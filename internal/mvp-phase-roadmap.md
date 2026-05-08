@@ -129,7 +129,8 @@ Deliverables:
   - [x] Load daily and monthly budget settings from policy.
   - [x] Compare current spend using Redis and/or PostgreSQL-backed usage state.
   - [x] Reject over-budget requests before upstream calls.
-  - [ ] Record estimated cost after requests and update budget counters.
+  - [x] Record available upstream estimated cost after requests and update
+        budget counters.
 
 Acceptance gates:
 

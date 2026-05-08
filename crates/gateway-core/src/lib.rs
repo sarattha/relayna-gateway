@@ -19,4 +19,6 @@ pub use policies::{
 };
 pub use rate_limits::{RateLimitDecision, RateLimitStore};
 pub use routing::{Provider, Route};
-pub use usage::{extract_model, UsageEvent, UsageRecorder, UsageStatus};
+pub use usage::{
+    extract_estimated_cost_usd, extract_model, UsageEvent, UsageRecorder, UsageStatus,
+};

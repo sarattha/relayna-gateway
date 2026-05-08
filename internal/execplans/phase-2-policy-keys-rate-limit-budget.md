@@ -38,8 +38,10 @@ budget says no.
   unreleased baseline rather than a compatibility shim.
 - Pingora exposes a `proxy_upstream_filter` hook that lets policy, Redis RPM,
   and budget checks run after authentication and before upstream connection.
-- Phase 2 can check seeded Redis budget counters before upstream calls, but
-  accurate cost extraction remains deferred to Phase 3 as planned.
+- Phase 2 can check seeded Redis budget counters before upstream calls and can
+  increment counters when a non-streaming upstream response exposes an
+  estimated cost. Accurate fallback pricing remains deferred to Phase 3 as
+  planned.
 
 ## Decision Log
 
@@ -57,6 +59,13 @@ budget says no.
   treat missing policy rows as default Phase 1-compatible generation policy.
   Rationale: Existing seeded Phase 1 keys keep working during unreleased local
   development while admin-created Phase 2 keys have durable policy state.
+  Date/Author: 2026-05-09 / Codex.
+- Decision: For Phase 2 budget spend updates, extract positive cost values only
+  from available non-streaming upstream JSON fields such as `estimated_cost`,
+  `response_cost`, `usage.total_cost`, `usage.cost`, and LiteLLM hidden
+  response cost metadata.
+  Rationale: This fixes the budget counter no-op for normal responses that
+  expose cost while keeping tokenizer/pricing fallback work in Phase 3.
   Date/Author: 2026-05-09 / Codex.
 
 ## Outcomes & Retrospective

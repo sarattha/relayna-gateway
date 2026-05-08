@@ -193,9 +193,10 @@ impl PostgresStore {
                 status,
                 status_code,
                 latency_ms,
+                estimated_cost,
                 created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             "#,
         )
         .bind(&event.request_id)
@@ -207,6 +208,7 @@ impl PostgresStore {
         .bind(status)
         .bind(i32::from(event.status_code))
         .bind(event.latency_ms)
+        .bind(event.estimated_cost_usd)
         .bind(event.created_at)
         .execute(&self.pool)
         .await
@@ -444,6 +446,23 @@ impl AdminKeyStore for PostgresStore {
     }
 
     async fn key_usage_summary(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyUsageSummary>> {
+        let key_exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM api_keys
+                WHERE id = $1
+            )
+            "#,
+        )
+        .bind(key_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        if !key_exists {
+            return Ok(None);
+        }
+
         sqlx::query_as::<_, (i64, i64, i64, Option<i64>, Option<f64>)>(
             r#"
             SELECT
@@ -457,28 +476,26 @@ impl AdminKeyStore for PostgresStore {
             "#,
         )
         .bind(key_id)
-        .fetch_optional(&self.pool)
+        .fetch_one(&self.pool)
         .await
-        .map(|row| {
-            row.map(
-                |(
+        .map(
+            |(
+                request_count,
+                success_count,
+                failure_count,
+                total_latency_ms,
+                estimated_cost_usd,
+            )| {
+                Some(AdminKeyUsageSummary {
+                    key_id,
                     request_count,
                     success_count,
                     failure_count,
-                    total_latency_ms,
+                    total_latency_ms: total_latency_ms.unwrap_or(0),
                     estimated_cost_usd,
-                )| {
-                    AdminKeyUsageSummary {
-                        key_id,
-                        request_count,
-                        success_count,
-                        failure_count,
-                        total_latency_ms: total_latency_ms.unwrap_or(0),
-                        estimated_cost_usd,
-                    }
-                },
-            )
-        })
+                })
+            },
+        )
         .map_err(|_| GatewayError::StoreUnavailable)
     }
 

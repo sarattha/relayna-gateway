@@ -3,9 +3,9 @@ use bytes::Bytes;
 use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
-    evaluate_policy, extract_generation_features, extract_model, AuthenticatedKey, BudgetDecision,
-    BudgetStore, GatewayError, PolicyLookup, Provider, RateLimitDecision, RateLimitStore, Route,
-    UsageEvent, UsageRecorder,
+    evaluate_policy, extract_estimated_cost_usd, extract_generation_features, extract_model,
+    AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError, PolicyLookup, Provider,
+    RateLimitDecision, RateLimitStore, Route, UsageEvent, UsageRecorder,
 };
 use pingora_core::{upstreams::peer::HttpPeer, Result as PingoraResult};
 use pingora_http::{RequestHeader, ResponseHeader};
@@ -74,6 +74,7 @@ pub struct PingoraContext {
     route: Option<Route>,
     key: Option<AuthenticatedKey>,
     body_prefix: Vec<u8>,
+    response_body_prefix: Vec<u8>,
     terminal_usage_recorded: bool,
 }
 
@@ -92,6 +93,7 @@ where
             route: None,
             key: None,
             body_prefix: Vec::new(),
+            response_body_prefix: Vec::new(),
             terminal_usage_recorded: false,
         }
     }
@@ -300,6 +302,26 @@ where
         Ok(())
     }
 
+    fn response_body_filter(
+        &self,
+        _session: &mut Session,
+        body: &mut Option<Bytes>,
+        _end_of_stream: bool,
+        ctx: &mut Self::CTX,
+    ) -> PingoraResult<Option<std::time::Duration>>
+    where
+        Self::CTX: Send + Sync,
+    {
+        if let Some(body) = body {
+            if ctx.response_body_prefix.len() < 65_536 {
+                let remaining = 65_536 - ctx.response_body_prefix.len();
+                ctx.response_body_prefix
+                    .extend_from_slice(&body[..body.len().min(remaining)]);
+            }
+        }
+        Ok(None)
+    }
+
     async fn logging(
         &self,
         session: &mut Session,
@@ -320,6 +342,7 @@ where
             .response_written()
             .map(|response| response.status.as_u16())
             .unwrap_or_else(|| if error.is_some() { 502 } else { 500 });
+        let estimated_cost_usd = extract_estimated_cost_usd(&ctx.response_body_prefix);
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
         let event = UsageEvent::new(
             &ctx.request_id,
@@ -329,12 +352,15 @@ where
             status_code,
             latency_ms,
             Utc::now(),
-        );
+        )
+        .with_estimated_cost_usd(estimated_cost_usd);
         let _ = self.store.insert_usage_event(&event).await;
-        let _ = self
-            .control_state
-            .add_budget_spend(key.key_id, 0.0, Utc::now())
-            .await;
+        if let Some(estimated_cost_usd) = estimated_cost_usd {
+            let _ = self
+                .control_state
+                .add_budget_spend(key.key_id, estimated_cost_usd, Utc::now())
+                .await;
+        }
     }
 }
 

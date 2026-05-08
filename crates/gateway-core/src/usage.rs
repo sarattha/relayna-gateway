@@ -12,7 +12,7 @@ pub enum UsageStatus {
     Failure,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UsageEvent {
     pub request_id: String,
     pub key_id: Uuid,
@@ -23,6 +23,7 @@ pub struct UsageEvent {
     pub status: UsageStatus,
     pub status_code: u16,
     pub latency_ms: i64,
+    pub estimated_cost_usd: Option<f64>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -57,8 +58,14 @@ impl UsageEvent {
             status,
             status_code,
             latency_ms,
+            estimated_cost_usd: None,
             created_at,
         }
+    }
+
+    pub fn with_estimated_cost_usd(mut self, estimated_cost_usd: Option<f64>) -> Self {
+        self.estimated_cost_usd = estimated_cost_usd;
+        self
     }
 }
 
@@ -70,6 +77,23 @@ pub fn extract_model(body: &[u8]) -> Option<String> {
         .map(str::trim)
         .filter(|model| !model.is_empty())
         .map(ToOwned::to_owned)
+}
+
+pub fn extract_estimated_cost_usd(body: &[u8]) -> Option<f64> {
+    let value: Value = serde_json::from_slice(body).ok()?;
+    let cost = [
+        value.get("estimated_cost"),
+        value.get("response_cost"),
+        value.pointer("/usage/estimated_cost"),
+        value.pointer("/usage/total_cost"),
+        value.pointer("/usage/cost"),
+        value.pointer("/_hidden_params/response_cost"),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(Value::as_f64)
+    .find(|cost| cost.is_finite() && *cost > 0.0);
+    cost
 }
 
 #[cfg(test)]
@@ -87,5 +111,18 @@ mod tests {
     #[test]
     fn ignores_missing_model() {
         assert_eq!(extract_model(br#"{"input":"ping"}"#), None);
+    }
+
+    #[test]
+    fn extracts_estimated_cost_from_common_upstream_shapes() {
+        assert_eq!(
+            extract_estimated_cost_usd(br#"{"usage":{"total_cost":0.0125}}"#),
+            Some(0.0125)
+        );
+        assert_eq!(
+            extract_estimated_cost_usd(br#"{"_hidden_params":{"response_cost":0.5}}"#),
+            Some(0.5)
+        );
+        assert_eq!(extract_estimated_cost_usd(br#"{"usage":{"cost":0}}"#), None);
     }
 }
