@@ -210,6 +210,7 @@ mod tests {
         Argon2,
     };
     use axum::body::Body;
+    use chrono::Duration;
     use gateway_core::{auth::StoredVirtualKey, AuthenticatedKey, UsageStatus};
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -288,13 +289,23 @@ mod tests {
     }
 
     async fn request(app: Router, route: &str, raw_key: Option<&str>) -> Response {
+        let auth_header = raw_key.map(|raw_key| format!("Bearer {raw_key}"));
+        request_with_auth_header(app, Method::POST, route, auth_header.as_deref()).await
+    }
+
+    async fn request_with_auth_header(
+        app: Router,
+        method: Method,
+        route: &str,
+        auth_header: Option<&str>,
+    ) -> Response {
         let mut builder = axum::http::Request::builder()
-            .method(Method::POST)
+            .method(method)
             .uri(route)
             .header("content-type", "application/json")
             .header("x-request-id", "req_test");
-        if let Some(raw_key) = raw_key {
-            builder = builder.header("authorization", format!("Bearer {raw_key}"));
+        if let Some(auth_header) = auth_header {
+            builder = builder.header("authorization", auth_header);
         }
         app.oneshot(
             builder
@@ -371,6 +382,95 @@ mod tests {
         let response = request(app, "/v1/chat/completions", None).await;
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(store.events.lock().expect("lock poisoned").is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_malformed_auth_before_upstream() {
+        let raw = "rk_live_1234567890abcdef";
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(Some(stored_key(raw)))),
+            events: Arc::new(Mutex::new(Vec::new())),
+        };
+        let server = MockServer::start().await;
+
+        let app = router_with_state(test_state(store.clone(), server.uri()));
+        let response = request_with_auth_header(
+            app,
+            Method::POST,
+            "/v1/chat/completions",
+            Some("Token nope"),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(store.events.lock().expect("lock poisoned").is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_unknown_key_before_upstream() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            events: Arc::new(Mutex::new(Vec::new())),
+        };
+        let server = MockServer::start().await;
+
+        let app = router_with_state(test_state(store.clone(), server.uri()));
+        let response = request(app, "/v1/chat/completions", Some("rk_live_unknownabcdef")).await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(store.events.lock().expect("lock poisoned").is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_disabled_key_before_upstream() {
+        let raw = "rk_live_1234567890abcdef";
+        let mut key = stored_key(raw);
+        key.disabled = true;
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(Some(key))),
+            events: Arc::new(Mutex::new(Vec::new())),
+        };
+        let server = MockServer::start().await;
+
+        let app = router_with_state(test_state(store.clone(), server.uri()));
+        let response = request(app, "/v1/chat/completions", Some(raw)).await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(store.events.lock().expect("lock poisoned").is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_expired_key_before_upstream() {
+        let raw = "rk_live_1234567890abcdef";
+        let mut key = stored_key(raw);
+        key.expires_at = Some(Utc::now() - Duration::minutes(1));
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(Some(key))),
+            events: Arc::new(Mutex::new(Vec::new())),
+        };
+        let server = MockServer::start().await;
+
+        let app = router_with_state(test_state(store.clone(), server.uri()));
+        let response = request(app, "/v1/chat/completions", Some(raw)).await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(store.events.lock().expect("lock poisoned").is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_legacy_completions_route() {
+        let raw = "rk_live_1234567890abcdef";
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(Some(stored_key(raw)))),
+            events: Arc::new(Mutex::new(Vec::new())),
+        };
+        let server = MockServer::start().await;
+
+        let app = router_with_state(test_state(store.clone(), server.uri()));
+        let response = request(app, "/v1/completions", Some(raw)).await;
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
         assert!(store.events.lock().expect("lock poisoned").is_empty());
     }
 
