@@ -1,8 +1,9 @@
 use anyhow::Context;
 use gateway_api::{app, config::Config};
-use gateway_proxy::{LiteLlmConfig, LiteLlmProxy};
+use gateway_proxy::{PingoraLiteLlmConfig, RelaynaPingoraProxy};
 use gateway_store::{PostgresStore, RedisReadiness};
-use std::time::Duration;
+use pingora_core::server::Server;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -14,25 +15,33 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("connect postgres")?;
     let redis = RedisReadiness::new(&config.redis_url).context("create redis client")?;
-    let proxy = LiteLlmProxy::new(LiteLlmConfig::new(
-        &config.litellm_base_url,
-        &config.litellm_service_key,
-        Duration::from_secs(30),
-    )?)
-    .context("create litellm proxy")?;
+    let proxy_config =
+        PingoraLiteLlmConfig::from_base_url(&config.litellm_base_url, &config.litellm_service_key)
+            .context("create pingora LiteLLM proxy config")?;
 
-    let app = app::router(store, redis, proxy);
-    let listener = TcpListener::bind(config.gateway_bind_addr)
+    let app = app::router(store.clone(), redis);
+    let listener = TcpListener::bind(config.gateway_control_bind_addr)
         .await
-        .context("bind gateway listener")?;
+        .context("bind gateway control listener")?;
 
-    tracing::info!(addr = %listener.local_addr()?, "gateway listening");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("serve gateway")?;
+    tracing::info!(addr = %listener.local_addr()?, "gateway control API listening");
+    tokio::spawn(async move {
+        if let Err(error) = axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+        {
+            tracing::error!(%error, "gateway control API stopped with error");
+        }
+    });
 
-    Ok(())
+    let mut pingora = Server::new(None).context("create pingora server")?;
+    pingora.bootstrap();
+    let proxy = RelaynaPingoraProxy::new(Arc::new(store), proxy_config);
+    let mut proxy_service = pingora_proxy::http_proxy_service(&pingora.configuration, proxy);
+    proxy_service.add_tcp(&config.gateway_bind_addr.to_string());
+    tracing::info!(addr = %config.gateway_bind_addr, "gateway Pingora proxy listening");
+    pingora.add_service(proxy_service);
+    pingora.run_forever()
 }
 
 async fn shutdown_signal() {

@@ -43,8 +43,8 @@ Deliverables:
   - [x] Keep authentication, routing, usage, policy, budget, and rate-limit
         decisions independent of Pingora and Axum request types.
 - Configuration and persistence:
-  - [x] Load required environment settings for database, Redis, LiteLLM, bind
-        address, LiteLLM service key, and log level.
+  - [x] Load required environment settings for database, Redis, LiteLLM, proxy
+        bind address, control bind address, LiteLLM service key, and log level.
   - [x] Add the initial PostgreSQL schema for virtual keys, usage events, and
         route policies.
   - [x] Store only key prefixes and hashes, never raw Relayna virtual keys.
@@ -81,7 +81,7 @@ Verification gates:
 
 - [x] Unit tests cover key validation, route resolution, credential stripping,
       usage event construction, and error mapping.
-- [x] Integration or black-box tests cover valid proxying, invalid auth,
+- [ ] Integration or black-box tests cover valid proxying, invalid auth,
       upstream timeout, upstream connection failure, and usage insertion.
 - [ ] Manual smoke test uses a seeded key and LiteLLM-compatible upstream for
       `POST /v1/chat/completions`.

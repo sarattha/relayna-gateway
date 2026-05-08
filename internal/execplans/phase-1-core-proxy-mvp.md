@@ -36,12 +36,13 @@ correlation data, and avoid logging prompt bodies by default.
 - [x] (2026-05-08 23:59 +07) Add Axum health/readiness control API.
 - [x] (2026-05-08 23:59 +07) Add proxy handling for
       `/v1/chat/completions` and `/v1/responses`, including a Pingora
-      `ProxyHttp` service implementation in `gateway-proxy` and an Axum-hosted
-      tested path in `gateway-api`.
+      `ProxyHttp` service implementation in `gateway-proxy` wired as the
+      runnable public proxy listener.
 - [x] (2026-05-08 23:59 +07) Add request IDs, structured errors, tracing, and
       graceful shutdown.
-- [x] (2026-05-08 23:59 +07) Add unit and black-box mock-upstream tests.
-      Remaining: manual smoke test against local PostgreSQL, Redis, and
+- [x] (2026-05-08 23:59 +07) Add unit tests for core auth/routing/usage,
+      Pingora proxy configuration, and Axum control routes. Remaining:
+      black-box Pingora proxy smoke test against local PostgreSQL, Redis, and
       LiteLLM-compatible upstream.
 - [x] (2026-05-08 23:59 +07) Run `$code-change-verification` and record
       results.
@@ -51,13 +52,10 @@ correlation data, and avoid logging prompt bodies by default.
 - Observation: The local default Rust toolchain was `rustc 1.59.0`, which was
   too old for the selected 2026 gateway dependencies.
   Evidence: `rustup update stable` moved the toolchain to `rustc 1.95.0`.
-- Observation: Pingora and Axum are represented as separate framework
-  boundaries. The tested runnable binary currently hosts health/readiness and
-  proxy routes through Axum, while `gateway-proxy` contains the Pingora
-  `ProxyHttp` implementation for the proxy plane.
-  Evidence: `crates/gateway-api/src/app.rs` black-box tests pass for both
-  generation routes; `crates/gateway-proxy/src/pingora_plane.rs` compiles
-  through clippy and tests.
+- Observation: Pingora and Axum must run as separate listeners to keep proxy
+  traffic out of the Axum control API.
+  Evidence: `GATEWAY_BIND_ADDR` now binds the Pingora proxy listener, while
+  `GATEWAY_CONTROL_BIND_ADDR` binds the Axum `/healthz` and `/readyz` listener.
 
 ## Decision Log
 
@@ -77,16 +75,21 @@ correlation data, and avoid logging prompt bodies by default.
   Rationale: Rate limits and budgets are Phase 2 scope, but preserving the
   deployment shape now avoids a later required configuration change.
   Date/Author: 2026-05-08 / Codex.
+- Decision: Use `GATEWAY_BIND_ADDR` for the public Pingora proxy listener and
+  add `GATEWAY_CONTROL_BIND_ADDR` for Axum health/readiness.
+  Rationale: Pingora must own `/v1/*` proxy traffic, while Axum should remain
+  control-plane only.
+  Date/Author: 2026-05-09 / Codex.
 
 ## Outcomes & Retrospective
 
 Implemented the initial Rust workspace, configuration, PostgreSQL schema,
-framework-agnostic auth/routing/usage core, Axum health/readiness API,
-LiteLLM proxy forwarding, Pingora proxy service implementation, usage
-recording, and tests. `$code-change-verification` passed on 2026-05-08.
+framework-agnostic auth/routing/usage core, Axum health/readiness API, Pingora
+LiteLLM proxy service, usage recording, and tests. `$code-change-verification`
+passed on 2026-05-08 and after Pingora/Axum listener separation on 2026-05-09.
 
-Remaining operational gap: run the manual smoke test with local PostgreSQL,
-Redis, and a LiteLLM-compatible upstream.
+Remaining operational gap: run the manual smoke test through the Pingora
+listener with local PostgreSQL, Redis, and a LiteLLM-compatible upstream.
 
 ## Context and Orientation
 
@@ -135,7 +138,7 @@ schemas, and usage event fields.
 Start by creating the Cargo workspace and package boundaries listed above.
 Implement configuration loading with required environment variables:
 `DATABASE_URL`, `REDIS_URL`, `LITELLM_BASE_URL`, `LITELLM_SERVICE_KEY`,
-`GATEWAY_BIND_ADDR`, and `LOG_LEVEL`.
+`GATEWAY_BIND_ADDR`, `GATEWAY_CONTROL_BIND_ADDR`, and `LOG_LEVEL`.
 
 Add initial PostgreSQL migrations and store code for virtual key lookup and
 usage event inserts. Store key prefixes and hashes only. Use `argon2` for
@@ -146,13 +149,15 @@ upstream target, usage event construction, and gateway errors. Keep these
 types independent of Axum and Pingora request types.
 
 Add the Axum control API with health and readiness endpoints, shared request ID
-handling, structured error responses, tracing, and graceful shutdown.
+handling, structured error responses, tracing, and graceful shutdown on
+`GATEWAY_CONTROL_BIND_ADDR`.
 
 Add proxy paths for `POST /v1/chat/completions` and `POST /v1/responses`.
 Validate the Relayna virtual key before forwarding, strip client
 `Authorization`, inject the LiteLLM service credential, add Relayna correlation
 headers, forward the request, preserve relevant response headers, and map
-upstream timeouts or connection failures to stable gateway errors.
+upstream timeouts or connection failures to stable gateway errors. These routes
+must be served by Pingora on `GATEWAY_BIND_ADDR`, not by Axum.
 
 Record usage events for both successful and failed requests. Capture request
 ID, key ID, project ID, route, model when present in JSON, provider `litellm`,

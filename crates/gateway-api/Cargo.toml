@@ -10,12 +10,13 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 chrono.workspace = true
-futures-util.workspace = true
 gateway-core = { path = "../gateway-core" }
 gateway-proxy = { path = "../gateway-proxy" }
 gateway-store = { path = "../gateway-store" }
 gateway-telemetry = { path = "../gateway-telemetry" }
 http.workspace = true
+pingora-core.workspace = true
+pingora-proxy.workspace = true
 redis.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -25,6 +26,4 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-argon2.workspace = true
 tower.workspace = true
-wiremock.workspace = true

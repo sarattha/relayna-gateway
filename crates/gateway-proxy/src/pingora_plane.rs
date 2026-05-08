@@ -241,3 +241,31 @@ async fn respond_error(
         .respond_error_with_body(error.status_code().as_u16(), Bytes::from(body))
         .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_https_litellm_base_url_for_pingora_peer() {
+        let config = PingoraLiteLlmConfig::from_base_url("https://litellm.internal", "service-key")
+            .expect("config");
+
+        assert_eq!(config.host, "litellm.internal");
+        assert_eq!(config.port, 443);
+        assert!(config.tls);
+        assert_eq!(config.sni, "litellm.internal");
+        assert_eq!(config.service_key, "service-key");
+    }
+
+    #[test]
+    fn parses_http_litellm_base_url_for_pingora_peer() {
+        let config = PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+            .expect("config");
+
+        assert_eq!(config.host, "127.0.0.1");
+        assert_eq!(config.port, 4000);
+        assert!(!config.tls);
+        assert_eq!(config.sni, "127.0.0.1");
+    }
+}

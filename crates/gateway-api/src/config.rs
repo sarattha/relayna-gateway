@@ -8,6 +8,7 @@ pub struct Config {
     pub litellm_base_url: String,
     pub litellm_service_key: String,
     pub gateway_bind_addr: SocketAddr,
+    pub gateway_control_bind_addr: SocketAddr,
     pub log_level: String,
 }
 
@@ -20,6 +21,9 @@ impl Config {
         let gateway_bind_addr = required("GATEWAY_BIND_ADDR")?
             .parse()
             .map_err(|_| GatewayError::InvalidConfiguration)?;
+        let gateway_control_bind_addr = required("GATEWAY_CONTROL_BIND_ADDR")?
+            .parse()
+            .map_err(|_| GatewayError::InvalidConfiguration)?;
         let log_level = required("LOG_LEVEL")?;
 
         Ok(Self {
@@ -28,6 +32,7 @@ impl Config {
             litellm_base_url,
             litellm_service_key,
             gateway_bind_addr,
+            gateway_control_bind_addr,
             log_level,
         })
     }
