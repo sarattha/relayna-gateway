@@ -28,8 +28,8 @@ adds execution gates for planning, review, and handoff.
 ExecPlan: `internal/execplans/phase-1-core-proxy-mvp.md`
 
 Objective: establish Relayna Gateway as the public AI API entry point by
-accepting authenticated OpenAI-compatible chat requests and forwarding them to
-LiteLLM while recording usage.
+accepting authenticated OpenAI-compatible generation requests and forwarding
+them to LiteLLM while recording usage.
 
 Deliverables:
 
@@ -52,7 +52,7 @@ Deliverables:
   - [ ] Accept `Authorization: Bearer rk_live_xxx` Relayna virtual keys.
   - [ ] Reject missing, malformed, invalid, expired, and disabled keys.
   - [ ] Attach authenticated key and project context to the request lifecycle.
-  - [ ] Route `POST /v1/chat/completions` to LiteLLM.
+  - [ ] Route `POST /v1/chat/completions` and `POST /v1/responses` to LiteLLM.
 - Proxy and accounting:
   - [ ] Strip client credentials before the upstream call.
   - [ ] Inject the internal LiteLLM service credential and Relayna correlation
@@ -67,8 +67,8 @@ Deliverables:
 
 Acceptance gates:
 
-- [ ] A valid Relayna virtual key can call `/v1/chat/completions` through the
-      gateway and receive the LiteLLM response.
+- [ ] A valid Relayna virtual key can call `/v1/chat/completions` and
+      `/v1/responses` through the gateway and receive the LiteLLM response.
 - [ ] Invalid, expired, disabled, and missing keys are rejected before any
       upstream provider call.
 - [ ] LiteLLM and provider credentials are never returned to the client.

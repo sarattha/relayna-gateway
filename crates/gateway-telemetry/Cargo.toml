@@ -1,0 +1,10 @@
+[package]
+name = "gateway-telemetry"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tracing-subscriber.workspace = true
+

@@ -1,0 +1,24 @@
+[package]
+name = "gateway-proxy"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+gateway-core = { path = "../gateway-core" }
+async-trait.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+http.workspace = true
+pingora-core.workspace = true
+pingora-http.workspace = true
+pingora-proxy.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true
