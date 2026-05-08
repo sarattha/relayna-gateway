@@ -3,7 +3,9 @@ use bytes::Bytes;
 use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
-    extract_model, AuthenticatedKey, GatewayError, Route, UsageEvent, UsageRecorder,
+    evaluate_policy, extract_estimated_cost_usd, extract_generation_features, extract_model,
+    AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError, PolicyLookup, Provider,
+    RateLimitDecision, RateLimitStore, Route, UsageEvent, UsageRecorder,
 };
 use pingora_core::{upstreams::peer::HttpPeer, Result as PingoraResult};
 use pingora_http::{RequestHeader, ResponseHeader};
@@ -45,17 +47,23 @@ impl PingoraLiteLlmConfig {
     }
 }
 
-pub struct RelaynaPingoraProxy<S> {
+pub struct RelaynaPingoraProxy<S, R> {
     store: Arc<S>,
+    control_state: Arc<R>,
     config: PingoraLiteLlmConfig,
 }
 
-impl<S> RelaynaPingoraProxy<S>
+impl<S, R> RelaynaPingoraProxy<S, R>
 where
-    S: VirtualKeyLookup + UsageRecorder,
+    S: VirtualKeyLookup + UsageRecorder + PolicyLookup,
+    R: RateLimitStore + BudgetStore,
 {
-    pub fn new(store: Arc<S>, config: PingoraLiteLlmConfig) -> Self {
-        Self { store, config }
+    pub fn new(store: Arc<S>, control_state: Arc<R>, config: PingoraLiteLlmConfig) -> Self {
+        Self {
+            store,
+            control_state,
+            config,
+        }
     }
 }
 
@@ -66,12 +74,15 @@ pub struct PingoraContext {
     route: Option<Route>,
     key: Option<AuthenticatedKey>,
     body_prefix: Vec<u8>,
+    response_body_prefix: Vec<u8>,
+    terminal_usage_recorded: bool,
 }
 
 #[async_trait]
-impl<S> ProxyHttp for RelaynaPingoraProxy<S>
+impl<S, R> ProxyHttp for RelaynaPingoraProxy<S, R>
 where
-    S: VirtualKeyLookup + UsageRecorder + Send + Sync + 'static,
+    S: VirtualKeyLookup + UsageRecorder + PolicyLookup + Send + Sync + 'static,
+    R: RateLimitStore + BudgetStore + Send + Sync + 'static,
 {
     type CTX = PingoraContext;
 
@@ -82,6 +93,8 @@ where
             route: None,
             key: None,
             body_prefix: Vec::new(),
+            response_body_prefix: Vec::new(),
+            terminal_usage_recorded: false,
         }
     }
 
@@ -149,6 +162,95 @@ where
         Ok(())
     }
 
+    async fn proxy_upstream_filter(
+        &self,
+        session: &mut Session,
+        ctx: &mut Self::CTX,
+    ) -> PingoraResult<bool>
+    where
+        Self::CTX: Send + Sync,
+    {
+        let Some(route) = ctx.route else {
+            respond_error(session, GatewayError::UnsupportedRoute, &ctx.request_id).await?;
+            return Ok(false);
+        };
+        let Some(key) = ctx.key.clone() else {
+            respond_error(session, GatewayError::MissingAuthorization, &ctx.request_id).await?;
+            return Ok(false);
+        };
+
+        let now = Utc::now();
+        let features = extract_generation_features(&ctx.body_prefix);
+        let policy = match self.store.policy_for_key(key.key_id).await {
+            Ok(policy) => policy,
+            Err(error) => {
+                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                    .await;
+                respond_error(session, error, &ctx.request_id).await?;
+                return Ok(false);
+            }
+        };
+
+        if let Err(error) = evaluate_policy(&policy, route, Provider::LiteLlm, &features) {
+            self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                .await;
+            respond_error(session, error, &ctx.request_id).await?;
+            return Ok(false);
+        }
+
+        match self
+            .control_state
+            .check_request_rate_limit(key.key_id, policy.rpm_limit, now)
+            .await
+        {
+            Ok(RateLimitDecision::Allowed { .. }) => {}
+            Ok(RateLimitDecision::Exceeded {
+                retry_after_seconds,
+                ..
+            }) => {
+                let error = GatewayError::RateLimitExceeded {
+                    retry_after_seconds,
+                };
+                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                    .await;
+                respond_error(session, error, &ctx.request_id).await?;
+                return Ok(false);
+            }
+            Err(error) => {
+                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                    .await;
+                respond_error(session, error, &ctx.request_id).await?;
+                return Ok(false);
+            }
+        }
+
+        match self
+            .control_state
+            .check_budget(
+                key.key_id,
+                policy.daily_budget_usd,
+                policy.monthly_budget_usd,
+                now,
+            )
+            .await
+        {
+            Ok(BudgetDecision::Allowed(_)) => Ok(true),
+            Ok(BudgetDecision::Exceeded(_)) => {
+                let error = GatewayError::BudgetExceeded;
+                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                    .await;
+                respond_error(session, error, &ctx.request_id).await?;
+                Ok(false)
+            }
+            Err(error) => {
+                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                    .await;
+                respond_error(session, error, &ctx.request_id).await?;
+                Ok(false)
+            }
+        }
+    }
+
     async fn upstream_peer(
         &self,
         _session: &mut Session,
@@ -200,6 +302,26 @@ where
         Ok(())
     }
 
+    fn response_body_filter(
+        &self,
+        _session: &mut Session,
+        body: &mut Option<Bytes>,
+        _end_of_stream: bool,
+        ctx: &mut Self::CTX,
+    ) -> PingoraResult<Option<std::time::Duration>>
+    where
+        Self::CTX: Send + Sync,
+    {
+        if let Some(body) = body {
+            if ctx.response_body_prefix.len() < 65_536 {
+                let remaining = 65_536 - ctx.response_body_prefix.len();
+                ctx.response_body_prefix
+                    .extend_from_slice(&body[..body.len().min(remaining)]);
+            }
+        }
+        Ok(None)
+    }
+
     async fn logging(
         &self,
         session: &mut Session,
@@ -212,11 +334,15 @@ where
         let Some(key) = &ctx.key else {
             return;
         };
+        if ctx.terminal_usage_recorded {
+            return;
+        }
 
         let status_code = session
             .response_written()
             .map(|response| response.status.as_u16())
             .unwrap_or_else(|| if error.is_some() { 502 } else { 500 });
+        let estimated_cost_usd = extract_estimated_cost_usd(&ctx.response_body_prefix);
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
         let event = UsageEvent::new(
             &ctx.request_id,
@@ -226,8 +352,46 @@ where
             status_code,
             latency_ms,
             Utc::now(),
+        )
+        .with_estimated_cost_usd(estimated_cost_usd);
+        let _ = self.store.insert_usage_event(&event).await;
+        if let Some(estimated_cost_usd) = estimated_cost_usd {
+            let _ = self
+                .control_state
+                .add_budget_spend(key.key_id, estimated_cost_usd, Utc::now())
+                .await;
+        }
+    }
+}
+
+impl<S, R> RelaynaPingoraProxy<S, R>
+where
+    S: UsageRecorder,
+{
+    async fn record_terminal_usage(
+        &self,
+        ctx: &mut PingoraContext,
+        key: &AuthenticatedKey,
+        route: Route,
+        status_code: u16,
+        now: chrono::DateTime<Utc>,
+    ) {
+        if ctx.terminal_usage_recorded {
+            return;
+        }
+
+        let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
+        let event = UsageEvent::new(
+            &ctx.request_id,
+            key,
+            route,
+            extract_model(&ctx.body_prefix),
+            status_code,
+            latency_ms,
+            now,
         );
         let _ = self.store.insert_usage_event(&event).await;
+        ctx.terminal_usage_recorded = true;
     }
 }
 

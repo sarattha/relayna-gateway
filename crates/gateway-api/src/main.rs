@@ -1,7 +1,7 @@
 use anyhow::Context;
 use gateway_api::{app, config::Config};
 use gateway_proxy::{PingoraLiteLlmConfig, RelaynaPingoraProxy};
-use gateway_store::{PostgresStore, RedisReadiness};
+use gateway_store::{PostgresStore, RedisControlState, RedisReadiness};
 use pingora_core::server::Server;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -15,11 +15,13 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("connect postgres")?;
     let redis = RedisReadiness::new(&config.redis_url).context("create redis client")?;
+    let redis_control =
+        RedisControlState::new(&config.redis_url).context("create redis control client")?;
     let proxy_config =
         PingoraLiteLlmConfig::from_base_url(&config.litellm_base_url, &config.litellm_service_key)
             .context("create pingora LiteLLM proxy config")?;
 
-    let app = app::router(store.clone(), redis);
+    let app = app::router(store.clone(), redis, config.gateway_admin_token.clone());
     let listener = TcpListener::bind(config.gateway_control_bind_addr)
         .await
         .context("bind gateway control listener")?;
@@ -36,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut pingora = Server::new(None).context("create pingora server")?;
     pingora.bootstrap();
-    let proxy = RelaynaPingoraProxy::new(Arc::new(store), proxy_config);
+    let proxy = RelaynaPingoraProxy::new(Arc::new(store), Arc::new(redis_control), proxy_config);
     let mut proxy_service = pingora_proxy::http_proxy_service(&pingora.configuration, proxy);
     proxy_service.add_tcp(&config.gateway_bind_addr.to_string());
     tracing::info!(addr = %config.gateway_bind_addr, "gateway Pingora proxy listening");

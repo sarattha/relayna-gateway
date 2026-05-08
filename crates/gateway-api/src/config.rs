@@ -7,6 +7,7 @@ pub struct Config {
     pub redis_url: String,
     pub litellm_base_url: String,
     pub litellm_service_key: String,
+    pub gateway_admin_token: String,
     pub gateway_bind_addr: SocketAddr,
     pub gateway_control_bind_addr: SocketAddr,
     pub log_level: String,
@@ -18,6 +19,7 @@ impl Config {
         let redis_url = required("REDIS_URL")?;
         let litellm_base_url = required("LITELLM_BASE_URL")?;
         let litellm_service_key = required("LITELLM_SERVICE_KEY")?;
+        let gateway_admin_token = required("GATEWAY_ADMIN_TOKEN")?;
         let gateway_bind_addr = required("GATEWAY_BIND_ADDR")?
             .parse()
             .map_err(|_| GatewayError::InvalidConfiguration)?;
@@ -31,6 +33,7 @@ impl Config {
             redis_url,
             litellm_base_url,
             litellm_service_key,
+            gateway_admin_token,
             gateway_bind_addr,
             gateway_control_bind_addr,
             log_level,

@@ -21,20 +21,27 @@ budget says no.
 
 ## Progress
 
-- [ ] Confirm Phase 1 behavior and schemas are complete.
-- [ ] Establish the compatibility boundary against the latest release tag.
-- [ ] Add key policy persistence and models.
-- [ ] Add protected admin key APIs.
-- [ ] Add policy enforcement before upstream calls.
-- [ ] Add Redis-backed request-per-minute limits.
-- [ ] Add simple daily and monthly budget checks and spend updates.
-- [ ] Add usage query behavior for key/project views.
-- [ ] Add tests for admin, policy, rate-limit, budget, and usage queries.
-- [ ] Run `$code-change-verification` and record results.
+- [x] Confirm Phase 1 behavior and schemas are complete.
+- [x] Establish the compatibility boundary against the latest release tag.
+- [x] Add key policy persistence and models.
+- [x] Add protected admin key APIs.
+- [x] Add policy enforcement before upstream calls.
+- [x] Add Redis-backed request-per-minute limits.
+- [x] Add simple daily and monthly budget checks and spend updates.
+- [x] Add usage query behavior for key/project views.
+- [x] Add tests for admin, policy, rate-limit, budget, and usage queries.
+- [x] Run `$code-change-verification` and record results.
 
 ## Surprises & Discoveries
 
-- None yet.
+- No `v*` release tags exist, so Phase 2 is implemented as an additive
+  unreleased baseline rather than a compatibility shim.
+- Pingora exposes a `proxy_upstream_filter` hook that lets policy, Redis RPM,
+  and budget checks run after authentication and before upstream connection.
+- Phase 2 can check seeded Redis budget counters before upstream calls and can
+  increment counters when a non-streaming upstream response exposes an
+  estimated cost. Accurate fallback pricing remains deferred to Phase 3 as
+  planned.
 
 ## Decision Log
 
@@ -43,10 +50,38 @@ budget says no.
   Rationale: Gateway owns policy and budget decisions, so clients and Relayna
   Studio need stable gateway-originated outcomes.
   Date/Author: 2026-05-08 / Codex.
+- Decision: Keep Pingora as the only owner of `/v1/*` generation traffic and
+  use Axum only for health/readiness/admin routes.
+  Rationale: This preserves the Phase 1 architecture boundary and avoids
+  splitting proxy behavior across frameworks.
+  Date/Author: 2026-05-09 / Codex.
+- Decision: Persist default Phase 2 policy rows for admin-created keys and
+  treat missing policy rows as default Phase 1-compatible generation policy.
+  Rationale: Existing seeded Phase 1 keys keep working during unreleased local
+  development while admin-created Phase 2 keys have durable policy state.
+  Date/Author: 2026-05-09 / Codex.
+- Decision: For Phase 2 budget spend updates, extract positive cost values only
+  from available non-streaming upstream JSON fields such as `estimated_cost`,
+  `response_cost`, `usage.total_cost`, `usage.cost`, and LiteLLM hidden
+  response cost metadata.
+  Rationale: This fixes the budget counter no-op for normal responses that
+  expose cost while keeping tokenizer/pricing fallback work in Phase 3.
+  Date/Author: 2026-05-09 / Codex.
 
 ## Outcomes & Retrospective
 
-Not started.
+Implemented the first Phase 2 runtime pass: admin key lifecycle routes,
+one-time raw key creation, policy persistence, route/model/provider/feature
+policy checks, Redis RPM counters, Redis budget checks, stable denial errors,
+and key/project usage summaries.
+
+Verification passed with:
+
+    bash .codex/skills/code-change-verification/scripts/run.sh
+
+Remaining validation before Phase 2 should be considered fully release-ready:
+add broader database/Redis black-box coverage when local service fixtures are
+available.
 
 ## Context and Orientation
 
