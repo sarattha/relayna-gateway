@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use axum::{
-    body::Bytes,
+    body::{Body, Bytes},
     extract::State,
     http::{HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
@@ -8,6 +8,7 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
+use futures_util::TryStreamExt;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
     extract_model, GatewayError, GatewayResult, Route, UsageEvent,
@@ -154,7 +155,13 @@ async fn proxy_generation_inner(
                 latency_ms,
                 Utc::now(),
             );
-            state.store.insert_usage_event(&event).await?;
+            if let Err(error) = state.store.insert_usage_event(&event).await {
+                tracing::warn!(
+                    request_id = %request_id,
+                    error = %error,
+                    "usage event insert failed after successful upstream response"
+                );
+            }
             Ok(upstream_response(upstream))
         }
         Err(error) => {
@@ -175,7 +182,9 @@ async fn proxy_generation_inner(
 }
 
 fn upstream_response(upstream: UpstreamResponse) -> Response {
-    let mut response = (upstream.status, upstream.body).into_response();
+    let body = Body::from_stream(upstream.body.map_err(std::io::Error::other));
+    let mut response = Response::new(body);
+    *response.status_mut() = upstream.status;
     for (name, value) in upstream.headers {
         if let Some(name) = name {
             response.headers_mut().append(name, value);
@@ -209,7 +218,6 @@ mod tests {
         password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
         Argon2,
     };
-    use axum::body::Body;
     use chrono::Duration;
     use gateway_core::{auth::StoredVirtualKey, AuthenticatedKey, UsageStatus};
     use std::sync::Mutex;
@@ -223,6 +231,11 @@ mod tests {
     struct MemoryStore {
         key: Arc<Mutex<Option<StoredVirtualKey>>>,
         events: Arc<Mutex<Vec<UsageEvent>>>,
+    }
+
+    #[derive(Clone)]
+    struct FailingUsageStore {
+        key: StoredVirtualKey,
     }
 
     #[async_trait]
@@ -240,6 +253,24 @@ mod tests {
                 .expect("lock poisoned")
                 .push(event.clone());
             Ok(())
+        }
+
+        async fn postgres_ready(&self) -> GatewayResult<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl VirtualKeyLookup for FailingUsageStore {
+        async fn find_by_prefix(&self, _prefix: &str) -> GatewayResult<Option<StoredVirtualKey>> {
+            Ok(Some(self.key.clone()))
+        }
+    }
+
+    #[async_trait]
+    impl GatewayData for FailingUsageStore {
+        async fn insert_usage_event(&self, _event: &UsageEvent) -> GatewayResult<()> {
+            Err(GatewayError::StoreUnavailable)
         }
 
         async fn postgres_ready(&self) -> GatewayResult<()> {
@@ -275,6 +306,14 @@ mod tests {
         upstream_url: String,
         timeout: std::time::Duration,
     ) -> AppState {
+        test_state_with_gateway_data(Arc::new(store), upstream_url, timeout)
+    }
+
+    fn test_state_with_gateway_data(
+        store: Arc<dyn GatewayData>,
+        upstream_url: String,
+        timeout: std::time::Duration,
+    ) -> AppState {
         let redis = RedisReadiness::new("redis://127.0.0.1:6379").expect("redis client");
         let proxy = LiteLlmProxy::new(
             gateway_proxy::LiteLlmConfig::new(upstream_url, "litellm-service", timeout)
@@ -282,7 +321,7 @@ mod tests {
         )
         .expect("proxy");
         AppState {
-            store: Arc::new(store),
+            store,
             redis,
             proxy,
         }
@@ -368,6 +407,31 @@ mod tests {
         let events = store.events.lock().expect("lock poisoned");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].route, Route::Responses);
+    }
+
+    #[tokio::test]
+    async fn returns_successful_upstream_response_when_usage_insert_fails() {
+        let raw = "rk_live_1234567890abcdef";
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(header("authorization", "Bearer litellm-service"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "id": "chatcmpl_test"
+            })))
+            .mount(&server)
+            .await;
+
+        let app = router_with_state(test_state_with_gateway_data(
+            Arc::new(FailingUsageStore {
+                key: stored_key(raw),
+            }),
+            server.uri(),
+            std::time::Duration::from_secs(5),
+        ));
+        let response = request(app, "/v1/chat/completions", Some(raw)).await;
+
+        assert_eq!(response.status(), StatusCode::CREATED);
     }
 
     #[tokio::test]

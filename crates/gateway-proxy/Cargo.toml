@@ -10,6 +10,7 @@ gateway-core = { path = "../gateway-core" }
 async-trait.workspace = true
 bytes.workspace = true
 chrono.workspace = true
+futures-util.workspace = true
 http.workspace = true
 pingora-core.workspace = true
 pingora-http.workspace = true

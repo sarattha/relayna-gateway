@@ -10,6 +10,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 chrono.workspace = true
+futures-util.workspace = true
 gateway-core = { path = "../gateway-core" }
 gateway-proxy = { path = "../gateway-proxy" }
 gateway-store = { path = "../gateway-store" }
@@ -27,4 +28,3 @@ uuid.workspace = true
 argon2.workspace = true
 tower.workspace = true
 wiremock.workspace = true
-

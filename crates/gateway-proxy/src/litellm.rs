@@ -1,3 +1,4 @@
+use futures_util::stream::BoxStream;
 use gateway_core::{AuthenticatedKey, GatewayError, GatewayResult, Route};
 use http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use reqwest::Url;
@@ -43,11 +44,10 @@ pub struct LiteLlmProxy {
     config: LiteLlmConfig,
 }
 
-#[derive(Debug, Clone)]
 pub struct UpstreamResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
-    pub body: Vec<u8>,
+    pub body: BoxStream<'static, Result<bytes::Bytes, reqwest::Error>>,
 }
 
 impl LiteLlmProxy {
@@ -83,12 +83,12 @@ impl LiteLlmProxy {
 
         let status = response.status();
         let headers = filter_response_headers(response.headers());
-        let body = response.bytes().await.map_err(map_reqwest_error)?.to_vec();
+        let body = response.bytes_stream();
 
         Ok(UpstreamResponse {
             status,
             headers,
-            body,
+            body: Box::pin(body),
         })
     }
 
