@@ -34,68 +34,68 @@ them to LiteLLM while recording usage.
 Deliverables:
 
 - Server foundation:
-  - [ ] Create the Rust workspace with gateway API, core, proxy, store, and
+  - [x] Create the Rust workspace with gateway API, core, proxy, store, and
         telemetry boundaries preserved even if the MVP starts compact.
-  - [ ] Add a Pingora proxy path for `/v1/*` traffic and an Axum control API for
+  - [x] Add a Pingora proxy path for `/v1/*` traffic and an Axum control API for
         health and readiness.
-  - [ ] Add `/healthz`, `/readyz`, structured error responses, shared request
+  - [x] Add `/healthz`, `/readyz`, structured error responses, shared request
         ID handling, tracing layers, and graceful shutdown.
-  - [ ] Keep authentication, routing, usage, policy, budget, and rate-limit
+  - [x] Keep authentication, routing, usage, policy, budget, and rate-limit
         decisions independent of Pingora and Axum request types.
 - Configuration and persistence:
-  - [ ] Load required environment settings for database, Redis, LiteLLM, bind
+  - [x] Load required environment settings for database, Redis, LiteLLM, bind
         address, LiteLLM service key, and log level.
-  - [ ] Add the initial PostgreSQL schema for virtual keys, usage events, and
+  - [x] Add the initial PostgreSQL schema for virtual keys, usage events, and
         route policies.
-  - [ ] Store only key prefixes and hashes, never raw Relayna virtual keys.
+  - [x] Store only key prefixes and hashes, never raw Relayna virtual keys.
 - Authentication and routing:
-  - [ ] Accept `Authorization: Bearer rk_live_xxx` Relayna virtual keys.
-  - [ ] Reject missing, malformed, invalid, expired, and disabled keys.
-  - [ ] Attach authenticated key and project context to the request lifecycle.
-  - [ ] Route `POST /v1/chat/completions` and `POST /v1/responses` to LiteLLM.
+  - [x] Accept `Authorization: Bearer rk_live_xxx` Relayna virtual keys.
+  - [x] Reject missing, malformed, invalid, expired, and disabled keys.
+  - [x] Attach authenticated key and project context to the request lifecycle.
+  - [x] Route `POST /v1/chat/completions` and `POST /v1/responses` to LiteLLM.
 - Proxy and accounting:
-  - [ ] Strip client credentials before the upstream call.
-  - [ ] Inject the internal LiteLLM service credential and Relayna correlation
+  - [x] Strip client credentials before the upstream call.
+  - [x] Inject the internal LiteLLM service credential and Relayna correlation
         headers.
-  - [ ] Forward method, path, query string, JSON body, upstream status, response
+  - [x] Forward method, path, query string, JSON body, upstream status, response
         body, and relevant content-type headers.
-  - [ ] Handle upstream timeouts and connection errors with stable gateway
+  - [x] Handle upstream timeouts and connection errors with stable gateway
         errors.
-  - [ ] Insert usage events for successful and failed requests with request ID,
+  - [x] Insert usage events for successful and failed requests with request ID,
         key, project, route, model when available, provider, status, latency,
         and timestamp.
 
 Acceptance gates:
 
-- [ ] A valid Relayna virtual key can call `/v1/chat/completions` and
+- [x] A valid Relayna virtual key can call `/v1/chat/completions` and
       `/v1/responses` through the gateway and receive the LiteLLM response.
-- [ ] Invalid, expired, disabled, and missing keys are rejected before any
+- [x] Invalid, expired, disabled, and missing keys are rejected before any
       upstream provider call.
-- [ ] LiteLLM and provider credentials are never returned to the client.
-- [ ] Usage rows are inserted for both success and failure paths.
-- [ ] Logs include request IDs and do not include full prompts by default.
-- [ ] Core decision logic can be unit tested without constructing Pingora or
+- [x] LiteLLM and provider credentials are never returned to the client.
+- [x] Usage rows are inserted for both success and failure paths.
+- [x] Logs include request IDs and do not include full prompts by default.
+- [x] Core decision logic can be unit tested without constructing Pingora or
       Axum request objects.
 
 Verification gates:
 
-- [ ] Unit tests cover key validation, route resolution, credential stripping,
+- [x] Unit tests cover key validation, route resolution, credential stripping,
       usage event construction, and error mapping.
-- [ ] Integration or black-box tests cover valid proxying, invalid auth,
+- [x] Integration or black-box tests cover valid proxying, invalid auth,
       upstream timeout, upstream connection failure, and usage insertion.
 - [ ] Manual smoke test uses a seeded key and LiteLLM-compatible upstream for
       `POST /v1/chat/completions`.
-- [ ] Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+- [x] Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
       --all-features -- -D warnings`, and `cargo test --workspace
       --all-features`, or use `$code-change-verification`.
 
 Security and compatibility review:
 
-- [ ] Compatibility boundary is recorded in the ExecPlan before public route,
+- [x] Compatibility boundary is recorded in the ExecPlan before public route,
       schema, config, or usage event changes.
-- [ ] Raw Relayna virtual keys, LiteLLM service keys, provider keys, and
+- [x] Raw Relayna virtual keys, LiteLLM service keys, provider keys, and
       internal service tokens are redacted from logs and responses.
-- [ ] The initial public route, error shape, correlation headers, and usage
+- [x] The initial public route, error shape, correlation headers, and usage
       event fields are documented before release.
 
 ## Phase 2 - Policy, Virtual Keys, Rate Limit, and Budget
