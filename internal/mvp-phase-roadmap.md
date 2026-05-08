@@ -109,57 +109,57 @@ key management.
 Deliverables:
 
 - Key policy and admin APIs:
-  - [ ] Add key policy persistence for allowed routes, models, providers,
+  - [x] Add key policy persistence for allowed routes, models, providers,
         request/token limits, budget limits, streaming, and tool permissions.
-  - [ ] Add protected admin APIs to create, read, update, revoke, disable, and
+  - [x] Add protected admin APIs to create, read, update, revoke, disable, and
         inspect usage for virtual keys.
-  - [ ] Return raw virtual keys only once at creation time.
-  - [ ] Hash raw keys before persistence and prevent raw-key logging.
+  - [x] Return raw virtual keys only once at creation time.
+  - [x] Hash raw keys before persistence and prevent raw-key logging.
 - Policy enforcement:
-  - [ ] Enforce route allowlists before proxying or task submission.
-  - [ ] Enforce model and provider allowlists before upstream calls.
-  - [ ] Reject disallowed passthrough, streaming, and tool use.
-  - [ ] Return stable `policy_denied` errors for denied requests.
+  - [x] Enforce route allowlists before proxying or task submission.
+  - [x] Enforce model and provider allowlists before upstream calls.
+  - [x] Reject disallowed passthrough, streaming, and tool use.
+  - [x] Return stable `policy_denied` errors for denied requests.
 - Rate limiting:
-  - [ ] Use Redis request-per-minute counters shared across gateway replicas.
-  - [ ] Increment counters atomically, set expirations, and reject over-limit
+  - [x] Use Redis request-per-minute counters shared across gateway replicas.
+  - [x] Increment counters atomically, set expirations, and reject over-limit
         requests with stable `rate_limit_exceeded` errors.
-  - [ ] Include retry hints when the counter state supports them.
+  - [x] Include retry hints when the counter state supports them.
 - Budget enforcement:
-  - [ ] Load daily and monthly budget settings from policy.
-  - [ ] Compare current spend using Redis and/or PostgreSQL-backed usage state.
-  - [ ] Reject over-budget requests before upstream calls.
+  - [x] Load daily and monthly budget settings from policy.
+  - [x] Compare current spend using Redis and/or PostgreSQL-backed usage state.
+  - [x] Reject over-budget requests before upstream calls.
   - [ ] Record estimated cost after requests and update budget counters.
 
 Acceptance gates:
 
-- [ ] Operators can create, inspect, update, revoke, and disable keys through
+- [x] Operators can create, inspect, update, revoke, and disable keys through
       protected admin APIs.
-- [ ] A key can be restricted to specific routes, models, and providers.
+- [x] A key can be restricted to specific routes, models, and providers.
 - [ ] Request-per-minute limits work across multiple gateway instances.
-- [ ] Daily and monthly budget checks reject requests that exceed policy.
-- [ ] Usage can be queried by key and project.
-- [ ] Raw API keys are never persisted or logged.
+- [x] Daily and monthly budget checks reject requests that exceed policy.
+- [x] Usage can be queried by key and project.
+- [x] Raw API keys are never persisted or logged.
 
 Verification gates:
 
-- [ ] Unit tests cover policy allow/deny decisions, admin key hashing,
+- [x] Unit tests cover policy allow/deny decisions, admin key hashing,
       rate-limit decisions, and budget decisions.
 - [ ] Integration tests cover admin create/revoke flows, denied routes, denied
       models, Redis rate limiting, budget rejection, and usage queries.
 - [ ] Multi-instance or simulated-concurrency tests prove Redis counters are
       shared and atomic.
-- [ ] Run the full Rust verification stack through `$code-change-verification`.
+- [x] Run the full Rust verification stack through `$code-change-verification`.
 
 Security and compatibility review:
 
-- [ ] Admin APIs require an internal admin credential and fail closed when
+- [x] Admin APIs require an internal admin credential and fail closed when
       missing or invalid.
-- [ ] Policy denial, rate-limit, and budget errors have stable status codes and
+- [x] Policy denial, rate-limit, and budget errors have stable status codes and
       response shapes before release.
-- [ ] PostgreSQL policy schemas and Redis counter formats are recorded as
+- [x] PostgreSQL policy schemas and Redis counter formats are recorded as
       compatibility-sensitive once released.
-- [ ] Sensitive headers and credentials remain redacted in logs, traces, and
+- [x] Sensitive headers and credentials remain redacted in logs, traces, and
       error responses.
 
 ## Phase 3 - Streaming and Accurate Usage Tracking

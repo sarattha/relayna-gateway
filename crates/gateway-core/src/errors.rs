@@ -22,6 +22,14 @@ pub enum GatewayError {
     UpstreamTimeout,
     #[error("upstream connection failed")]
     UpstreamConnection,
+    #[error("request denied by policy")]
+    PolicyDenied,
+    #[error("request rate limit exceeded")]
+    RateLimitExceeded { retry_after_seconds: Option<u64> },
+    #[error("budget exceeded")]
+    BudgetExceeded,
+    #[error("gateway control state is unavailable")]
+    ControlStateUnavailable,
     #[error("store unavailable")]
     StoreUnavailable,
     #[error("gateway configuration is invalid")]
@@ -38,6 +46,8 @@ pub struct ErrorEnvelope {
     pub code: &'static str,
     pub message: &'static str,
     pub request_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_seconds: Option<u64>,
 }
 
 impl GatewayError {
@@ -48,8 +58,12 @@ impl GatewayError {
                 StatusCode::UNAUTHORIZED
             }
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
+            Self::PolicyDenied => StatusCode::FORBIDDEN,
+            Self::RateLimitExceeded { .. } => StatusCode::TOO_MANY_REQUESTS,
+            Self::BudgetExceeded => StatusCode::PAYMENT_REQUIRED,
             Self::UpstreamTimeout => StatusCode::GATEWAY_TIMEOUT,
             Self::UpstreamConnection | Self::StoreUnavailable => StatusCode::BAD_GATEWAY,
+            Self::ControlStateUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             Self::InvalidConfiguration => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -64,6 +78,10 @@ impl GatewayError {
             Self::UnsupportedRoute => "unsupported_route",
             Self::UpstreamTimeout => "upstream_timeout",
             Self::UpstreamConnection => "upstream_connection",
+            Self::PolicyDenied => "policy_denied",
+            Self::RateLimitExceeded { .. } => "rate_limit_exceeded",
+            Self::BudgetExceeded => "budget_exceeded",
+            Self::ControlStateUnavailable => "control_state_unavailable",
             Self::StoreUnavailable => "store_unavailable",
             Self::InvalidConfiguration => "invalid_configuration",
         }
@@ -77,8 +95,12 @@ impl GatewayError {
             Self::DisabledVirtualKey => "Virtual key is disabled.",
             Self::ExpiredVirtualKey => "Virtual key has expired.",
             Self::UnsupportedRoute => "Route is not supported by this gateway.",
+            Self::PolicyDenied => "Request is denied by key policy.",
+            Self::RateLimitExceeded { .. } => "Rate limit exceeded.",
+            Self::BudgetExceeded => "Budget limit exceeded.",
             Self::UpstreamTimeout => "Upstream provider timed out.",
             Self::UpstreamConnection => "Upstream provider is unavailable.",
+            Self::ControlStateUnavailable => "Gateway control state is unavailable.",
             Self::StoreUnavailable => "Gateway store is unavailable.",
             Self::InvalidConfiguration => "Gateway configuration is invalid.",
         }
@@ -90,6 +112,12 @@ impl GatewayError {
                 code: self.code(),
                 message: self.public_message(),
                 request_id: request_id.into(),
+                retry_after_seconds: match self {
+                    Self::RateLimitExceeded {
+                        retry_after_seconds,
+                    } => *retry_after_seconds,
+                    _ => None,
+                },
             },
         }
     }

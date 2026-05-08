@@ -41,7 +41,7 @@ impl UsageEvent {
         latency_ms: i64,
         created_at: DateTime<Utc>,
     ) -> Self {
-        let status = if status_code < 500 {
+        let status = if status_code < 400 {
             UsageStatus::Success
         } else {
             UsageStatus::Failure
