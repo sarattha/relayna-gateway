@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    name: rust
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Detect Cargo workspace
+        id: cargo
+        run: |
+          if [ -f Cargo.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Rust
+        if: steps.cargo.outputs.present == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and build output
+        if: steps.cargo.outputs.present == 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Rust formatting
+        if: steps.cargo.outputs.present == 'true'
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        if: steps.cargo.outputs.present == 'true'
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run Rust tests
+        if: steps.cargo.outputs.present == 'true'
+        run: cargo test --workspace --all-features
+
+      - name: Build workspace
+        if: steps.cargo.outputs.present == 'true'
+        run: cargo build --workspace --all-features
+
+      - name: Skip Rust checks
+        if: steps.cargo.outputs.present != 'true'
+        run: echo "No Cargo.toml found yet; skipping Rust workspace checks."
+
+  repository-metadata:
+    name: repository metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify required guidance files
+        run: |
+          test -f README.md
+          test -f AGENTS.md
+          test -f PLANS.md
+          test -f internal/design-manifesto.md
+
+      - name: Validate JSON schemas
+        run: |
+          python3 -m json.tool .github/codex/schemas/pr-labels.json >/dev/null
+
+      - name: Validate workflow YAML parses
+        run: |
+          ruby -ryaml -e 'Dir[".github/workflows/*.yml"].each { |path| YAML.load_file(path) }'

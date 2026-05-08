@@ -1,0 +1,34 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - "README.md"
+      - "AGENTS.md"
+      - "PLANS.md"
+      - "docs/**"
+      - "internal/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify gateway documentation anchors
+        run: |
+          grep -q "Relayna Gateway" README.md
+          grep -q "internal/design-manifesto.md" README.md
+          grep -q "Relayna Gateway" AGENTS.md
+          grep -q "Relayna Gateway" PLANS.md
+
+      - name: Validate MkDocs config when present
+        if: hashFiles('mkdocs.yml') != ''
+        run: |
+          ruby -ryaml -e 'YAML.load_file("mkdocs.yml")'

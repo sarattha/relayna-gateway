@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Detect Cargo workspace
+        id: cargo
+        run: |
+          if [ -f Cargo.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Rust
+        if: steps.cargo.outputs.present == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and build output
+        if: steps.cargo.outputs.present == 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run release checks
+        if: steps.cargo.outputs.present == 'true'
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo test --workspace --all-features
+          cargo build --workspace --release --all-features
+
+      - name: Extract release notes
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import subprocess
+
+          version = os.environ["RELEASE_VERSION"].lstrip("v")
+          changelog = pathlib.Path("CHANGELOG.md")
+
+          if changelog.exists():
+              lines = changelog.read_text().splitlines()
+              target = f"## {version} -"
+              capture = False
+              body = []
+
+              for line in lines:
+                  if line.startswith("## "):
+                      if capture:
+                          break
+                      capture = line.startswith(target)
+                      continue
+                  if capture:
+                      body.append(line)
+
+              text = "\n".join(body).strip()
+          else:
+              text = ""
+
+          if not text:
+              text = subprocess.check_output(
+                  ["git", "log", "--oneline", "-20"],
+                  text=True,
+              ).strip()
+
+          pathlib.Path("release-notes.md").write_text(text + "\n")
+          PY
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md

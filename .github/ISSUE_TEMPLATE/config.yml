@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Relayna Gateway README
+    url: https://github.com/sarattha/relayna-gateway#readme
+    about: Start with the README and linked design manifesto before opening an issue.
