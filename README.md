@@ -104,5 +104,6 @@ Relayna virtual keys.
 ## Documentation
 
 - Design manifesto: [`internal/design-manifesto.md`](internal/design-manifesto.md)
+- Internal MVP phase roadmap: [`internal/mvp-phase-roadmap.md`](internal/mvp-phase-roadmap.md)
 - Contributor and agent guide: [`AGENTS.md`](AGENTS.md)
 - Execution plan rules: [`PLANS.md`](PLANS.md)
