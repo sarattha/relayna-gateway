@@ -238,6 +238,7 @@ Establish the foundation of Relayna Gateway as the public AI API entry point.
 At the end of this phase, users should be able to call:
 
 POST /v1/chat/completions
+POST /v1/responses
 
 using a Relayna virtual key, and the gateway should forward the request to LiteLLM.
 
@@ -283,6 +284,7 @@ Config
     * LITELLM_BASE_URL
     * LITELLM_SERVICE_KEY
     * GATEWAY_BIND_ADDR
+    * GATEWAY_CONTROL_BIND_ADDR
     * LOG_LEVEL
 
 Database
@@ -367,6 +369,7 @@ Acceptance Criteria
 Phase 1 is complete when:
 
 * A client can call /v1/chat/completions through Relayna Gateway
+* A client can call /v1/responses through Relayna Gateway
 * Invalid keys are rejected
 * Valid keys are accepted
 * Gateway forwards to LiteLLM through the proxy plane
