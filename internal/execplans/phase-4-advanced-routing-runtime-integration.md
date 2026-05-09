@@ -18,7 +18,8 @@ runs.
 
 ## Progress
 
-- [ ] Confirm Phases 1 through 3 are complete.
+- [x] (2026-05-09 22:51 +07) Confirm Phases 1 through 3 are complete for
+      gateway-only Phase 4 follow-up work.
 - [x] (2026-05-09 18:40 +07) Establish compatibility boundary for route config, passthrough behavior,
       task request shapes, worker headers, and usage attribution fields.
 - [x] (2026-05-09 18:40 +07) Add route resolver support for static and wildcard routes.
@@ -28,8 +29,9 @@ runs.
 - [ ] Add Relayna task submission and task status/events proxy behavior. Deferred by gateway-only scope.
 - [x] (2026-05-09 20:28 +07) Add worker-to-gateway authentication and task/run usage attribution.
 - [x] (2026-05-09 20:28 +07) Add safe provider fallback classification.
-- [ ] Add executed provider fallback chains.
-- [x] (2026-05-09 20:29 +07) Run `$code-change-verification` and record results.
+- [x] (2026-05-09 22:51 +07) Add executed provider fallback chains for
+      direct OpenAI-compatible passthrough to LiteLLM.
+- [x] (2026-05-09 22:54 +07) Run `$code-change-verification` and record results.
 
 ## Surprises & Discoveries
 
@@ -41,6 +43,11 @@ runs.
   runtime task APIs by accepting trusted worker attribution headers.
   Evidence: Proxy only honors `x-relayna-task-id` and `x-relayna-run-id` when
   `x-relayna-worker-token` matches configured `RELAYNA_WORKER_TOKEN`.
+- Observation: Pingora retry hooks can execute the provider fallback without
+  coupling to Relayna runtime routes.
+  Evidence: `fail_to_connect`, `error_while_proxy`, and
+  `upstream_response_filter` now switch direct OpenAI-compatible traffic to the
+  configured LiteLLM upstream for one retry on safe failure classes.
 
 ## Decision Log
 
@@ -53,14 +60,21 @@ runs.
   Rationale: These are gateway-owned service routes, not Relayna runtime task
   APIs, and need the same auth, policy, budget, and usage controls.
   Date/Author: 2026-05-09 / Codex.
+- Decision: Limit the first executed fallback chain to
+  OpenAI-compatible direct provider passthrough falling back to LiteLLM.
+  Rationale: LiteLLM is the configured generic LLM backend and can safely
+  receive the rewritten OpenAI-compatible path; internal service fallback would
+  risk sending service-specific payloads to the wrong backend.
+  Date/Author: 2026-05-09 / Codex.
 
 ## Outcomes & Retrospective
 
-Mostly implemented for gateway-only scope. Route matching, provider/service
-policy fields, upstream config, credential injection, per-route body limits and
-timeouts, trusted task/run attribution, and fallback classification are
-implemented. Executed fallback retries and Relayna runtime APIs remain.
-`$code-change-verification` passed.
+Implemented for gateway-only scope. Route matching, provider/service policy
+fields, upstream config, credential injection, per-route body limits and
+timeouts, trusted task/run attribution, fallback classification, and executed
+direct-provider-to-LiteLLM fallback retries are implemented. Relayna runtime
+task submission/status/events remain deferred by product scope.
+`$code-change-verification` passed for the fallback implementation.
 
 ## Context and Orientation
 

@@ -4,12 +4,15 @@ use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
     evaluate_policy, extract_estimated_cost_usd, extract_generation_features, extract_model,
-    extract_usage_tokens, AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError,
-    PolicyLookup, Provider, RateLimitDecision, RateLimitStore, Route, RouteMatch, UsageEvent,
-    UsageRecorder,
+    extract_usage_tokens, is_retry_safe_status, AuthenticatedKey, BudgetDecision, BudgetStore,
+    GatewayError, PolicyLookup, Provider, RateLimitDecision, RateLimitStore, Route, RouteMatch,
+    UsageEvent, UsageRecorder,
 };
 use http::Uri;
-use pingora_core::{upstreams::peer::HttpPeer, Result as PingoraResult};
+use pingora_core::{
+    upstreams::peer::HttpPeer, Error as PingoraError, ErrorSource, ErrorType,
+    Result as PingoraResult,
+};
 use pingora_http::{RequestHeader, ResponseHeader};
 use pingora_proxy::{ProxyHttp, Session};
 use std::{
@@ -125,6 +128,7 @@ pub struct PingoraContext {
     task_id: Option<String>,
     run_id: Option<String>,
     traceparent: Option<String>,
+    fallback_count: i32,
     terminal_usage_recorded: bool,
 }
 
@@ -152,6 +156,7 @@ where
             task_id: None,
             run_id: None,
             traceparent: None,
+            fallback_count: 0,
             terminal_usage_recorded: false,
         }
     }
@@ -425,6 +430,24 @@ where
         Ok(())
     }
 
+    async fn upstream_response_filter(
+        &self,
+        _session: &mut Session,
+        upstream_response: &mut ResponseHeader,
+        ctx: &mut Self::CTX,
+    ) -> PingoraResult<()>
+    where
+        Self::CTX: Send + Sync,
+    {
+        let status_code = upstream_response.status.as_u16();
+        if is_retry_safe_status(status_code) && self.activate_provider_fallback(ctx) {
+            let mut error = PingoraError::new_up(ErrorType::HTTPStatus(status_code));
+            error.set_retry(true);
+            return Err(error);
+        }
+        Ok(())
+    }
+
     async fn response_filter(
         &self,
         _session: &mut Session,
@@ -478,11 +501,7 @@ where
         let (input_tokens, output_tokens, total_tokens) =
             extract_usage_tokens(&ctx.response_body_prefix);
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        let provider = ctx
-            .route_match
-            .as_ref()
-            .map(|matched| matched.provider)
-            .unwrap_or(Provider::LiteLlm);
+        let provider = provider_for_usage(ctx);
         let event = UsageEvent::new(
             &ctx.request_id,
             key,
@@ -500,7 +519,8 @@ where
                 .as_ref()
                 .and_then(|matched| matched.service_name.clone()),
         )
-        .with_task_context(ctx.task_id.clone(), ctx.run_id.clone());
+        .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
+        .with_fallback_count(ctx.fallback_count);
         let _ = self.store.insert_usage_event(&event).await;
         gateway_telemetry::record_request(status_code);
         if let Some(tokens) = event.total_tokens {
@@ -536,6 +556,33 @@ where
             gateway_telemetry::stream_finished(error.is_some() || status_code >= 500);
         }
     }
+
+    fn fail_to_connect(
+        &self,
+        _session: &mut Session,
+        _peer: &HttpPeer,
+        ctx: &mut Self::CTX,
+        mut error: Box<PingoraError>,
+    ) -> Box<PingoraError> {
+        if self.activate_provider_fallback(ctx) {
+            error.set_retry(true);
+        }
+        error
+    }
+
+    fn error_while_proxy(
+        &self,
+        _peer: &HttpPeer,
+        _session: &mut Session,
+        mut error: Box<PingoraError>,
+        ctx: &mut Self::CTX,
+        _client_reused: bool,
+    ) -> Box<PingoraError> {
+        if is_retry_safe_proxy_error(&error) && self.activate_provider_fallback(ctx) {
+            error.set_retry(true);
+        }
+        error
+    }
 }
 
 impl<S, R> RelaynaPingoraProxy<S, R>
@@ -544,14 +591,28 @@ where
     R: BudgetStore,
 {
     fn upstream_for<'a>(&'a self, ctx: &PingoraContext) -> Option<&'a PingoraUpstreamConfig> {
-        let Some(matched) = &ctx.route_match else {
+        if ctx.route_match.is_none() {
             return Some(&self.config.litellm);
-        };
-        match matched.provider {
+        }
+        match provider_for_usage(ctx) {
             Provider::LiteLlm => Some(&self.config.litellm),
             Provider::OpenAiCompatible => self.config.direct_openai.as_ref(),
             Provider::InternalService => self.config.internal_service.as_ref(),
         }
+    }
+
+    fn activate_provider_fallback(&self, ctx: &mut PingoraContext) -> bool {
+        let Some(matched) = &ctx.route_match else {
+            return false;
+        };
+        if matched.provider != Provider::OpenAiCompatible || ctx.fallback_count > 0 {
+            return false;
+        }
+        if self.config.direct_openai.is_none() {
+            return false;
+        }
+        ctx.fallback_count = 1;
+        true
     }
 
     fn trusted_worker(&self, req: &RequestHeader) -> bool {
@@ -574,11 +635,7 @@ where
         }
 
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        let provider = ctx
-            .route_match
-            .as_ref()
-            .map(|matched| matched.provider)
-            .unwrap_or(Provider::LiteLlm);
+        let provider = provider_for_usage(ctx);
         let event = UsageEvent::new(
             &ctx.request_id,
             key,
@@ -594,7 +651,8 @@ where
                 .as_ref()
                 .and_then(|matched| matched.service_name.clone()),
         )
-        .with_task_context(ctx.task_id.clone(), ctx.run_id.clone());
+        .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
+        .with_fallback_count(ctx.fallback_count);
         let _ = self.store.insert_usage_event(&event).await;
         gateway_telemetry::record_request(status_code);
         if ctx.budget_reserved {
@@ -675,6 +733,26 @@ fn observe_response_body_chunk(ctx: &mut PingoraContext, body: &[u8]) {
     }
 }
 
+fn provider_for_usage(ctx: &PingoraContext) -> Provider {
+    if ctx.fallback_count > 0 {
+        return Provider::LiteLlm;
+    }
+    ctx.route_match
+        .as_ref()
+        .map(|matched| matched.provider)
+        .unwrap_or(Provider::LiteLlm)
+}
+
+fn is_retry_safe_proxy_error(error: &PingoraError) -> bool {
+    if error.esource() != &ErrorSource::Upstream {
+        return false;
+    }
+    matches!(
+        error.etype(),
+        ErrorType::ReadTimedout | ErrorType::WriteTimedout
+    )
+}
+
 #[cfg(test)]
 fn new_pingora_context_for_tests() -> PingoraContext {
     PingoraContext {
@@ -692,6 +770,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         task_id: None,
         run_id: None,
         traceparent: None,
+        fallback_count: 0,
         terminal_usage_recorded: false,
     }
 }
@@ -784,6 +863,48 @@ mod tests {
 
         observe_response_body_chunk(&mut ctx, &vec![b'x'; 70_000]);
         assert_eq!(ctx.response_body_prefix.len(), 65_536);
+    }
+
+    #[test]
+    fn direct_provider_fallback_switches_once_to_litellm() {
+        let store = Arc::new(MemoryUsageStore::default());
+        let control_state = Arc::new(MemoryControlState::default());
+        let proxy = RelaynaPingoraProxy {
+            store,
+            control_state,
+            config: PingoraLiteLlmConfig::from_base_url("http://litellm.internal", "litellm-key")
+                .expect("litellm config")
+                .with_direct_openai(Some(
+                    PingoraUpstreamConfig::from_base_url("https://api.openai.test", "openai-key")
+                        .expect("direct config"),
+                )),
+        };
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.route_match = Some(
+            Route::resolve_match(&http::Method::POST, "/providers/openai/v1/chat/completions")
+                .expect("route"),
+        );
+
+        assert_eq!(provider_for_usage(&ctx), Provider::OpenAiCompatible);
+        assert_eq!(
+            proxy
+                .upstream_for(&ctx)
+                .expect("direct upstream")
+                .service_key,
+            "openai-key"
+        );
+
+        assert!(proxy.activate_provider_fallback(&mut ctx));
+        assert_eq!(ctx.fallback_count, 1);
+        assert_eq!(provider_for_usage(&ctx), Provider::LiteLlm);
+        assert_eq!(
+            proxy
+                .upstream_for(&ctx)
+                .expect("fallback upstream")
+                .service_key,
+            "litellm-key"
+        );
+        assert!(!proxy.activate_provider_fallback(&mut ctx));
     }
 
     #[derive(Default)]
@@ -915,5 +1036,41 @@ mod tests {
                 .as_slice(),
             &[(key.key_id, "req_disconnect".to_owned())]
         );
+    }
+
+    #[tokio::test]
+    async fn fallback_usage_records_final_provider_and_count() {
+        let store = Arc::new(MemoryUsageStore::default());
+        let control_state = Arc::new(MemoryControlState::default());
+        let proxy = RelaynaPingoraProxy {
+            store: store.clone(),
+            control_state,
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+                .expect("config"),
+        };
+        let key = AuthenticatedKey {
+            key_id: Uuid::new_v4(),
+            project_id: Uuid::new_v4(),
+            key_prefix: "rk_live_test_key".to_owned(),
+        };
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.request_id = "req_fallback".to_owned();
+        ctx.route = Some(Route::DirectOpenAi);
+        ctx.route_match = Some(
+            Route::resolve_match(&http::Method::POST, "/providers/openai/v1/chat/completions")
+                .expect("route"),
+        );
+        ctx.key = Some(key.clone());
+        ctx.fallback_count = 1;
+
+        proxy
+            .record_terminal_usage(&mut ctx, &key, Route::DirectOpenAi, 502, Utc::now())
+            .await;
+
+        let events = store.events.lock().expect("events lock");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].request_id, "req_fallback");
+        assert_eq!(events[0].provider, Provider::LiteLlm);
+        assert_eq!(events[0].fallback_count, 1);
     }
 }
