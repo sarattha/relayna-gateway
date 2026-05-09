@@ -8,6 +8,7 @@ use gateway_core::{
     PolicyLookup, Provider, RateLimitDecision, RateLimitStore, Route, RouteMatch, UsageEvent,
     UsageRecorder,
 };
+use http::Uri;
 use pingora_core::{upstreams::peer::HttpPeer, Result as PingoraResult};
 use pingora_http::{RequestHeader, ResponseHeader};
 use pingora_proxy::{ProxyHttp, Session};
@@ -393,6 +394,13 @@ where
         let upstream = self.upstream_for(ctx).unwrap_or(&self.config.litellm);
         upstream_request
             .insert_header("authorization", format!("Bearer {}", upstream.service_key))?;
+        if ctx
+            .route_match
+            .as_ref()
+            .is_some_and(|matched| matched.provider == Provider::OpenAiCompatible)
+        {
+            rewrite_direct_openai_uri(upstream_request)?;
+        }
         upstream_request.insert_header("x-relayna-request-id", &ctx.request_id)?;
         if let Some(traceparent) = &ctx.traceparent {
             upstream_request.insert_header("traceparent", traceparent)?;
@@ -628,6 +636,42 @@ fn is_valid_traceparent(value: &str) -> bool {
             .all(|part| part.chars().all(|character| character.is_ascii_hexdigit()))
 }
 
+fn rewrite_direct_openai_uri(upstream_request: &mut RequestHeader) -> PingoraResult<()> {
+    let Some(path_and_query) = upstream_request
+        .uri
+        .path_and_query()
+        .map(|value| value.as_str())
+    else {
+        return Ok(());
+    };
+    let rewritten = direct_openai_path_and_query(path_and_query);
+    let uri = Uri::builder()
+        .path_and_query(rewritten)
+        .build()
+        .map_err(|_| {
+            pingora_core::Error::explain(
+                pingora_core::ErrorType::InvalidHTTPHeader,
+                "invalid rewritten OpenAI-compatible upstream URI",
+            )
+        })?;
+    upstream_request.set_uri(uri);
+    Ok(())
+}
+
+fn direct_openai_path_and_query(path_and_query: &str) -> String {
+    let Some(rest) = path_and_query.strip_prefix("/providers/openai") else {
+        return path_and_query.to_owned();
+    };
+    if rest.is_empty() {
+        return "/".to_owned();
+    }
+    if rest.starts_with('/') || rest.starts_with('?') {
+        rest.to_owned()
+    } else {
+        format!("/{rest}")
+    }
+}
+
 async fn respond_error(
     session: &mut Session,
     error: GatewayError,
@@ -681,5 +725,18 @@ mod tests {
             .with_worker_token(Some("worker-token".to_owned()));
 
         assert_eq!(config.worker_token.as_deref(), Some("worker-token"));
+    }
+
+    #[test]
+    fn rewrites_direct_openai_prefix_and_preserves_query() {
+        assert_eq!(
+            direct_openai_path_and_query("/providers/openai/v1/chat/completions?stream=true"),
+            "/v1/chat/completions?stream=true"
+        );
+        assert_eq!(direct_openai_path_and_query("/providers/openai"), "/");
+        assert_eq!(
+            direct_openai_path_and_query("/v1/chat/completions"),
+            "/v1/chat/completions"
+        );
     }
 }
