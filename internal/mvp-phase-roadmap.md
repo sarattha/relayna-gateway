@@ -478,6 +478,76 @@ Security and compatibility review:
       removed as unreleased branch-local behavior or explicitly documented as a
       development fallback.
 
+## Phase 7 - Admin UI and Operator Console
+
+ExecPlan: `internal/execplans/phase-7-admin-ui-operator-console.md`
+
+Objective: provide a bundled operator UI for controlling Relayna Gateway and
+replace the unreleased environment-only admin token with database-backed
+operator token bootstrap and rotation.
+
+Deliverables:
+
+- Operator token bootstrap:
+  - [x] Add durable PostgreSQL storage for operator token prefixes, hashes,
+        disabled/revoked state, last-used timestamp, and lifecycle timestamps.
+  - [x] Generate one random operator token on first startup when no active
+        token exists, print it once, and store only its hash and lookup prefix.
+  - [x] Reject missing, malformed, invalid, disabled, and revoked operator
+        tokens for protected admin APIs.
+  - [x] Add authenticated token rotation that returns a new raw token once and
+        invalidates the previous token.
+- Bundled Admin UI:
+  - [x] Serve static Admin UI assets from the control-plane listener at
+        `/admin-ui`.
+  - [x] Add sign-in using the operator token with browser session storage only.
+  - [x] Add operator screens for overview, keys, services, usage, health, and
+        token rotation.
+  - [x] Keep service credentials write-only and never render stored secrets.
+- Gateway control workflows:
+  - [x] Let operators create and inspect virtual keys and display raw keys only
+        once after creation.
+  - [x] Let operators create/import/inspect/enable/disable/delete services and
+        see sync status and incomplete runtime fields.
+  - [x] Let operators inspect usage breakdowns and provider/service health.
+
+Acceptance gates:
+
+- [x] Gateway no longer requires `GATEWAY_ADMIN_TOKEN` for startup.
+- [x] First startup with no active operator token creates and prints one raw
+      token.
+- [x] Restart with an existing active token does not generate a second token.
+- [x] Existing admin APIs use database-backed operator token verification.
+- [x] Operator token rotation invalidates the old token.
+- [x] `/admin-ui` loads without exposing raw operator tokens or service
+      credentials.
+- [x] The UI supports key, service, usage, health, sign-in, sign-out, and token
+      rotation workflows.
+
+Verification gates:
+
+- [x] Unit tests cover operator token generation, hashing, malformed token
+      rejection, static UI serving, API auth, and token rotation.
+- [ ] Store tests cover PostgreSQL bootstrap, restart idempotence, verification,
+      revoked/disabled rejection, rotation, and last-used updates.
+- [ ] UI smoke tests cover sign-in, session storage, API authorization headers,
+      key creation, service import/patch, usage rendering, health rendering,
+      and error states.
+- [x] Real-container smoke covers PostgreSQL bootstrap, Redis readiness, UI
+      serving, service lifecycle, key lifecycle, rate-limit rejection, usage
+      display, and token rotation.
+- [x] Run `$code-change-verification` after admin auth, UI, migration, and test
+      changes.
+
+Security and compatibility review:
+
+- [x] Operator tokens are stored only as Argon2 hashes plus lookup prefixes.
+- [x] Raw operator tokens and raw virtual keys are only shown once.
+- [x] Browser storage uses session storage rather than local storage.
+- [x] The UI never displays stored service credentials.
+- [x] No released compatibility tag exists, so replacing `GATEWAY_ADMIN_TOKEN`
+      is treated as unreleased branch-local replacement.
+
 ## Cross-Phase Done Definition
 
 - [ ] The phase delivers observable behavior that matches

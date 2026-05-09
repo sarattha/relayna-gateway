@@ -16,6 +16,10 @@ pub enum GatewayError {
     DisabledVirtualKey,
     #[error("virtual key has expired")]
     ExpiredVirtualKey,
+    #[error("invalid operator token")]
+    InvalidOperatorToken,
+    #[error("operator token is disabled")]
+    DisabledOperatorToken,
     #[error("unsupported route")]
     UnsupportedRoute,
     #[error("request body too large")]
@@ -71,6 +75,7 @@ impl GatewayError {
             Self::InvalidVirtualKey | Self::DisabledVirtualKey | Self::ExpiredVirtualKey => {
                 StatusCode::UNAUTHORIZED
             }
+            Self::InvalidOperatorToken | Self::DisabledOperatorToken => StatusCode::UNAUTHORIZED,
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
             Self::RequestBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::PolicyDenied => StatusCode::FORBIDDEN,
@@ -95,6 +100,8 @@ impl GatewayError {
             Self::InvalidVirtualKey => "invalid_virtual_key",
             Self::DisabledVirtualKey => "disabled_virtual_key",
             Self::ExpiredVirtualKey => "expired_virtual_key",
+            Self::InvalidOperatorToken => "invalid_operator_token",
+            Self::DisabledOperatorToken => "disabled_operator_token",
             Self::UnsupportedRoute => "unsupported_route",
             Self::RequestBodyTooLarge => "request_body_too_large",
             Self::UpstreamTimeout => "upstream_timeout",
@@ -121,6 +128,8 @@ impl GatewayError {
             Self::InvalidVirtualKey => "Virtual key is invalid.",
             Self::DisabledVirtualKey => "Virtual key is disabled.",
             Self::ExpiredVirtualKey => "Virtual key has expired.",
+            Self::InvalidOperatorToken => "Operator token is invalid.",
+            Self::DisabledOperatorToken => "Operator token is disabled.",
             Self::UnsupportedRoute => "Route is not supported by this gateway.",
             Self::RequestBodyTooLarge => "Request body exceeds the route limit.",
             Self::PolicyDenied => "Request is denied by key policy.",
