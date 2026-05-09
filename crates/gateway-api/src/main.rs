@@ -3,16 +3,16 @@ use gateway_api::{app, config::Config};
 use gateway_proxy::{PingoraLiteLlmConfig, PingoraUpstreamConfig, RelaynaPingoraProxy};
 use gateway_store::{PostgresStore, RedisControlState, RedisReadiness};
 use pingora_core::server::Server;
-use std::sync::Arc;
+use std::{sync::Arc, thread};
 use tokio::net::TcpListener;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let config = Config::from_env().context("load gateway configuration")?;
     gateway_telemetry::init(&config.log_level);
 
-    let store = PostgresStore::connect(&config.database_url)
-        .await
+    let setup_runtime = tokio::runtime::Runtime::new().context("create setup runtime")?;
+    let store = setup_runtime
+        .block_on(PostgresStore::connect(&config.database_url))
         .context("connect postgres")?;
     let redis = RedisReadiness::new(&config.redis_url).context("create redis client")?;
     let redis_control =
@@ -41,18 +41,31 @@ async fn main() -> anyhow::Result<()> {
     proxy_config = proxy_config.with_worker_token(config.relayna_worker_token.clone());
 
     let app = app::router(store.clone(), redis, config.gateway_admin_token.clone());
-    let listener = TcpListener::bind(config.gateway_control_bind_addr)
-        .await
-        .context("bind gateway control listener")?;
-
-    tracing::info!(addr = %listener.local_addr()?, "gateway control API listening");
-    tokio::spawn(async move {
-        if let Err(error) = axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal())
-            .await
-        {
-            tracing::error!(%error, "gateway control API stopped with error");
-        }
+    let control_bind_addr = config.gateway_control_bind_addr;
+    thread::spawn(move || {
+        let runtime = match tokio::runtime::Runtime::new() {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                tracing::error!(%error, "failed to create gateway control runtime");
+                return;
+            }
+        };
+        runtime.block_on(async move {
+            let listener = match TcpListener::bind(control_bind_addr).await {
+                Ok(listener) => listener,
+                Err(error) => {
+                    tracing::error!(%error, addr = %control_bind_addr, "failed to bind gateway control listener");
+                    return;
+                }
+            };
+            tracing::info!(addr = %listener.local_addr().unwrap_or(control_bind_addr), "gateway control API listening");
+            if let Err(error) = axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+            {
+                tracing::error!(%error, "gateway control API stopped with error");
+            }
+        });
     });
 
     let mut pingora = Server::new(None).context("create pingora server")?;
