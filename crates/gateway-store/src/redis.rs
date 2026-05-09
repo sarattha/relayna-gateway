@@ -82,7 +82,7 @@ impl RateLimitStore for RedisControlState {
 
         let key = request_rate_limit_key(key_id, now);
         let mut connection = self.connection().await?;
-        let count: i64 = redis::pipe()
+        let (count,): (i64,) = redis::pipe()
             .atomic()
             .cmd("INCR")
             .arg(&key)
@@ -151,11 +151,7 @@ impl BudgetStore for RedisControlState {
         let mut connection = self.connection().await?;
         let _: f64 = redis::cmd("INCRBYFLOAT")
             .arg(&daily_key)
-            .arg(encode_budget_reservation(
-                estimated_cost_usd,
-                &daily_key,
-                &monthly_key,
-            ))
+            .arg(estimated_cost_usd)
             .query_async(&mut connection)
             .await
             .map_err(|_| GatewayError::ControlStateUnavailable)?;
@@ -196,7 +192,11 @@ impl BudgetStore for RedisControlState {
             .atomic()
             .cmd("SET")
             .arg(&reservation_key)
-            .arg(estimated_cost_usd)
+            .arg(encode_budget_reservation(
+                estimated_cost_usd,
+                &daily_key,
+                &monthly_key,
+            ))
             .arg("EX")
             .arg(3600)
             .cmd("INCRBYFLOAT")

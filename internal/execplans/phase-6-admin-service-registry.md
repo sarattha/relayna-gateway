@@ -45,6 +45,14 @@ with per-service credentials, limits, pricing, and health visibility.
 - The current repository has unit/API coverage but no live PostgreSQL-backed
   store integration harness, so service persistence is covered by additive SQL
   migration plus compile-time store wiring in this pass.
+- Real-container testing found that successful proxy usage inserts were not
+  being persisted because the `usage_events` insert SQL had one fewer
+  placeholder than inserted columns. The insert was corrected and verified
+  against Postgres.
+- Real-container testing found Redis-backed RPM checks failed before upstream
+  calls because the pipeline response was decoded with the wrong shape. The
+  rate-limit pipeline decode was corrected and the budget spend path now sends
+  numeric `INCRBYFLOAT` values while reservations keep encoded key metadata.
 
 ## Decision Log
 
@@ -100,6 +108,16 @@ Verification: `bash .codex/skills/code-change-verification/scripts/run.sh`
 passed on 2026-05-10. The script ran `cargo fmt --all --check`,
 `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and
 `cargo test --workspace --all-features`.
+
+Real service verification: started Gateway against local Docker containers
+`relayna-postgres` and `redis` using a disposable
+`relayna_gateway_phase6_test` database, applied all migrations, and used a
+local HTTP stub service. Verified `/readyz`, admin service create/import/patch,
+redacted credentials, Studio incomplete-to-synced transition, `/summary`
+passthrough, `/services/translation/*` path rewriting, client credential
+stripping, registered credential injection, Redis-backed RPM rejection, usage
+by service from Postgres, and disabled-service fail-closed behavior. The
+temporary gateway, stub service, and test database were removed after the run.
 
 ## Context and Orientation
 
