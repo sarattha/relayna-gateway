@@ -4,8 +4,9 @@ use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
     evaluate_policy, extract_estimated_cost_usd, extract_generation_features, extract_model,
-    AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError, PolicyLookup, Provider,
-    RateLimitDecision, RateLimitStore, Route, UsageEvent, UsageRecorder,
+    extract_usage_tokens, AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError,
+    PolicyLookup, Provider, RateLimitDecision, RateLimitStore, Route, RouteMatch, UsageEvent,
+    UsageRecorder,
 };
 use pingora_core::{upstreams::peer::HttpPeer, Result as PingoraResult};
 use pingora_http::{RequestHeader, ResponseHeader};
@@ -14,6 +15,13 @@ use std::{sync::Arc, time::Instant};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PingoraLiteLlmConfig {
+    pub litellm: PingoraUpstreamConfig,
+    pub direct_openai: Option<PingoraUpstreamConfig>,
+    pub internal_service: Option<PingoraUpstreamConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PingoraUpstreamConfig {
     pub host: String,
     pub port: u16,
     pub tls: bool,
@@ -22,6 +30,29 @@ pub struct PingoraLiteLlmConfig {
 }
 
 impl PingoraLiteLlmConfig {
+    pub fn from_base_url(
+        base_url: impl AsRef<str>,
+        service_key: impl Into<String>,
+    ) -> gateway_core::GatewayResult<Self> {
+        Ok(Self {
+            litellm: PingoraUpstreamConfig::from_base_url(base_url, service_key)?,
+            direct_openai: None,
+            internal_service: None,
+        })
+    }
+
+    pub fn with_direct_openai(mut self, upstream: Option<PingoraUpstreamConfig>) -> Self {
+        self.direct_openai = upstream;
+        self
+    }
+
+    pub fn with_internal_service(mut self, upstream: Option<PingoraUpstreamConfig>) -> Self {
+        self.internal_service = upstream;
+        self
+    }
+}
+
+impl PingoraUpstreamConfig {
     pub fn from_base_url(
         base_url: impl AsRef<str>,
         service_key: impl Into<String>,
@@ -72,6 +103,7 @@ pub struct PingoraContext {
     started: Instant,
     request_id: String,
     route: Option<Route>,
+    route_match: Option<RouteMatch>,
     key: Option<AuthenticatedKey>,
     body_prefix: Vec<u8>,
     response_body_prefix: Vec<u8>,
@@ -91,6 +123,7 @@ where
             started: Instant::now(),
             request_id: uuid::Uuid::new_v4().to_string(),
             route: None,
+            route_match: None,
             key: None,
             body_prefix: Vec::new(),
             response_body_prefix: Vec::new(),
@@ -114,14 +147,15 @@ where
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-        let route = match Route::resolve(&req.method, req.uri.path()) {
-            Ok(route) => route,
+        let matched = match Route::resolve_match(&req.method, req.uri.path()) {
+            Ok(matched) => matched,
             Err(error) => {
                 respond_error(session, error, &ctx.request_id).await?;
                 return Ok(true);
             }
         };
-        ctx.route = Some(route);
+        ctx.route = Some(matched.route);
+        ctx.route_match = Some(matched);
 
         let authorization = req
             .headers
@@ -170,17 +204,25 @@ where
     where
         Self::CTX: Send + Sync,
     {
-        let Some(route) = ctx.route else {
+        let Some(matched) = ctx.route_match.clone() else {
             respond_error(session, GatewayError::UnsupportedRoute, &ctx.request_id).await?;
             return Ok(false);
         };
+        let route = matched.route;
         let Some(key) = ctx.key.clone() else {
             respond_error(session, GatewayError::MissingAuthorization, &ctx.request_id).await?;
             return Ok(false);
         };
+        if self.upstream_for(ctx).is_none() {
+            respond_error(session, GatewayError::InvalidConfiguration, &ctx.request_id).await?;
+            return Ok(false);
+        }
 
         let now = Utc::now();
-        let features = extract_generation_features(&ctx.body_prefix);
+        let mut features = extract_generation_features(&ctx.body_prefix);
+        if features.service_name.is_none() {
+            features.service_name = matched.service_name.clone();
+        }
         let policy = match self.store.policy_for_key(key.key_id).await {
             Ok(policy) => policy,
             Err(error) => {
@@ -191,7 +233,7 @@ where
             }
         };
 
-        if let Err(error) = evaluate_policy(&policy, route, Provider::LiteLlm, &features) {
+        if let Err(error) = evaluate_policy(&policy, route, matched.provider, &features) {
             self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
                 .await;
             respond_error(session, error, &ctx.request_id).await?;
@@ -208,6 +250,7 @@ where
                 retry_after_seconds,
                 ..
             }) => {
+                gateway_telemetry::record_rate_limit_rejection();
                 let error = GatewayError::RateLimitExceeded {
                     retry_after_seconds,
                 };
@@ -236,6 +279,7 @@ where
         {
             Ok(BudgetDecision::Allowed(_)) => Ok(true),
             Ok(BudgetDecision::Exceeded(_)) => {
+                gateway_telemetry::record_budget_rejection();
                 let error = GatewayError::BudgetExceeded;
                 self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
                     .await;
@@ -254,13 +298,14 @@ where
     async fn upstream_peer(
         &self,
         _session: &mut Session,
-        _ctx: &mut Self::CTX,
+        ctx: &mut Self::CTX,
     ) -> PingoraResult<Box<HttpPeer>> {
-        let addr = format!("{}:{}", self.config.host, self.config.port);
+        let upstream = self.upstream_for(ctx).unwrap_or(&self.config.litellm);
+        let addr = format!("{}:{}", upstream.host, upstream.port);
         Ok(Box::new(HttpPeer::new(
             addr,
-            self.config.tls,
-            self.config.sni.clone(),
+            upstream.tls,
+            upstream.sni.clone(),
         )))
     }
 
@@ -275,15 +320,19 @@ where
     {
         upstream_request.remove_header("authorization");
         upstream_request.remove_header("host");
-        upstream_request.insert_header(
-            "authorization",
-            format!("Bearer {}", self.config.service_key),
-        )?;
+        let upstream = self.upstream_for(ctx).unwrap_or(&self.config.litellm);
+        upstream_request
+            .insert_header("authorization", format!("Bearer {}", upstream.service_key))?;
         upstream_request.insert_header("x-relayna-request-id", &ctx.request_id)?;
 
         if let Some(key) = &ctx.key {
             upstream_request.insert_header("x-relayna-key-id", key.key_id.to_string())?;
             upstream_request.insert_header("x-relayna-project-id", key.project_id.to_string())?;
+        }
+        if let Some(matched) = &ctx.route_match {
+            if let Some(service_name) = &matched.service_name {
+                upstream_request.insert_header("x-relayna-service", service_name)?;
+            }
         }
 
         Ok(())
@@ -343,7 +392,14 @@ where
             .map(|response| response.status.as_u16())
             .unwrap_or_else(|| if error.is_some() { 502 } else { 500 });
         let estimated_cost_usd = extract_estimated_cost_usd(&ctx.response_body_prefix);
+        let (input_tokens, output_tokens, total_tokens) =
+            extract_usage_tokens(&ctx.response_body_prefix);
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
+        let provider = ctx
+            .route_match
+            .as_ref()
+            .map(|matched| matched.provider)
+            .unwrap_or(Provider::LiteLlm);
         let event = UsageEvent::new(
             &ctx.request_id,
             key,
@@ -353,8 +409,22 @@ where
             latency_ms,
             Utc::now(),
         )
-        .with_estimated_cost_usd(estimated_cost_usd);
+        .with_provider(provider)
+        .with_usage_tokens(input_tokens, output_tokens, total_tokens)
+        .with_estimated_cost_usd(estimated_cost_usd)
+        .with_service_name(
+            ctx.route_match
+                .as_ref()
+                .and_then(|matched| matched.service_name.clone()),
+        );
         let _ = self.store.insert_usage_event(&event).await;
+        gateway_telemetry::record_request(status_code);
+        if let Some(tokens) = event.total_tokens {
+            gateway_telemetry::record_tokens(tokens);
+        }
+        if let Some(estimated_cost_usd) = estimated_cost_usd {
+            gateway_telemetry::record_estimated_cost_usd(estimated_cost_usd);
+        }
         if let Some(estimated_cost_usd) = estimated_cost_usd {
             let _ = self
                 .control_state
@@ -368,6 +438,17 @@ impl<S, R> RelaynaPingoraProxy<S, R>
 where
     S: UsageRecorder,
 {
+    fn upstream_for<'a>(&'a self, ctx: &PingoraContext) -> Option<&'a PingoraUpstreamConfig> {
+        let Some(matched) = &ctx.route_match else {
+            return Some(&self.config.litellm);
+        };
+        match matched.provider {
+            Provider::LiteLlm => Some(&self.config.litellm),
+            Provider::OpenAiCompatible => self.config.direct_openai.as_ref(),
+            Provider::InternalService => self.config.internal_service.as_ref(),
+        }
+    }
+
     async fn record_terminal_usage(
         &self,
         ctx: &mut PingoraContext,
@@ -381,6 +462,11 @@ where
         }
 
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
+        let provider = ctx
+            .route_match
+            .as_ref()
+            .map(|matched| matched.provider)
+            .unwrap_or(Provider::LiteLlm);
         let event = UsageEvent::new(
             &ctx.request_id,
             key,
@@ -389,8 +475,15 @@ where
             status_code,
             latency_ms,
             now,
+        )
+        .with_provider(provider)
+        .with_service_name(
+            ctx.route_match
+                .as_ref()
+                .and_then(|matched| matched.service_name.clone()),
         );
         let _ = self.store.insert_usage_event(&event).await;
+        gateway_telemetry::record_request(status_code);
         ctx.terminal_usage_recorded = true;
     }
 }
@@ -415,11 +508,11 @@ mod tests {
         let config = PingoraLiteLlmConfig::from_base_url("https://litellm.internal", "service-key")
             .expect("config");
 
-        assert_eq!(config.host, "litellm.internal");
-        assert_eq!(config.port, 443);
-        assert!(config.tls);
-        assert_eq!(config.sni, "litellm.internal");
-        assert_eq!(config.service_key, "service-key");
+        assert_eq!(config.litellm.host, "litellm.internal");
+        assert_eq!(config.litellm.port, 443);
+        assert!(config.litellm.tls);
+        assert_eq!(config.litellm.sni, "litellm.internal");
+        assert_eq!(config.litellm.service_key, "service-key");
     }
 
     #[test]
@@ -427,9 +520,9 @@ mod tests {
         let config = PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
             .expect("config");
 
-        assert_eq!(config.host, "127.0.0.1");
-        assert_eq!(config.port, 4000);
-        assert!(!config.tls);
-        assert_eq!(config.sni, "127.0.0.1");
+        assert_eq!(config.litellm.host, "127.0.0.1");
+        assert_eq!(config.litellm.port, 4000);
+        assert!(!config.litellm.tls);
+        assert_eq!(config.litellm.sni, "127.0.0.1");
     }
 }

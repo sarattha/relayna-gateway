@@ -3,10 +3,11 @@ use gateway_core::{
     admin::{AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminPolicyResponse},
     auth::{StoredVirtualKey, VirtualKeyLookup},
     AdminKeyStore, AdminKeyUsageSummary, GatewayError, GatewayResult, KeyPolicy, PolicyLookup,
-    ProjectUsageSummary, Provider, Route, UsageEvent, UsageRecorder, UsageStatus,
-    VirtualKeyMaterial,
+    ProjectUsageSummary, Provider, ProviderHealth, Route, UsageBreakdown, UsageBreakdownDimension,
+    UsageEvent, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary,
+    UsageTimeseriesPoint, VirtualKeyMaterial,
 };
-use sqlx::{postgres::PgPoolOptions, PgPool, Row};
+use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -51,6 +52,7 @@ impl PostgresStore {
                 allowed_routes,
                 allowed_models,
                 allowed_providers,
+                allowed_services,
                 rpm_limit,
                 tpm_limit,
                 daily_budget_usd,
@@ -58,11 +60,12 @@ impl PostgresStore {
                 allow_streaming,
                 allow_tools
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (key_id) DO UPDATE SET
                 allowed_routes = EXCLUDED.allowed_routes,
                 allowed_models = EXCLUDED.allowed_models,
                 allowed_providers = EXCLUDED.allowed_providers,
+                allowed_services = EXCLUDED.allowed_services,
                 rpm_limit = EXCLUDED.rpm_limit,
                 tpm_limit = EXCLUDED.tpm_limit,
                 daily_budget_usd = EXCLUDED.daily_budget_usd,
@@ -76,6 +79,7 @@ impl PostgresStore {
         .bind(route_strings(&policy.allowed_routes))
         .bind(&policy.allowed_models)
         .bind(provider_strings(&policy.allowed_providers))
+        .bind(&policy.allowed_services)
         .bind(policy.rpm_limit)
         .bind(policy.tpm_limit)
         .bind(policy.daily_budget_usd)
@@ -104,6 +108,7 @@ impl PostgresStore {
                 p.allowed_routes,
                 p.allowed_models,
                 p.allowed_providers,
+                p.allowed_services,
                 p.rpm_limit,
                 p.tpm_limit,
                 p.daily_budget_usd,
@@ -150,6 +155,7 @@ impl PostgresStore {
                 allowed_providers: row
                     .try_get("allowed_providers")
                     .unwrap_or_else(|_| provider_strings(&KeyPolicy::default().allowed_providers)),
+                allowed_services: row.try_get("allowed_services").unwrap_or_default(),
                 rpm_limit: row.try_get("rpm_limit").ok(),
                 tpm_limit: row.try_get("tpm_limit").ok(),
                 daily_budget_usd: row.try_get("daily_budget_usd").ok(),
@@ -169,13 +175,8 @@ impl PostgresStore {
     }
 
     pub async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()> {
-        let route = match event.route {
-            Route::ChatCompletions => "/v1/chat/completions",
-            Route::Responses => "/v1/responses",
-        };
-        let provider = match event.provider {
-            Provider::LiteLlm => "litellm",
-        };
+        let route = event.route.as_str();
+        let provider = event.provider.as_str();
         let status = match event.status {
             UsageStatus::Success => "success",
             UsageStatus::Failure => "failure",
@@ -193,10 +194,15 @@ impl PostgresStore {
                 status,
                 status_code,
                 latency_ms,
+                input_tokens,
+                output_tokens,
+                total_tokens,
                 estimated_cost,
+                service_name,
+                fallback_count,
                 created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             "#,
         )
         .bind(&event.request_id)
@@ -208,7 +214,12 @@ impl PostgresStore {
         .bind(status)
         .bind(i32::from(event.status_code))
         .bind(event.latency_ms)
+        .bind(event.input_tokens)
+        .bind(event.output_tokens)
+        .bind(event.total_tokens)
         .bind(event.estimated_cost_usd)
+        .bind(&event.service_name)
+        .bind(event.fallback_count)
         .bind(event.created_at)
         .execute(&self.pool)
         .await
@@ -273,6 +284,7 @@ impl gateway_core::PolicyLookup for PostgresStore {
                 Vec<String>,
                 Vec<String>,
                 Vec<String>,
+                Vec<String>,
                 Option<i32>,
                 Option<i32>,
                 Option<f64>,
@@ -286,6 +298,7 @@ impl gateway_core::PolicyLookup for PostgresStore {
                 allowed_routes,
                 allowed_models,
                 allowed_providers,
+                allowed_services,
                 rpm_limit,
                 tpm_limit,
                 daily_budget_usd,
@@ -305,6 +318,7 @@ impl gateway_core::PolicyLookup for PostgresStore {
             allowed_routes,
             allowed_models,
             allowed_providers,
+            allowed_services,
             rpm_limit,
             tpm_limit,
             daily_budget_usd,
@@ -320,6 +334,7 @@ impl gateway_core::PolicyLookup for PostgresStore {
             allowed_routes: parse_routes(&allowed_routes)?,
             allowed_models,
             allowed_providers: parse_providers(&allowed_providers)?,
+            allowed_services,
             rpm_limit,
             tpm_limit,
             daily_budget_usd,
@@ -463,13 +478,16 @@ impl AdminKeyStore for PostgresStore {
             return Ok(None);
         }
 
-        sqlx::query_as::<_, (i64, i64, i64, Option<i64>, Option<f64>)>(
+        sqlx::query_as::<_, (i64, i64, i64, Option<i64>, i64, i64, i64, Option<f64>)>(
             r#"
             SELECT
                 COUNT(*)::bigint,
                 COUNT(*) FILTER (WHERE status = 'success')::bigint,
                 COUNT(*) FILTER (WHERE status = 'failure')::bigint,
                 COALESCE(SUM(latency_ms), 0)::bigint,
+                COALESCE(SUM(input_tokens), 0)::bigint,
+                COALESCE(SUM(output_tokens), 0)::bigint,
+                COALESCE(SUM(total_tokens), 0)::bigint,
                 SUM(estimated_cost)::double precision
             FROM usage_events
             WHERE key_id = $1
@@ -484,6 +502,9 @@ impl AdminKeyStore for PostgresStore {
                 success_count,
                 failure_count,
                 total_latency_ms,
+                input_tokens,
+                output_tokens,
+                total_tokens,
                 estimated_cost_usd,
             )| {
                 Some(AdminKeyUsageSummary {
@@ -492,6 +513,9 @@ impl AdminKeyStore for PostgresStore {
                     success_count,
                     failure_count,
                     total_latency_ms: total_latency_ms.unwrap_or(0),
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
                     estimated_cost_usd,
                 })
             },
@@ -500,13 +524,16 @@ impl AdminKeyStore for PostgresStore {
     }
 
     async fn project_usage_summary(&self, project_id: Uuid) -> GatewayResult<ProjectUsageSummary> {
-        sqlx::query_as::<_, (i64, i64, i64, Option<i64>, Option<f64>)>(
+        sqlx::query_as::<_, (i64, i64, i64, Option<i64>, i64, i64, i64, Option<f64>)>(
             r#"
             SELECT
                 COUNT(*)::bigint,
                 COUNT(*) FILTER (WHERE status = 'success')::bigint,
                 COUNT(*) FILTER (WHERE status = 'failure')::bigint,
                 COALESCE(SUM(latency_ms), 0)::bigint,
+                COALESCE(SUM(input_tokens), 0)::bigint,
+                COALESCE(SUM(output_tokens), 0)::bigint,
+                COALESCE(SUM(total_tokens), 0)::bigint,
                 SUM(estimated_cost)::double precision
             FROM usage_events
             WHERE project_id = $1
@@ -521,6 +548,9 @@ impl AdminKeyStore for PostgresStore {
                 success_count,
                 failure_count,
                 total_latency_ms,
+                input_tokens,
+                output_tokens,
+                total_tokens,
                 estimated_cost_usd,
             )| {
                 ProjectUsageSummary {
@@ -529,11 +559,231 @@ impl AdminKeyStore for PostgresStore {
                     success_count,
                     failure_count,
                     total_latency_ms: total_latency_ms.unwrap_or(0),
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
                     estimated_cost_usd,
                 }
             },
         )
         .map_err(|_| GatewayError::StoreUnavailable)
+    }
+}
+
+#[async_trait]
+impl UsageQueryStore for PostgresStore {
+    async fn usage_summary(&self, query: UsageQuery) -> GatewayResult<UsageSummary> {
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            SELECT
+                COUNT(*)::bigint,
+                COUNT(*) FILTER (WHERE status = 'success')::bigint,
+                COUNT(*) FILTER (WHERE status = 'failure')::bigint,
+                COALESCE(SUM(input_tokens), 0)::bigint,
+                COALESCE(SUM(output_tokens), 0)::bigint,
+                COALESCE(SUM(total_tokens), 0)::bigint,
+                SUM(estimated_cost)::double precision,
+                COALESCE(SUM(latency_ms), 0)::bigint,
+                COALESCE(SUM(fallback_count), 0)::bigint
+            FROM usage_events
+            "#,
+        );
+        append_usage_filters(&mut builder, &query);
+        builder
+            .build_query_as::<(i64, i64, i64, i64, i64, i64, Option<f64>, i64, i64)>()
+            .fetch_one(&self.pool)
+            .await
+            .map(summary_from_row)
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn usage_timeseries(
+        &self,
+        query: UsageQuery,
+    ) -> GatewayResult<Vec<UsageTimeseriesPoint>> {
+        let interval = match query.interval.as_deref() {
+            Some("day") => "day",
+            _ => "hour",
+        };
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT date_trunc(");
+        builder.push_bind(interval);
+        builder.push(
+            r#", created_at) AS bucket,
+                COUNT(*)::bigint,
+                COUNT(*) FILTER (WHERE status = 'success')::bigint,
+                COUNT(*) FILTER (WHERE status = 'failure')::bigint,
+                COALESCE(SUM(input_tokens), 0)::bigint,
+                COALESCE(SUM(output_tokens), 0)::bigint,
+                COALESCE(SUM(total_tokens), 0)::bigint,
+                SUM(estimated_cost)::double precision,
+                COALESCE(SUM(latency_ms), 0)::bigint,
+                COALESCE(SUM(fallback_count), 0)::bigint
+            FROM usage_events
+            "#,
+        );
+        append_usage_filters(&mut builder, &query);
+        builder.push(" GROUP BY bucket ORDER BY bucket ASC");
+
+        builder
+            .build_query_as::<(
+                chrono::DateTime<chrono::Utc>,
+                i64,
+                i64,
+                i64,
+                i64,
+                i64,
+                i64,
+                Option<f64>,
+                i64,
+                i64,
+            )>()
+            .fetch_all(&self.pool)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(
+                        |(
+                            bucket,
+                            request_count,
+                            success_count,
+                            failure_count,
+                            input_tokens,
+                            output_tokens,
+                            total_tokens,
+                            estimated_cost_usd,
+                            total_latency_ms,
+                            fallback_count,
+                        )| UsageTimeseriesPoint {
+                            bucket,
+                            summary: UsageSummary {
+                                request_count,
+                                success_count,
+                                failure_count,
+                                input_tokens,
+                                output_tokens,
+                                total_tokens,
+                                estimated_cost_usd,
+                                total_latency_ms,
+                                fallback_count,
+                            },
+                        },
+                    )
+                    .collect()
+            })
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn usage_breakdown(
+        &self,
+        query: UsageQuery,
+        dimension: UsageBreakdownDimension,
+    ) -> GatewayResult<Vec<UsageBreakdown>> {
+        let column = match dimension {
+            UsageBreakdownDimension::Key => "key_id::text",
+            UsageBreakdownDimension::Project => "project_id::text",
+            UsageBreakdownDimension::Model => "COALESCE(model, 'unknown')",
+            UsageBreakdownDimension::Provider => "provider",
+            UsageBreakdownDimension::Service => "COALESCE(service_name, 'none')",
+        };
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT ");
+        builder.push(column);
+        builder.push(
+            r#" AS name,
+                COUNT(*)::bigint,
+                COUNT(*) FILTER (WHERE status = 'success')::bigint,
+                COUNT(*) FILTER (WHERE status = 'failure')::bigint,
+                COALESCE(SUM(input_tokens), 0)::bigint,
+                COALESCE(SUM(output_tokens), 0)::bigint,
+                COALESCE(SUM(total_tokens), 0)::bigint,
+                SUM(estimated_cost)::double precision,
+                COALESCE(SUM(latency_ms), 0)::bigint,
+                COALESCE(SUM(fallback_count), 0)::bigint
+            FROM usage_events
+            "#,
+        );
+        append_usage_filters(&mut builder, &query);
+        builder.push(" GROUP BY name ORDER BY 2 DESC, name ASC");
+
+        builder
+            .build_query_as::<(String, i64, i64, i64, i64, i64, i64, Option<f64>, i64, i64)>()
+            .fetch_all(&self.pool)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(
+                        |(
+                            name,
+                            request_count,
+                            success_count,
+                            failure_count,
+                            input_tokens,
+                            output_tokens,
+                            total_tokens,
+                            estimated_cost_usd,
+                            total_latency_ms,
+                            fallback_count,
+                        )| UsageBreakdown {
+                            name,
+                            summary: UsageSummary {
+                                request_count,
+                                success_count,
+                                failure_count,
+                                input_tokens,
+                                output_tokens,
+                                total_tokens,
+                                estimated_cost_usd,
+                                total_latency_ms,
+                                fallback_count,
+                            },
+                        },
+                    )
+                    .collect()
+            })
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn provider_health(&self, query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            SELECT
+                COALESCE(service_name, provider) AS name,
+                COUNT(*)::bigint,
+                COUNT(*) FILTER (WHERE status = 'failure')::bigint,
+                COUNT(*) FILTER (WHERE status_code = 504)::bigint,
+                COALESCE(SUM(fallback_count), 0)::bigint,
+                COALESCE(SUM(latency_ms), 0)::bigint
+            FROM usage_events
+            "#,
+        );
+        append_usage_filters(&mut builder, &query);
+        builder.push(" GROUP BY name ORDER BY name ASC");
+
+        builder
+            .build_query_as::<(String, i64, i64, i64, i64, i64)>()
+            .fetch_all(&self.pool)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(
+                        |(
+                            name,
+                            request_count,
+                            error_count,
+                            timeout_count,
+                            fallback_count,
+                            total_latency_ms,
+                        )| ProviderHealth {
+                            name,
+                            request_count,
+                            error_count,
+                            timeout_count,
+                            fallback_count,
+                            total_latency_ms,
+                        },
+                    )
+                    .collect()
+            })
+            .map_err(|_| GatewayError::StoreUnavailable)
     }
 }
 
@@ -549,6 +799,9 @@ fn apply_policy_patch(
     }
     if let Some(allowed_providers) = patch.allowed_providers {
         policy.allowed_providers = parse_providers(&allowed_providers)?;
+    }
+    if let Some(allowed_services) = patch.allowed_services {
+        policy.allowed_services = allowed_services;
     }
     if let Some(rpm_limit) = patch.rpm_limit {
         policy.rpm_limit = rpm_limit;
@@ -583,6 +836,8 @@ fn provider_strings(providers: &[Provider]) -> Vec<String> {
         .iter()
         .map(|provider| match provider {
             Provider::LiteLlm => "litellm".to_owned(),
+            Provider::OpenAiCompatible => "openai-compatible".to_owned(),
+            Provider::InternalService => "internal-service".to_owned(),
         })
         .collect()
 }
@@ -593,6 +848,12 @@ fn parse_routes(values: &[String]) -> GatewayResult<Vec<Route>> {
         .map(|value| match value.as_str() {
             "/v1/chat/completions" => Ok(Route::ChatCompletions),
             "/v1/responses" => Ok(Route::Responses),
+            "/providers/openai/*" => Ok(Route::DirectOpenAi),
+            "/summary" => Ok(Route::Summary),
+            "/translation" => Ok(Route::Translation),
+            "/ocr" => Ok(Route::Ocr),
+            "/embeddings" => Ok(Route::Embeddings),
+            "/services/*" => Ok(Route::ServiceWildcard),
             _ => Err(GatewayError::PolicyDenied),
         })
         .collect()
@@ -603,7 +864,72 @@ fn parse_providers(values: &[String]) -> GatewayResult<Vec<Provider>> {
         .iter()
         .map(|value| match value.as_str() {
             "litellm" => Ok(Provider::LiteLlm),
+            "openai-compatible" => Ok(Provider::OpenAiCompatible),
+            "internal-service" => Ok(Provider::InternalService),
             _ => Err(GatewayError::PolicyDenied),
         })
         .collect()
+}
+
+fn append_usage_filters<'a>(builder: &mut QueryBuilder<'a, Postgres>, query: &'a UsageQuery) {
+    let mut separated = builder.separated(" AND ");
+    separated.push_unseparated(" WHERE true");
+    if let Some(from) = query.from {
+        separated.push("created_at >= ");
+        separated.push_bind_unseparated(from);
+    }
+    if let Some(to) = query.to {
+        separated.push("created_at < ");
+        separated.push_bind_unseparated(to);
+    }
+    if let Some(project_id) = query.project_id {
+        separated.push("project_id = ");
+        separated.push_bind_unseparated(project_id);
+    }
+    if let Some(key_id) = query.key_id {
+        separated.push("key_id = ");
+        separated.push_bind_unseparated(key_id);
+    }
+    if let Some(route) = query.route.as_deref() {
+        separated.push("route = ");
+        separated.push_bind_unseparated(route);
+    }
+    if let Some(provider) = query.provider.as_deref() {
+        separated.push("provider = ");
+        separated.push_bind_unseparated(provider);
+    }
+    if let Some(service) = query.service.as_deref() {
+        separated.push("service_name = ");
+        separated.push_bind_unseparated(service);
+    }
+    if let Some(model) = query.model.as_deref() {
+        separated.push("model = ");
+        separated.push_bind_unseparated(model);
+    }
+}
+
+fn summary_from_row(
+    (
+        request_count,
+        success_count,
+        failure_count,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        estimated_cost_usd,
+        total_latency_ms,
+        fallback_count,
+    ): (i64, i64, i64, i64, i64, i64, Option<f64>, i64, i64),
+) -> UsageSummary {
+    UsageSummary {
+        request_count,
+        success_count,
+        failure_count,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        estimated_cost_usd,
+        total_latency_ms,
+        fallback_count,
+    }
 }

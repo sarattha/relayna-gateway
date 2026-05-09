@@ -955,6 +955,7 @@ dependencies = [
  "bytes",
  "chrono",
  "gateway-core",
+ "gateway-telemetry",
  "http",
  "pingora-core",
  "pingora-http",

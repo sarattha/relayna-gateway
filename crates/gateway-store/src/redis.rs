@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use gateway_core::{
-    budgets::{daily_budget_key, evaluate_budget, monthly_budget_key},
+    budgets::{budget_reservation_key, daily_budget_key, evaluate_budget, monthly_budget_key},
     rate_limits::request_rate_limit_key,
     BudgetDecision, BudgetState, BudgetStore, GatewayError, GatewayResult, RateLimitDecision,
     RateLimitStore,
@@ -163,6 +163,112 @@ impl BudgetStore for RedisControlState {
             .await
             .map_err(|_| GatewayError::ControlStateUnavailable)?;
 
+        Ok(())
+    }
+
+    async fn reserve_budget(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+        estimated_cost_usd: f64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        if estimated_cost_usd <= 0.0 {
+            return Ok(());
+        }
+
+        let reservation_key = budget_reservation_key(key_id, request_id);
+        let daily_key = daily_budget_key(key_id, now);
+        let monthly_key = monthly_budget_key(key_id, now);
+        let mut connection = self.connection().await?;
+        let _: () = redis::pipe()
+            .atomic()
+            .cmd("SET")
+            .arg(&reservation_key)
+            .arg(estimated_cost_usd)
+            .arg("EX")
+            .arg(3600)
+            .cmd("INCRBYFLOAT")
+            .arg(&daily_key)
+            .arg(estimated_cost_usd)
+            .ignore()
+            .cmd("EXPIRE")
+            .arg(&daily_key)
+            .arg(172_800)
+            .ignore()
+            .cmd("INCRBYFLOAT")
+            .arg(&monthly_key)
+            .arg(estimated_cost_usd)
+            .ignore()
+            .cmd("EXPIRE")
+            .arg(&monthly_key)
+            .arg(5_356_800)
+            .ignore()
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        Ok(())
+    }
+
+    async fn reconcile_budget_reservation(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+        actual_cost_usd: f64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        let reservation_key = budget_reservation_key(key_id, request_id);
+        let daily_key = daily_budget_key(key_id, now);
+        let monthly_key = monthly_budget_key(key_id, now);
+        let mut connection = self.connection().await?;
+        let reserved = Self::get_f64(&mut connection, &reservation_key).await?;
+        let delta = actual_cost_usd.max(0.0) - reserved;
+        let _: () = redis::pipe()
+            .atomic()
+            .cmd("INCRBYFLOAT")
+            .arg(&daily_key)
+            .arg(delta)
+            .ignore()
+            .cmd("INCRBYFLOAT")
+            .arg(&monthly_key)
+            .arg(delta)
+            .ignore()
+            .cmd("DEL")
+            .arg(&reservation_key)
+            .ignore()
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        Ok(())
+    }
+
+    async fn release_budget_reservation(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+    ) -> GatewayResult<()> {
+        let reservation_key = budget_reservation_key(key_id, request_id);
+        let now = Utc::now();
+        let daily_key = daily_budget_key(key_id, now);
+        let monthly_key = monthly_budget_key(key_id, now);
+        let mut connection = self.connection().await?;
+        let reserved = Self::get_f64(&mut connection, &reservation_key).await?;
+        let _: () = redis::pipe()
+            .atomic()
+            .cmd("INCRBYFLOAT")
+            .arg(&daily_key)
+            .arg(-reserved)
+            .ignore()
+            .cmd("INCRBYFLOAT")
+            .arg(&monthly_key)
+            .arg(-reserved)
+            .ignore()
+            .cmd("DEL")
+            .arg(&reservation_key)
+            .ignore()
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
         Ok(())
     }
 }

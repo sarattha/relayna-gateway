@@ -19,12 +19,12 @@ runs.
 ## Progress
 
 - [ ] Confirm Phases 1 through 3 are complete.
-- [ ] Establish compatibility boundary for route config, passthrough behavior,
+- [x] (2026-05-09 18:40 +07) Establish compatibility boundary for route config, passthrough behavior,
       task request shapes, worker headers, and usage attribution fields.
-- [ ] Add route resolver support for static and wildcard routes.
+- [x] (2026-05-09 18:40 +07) Add route resolver support for static and wildcard routes.
 - [ ] Add per-route timeout, body size, auth mode, and cost mode handling.
-- [ ] Add direct provider passthrough.
-- [ ] Add internal service routing.
+- [x] (2026-05-09 18:40 +07) Add OpenAI-compatible direct provider upstream selection.
+- [x] (2026-05-09 18:40 +07) Add internal service route matching, policy, upstream selection, and usage attribution.
 - [ ] Add Relayna task submission and task status/events proxy behavior.
 - [ ] Add worker-to-gateway authentication and task/run usage attribution.
 - [ ] Add provider fallback chains for safe error classes.
@@ -32,7 +32,10 @@ runs.
 
 ## Surprises & Discoveries
 
-- None yet.
+- Observation: Phase 4 runtime task integration is intentionally deferred by
+  product decision; gateway-only direct provider and internal service
+  passthrough are the active scope.
+  Evidence: User selected "focus on relayna-gateway only" during planning.
 
 ## Decision Log
 
@@ -40,10 +43,19 @@ runs.
   Rationale: Pingora, Axum, internal service calls, and task submission all
   need the same policy and routing decisions without framework coupling.
   Date/Author: 2026-05-08 / Codex.
+- Decision: Include internal service passthrough as first-class Phase 4 scope
+  for `/summary`, `/translation`, `/ocr`, `/embeddings`, and `/services/*`.
+  Rationale: These are gateway-owned service routes, not Relayna runtime task
+  APIs, and need the same auth, policy, budget, and usage controls.
+  Date/Author: 2026-05-09 / Codex.
 
 ## Outcomes & Retrospective
 
-Not started.
+Started. Core route matching, provider/service policy fields, optional
+OpenAI-compatible and internal service upstream config, credential injection,
+and usage attribution are implemented. Per-route timeout/body-size config,
+fallback retry execution, worker-token attribution, and Relayna runtime APIs
+remain.
 
 ## Context and Orientation
 

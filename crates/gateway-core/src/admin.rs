@@ -32,6 +32,7 @@ pub struct KeyPolicyPatch {
     pub allowed_routes: Option<Vec<String>>,
     pub allowed_models: Option<Vec<String>>,
     pub allowed_providers: Option<Vec<String>>,
+    pub allowed_services: Option<Vec<String>>,
     pub rpm_limit: Option<Option<i32>>,
     pub tpm_limit: Option<Option<i32>>,
     pub daily_budget_usd: Option<Option<f64>>,
@@ -64,6 +65,7 @@ pub struct AdminPolicyResponse {
     pub allowed_routes: Vec<String>,
     pub allowed_models: Vec<String>,
     pub allowed_providers: Vec<String>,
+    pub allowed_services: Vec<String>,
     pub rpm_limit: Option<i32>,
     pub tpm_limit: Option<i32>,
     pub daily_budget_usd: Option<f64>,
@@ -79,6 +81,9 @@ pub struct AdminKeyUsageSummary {
     pub success_count: i64,
     pub failure_count: i64,
     pub total_latency_ms: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
     pub estimated_cost_usd: Option<f64>,
 }
 
@@ -89,6 +94,9 @@ pub struct ProjectUsageSummary {
     pub success_count: i64,
     pub failure_count: i64,
     pub total_latency_ms: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
     pub estimated_cost_usd: Option<f64>,
 }
 

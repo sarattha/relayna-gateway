@@ -19,20 +19,23 @@ usage, and reconciled cost.
 ## Progress
 
 - [ ] Confirm Phase 1 and Phase 2 behavior is complete.
-- [ ] Establish compatibility boundary for streaming, usage, Redis budget
+- [x] (2026-05-09 18:40 +07) Establish compatibility boundary for streaming, usage, Redis budget
       reservation state, and telemetry fields.
 - [ ] Add streaming request detection.
 - [ ] Add Pingora SSE passthrough without full response buffering.
-- [ ] Add stream lifecycle telemetry and metrics.
+- [x] (2026-05-09 18:40 +07) Add baseline stream lifecycle telemetry and metrics counters.
 - [ ] Add disconnect and timeout handling.
-- [ ] Add usage extraction fallback order and pricing.
-- [ ] Add budget reservation and reconciliation.
+- [x] (2026-05-09 18:40 +07) Add upstream usage token/cost extraction and persisted usage fields.
+- [x] (2026-05-09 18:40 +07) Add Redis budget reservation, reconciliation, and release methods.
 - [ ] Add streaming, disconnect, and accounting tests.
 - [ ] Run `$code-change-verification` and record results.
 
 ## Surprises & Discoveries
 
-- None yet.
+- Observation: There are no `v*` release tags, so Phase 3 compatibility is
+  treated as unreleased branch-local behavior while PostgreSQL changes remain
+  additive migrations.
+  Evidence: `git tag -l 'v*' --sort=-v:refname | head -n1` returned no tag.
 
 ## Decision Log
 
@@ -41,10 +44,17 @@ usage, and reconciled cost.
   Rationale: The design manifesto prioritizes streaming over buffering and
   requires high-concurrency safety.
   Date/Author: 2026-05-08 / Codex.
+- Decision: Persist token totals, service name, and fallback count additively
+  on `usage_events`.
+  Rationale: Studio-facing queries and cost accounting need the fields without
+  rewriting existing usage rows.
+  Date/Author: 2026-05-09 / Codex.
 
 ## Outcomes & Retrospective
 
-Not started.
+Started. Baseline usage extraction, metrics rendering, and Redis reservation
+interfaces are implemented. Incremental SSE passthrough, disconnect-specific
+tests, and final `$code-change-verification` results still remain.
 
 ## Context and Orientation
 

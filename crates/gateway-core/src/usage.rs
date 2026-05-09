@@ -23,7 +23,12 @@ pub struct UsageEvent {
     pub status: UsageStatus,
     pub status_code: u16,
     pub latency_ms: i64,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
     pub estimated_cost_usd: Option<f64>,
+    pub service_name: Option<String>,
+    pub fallback_count: i32,
     pub created_at: DateTime<Utc>,
 }
 
@@ -58,13 +63,48 @@ impl UsageEvent {
             status,
             status_code,
             latency_ms,
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
             estimated_cost_usd: None,
+            service_name: None,
+            fallback_count: 0,
             created_at,
         }
     }
 
     pub fn with_estimated_cost_usd(mut self, estimated_cost_usd: Option<f64>) -> Self {
         self.estimated_cost_usd = estimated_cost_usd;
+        self
+    }
+
+    pub fn with_provider(mut self, provider: Provider) -> Self {
+        self.provider = provider;
+        self
+    }
+
+    pub fn with_usage_tokens(
+        mut self,
+        input_tokens: Option<i64>,
+        output_tokens: Option<i64>,
+        total_tokens: Option<i64>,
+    ) -> Self {
+        self.input_tokens = input_tokens;
+        self.output_tokens = output_tokens;
+        self.total_tokens = total_tokens.or_else(|| match (input_tokens, output_tokens) {
+            (Some(input), Some(output)) => Some(input + output),
+            _ => None,
+        });
+        self
+    }
+
+    pub fn with_service_name(mut self, service_name: Option<String>) -> Self {
+        self.service_name = service_name;
+        self
+    }
+
+    pub fn with_fallback_count(mut self, fallback_count: i32) -> Self {
+        self.fallback_count = fallback_count.max(0);
         self
     }
 }
@@ -96,6 +136,37 @@ pub fn extract_estimated_cost_usd(body: &[u8]) -> Option<f64> {
     cost
 }
 
+pub fn extract_usage_tokens(body: &[u8]) -> (Option<i64>, Option<i64>, Option<i64>) {
+    let Ok(value) = serde_json::from_slice::<Value>(body) else {
+        return (None, None, None);
+    };
+    let input = [
+        value.pointer("/usage/prompt_tokens"),
+        value.pointer("/usage/input_tokens"),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(Value::as_i64)
+    .find(|tokens| *tokens >= 0);
+    let output = [
+        value.pointer("/usage/completion_tokens"),
+        value.pointer("/usage/output_tokens"),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(Value::as_i64)
+    .find(|tokens| *tokens >= 0);
+    let total = value
+        .pointer("/usage/total_tokens")
+        .and_then(Value::as_i64)
+        .filter(|tokens| *tokens >= 0)
+        .or_else(|| match (input, output) {
+            (Some(input), Some(output)) => Some(input + output),
+            _ => None,
+        });
+    (input, output, total)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,5 +195,19 @@ mod tests {
             Some(0.5)
         );
         assert_eq!(extract_estimated_cost_usd(br#"{"usage":{"cost":0}}"#), None);
+    }
+
+    #[test]
+    fn extracts_usage_tokens_from_openai_and_responses_shapes() {
+        assert_eq!(
+            extract_usage_tokens(
+                br#"{"usage":{"prompt_tokens":10,"completion_tokens":8,"total_tokens":18}}"#
+            ),
+            (Some(10), Some(8), Some(18))
+        );
+        assert_eq!(
+            extract_usage_tokens(br#"{"usage":{"input_tokens":4,"output_tokens":6}}"#),
+            (Some(4), Some(6), Some(10))
+        );
     }
 }

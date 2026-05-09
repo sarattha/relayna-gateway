@@ -1,6 +1,6 @@
 use anyhow::Context;
 use gateway_api::{app, config::Config};
-use gateway_proxy::{PingoraLiteLlmConfig, RelaynaPingoraProxy};
+use gateway_proxy::{PingoraLiteLlmConfig, PingoraUpstreamConfig, RelaynaPingoraProxy};
 use gateway_store::{PostgresStore, RedisControlState, RedisReadiness};
 use pingora_core::server::Server;
 use std::sync::Arc;
@@ -17,9 +17,27 @@ async fn main() -> anyhow::Result<()> {
     let redis = RedisReadiness::new(&config.redis_url).context("create redis client")?;
     let redis_control =
         RedisControlState::new(&config.redis_url).context("create redis control client")?;
-    let proxy_config =
+    let mut proxy_config =
         PingoraLiteLlmConfig::from_base_url(&config.litellm_base_url, &config.litellm_service_key)
             .context("create pingora LiteLLM proxy config")?;
+    if let (Some(base_url), Some(service_key)) = (
+        config.direct_openai_base_url.as_deref(),
+        config.direct_openai_service_key.as_deref(),
+    ) {
+        proxy_config = proxy_config.with_direct_openai(Some(
+            PingoraUpstreamConfig::from_base_url(base_url, service_key)
+                .context("create direct OpenAI-compatible upstream config")?,
+        ));
+    }
+    if let (Some(base_url), Some(service_key)) = (
+        config.internal_service_base_url.as_deref(),
+        config.internal_service_token.as_deref(),
+    ) {
+        proxy_config = proxy_config.with_internal_service(Some(
+            PingoraUpstreamConfig::from_base_url(base_url, service_key)
+                .context("create internal service upstream config")?,
+        ));
+    }
 
     let app = app::router(store.clone(), redis, config.gateway_admin_token.clone());
     let listener = TcpListener::bind(config.gateway_control_bind_addr)

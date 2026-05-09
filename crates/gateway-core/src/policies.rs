@@ -8,6 +8,7 @@ pub struct KeyPolicy {
     pub allowed_routes: Vec<Route>,
     pub allowed_models: Vec<String>,
     pub allowed_providers: Vec<Provider>,
+    pub allowed_services: Vec<String>,
     pub rpm_limit: Option<i32>,
     pub tpm_limit: Option<i32>,
     pub daily_budget_usd: Option<f64>,
@@ -22,6 +23,7 @@ impl Default for KeyPolicy {
             allowed_routes: vec![Route::ChatCompletions, Route::Responses],
             allowed_models: Vec::new(),
             allowed_providers: vec![Provider::LiteLlm],
+            allowed_services: Vec::new(),
             rpm_limit: None,
             tpm_limit: None,
             daily_budget_usd: None,
@@ -37,6 +39,7 @@ pub struct GenerationFeatures {
     pub model: Option<String>,
     pub stream: bool,
     pub tools: bool,
+    pub service_name: Option<String>,
 }
 
 #[async_trait]
@@ -66,6 +69,17 @@ pub fn evaluate_policy(
 
     if !policy.allowed_providers.is_empty() && !policy.allowed_providers.contains(&provider) {
         return Err(GatewayError::PolicyDenied);
+    }
+
+    if let Some(service_name) = features.service_name.as_deref() {
+        if !policy.allowed_services.is_empty()
+            && !policy
+                .allowed_services
+                .iter()
+                .any(|allowed_service| allowed_service == service_name)
+        {
+            return Err(GatewayError::PolicyDenied);
+        }
     }
 
     if let Some(model) = features.model.as_deref() {
@@ -108,11 +122,18 @@ pub fn extract_generation_features(body: &[u8]) -> GenerationFeatures {
         .get("tools")
         .and_then(Value::as_array)
         .is_some_and(|tools| !tools.is_empty());
+    let service_name = value
+        .get("service")
+        .or_else(|| value.get("service_name"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
 
     GenerationFeatures {
         model,
         stream,
         tools,
+        service_name,
     }
 }
 
@@ -201,16 +222,34 @@ mod tests {
             .unwrap_err(),
             GatewayError::PolicyDenied
         );
+
+        assert_eq!(
+            evaluate_policy(
+                &KeyPolicy {
+                    allowed_routes: vec![Route::Summary],
+                    allowed_providers: vec![Provider::InternalService],
+                    allowed_services: vec!["summary".to_owned()],
+                    ..KeyPolicy::default()
+                },
+                Route::Summary,
+                Provider::InternalService,
+                &GenerationFeatures {
+                    service_name: Some("translation".to_owned()),
+                    ..GenerationFeatures::default()
+                },
+            )
+            .unwrap_err(),
+            GatewayError::PolicyDenied
+        );
     }
 
     #[test]
     fn extracts_generation_features_without_logging_body() {
-        let features = extract_generation_features(
-            br#"{"model":"gpt-4.1-mini","stream":true,"tools":[{"type":"function"}]}"#,
-        );
+        let features = extract_generation_features(br#"{"model":"gpt-4.1-mini","stream":true,"tools":[{"type":"function"}],"service":"summary"}"#);
 
         assert_eq!(features.model.as_deref(), Some("gpt-4.1-mini"));
         assert!(features.stream);
         assert!(features.tools);
+        assert_eq!(features.service_name.as_deref(), Some("summary"));
     }
 }

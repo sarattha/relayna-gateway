@@ -19,22 +19,25 @@ failure behavior.
 ## Progress
 
 - [ ] Confirm Phases 1 through 4 are complete.
-- [ ] Establish compatibility boundary for usage queries, telemetry fields,
+- [x] (2026-05-09 18:40 +07) Establish compatibility boundary for usage queries, telemetry fields,
       metrics names, log fields, deployment config, and task observability.
-- [ ] Add usage and dashboard query APIs.
+- [x] (2026-05-09 18:40 +07) Add usage and dashboard query APIs.
 - [ ] Add task observability APIs or proxy behavior.
-- [ ] Add provider health tracking.
+- [x] (2026-05-09 18:40 +07) Add provider and internal service health query API.
 - [ ] Add OpenTelemetry propagation and spans.
-- [ ] Add Prometheus metrics.
+- [x] (2026-05-09 18:40 +07) Add Prometheus metrics endpoint and baseline counters.
 - [ ] Add structured JSON logging and redaction coverage.
-- [ ] Add Kubernetes production deployment resources.
+- [x] (2026-05-09 18:40 +07) Add Kubernetes production deployment resources.
 - [ ] Add reliability hardening for timeouts, retries, backpressure, limits,
       graceful shutdown, and error taxonomy.
 - [ ] Run `$code-change-verification` and deployment validation.
 
 ## Surprises & Discoveries
 
-- None yet.
+- Observation: Studio-facing usage APIs can be served from existing
+  `usage_events` with additive token, service, and fallback columns.
+  Evidence: Phase 5 query implementation uses PostgreSQL aggregation over
+  `usage_events`.
 
 ## Decision Log
 
@@ -42,10 +45,17 @@ failure behavior.
   Rationale: Observability should help operations without leaking prompts,
   keys, provider payloads, or unbounded labels.
   Date/Author: 2026-05-08 / Codex.
+- Decision: Expose internal service health alongside provider health.
+  Rationale: Phase 4 service passthrough makes `/summary`, `/translation`, and
+  other internal services operational dependencies visible to Studio.
+  Date/Author: 2026-05-09 / Codex.
 
 ## Outcomes & Retrospective
 
-Not started.
+Started. Protected usage summary, timeseries, breakdown, provider/service
+health, `/metrics`, and Kubernetes resources are implemented. OpenTelemetry
+span propagation, redaction-specific tests, graceful shutdown validation, and
+deployment dry-run validation remain.
 
 ## Context and Orientation
 
