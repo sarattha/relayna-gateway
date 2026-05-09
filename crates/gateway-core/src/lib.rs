@@ -6,6 +6,7 @@ pub mod observability;
 pub mod policies;
 pub mod rate_limits;
 pub mod routing;
+pub mod services;
 pub mod usage;
 
 pub use admin::{
@@ -24,6 +25,12 @@ pub use policies::{
 };
 pub use rate_limits::{RateLimitDecision, RateLimitStore};
 pub use routing::{is_retry_safe_status, BackendType, Provider, Route, RouteMatch};
+pub use services::{
+    default_route_pattern, service_wildcard_suffix, validate_service_name, AdminServiceStore,
+    ServiceCostMode, ServiceCreateRequest, ServicePatchRequest, ServiceRegistration,
+    ServiceRegistryLookup, ServiceResponse, ServiceSource, ServiceSyncStatus,
+    ServiceSyncStatusResponse, StudioServiceImportRequest, StudioServicePricing,
+};
 pub use usage::{
     extract_estimated_cost_usd, extract_model, extract_usage_tokens, UsageEvent, UsageRecorder,
     UsageStatus,

@@ -20,25 +20,39 @@ with per-service credentials, limits, pricing, and health visibility.
 
 ## Progress
 
-- [ ] Confirm Phases 3 through 5 gateway-only service passthrough behavior is
-      complete.
-- [ ] Establish compatibility boundary for service registry APIs, PostgreSQL
+- [x] Confirm current Phase 3 through 5 gateway-only service passthrough
+      foundations exist for service route names, `allowed_services`, usage
+      service attribution, and provider/service health.
+- [x] Establish compatibility boundary for service registry APIs, PostgreSQL
       schema, service route matching, credential handling, and usage fields.
-- [ ] Add persistent service registry schema.
-- [ ] Add protected admin service registry APIs.
-- [ ] Add Relayna Studio service import and sync behavior.
-- [ ] Load active service registrations in the proxy path.
-- [ ] Route static and wildcard service passthrough through registered service
+- [x] Add persistent service registry schema.
+- [x] Add protected admin service registry APIs.
+- [x] Add Relayna Studio service import and sync behavior.
+- [x] Load active service registrations in the proxy path.
+- [x] Route static and wildcard service passthrough through registered service
       upstreams.
-- [ ] Enforce key policy against registered service names.
-- [ ] Record usage, cost, latency, fallback count, and provider health by
+- [x] Enforce key policy against registered service names.
+- [x] Record usage, cost, latency, fallback count, and provider health by
       registered service.
-- [ ] Add registry, routing, credential, policy, and usage tests.
-- [ ] Run `$code-change-verification` and record results.
+- [x] Add registry, routing, credential, policy, and usage tests.
+- [x] Run `$code-change-verification` and record results.
 
 ## Surprises & Discoveries
 
-- None yet.
+- No `v*` release tag exists locally, so the existing
+  `INTERNAL_SERVICE_BASE_URL` behavior is treated as unreleased branch-local
+  shortcut behavior and is replaced directly by registry-based routing.
+- The current repository has unit/API coverage but no live PostgreSQL-backed
+  store integration harness, so service persistence is covered by additive SQL
+  migration plus compile-time store wiring in this pass.
+- Real-container testing found that successful proxy usage inserts were not
+  being persisted because the `usage_events` insert SQL had one fewer
+  placeholder than inserted columns. The insert was corrected and verified
+  against Postgres.
+- Real-container testing found Redis-backed RPM checks failed before upstream
+  calls because the pipeline response was decoded with the wrong shape. The
+  rate-limit pipeline decode was corrected and the budget spend path now sends
+  numeric `INCRBYFLOAT` values while reservations keep encoded key metadata.
 
 ## Decision Log
 
@@ -62,9 +76,48 @@ with per-service credentials, limits, pricing, and health visibility.
   budgets, usage, and fail-closed behavior.
   Date/Author: 2026-05-09 / Codex.
 
+- Decision: Phase 6 Studio import/sync is request-body driven through protected
+  admin APIs, not an outbound Gateway-to-Studio catalog client.
+  Rationale: This delivers deterministic import/sync semantics without adding
+  Studio client configuration, auth, retry, and availability behavior to the
+  gateway runtime in this phase.
+  Date/Author: 2026-05-10 / Codex.
+
+- Decision: Store service credentials as opaque gateway-owned Postgres secret
+  material for the MVP and redact them from every admin read/list response.
+  Rationale: Per-service credential injection is required for routing now;
+  KMS/envelope encryption can be added later without exposing raw credentials
+  through public API shapes.
+  Date/Author: 2026-05-10 / Codex.
+
+- Decision: Remove the environment-based internal service upstream shortcut
+  from startup config.
+  Rationale: No released compatibility tag exists, and Phase 6 makes durable
+  service registrations the source of truth for internal service upstreams.
+  Date/Author: 2026-05-10 / Codex.
+
 ## Outcomes & Retrospective
 
-Not started.
+Implemented the first Phase 6 pass: core service registry contracts,
+PostgreSQL registry migration and store methods, protected admin service APIs,
+request-body Studio import/sync, dynamic proxy service lookup, registered
+credential injection, wildcard path rewriting, service policy enforcement, and
+redacted admin responses.
+
+Verification: `bash .codex/skills/code-change-verification/scripts/run.sh`
+passed on 2026-05-10. The script ran `cargo fmt --all --check`,
+`cargo clippy --workspace --all-targets --all-features -- -D warnings`, and
+`cargo test --workspace --all-features`.
+
+Real service verification: started Gateway against local Docker containers
+`relayna-postgres` and `redis` using a disposable
+`relayna_gateway_phase6_test` database, applied all migrations, and used a
+local HTTP stub service. Verified `/readyz`, admin service create/import/patch,
+redacted credentials, Studio incomplete-to-synced transition, `/summary`
+passthrough, `/services/translation/*` path rewriting, client credential
+stripping, registered credential injection, Redis-backed RPM rejection, usage
+by service from Postgres, and disabled-service fail-closed behavior. The
+temporary gateway, stub service, and test database were removed after the run.
 
 ## Context and Orientation
 

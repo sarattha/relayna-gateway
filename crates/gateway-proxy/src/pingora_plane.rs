@@ -4,9 +4,9 @@ use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
     evaluate_policy, extract_estimated_cost_usd, extract_generation_features, extract_model,
-    extract_usage_tokens, is_retry_safe_status, AuthenticatedKey, BudgetDecision, BudgetStore,
-    GatewayError, PolicyLookup, Provider, RateLimitDecision, RateLimitStore, Route, RouteMatch,
-    UsageEvent, UsageRecorder,
+    extract_usage_tokens, is_retry_safe_status, service_wildcard_suffix, AuthenticatedKey,
+    BudgetDecision, BudgetStore, GatewayError, PolicyLookup, Provider, RateLimitDecision,
+    RateLimitStore, Route, RouteMatch, ServiceRegistryLookup, UsageEvent, UsageRecorder,
 };
 use http::Uri;
 use pingora_core::{
@@ -24,7 +24,6 @@ use std::{
 pub struct PingoraLiteLlmConfig {
     pub litellm: PingoraUpstreamConfig,
     pub direct_openai: Option<PingoraUpstreamConfig>,
-    pub internal_service: Option<PingoraUpstreamConfig>,
     pub worker_token: Option<String>,
 }
 
@@ -45,18 +44,12 @@ impl PingoraLiteLlmConfig {
         Ok(Self {
             litellm: PingoraUpstreamConfig::from_base_url(base_url, service_key)?,
             direct_openai: None,
-            internal_service: None,
             worker_token: None,
         })
     }
 
     pub fn with_direct_openai(mut self, upstream: Option<PingoraUpstreamConfig>) -> Self {
         self.direct_openai = upstream;
-        self
-    }
-
-    pub fn with_internal_service(mut self, upstream: Option<PingoraUpstreamConfig>) -> Self {
-        self.internal_service = upstream;
         self
     }
 
@@ -100,7 +93,7 @@ pub struct RelaynaPingoraProxy<S, R> {
 
 impl<S, R> RelaynaPingoraProxy<S, R>
 where
-    S: VirtualKeyLookup + UsageRecorder + PolicyLookup,
+    S: VirtualKeyLookup + UsageRecorder + PolicyLookup + ServiceRegistryLookup,
     R: RateLimitStore + BudgetStore,
 {
     pub fn new(store: Arc<S>, control_state: Arc<R>, config: PingoraLiteLlmConfig) -> Self {
@@ -130,12 +123,19 @@ pub struct PingoraContext {
     traceparent: Option<String>,
     fallback_count: i32,
     terminal_usage_recorded: bool,
+    service_upstream: Option<PingoraUpstreamConfig>,
 }
 
 #[async_trait]
 impl<S, R> ProxyHttp for RelaynaPingoraProxy<S, R>
 where
-    S: VirtualKeyLookup + UsageRecorder + PolicyLookup + Send + Sync + 'static,
+    S: VirtualKeyLookup
+        + UsageRecorder
+        + PolicyLookup
+        + ServiceRegistryLookup
+        + Send
+        + Sync
+        + 'static,
     R: RateLimitStore + BudgetStore + Send + Sync + 'static,
 {
     type CTX = PingoraContext;
@@ -158,6 +158,7 @@ where
             traceparent: None,
             fallback_count: 0,
             terminal_usage_recorded: false,
+            service_upstream: None,
         }
     }
 
@@ -177,7 +178,7 @@ where
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-        let matched = match Route::resolve_match(&req.method, req.uri.path()) {
+        let mut matched = match Route::resolve_match(&req.method, req.uri.path()) {
             Ok(matched) => matched,
             Err(error) => {
                 respond_error(session, error, &ctx.request_id).await?;
@@ -185,7 +186,6 @@ where
             }
         };
         ctx.route = Some(matched.route);
-        ctx.route_match = Some(matched);
         ctx.traceparent = header_value(req, "traceparent")
             .filter(|value| is_valid_traceparent(value))
             .map(ToOwned::to_owned);
@@ -203,6 +203,53 @@ where
             .await
         {
             Ok(key) => {
+                if let Some(service_name) = matched.service_name.as_deref() {
+                    let registration = match self.store.service_registration(service_name).await {
+                        Ok(Some(registration)) => registration,
+                        Ok(None) => {
+                            respond_error(session, GatewayError::MissingService, &ctx.request_id)
+                                .await?;
+                            return Ok(true);
+                        }
+                        Err(error) => {
+                            respond_error(session, error, &ctx.request_id).await?;
+                            return Ok(true);
+                        }
+                    };
+                    if let Err(error) = registration.ensure_routable() {
+                        respond_error(session, error, &ctx.request_id).await?;
+                        return Ok(true);
+                    }
+                    if !registration
+                        .allowed_methods
+                        .iter()
+                        .any(|method| method.eq_ignore_ascii_case(req.method.as_str()))
+                    {
+                        respond_error(session, GatewayError::UnsupportedRoute, &ctx.request_id)
+                            .await?;
+                        return Ok(true);
+                    }
+                    let upstream = match PingoraUpstreamConfig::from_base_url(
+                        registration
+                            .upstream_base_url
+                            .as_deref()
+                            .unwrap_or_default(),
+                        registration.credential_secret.clone().unwrap_or_default(),
+                    ) {
+                        Ok(upstream) => upstream,
+                        Err(error) => {
+                            respond_error(session, error, &ctx.request_id).await?;
+                            return Ok(true);
+                        }
+                    };
+                    matched.timeout_ms = u64::try_from(registration.timeout_ms)
+                        .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+                    matched.max_body_bytes = usize::try_from(registration.max_body_bytes)
+                        .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+                    matched.estimated_cost_usd = registration.estimated_cost_usd;
+                    ctx.service_upstream = Some(upstream);
+                }
+                ctx.route_match = Some(matched);
                 ctx.key = Some(key);
                 Ok(false)
             }
@@ -406,6 +453,13 @@ where
         {
             rewrite_direct_openai_uri(upstream_request)?;
         }
+        if let Some(matched) = &ctx.route_match {
+            if matched.route == Route::ServiceWildcard {
+                if let Some(service_name) = matched.service_name.as_deref() {
+                    rewrite_service_wildcard_uri(upstream_request, service_name)?;
+                }
+            }
+        }
         upstream_request.insert_header("x-relayna-request-id", &ctx.request_id)?;
         if let Some(traceparent) = &ctx.traceparent {
             upstream_request.insert_header("traceparent", traceparent)?;
@@ -590,14 +644,14 @@ where
     S: UsageRecorder,
     R: BudgetStore,
 {
-    fn upstream_for<'a>(&'a self, ctx: &PingoraContext) -> Option<&'a PingoraUpstreamConfig> {
+    fn upstream_for<'a>(&'a self, ctx: &'a PingoraContext) -> Option<&'a PingoraUpstreamConfig> {
         if ctx.route_match.is_none() {
             return Some(&self.config.litellm);
         }
         match provider_for_usage(ctx) {
             Provider::LiteLlm => Some(&self.config.litellm),
             Provider::OpenAiCompatible => self.config.direct_openai.as_ref(),
-            Provider::InternalService => self.config.internal_service.as_ref(),
+            Provider::InternalService => ctx.service_upstream.as_ref(),
         }
     }
 
@@ -720,6 +774,33 @@ fn direct_openai_path_and_query(path_and_query: &str) -> String {
     }
 }
 
+fn rewrite_service_wildcard_uri(
+    upstream_request: &mut RequestHeader,
+    service_name: &str,
+) -> PingoraResult<()> {
+    let Some(path_and_query) = upstream_request
+        .uri
+        .path_and_query()
+        .map(|value| value.as_str())
+    else {
+        return Ok(());
+    };
+    let Some(rewritten) = service_wildcard_suffix(path_and_query, service_name) else {
+        return Ok(());
+    };
+    let uri = Uri::builder()
+        .path_and_query(rewritten)
+        .build()
+        .map_err(|_| {
+            pingora_core::Error::explain(
+                pingora_core::ErrorType::InvalidHTTPHeader,
+                "invalid rewritten service upstream URI",
+            )
+        })?;
+    upstream_request.set_uri(uri);
+    Ok(())
+}
+
 fn observe_response_body_chunk(ctx: &mut PingoraContext, body: &[u8]) {
     if ctx.is_streaming && !ctx.first_chunk_recorded {
         ctx.first_chunk_recorded = true;
@@ -772,6 +853,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         traceparent: None,
         fallback_count: 0,
         terminal_usage_recorded: false,
+        service_upstream: None,
     }
 }
 
@@ -846,6 +928,18 @@ mod tests {
         assert_eq!(
             direct_openai_path_and_query("/v1/chat/completions"),
             "/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn rewrites_service_wildcard_prefix_and_preserves_query() {
+        assert_eq!(
+            service_wildcard_suffix("/services/custom-ai/run?trace=1", "custom-ai").as_deref(),
+            Some("/run?trace=1")
+        );
+        assert_eq!(
+            service_wildcard_suffix("/services/custom-ai", "custom-ai").as_deref(),
+            Some("/")
         );
     }
 
