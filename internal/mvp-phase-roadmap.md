@@ -380,6 +380,104 @@ Security and compatibility review:
 - [ ] Production config fails closed when required secrets or upstream settings
       are missing.
 
+## Phase 6 - Admin and Studio Service Registry
+
+ExecPlan: `internal/execplans/phase-6-admin-service-registry.md`
+
+Objective: replace the single environment-configured internal service upstream
+with protected admin APIs and Relayna Studio import/sync behavior for
+registering gateway-owned service passthrough targets such as summary,
+translation, OCR, embeddings, and custom `/services/{service_name}/*` services.
+
+Deliverables:
+
+- Service registry persistence:
+  - [ ] Add a durable PostgreSQL service registration schema keyed by service
+        name.
+  - [ ] Store Studio service ID when applicable, route pattern, upstream base
+        URL, enabled state, allowed methods, timeout, body size limit, cost
+        mode, estimated cost, credential reference or credential secret,
+        fallback services, source, sync status, last synced timestamp, and
+        lifecycle timestamps.
+  - [ ] Never return raw internal service credentials from read/list APIs.
+- Admin service APIs:
+  - [ ] Add protected APIs to create, list, read, patch, disable, enable, and
+        delete service registrations.
+  - [ ] Add protected APIs to import and sync services already registered in
+        Relayna Studio.
+  - [ ] Preserve Gateway-owned runtime fields when Studio metadata is
+        refreshed unless an admin explicitly overwrites them.
+  - [ ] Validate service names, upstream URLs, allowed methods, timeout/body
+        limits, cost settings, Studio service IDs, and duplicate
+        registrations.
+  - [ ] Return stable errors for missing, disabled, duplicate, or invalid
+        services.
+- Service passthrough routing:
+  - [ ] Resolve `/summary`, `/translation`, `/ocr`, `/embeddings`, and
+        `/services/{service_name}/*` through the registry.
+  - [ ] Treat Studio-imported services as unroutable until Gateway-owned
+        runtime fields such as upstream URL and credential are configured.
+  - [ ] Fail closed when a service is missing, disabled, or has invalid
+        upstream configuration.
+  - [ ] Strip client credentials, inject registered service credentials, add
+        Relayna correlation headers, and preserve or rewrite paths according to
+        the registered route pattern.
+- Policy, usage, and health:
+  - [ ] Enforce key `allowed_services` policy against registered service names.
+  - [ ] Apply registered timeout, body size, cost mode, and estimated cost.
+  - [ ] Attribute usage, latency, errors, fallback count, and health to the
+        registered service name.
+  - [ ] Expose local, Studio-imported, incomplete, stale, and failed sync
+        states for Relayna Studio and operators.
+  - [ ] Include registered services in Studio usage and provider/service health
+        views.
+
+Acceptance gates:
+
+- [ ] Operators can manage service registrations through protected admin APIs.
+- [ ] Gateway can import or sync service registrations that already exist in
+      Relayna Studio.
+- [ ] Studio-imported services fail closed until required Gateway-owned runtime
+      fields are configured.
+- [ ] Raw service credentials are accepted only on create/update and are never
+      returned by read/list responses.
+- [ ] Registered services route traffic to service-specific upstreams.
+- [ ] Disabled or missing services are rejected before upstream calls.
+- [ ] A key can be allowed for one service and denied for another.
+- [ ] Usage and health data are visible by registered service name.
+- [ ] Sync status shows whether each service is local, synced from Studio,
+      stale, failed, or incomplete.
+
+Verification gates:
+
+- [ ] Unit tests cover service name validation, admin payload validation,
+      response redaction, route-to-service mapping, Studio import mapping, and
+      policy decisions.
+- [ ] Store tests cover service lifecycle persistence, Studio service ID
+      uniqueness, sync status, local override preservation, and duplicate
+      handling.
+- [ ] API tests cover admin auth, invalid payloads, credential one-way
+      behavior, disabled service states, Studio import/sync requests,
+      incomplete Studio-imported services, and stable response shapes.
+- [ ] Proxy tests with stub services cover path rewriting, header stripping,
+      credential injection, missing/disabled service rejection, and usage
+      attribution.
+- [ ] Run `$code-change-verification` after service registry runtime,
+      migration, test, or configuration changes.
+
+Security and compatibility review:
+
+- [ ] Service registry API shapes, PostgreSQL schema, route matching,
+      Studio sync contracts, credential storage, and usage/health fields are
+      reviewed before release.
+- [ ] Service credentials remain gateway-owned, redacted from logs, stripped
+      from client requests, and never returned to callers.
+- [ ] Studio service metadata cannot bypass Gateway policy, budget, credential,
+      or upstream validation.
+- [ ] The environment-based `INTERNAL_SERVICE_BASE_URL` shortcut is either
+      removed as unreleased branch-local behavior or explicitly documented as a
+      development fallback.
+
 ## Cross-Phase Done Definition
 
 - [ ] The phase delivers observable behavior that matches

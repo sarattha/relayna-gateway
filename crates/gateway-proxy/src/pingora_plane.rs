@@ -449,17 +449,7 @@ where
         Self::CTX: Send + Sync,
     {
         if let Some(body) = body {
-            if ctx.is_streaming && !ctx.first_chunk_recorded {
-                ctx.first_chunk_recorded = true;
-                let latency_ms =
-                    u64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(u64::MAX);
-                gateway_telemetry::record_first_token_latency_ms(latency_ms);
-            }
-            if ctx.response_body_prefix.len() < 65_536 {
-                let remaining = 65_536 - ctx.response_body_prefix.len();
-                ctx.response_body_prefix
-                    .extend_from_slice(&body[..body.len().min(remaining)]);
-            }
+            observe_response_body_chunk(ctx, body);
         }
         Ok(None)
     }
@@ -672,6 +662,40 @@ fn direct_openai_path_and_query(path_and_query: &str) -> String {
     }
 }
 
+fn observe_response_body_chunk(ctx: &mut PingoraContext, body: &[u8]) {
+    if ctx.is_streaming && !ctx.first_chunk_recorded {
+        ctx.first_chunk_recorded = true;
+        let latency_ms = u64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        gateway_telemetry::record_first_token_latency_ms(latency_ms);
+    }
+    if ctx.response_body_prefix.len() < 65_536 {
+        let remaining = 65_536 - ctx.response_body_prefix.len();
+        ctx.response_body_prefix
+            .extend_from_slice(&body[..body.len().min(remaining)]);
+    }
+}
+
+#[cfg(test)]
+fn new_pingora_context_for_tests() -> PingoraContext {
+    PingoraContext {
+        started: Instant::now(),
+        request_id: uuid::Uuid::new_v4().to_string(),
+        route: None,
+        route_match: None,
+        key: None,
+        body_prefix: Vec::new(),
+        body_bytes_seen: 0,
+        response_body_prefix: Vec::new(),
+        is_streaming: false,
+        first_chunk_recorded: false,
+        budget_reserved: false,
+        task_id: None,
+        run_id: None,
+        traceparent: None,
+        terminal_usage_recorded: false,
+    }
+}
+
 async fn respond_error(
     session: &mut Session,
     error: GatewayError,
@@ -686,6 +710,12 @@ async fn respond_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{DateTime, Utc};
+    use gateway_core::{
+        AuthenticatedKey, BudgetDecision, BudgetState, GatewayResult, RateLimitDecision, UsageEvent,
+    };
+    use std::sync::Mutex;
+    use uuid::Uuid;
 
     #[test]
     fn parses_https_litellm_base_url_for_pingora_peer() {
@@ -737,6 +767,153 @@ mod tests {
         assert_eq!(
             direct_openai_path_and_query("/v1/chat/completions"),
             "/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn delayed_stream_chunk_records_first_chunk_once_and_caps_prefix() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.started = Instant::now() - Duration::from_millis(25);
+        ctx.is_streaming = true;
+
+        observe_response_body_chunk(&mut ctx, b"data: first\n\n");
+        observe_response_body_chunk(&mut ctx, b"data: second\n\n");
+
+        assert!(ctx.first_chunk_recorded);
+        assert_eq!(ctx.response_body_prefix, b"data: first\n\ndata: second\n\n");
+
+        observe_response_body_chunk(&mut ctx, &vec![b'x'; 70_000]);
+        assert_eq!(ctx.response_body_prefix.len(), 65_536);
+    }
+
+    #[derive(Default)]
+    struct MemoryUsageStore {
+        events: Mutex<Vec<UsageEvent>>,
+    }
+
+    #[async_trait]
+    impl UsageRecorder for MemoryUsageStore {
+        async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()> {
+            self.events.lock().expect("events lock").push(event.clone());
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct MemoryControlState {
+        released: Mutex<Vec<(Uuid, String)>>,
+    }
+
+    #[async_trait]
+    impl BudgetStore for MemoryControlState {
+        async fn check_budget(
+            &self,
+            _key_id: Uuid,
+            _daily_budget_usd: Option<f64>,
+            _monthly_budget_usd: Option<f64>,
+            _now: DateTime<Utc>,
+        ) -> GatewayResult<BudgetDecision> {
+            Ok(BudgetDecision::Allowed(BudgetState {
+                daily_spend_usd: 0.0,
+                monthly_spend_usd: 0.0,
+            }))
+        }
+
+        async fn add_budget_spend(
+            &self,
+            _key_id: Uuid,
+            _estimated_cost_usd: f64,
+            _now: DateTime<Utc>,
+        ) -> GatewayResult<()> {
+            Ok(())
+        }
+
+        async fn reserve_budget(
+            &self,
+            _key_id: Uuid,
+            _request_id: &str,
+            _estimated_cost_usd: f64,
+            _now: DateTime<Utc>,
+        ) -> GatewayResult<()> {
+            Ok(())
+        }
+
+        async fn reconcile_budget_reservation(
+            &self,
+            _key_id: Uuid,
+            _request_id: &str,
+            _actual_cost_usd: f64,
+            _now: DateTime<Utc>,
+        ) -> GatewayResult<()> {
+            Ok(())
+        }
+
+        async fn release_budget_reservation(
+            &self,
+            key_id: Uuid,
+            request_id: &str,
+        ) -> GatewayResult<()> {
+            self.released
+                .lock()
+                .expect("released lock")
+                .push((key_id, request_id.to_owned()));
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl RateLimitStore for MemoryControlState {
+        async fn check_request_rate_limit(
+            &self,
+            _key_id: Uuid,
+            _rpm_limit: Option<i32>,
+            _now: DateTime<Utc>,
+        ) -> GatewayResult<RateLimitDecision> {
+            Ok(RateLimitDecision::Allowed { count: 1 })
+        }
+    }
+
+    #[tokio::test]
+    async fn disconnect_cleanup_records_failure_usage_and_releases_stream_reservation() {
+        let store = Arc::new(MemoryUsageStore::default());
+        let control_state = Arc::new(MemoryControlState::default());
+        let proxy = RelaynaPingoraProxy {
+            store: store.clone(),
+            control_state: control_state.clone(),
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+                .expect("config"),
+        };
+        let key = AuthenticatedKey {
+            key_id: Uuid::new_v4(),
+            project_id: Uuid::new_v4(),
+            key_prefix: "rk_live_test_key".to_owned(),
+        };
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.request_id = "req_disconnect".to_owned();
+        ctx.route = Some(Route::ChatCompletions);
+        ctx.route_match =
+            Some(Route::resolve_match(&http::Method::POST, "/v1/chat/completions").expect("route"));
+        ctx.key = Some(key.clone());
+        ctx.is_streaming = true;
+        ctx.budget_reserved = true;
+
+        proxy
+            .record_terminal_usage(&mut ctx, &key, Route::ChatCompletions, 502, Utc::now())
+            .await;
+
+        let events = store.events.lock().expect("events lock");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].request_id, "req_disconnect");
+        assert_eq!(events[0].status_code, 502);
+        drop(events);
+        assert!(ctx.terminal_usage_recorded);
+        assert_eq!(
+            control_state
+                .released
+                .lock()
+                .expect("released lock")
+                .as_slice(),
+            &[(key.key_id, "req_disconnect".to_owned())]
         );
     }
 }

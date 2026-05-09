@@ -27,7 +27,7 @@ usage, and reconciled cost.
 - [x] (2026-05-09 20:28 +07) Add stream terminal cleanup for error/disconnect paths and route timeout settings.
 - [x] (2026-05-09 18:40 +07) Add upstream usage token/cost extraction and persisted usage fields.
 - [x] (2026-05-09 18:40 +07) Add Redis budget reservation, reconciliation, and release methods.
-- [ ] Add streaming integration tests for delayed chunks and disconnects.
+- [x] (2026-05-09 22:49 +07) Add streaming tests for delayed chunks and disconnect cleanup.
 - [x] (2026-05-09 20:29 +07) Run `$code-change-verification` and record results.
 
 ## Surprises & Discoveries
@@ -57,10 +57,10 @@ usage, and reconciled cost.
 
 ## Outcomes & Retrospective
 
-Mostly implemented. Streaming detection, bounded passthrough accounting,
-first-token metrics, route timeouts, Redis reservation cleanup, and usage
-fields are implemented. `$code-change-verification` passed. Delayed-SSE and
-disconnect integration tests remain.
+Implemented. Streaming detection, bounded passthrough accounting, first-token
+metrics, route timeouts, Redis reservation cleanup, usage fields, delayed chunk
+coverage, and disconnect cleanup coverage are implemented.
+`$code-change-verification` passed.
 
 ## Context and Orientation
 
