@@ -8,7 +8,8 @@ use axum::{
 };
 use gateway_core::{
     auth::VirtualKeyLookup, AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,
-    CreatedAdminKeyResponse, GatewayError, GatewayResult, UsageBreakdownDimension, UsageEvent,
+    AdminServiceStore, CreatedAdminKeyResponse, GatewayError, GatewayResult, ServiceCreateRequest,
+    ServicePatchRequest, StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent,
     UsageQuery, UsageQueryStore, VirtualKeyMaterial,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
@@ -20,7 +21,9 @@ use tower_http::{
 };
 
 #[async_trait]
-pub trait GatewayData: VirtualKeyLookup + AdminKeyStore + UsageQueryStore + Send + Sync {
+pub trait GatewayData:
+    VirtualKeyLookup + AdminKeyStore + AdminServiceStore + UsageQueryStore + Send + Sync
+{
     async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()>;
     async fn postgres_ready(&self) -> GatewayResult<()>;
 }
@@ -62,6 +65,25 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin/keys/{key_id}/revoke", post(revoke_key))
         .route("/admin/keys/{key_id}/disable", post(disable_key))
         .route("/admin/keys/{key_id}/usage", get(key_usage))
+        .route("/admin/services", post(create_service).get(list_services))
+        .route("/admin/services/import", post(import_service))
+        .route("/admin/services/sync", post(sync_service))
+        .route(
+            "/admin/services/{service_name}",
+            get(get_service).patch(patch_service).delete(delete_service),
+        )
+        .route(
+            "/admin/services/{service_name}/disable",
+            post(disable_service),
+        )
+        .route(
+            "/admin/services/{service_name}/enable",
+            post(enable_service),
+        )
+        .route(
+            "/admin/services/{service_name}/sync-status",
+            get(service_sync_status),
+        )
         .route("/admin/projects/{project_id}/usage", get(project_usage))
         .route("/admin/usage/summary", get(usage_summary))
         .route("/admin/usage/timeseries", get(usage_timeseries))
@@ -203,6 +225,127 @@ async fn project_usage(
 
     match state.store.project_usage_summary(project_id).await {
         Ok(summary) => Json(summary).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn create_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ServiceCreateRequest>,
+) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.create_service(request).await
+    })
+    .await
+}
+
+async fn list_services(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.list_services().await
+    })
+    .await
+}
+
+async fn get_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_name): Path<String>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers) {
+        return response;
+    }
+
+    match state.store.get_service(&service_name).await {
+        Ok(Some(service)) => Json(service).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn patch_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_name): Path<String>,
+    Json(patch): Json<ServicePatchRequest>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers) {
+        return response;
+    }
+
+    match state.store.patch_service(&service_name, patch).await {
+        Ok(Some(service)) => Json(service).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn delete_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_name): Path<String>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers) {
+        return response;
+    }
+
+    match state.store.delete_service(&service_name).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn disable_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_name): Path<String>,
+) -> Response {
+    mutate_service_enabled(state, headers, service_name, false).await
+}
+
+async fn enable_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_name): Path<String>,
+) -> Response {
+    mutate_service_enabled(state, headers, service_name, true).await
+}
+
+async fn import_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<StudioServiceImportRequest>,
+) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.import_studio_service(request).await
+    })
+    .await
+}
+
+async fn sync_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<StudioServiceImportRequest>,
+) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.sync_studio_service(request).await
+    })
+    .await
+}
+
+async fn service_sync_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_name): Path<String>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers) {
+        return response;
+    }
+
+    match state.store.service_sync_status(&service_name).await {
+        Ok(Some(status)) => Json(status).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
 }
@@ -367,6 +510,27 @@ async fn mutate_key_lifecycle(
     }
 }
 
+async fn mutate_service_enabled(
+    state: AppState,
+    headers: HeaderMap,
+    service_name: String,
+    enabled: bool,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers) {
+        return response;
+    }
+
+    match state
+        .store
+        .set_service_enabled(&service_name, enabled)
+        .await
+    {
+        Ok(Some(service)) => Json(service).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response> {
     let Some(authorization) = headers
         .get("authorization")
@@ -415,7 +579,8 @@ mod tests {
     use gateway_core::{
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
-        ProviderHealth, UsageBreakdown, UsageSummary, UsageTimeseriesPoint,
+        ProviderHealth, ServiceCostMode, ServiceResponse, ServiceSource, ServiceSyncStatus,
+        ServiceSyncStatusResponse, UsageBreakdown, UsageSummary, UsageTimeseriesPoint,
     };
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -425,6 +590,7 @@ mod tests {
     struct MemoryStore {
         key: Arc<Mutex<Option<StoredVirtualKey>>>,
         admin_key: Arc<Mutex<Option<AdminKeyResponse>>>,
+        services: Arc<Mutex<Vec<ServiceResponse>>>,
         events: Arc<Mutex<Vec<UsageEvent>>>,
         postgres_ready: bool,
     }
@@ -559,6 +725,210 @@ mod tests {
     }
 
     #[async_trait]
+    impl AdminServiceStore for MemoryStore {
+        async fn create_service(
+            &self,
+            request: ServiceCreateRequest,
+        ) -> GatewayResult<ServiceResponse> {
+            request.validate()?;
+            let mut services = self.services.lock().expect("lock poisoned");
+            if services.iter().any(|service| service.name == request.name) {
+                return Err(GatewayError::DuplicateService);
+            }
+            let now = Utc::now();
+            let response = ServiceResponse {
+                name: request.name.clone(),
+                studio_service_id: request.studio_service_id.clone(),
+                route_pattern: request
+                    .route_pattern
+                    .clone()
+                    .unwrap_or_else(|| format!("/services/{}/*", request.name)),
+                upstream_base_url: request.upstream_base_url.clone(),
+                enabled: request.enabled,
+                allowed_methods: request.allowed_methods.clone(),
+                credential_configured: request.credential.is_some(),
+                timeout_ms: request.timeout_ms,
+                max_body_bytes: request.max_body_bytes,
+                cost_mode: request.cost_mode,
+                estimated_cost_usd: request.estimated_cost_usd,
+                fallback_services: request.fallback_services.clone(),
+                source: if request.studio_service_id.is_some() {
+                    ServiceSource::Studio
+                } else {
+                    ServiceSource::Gateway
+                },
+                sync_status: if request.upstream_base_url.is_some() && request.credential.is_some()
+                {
+                    ServiceSyncStatus::Local
+                } else {
+                    ServiceSyncStatus::Incomplete
+                },
+                last_synced_at: None,
+                disabled_at: None,
+                created_at: now,
+                updated_at: now,
+                missing_runtime_fields: missing_runtime_fields(
+                    request.upstream_base_url.as_deref(),
+                    request.credential.as_deref(),
+                ),
+            };
+            services.push(response.clone());
+            Ok(response)
+        }
+
+        async fn list_services(&self) -> GatewayResult<Vec<ServiceResponse>> {
+            Ok(self.services.lock().expect("lock poisoned").clone())
+        }
+
+        async fn get_service(&self, name: &str) -> GatewayResult<Option<ServiceResponse>> {
+            Ok(self
+                .services
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|service| service.name == name)
+                .cloned())
+        }
+
+        async fn patch_service(
+            &self,
+            name: &str,
+            patch: ServicePatchRequest,
+        ) -> GatewayResult<Option<ServiceResponse>> {
+            patch.validate()?;
+            let mut services = self.services.lock().expect("lock poisoned");
+            let Some(service) = services.iter_mut().find(|service| service.name == name) else {
+                return Ok(None);
+            };
+            if let Some(enabled) = patch.enabled {
+                service.enabled = enabled;
+            }
+            if let Some(upstream_base_url) = patch.upstream_base_url {
+                service.upstream_base_url = upstream_base_url;
+            }
+            if let Some(credential) = patch.credential {
+                service.credential_configured = credential.is_some();
+            }
+            service.updated_at = Utc::now();
+            service.missing_runtime_fields = if service.credential_configured {
+                missing_runtime_fields(service.upstream_base_url.as_deref(), Some("configured"))
+            } else {
+                missing_runtime_fields(service.upstream_base_url.as_deref(), None)
+            };
+            Ok(Some(service.clone()))
+        }
+
+        async fn delete_service(&self, name: &str) -> GatewayResult<bool> {
+            let mut services = self.services.lock().expect("lock poisoned");
+            let before = services.len();
+            services.retain(|service| service.name != name);
+            Ok(services.len() != before)
+        }
+
+        async fn set_service_enabled(
+            &self,
+            name: &str,
+            enabled: bool,
+        ) -> GatewayResult<Option<ServiceResponse>> {
+            let mut services = self.services.lock().expect("lock poisoned");
+            let Some(service) = services.iter_mut().find(|service| service.name == name) else {
+                return Ok(None);
+            };
+            service.enabled = enabled;
+            service.disabled_at = if enabled { None } else { Some(Utc::now()) };
+            Ok(Some(service.clone()))
+        }
+
+        async fn import_studio_service(
+            &self,
+            request: StudioServiceImportRequest,
+        ) -> GatewayResult<ServiceResponse> {
+            self.sync_studio_service(request).await
+        }
+
+        async fn sync_studio_service(
+            &self,
+            request: StudioServiceImportRequest,
+        ) -> GatewayResult<ServiceResponse> {
+            request.validate()?;
+            let mut services = self.services.lock().expect("lock poisoned");
+            let now = Utc::now();
+            if let Some(service) = services.iter_mut().find(|service| {
+                service.studio_service_id.as_deref() == Some(&request.studio_service_id)
+            }) {
+                service.name = request.name;
+                service.route_pattern = request
+                    .route_pattern
+                    .unwrap_or_else(|| format!("/services/{}/*", service.name));
+                service.source = ServiceSource::Studio;
+                service.sync_status = if service.missing_runtime_fields.is_empty() {
+                    ServiceSyncStatus::Synced
+                } else {
+                    ServiceSyncStatus::Incomplete
+                };
+                service.last_synced_at = Some(now);
+                service.updated_at = now;
+                return Ok(service.clone());
+            }
+
+            let response = ServiceResponse {
+                name: request.name.clone(),
+                studio_service_id: Some(request.studio_service_id),
+                route_pattern: request
+                    .route_pattern
+                    .unwrap_or_else(|| format!("/services/{}/*", request.name)),
+                upstream_base_url: None,
+                enabled: false,
+                allowed_methods: vec!["POST".to_owned()],
+                credential_configured: false,
+                timeout_ms: 60_000,
+                max_body_bytes: 2_097_152,
+                cost_mode: request
+                    .default_pricing
+                    .as_ref()
+                    .map(|pricing| pricing.cost_mode)
+                    .unwrap_or(ServiceCostMode::None),
+                estimated_cost_usd: request
+                    .default_pricing
+                    .as_ref()
+                    .and_then(|pricing| pricing.estimated_cost_usd),
+                fallback_services: Vec::new(),
+                source: ServiceSource::Studio,
+                sync_status: ServiceSyncStatus::Incomplete,
+                last_synced_at: Some(now),
+                disabled_at: None,
+                created_at: now,
+                updated_at: now,
+                missing_runtime_fields: vec![
+                    "upstream_base_url".to_owned(),
+                    "credential".to_owned(),
+                ],
+            };
+            services.push(response.clone());
+            Ok(response)
+        }
+
+        async fn service_sync_status(
+            &self,
+            name: &str,
+        ) -> GatewayResult<Option<ServiceSyncStatusResponse>> {
+            Ok(self
+                .services
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|service| service.name == name)
+                .map(|service| ServiceSyncStatusResponse {
+                    name: service.name.clone(),
+                    source: service.source,
+                    sync_status: service.sync_status,
+                    last_synced_at: service.last_synced_at,
+                    missing_runtime_fields: service.missing_runtime_fields.clone(),
+                }))
+        }
+    }
+
+    #[async_trait]
     impl UsageQueryStore for MemoryStore {
         async fn usage_summary(&self, _query: UsageQuery) -> GatewayResult<UsageSummary> {
             Ok(UsageSummary::default())
@@ -593,6 +963,17 @@ mod tests {
             disabled: false,
             expires_at: None,
         }
+    }
+
+    fn missing_runtime_fields(upstream: Option<&str>, credential: Option<&str>) -> Vec<String> {
+        let mut fields = Vec::new();
+        if upstream.is_none_or(str::is_empty) {
+            fields.push("upstream_base_url".to_owned());
+        }
+        if credential.is_none_or(str::is_empty) {
+            fields.push("credential".to_owned());
+        }
+        fields
     }
 
     fn test_state(store: MemoryStore) -> AppState {
@@ -654,11 +1035,31 @@ mod tests {
             .expect("response")
     }
 
+    async fn admin_patch(app: Router, route: &str, token: Option<&str>, body: &str) -> Response {
+        let mut builder = axum::http::Request::builder()
+            .method(axum::http::Method::PATCH)
+            .uri(route)
+            .header("x-request-id", "req_test")
+            .header("content-type", "application/json");
+        if let Some(token) = token {
+            builder = builder.header("authorization", format!("Bearer {token}"));
+        }
+
+        app.oneshot(
+            builder
+                .body(axum::body::Body::from(body.to_owned()))
+                .expect("request"),
+        )
+        .await
+        .expect("response")
+    }
+
     #[tokio::test]
     async fn healthz_returns_ok() {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -675,6 +1076,7 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(Some(stored_key(raw)))),
             admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -692,6 +1094,7 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(Some(stored_key(raw)))),
             admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: false,
         };
@@ -707,6 +1110,7 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -728,6 +1132,7 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -762,6 +1167,7 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -776,6 +1182,7 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -783,5 +1190,122 @@ mod tests {
         let response = admin_get(app, "/admin/tasks/task-1/usage", Some("admin-test-token")).await;
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn admin_service_create_redacts_raw_credential() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = admin_post(
+            app,
+            "/admin/services",
+            Some("admin-test-token"),
+            r#"{
+                "name":"summary",
+                "route_pattern":"/summary",
+                "upstream_base_url":"http://summary.internal:8080",
+                "allowed_methods":["POST"],
+                "credential":"internal-summary-token",
+                "timeout_ms":60000,
+                "max_body_bytes":1048576,
+                "cost_mode":"fixed",
+                "estimated_cost_usd":0.01,
+                "enabled":true
+            }"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["name"], "summary");
+        assert_eq!(value["credential_configured"], true);
+        assert!(value.get("credential").is_none());
+    }
+
+    #[tokio::test]
+    async fn admin_service_import_reports_incomplete_runtime_fields() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = admin_post(
+            app.clone(),
+            "/admin/services/import",
+            Some("admin-test-token"),
+            r#"{
+                "studio_service_id":"svc_1",
+                "name":"translation",
+                "route_pattern":"/translation",
+                "category":"language",
+                "default_pricing":{"cost_mode":"fixed","estimated_cost_usd":0.02}
+            }"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let status = admin_get(
+            app,
+            "/admin/services/translation/sync-status",
+            Some("admin-test-token"),
+        )
+        .await;
+        let body = axum::body::to_bytes(status.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["sync_status"], "incomplete");
+        assert_eq!(value["missing_runtime_fields"][0], "upstream_base_url");
+        assert_eq!(value["missing_runtime_fields"][1], "credential");
+    }
+
+    #[tokio::test]
+    async fn admin_service_patch_can_configure_imported_service() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let _ = admin_post(
+            app.clone(),
+            "/admin/services/import",
+            Some("admin-test-token"),
+            r#"{"studio_service_id":"svc_1","name":"translation","route_pattern":"/translation"}"#,
+        )
+        .await;
+        let response = admin_patch(
+            app,
+            "/admin/services/translation",
+            Some("admin-test-token"),
+            r#"{"upstream_base_url":"http://translation.internal:8080","credential":"token","enabled":true}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["enabled"], true);
+        assert_eq!(value["credential_configured"], true);
+        assert!(value["missing_runtime_fields"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 }

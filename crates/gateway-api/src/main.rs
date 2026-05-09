@@ -29,15 +29,6 @@ fn main() -> anyhow::Result<()> {
                 .context("create direct OpenAI-compatible upstream config")?,
         ));
     }
-    if let (Some(base_url), Some(service_key)) = (
-        config.internal_service_base_url.as_deref(),
-        config.internal_service_token.as_deref(),
-    ) {
-        proxy_config = proxy_config.with_internal_service(Some(
-            PingoraUpstreamConfig::from_base_url(base_url, service_key)
-                .context("create internal service upstream config")?,
-        ));
-    }
     proxy_config = proxy_config.with_worker_token(config.relayna_worker_token.clone());
 
     let app = app::router(store.clone(), redis, config.gateway_admin_token.clone());

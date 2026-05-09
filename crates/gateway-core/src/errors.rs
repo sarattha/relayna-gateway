@@ -30,6 +30,18 @@ pub enum GatewayError {
     RateLimitExceeded { retry_after_seconds: Option<u64> },
     #[error("budget exceeded")]
     BudgetExceeded,
+    #[error("service registration already exists")]
+    DuplicateService,
+    #[error("service registration was not found")]
+    MissingService,
+    #[error("service registration is disabled")]
+    DisabledService,
+    #[error("service registration is incomplete")]
+    IncompleteService,
+    #[error("service registration payload is invalid")]
+    InvalidServicePayload,
+    #[error("service upstream configuration is invalid")]
+    InvalidServiceUpstream,
     #[error("gateway control state is unavailable")]
     ControlStateUnavailable,
     #[error("store unavailable")]
@@ -64,6 +76,11 @@ impl GatewayError {
             Self::PolicyDenied => StatusCode::FORBIDDEN,
             Self::RateLimitExceeded { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::BudgetExceeded => StatusCode::PAYMENT_REQUIRED,
+            Self::DuplicateService => StatusCode::CONFLICT,
+            Self::MissingService => StatusCode::NOT_FOUND,
+            Self::DisabledService => StatusCode::FORBIDDEN,
+            Self::IncompleteService => StatusCode::CONFLICT,
+            Self::InvalidServicePayload | Self::InvalidServiceUpstream => StatusCode::BAD_REQUEST,
             Self::UpstreamTimeout => StatusCode::GATEWAY_TIMEOUT,
             Self::UpstreamConnection | Self::StoreUnavailable => StatusCode::BAD_GATEWAY,
             Self::ControlStateUnavailable => StatusCode::SERVICE_UNAVAILABLE,
@@ -85,6 +102,12 @@ impl GatewayError {
             Self::PolicyDenied => "policy_denied",
             Self::RateLimitExceeded { .. } => "rate_limit_exceeded",
             Self::BudgetExceeded => "budget_exceeded",
+            Self::DuplicateService => "duplicate_service",
+            Self::MissingService => "missing_service",
+            Self::DisabledService => "disabled_service",
+            Self::IncompleteService => "incomplete_service",
+            Self::InvalidServicePayload => "invalid_service_payload",
+            Self::InvalidServiceUpstream => "invalid_service_upstream",
             Self::ControlStateUnavailable => "control_state_unavailable",
             Self::StoreUnavailable => "store_unavailable",
             Self::InvalidConfiguration => "invalid_configuration",
@@ -103,6 +126,12 @@ impl GatewayError {
             Self::PolicyDenied => "Request is denied by key policy.",
             Self::RateLimitExceeded { .. } => "Rate limit exceeded.",
             Self::BudgetExceeded => "Budget limit exceeded.",
+            Self::DuplicateService => "Service registration already exists.",
+            Self::MissingService => "Service registration was not found.",
+            Self::DisabledService => "Service registration is disabled.",
+            Self::IncompleteService => "Service registration is incomplete.",
+            Self::InvalidServicePayload => "Service registration payload is invalid.",
+            Self::InvalidServiceUpstream => "Service upstream configuration is invalid.",
             Self::UpstreamTimeout => "Upstream provider timed out.",
             Self::UpstreamConnection => "Upstream provider is unavailable.",
             Self::ControlStateUnavailable => "Gateway control state is unavailable.",
