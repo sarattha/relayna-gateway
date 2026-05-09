@@ -100,6 +100,17 @@ gateway_first_token_latency_samples {}
     )
 }
 
+pub fn is_sensitive_field(name: &str) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    normalized == "authorization"
+        || normalized == "proxy-authorization"
+        || normalized == "x-api-key"
+        || normalized.ends_with("_key")
+        || normalized.ends_with("_token")
+        || normalized.contains("secret")
+        || normalized.contains("password")
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -108,5 +119,14 @@ mod tests {
         assert!(metrics.contains("gateway_requests_total"));
         assert!(metrics.contains("gateway_active_streams"));
         assert!(metrics.contains("gateway_first_token_latency_ms"));
+    }
+
+    #[test]
+    fn identifies_sensitive_fields_for_redaction() {
+        assert!(super::is_sensitive_field("Authorization"));
+        assert!(super::is_sensitive_field("provider_secret"));
+        assert!(super::is_sensitive_field("internal_service_token"));
+        assert!(!super::is_sensitive_field("request_id"));
+        assert!(!super::is_sensitive_field("project_id"));
     }
 }

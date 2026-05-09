@@ -70,6 +70,8 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin/usage/by-model", get(usage_by_model))
         .route("/admin/usage/by-provider", get(usage_by_provider))
         .route("/admin/usage/by-service", get(usage_by_service))
+        .route("/admin/usage/by-task", get(usage_by_task))
+        .route("/admin/tasks/{task_id}/usage", get(task_usage))
         .route("/admin/provider-health", get(provider_health))
         .route("/metrics", get(metrics))
         .layer(PropagateRequestIdLayer::x_request_id())
@@ -265,6 +267,27 @@ async fn usage_by_service(
     Query(query): Query<UsageQuery>,
 ) -> Response {
     usage_breakdown(state, headers, query, UsageBreakdownDimension::Service).await
+}
+
+async fn usage_by_task(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    usage_breakdown(state, headers, query, UsageBreakdownDimension::Task).await
+}
+
+async fn task_usage(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(task_id): Path<String>,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    query.task_id = Some(task_id);
+    admin_query(headers, &state, |store| async move {
+        store.usage_summary(query).await
+    })
+    .await
 }
 
 async fn usage_breakdown(
@@ -617,6 +640,20 @@ mod tests {
         .expect("response")
     }
 
+    async fn admin_get(app: Router, route: &str, token: Option<&str>) -> Response {
+        let mut builder = axum::http::Request::builder()
+            .method(axum::http::Method::GET)
+            .uri(route)
+            .header("x-request-id", "req_test");
+        if let Some(token) = token {
+            builder = builder.header("authorization", format!("Bearer {token}"));
+        }
+
+        app.oneshot(builder.body(axum::body::Body::empty()).expect("request"))
+            .await
+            .expect("response")
+    }
+
     #[tokio::test]
     async fn healthz_returns_ok() {
         let store = MemoryStore {
@@ -718,5 +755,33 @@ mod tests {
             .expect("key prefix")
             .starts_with("rk_live_"));
         assert!(value["key"].get("key_hash").is_none());
+    }
+
+    #[tokio::test]
+    async fn metrics_endpoint_is_scrapeable_without_admin_token() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = request(app, "/metrics").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn task_usage_requires_admin_token_and_returns_summary() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = admin_get(app, "/admin/tasks/task-1/usage", Some("admin-test-token")).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

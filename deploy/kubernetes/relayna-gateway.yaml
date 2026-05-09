@@ -22,6 +22,7 @@ stringData:
   DIRECT_OPENAI_SERVICE_KEY: ""
   INTERNAL_SERVICE_BASE_URL: ""
   INTERNAL_SERVICE_TOKEN: ""
+  RELAYNA_WORKER_TOKEN: ""
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -137,6 +138,24 @@ spec:
     - port: control
       path: /metrics
       interval: 30s
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: relayna-gateway
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: gateway.relayna.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: relayna-gateway
+                port:
+                  name: proxy
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

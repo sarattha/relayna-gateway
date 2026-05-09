@@ -28,12 +28,15 @@ pub enum BackendType {
     InternalService,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RouteMatch {
     pub route: Route,
     pub backend: BackendType,
     pub provider: Provider,
     pub service_name: Option<String>,
+    pub timeout_ms: u64,
+    pub max_body_bytes: usize,
+    pub estimated_cost_usd: Option<f64>,
 }
 
 impl Route {
@@ -67,6 +70,9 @@ impl Route {
                 backend: BackendType::DirectProvider,
                 provider: Provider::OpenAiCompatible,
                 service_name: None,
+                timeout_ms: 60_000,
+                max_body_bytes: 1_048_576,
+                estimated_cost_usd: Some(0.01),
             }),
             _ => Err(GatewayError::UnsupportedRoute),
         }
@@ -103,6 +109,9 @@ impl RouteMatch {
             backend: BackendType::LiteLlm,
             provider: Provider::LiteLlm,
             service_name: None,
+            timeout_ms: 120_000,
+            max_body_bytes: 1_048_576,
+            estimated_cost_usd: Some(0.01),
         }
     }
 
@@ -112,8 +121,15 @@ impl RouteMatch {
             backend: BackendType::InternalService,
             provider: Provider::InternalService,
             service_name: Some(service_name.to_owned()),
+            timeout_ms: 60_000,
+            max_body_bytes: 2_097_152,
+            estimated_cost_usd: Some(0.01),
         }
     }
+}
+
+pub fn is_retry_safe_status(status_code: u16) -> bool {
+    matches!(status_code, 429 | 500 | 502 | 503 | 504)
 }
 
 #[cfg(test)]
@@ -161,5 +177,13 @@ mod tests {
             Route::resolve_match(&Method::POST, "/services/custom-ai/run").expect("service");
         assert_eq!(wildcard.route, Route::ServiceWildcard);
         assert_eq!(wildcard.service_name.as_deref(), Some("custom-ai"));
+    }
+
+    #[test]
+    fn classifies_retry_safe_status_codes() {
+        assert!(is_retry_safe_status(429));
+        assert!(is_retry_safe_status(503));
+        assert!(!is_retry_safe_status(400));
+        assert!(!is_retry_safe_status(401));
     }
 }

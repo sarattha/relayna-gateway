@@ -11,6 +11,7 @@ pub struct Config {
     pub direct_openai_service_key: Option<String>,
     pub internal_service_base_url: Option<String>,
     pub internal_service_token: Option<String>,
+    pub relayna_worker_token: Option<String>,
     pub gateway_admin_token: String,
     pub gateway_bind_addr: SocketAddr,
     pub gateway_control_bind_addr: SocketAddr,
@@ -27,6 +28,7 @@ impl Config {
         let direct_openai_service_key = optional("DIRECT_OPENAI_SERVICE_KEY");
         let internal_service_base_url = optional("INTERNAL_SERVICE_BASE_URL");
         let internal_service_token = optional("INTERNAL_SERVICE_TOKEN");
+        let relayna_worker_token = optional("RELAYNA_WORKER_TOKEN");
         let gateway_admin_token = required("GATEWAY_ADMIN_TOKEN")?;
         let gateway_bind_addr = required("GATEWAY_BIND_ADDR")?
             .parse()
@@ -45,6 +47,7 @@ impl Config {
             direct_openai_service_key,
             internal_service_base_url,
             internal_service_token,
+            relayna_worker_token,
             gateway_admin_token,
             gateway_bind_addr,
             gateway_control_bind_addr,

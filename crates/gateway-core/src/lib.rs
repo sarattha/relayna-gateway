@@ -23,7 +23,7 @@ pub use policies::{
     evaluate_policy, extract_generation_features, GenerationFeatures, KeyPolicy, PolicyLookup,
 };
 pub use rate_limits::{RateLimitDecision, RateLimitStore};
-pub use routing::{BackendType, Provider, Route, RouteMatch};
+pub use routing::{is_retry_safe_status, BackendType, Provider, Route, RouteMatch};
 pub use usage::{
     extract_estimated_cost_usd, extract_model, extract_usage_tokens, UsageEvent, UsageRecorder,
     UsageStatus,

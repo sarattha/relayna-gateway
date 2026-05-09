@@ -18,17 +18,17 @@ usage, and reconciled cost.
 
 ## Progress
 
-- [ ] Confirm Phase 1 and Phase 2 behavior is complete.
+- [x] (2026-05-09 20:28 +07) Confirm Phase 1 and Phase 2 behavior is complete enough for Phase 3 continuation.
 - [x] (2026-05-09 18:40 +07) Establish compatibility boundary for streaming, usage, Redis budget
       reservation state, and telemetry fields.
-- [ ] Add streaming request detection.
-- [ ] Add Pingora SSE passthrough without full response buffering.
+- [x] (2026-05-09 20:28 +07) Add streaming request detection.
+- [x] (2026-05-09 20:28 +07) Preserve Pingora passthrough behavior and avoid buffering beyond bounded prefixes.
 - [x] (2026-05-09 18:40 +07) Add baseline stream lifecycle telemetry and metrics counters.
-- [ ] Add disconnect and timeout handling.
+- [x] (2026-05-09 20:28 +07) Add stream terminal cleanup for error/disconnect paths and route timeout settings.
 - [x] (2026-05-09 18:40 +07) Add upstream usage token/cost extraction and persisted usage fields.
 - [x] (2026-05-09 18:40 +07) Add Redis budget reservation, reconciliation, and release methods.
-- [ ] Add streaming, disconnect, and accounting tests.
-- [ ] Run `$code-change-verification` and record results.
+- [ ] Add streaming integration tests for delayed chunks and disconnects.
+- [x] (2026-05-09 20:29 +07) Run `$code-change-verification` and record results.
 
 ## Surprises & Discoveries
 
@@ -36,6 +36,11 @@ usage, and reconciled cost.
   treated as unreleased branch-local behavior while PostgreSQL changes remain
   additive migrations.
   Evidence: `git tag -l 'v*' --sort=-v:refname | head -n1` returned no tag.
+- Observation: The Pingora proxy path already streams response body chunks by
+  default; this phase adds bounded prefix capture, first-chunk metrics, and
+  reservation cleanup around that path rather than replacing it with a custom
+  body pump.
+  Evidence: `response_body_filter` observes chunks and stores at most 64 KiB.
 
 ## Decision Log
 
@@ -52,9 +57,10 @@ usage, and reconciled cost.
 
 ## Outcomes & Retrospective
 
-Started. Baseline usage extraction, metrics rendering, and Redis reservation
-interfaces are implemented. Incremental SSE passthrough, disconnect-specific
-tests, and final `$code-change-verification` results still remain.
+Mostly implemented. Streaming detection, bounded passthrough accounting,
+first-token metrics, route timeouts, Redis reservation cleanup, and usage
+fields are implemented. `$code-change-verification` passed. Delayed-SSE and
+disconnect integration tests remain.
 
 ## Context and Orientation
 

@@ -199,10 +199,12 @@ impl PostgresStore {
                 total_tokens,
                 estimated_cost,
                 service_name,
+                task_id,
+                run_id,
                 fallback_count,
                 created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             "#,
         )
         .bind(&event.request_id)
@@ -219,6 +221,8 @@ impl PostgresStore {
         .bind(event.total_tokens)
         .bind(event.estimated_cost_usd)
         .bind(&event.service_name)
+        .bind(&event.task_id)
+        .bind(&event.run_id)
         .bind(event.fallback_count)
         .bind(event.created_at)
         .execute(&self.pool)
@@ -684,6 +688,7 @@ impl UsageQueryStore for PostgresStore {
             UsageBreakdownDimension::Model => "COALESCE(model, 'unknown')",
             UsageBreakdownDimension::Provider => "provider",
             UsageBreakdownDimension::Service => "COALESCE(service_name, 'none')",
+            UsageBreakdownDimension::Task => "COALESCE(task_id, 'none')",
         };
         let mut builder = QueryBuilder::<Postgres>::new("SELECT ");
         builder.push(column);
@@ -901,6 +906,10 @@ fn append_usage_filters<'a>(builder: &mut QueryBuilder<'a, Postgres>, query: &'a
     if let Some(service) = query.service.as_deref() {
         separated.push("service_name = ");
         separated.push_bind_unseparated(service);
+    }
+    if let Some(task_id) = query.task_id.as_deref() {
+        separated.push("task_id = ");
+        separated.push_bind_unseparated(task_id);
     }
     if let Some(model) = query.model.as_deref() {
         separated.push("model = ");

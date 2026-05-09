@@ -38,6 +38,7 @@ async fn main() -> anyhow::Result<()> {
                 .context("create internal service upstream config")?,
         ));
     }
+    proxy_config = proxy_config.with_worker_token(config.relayna_worker_token.clone());
 
     let app = app::router(store.clone(), redis, config.gateway_admin_token.clone());
     let listener = TcpListener::bind(config.gateway_control_bind_addr)

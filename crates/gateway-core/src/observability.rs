@@ -13,6 +13,7 @@ pub struct UsageQuery {
     pub route: Option<String>,
     pub provider: Option<String>,
     pub service: Option<String>,
+    pub task_id: Option<String>,
     pub model: Option<String>,
     pub interval: Option<String>,
 }
@@ -75,6 +76,7 @@ pub enum UsageBreakdownDimension {
     Model,
     Provider,
     Service,
+    Task,
 }
 
 #[async_trait]

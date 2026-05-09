@@ -28,6 +28,8 @@ pub struct UsageEvent {
     pub total_tokens: Option<i64>,
     pub estimated_cost_usd: Option<f64>,
     pub service_name: Option<String>,
+    pub task_id: Option<String>,
+    pub run_id: Option<String>,
     pub fallback_count: i32,
     pub created_at: DateTime<Utc>,
 }
@@ -68,6 +70,8 @@ impl UsageEvent {
             total_tokens: None,
             estimated_cost_usd: None,
             service_name: None,
+            task_id: None,
+            run_id: None,
             fallback_count: 0,
             created_at,
         }
@@ -100,6 +104,12 @@ impl UsageEvent {
 
     pub fn with_service_name(mut self, service_name: Option<String>) -> Self {
         self.service_name = service_name;
+        self
+    }
+
+    pub fn with_task_context(mut self, task_id: Option<String>, run_id: Option<String>) -> Self {
+        self.task_id = task_id;
+        self.run_id = run_id;
         self
     }
 

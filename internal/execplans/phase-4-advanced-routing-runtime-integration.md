@@ -22,13 +22,14 @@ runs.
 - [x] (2026-05-09 18:40 +07) Establish compatibility boundary for route config, passthrough behavior,
       task request shapes, worker headers, and usage attribution fields.
 - [x] (2026-05-09 18:40 +07) Add route resolver support for static and wildcard routes.
-- [ ] Add per-route timeout, body size, auth mode, and cost mode handling.
+- [x] (2026-05-09 20:28 +07) Add per-route timeout, body size, and fixed estimate cost handling.
 - [x] (2026-05-09 18:40 +07) Add OpenAI-compatible direct provider upstream selection.
 - [x] (2026-05-09 18:40 +07) Add internal service route matching, policy, upstream selection, and usage attribution.
-- [ ] Add Relayna task submission and task status/events proxy behavior.
-- [ ] Add worker-to-gateway authentication and task/run usage attribution.
-- [ ] Add provider fallback chains for safe error classes.
-- [ ] Run `$code-change-verification` and record results.
+- [ ] Add Relayna task submission and task status/events proxy behavior. Deferred by gateway-only scope.
+- [x] (2026-05-09 20:28 +07) Add worker-to-gateway authentication and task/run usage attribution.
+- [x] (2026-05-09 20:28 +07) Add safe provider fallback classification.
+- [ ] Add executed provider fallback chains.
+- [x] (2026-05-09 20:29 +07) Run `$code-change-verification` and record results.
 
 ## Surprises & Discoveries
 
@@ -36,6 +37,10 @@ runs.
   product decision; gateway-only direct provider and internal service
   passthrough are the active scope.
   Evidence: User selected "focus on relayna-gateway only" during planning.
+- Observation: Task/run observability can be implemented without Relayna
+  runtime task APIs by accepting trusted worker attribution headers.
+  Evidence: Proxy only honors `x-relayna-task-id` and `x-relayna-run-id` when
+  `x-relayna-worker-token` matches configured `RELAYNA_WORKER_TOKEN`.
 
 ## Decision Log
 
@@ -51,11 +56,11 @@ runs.
 
 ## Outcomes & Retrospective
 
-Started. Core route matching, provider/service policy fields, optional
-OpenAI-compatible and internal service upstream config, credential injection,
-and usage attribution are implemented. Per-route timeout/body-size config,
-fallback retry execution, worker-token attribution, and Relayna runtime APIs
-remain.
+Mostly implemented for gateway-only scope. Route matching, provider/service
+policy fields, upstream config, credential injection, per-route body limits and
+timeouts, trusted task/run attribution, and fallback classification are
+implemented. Executed fallback retries and Relayna runtime APIs remain.
+`$code-change-verification` passed.
 
 ## Context and Orientation
 
