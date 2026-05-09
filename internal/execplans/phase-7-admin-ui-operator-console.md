@@ -34,6 +34,9 @@ prefix in PostgreSQL, and prints the raw token once.
 - [x] Serve bundled Admin UI assets from the control-plane listener.
 - [x] Add UI screens for overview, keys, services, usage, health, sign-in,
       sign-out, and token rotation.
+- [ ] Add Admin UI support for the Key page to list all virtual keys with
+      their current status.
+- [ ] Add Admin UI support to edit an added virtual key after creation.
 - [x] Add tests for operator token primitives, admin API auth, token rotation,
       static UI serving, and one-time raw token behavior.
 - [x] Run `$code-change-verification` and record results.
