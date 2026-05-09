@@ -70,6 +70,10 @@ release-build: ## Build the Rust workspace in release mode
 		$(MAKE) ensure-cargo; \
 	fi
 
+.PHONY: run-gateway
+run-gateway: ## Run Relayna Gateway with local development defaults
+	scripts/run-gateway.sh
+
 .PHONY: check
 check: ## Run format, lint, and test checks
 	$(MAKE) format

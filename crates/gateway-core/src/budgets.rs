@@ -31,6 +31,25 @@ pub trait BudgetStore: Send + Sync {
         estimated_cost_usd: f64,
         now: DateTime<Utc>,
     ) -> GatewayResult<()>;
+
+    async fn reserve_budget(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+        estimated_cost_usd: f64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()>;
+
+    async fn reconcile_budget_reservation(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+        actual_cost_usd: f64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()>;
+
+    async fn release_budget_reservation(&self, key_id: Uuid, request_id: &str)
+        -> GatewayResult<()>;
 }
 
 #[async_trait]
@@ -60,6 +79,40 @@ where
             .add_budget_spend(key_id, estimated_cost_usd, now)
             .await
     }
+
+    async fn reserve_budget(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+        estimated_cost_usd: f64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        (**self)
+            .reserve_budget(key_id, request_id, estimated_cost_usd, now)
+            .await
+    }
+
+    async fn reconcile_budget_reservation(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+        actual_cost_usd: f64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        (**self)
+            .reconcile_budget_reservation(key_id, request_id, actual_cost_usd, now)
+            .await
+    }
+
+    async fn release_budget_reservation(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+    ) -> GatewayResult<()> {
+        (**self)
+            .release_budget_reservation(key_id, request_id)
+            .await
+    }
 }
 
 pub fn daily_budget_key(key_id: Uuid, now: DateTime<Utc>) -> String {
@@ -68,6 +121,10 @@ pub fn daily_budget_key(key_id: Uuid, now: DateTime<Utc>) -> String {
 
 pub fn monthly_budget_key(key_id: Uuid, now: DateTime<Utc>) -> String {
     format!("budget:monthly:{key_id}:{}", now.format("%Y%m"))
+}
+
+pub fn budget_reservation_key(key_id: Uuid, request_id: &str) -> String {
+    format!("budget:reservation:{key_id}:{request_id}")
 }
 
 pub fn evaluate_budget(
@@ -104,6 +161,10 @@ mod tests {
         assert_eq!(
             monthly_budget_key(key_id, now),
             "budget:monthly:018f8d31-86a7-7c48-8f36-4d1fa4d99101:202605"
+        );
+        assert_eq!(
+            budget_reservation_key(key_id, "req-1"),
+            "budget:reservation:018f8d31-86a7-7c48-8f36-4d1fa4d99101:req-1"
         );
     }
 

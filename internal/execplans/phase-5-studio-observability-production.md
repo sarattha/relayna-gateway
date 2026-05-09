@@ -19,22 +19,30 @@ failure behavior.
 ## Progress
 
 - [ ] Confirm Phases 1 through 4 are complete.
-- [ ] Establish compatibility boundary for usage queries, telemetry fields,
+- [x] (2026-05-09 18:40 +07) Establish compatibility boundary for usage queries, telemetry fields,
       metrics names, log fields, deployment config, and task observability.
-- [ ] Add usage and dashboard query APIs.
-- [ ] Add task observability APIs or proxy behavior.
-- [ ] Add provider health tracking.
-- [ ] Add OpenTelemetry propagation and spans.
-- [ ] Add Prometheus metrics.
-- [ ] Add structured JSON logging and redaction coverage.
-- [ ] Add Kubernetes production deployment resources.
-- [ ] Add reliability hardening for timeouts, retries, backpressure, limits,
+- [x] (2026-05-09 18:40 +07) Add usage and dashboard query APIs.
+- [x] (2026-05-09 20:28 +07) Add task observability APIs from gateway usage attribution.
+- [x] (2026-05-09 18:40 +07) Add provider and internal service health query API.
+- [x] (2026-05-09 20:28 +07) Add traceparent propagation through proxy upstream calls.
+- [x] (2026-05-09 18:40 +07) Add Prometheus metrics endpoint and baseline counters.
+- [x] (2026-05-09 20:28 +07) Add structured JSON logging and redaction coverage helpers.
+- [x] (2026-05-09 18:40 +07) Add Kubernetes production deployment resources.
+- [x] (2026-05-09 20:28 +07) Add reliability hardening for timeouts, backpressure limits,
       graceful shutdown, and error taxonomy.
-- [ ] Run `$code-change-verification` and deployment validation.
+- [x] (2026-05-09 20:29 +07) Run `$code-change-verification`; deployment YAML parse passed, Kubernetes dry-run blocked by local cluster.
 
 ## Surprises & Discoveries
 
-- None yet.
+- Observation: Studio-facing usage APIs can be served from existing
+  `usage_events` with additive token, service, and fallback columns.
+  Evidence: Phase 5 query implementation uses PostgreSQL aggregation over
+  `usage_events`.
+- Observation: Local Kubernetes server-side/client dry-run validation is
+  blocked because the configured kube API server is unavailable.
+  Evidence: `kubectl apply --dry-run=client -f deploy/kubernetes/relayna-gateway.yaml`
+  failed connecting to `https://127.0.0.1:60717`; Ruby YAML parsing succeeded
+  for 9 documents.
 
 ## Decision Log
 
@@ -42,10 +50,18 @@ failure behavior.
   Rationale: Observability should help operations without leaking prompts,
   keys, provider payloads, or unbounded labels.
   Date/Author: 2026-05-08 / Codex.
+- Decision: Expose internal service health alongside provider health.
+  Rationale: Phase 4 service passthrough makes `/summary`, `/translation`, and
+  other internal services operational dependencies visible to Studio.
+  Date/Author: 2026-05-09 / Codex.
 
 ## Outcomes & Retrospective
 
-Not started.
+Mostly implemented. Protected usage summary, timeseries, breakdown,
+by-task/task usage, provider/service health, `/metrics`, traceparent
+propagation, redaction helper tests, route reliability limits, and Kubernetes
+resources are implemented. Live Kubernetes dry-run validation remains blocked
+by unavailable local cluster access. `$code-change-verification` passed.
 
 ## Context and Orientation
 

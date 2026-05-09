@@ -7,6 +7,11 @@ pub struct Config {
     pub redis_url: String,
     pub litellm_base_url: String,
     pub litellm_service_key: String,
+    pub direct_openai_base_url: Option<String>,
+    pub direct_openai_service_key: Option<String>,
+    pub internal_service_base_url: Option<String>,
+    pub internal_service_token: Option<String>,
+    pub relayna_worker_token: Option<String>,
     pub gateway_admin_token: String,
     pub gateway_bind_addr: SocketAddr,
     pub gateway_control_bind_addr: SocketAddr,
@@ -19,6 +24,11 @@ impl Config {
         let redis_url = required("REDIS_URL")?;
         let litellm_base_url = required("LITELLM_BASE_URL")?;
         let litellm_service_key = required("LITELLM_SERVICE_KEY")?;
+        let direct_openai_base_url = optional("DIRECT_OPENAI_BASE_URL");
+        let direct_openai_service_key = optional("DIRECT_OPENAI_SERVICE_KEY");
+        let internal_service_base_url = optional("INTERNAL_SERVICE_BASE_URL");
+        let internal_service_token = optional("INTERNAL_SERVICE_TOKEN");
+        let relayna_worker_token = optional("RELAYNA_WORKER_TOKEN");
         let gateway_admin_token = required("GATEWAY_ADMIN_TOKEN")?;
         let gateway_bind_addr = required("GATEWAY_BIND_ADDR")?
             .parse()
@@ -33,6 +43,11 @@ impl Config {
             redis_url,
             litellm_base_url,
             litellm_service_key,
+            direct_openai_base_url,
+            direct_openai_service_key,
+            internal_service_base_url,
+            internal_service_token,
+            relayna_worker_token,
             gateway_admin_token,
             gateway_bind_addr,
             gateway_control_bind_addr,
@@ -47,6 +62,13 @@ fn required(name: &str) -> GatewayResult<String> {
         .ok()
         .filter(|value| !value.is_empty())
         .ok_or(GatewayError::InvalidConfiguration)
+}
+
+fn optional(name: &str) -> Option<String> {
+    env::var(name)
+        .map(|value| value.trim().to_owned())
+        .ok()
+        .filter(|value| !value.is_empty())
 }
 
 #[cfg(test)]

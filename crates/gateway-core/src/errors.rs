@@ -18,6 +18,8 @@ pub enum GatewayError {
     ExpiredVirtualKey,
     #[error("unsupported route")]
     UnsupportedRoute,
+    #[error("request body too large")]
+    RequestBodyTooLarge,
     #[error("upstream timed out")]
     UpstreamTimeout,
     #[error("upstream connection failed")]
@@ -58,6 +60,7 @@ impl GatewayError {
                 StatusCode::UNAUTHORIZED
             }
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
+            Self::RequestBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::PolicyDenied => StatusCode::FORBIDDEN,
             Self::RateLimitExceeded { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::BudgetExceeded => StatusCode::PAYMENT_REQUIRED,
@@ -76,6 +79,7 @@ impl GatewayError {
             Self::DisabledVirtualKey => "disabled_virtual_key",
             Self::ExpiredVirtualKey => "expired_virtual_key",
             Self::UnsupportedRoute => "unsupported_route",
+            Self::RequestBodyTooLarge => "request_body_too_large",
             Self::UpstreamTimeout => "upstream_timeout",
             Self::UpstreamConnection => "upstream_connection",
             Self::PolicyDenied => "policy_denied",
@@ -95,6 +99,7 @@ impl GatewayError {
             Self::DisabledVirtualKey => "Virtual key is disabled.",
             Self::ExpiredVirtualKey => "Virtual key has expired.",
             Self::UnsupportedRoute => "Route is not supported by this gateway.",
+            Self::RequestBodyTooLarge => "Request body exceeds the route limit.",
             Self::PolicyDenied => "Request is denied by key policy.",
             Self::RateLimitExceeded { .. } => "Rate limit exceeded.",
             Self::BudgetExceeded => "Budget limit exceeded.",

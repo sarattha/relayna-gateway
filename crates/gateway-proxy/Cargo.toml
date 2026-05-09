@@ -7,6 +7,7 @@ repository.workspace = true
 
 [dependencies]
 gateway-core = { path = "../gateway-core" }
+gateway-telemetry = { path = "../gateway-telemetry" }
 async-trait.workspace = true
 bytes.workspace = true
 chrono.workspace = true
@@ -18,3 +19,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 url.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

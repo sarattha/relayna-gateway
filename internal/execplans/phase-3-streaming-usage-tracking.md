@@ -18,21 +18,29 @@ usage, and reconciled cost.
 
 ## Progress
 
-- [ ] Confirm Phase 1 and Phase 2 behavior is complete.
-- [ ] Establish compatibility boundary for streaming, usage, Redis budget
+- [x] (2026-05-09 20:28 +07) Confirm Phase 1 and Phase 2 behavior is complete enough for Phase 3 continuation.
+- [x] (2026-05-09 18:40 +07) Establish compatibility boundary for streaming, usage, Redis budget
       reservation state, and telemetry fields.
-- [ ] Add streaming request detection.
-- [ ] Add Pingora SSE passthrough without full response buffering.
-- [ ] Add stream lifecycle telemetry and metrics.
-- [ ] Add disconnect and timeout handling.
-- [ ] Add usage extraction fallback order and pricing.
-- [ ] Add budget reservation and reconciliation.
-- [ ] Add streaming, disconnect, and accounting tests.
-- [ ] Run `$code-change-verification` and record results.
+- [x] (2026-05-09 20:28 +07) Add streaming request detection.
+- [x] (2026-05-09 20:28 +07) Preserve Pingora passthrough behavior and avoid buffering beyond bounded prefixes.
+- [x] (2026-05-09 18:40 +07) Add baseline stream lifecycle telemetry and metrics counters.
+- [x] (2026-05-09 20:28 +07) Add stream terminal cleanup for error/disconnect paths and route timeout settings.
+- [x] (2026-05-09 18:40 +07) Add upstream usage token/cost extraction and persisted usage fields.
+- [x] (2026-05-09 18:40 +07) Add Redis budget reservation, reconciliation, and release methods.
+- [x] (2026-05-09 22:49 +07) Add streaming tests for delayed chunks and disconnect cleanup.
+- [x] (2026-05-09 20:29 +07) Run `$code-change-verification` and record results.
 
 ## Surprises & Discoveries
 
-- None yet.
+- Observation: There are no `v*` release tags, so Phase 3 compatibility is
+  treated as unreleased branch-local behavior while PostgreSQL changes remain
+  additive migrations.
+  Evidence: `git tag -l 'v*' --sort=-v:refname | head -n1` returned no tag.
+- Observation: The Pingora proxy path already streams response body chunks by
+  default; this phase adds bounded prefix capture, first-chunk metrics, and
+  reservation cleanup around that path rather than replacing it with a custom
+  body pump.
+  Evidence: `response_body_filter` observes chunks and stores at most 64 KiB.
 
 ## Decision Log
 
@@ -41,10 +49,18 @@ usage, and reconciled cost.
   Rationale: The design manifesto prioritizes streaming over buffering and
   requires high-concurrency safety.
   Date/Author: 2026-05-08 / Codex.
+- Decision: Persist token totals, service name, and fallback count additively
+  on `usage_events`.
+  Rationale: Studio-facing queries and cost accounting need the fields without
+  rewriting existing usage rows.
+  Date/Author: 2026-05-09 / Codex.
 
 ## Outcomes & Retrospective
 
-Not started.
+Implemented. Streaming detection, bounded passthrough accounting, first-token
+metrics, route timeouts, Redis reservation cleanup, usage fields, delayed chunk
+coverage, and disconnect cleanup coverage are implemented.
+`$code-change-verification` passed.
 
 ## Context and Orientation
 

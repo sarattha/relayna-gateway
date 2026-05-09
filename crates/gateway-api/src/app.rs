@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -8,7 +8,8 @@ use axum::{
 };
 use gateway_core::{
     auth::VirtualKeyLookup, AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,
-    CreatedAdminKeyResponse, GatewayError, GatewayResult, UsageEvent, VirtualKeyMaterial,
+    CreatedAdminKeyResponse, GatewayError, GatewayResult, UsageBreakdownDimension, UsageEvent,
+    UsageQuery, UsageQueryStore, VirtualKeyMaterial,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::Serialize;
@@ -19,7 +20,7 @@ use tower_http::{
 };
 
 #[async_trait]
-pub trait GatewayData: VirtualKeyLookup + AdminKeyStore + Send + Sync {
+pub trait GatewayData: VirtualKeyLookup + AdminKeyStore + UsageQueryStore + Send + Sync {
     async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()>;
     async fn postgres_ready(&self) -> GatewayResult<()>;
 }
@@ -62,6 +63,17 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin/keys/{key_id}/disable", post(disable_key))
         .route("/admin/keys/{key_id}/usage", get(key_usage))
         .route("/admin/projects/{project_id}/usage", get(project_usage))
+        .route("/admin/usage/summary", get(usage_summary))
+        .route("/admin/usage/timeseries", get(usage_timeseries))
+        .route("/admin/usage/by-key", get(usage_by_key))
+        .route("/admin/usage/by-project", get(usage_by_project))
+        .route("/admin/usage/by-model", get(usage_by_model))
+        .route("/admin/usage/by-provider", get(usage_by_provider))
+        .route("/admin/usage/by-service", get(usage_by_service))
+        .route("/admin/usage/by-task", get(usage_by_task))
+        .route("/admin/tasks/{task_id}/usage", get(task_usage))
+        .route("/admin/provider-health", get(provider_health))
+        .route("/metrics", get(metrics))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(TraceLayer::new_for_http())
@@ -195,6 +207,139 @@ async fn project_usage(
     }
 }
 
+async fn usage_summary(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.usage_summary(query).await
+    })
+    .await
+}
+
+async fn usage_timeseries(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.usage_timeseries(query).await
+    })
+    .await
+}
+
+async fn usage_by_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    usage_breakdown(state, headers, query, UsageBreakdownDimension::Key).await
+}
+
+async fn usage_by_project(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    usage_breakdown(state, headers, query, UsageBreakdownDimension::Project).await
+}
+
+async fn usage_by_model(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    usage_breakdown(state, headers, query, UsageBreakdownDimension::Model).await
+}
+
+async fn usage_by_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    usage_breakdown(state, headers, query, UsageBreakdownDimension::Provider).await
+}
+
+async fn usage_by_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    usage_breakdown(state, headers, query, UsageBreakdownDimension::Service).await
+}
+
+async fn usage_by_task(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    usage_breakdown(state, headers, query, UsageBreakdownDimension::Task).await
+}
+
+async fn task_usage(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(task_id): Path<String>,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    query.task_id = Some(task_id);
+    admin_query(headers, &state, |store| async move {
+        store.usage_summary(query).await
+    })
+    .await
+}
+
+async fn usage_breakdown(
+    state: AppState,
+    headers: HeaderMap,
+    query: UsageQuery,
+    dimension: UsageBreakdownDimension,
+) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.usage_breakdown(query, dimension).await
+    })
+    .await
+}
+
+async fn provider_health(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.provider_health(query).await
+    })
+    .await
+}
+
+async fn admin_query<T, Fut>(
+    headers: HeaderMap,
+    state: &AppState,
+    query: impl FnOnce(Arc<dyn GatewayData>) -> Fut,
+) -> Response
+where
+    T: Serialize,
+    Fut: std::future::Future<Output = GatewayResult<T>>,
+{
+    if let Some(response) = require_admin(state, &headers) {
+        return response;
+    }
+    match query(state.store.clone()).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn metrics() -> Response {
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; version=0.0.4")],
+        gateway_telemetry::prometheus(),
+    )
+        .into_response()
+}
+
 enum KeyLifecycleAction {
     Revoke,
     Disable,
@@ -270,6 +415,7 @@ mod tests {
     use gateway_core::{
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
+        ProviderHealth, UsageBreakdown, UsageSummary, UsageTimeseriesPoint,
     };
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -330,6 +476,7 @@ mod tests {
                     ],
                     allowed_models: Vec::new(),
                     allowed_providers: vec!["litellm".to_owned()],
+                    allowed_services: Vec::new(),
                     rpm_limit: None,
                     tpm_limit: None,
                     daily_budget_usd: None,
@@ -386,6 +533,9 @@ mod tests {
                 success_count: 0,
                 failure_count: 0,
                 total_latency_ms: 0,
+                input_tokens: 0,
+                output_tokens: 0,
+                total_tokens: 0,
                 estimated_cost_usd: None,
             }))
         }
@@ -400,8 +550,37 @@ mod tests {
                 success_count: 0,
                 failure_count: 0,
                 total_latency_ms: 0,
+                input_tokens: 0,
+                output_tokens: 0,
+                total_tokens: 0,
                 estimated_cost_usd: None,
             })
+        }
+    }
+
+    #[async_trait]
+    impl UsageQueryStore for MemoryStore {
+        async fn usage_summary(&self, _query: UsageQuery) -> GatewayResult<UsageSummary> {
+            Ok(UsageSummary::default())
+        }
+
+        async fn usage_timeseries(
+            &self,
+            _query: UsageQuery,
+        ) -> GatewayResult<Vec<UsageTimeseriesPoint>> {
+            Ok(Vec::new())
+        }
+
+        async fn usage_breakdown(
+            &self,
+            _query: UsageQuery,
+            _dimension: UsageBreakdownDimension,
+        ) -> GatewayResult<Vec<UsageBreakdown>> {
+            Ok(Vec::new())
+        }
+
+        async fn provider_health(&self, _query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
+            Ok(Vec::new())
         }
     }
 
@@ -459,6 +638,20 @@ mod tests {
         )
         .await
         .expect("response")
+    }
+
+    async fn admin_get(app: Router, route: &str, token: Option<&str>) -> Response {
+        let mut builder = axum::http::Request::builder()
+            .method(axum::http::Method::GET)
+            .uri(route)
+            .header("x-request-id", "req_test");
+        if let Some(token) = token {
+            builder = builder.header("authorization", format!("Bearer {token}"));
+        }
+
+        app.oneshot(builder.body(axum::body::Body::empty()).expect("request"))
+            .await
+            .expect("response")
     }
 
     #[tokio::test]
@@ -562,5 +755,33 @@ mod tests {
             .expect("key prefix")
             .starts_with("rk_live_"));
         assert!(value["key"].get("key_hash").is_none());
+    }
+
+    #[tokio::test]
+    async fn metrics_endpoint_is_scrapeable_without_admin_token() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = request(app, "/metrics").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn task_usage_requires_admin_token_and_returns_summary() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = admin_get(app, "/admin/tasks/task-1/usage", Some("admin-test-token")).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

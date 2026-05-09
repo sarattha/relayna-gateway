@@ -1,12 +1,19 @@
 use chrono::{DateTime, Utc};
 use gateway_core::{
-    budgets::{daily_budget_key, evaluate_budget, monthly_budget_key},
+    budgets::{budget_reservation_key, daily_budget_key, evaluate_budget, monthly_budget_key},
     rate_limits::request_rate_limit_key,
     BudgetDecision, BudgetState, BudgetStore, GatewayError, GatewayResult, RateLimitDecision,
     RateLimitStore,
 };
 use redis::{aio::MultiplexedConnection, AsyncCommands};
 use uuid::Uuid;
+
+#[derive(Debug, Clone, PartialEq)]
+struct StoredBudgetReservation {
+    amount_usd: f64,
+    daily_key: String,
+    monthly_key: String,
+}
 
 #[derive(Clone)]
 pub struct RedisReadiness {
@@ -144,7 +151,11 @@ impl BudgetStore for RedisControlState {
         let mut connection = self.connection().await?;
         let _: f64 = redis::cmd("INCRBYFLOAT")
             .arg(&daily_key)
-            .arg(estimated_cost_usd)
+            .arg(encode_budget_reservation(
+                estimated_cost_usd,
+                &daily_key,
+                &monthly_key,
+            ))
             .query_async(&mut connection)
             .await
             .map_err(|_| GatewayError::ControlStateUnavailable)?;
@@ -164,5 +175,185 @@ impl BudgetStore for RedisControlState {
             .map_err(|_| GatewayError::ControlStateUnavailable)?;
 
         Ok(())
+    }
+
+    async fn reserve_budget(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+        estimated_cost_usd: f64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        if estimated_cost_usd <= 0.0 {
+            return Ok(());
+        }
+
+        let reservation_key = budget_reservation_key(key_id, request_id);
+        let daily_key = daily_budget_key(key_id, now);
+        let monthly_key = monthly_budget_key(key_id, now);
+        let mut connection = self.connection().await?;
+        let _: () = redis::pipe()
+            .atomic()
+            .cmd("SET")
+            .arg(&reservation_key)
+            .arg(estimated_cost_usd)
+            .arg("EX")
+            .arg(3600)
+            .cmd("INCRBYFLOAT")
+            .arg(&daily_key)
+            .arg(estimated_cost_usd)
+            .ignore()
+            .cmd("EXPIRE")
+            .arg(&daily_key)
+            .arg(172_800)
+            .ignore()
+            .cmd("INCRBYFLOAT")
+            .arg(&monthly_key)
+            .arg(estimated_cost_usd)
+            .ignore()
+            .cmd("EXPIRE")
+            .arg(&monthly_key)
+            .arg(5_356_800)
+            .ignore()
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        Ok(())
+    }
+
+    async fn reconcile_budget_reservation(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+        actual_cost_usd: f64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        let reservation_key = budget_reservation_key(key_id, request_id);
+        let mut connection = self.connection().await?;
+        let reservation =
+            read_budget_reservation(&mut connection, &reservation_key, key_id, now).await?;
+        let delta = actual_cost_usd.max(0.0) - reservation.amount_usd;
+        let _: () = redis::pipe()
+            .atomic()
+            .cmd("INCRBYFLOAT")
+            .arg(&reservation.daily_key)
+            .arg(delta)
+            .ignore()
+            .cmd("INCRBYFLOAT")
+            .arg(&reservation.monthly_key)
+            .arg(delta)
+            .ignore()
+            .cmd("DEL")
+            .arg(&reservation_key)
+            .ignore()
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        Ok(())
+    }
+
+    async fn release_budget_reservation(
+        &self,
+        key_id: Uuid,
+        request_id: &str,
+    ) -> GatewayResult<()> {
+        let reservation_key = budget_reservation_key(key_id, request_id);
+        let mut connection = self.connection().await?;
+        let reservation =
+            read_budget_reservation(&mut connection, &reservation_key, key_id, Utc::now()).await?;
+        let _: () = redis::pipe()
+            .atomic()
+            .cmd("INCRBYFLOAT")
+            .arg(&reservation.daily_key)
+            .arg(-reservation.amount_usd)
+            .ignore()
+            .cmd("INCRBYFLOAT")
+            .arg(&reservation.monthly_key)
+            .arg(-reservation.amount_usd)
+            .ignore()
+            .cmd("DEL")
+            .arg(&reservation_key)
+            .ignore()
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        Ok(())
+    }
+}
+
+fn encode_budget_reservation(amount_usd: f64, daily_key: &str, monthly_key: &str) -> String {
+    format!("{amount_usd}|{daily_key}|{monthly_key}")
+}
+
+fn parse_budget_reservation(
+    value: &str,
+    key_id: Uuid,
+    fallback_now: DateTime<Utc>,
+) -> Option<StoredBudgetReservation> {
+    let parts: Vec<&str> = value.split('|').collect();
+    if parts.len() == 3 {
+        let amount_usd = parts[0].parse::<f64>().ok()?;
+        if amount_usd.is_finite() && amount_usd >= 0.0 {
+            return Some(StoredBudgetReservation {
+                amount_usd,
+                daily_key: parts[1].to_owned(),
+                monthly_key: parts[2].to_owned(),
+            });
+        }
+    }
+
+    let amount_usd = value.parse::<f64>().ok()?;
+    if !amount_usd.is_finite() || amount_usd < 0.0 {
+        return None;
+    }
+    Some(StoredBudgetReservation {
+        amount_usd,
+        daily_key: daily_budget_key(key_id, fallback_now),
+        monthly_key: monthly_budget_key(key_id, fallback_now),
+    })
+}
+
+async fn read_budget_reservation(
+    connection: &mut MultiplexedConnection,
+    reservation_key: &str,
+    key_id: Uuid,
+    fallback_now: DateTime<Utc>,
+) -> GatewayResult<StoredBudgetReservation> {
+    let value: Option<String> = connection
+        .get(reservation_key)
+        .await
+        .map_err(|_| GatewayError::ControlStateUnavailable)?;
+    Ok(value
+        .as_deref()
+        .and_then(|value| parse_budget_reservation(value, key_id, fallback_now))
+        .unwrap_or_else(|| StoredBudgetReservation {
+            amount_usd: 0.0,
+            daily_key: daily_budget_key(key_id, fallback_now),
+            monthly_key: monthly_budget_key(key_id, fallback_now),
+        }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reservation_value_preserves_original_budget_keys() {
+        let key_id = Uuid::parse_str("018f8d31-86a7-7c48-8f36-4d1fa4d99101").expect("uuid");
+        let now = DateTime::parse_from_rfc3339("2026-05-09T23:59:59Z")
+            .expect("time")
+            .with_timezone(&Utc);
+        let daily_key = daily_budget_key(key_id, now);
+        let monthly_key = monthly_budget_key(key_id, now);
+        let encoded = encode_budget_reservation(0.25, &daily_key, &monthly_key);
+        let later = DateTime::parse_from_rfc3339("2026-05-10T00:00:01Z")
+            .expect("time")
+            .with_timezone(&Utc);
+
+        let parsed = parse_budget_reservation(&encoded, key_id, later).expect("reservation");
+
+        assert_eq!(parsed.amount_usd, 0.25);
+        assert_eq!(parsed.daily_key, daily_key);
+        assert_eq!(parsed.monthly_key, monthly_key);
     }
 }
