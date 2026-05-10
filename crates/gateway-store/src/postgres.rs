@@ -18,10 +18,14 @@ use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row};
 use thiserror::Error;
 use uuid::Uuid;
 
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("postgres error: {0}")]
     Postgres(#[from] sqlx::Error),
+    #[error("postgres migration error: {0}")]
+    Migration(#[from] sqlx::migrate::MigrateError),
 }
 
 #[derive(Clone)]
@@ -35,6 +39,7 @@ impl PostgresStore {
             .max_connections(10)
             .connect(database_url)
             .await?;
+        MIGRATOR.run(&pool).await?;
         Ok(Self { pool })
     }
 

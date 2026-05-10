@@ -87,14 +87,17 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-If migrations are present, run the repository migration command documented with
-the migration tooling before testing API behavior.
+On startup, the gateway runs the bundled PostgreSQL migrations before
+bootstrapping operator tokens or serving traffic. This keeps virtual keys,
+policies, usage events, service registrations, and operator tokens
+database-backed from a fresh database.
 
 ## Required Runtime Services
 
 Gateway development commonly depends on:
 
-- PostgreSQL for virtual keys, route policies, and usage events.
+- PostgreSQL for virtual keys, route policies, usage events, service
+  registrations, and operator tokens.
 - Redis for rate limiting and budget counters.
 - LiteLLM or another OpenAI-compatible upstream for proxy tests.
 
