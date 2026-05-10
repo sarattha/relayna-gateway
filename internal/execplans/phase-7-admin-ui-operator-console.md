@@ -34,9 +34,9 @@ prefix in PostgreSQL, and prints the raw token once.
 - [x] Serve bundled Admin UI assets from the control-plane listener.
 - [x] Add UI screens for overview, keys, services, usage, health, sign-in,
       sign-out, and token rotation.
-- [ ] Add Admin UI support for the Key page to list all virtual keys with
+- [x] Add Admin UI support for the Key page to list all virtual keys with
       their current status.
-- [ ] Add Admin UI support to edit an added virtual key after creation.
+- [x] Add Admin UI support to edit an added virtual key after creation.
 - [x] Add tests for operator token primitives, admin API auth, token rotation,
       static UI serving, and one-time raw token behavior.
 - [x] Run `$code-change-verification` and record results.
@@ -50,6 +50,9 @@ prefix in PostgreSQL, and prints the raw token once.
 - Real-container testing verified startup bootstrap, database-backed admin
   auth, Redis-backed rate limiting, service passthrough, usage persistence,
   token rotation, and bundled UI rendering with the new operator token model.
+- Browser verification against a fresh PostgreSQL-backed gateway caught the
+  remaining Phase 7 key workflow gap and confirmed key create/list/edit plus
+  service create/edit flows through the bundled UI.
 
 ## Decision Log
 
@@ -84,6 +87,14 @@ material and verification helpers, Postgres bootstrap/verify/rotate behavior,
 database-backed admin middleware, `/admin/operator-token/rotate`, bundled
 static UI assets, and tests for token and UI behavior.
 
+Follow-up Phase 7 UI completion added a database-backed `GET /admin/keys`
+endpoint, wired the key page to list all virtual keys, added post-create key
+editing for expiry, disabled state, and policy fields, expanded service patch
+controls, and refreshed the bundled UI styling for a minimal operator console.
+Virtual key lifecycle handling now also treats `revoked_at` as durable
+authentication state, adds a database-backed enable action for disabled keys,
+and prevents revoked keys from being revived through patch or enable flows.
+
 Verification: `bash .codex/skills/code-change-verification/scripts/run.sh`
 passed on 2026-05-10. The script ran `cargo fmt --all --check`,
 `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and
@@ -100,6 +111,14 @@ rejection, and new-token acceptance. Rendered `/admin-ui` in headless Chrome
 through Playwright and verified the sign-in screen loads without embedding the
 bootstrap token. The temporary gateway, stub service, and test database were
 removed after the run.
+
+Follow-up Browser verification: started Gateway against disposable PostgreSQL
+database `relayna_gateway_phase7_ui_test` and Redis, opened `/admin-ui` in the
+Codex in-app Browser, signed in with the generated database-backed operator
+token, created a virtual key, confirmed the raw key modal, edited the key
+policy and disabled state, created a service with a write-only credential,
+patched fallback services, and confirmed persisted rows directly in
+PostgreSQL.
 
 ## Context and Orientation
 

@@ -507,6 +507,10 @@ Deliverables:
 - Gateway control workflows:
   - [x] Let operators create and inspect virtual keys and display raw keys only
         once after creation.
+  - [x] Let operators list virtual keys with current database-backed status and
+        edit expiry, disabled state, and policy after creation.
+  - [x] Keep virtual key disable, enable, and revoke lifecycle state in
+        PostgreSQL, and reject revoked keys during authentication.
   - [x] Let operators create/import/inspect/enable/disable/delete services and
         see sync status and incomplete runtime fields.
   - [x] Let operators inspect usage breakdowns and provider/service health.
@@ -533,6 +537,8 @@ Verification gates:
 - [ ] UI smoke tests cover sign-in, session storage, API authorization headers,
       key creation, service import/patch, usage rendering, health rendering,
       and error states.
+- [x] Browser smoke covered PostgreSQL-backed sign-in, key creation/list/edit,
+      service create/patch, overview, and persisted database rows.
 - [x] Real-container smoke covers PostgreSQL bootstrap, Redis readiness, UI
       serving, service lifecycle, key lifecycle, rate-limit rejection, usage
       display, and token rotation.

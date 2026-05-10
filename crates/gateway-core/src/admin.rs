@@ -115,6 +115,8 @@ pub trait AdminKeyStore: Send + Sync {
         material: &VirtualKeyMaterial,
     ) -> GatewayResult<AdminKeyResponse>;
 
+    async fn list_admin_keys(&self) -> GatewayResult<Vec<AdminKeyResponse>>;
+
     async fn get_admin_key(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>>;
 
     async fn patch_admin_key(
@@ -126,6 +128,8 @@ pub trait AdminKeyStore: Send + Sync {
     async fn revoke_admin_key(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>>;
 
     async fn disable_admin_key(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>>;
+
+    async fn enable_admin_key(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>>;
 
     async fn key_usage_summary(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyUsageSummary>>;
 
@@ -143,6 +147,10 @@ where
         material: &VirtualKeyMaterial,
     ) -> GatewayResult<AdminKeyResponse> {
         (**self).create_admin_key(request, material).await
+    }
+
+    async fn list_admin_keys(&self) -> GatewayResult<Vec<AdminKeyResponse>> {
+        (**self).list_admin_keys().await
     }
 
     async fn get_admin_key(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>> {
@@ -163,6 +171,10 @@ where
 
     async fn disable_admin_key(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>> {
         (**self).disable_admin_key(key_id).await
+    }
+
+    async fn enable_admin_key(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>> {
+        (**self).enable_admin_key(key_id).await
     }
 
     async fn key_usage_summary(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyUsageSummary>> {

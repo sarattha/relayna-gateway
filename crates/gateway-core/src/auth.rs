@@ -51,6 +51,7 @@ pub struct StoredVirtualKey {
     pub key_prefix: String,
     pub key_hash: String,
     pub disabled: bool,
+    pub revoked_at: Option<DateTime<Utc>>,
     pub expires_at: Option<DateTime<Utc>>,
 }
 
@@ -101,6 +102,10 @@ where
             .find_by_prefix(key.prefix())
             .await?
             .ok_or(GatewayError::InvalidVirtualKey)?;
+
+        if stored.revoked_at.is_some() {
+            return Err(GatewayError::RevokedVirtualKey);
+        }
 
         if stored.disabled {
             return Err(GatewayError::DisabledVirtualKey);
@@ -168,6 +173,7 @@ mod tests {
             key_prefix: raw.chars().take(LOOKUP_PREFIX_LEN).collect(),
             key_hash: hash(raw),
             disabled: false,
+            revoked_at: None,
             expires_at: None,
         }
     }
@@ -233,5 +239,23 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err, GatewayError::ExpiredVirtualKey);
+    }
+
+    #[tokio::test]
+    async fn rejects_revoked_key_even_when_not_disabled() {
+        let raw = "rk_live_1234567890abcdef";
+        let mut key = stored(raw);
+        key.disabled = false;
+        key.revoked_at = Some(Utc::now());
+        let lookup = MemoryLookup {
+            value: Arc::new(Mutex::new(Some(key))),
+        };
+
+        let err = Authenticator::new(lookup)
+            .authenticate_authorization(Some(&format!("Bearer {raw}")), Utc::now())
+            .await
+            .unwrap_err();
+
+        assert_eq!(err, GatewayError::RevokedVirtualKey);
     }
 }
