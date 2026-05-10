@@ -7,12 +7,23 @@ on:
   pull_request:
     paths:
       - "README.md"
+      - "CHANGELOG.md"
       - "AGENTS.md"
       - "PLANS.md"
       - "docs/**"
+      - "mkdocs.yml"
       - "internal/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   docs:
@@ -24,11 +35,35 @@ jobs:
       - name: Verify gateway documentation anchors
         run: |
           grep -q "Relayna Gateway" README.md
-          grep -q "internal/design-manifesto.md" README.md
+          grep -q "docs/architecture.md" README.md
           grep -q "Relayna Gateway" AGENTS.md
           grep -q "Relayna Gateway" PLANS.md
 
-      - name: Validate MkDocs config when present
-        if: hashFiles('mkdocs.yml') != ''
-        run: |
-          ruby -ryaml -e 'YAML.load_file("mkdocs.yml")'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install docs dependencies
+        run: pip install mkdocs-material
+
+      - name: Build MkDocs site
+        run: mkdocs build --strict
+
+      - name: Upload Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: docs
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

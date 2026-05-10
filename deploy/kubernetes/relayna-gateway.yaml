@@ -17,11 +17,8 @@ stringData:
   REDIS_URL: "redis://replace-me"
   LITELLM_BASE_URL: "http://litellm:4000"
   LITELLM_SERVICE_KEY: "replace-me"
-  GATEWAY_ADMIN_TOKEN: "replace-me"
   DIRECT_OPENAI_BASE_URL: ""
   DIRECT_OPENAI_SERVICE_KEY: ""
-  INTERNAL_SERVICE_BASE_URL: ""
-  INTERNAL_SERVICE_TOKEN: ""
   RELAYNA_WORKER_TOKEN: ""
 ---
 apiVersion: apps/v1
@@ -45,7 +42,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: gateway
-          image: relayna-gateway:latest
+          image: ghcr.io/sarattha/relayna-gateway:0.0.2
           imagePullPolicy: IfNotPresent
           ports:
             - name: proxy

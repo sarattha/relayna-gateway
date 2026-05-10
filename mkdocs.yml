@@ -1,8 +1,8 @@
-site_name: relayna
-site_description: Public documentation for relayna
-site_url: https://sarattha.github.io/relayna/
-repo_url: https://github.com/sarattha/relayna
-repo_name: sarattha/relayna
+site_name: Relayna Gateway
+site_description: Public documentation for Relayna Gateway
+site_url: https://sarattha.github.io/relayna-gateway/
+repo_url: https://github.com/sarattha/relayna-gateway
+repo_name: sarattha/relayna-gateway
 theme:
   name: material
   language: en
@@ -23,21 +23,17 @@ theme:
     code: JetBrains Mono
 nav:
   - Overview: index.md
+  - Architecture: architecture.md
   - Getting Started: getting-started.md
-  - Studio Backend: studio-backend.md
-  - Studio Frontend: studio-frontend.md
-  - Migration v1 to v2: migration-v1-to-v2.md
-  - Components: components.md
-  - Observability: observability.md
-  - AKS Observability: aks-observability.md
-  - Execution Graphs: execution-graphs.md
-  - Workflow Topology: workflow-topology-plan.md
+  - Admin Portal: admin-portal.md
+  - Deployment: deployment.md
+  - Operations: operations.md
   - Releases: releases.md
-  - Development: development.md
 markdown_extensions:
   - admonition
   - toc:
       permalink: true
+  - pymdownx.superfences
 extra_javascript:
   - https://unpkg.com/mermaid@11/dist/mermaid.min.js
   - assets/mermaid-init.js

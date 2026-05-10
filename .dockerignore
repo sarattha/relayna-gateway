@@ -1,0 +1,6 @@
+target
+site
+.git
+.venv
+.idea
+**/*.rs.bk

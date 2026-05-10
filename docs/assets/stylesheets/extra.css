@@ -1,0 +1,13 @@
+:root {
+  --md-primary-fg-color: #ffffff;
+  --md-accent-fg-color: #1f766d;
+}
+
+.md-header,
+.md-tabs {
+  color: #172033;
+}
+
+.md-typeset code {
+  font-size: 0.9em;
+}
