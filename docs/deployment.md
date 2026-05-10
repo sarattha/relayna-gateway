@@ -63,17 +63,18 @@ redis://host.docker.internal:6379
 
 The repository includes a baseline manifest at `deploy/kubernetes/relayna-gateway.yaml`.
 
-1. Build and publish the image:
+1. Choose a registry path you can push to, then build and publish the image:
 
    ```bash
-   docker build -t ghcr.io/sarattha/relayna-gateway:0.0.2 .
-   docker push ghcr.io/sarattha/relayna-gateway:0.0.2
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.0.2"
+   docker build -t "$RELAYNA_GATEWAY_IMAGE" .
+   docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
 
 2. Update the Deployment image:
 
    ```yaml
-   image: ghcr.io/sarattha/relayna-gateway:0.0.2
+   image: <your-registry>/<your-org>/relayna-gateway:0.0.2
    ```
 
 3. Store secrets through your cluster secret manager:
