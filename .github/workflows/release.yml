@@ -42,6 +42,24 @@ jobs:
           cargo test --workspace --all-features
           cargo build --workspace --release --all-features
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run admin portal tests
+        run: node tests/admin-ui.test.mjs
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build documentation
+        run: |
+          pip install mkdocs-material
+          mkdocs build --strict
+
       - name: Extract release notes
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
@@ -74,10 +92,7 @@ jobs:
               text = ""
 
           if not text:
-              text = subprocess.check_output(
-                  ["git", "log", "--oneline", "-20"],
-                  text=True,
-              ).strip()
+              raise SystemExit(f"missing CHANGELOG.md notes for {version}")
 
           pathlib.Path("release-notes.md").write_text(text + "\n")
           PY
@@ -86,3 +101,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.md
+          files: CHANGELOG.md

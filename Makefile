@@ -54,6 +54,10 @@ test: ## Run Rust tests
 		$(MAKE) ensure-cargo; \
 	fi
 
+.PHONY: admin-ui-test
+admin-ui-test: ## Run admin portal static tests
+	node tests/admin-ui.test.mjs
+
 .PHONY: build
 build: ## Build the Rust workspace
 	@if [[ -f Cargo.toml ]]; then \
@@ -79,6 +83,7 @@ check: ## Run format, lint, and test checks
 	$(MAKE) format
 	$(MAKE) lint
 	$(MAKE) test
+	$(MAKE) admin-ui-test
 
 .PHONY: verify
 verify: ## Run the repository Codex verification helper
@@ -89,17 +94,15 @@ metadata-check: ## Validate repository metadata files
 	$(PYTHON) -m json.tool .github/codex/schemas/pr-labels.json >/dev/null
 	$(RUBY) -ryaml -e 'Dir[".github/workflows/*.yml"].each { |path| YAML.load_file(path) }'
 	@grep -q "Relayna Gateway" README.md
-	@grep -q "internal/design-manifesto.md" README.md
+	@grep -q "docs/architecture.md" README.md
 	@grep -q "Relayna Gateway" AGENTS.md
 	@grep -q "Relayna Gateway" PLANS.md
 
 .PHONY: docs-check
 docs-check: ## Validate documentation anchors and optional MkDocs config
 	@grep -q "Relayna Gateway" README.md
-	@grep -q "internal/design-manifesto.md" README.md
-	@if [[ -f mkdocs.yml ]]; then \
-		$(RUBY) -ryaml -e 'YAML.load_file("mkdocs.yml")'; \
-	fi
+	@grep -q "docs/architecture.md" README.md
+	mkdocs build --strict
 
 .PHONY: clean
 clean: ## Remove Rust and local cache artifacts
