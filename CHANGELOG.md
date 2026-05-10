@@ -2,6 +2,19 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.3 - 2026-05-10
+
+### Added
+
+- GitHub Container Registry publishing in the tag-based release workflow.
+- Release image tags for full semver, major-minor, and latest aliases.
+
+### Changed
+
+- Workspace crate versions now share the `0.0.3` release version.
+- Deployment examples and the baseline Kubernetes image now target the `0.0.3`
+  gateway image.
+
 ## 0.0.2 - 2026-05-10
 
 ### Added
