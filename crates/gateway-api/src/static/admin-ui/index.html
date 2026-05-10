@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Relayna Gateway Admin</title>
+    <link rel="stylesheet" href="/admin-ui/app.css" />
+  </head>
+  <body>
+    <div id="login" class="login-shell">
+      <form id="login-form" class="login-panel">
+        <h1>Relayna Gateway Admin</h1>
+        <label>
+          Operator token
+          <input id="operator-token" type="password" autocomplete="current-password" />
+        </label>
+        <button type="submit">Sign in</button>
+        <p id="login-error" class="error-text"></p>
+      </form>
+    </div>
+
+    <main id="app" class="app-shell hidden">
+      <aside class="sidebar">
+        <div class="brand">Relayna Gateway</div>
+        <button data-view="overview" class="nav active">Overview</button>
+        <button data-view="keys" class="nav">Keys</button>
+        <button data-view="services" class="nav">Services</button>
+        <button data-view="usage" class="nav">Usage</button>
+        <button data-view="health" class="nav">Health</button>
+        <button id="rotate-token" class="danger">Rotate token</button>
+        <button id="sign-out">Sign out</button>
+      </aside>
+
+      <section class="workspace">
+        <header class="toolbar">
+          <h2 id="view-title">Overview</h2>
+          <button id="refresh">Refresh</button>
+        </header>
+        <div id="notice" class="notice hidden"></div>
+        <section id="content"></section>
+      </section>
+    </main>
+
+    <template id="raw-token-template">
+      <section class="modal-backdrop">
+        <div class="modal">
+          <h3>Token shown once</h3>
+          <textarea readonly rows="4"></textarea>
+          <button data-close-modal>Close</button>
+        </div>
+      </section>
+    </template>
+
+    <script src="/admin-ui/app.js"></script>
+  </body>
+</html>

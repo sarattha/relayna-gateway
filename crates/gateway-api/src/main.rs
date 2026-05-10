@@ -1,5 +1,6 @@
 use anyhow::Context;
 use gateway_api::{app, config::Config};
+use gateway_core::{OperatorTokenMaterial, OperatorTokenStore};
 use gateway_proxy::{PingoraLiteLlmConfig, PingoraUpstreamConfig, RelaynaPingoraProxy};
 use gateway_store::{PostgresStore, RedisControlState, RedisReadiness};
 use pingora_core::server::Server;
@@ -14,6 +15,15 @@ fn main() -> anyhow::Result<()> {
     let store = setup_runtime
         .block_on(PostgresStore::connect(&config.database_url))
         .context("connect postgres")?;
+    if let Some(material) = setup_runtime
+        .block_on(bootstrap_operator_token(&store))
+        .context("bootstrap operator token")?
+    {
+        tracing::warn!(
+            "generated first Relayna Gateway operator token; store it securely because it will not be shown again"
+        );
+        println!("Relayna Gateway operator token: {}", material.raw_token);
+    }
     let redis = RedisReadiness::new(&config.redis_url).context("create redis client")?;
     let redis_control =
         RedisControlState::new(&config.redis_url).context("create redis control client")?;
@@ -31,7 +41,7 @@ fn main() -> anyhow::Result<()> {
     }
     proxy_config = proxy_config.with_worker_token(config.relayna_worker_token.clone());
 
-    let app = app::router(store.clone(), redis, config.gateway_admin_token.clone());
+    let app = app::router(store.clone(), redis);
     let control_bind_addr = config.gateway_control_bind_addr;
     thread::spawn(move || {
         let runtime = match tokio::runtime::Runtime::new() {
@@ -67,6 +77,20 @@ fn main() -> anyhow::Result<()> {
     tracing::info!(addr = %config.gateway_bind_addr, "gateway Pingora proxy listening");
     pingora.add_service(proxy_service);
     pingora.run_forever()
+}
+
+async fn bootstrap_operator_token(
+    store: &PostgresStore,
+) -> anyhow::Result<Option<OperatorTokenMaterial>> {
+    let material = OperatorTokenMaterial::generate().context("generate operator token")?;
+    match store
+        .bootstrap_operator_token(&material)
+        .await
+        .context("store bootstrap operator token")?
+    {
+        Some(_) => Ok(Some(material)),
+        None => Ok(None),
+    }
 }
 
 async fn shutdown_signal() {

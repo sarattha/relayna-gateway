@@ -3,6 +3,7 @@ pub mod auth;
 pub mod budgets;
 pub mod errors;
 pub mod observability;
+pub mod operators;
 pub mod policies;
 pub mod rate_limits;
 pub mod routing;
@@ -19,6 +20,10 @@ pub use errors::{GatewayError, GatewayResult};
 pub use observability::{
     ProviderHealth, UsageBreakdown, UsageBreakdownDimension, UsageQuery, UsageQueryStore,
     UsageSummary, UsageTimeseriesPoint,
+};
+pub use operators::{
+    operator_token_prefix, verify_stored_operator_token, CreatedOperatorTokenResponse,
+    OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore, StoredOperatorToken,
 };
 pub use policies::{
     evaluate_policy, extract_generation_features, GenerationFeatures, KeyPolicy, PolicyLookup,

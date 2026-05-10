@@ -6,9 +6,11 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use chrono::Utc;
 use gateway_core::{
     auth::VirtualKeyLookup, AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,
-    AdminServiceStore, CreatedAdminKeyResponse, GatewayError, GatewayResult, ServiceCreateRequest,
+    AdminServiceStore, CreatedAdminKeyResponse, CreatedOperatorTokenResponse, GatewayError,
+    GatewayResult, OperatorTokenMaterial, OperatorTokenStore, ServiceCreateRequest,
     ServicePatchRequest, StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent,
     UsageQuery, UsageQueryStore, VirtualKeyMaterial,
 };
@@ -22,7 +24,13 @@ use tower_http::{
 
 #[async_trait]
 pub trait GatewayData:
-    VirtualKeyLookup + AdminKeyStore + AdminServiceStore + UsageQueryStore + Send + Sync
+    VirtualKeyLookup
+    + AdminKeyStore
+    + AdminServiceStore
+    + OperatorTokenStore
+    + UsageQueryStore
+    + Send
+    + Sync
 {
     async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()>;
     async fn postgres_ready(&self) -> GatewayResult<()>;
@@ -45,14 +53,12 @@ impl GatewayData for PostgresStore {
 pub struct AppState {
     store: Arc<dyn GatewayData>,
     redis: RedisReadiness,
-    admin_token: String,
 }
 
-pub fn router(store: PostgresStore, redis: RedisReadiness, admin_token: String) -> Router {
+pub fn router(store: PostgresStore, redis: RedisReadiness) -> Router {
     router_with_state(AppState {
         store: Arc::new(store),
         redis,
-        admin_token,
     })
 }
 
@@ -65,6 +71,7 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin/keys/{key_id}/revoke", post(revoke_key))
         .route("/admin/keys/{key_id}/disable", post(disable_key))
         .route("/admin/keys/{key_id}/usage", get(key_usage))
+        .route("/admin/operator-token/rotate", post(rotate_operator_token))
         .route("/admin/services", post(create_service).get(list_services))
         .route("/admin/services/import", post(import_service))
         .route("/admin/services/sync", post(sync_service))
@@ -95,6 +102,8 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin/usage/by-task", get(usage_by_task))
         .route("/admin/tasks/{task_id}/usage", get(task_usage))
         .route("/admin/provider-health", get(provider_health))
+        .route("/admin-ui", get(admin_ui_index))
+        .route("/admin-ui/{*path}", get(admin_ui_asset))
         .route("/metrics", get(metrics))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
@@ -131,7 +140,7 @@ async fn create_key(
     headers: HeaderMap,
     Json(request): Json<AdminKeyCreate>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
@@ -154,7 +163,7 @@ async fn get_key(
     headers: HeaderMap,
     Path(key_id): Path<uuid::Uuid>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
@@ -171,7 +180,7 @@ async fn patch_key(
     Path(key_id): Path<uuid::Uuid>,
     Json(patch): Json<AdminKeyPatch>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
@@ -203,7 +212,7 @@ async fn key_usage(
     headers: HeaderMap,
     Path(key_id): Path<uuid::Uuid>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
@@ -219,12 +228,39 @@ async fn project_usage(
     headers: HeaderMap,
     Path(project_id): Path<uuid::Uuid>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
     match state.store.project_usage_summary(project_id).await {
         Ok(summary) => Json(summary).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn rotate_operator_token(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let current_raw_token = match bearer_token(&headers) {
+        Ok(token) => token.to_owned(),
+        Err(error) => return error_response(&headers, error),
+    };
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    let material = match OperatorTokenMaterial::generate() {
+        Ok(material) => material,
+        Err(error) => return error_response(&headers, error),
+    };
+    match state
+        .store
+        .rotate_operator_token(&current_raw_token, &material, Utc::now())
+        .await
+    {
+        Ok(token) => Json(CreatedOperatorTokenResponse {
+            token,
+            raw_token: material.raw_token,
+        })
+        .into_response(),
         Err(error) => error_response(&headers, error),
     }
 }
@@ -252,7 +288,7 @@ async fn get_service(
     headers: HeaderMap,
     Path(service_name): Path<String>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
@@ -269,7 +305,7 @@ async fn patch_service(
     Path(service_name): Path<String>,
     Json(patch): Json<ServicePatchRequest>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
@@ -285,7 +321,7 @@ async fn delete_service(
     headers: HeaderMap,
     Path(service_name): Path<String>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
@@ -339,7 +375,7 @@ async fn service_sync_status(
     headers: HeaderMap,
     Path(service_name): Path<String>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
@@ -465,7 +501,7 @@ where
     T: Serialize,
     Fut: std::future::Future<Output = GatewayResult<T>>,
 {
-    if let Some(response) = require_admin(state, &headers) {
+    if let Some(response) = require_admin(state, &headers).await {
         return response;
     }
     match query(state.store.clone()).await {
@@ -483,6 +519,32 @@ async fn metrics() -> Response {
         .into_response()
 }
 
+async fn admin_ui_index() -> Response {
+    static_response(
+        "text/html; charset=utf-8",
+        include_str!("static/admin-ui/index.html"),
+    )
+}
+
+async fn admin_ui_asset(Path(path): Path<String>) -> Response {
+    match path.as_str() {
+        "" | "index.html" => admin_ui_index().await,
+        "app.css" => static_response(
+            "text/css; charset=utf-8",
+            include_str!("static/admin-ui/app.css"),
+        ),
+        "app.js" => static_response(
+            "application/javascript; charset=utf-8",
+            include_str!("static/admin-ui/app.js"),
+        ),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+fn static_response(content_type: &'static str, body: &'static str) -> Response {
+    (StatusCode::OK, [("content-type", content_type)], body).into_response()
+}
+
 enum KeyLifecycleAction {
     Revoke,
     Disable,
@@ -494,7 +556,7 @@ async fn mutate_key_lifecycle(
     key_id: uuid::Uuid,
     action: KeyLifecycleAction,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
@@ -516,7 +578,7 @@ async fn mutate_service_enabled(
     service_name: String,
     enabled: bool,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers) {
+    if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
@@ -531,32 +593,33 @@ async fn mutate_service_enabled(
     }
 }
 
-fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+async fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+    let token = match bearer_token(headers) {
+        Ok(token) => token,
+        Err(error) => return Some(error_response(headers, error)),
+    };
+
+    match state.store.verify_operator_token(token, Utc::now()).await {
+        Ok(()) => None,
+        Err(error) => Some(error_response(headers, error)),
+    }
+}
+
+fn bearer_token(headers: &HeaderMap) -> GatewayResult<&str> {
     let Some(authorization) = headers
         .get("authorization")
         .and_then(|value| value.to_str().ok())
     else {
-        return Some(error_response(headers, GatewayError::MissingAuthorization));
+        return Err(GatewayError::MissingAuthorization);
     };
     let Some(token) = authorization
         .strip_prefix("Bearer ")
         .map(str::trim)
         .filter(|token| !token.is_empty())
     else {
-        return Some(error_response(
-            headers,
-            GatewayError::MalformedAuthorization,
-        ));
+        return Err(GatewayError::MalformedAuthorization);
     };
-
-    if token != state.admin_token {
-        return Some(error_response(
-            headers,
-            GatewayError::MalformedAuthorization,
-        ));
-    }
-
-    None
+    Ok(token)
 }
 
 fn error_response(headers: &HeaderMap, error: GatewayError) -> Response {
@@ -579,8 +642,9 @@ mod tests {
     use gateway_core::{
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
-        ProviderHealth, ServiceCostMode, ServiceResponse, ServiceSource, ServiceSyncStatus,
-        ServiceSyncStatusResponse, UsageBreakdown, UsageSummary, UsageTimeseriesPoint,
+        OperatorTokenResponse, ProviderHealth, ServiceCostMode, ServiceResponse, ServiceSource,
+        ServiceSyncStatus, ServiceSyncStatusResponse, UsageBreakdown, UsageSummary,
+        UsageTimeseriesPoint,
     };
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -591,6 +655,7 @@ mod tests {
         key: Arc<Mutex<Option<StoredVirtualKey>>>,
         admin_key: Arc<Mutex<Option<AdminKeyResponse>>>,
         services: Arc<Mutex<Vec<ServiceResponse>>>,
+        operator_tokens: Arc<Mutex<Vec<String>>>,
         events: Arc<Mutex<Vec<UsageEvent>>>,
         postgres_ready: bool,
     }
@@ -929,6 +994,54 @@ mod tests {
     }
 
     #[async_trait]
+    impl OperatorTokenStore for MemoryStore {
+        async fn bootstrap_operator_token(
+            &self,
+            material: &OperatorTokenMaterial,
+        ) -> GatewayResult<Option<OperatorTokenResponse>> {
+            let mut tokens = self.operator_tokens.lock().expect("lock poisoned");
+            if !tokens.is_empty() {
+                return Ok(None);
+            }
+            tokens.push(material.raw_token.clone());
+            Ok(Some(operator_response(&material.token_prefix)))
+        }
+
+        async fn verify_operator_token(
+            &self,
+            raw_token: &str,
+            _now: chrono::DateTime<Utc>,
+        ) -> GatewayResult<()> {
+            if self
+                .operator_tokens
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .any(|token| token == raw_token)
+            {
+                Ok(())
+            } else {
+                Err(GatewayError::InvalidOperatorToken)
+            }
+        }
+
+        async fn rotate_operator_token(
+            &self,
+            current_raw_token: &str,
+            material: &OperatorTokenMaterial,
+            _now: chrono::DateTime<Utc>,
+        ) -> GatewayResult<OperatorTokenResponse> {
+            let mut tokens = self.operator_tokens.lock().expect("lock poisoned");
+            let Some(position) = tokens.iter().position(|token| token == current_raw_token) else {
+                return Err(GatewayError::InvalidOperatorToken);
+            };
+            tokens.remove(position);
+            tokens.push(material.raw_token.clone());
+            Ok(operator_response(&material.token_prefix))
+        }
+    }
+
+    #[async_trait]
     impl UsageQueryStore for MemoryStore {
         async fn usage_summary(&self, _query: UsageQuery) -> GatewayResult<UsageSummary> {
             Ok(UsageSummary::default())
@@ -976,6 +1089,22 @@ mod tests {
         fields
     }
 
+    fn operator_response(token_prefix: &str) -> OperatorTokenResponse {
+        let now = Utc::now();
+        OperatorTokenResponse {
+            id: Uuid::new_v4(),
+            token_prefix: token_prefix.to_owned(),
+            disabled: false,
+            revoked_at: None,
+            last_used_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    const TEST_OPERATOR_TOKEN: &str =
+        "op_live_testoperator000000000000000000000000000000000000000000000000";
+
     fn test_state(store: MemoryStore) -> AppState {
         test_state_with_redis_url(store, "redis://127.0.0.1:6379")
     }
@@ -985,7 +1114,6 @@ mod tests {
         AppState {
             store: Arc::new(store),
             redis,
-            admin_token: "admin-test-token".to_owned(),
         }
     }
 
@@ -1060,6 +1188,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -1077,6 +1206,7 @@ mod tests {
             key: Arc::new(Mutex::new(Some(stored_key(raw)))),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -1095,6 +1225,7 @@ mod tests {
             key: Arc::new(Mutex::new(Some(stored_key(raw)))),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: false,
         };
@@ -1111,6 +1242,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -1133,6 +1265,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -1141,7 +1274,7 @@ mod tests {
         let response = admin_post(
             app,
             "/admin/keys",
-            Some("admin-test-token"),
+            Some(TEST_OPERATOR_TOKEN),
             &format!(r#"{{"project_id":"{project_id}"}}"#),
         )
         .await;
@@ -1168,6 +1301,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -1183,13 +1317,75 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
         let app = router_with_state(test_state(store));
-        let response = admin_get(app, "/admin/tasks/task-1/usage", Some("admin-test-token")).await;
+        let response = admin_get(app, "/admin/tasks/task-1/usage", Some(TEST_OPERATOR_TOKEN)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn admin_ui_assets_are_served_without_exposing_operator_token() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = request(app, "/admin-ui").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let body = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(body.contains("Relayna Gateway Admin"));
+        assert!(!body.contains(TEST_OPERATOR_TOKEN));
+    }
+
+    #[tokio::test]
+    async fn operator_token_rotation_returns_new_raw_token_once_and_invalidates_old_token() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = admin_post(
+            app.clone(),
+            "/admin/operator-token/rotate",
+            Some(TEST_OPERATOR_TOKEN),
+            "{}",
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        let new_token = value["raw_token"].as_str().expect("raw token");
+        assert!(new_token.starts_with("op_live_"));
+        assert!(value["token"].get("token_hash").is_none());
+
+        let old_response = admin_get(
+            app.clone(),
+            "/admin/usage/summary",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(old_response.status(), StatusCode::UNAUTHORIZED);
+        let new_response = admin_get(app, "/admin/usage/summary", Some(new_token)).await;
+        assert_eq!(new_response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -1198,6 +1394,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -1205,7 +1402,7 @@ mod tests {
         let response = admin_post(
             app,
             "/admin/services",
-            Some("admin-test-token"),
+            Some(TEST_OPERATOR_TOKEN),
             r#"{
                 "name":"summary",
                 "route_pattern":"/summary",
@@ -1237,6 +1434,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -1244,7 +1442,7 @@ mod tests {
         let response = admin_post(
             app.clone(),
             "/admin/services/import",
-            Some("admin-test-token"),
+            Some(TEST_OPERATOR_TOKEN),
             r#"{
                 "studio_service_id":"svc_1",
                 "name":"translation",
@@ -1259,7 +1457,7 @@ mod tests {
         let status = admin_get(
             app,
             "/admin/services/translation/sync-status",
-            Some("admin-test-token"),
+            Some(TEST_OPERATOR_TOKEN),
         )
         .await;
         let body = axum::body::to_bytes(status.into_body(), usize::MAX)
@@ -1277,6 +1475,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         };
@@ -1284,14 +1483,14 @@ mod tests {
         let _ = admin_post(
             app.clone(),
             "/admin/services/import",
-            Some("admin-test-token"),
+            Some(TEST_OPERATOR_TOKEN),
             r#"{"studio_service_id":"svc_1","name":"translation","route_pattern":"/translation"}"#,
         )
         .await;
         let response = admin_patch(
             app,
             "/admin/services/translation",
-            Some("admin-test-token"),
+            Some(TEST_OPERATOR_TOKEN),
             r#"{"upstream_base_url":"http://translation.internal:8080","credential":"token","enabled":true}"#,
         )
         .await;

@@ -2,16 +2,17 @@ use async_trait::async_trait;
 use gateway_core::{
     admin::{AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminPolicyResponse},
     auth::{StoredVirtualKey, VirtualKeyLookup},
-    default_route_pattern,
+    default_route_pattern, operator_token_prefix,
     services::{
         AdminServiceStore, ServiceCostMode, ServiceCreateRequest, ServicePatchRequest,
         ServiceRegistration, ServiceRegistryLookup, ServiceResponse, ServiceSource,
         ServiceSyncStatus, ServiceSyncStatusResponse, StudioServiceImportRequest,
     },
-    AdminKeyStore, AdminKeyUsageSummary, GatewayError, GatewayResult, KeyPolicy, PolicyLookup,
-    ProjectUsageSummary, Provider, ProviderHealth, Route, UsageBreakdown, UsageBreakdownDimension,
-    UsageEvent, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary,
-    UsageTimeseriesPoint, VirtualKeyMaterial,
+    verify_stored_operator_token, AdminKeyStore, AdminKeyUsageSummary, GatewayError, GatewayResult,
+    KeyPolicy, OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore, PolicyLookup,
+    ProjectUsageSummary, Provider, ProviderHealth, Route, StoredOperatorToken, UsageBreakdown,
+    UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus,
+    UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row};
 use thiserror::Error;
@@ -178,6 +179,26 @@ impl PostgresStore {
         };
 
         Ok(Some(response))
+    }
+
+    async fn stored_operator_token_by_prefix(
+        &self,
+        prefix: &str,
+    ) -> GatewayResult<Option<StoredOperatorToken>> {
+        sqlx::query(
+            r#"
+            SELECT id, token_prefix, token_hash, disabled, revoked_at
+            FROM operator_tokens
+            WHERE token_prefix = $1
+            "#,
+        )
+        .bind(prefix)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|row| stored_operator_token_from_row(&row))
+        .transpose()
+        .map_err(|_| GatewayError::StoreUnavailable)
     }
 
     async fn upsert_studio_service(
@@ -649,6 +670,119 @@ impl AdminKeyStore for PostgresStore {
             },
         )
         .map_err(|_| GatewayError::StoreUnavailable)
+    }
+}
+
+#[async_trait]
+impl OperatorTokenStore for PostgresStore {
+    async fn bootstrap_operator_token(
+        &self,
+        material: &OperatorTokenMaterial,
+    ) -> GatewayResult<Option<OperatorTokenResponse>> {
+        let token_id = Uuid::new_v4();
+        match sqlx::query(
+            r#"
+            INSERT INTO operator_tokens (id, token_prefix, token_hash)
+            SELECT $1, $2, $3
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM operator_tokens
+                WHERE disabled = false AND revoked_at IS NULL
+            )
+            RETURNING id, token_prefix, disabled, revoked_at, last_used_at, created_at, updated_at
+            "#,
+        )
+        .bind(token_id)
+        .bind(&material.token_prefix)
+        .bind(&material.token_hash)
+        .fetch_optional(&self.pool)
+        .await
+        {
+            Ok(row) => Ok(row.map(operator_token_response_from_row)),
+            Err(error) if is_unique_violation_on(&error, "operator_tokens_one_active_idx") => {
+                Ok(None)
+            }
+            Err(_) => Err(GatewayError::StoreUnavailable),
+        }
+    }
+
+    async fn verify_operator_token(
+        &self,
+        raw_token: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> GatewayResult<()> {
+        let prefix = operator_token_prefix(raw_token)?;
+        let stored = self
+            .stored_operator_token_by_prefix(&prefix)
+            .await?
+            .ok_or(GatewayError::InvalidOperatorToken)?;
+        verify_stored_operator_token(raw_token, &stored)?;
+
+        sqlx::query(
+            r#"
+            UPDATE operator_tokens
+            SET last_used_at = $2, updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(stored.id)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(())
+    }
+
+    async fn rotate_operator_token(
+        &self,
+        current_raw_token: &str,
+        material: &OperatorTokenMaterial,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> GatewayResult<OperatorTokenResponse> {
+        let prefix = operator_token_prefix(current_raw_token)?;
+        let stored = self
+            .stored_operator_token_by_prefix(&prefix)
+            .await?
+            .ok_or(GatewayError::InvalidOperatorToken)?;
+        verify_stored_operator_token(current_raw_token, &stored)?;
+
+        let token_id = Uuid::new_v4();
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        sqlx::query(
+            r#"
+            UPDATE operator_tokens
+            SET disabled = true, revoked_at = $2, updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(stored.id)
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        let response = sqlx::query(
+            r#"
+            INSERT INTO operator_tokens (id, token_prefix, token_hash)
+            VALUES ($1, $2, $3)
+            RETURNING id, token_prefix, disabled, revoked_at, last_used_at, created_at, updated_at
+            "#,
+        )
+        .bind(token_id)
+        .bind(&material.token_prefix)
+        .bind(&material.token_hash)
+        .fetch_one(&mut *tx)
+        .await
+        .map(operator_token_response_from_row)
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        Ok(response)
     }
 }
 
@@ -1237,6 +1371,38 @@ fn parse_providers(values: &[String]) -> GatewayResult<Vec<Provider>> {
         .collect()
 }
 
+fn operator_token_response_from_row(row: sqlx::postgres::PgRow) -> OperatorTokenResponse {
+    OperatorTokenResponse {
+        id: row.try_get("id").expect("operator token id"),
+        token_prefix: row.try_get("token_prefix").expect("operator token prefix"),
+        disabled: row.try_get("disabled").expect("operator token disabled"),
+        revoked_at: row
+            .try_get("revoked_at")
+            .expect("operator token revoked_at"),
+        last_used_at: row
+            .try_get("last_used_at")
+            .expect("operator token last_used_at"),
+        created_at: row
+            .try_get("created_at")
+            .expect("operator token created_at"),
+        updated_at: row
+            .try_get("updated_at")
+            .expect("operator token updated_at"),
+    }
+}
+
+fn stored_operator_token_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<StoredOperatorToken, sqlx::Error> {
+    Ok(StoredOperatorToken {
+        id: row.try_get("id")?,
+        token_prefix: row.try_get("token_prefix")?,
+        token_hash: row.try_get("token_hash")?,
+        disabled: row.try_get("disabled")?,
+        revoked_at: row.try_get("revoked_at")?,
+    })
+}
+
 fn service_registration_from_row(
     row: &sqlx::postgres::PgRow,
 ) -> Result<ServiceRegistration, sqlx::Error> {
@@ -1342,6 +1508,13 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
     error
         .as_database_error()
         .is_some_and(|database_error| database_error.code().as_deref() == Some("23505"))
+}
+
+fn is_unique_violation_on(error: &sqlx::Error, constraint: &str) -> bool {
+    error.as_database_error().is_some_and(|database_error| {
+        database_error.code().as_deref() == Some("23505")
+            && database_error.constraint() == Some(constraint)
+    })
 }
 
 fn append_usage_filters<'a>(builder: &mut QueryBuilder<'a, Postgres>, query: &'a UsageQuery) {
