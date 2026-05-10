@@ -66,10 +66,11 @@ pub fn router_with_state(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .route("/admin/keys", post(create_key))
+        .route("/admin/keys", post(create_key).get(list_keys))
         .route("/admin/keys/{key_id}", get(get_key).patch(patch_key))
         .route("/admin/keys/{key_id}/revoke", post(revoke_key))
         .route("/admin/keys/{key_id}/disable", post(disable_key))
+        .route("/admin/keys/{key_id}/enable", post(enable_key))
         .route("/admin/keys/{key_id}/usage", get(key_usage))
         .route("/admin/operator-token/rotate", post(rotate_operator_token))
         .route("/admin/services", post(create_service).get(list_services))
@@ -158,6 +159,17 @@ async fn create_key(
     }
 }
 
+async fn list_keys(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match state.store.list_admin_keys().await {
+        Ok(keys) => Json(keys).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn get_key(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -205,6 +217,14 @@ async fn disable_key(
     Path(key_id): Path<uuid::Uuid>,
 ) -> Response {
     mutate_key_lifecycle(state, headers, key_id, KeyLifecycleAction::Disable).await
+}
+
+async fn enable_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(key_id): Path<uuid::Uuid>,
+) -> Response {
+    mutate_key_lifecycle(state, headers, key_id, KeyLifecycleAction::Enable).await
 }
 
 async fn key_usage(
@@ -548,6 +568,7 @@ fn static_response(content_type: &'static str, body: &'static str) -> Response {
 enum KeyLifecycleAction {
     Revoke,
     Disable,
+    Enable,
 }
 
 async fn mutate_key_lifecycle(
@@ -563,6 +584,7 @@ async fn mutate_key_lifecycle(
     let result: GatewayResult<Option<AdminKeyResponse>> = match action {
         KeyLifecycleAction::Revoke => state.store.revoke_admin_key(key_id).await,
         KeyLifecycleAction::Disable => state.store.disable_admin_key(key_id).await,
+        KeyLifecycleAction::Enable => state.store.enable_admin_key(key_id).await,
     };
 
     match result {
@@ -726,6 +748,16 @@ mod tests {
             Ok(self.admin_key.lock().expect("lock poisoned").clone())
         }
 
+        async fn list_admin_keys(&self) -> GatewayResult<Vec<AdminKeyResponse>> {
+            Ok(self
+                .admin_key
+                .lock()
+                .expect("lock poisoned")
+                .clone()
+                .into_iter()
+                .collect())
+        }
+
         async fn patch_admin_key(
             &self,
             _key_id: Uuid,
@@ -750,6 +782,16 @@ mod tests {
             let mut key = self.admin_key.lock().expect("lock poisoned");
             if let Some(key) = key.as_mut() {
                 key.disabled = true;
+            }
+            Ok(key.clone())
+        }
+
+        async fn enable_admin_key(&self, _key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>> {
+            let mut key = self.admin_key.lock().expect("lock poisoned");
+            if let Some(key) = key.as_mut() {
+                if key.revoked_at.is_none() {
+                    key.disabled = false;
+                }
             }
             Ok(key.clone())
         }
@@ -1074,6 +1116,7 @@ mod tests {
             key_prefix: raw.chars().take(16).collect(),
             key_hash: "not-used-by-control-api".to_owned(),
             disabled: false,
+            revoked_at: None,
             expires_at: None,
         }
     }
@@ -1293,6 +1336,126 @@ mod tests {
             .expect("key prefix")
             .starts_with("rk_live_"));
         assert!(value["key"].get("key_hash").is_none());
+    }
+
+    #[tokio::test]
+    async fn admin_list_keys_returns_database_backed_key_metadata() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let project_id = Uuid::new_v4();
+        let response = admin_post(
+            app.clone(),
+            "/admin/keys",
+            Some(TEST_OPERATOR_TOKEN),
+            &format!(r#"{{"project_id":"{project_id}"}}"#),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = admin_get(app, "/admin/keys", Some(TEST_OPERATOR_TOKEN)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        let keys = value.as_array().expect("keys");
+
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0]["project_id"], project_id.to_string());
+        assert!(keys[0]["key_hash"].is_null());
+        assert!(keys[0]["raw_key"].is_null());
+    }
+
+    #[tokio::test]
+    async fn admin_key_lifecycle_enable_disable_and_revoke_are_persisted() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let project_id = Uuid::new_v4();
+        let response = admin_post(
+            app.clone(),
+            "/admin/keys",
+            Some(TEST_OPERATOR_TOKEN),
+            &format!(r#"{{"project_id":"{project_id}"}}"#),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        let key_id = value["key"]["id"].as_str().expect("key id");
+
+        let response = admin_post(
+            app.clone(),
+            &format!("/admin/keys/{key_id}/disable"),
+            Some(TEST_OPERATOR_TOKEN),
+            "{}",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["disabled"], true);
+
+        let response = admin_post(
+            app.clone(),
+            &format!("/admin/keys/{key_id}/enable"),
+            Some(TEST_OPERATOR_TOKEN),
+            "{}",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["disabled"], false);
+
+        let response = admin_post(
+            app.clone(),
+            &format!("/admin/keys/{key_id}/revoke"),
+            Some(TEST_OPERATOR_TOKEN),
+            "{}",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["disabled"], true);
+        assert!(value["revoked_at"].as_str().is_some());
+
+        let response = admin_post(
+            app,
+            &format!("/admin/keys/{key_id}/enable"),
+            Some(TEST_OPERATOR_TOKEN),
+            "{}",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["disabled"], true);
+        assert!(value["revoked_at"].as_str().is_some());
     }
 
     #[tokio::test]

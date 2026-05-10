@@ -18,10 +18,14 @@ use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row};
 use thiserror::Error;
 use uuid::Uuid;
 
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("postgres error: {0}")]
     Postgres(#[from] sqlx::Error),
+    #[error("postgres migration error: {0}")]
+    Migration(#[from] sqlx::migrate::MigrateError),
 }
 
 #[derive(Clone)]
@@ -35,6 +39,7 @@ impl PostgresStore {
             .max_connections(10)
             .connect(database_url)
             .await?;
+        MIGRATOR.run(&pool).await?;
         Ok(Self { pool })
     }
 
@@ -135,50 +140,7 @@ impl PostgresStore {
             return Ok(None);
         };
 
-        let response = AdminKeyResponse {
-            id: row
-                .try_get("id")
-                .map_err(|_| GatewayError::StoreUnavailable)?,
-            project_id: row
-                .try_get("project_id")
-                .map_err(|_| GatewayError::StoreUnavailable)?,
-            key_prefix: row
-                .try_get("key_prefix")
-                .map_err(|_| GatewayError::StoreUnavailable)?,
-            disabled: row
-                .try_get("disabled")
-                .map_err(|_| GatewayError::StoreUnavailable)?,
-            revoked_at: row
-                .try_get("revoked_at")
-                .map_err(|_| GatewayError::StoreUnavailable)?,
-            expires_at: row
-                .try_get("expires_at")
-                .map_err(|_| GatewayError::StoreUnavailable)?,
-            policy: AdminPolicyResponse {
-                allowed_routes: row
-                    .try_get("allowed_routes")
-                    .unwrap_or_else(|_| route_strings(&KeyPolicy::default().allowed_routes)),
-                allowed_models: row.try_get("allowed_models").unwrap_or_default(),
-                allowed_providers: row
-                    .try_get("allowed_providers")
-                    .unwrap_or_else(|_| provider_strings(&KeyPolicy::default().allowed_providers)),
-                allowed_services: row.try_get("allowed_services").unwrap_or_default(),
-                rpm_limit: row.try_get("rpm_limit").ok(),
-                tpm_limit: row.try_get("tpm_limit").ok(),
-                daily_budget_usd: row.try_get("daily_budget_usd").ok(),
-                monthly_budget_usd: row.try_get("monthly_budget_usd").ok(),
-                allow_streaming: row.try_get("allow_streaming").unwrap_or(false),
-                allow_tools: row.try_get("allow_tools").unwrap_or(false),
-            },
-            created_at: row
-                .try_get("created_at")
-                .map_err(|_| GatewayError::StoreUnavailable)?,
-            updated_at: row
-                .try_get("updated_at")
-                .map_err(|_| GatewayError::StoreUnavailable)?,
-        };
-
-        Ok(Some(response))
+        admin_key_response_from_row(&row).map(Some)
     }
 
     async fn stored_operator_token_by_prefix(
@@ -351,10 +313,11 @@ impl VirtualKeyLookup for PostgresStore {
                 String,
                 bool,
                 Option<chrono::DateTime<chrono::Utc>>,
+                Option<chrono::DateTime<chrono::Utc>>,
             ),
         >(
             r#"
-            SELECT id, project_id, key_prefix, key_hash, disabled, expires_at
+            SELECT id, project_id, key_prefix, key_hash, disabled, revoked_at, expires_at
             FROM api_keys
             WHERE key_prefix = $1
             "#,
@@ -364,13 +327,16 @@ impl VirtualKeyLookup for PostgresStore {
         .await
         .map(|row| {
             row.map(
-                |(id, project_id, key_prefix, key_hash, disabled, expires_at)| StoredVirtualKey {
-                    id,
-                    project_id,
-                    key_prefix,
-                    key_hash,
-                    disabled,
-                    expires_at,
+                |(id, project_id, key_prefix, key_hash, disabled, revoked_at, expires_at)| {
+                    StoredVirtualKey {
+                        id,
+                        project_id,
+                        key_prefix,
+                        key_hash,
+                        disabled,
+                        revoked_at,
+                        expires_at,
+                    }
                 },
             )
         })
@@ -479,6 +445,42 @@ impl AdminKeyStore for PostgresStore {
             .ok_or(GatewayError::StoreUnavailable)
     }
 
+    async fn list_admin_keys(&self) -> GatewayResult<Vec<AdminKeyResponse>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                k.id,
+                k.project_id,
+                k.key_prefix,
+                k.disabled,
+                k.revoked_at,
+                k.expires_at,
+                k.created_at,
+                k.updated_at,
+                p.allowed_routes,
+                p.allowed_models,
+                p.allowed_providers,
+                p.allowed_services,
+                p.rpm_limit,
+                p.tpm_limit,
+                p.daily_budget_usd,
+                p.monthly_budget_usd,
+                p.allow_streaming,
+                p.allow_tools
+            FROM api_keys k
+            LEFT JOIN key_policies p ON p.key_id = k.id
+            ORDER BY k.created_at DESC, k.id DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        rows.iter()
+            .map(admin_key_response_from_row)
+            .collect::<GatewayResult<Vec<_>>>()
+    }
+
     async fn get_admin_key(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>> {
         self.response_for_key(key_id).await
     }
@@ -499,6 +501,7 @@ impl AdminKeyStore for PostgresStore {
                 disabled = COALESCE($4, disabled),
                 updated_at = now()
             WHERE id = $1
+              AND revoked_at IS NULL
             "#,
         )
         .bind(key_id)
@@ -511,7 +514,7 @@ impl AdminKeyStore for PostgresStore {
         .rows_affected();
 
         if rows == 0 {
-            return Ok(None);
+            return self.response_for_key(key_id).await;
         }
 
         if let Some(policy_patch) = patch.policy {
@@ -529,6 +532,7 @@ impl AdminKeyStore for PostgresStore {
             UPDATE api_keys
             SET disabled = true, revoked_at = now(), updated_at = now()
             WHERE id = $1
+              AND revoked_at IS NULL
             "#,
         )
         .bind(key_id)
@@ -538,7 +542,7 @@ impl AdminKeyStore for PostgresStore {
         .rows_affected();
 
         if rows == 0 {
-            return Ok(None);
+            return self.response_for_key(key_id).await;
         }
         self.response_for_key(key_id).await
     }
@@ -549,6 +553,7 @@ impl AdminKeyStore for PostgresStore {
             UPDATE api_keys
             SET disabled = true, updated_at = now()
             WHERE id = $1
+              AND revoked_at IS NULL
             "#,
         )
         .bind(key_id)
@@ -558,7 +563,28 @@ impl AdminKeyStore for PostgresStore {
         .rows_affected();
 
         if rows == 0 {
-            return Ok(None);
+            return self.response_for_key(key_id).await;
+        }
+        self.response_for_key(key_id).await
+    }
+
+    async fn enable_admin_key(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>> {
+        let rows = sqlx::query(
+            r#"
+            UPDATE api_keys
+            SET disabled = false, updated_at = now()
+            WHERE id = $1
+              AND revoked_at IS NULL
+            "#,
+        )
+        .bind(key_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .rows_affected();
+
+        if rows == 0 {
+            return self.response_for_key(key_id).await;
         }
         self.response_for_key(key_id).await
     }
@@ -1369,6 +1395,51 @@ fn parse_providers(values: &[String]) -> GatewayResult<Vec<Provider>> {
             _ => Err(GatewayError::PolicyDenied),
         })
         .collect()
+}
+
+fn admin_key_response_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<AdminKeyResponse> {
+    Ok(AdminKeyResponse {
+        id: row
+            .try_get("id")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        project_id: row
+            .try_get("project_id")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        key_prefix: row
+            .try_get("key_prefix")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        disabled: row
+            .try_get("disabled")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        revoked_at: row
+            .try_get("revoked_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        expires_at: row
+            .try_get("expires_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        policy: AdminPolicyResponse {
+            allowed_routes: row
+                .try_get("allowed_routes")
+                .unwrap_or_else(|_| route_strings(&KeyPolicy::default().allowed_routes)),
+            allowed_models: row.try_get("allowed_models").unwrap_or_default(),
+            allowed_providers: row
+                .try_get("allowed_providers")
+                .unwrap_or_else(|_| provider_strings(&KeyPolicy::default().allowed_providers)),
+            allowed_services: row.try_get("allowed_services").unwrap_or_default(),
+            rpm_limit: row.try_get("rpm_limit").ok(),
+            tpm_limit: row.try_get("tpm_limit").ok(),
+            daily_budget_usd: row.try_get("daily_budget_usd").ok(),
+            monthly_budget_usd: row.try_get("monthly_budget_usd").ok(),
+            allow_streaming: row.try_get("allow_streaming").unwrap_or(false),
+            allow_tools: row.try_get("allow_tools").unwrap_or(false),
+        },
+        created_at: row
+            .try_get("created_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
 }
 
 fn operator_token_response_from_row(row: sqlx::postgres::PgRow) -> OperatorTokenResponse {

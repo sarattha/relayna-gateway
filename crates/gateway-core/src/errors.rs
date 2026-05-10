@@ -14,6 +14,8 @@ pub enum GatewayError {
     InvalidVirtualKey,
     #[error("virtual key is disabled")]
     DisabledVirtualKey,
+    #[error("virtual key is revoked")]
+    RevokedVirtualKey,
     #[error("virtual key has expired")]
     ExpiredVirtualKey,
     #[error("invalid operator token")]
@@ -72,9 +74,10 @@ impl GatewayError {
     pub fn status_code(&self) -> StatusCode {
         match self {
             Self::MissingAuthorization | Self::MalformedAuthorization => StatusCode::UNAUTHORIZED,
-            Self::InvalidVirtualKey | Self::DisabledVirtualKey | Self::ExpiredVirtualKey => {
-                StatusCode::UNAUTHORIZED
-            }
+            Self::InvalidVirtualKey
+            | Self::DisabledVirtualKey
+            | Self::RevokedVirtualKey
+            | Self::ExpiredVirtualKey => StatusCode::UNAUTHORIZED,
             Self::InvalidOperatorToken | Self::DisabledOperatorToken => StatusCode::UNAUTHORIZED,
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
             Self::RequestBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
@@ -99,6 +102,7 @@ impl GatewayError {
             Self::MalformedAuthorization => "malformed_authorization",
             Self::InvalidVirtualKey => "invalid_virtual_key",
             Self::DisabledVirtualKey => "disabled_virtual_key",
+            Self::RevokedVirtualKey => "revoked_virtual_key",
             Self::ExpiredVirtualKey => "expired_virtual_key",
             Self::InvalidOperatorToken => "invalid_operator_token",
             Self::DisabledOperatorToken => "disabled_operator_token",
@@ -127,6 +131,7 @@ impl GatewayError {
             Self::MalformedAuthorization => "Authorization header must be a Bearer Relayna key.",
             Self::InvalidVirtualKey => "Virtual key is invalid.",
             Self::DisabledVirtualKey => "Virtual key is disabled.",
+            Self::RevokedVirtualKey => "Virtual key is revoked.",
             Self::ExpiredVirtualKey => "Virtual key has expired.",
             Self::InvalidOperatorToken => "Operator token is invalid.",
             Self::DisabledOperatorToken => "Operator token is disabled.",
