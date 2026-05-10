@@ -20,7 +20,6 @@ fn main() -> anyhow::Result<()> {
         .context("bootstrap operator token")?
     {
         tracing::warn!(
-            operator_token = %material.raw_token,
             "generated first Relayna Gateway operator token; store it securely because it will not be shown again"
         );
         println!("Relayna Gateway operator token: {}", material.raw_token);

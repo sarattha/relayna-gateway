@@ -181,39 +181,6 @@ impl PostgresStore {
         Ok(Some(response))
     }
 
-    async fn active_operator_token_exists(&self) -> GatewayResult<bool> {
-        sqlx::query_scalar::<_, bool>(
-            r#"
-            SELECT EXISTS (
-                SELECT 1
-                FROM operator_tokens
-                WHERE disabled = false AND revoked_at IS NULL
-            )
-            "#,
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|_| GatewayError::StoreUnavailable)
-    }
-
-    async fn operator_token_response(
-        &self,
-        token_id: Uuid,
-    ) -> GatewayResult<OperatorTokenResponse> {
-        sqlx::query(
-            r#"
-            SELECT id, token_prefix, disabled, revoked_at, last_used_at, created_at, updated_at
-            FROM operator_tokens
-            WHERE id = $1
-            "#,
-        )
-        .bind(token_id)
-        .fetch_one(&self.pool)
-        .await
-        .map(operator_token_response_from_row)
-        .map_err(|_| GatewayError::StoreUnavailable)
-    }
-
     async fn stored_operator_token_by_prefix(
         &self,
         prefix: &str,
@@ -712,25 +679,31 @@ impl OperatorTokenStore for PostgresStore {
         &self,
         material: &OperatorTokenMaterial,
     ) -> GatewayResult<Option<OperatorTokenResponse>> {
-        if self.active_operator_token_exists().await? {
-            return Ok(None);
-        }
-
         let token_id = Uuid::new_v4();
-        sqlx::query(
+        match sqlx::query(
             r#"
             INSERT INTO operator_tokens (id, token_prefix, token_hash)
-            VALUES ($1, $2, $3)
+            SELECT $1, $2, $3
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM operator_tokens
+                WHERE disabled = false AND revoked_at IS NULL
+            )
+            RETURNING id, token_prefix, disabled, revoked_at, last_used_at, created_at, updated_at
             "#,
         )
         .bind(token_id)
         .bind(&material.token_prefix)
         .bind(&material.token_hash)
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
-        .map_err(|_| GatewayError::StoreUnavailable)?;
-
-        self.operator_token_response(token_id).await.map(Some)
+        {
+            Ok(row) => Ok(row.map(operator_token_response_from_row)),
+            Err(error) if is_unique_violation_on(&error, "operator_tokens_one_active_idx") => {
+                Ok(None)
+            }
+            Err(_) => Err(GatewayError::StoreUnavailable),
+        }
     }
 
     async fn verify_operator_token(
@@ -791,23 +764,25 @@ impl OperatorTokenStore for PostgresStore {
         .execute(&mut *tx)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
-        sqlx::query(
+        let response = sqlx::query(
             r#"
             INSERT INTO operator_tokens (id, token_prefix, token_hash)
             VALUES ($1, $2, $3)
+            RETURNING id, token_prefix, disabled, revoked_at, last_used_at, created_at, updated_at
             "#,
         )
         .bind(token_id)
         .bind(&material.token_prefix)
         .bind(&material.token_hash)
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await
+        .map(operator_token_response_from_row)
         .map_err(|_| GatewayError::StoreUnavailable)?;
         tx.commit()
             .await
             .map_err(|_| GatewayError::StoreUnavailable)?;
 
-        self.operator_token_response(token_id).await
+        Ok(response)
     }
 }
 
@@ -1533,6 +1508,13 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
     error
         .as_database_error()
         .is_some_and(|database_error| database_error.code().as_deref() == Some("23505"))
+}
+
+fn is_unique_violation_on(error: &sqlx::Error, constraint: &str) -> bool {
+    error.as_database_error().is_some_and(|database_error| {
+        database_error.code().as_deref() == Some("23505")
+            && database_error.constraint() == Some(constraint)
+    })
 }
 
 fn append_usage_filters<'a>(builder: &mut QueryBuilder<'a, Postgres>, query: &'a UsageQuery) {

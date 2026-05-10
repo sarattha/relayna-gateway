@@ -12,3 +12,7 @@ CREATE TABLE IF NOT EXISTS operator_tokens (
 CREATE INDEX IF NOT EXISTS operator_tokens_active_idx
     ON operator_tokens (created_at DESC)
     WHERE disabled = false AND revoked_at IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS operator_tokens_one_active_idx
+    ON operator_tokens ((true))
+    WHERE disabled = false AND revoked_at IS NULL;
