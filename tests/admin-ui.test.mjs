@@ -48,6 +48,13 @@ test("routes view includes service route registrations", () => {
   assert.match(js, /allowed_methods/);
 });
 
+test("service methods use a multi-select control", () => {
+  assert.match(js, /function methodSelect\(selected = \[\]\)/);
+  assert.match(js, /<select name="allowed_methods" multiple size="5">/);
+  assert.match(js, /form\.getAll\("allowed_methods"\)/);
+  assert.match(css, /select\[multiple\]/);
+});
+
 test("service editor closes after a successful save", () => {
   assert.match(
     js,
