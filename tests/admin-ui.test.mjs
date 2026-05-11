@@ -20,7 +20,7 @@ function test(name, fn) {
 }
 
 test("admin portal shell exposes all release-critical views", () => {
-  for (const view of ["overview", "keys", "services", "usage", "health"]) {
+  for (const view of ["overview", "keys", "routes", "services", "usage", "health"]) {
     assert.match(html, new RegExp(`data-view="${view}"`));
   }
   assert.match(html, /id="operator-token"/);
@@ -31,6 +31,7 @@ test("admin portal calls the expected gateway admin APIs", () => {
   for (const endpoint of [
     "/admin/usage/summary",
     "/admin/provider-health",
+    "/admin/openai-routes",
     "/admin/keys",
     "/admin/services",
     "/admin/operator-token/rotate",
@@ -38,6 +39,28 @@ test("admin portal calls the expected gateway admin APIs", () => {
   ]) {
     assert.match(js, new RegExp(endpoint.replaceAll("/", "\\/")));
   }
+});
+
+test("routes view includes service route registrations", () => {
+  assert.match(js, /Registered service routes/);
+  assert.match(js, /function serviceRouteTable\(rows\)/);
+  assert.match(js, /route_pattern/);
+  assert.match(js, /allowed_methods/);
+});
+
+test("service methods use explicit checkbox controls", () => {
+  assert.match(js, /function methodSelect\(selected = \[\]\)/);
+  assert.match(js, /class="checkbox-group"/);
+  assert.match(js, /name="allowed_methods" type="checkbox"/);
+  assert.match(js, /form\.getAll\("allowed_methods"\)/);
+  assert.match(css, /\.checkbox-group/);
+});
+
+test("service editor closes after a successful save", () => {
+  assert.match(
+    js,
+    /async function patchService\(event\) \{[\s\S]*await api\(`\/admin\/services\/\$\{serviceName\}`,[\s\S]*state\.editingServiceName = null;[\s\S]*await services\(\);[\s\S]*\}/,
+  );
 });
 
 test("admin portal escapes rendered user-controlled values", () => {

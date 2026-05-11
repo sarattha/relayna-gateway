@@ -24,6 +24,8 @@ pub enum GatewayError {
     DisabledOperatorToken,
     #[error("unsupported route")]
     UnsupportedRoute,
+    #[error("route is disabled")]
+    DisabledRoute,
     #[error("request body too large")]
     RequestBodyTooLarge,
     #[error("upstream timed out")]
@@ -80,6 +82,7 @@ impl GatewayError {
             | Self::ExpiredVirtualKey => StatusCode::UNAUTHORIZED,
             Self::InvalidOperatorToken | Self::DisabledOperatorToken => StatusCode::UNAUTHORIZED,
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
+            Self::DisabledRoute => StatusCode::FORBIDDEN,
             Self::RequestBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::PolicyDenied => StatusCode::FORBIDDEN,
             Self::RateLimitExceeded { .. } => StatusCode::TOO_MANY_REQUESTS,
@@ -107,6 +110,7 @@ impl GatewayError {
             Self::InvalidOperatorToken => "invalid_operator_token",
             Self::DisabledOperatorToken => "disabled_operator_token",
             Self::UnsupportedRoute => "unsupported_route",
+            Self::DisabledRoute => "disabled_route",
             Self::RequestBodyTooLarge => "request_body_too_large",
             Self::UpstreamTimeout => "upstream_timeout",
             Self::UpstreamConnection => "upstream_connection",
@@ -136,6 +140,7 @@ impl GatewayError {
             Self::InvalidOperatorToken => "Operator token is invalid.",
             Self::DisabledOperatorToken => "Operator token is disabled.",
             Self::UnsupportedRoute => "Route is not supported by this gateway.",
+            Self::DisabledRoute => "Route is disabled by gateway policy.",
             Self::RequestBodyTooLarge => "Request body exceeds the route limit.",
             Self::PolicyDenied => "Request is denied by key policy.",
             Self::RateLimitExceeded { .. } => "Rate limit exceeded.",

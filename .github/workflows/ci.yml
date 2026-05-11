@@ -90,6 +90,9 @@ jobs:
         run: |
           ruby -ryaml -e 'Dir[".github/workflows/*.yml"].each { |path| YAML.load_file(path) }'
 
+      - name: Validate release metadata
+        run: python3 scripts/validate-release-metadata.py
+
   docs:
     name: docs
     runs-on: ubuntu-latest

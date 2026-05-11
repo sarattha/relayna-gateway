@@ -2,6 +2,7 @@ const tokenKey = "relayna_gateway_operator_token";
 const state = {
   view: "overview",
   keys: [],
+  openaiRoutes: [],
   services: [],
   editingKeyId: null,
   editingServiceName: null,
@@ -12,6 +13,7 @@ const app = document.querySelector("#app");
 const content = document.querySelector("#content");
 const title = document.querySelector("#view-title");
 const notice = document.querySelector("#notice");
+const requestTimeoutMs = 8000;
 
 function token() {
   return sessionStorage.getItem(tokenKey);
@@ -24,7 +26,7 @@ function setNotice(message, kind = "error") {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetchWithTimeout(path, {
     ...options,
     headers: {
       "content-type": "application/json",
@@ -42,6 +44,30 @@ async function api(path, options = {}) {
   }
   if (response.status === 204) return null;
   return response.json();
+}
+
+async function json(path, options = {}) {
+  const response = await fetchWithTimeout(path, options);
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json();
+}
+
+async function fetchWithTimeout(path, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  try {
+    return await fetch(path, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("request_timeout");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function showRawToken(rawToken, label = "Token shown once") {
@@ -138,29 +164,34 @@ async function refresh() {
   try {
     if (state.view === "overview") await overview();
     if (state.view === "keys") await keys();
+    if (state.view === "routes") await routes();
     if (state.view === "services") await services();
     if (state.view === "usage") await usage();
     if (state.view === "health") await health();
   } catch (error) {
     setNotice(error.message);
+    content.innerHTML = `<section class="panel"><div class="empty-state"><p>${esc(error.message)}</p></div></section>`;
   }
 }
 
 async function overview() {
-  const [summary, healthRows, ready, keysRows, servicesRows] = await Promise.all([
+  const [summary, healthRows, ready, keysRows, openaiRoutes, servicesRows] = await Promise.all([
     api("/admin/usage/summary"),
     api("/admin/provider-health"),
-    fetch("/readyz").then((response) => response.json()),
+    json("/readyz"),
     api("/admin/keys"),
+    api("/admin/openai-routes"),
     api("/admin/services"),
   ]);
   const activeKeys = keysRows.filter((key) => !key.disabled && !key.revoked_at).length;
+  const enabledRoutes = openaiRoutes.filter((route) => route.enabled).length;
   const enabledServices = servicesRows.filter((service) => service.enabled).length;
   content.innerHTML = `
     <div class="grid stats">
       ${stat("Readiness", ready.status)}
       ${stat("Requests", summary.request_count)}
       ${stat("Active keys", activeKeys)}
+      ${stat("OpenAI routes", `${enabledRoutes}/${openaiRoutes.length}`)}
       ${stat("Enabled services", enabledServices)}
       ${stat("Failures", summary.failure_count)}
       ${stat("Cost", money(summary.estimated_cost_usd))}
@@ -336,6 +367,62 @@ async function keyAction(event) {
   await keys();
 }
 
+async function routes() {
+  [state.openaiRoutes, state.services] = await Promise.all([
+    api("/admin/openai-routes"),
+    api("/admin/services"),
+  ]);
+  content.innerHTML = `
+    <section class="panel">
+      <div class="panel-heading"><h3>OpenAI-compatible routes</h3><span class="subtle">${state.openaiRoutes.length} total</span></div>
+      ${openaiRouteTable(state.openaiRoutes)}
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Registered service routes</h3><span class="subtle">${state.services.length} total</span></div>
+      ${serviceRouteTable(state.services)}
+    </section>
+  `;
+  document.querySelectorAll("[data-openai-route-action]").forEach((button) => {
+    button.addEventListener("click", openaiRouteAction);
+  });
+}
+
+function openaiRouteTable(rows) {
+  return table(
+    ["Route", "State", "Updated", "Actions"],
+    rows.map((row) => [
+      `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
+      row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
+      time(row.updated_at),
+      `<div class="actions">
+        <button data-openai-route-action="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}">${row.enabled ? "Disable" : "Enable"}</button>
+      </div>`,
+    ]),
+  );
+}
+
+function serviceRouteTable(rows) {
+  return table(
+    ["Service", "Route", "State", "Methods", "Upstream", "Credential"],
+    rows.map((row) => [
+      `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
+      `<code>${esc(row.route_pattern)}</code>`,
+      serviceBadges(row),
+      esc(listValue(row.allowed_methods, "none")),
+      esc(row.upstream_base_url || "missing"),
+      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+    ]),
+  );
+}
+
+async function openaiRouteAction(event) {
+  const { routeId, openaiRouteAction: action } = event.currentTarget.dataset;
+  if (!(await confirmAction(`${action} ${routeId}`, "This gateway route change is written to the database."))) return;
+  await api(`/admin/openai-routes/${routeId}/${action}`, { method: "POST", body: "{}" });
+  setNotice(`OpenAI route ${action}d.`, "success");
+  await routes();
+}
+
 async function services() {
   state.services = await api("/admin/services");
   const editing = state.services.find((service) => service.name === state.editingServiceName);
@@ -349,7 +436,7 @@ async function services() {
           <label>Route pattern<input name="route_pattern" placeholder="/services/name/*"></label>
           <label>Upstream URL<input name="upstream_base_url"></label>
           <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
-          <label>Methods<input name="allowed_methods" value="POST"></label>
+          <div class="field"><span>Methods</span>${methodSelect(["POST"])}</div>
           <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="60000"></label>
           <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="2097152"></label>
           <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
@@ -386,7 +473,7 @@ function serviceEditForm(service) {
       <label>Route pattern<input name="route_pattern" value="${attr(service.route_pattern)}"></label>
       <label>Upstream URL<input name="upstream_base_url" value="${attr(service.upstream_base_url ?? "")}"></label>
       <label>Credential<input name="credential" type="password" autocomplete="new-password" placeholder="${service.credential_configured ? "configured" : "missing"}"></label>
-      <label>Methods<input name="allowed_methods" value="${attr(listValue(service.allowed_methods, "POST"))}"></label>
+      <div class="field"><span>Methods</span>${methodSelect(service.allowed_methods)}</div>
       <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="${attr(service.timeout_ms)}"></label>
       <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
       <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
@@ -547,7 +634,7 @@ async function loadUsage(event) {
 
 async function health() {
   const [ready, rows] = await Promise.all([
-    fetch("/readyz").then((response) => response.json()),
+    json("/readyz"),
     api("/admin/provider-health"),
   ]);
   const requestCount = rows.reduce((sum, row) => sum + row.request_count, 0);
@@ -623,7 +710,7 @@ function serviceBody(form, patch) {
     route_pattern: form.get("route_pattern") || undefined,
     upstream_base_url: patch ? nullableString(form.get("upstream_base_url")) : blankToUndefined(form.get("upstream_base_url")),
     enabled: form.has("enabled"),
-    allowed_methods: csv(form.get("allowed_methods")),
+    allowed_methods: form.getAll("allowed_methods"),
     timeout_ms: Number(form.get("timeout_ms")),
     max_body_bytes: Number(form.get("max_body_bytes")),
     cost_mode: form.get("cost_mode"),
@@ -688,6 +775,17 @@ function toLocalInput(value) {
 
 function listValue(values, fallback) {
   return Array.isArray(values) && values.length ? values.join(",") : fallback;
+}
+
+function methodSelect(selected = []) {
+  const selectedMethods = new Set(Array.isArray(selected) && selected.length ? selected : ["POST"]);
+  return `<div class="checkbox-group" role="group" aria-label="Methods">
+    ${["GET", "POST", "PUT", "PATCH", "DELETE"].map((value) => methodOption(value, selectedMethods)).join("")}
+  </div>`;
+}
+
+function methodOption(value, selectedMethods) {
+  return `<label><input name="allowed_methods" type="checkbox" value="${attr(value)}" ${selectedMethods.has(value) ? "checked" : ""}> ${esc(value)}</label>`;
 }
 
 function option(value, selected) {

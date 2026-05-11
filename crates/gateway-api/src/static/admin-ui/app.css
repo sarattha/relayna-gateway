@@ -72,7 +72,8 @@ textarea {
   resize: vertical;
 }
 
-label {
+label,
+.field {
   display: grid;
   gap: 5px;
   min-width: 0;
@@ -91,6 +92,32 @@ label.check {
 }
 
 label.check input {
+  width: auto;
+  min-height: 0;
+}
+
+.checkbox-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
+  gap: 7px;
+  width: 100%;
+}
+
+.checkbox-group label {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid #c2cad5;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #172033;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.checkbox-group input {
   width: auto;
   min-height: 0;
 }

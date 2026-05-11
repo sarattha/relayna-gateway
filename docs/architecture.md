@@ -25,12 +25,13 @@ flowchart LR
 
 ## Request Flow
 
-1. A client sends an OpenAI-compatible request with `Authorization: Bearer rk_live_...`.
+1. A client sends an OpenAI-compatible or registered service request with `Authorization: Bearer rk_live_...`.
 2. The proxy extracts the key prefix and loads the hashed key record from PostgreSQL.
-3. `gateway-core` verifies the key secret, disabled state, revocation state, expiry, allowed route, allowed model, allowed provider, streaming permission, rate limit, and budget.
-4. Redis counters are checked and updated for rate limit and budget decisions.
-5. The proxy strips client credentials and forwards the request with the configured internal upstream credential.
-6. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields.
+3. Globally disabled OpenAI-compatible LiteLLM routes are rejected before policy, rate-limit, and budget checks.
+4. `gateway-core` verifies the key secret, disabled state, revocation state, expiry, allowed route, allowed model, allowed provider, streaming permission, service method permission, rate limit, and budget.
+5. Redis counters are checked and updated for rate limit and budget decisions.
+6. The proxy strips client credentials and forwards the request with the configured internal upstream credential.
+7. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields.
 
 ## Control Plane
 
@@ -60,7 +61,10 @@ PostgreSQL is the source of truth for durable state:
 - Policy fields for routes, models, providers, services, streaming, tools, rate limits, and budgets.
 - Usage events consumed by Relayna Studio and operators.
 - Service registrations and Studio sync state.
+- Global OpenAI route enablement for `/v1/chat/completions` and `/v1/responses`.
 - Operator token hashes.
+
+Registered service routes support wildcard paths under `/services/<service-name>/*`. The route resolver can match `GET` for service wildcard traffic, but forwarding still requires the service registration to include `GET` in its allowed method set. OpenAI-compatible routes, direct provider routes, and legacy named service routes remain `POST` routes.
 
 Redis is the fast mutable state layer:
 

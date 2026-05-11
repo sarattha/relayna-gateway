@@ -5,8 +5,9 @@ use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
     evaluate_policy, extract_estimated_cost_usd, extract_generation_features, extract_model,
     extract_usage_tokens, is_retry_safe_status, service_wildcard_suffix, AuthenticatedKey,
-    BudgetDecision, BudgetStore, GatewayError, PolicyLookup, Provider, RateLimitDecision,
-    RateLimitStore, Route, RouteMatch, ServiceRegistryLookup, UsageEvent, UsageRecorder,
+    BudgetDecision, BudgetStore, GatewayError, GatewayResult, OpenAiRouteSettingsLookup,
+    PolicyLookup, Provider, RateLimitDecision, RateLimitStore, Route, RouteMatch,
+    ServiceRegistryLookup, UsageEvent, UsageRecorder,
 };
 use http::Uri;
 use pingora_core::{
@@ -93,7 +94,11 @@ pub struct RelaynaPingoraProxy<S, R> {
 
 impl<S, R> RelaynaPingoraProxy<S, R>
 where
-    S: VirtualKeyLookup + UsageRecorder + PolicyLookup + ServiceRegistryLookup,
+    S: VirtualKeyLookup
+        + UsageRecorder
+        + PolicyLookup
+        + ServiceRegistryLookup
+        + OpenAiRouteSettingsLookup,
     R: RateLimitStore + BudgetStore,
 {
     pub fn new(store: Arc<S>, control_state: Arc<R>, config: PingoraLiteLlmConfig) -> Self {
@@ -133,6 +138,7 @@ where
         + UsageRecorder
         + PolicyLookup
         + ServiceRegistryLookup
+        + OpenAiRouteSettingsLookup
         + Send
         + Sync
         + 'static,
@@ -310,6 +316,13 @@ where
         }
 
         let now = Utc::now();
+        if let Err(error) = self.ensure_openai_route_enabled(route).await {
+            self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                .await;
+            respond_error(session, error, &ctx.request_id).await?;
+            return Ok(false);
+        }
+
         let mut features = extract_generation_features(&ctx.body_prefix);
         if features.service_name.is_none() {
             features.service_name = matched.service_name.clone();
@@ -675,7 +688,26 @@ where
         };
         header_value(req, "x-relayna-worker-token").is_some_and(|actual| actual == expected)
     }
+}
 
+impl<S, R> RelaynaPingoraProxy<S, R>
+where
+    S: OpenAiRouteSettingsLookup,
+{
+    async fn ensure_openai_route_enabled(&self, route: Route) -> GatewayResult<()> {
+        if self.store.openai_route_enabled(route).await? {
+            Ok(())
+        } else {
+            Err(GatewayError::DisabledRoute)
+        }
+    }
+}
+
+impl<S, R> RelaynaPingoraProxy<S, R>
+where
+    S: UsageRecorder,
+    R: BudgetStore,
+{
     async fn record_terminal_usage(
         &self,
         ctx: &mut PingoraContext,
@@ -1001,9 +1033,42 @@ mod tests {
         assert!(!proxy.activate_provider_fallback(&mut ctx));
     }
 
-    #[derive(Default)]
+    #[tokio::test]
+    async fn openai_route_setting_blocks_disabled_litellm_routes_only() {
+        let store = Arc::new(MemoryUsageStore::default());
+        *store.openai_routes_enabled.lock().expect("routes lock") = false;
+        let proxy = RelaynaPingoraProxy {
+            store,
+            control_state: Arc::new(MemoryControlState::default()),
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+                .expect("config"),
+        };
+
+        assert_eq!(
+            proxy
+                .ensure_openai_route_enabled(Route::ChatCompletions)
+                .await
+                .unwrap_err(),
+            GatewayError::DisabledRoute
+        );
+        proxy
+            .ensure_openai_route_enabled(Route::ServiceWildcard)
+            .await
+            .expect("service wildcard is not controlled by OpenAI route settings");
+    }
+
     struct MemoryUsageStore {
         events: Mutex<Vec<UsageEvent>>,
+        openai_routes_enabled: Mutex<bool>,
+    }
+
+    impl Default for MemoryUsageStore {
+        fn default() -> Self {
+            Self {
+                events: Mutex::new(Vec::new()),
+                openai_routes_enabled: Mutex::new(true),
+            }
+        }
     }
 
     #[async_trait]
@@ -1011,6 +1076,17 @@ mod tests {
         async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()> {
             self.events.lock().expect("events lock").push(event.clone());
             Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl OpenAiRouteSettingsLookup for MemoryUsageStore {
+        async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool> {
+            if gateway_core::openai_route_id(route).is_some() {
+                Ok(*self.openai_routes_enabled.lock().expect("routes lock"))
+            } else {
+                Ok(true)
+            }
         }
     }
 
