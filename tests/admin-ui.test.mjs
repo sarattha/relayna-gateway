@@ -48,6 +48,13 @@ test("routes view includes service route registrations", () => {
   assert.match(js, /allowed_methods/);
 });
 
+test("service editor closes after a successful save", () => {
+  assert.match(
+    js,
+    /async function patchService\(event\) \{[\s\S]*await api\(`\/admin\/services\/\$\{serviceName\}`,[\s\S]*state\.editingServiceName = null;[\s\S]*await services\(\);[\s\S]*\}/,
+  );
+});
+
 test("admin portal escapes rendered user-controlled values", () => {
   assert.match(js, /function esc\(value\)/);
   for (const replacement of ["&amp;", "&lt;", "&gt;", "&quot;", "&#039;"]) {
