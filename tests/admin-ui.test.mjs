@@ -41,6 +41,13 @@ test("admin portal calls the expected gateway admin APIs", () => {
   }
 });
 
+test("routes view includes service route registrations", () => {
+  assert.match(js, /Registered service routes/);
+  assert.match(js, /function serviceRouteTable\(rows\)/);
+  assert.match(js, /route_pattern/);
+  assert.match(js, /allowed_methods/);
+});
+
 test("admin portal escapes rendered user-controlled values", () => {
   assert.match(js, /function esc\(value\)/);
   for (const replacement of ["&amp;", "&lt;", "&gt;", "&quot;", "&#039;"]) {

@@ -342,11 +342,18 @@ async function keyAction(event) {
 }
 
 async function routes() {
-  state.openaiRoutes = await api("/admin/openai-routes");
+  [state.openaiRoutes, state.services] = await Promise.all([
+    api("/admin/openai-routes"),
+    api("/admin/services"),
+  ]);
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>OpenAI-compatible routes</h3><span class="subtle">${state.openaiRoutes.length} total</span></div>
       ${openaiRouteTable(state.openaiRoutes)}
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Registered service routes</h3><span class="subtle">${state.services.length} total</span></div>
+      ${serviceRouteTable(state.services)}
     </section>
   `;
   document.querySelectorAll("[data-openai-route-action]").forEach((button) => {
@@ -364,6 +371,20 @@ function openaiRouteTable(rows) {
       `<div class="actions">
         <button data-openai-route-action="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}">${row.enabled ? "Disable" : "Enable"}</button>
       </div>`,
+    ]),
+  );
+}
+
+function serviceRouteTable(rows) {
+  return table(
+    ["Service", "Route", "State", "Methods", "Upstream", "Credential"],
+    rows.map((row) => [
+      `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
+      `<code>${esc(row.route_pattern)}</code>`,
+      serviceBadges(row),
+      esc(listValue(row.allowed_methods, "none")),
+      esc(row.upstream_base_url || "missing"),
+      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
     ]),
   );
 }
