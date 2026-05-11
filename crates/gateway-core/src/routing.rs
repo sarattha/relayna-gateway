@@ -45,17 +45,21 @@ impl Route {
     }
 
     pub fn resolve_match(method: &Method, path: &str) -> GatewayResult<RouteMatch> {
-        if method != Method::POST {
-            return Err(GatewayError::UnsupportedRoute);
-        }
-
         match path {
-            "/v1/chat/completions" => Ok(RouteMatch::litellm(Self::ChatCompletions)),
-            "/v1/responses" => Ok(RouteMatch::litellm(Self::Responses)),
-            "/summary" => Ok(RouteMatch::service(Self::Summary, "summary")),
-            "/translation" => Ok(RouteMatch::service(Self::Translation, "translation")),
-            "/ocr" => Ok(RouteMatch::service(Self::Ocr, "ocr")),
-            "/embeddings" => Ok(RouteMatch::service(Self::Embeddings, "embeddings")),
+            "/v1/chat/completions" if method == Method::POST => {
+                Ok(RouteMatch::litellm(Self::ChatCompletions))
+            }
+            "/v1/responses" if method == Method::POST => Ok(RouteMatch::litellm(Self::Responses)),
+            "/summary" if method == Method::POST => {
+                Ok(RouteMatch::service(Self::Summary, "summary"))
+            }
+            "/translation" if method == Method::POST => {
+                Ok(RouteMatch::service(Self::Translation, "translation"))
+            }
+            "/ocr" if method == Method::POST => Ok(RouteMatch::service(Self::Ocr, "ocr")),
+            "/embeddings" if method == Method::POST => {
+                Ok(RouteMatch::service(Self::Embeddings, "embeddings"))
+            }
             _ if path.starts_with("/services/") => {
                 let service_name = path
                     .trim_start_matches("/services/")
@@ -65,15 +69,17 @@ impl Route {
                     .ok_or(GatewayError::UnsupportedRoute)?;
                 Ok(RouteMatch::service(Self::ServiceWildcard, service_name))
             }
-            _ if path.starts_with("/providers/openai/") => Ok(RouteMatch {
-                route: Self::DirectOpenAi,
-                backend: BackendType::DirectProvider,
-                provider: Provider::OpenAiCompatible,
-                service_name: None,
-                timeout_ms: 60_000,
-                max_body_bytes: 1_048_576,
-                estimated_cost_usd: Some(0.01),
-            }),
+            _ if method == Method::POST && path.starts_with("/providers/openai/") => {
+                Ok(RouteMatch {
+                    route: Self::DirectOpenAi,
+                    backend: BackendType::DirectProvider,
+                    provider: Provider::OpenAiCompatible,
+                    service_name: None,
+                    timeout_ms: 60_000,
+                    max_body_bytes: 1_048_576,
+                    estimated_cost_usd: Some(0.01),
+                })
+            }
             _ => Err(GatewayError::UnsupportedRoute),
         }
     }
@@ -155,6 +161,10 @@ mod tests {
             GatewayError::UnsupportedRoute
         );
         assert_eq!(
+            Route::resolve(&Method::GET, "/v1/chat/completions").unwrap_err(),
+            GatewayError::UnsupportedRoute
+        );
+        assert_eq!(
             Route::resolve(&Method::POST, "/v1/completions").unwrap_err(),
             GatewayError::UnsupportedRoute
         );
@@ -177,6 +187,22 @@ mod tests {
             Route::resolve_match(&Method::POST, "/services/custom-ai/run").expect("service");
         assert_eq!(wildcard.route, Route::ServiceWildcard);
         assert_eq!(wildcard.service_name.as_deref(), Some("custom-ai"));
+    }
+
+    #[test]
+    fn resolves_service_wildcard_get_without_opening_generation_get() {
+        let wildcard = Route::resolve_match(&Method::GET, "/services/translation-service/health")
+            .expect("service wildcard");
+
+        assert_eq!(wildcard.route, Route::ServiceWildcard);
+        assert_eq!(
+            wildcard.service_name.as_deref(),
+            Some("translation-service")
+        );
+        assert_eq!(
+            Route::resolve_match(&Method::GET, "/providers/openai/v1/models").unwrap_err(),
+            GatewayError::UnsupportedRoute
+        );
     }
 
     #[test]

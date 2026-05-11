@@ -8,8 +8,9 @@ use gateway_core::{
         ServiceRegistration, ServiceRegistryLookup, ServiceResponse, ServiceSource,
         ServiceSyncStatus, ServiceSyncStatusResponse, StudioServiceImportRequest,
     },
-    verify_stored_operator_token, AdminKeyStore, AdminKeyUsageSummary, GatewayError, GatewayResult,
-    KeyPolicy, OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore, PolicyLookup,
+    verify_stored_operator_token, AdminKeyStore, AdminKeyUsageSummary, AdminOpenAiRouteStore,
+    GatewayError, GatewayResult, KeyPolicy, OpenAiRouteSetting, OpenAiRouteSettingsLookup,
+    OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore, PolicyLookup,
     ProjectUsageSummary, Provider, ProviderHealth, Route, StoredOperatorToken, UsageBreakdown,
     UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus,
     UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
@@ -813,6 +814,86 @@ impl OperatorTokenStore for PostgresStore {
 }
 
 #[async_trait]
+impl AdminOpenAiRouteStore for PostgresStore {
+    async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT route_id, route, enabled, updated_at
+            FROM openai_route_settings
+            ORDER BY route_id
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        rows.iter()
+            .map(openai_route_setting_from_row)
+            .collect::<GatewayResult<Vec<_>>>()
+    }
+
+    async fn set_openai_route_enabled(
+        &self,
+        route_id: &str,
+        enabled: bool,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        if gateway_core::openai_route_from_id(route_id).is_none() {
+            return Ok(None);
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE openai_route_settings
+            SET enabled = $2,
+                updated_at = now()
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .bind(enabled)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        sqlx::query(
+            r#"
+            SELECT route_id, route, enabled, updated_at
+            FROM openai_route_settings
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|row| openai_route_setting_from_row(&row))
+        .transpose()
+    }
+}
+
+#[async_trait]
+impl OpenAiRouteSettingsLookup for PostgresStore {
+    async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool> {
+        let Some(route_id) = gateway_core::openai_route_id(route) else {
+            return Ok(true);
+        };
+
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT enabled
+            FROM openai_route_settings
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .ok_or(GatewayError::StoreUnavailable)
+    }
+}
+
+#[async_trait]
 impl AdminServiceStore for PostgresStore {
     async fn create_service(
         &self,
@@ -1395,6 +1476,23 @@ fn parse_providers(values: &[String]) -> GatewayResult<Vec<Provider>> {
             _ => Err(GatewayError::PolicyDenied),
         })
         .collect()
+}
+
+fn openai_route_setting_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<OpenAiRouteSetting> {
+    Ok(OpenAiRouteSetting {
+        route_id: row
+            .try_get("route_id")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        route: row
+            .try_get("route")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        enabled: row
+            .try_get("enabled")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
 }
 
 fn admin_key_response_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<AdminKeyResponse> {

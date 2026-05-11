@@ -20,7 +20,7 @@ function test(name, fn) {
 }
 
 test("admin portal shell exposes all release-critical views", () => {
-  for (const view of ["overview", "keys", "services", "usage", "health"]) {
+  for (const view of ["overview", "keys", "routes", "services", "usage", "health"]) {
     assert.match(html, new RegExp(`data-view="${view}"`));
   }
   assert.match(html, /id="operator-token"/);
@@ -31,6 +31,7 @@ test("admin portal calls the expected gateway admin APIs", () => {
   for (const endpoint of [
     "/admin/usage/summary",
     "/admin/provider-health",
+    "/admin/openai-routes",
     "/admin/keys",
     "/admin/services",
     "/admin/operator-token/rotate",

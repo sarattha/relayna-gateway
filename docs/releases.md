@@ -9,6 +9,7 @@ Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.0.3` is the curre
 3. Run the full verification stack:
 
    ```bash
+   python3 scripts/validate-release-metadata.py v0.0.3
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -30,7 +31,7 @@ Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.0.3` is the curre
    git push origin v0.0.3
    ```
 
-The GitHub release workflow extracts release notes from the matching `CHANGELOG.md` section and publishes the Docker image to GitHub Container Registry.
+The GitHub release workflow validates that the tag version, workspace package version, and matching `CHANGELOG.md` section agree before it builds or publishes anything. It then extracts release notes from the matching changelog section and publishes the Docker image to GitHub Container Registry.
 
 For `v0.0.3`, the workflow publishes:
 

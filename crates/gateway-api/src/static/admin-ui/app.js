@@ -2,6 +2,7 @@ const tokenKey = "relayna_gateway_operator_token";
 const state = {
   view: "overview",
   keys: [],
+  openaiRoutes: [],
   services: [],
   editingKeyId: null,
   editingServiceName: null,
@@ -138,6 +139,7 @@ async function refresh() {
   try {
     if (state.view === "overview") await overview();
     if (state.view === "keys") await keys();
+    if (state.view === "routes") await routes();
     if (state.view === "services") await services();
     if (state.view === "usage") await usage();
     if (state.view === "health") await health();
@@ -147,20 +149,23 @@ async function refresh() {
 }
 
 async function overview() {
-  const [summary, healthRows, ready, keysRows, servicesRows] = await Promise.all([
+  const [summary, healthRows, ready, keysRows, openaiRoutes, servicesRows] = await Promise.all([
     api("/admin/usage/summary"),
     api("/admin/provider-health"),
     fetch("/readyz").then((response) => response.json()),
     api("/admin/keys"),
+    api("/admin/openai-routes"),
     api("/admin/services"),
   ]);
   const activeKeys = keysRows.filter((key) => !key.disabled && !key.revoked_at).length;
+  const enabledRoutes = openaiRoutes.filter((route) => route.enabled).length;
   const enabledServices = servicesRows.filter((service) => service.enabled).length;
   content.innerHTML = `
     <div class="grid stats">
       ${stat("Readiness", ready.status)}
       ${stat("Requests", summary.request_count)}
       ${stat("Active keys", activeKeys)}
+      ${stat("OpenAI routes", `${enabledRoutes}/${openaiRoutes.length}`)}
       ${stat("Enabled services", enabledServices)}
       ${stat("Failures", summary.failure_count)}
       ${stat("Cost", money(summary.estimated_cost_usd))}
@@ -334,6 +339,41 @@ async function keyAction(event) {
   await api(`/admin/keys/${keyId}/${action}`, { method: "POST", body: "{}" });
   setNotice(`Virtual key ${action}d.`, "success");
   await keys();
+}
+
+async function routes() {
+  state.openaiRoutes = await api("/admin/openai-routes");
+  content.innerHTML = `
+    <section class="panel">
+      <div class="panel-heading"><h3>OpenAI-compatible routes</h3><span class="subtle">${state.openaiRoutes.length} total</span></div>
+      ${openaiRouteTable(state.openaiRoutes)}
+    </section>
+  `;
+  document.querySelectorAll("[data-openai-route-action]").forEach((button) => {
+    button.addEventListener("click", openaiRouteAction);
+  });
+}
+
+function openaiRouteTable(rows) {
+  return table(
+    ["Route", "State", "Updated", "Actions"],
+    rows.map((row) => [
+      `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
+      row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
+      time(row.updated_at),
+      `<div class="actions">
+        <button data-openai-route-action="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}">${row.enabled ? "Disable" : "Enable"}</button>
+      </div>`,
+    ]),
+  );
+}
+
+async function openaiRouteAction(event) {
+  const { routeId, openaiRouteAction: action } = event.currentTarget.dataset;
+  if (!(await confirmAction(`${action} ${routeId}`, "This gateway route change is written to the database."))) return;
+  await api(`/admin/openai-routes/${routeId}/${action}`, { method: "POST", body: "{}" });
+  setNotice(`OpenAI route ${action}d.`, "success");
+  await routes();
 }
 
 async function services() {

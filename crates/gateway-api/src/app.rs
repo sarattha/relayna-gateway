@@ -9,10 +9,10 @@ use axum::{
 use chrono::Utc;
 use gateway_core::{
     auth::VirtualKeyLookup, AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,
-    AdminServiceStore, CreatedAdminKeyResponse, CreatedOperatorTokenResponse, GatewayError,
-    GatewayResult, OperatorTokenMaterial, OperatorTokenStore, ServiceCreateRequest,
-    ServicePatchRequest, StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent,
-    UsageQuery, UsageQueryStore, VirtualKeyMaterial,
+    AdminOpenAiRouteStore, AdminServiceStore, CreatedAdminKeyResponse,
+    CreatedOperatorTokenResponse, GatewayError, GatewayResult, OperatorTokenMaterial,
+    OperatorTokenStore, ServiceCreateRequest, ServicePatchRequest, StudioServiceImportRequest,
+    UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore, VirtualKeyMaterial,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::Serialize;
@@ -26,6 +26,7 @@ use tower_http::{
 pub trait GatewayData:
     VirtualKeyLookup
     + AdminKeyStore
+    + AdminOpenAiRouteStore
     + AdminServiceStore
     + OperatorTokenStore
     + UsageQueryStore
@@ -73,6 +74,15 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin/keys/{key_id}/enable", post(enable_key))
         .route("/admin/keys/{key_id}/usage", get(key_usage))
         .route("/admin/operator-token/rotate", post(rotate_operator_token))
+        .route("/admin/openai-routes", get(list_openai_routes))
+        .route(
+            "/admin/openai-routes/{route_id}/disable",
+            post(disable_openai_route),
+        )
+        .route(
+            "/admin/openai-routes/{route_id}/enable",
+            post(enable_openai_route),
+        )
         .route("/admin/services", post(create_service).get(list_services))
         .route("/admin/services/import", post(import_service))
         .route("/admin/services/sync", post(sync_service))
@@ -283,6 +293,29 @@ async fn rotate_operator_token(State(state): State<AppState>, headers: HeaderMap
         .into_response(),
         Err(error) => error_response(&headers, error),
     }
+}
+
+async fn list_openai_routes(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.list_openai_route_settings().await
+    })
+    .await
+}
+
+async fn disable_openai_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(route_id): Path<String>,
+) -> Response {
+    mutate_openai_route_enabled(state, headers, route_id, false).await
+}
+
+async fn enable_openai_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(route_id): Path<String>,
+) -> Response {
+    mutate_openai_route_enabled(state, headers, route_id, true).await
 }
 
 async fn create_service(
@@ -615,6 +648,27 @@ async fn mutate_service_enabled(
     }
 }
 
+async fn mutate_openai_route_enabled(
+    state: AppState,
+    headers: HeaderMap,
+    route_id: String,
+    enabled: bool,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match state
+        .store
+        .set_openai_route_enabled(&route_id, enabled)
+        .await
+    {
+        Ok(Some(setting)) => Json(setting).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response> {
     let token = match bearer_token(headers) {
         Ok(token) => token,
@@ -664,9 +718,9 @@ mod tests {
     use gateway_core::{
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
-        OperatorTokenResponse, ProviderHealth, ServiceCostMode, ServiceResponse, ServiceSource,
-        ServiceSyncStatus, ServiceSyncStatusResponse, UsageBreakdown, UsageSummary,
-        UsageTimeseriesPoint,
+        OpenAiRouteSetting, OperatorTokenResponse, ProviderHealth, ServiceCostMode,
+        ServiceResponse, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
+        UsageBreakdown, UsageSummary, UsageTimeseriesPoint,
     };
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -677,6 +731,7 @@ mod tests {
         key: Arc<Mutex<Option<StoredVirtualKey>>>,
         admin_key: Arc<Mutex<Option<AdminKeyResponse>>>,
         services: Arc<Mutex<Vec<ServiceResponse>>>,
+        openai_routes: Arc<Mutex<Vec<OpenAiRouteSetting>>>,
         operator_tokens: Arc<Mutex<Vec<String>>>,
         events: Arc<Mutex<Vec<UsageEvent>>>,
         postgres_ready: bool,
@@ -828,6 +883,27 @@ mod tests {
                 total_tokens: 0,
                 estimated_cost_usd: None,
             })
+        }
+    }
+
+    #[async_trait]
+    impl AdminOpenAiRouteStore for MemoryStore {
+        async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
+            Ok(self.openai_routes.lock().expect("lock poisoned").clone())
+        }
+
+        async fn set_openai_route_enabled(
+            &self,
+            route_id: &str,
+            enabled: bool,
+        ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+            let mut routes = self.openai_routes.lock().expect("lock poisoned");
+            let Some(route) = routes.iter_mut().find(|route| route.route_id == route_id) else {
+                return Ok(None);
+            };
+            route.enabled = enabled;
+            route.updated_at = Utc::now();
+            Ok(Some(route.clone()))
         }
     }
 
@@ -1160,6 +1236,24 @@ mod tests {
         }
     }
 
+    fn default_openai_routes() -> Vec<OpenAiRouteSetting> {
+        let now = Utc::now();
+        vec![
+            OpenAiRouteSetting {
+                route_id: "chat-completions".to_owned(),
+                route: "/v1/chat/completions".to_owned(),
+                enabled: true,
+                updated_at: now,
+            },
+            OpenAiRouteSetting {
+                route_id: "responses".to_owned(),
+                route: "/v1/responses".to_owned(),
+                enabled: true,
+                updated_at: now,
+            },
+        ]
+    }
+
     async fn request(app: Router, route: &str) -> Response {
         app.oneshot(
             axum::http::Request::builder()
@@ -1231,6 +1325,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1249,6 +1344,7 @@ mod tests {
             key: Arc::new(Mutex::new(Some(stored_key(raw)))),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1268,6 +1364,7 @@ mod tests {
             key: Arc::new(Mutex::new(Some(stored_key(raw)))),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: false,
@@ -1285,6 +1382,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1308,6 +1406,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1344,6 +1443,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1379,6 +1479,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1464,6 +1565,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1480,6 +1582,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1496,6 +1599,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1518,6 +1622,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1552,11 +1657,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn openai_route_settings_can_be_listed_and_toggled() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+
+        let response = admin_get(
+            app.clone(),
+            "/admin/openai-routes",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value.as_array().expect("routes").len(), 2);
+
+        let response = admin_post(
+            app.clone(),
+            "/admin/openai-routes/chat-completions/disable",
+            Some(TEST_OPERATOR_TOKEN),
+            "{}",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["route_id"], "chat-completions");
+        assert_eq!(value["enabled"], false);
+
+        let response = admin_post(
+            app,
+            "/admin/openai-routes/chat-completions/enable",
+            Some(TEST_OPERATOR_TOKEN),
+            "{}",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["enabled"], true);
+    }
+
+    #[tokio::test]
     async fn admin_service_create_redacts_raw_credential() {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1597,6 +1759,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -1638,6 +1801,7 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
