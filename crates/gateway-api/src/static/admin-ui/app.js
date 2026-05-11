@@ -13,6 +13,7 @@ const app = document.querySelector("#app");
 const content = document.querySelector("#content");
 const title = document.querySelector("#view-title");
 const notice = document.querySelector("#notice");
+const requestTimeoutMs = 8000;
 
 function token() {
   return sessionStorage.getItem(tokenKey);
@@ -25,7 +26,7 @@ function setNotice(message, kind = "error") {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetchWithTimeout(path, {
     ...options,
     headers: {
       "content-type": "application/json",
@@ -43,6 +44,30 @@ async function api(path, options = {}) {
   }
   if (response.status === 204) return null;
   return response.json();
+}
+
+async function json(path, options = {}) {
+  const response = await fetchWithTimeout(path, options);
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json();
+}
+
+async function fetchWithTimeout(path, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  try {
+    return await fetch(path, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("request_timeout");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function showRawToken(rawToken, label = "Token shown once") {
@@ -145,6 +170,7 @@ async function refresh() {
     if (state.view === "health") await health();
   } catch (error) {
     setNotice(error.message);
+    content.innerHTML = `<section class="panel"><div class="empty-state"><p>${esc(error.message)}</p></div></section>`;
   }
 }
 
@@ -152,7 +178,7 @@ async function overview() {
   const [summary, healthRows, ready, keysRows, openaiRoutes, servicesRows] = await Promise.all([
     api("/admin/usage/summary"),
     api("/admin/provider-health"),
-    fetch("/readyz").then((response) => response.json()),
+    json("/readyz"),
     api("/admin/keys"),
     api("/admin/openai-routes"),
     api("/admin/services"),
@@ -608,7 +634,7 @@ async function loadUsage(event) {
 
 async function health() {
   const [ready, rows] = await Promise.all([
-    fetch("/readyz").then((response) => response.json()),
+    json("/readyz"),
     api("/admin/provider-health"),
   ]);
   const requestCount = rows.reduce((sum, row) => sum + row.request_count, 0);
