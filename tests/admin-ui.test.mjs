@@ -48,11 +48,12 @@ test("routes view includes service route registrations", () => {
   assert.match(js, /allowed_methods/);
 });
 
-test("service methods use a multi-select control", () => {
+test("service methods use explicit checkbox controls", () => {
   assert.match(js, /function methodSelect\(selected = \[\]\)/);
-  assert.match(js, /<select name="allowed_methods" multiple size="5">/);
+  assert.match(js, /class="checkbox-group"/);
+  assert.match(js, /name="allowed_methods" type="checkbox"/);
   assert.match(js, /form\.getAll\("allowed_methods"\)/);
-  assert.match(css, /select\[multiple\]/);
+  assert.match(css, /\.checkbox-group/);
 });
 
 test("service editor closes after a successful save", () => {

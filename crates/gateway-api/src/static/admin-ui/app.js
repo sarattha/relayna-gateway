@@ -436,7 +436,7 @@ async function services() {
           <label>Route pattern<input name="route_pattern" placeholder="/services/name/*"></label>
           <label>Upstream URL<input name="upstream_base_url"></label>
           <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
-          <label>Methods${methodSelect(["POST"])}</label>
+          <div class="field"><span>Methods</span>${methodSelect(["POST"])}</div>
           <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="60000"></label>
           <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="2097152"></label>
           <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
@@ -473,7 +473,7 @@ function serviceEditForm(service) {
       <label>Route pattern<input name="route_pattern" value="${attr(service.route_pattern)}"></label>
       <label>Upstream URL<input name="upstream_base_url" value="${attr(service.upstream_base_url ?? "")}"></label>
       <label>Credential<input name="credential" type="password" autocomplete="new-password" placeholder="${service.credential_configured ? "configured" : "missing"}"></label>
-      <label>Methods${methodSelect(service.allowed_methods)}</label>
+      <div class="field"><span>Methods</span>${methodSelect(service.allowed_methods)}</div>
       <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="${attr(service.timeout_ms)}"></label>
       <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
       <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
@@ -779,13 +779,13 @@ function listValue(values, fallback) {
 
 function methodSelect(selected = []) {
   const selectedMethods = new Set(Array.isArray(selected) && selected.length ? selected : ["POST"]);
-  return `<select name="allowed_methods" multiple size="5">
+  return `<div class="checkbox-group" role="group" aria-label="Methods">
     ${["GET", "POST", "PUT", "PATCH", "DELETE"].map((value) => methodOption(value, selectedMethods)).join("")}
-  </select>`;
+  </div>`;
 }
 
 function methodOption(value, selectedMethods) {
-  return `<option value="${attr(value)}" ${selectedMethods.has(value) ? "selected" : ""}>${esc(value)}</option>`;
+  return `<label><input name="allowed_methods" type="checkbox" value="${attr(value)}" ${selectedMethods.has(value) ? "checked" : ""}> ${esc(value)}</label>`;
 }
 
 function option(value, selected) {
