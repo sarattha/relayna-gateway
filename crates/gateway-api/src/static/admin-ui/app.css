@@ -307,6 +307,16 @@ td code {
   font-size: 12px;
 }
 
+.help {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  color: #536276;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .stat {
   display: grid;
   gap: 4px;

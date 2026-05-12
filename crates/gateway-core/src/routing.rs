@@ -121,7 +121,7 @@ impl RouteMatch {
         }
     }
 
-    fn service(route: Route, service_name: &str) -> Self {
+    pub fn service(route: Route, service_name: &str) -> Self {
         Self {
             route,
             backend: BackendType::InternalService,

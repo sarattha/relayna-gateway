@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use http::Method;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 const DEFAULT_TIMEOUT_MS: i64 = 60_000;
 const DEFAULT_MAX_BODY_BYTES: i64 = 2_097_152;
@@ -36,6 +37,7 @@ pub enum ServiceCostMode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServiceRegistration {
     pub name: String,
+    pub project_id: Option<Uuid>,
     pub studio_service_id: Option<String>,
     pub route_pattern: String,
     pub upstream_base_url: Option<String>,
@@ -58,6 +60,8 @@ pub struct ServiceRegistration {
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct ServiceCreateRequest {
     pub name: String,
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
     #[serde(default)]
     pub studio_service_id: Option<String>,
     #[serde(default)]
@@ -84,6 +88,7 @@ pub struct ServiceCreateRequest {
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 pub struct ServicePatchRequest {
+    pub project_id: Option<Option<Uuid>>,
     pub studio_service_id: Option<Option<String>>,
     pub route_pattern: Option<String>,
     pub upstream_base_url: Option<Option<String>>,
@@ -103,6 +108,8 @@ pub struct StudioServiceImportRequest {
     pub studio_service_id: String,
     pub name: String,
     #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
     pub route_pattern: Option<String>,
     #[serde(default)]
     pub category: Option<String>,
@@ -120,6 +127,7 @@ pub struct StudioServicePricing {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ServiceResponse {
     pub name: String,
+    pub project_id: Option<Uuid>,
     pub studio_service_id: Option<String>,
     pub route_pattern: String,
     pub upstream_base_url: Option<String>,
@@ -257,6 +265,29 @@ where
     }
 }
 
+#[async_trait]
+pub trait ServiceRouteLookup: Send + Sync {
+    async fn service_registration_for_route(
+        &self,
+        method: &Method,
+        path: &str,
+    ) -> GatewayResult<Option<ServiceRegistration>>;
+}
+
+#[async_trait]
+impl<T> ServiceRouteLookup for std::sync::Arc<T>
+where
+    T: ServiceRouteLookup + ?Sized,
+{
+    async fn service_registration_for_route(
+        &self,
+        method: &Method,
+        path: &str,
+    ) -> GatewayResult<Option<ServiceRegistration>> {
+        (**self).service_registration_for_route(method, path).await
+    }
+}
+
 impl ServiceCreateRequest {
     pub fn validate(&self) -> GatewayResult<()> {
         validate_service_name(&self.name)?;
@@ -351,6 +382,7 @@ impl ServiceRegistration {
     pub fn to_response(&self) -> ServiceResponse {
         ServiceResponse {
             name: self.name.clone(),
+            project_id: self.project_id,
             studio_service_id: self.studio_service_id.clone(),
             route_pattern: self.route_pattern.clone(),
             upstream_base_url: self.upstream_base_url.clone(),
@@ -540,6 +572,7 @@ mod tests {
         let now = Utc::now();
         let registration = ServiceRegistration {
             name: "summary".to_owned(),
+            project_id: None,
             studio_service_id: None,
             route_pattern: "/summary".to_owned(),
             upstream_base_url: Some("http://summary.internal".to_owned()),
@@ -582,6 +615,7 @@ mod tests {
         let request = StudioServiceImportRequest {
             studio_service_id: "svc_1".to_owned(),
             name: "translation".to_owned(),
+            project_id: None,
             route_pattern: Some("/translation".to_owned()),
             category: None,
             default_pricing: Some(StudioServicePricing {

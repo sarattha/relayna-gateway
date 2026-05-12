@@ -2,6 +2,32 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.5 - 2026-05-12
+
+### Added
+
+- Admin project management APIs and portal view for creating project UUIDs and
+  linking virtual keys and services to projects.
+- Admin provider configuration APIs and portal view for LiteLLM and internal
+  service endpoints with write-only credentials.
+- Persisted service route-pattern resolution so registered internal routes can
+  be selected and used consistently by the proxy.
+- Admin portal provider selectors, service route choices, and cost-mode help
+  text for fixed and passthrough pricing.
+
+### Changed
+
+- Workspace crate versions now share the `0.0.5` release version.
+- Deployment examples and the baseline Kubernetes image now target the `0.0.5`
+  gateway image.
+
+### Fixed
+
+- Overview, Usage, project usage, and key usage cost summaries now report
+  numeric zero-cost aggregates instead of `n/a` when no cost rows are present.
+- Fixed-cost service requests now record the configured estimate when upstream
+  responses do not include passthrough cost fields.
+
 ## 0.0.4 - 2026-05-11
 
 ### Added

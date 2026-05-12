@@ -59,7 +59,7 @@ Useful endpoints:
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.0.4 .
+docker build -t relayna-gateway:0.0.5 .
 ```
 
 Run it:
@@ -72,12 +72,12 @@ docker run --rm \
   -e REDIS_URL="redis://host.docker.internal:6379" \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
-  relayna-gateway:0.0.4
+  relayna-gateway:0.0.5
 ```
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.0.4`, and provide `relayna-gateway-secrets` through your cluster secret manager. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.0.5`, and provide `relayna-gateway-secrets` through your cluster secret manager. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Checks
 

@@ -6,8 +6,8 @@ use gateway_core::{
     evaluate_policy, extract_estimated_cost_usd, extract_generation_features, extract_model,
     extract_usage_tokens, is_retry_safe_status, service_wildcard_suffix, AuthenticatedKey,
     BudgetDecision, BudgetStore, GatewayError, GatewayResult, OpenAiRouteSettingsLookup,
-    PolicyLookup, Provider, RateLimitDecision, RateLimitStore, Route, RouteMatch,
-    ServiceRegistryLookup, UsageEvent, UsageRecorder,
+    PolicyLookup, Provider, ProviderConfigLookup, RateLimitDecision, RateLimitStore, Route,
+    RouteMatch, ServiceRegistryLookup, ServiceRouteLookup, UsageEvent, UsageRecorder,
 };
 use http::Uri;
 use pingora_core::{
@@ -98,6 +98,7 @@ where
         + UsageRecorder
         + PolicyLookup
         + ServiceRegistryLookup
+        + ServiceRouteLookup
         + OpenAiRouteSettingsLookup,
     R: RateLimitStore + BudgetStore,
 {
@@ -129,6 +130,7 @@ pub struct PingoraContext {
     fallback_count: i32,
     terminal_usage_recorded: bool,
     service_upstream: Option<PingoraUpstreamConfig>,
+    litellm_upstream: Option<PingoraUpstreamConfig>,
 }
 
 #[async_trait]
@@ -138,7 +140,9 @@ where
         + UsageRecorder
         + PolicyLookup
         + ServiceRegistryLookup
+        + ServiceRouteLookup
         + OpenAiRouteSettingsLookup
+        + ProviderConfigLookup
         + Send
         + Sync
         + 'static,
@@ -165,6 +169,7 @@ where
             fallback_count: 0,
             terminal_usage_recorded: false,
             service_upstream: None,
+            litellm_upstream: None,
         }
     }
 
@@ -184,11 +189,45 @@ where
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-        let mut matched = match Route::resolve_match(&req.method, req.uri.path()) {
-            Ok(matched) => matched,
-            Err(error) => {
-                respond_error(session, error, &ctx.request_id).await?;
-                return Ok(true);
+        let persisted_service = if should_check_service_routes(req.uri.path()) {
+            match self
+                .store
+                .service_registration_for_route(&req.method, req.uri.path())
+                .await
+            {
+                Ok(registration) => registration,
+                Err(error) => {
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(true);
+                }
+            }
+        } else {
+            None
+        };
+        let mut matched = if let Some(registration) = persisted_service {
+            let service_name = registration.name.clone();
+            let upstream = match service_upstream_from_registration(&registration) {
+                Ok(upstream) => upstream,
+                Err(error) => {
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(true);
+                }
+            };
+            let mut matched = RouteMatch::service(Route::ServiceWildcard, &service_name);
+            matched.timeout_ms = u64::try_from(registration.timeout_ms)
+                .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+            matched.max_body_bytes = usize::try_from(registration.max_body_bytes)
+                .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+            matched.estimated_cost_usd = registration.estimated_cost_usd;
+            ctx.service_upstream = Some(upstream);
+            matched
+        } else {
+            match Route::resolve_match(&req.method, req.uri.path()) {
+                Ok(matched) => matched,
+                Err(error) => {
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(true);
+                }
             }
         };
         ctx.route = Some(matched.route);
@@ -210,6 +249,11 @@ where
         {
             Ok(key) => {
                 if let Some(service_name) = matched.service_name.as_deref() {
+                    if ctx.service_upstream.is_some() {
+                        ctx.route_match = Some(matched);
+                        ctx.key = Some(key);
+                        return Ok(false);
+                    }
                     let registration = match self.store.service_registration(service_name).await {
                         Ok(Some(registration)) => registration,
                         Ok(None) => {
@@ -222,10 +266,6 @@ where
                             return Ok(true);
                         }
                     };
-                    if let Err(error) = registration.ensure_routable() {
-                        respond_error(session, error, &ctx.request_id).await?;
-                        return Ok(true);
-                    }
                     if !registration
                         .allowed_methods
                         .iter()
@@ -235,13 +275,7 @@ where
                             .await?;
                         return Ok(true);
                     }
-                    let upstream = match PingoraUpstreamConfig::from_base_url(
-                        registration
-                            .upstream_base_url
-                            .as_deref()
-                            .unwrap_or_default(),
-                        registration.credential_secret.clone().unwrap_or_default(),
-                    ) {
+                    let upstream = match service_upstream_from_registration(&registration) {
                         Ok(upstream) => upstream,
                         Err(error) => {
                             respond_error(session, error, &ctx.request_id).await?;
@@ -254,6 +288,28 @@ where
                         .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
                     matched.estimated_cost_usd = registration.estimated_cost_usd;
                     ctx.service_upstream = Some(upstream);
+                }
+                if matched.provider == Provider::LiteLlm {
+                    match self.store.active_litellm_config().await {
+                        Ok(Some(config)) => {
+                            let upstream = match PingoraUpstreamConfig::from_base_url(
+                                &config.base_url,
+                                config.credential,
+                            ) {
+                                Ok(upstream) => upstream,
+                                Err(error) => {
+                                    respond_error(session, error, &ctx.request_id).await?;
+                                    return Ok(true);
+                                }
+                            };
+                            ctx.litellm_upstream = Some(upstream);
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            respond_error(session, error, &ctx.request_id).await?;
+                            return Ok(true);
+                        }
+                    }
                 }
                 ctx.route_match = Some(matched);
                 ctx.key = Some(key);
@@ -564,7 +620,12 @@ where
             .response_written()
             .map(|response| response.status.as_u16())
             .unwrap_or_else(|| if error.is_some() { 502 } else { 500 });
-        let estimated_cost_usd = extract_estimated_cost_usd(&ctx.response_body_prefix);
+        let estimated_cost_usd =
+            extract_estimated_cost_usd(&ctx.response_body_prefix).or_else(|| {
+                ctx.route_match
+                    .as_ref()
+                    .and_then(|matched| matched.estimated_cost_usd)
+            });
         let (input_tokens, output_tokens, total_tokens) =
             extract_usage_tokens(&ctx.response_body_prefix);
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
@@ -662,7 +723,7 @@ where
             return Some(&self.config.litellm);
         }
         match provider_for_usage(ctx) {
-            Provider::LiteLlm => Some(&self.config.litellm),
+            Provider::LiteLlm => ctx.litellm_upstream.as_ref().or(Some(&self.config.litellm)),
             Provider::OpenAiCompatible => self.config.direct_openai.as_ref(),
             Provider::InternalService => ctx.service_upstream.as_ref(),
         }
@@ -722,6 +783,10 @@ where
 
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
         let provider = provider_for_usage(ctx);
+        let estimated_cost_usd = ctx
+            .route_match
+            .as_ref()
+            .and_then(|matched| matched.estimated_cost_usd);
         let event = UsageEvent::new(
             &ctx.request_id,
             key,
@@ -732,6 +797,7 @@ where
             now,
         )
         .with_provider(provider)
+        .with_estimated_cost_usd(estimated_cost_usd)
         .with_service_name(
             ctx.route_match
                 .as_ref()
@@ -833,6 +899,10 @@ fn rewrite_service_wildcard_uri(
     Ok(())
 }
 
+fn should_check_service_routes(path: &str) -> bool {
+    !path.starts_with("/v1/") && !path.starts_with("/providers/openai/")
+}
+
 fn observe_response_body_chunk(ctx: &mut PingoraContext, body: &[u8]) {
     if ctx.is_streaming && !ctx.first_chunk_recorded {
         ctx.first_chunk_recorded = true;
@@ -854,6 +924,19 @@ fn provider_for_usage(ctx: &PingoraContext) -> Provider {
         .as_ref()
         .map(|matched| matched.provider)
         .unwrap_or(Provider::LiteLlm)
+}
+
+fn service_upstream_from_registration(
+    registration: &gateway_core::ServiceRegistration,
+) -> GatewayResult<PingoraUpstreamConfig> {
+    registration.ensure_routable()?;
+    PingoraUpstreamConfig::from_base_url(
+        registration
+            .upstream_base_url
+            .as_deref()
+            .unwrap_or_default(),
+        registration.credential_secret.clone().unwrap_or_default(),
+    )
 }
 
 fn is_retry_safe_proxy_error(error: &PingoraError) -> bool {
@@ -886,6 +969,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         fallback_count: 0,
         terminal_usage_recorded: false,
         service_upstream: None,
+        litellm_upstream: None,
     }
 }
 
