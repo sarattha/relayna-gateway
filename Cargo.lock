@@ -909,7 +909,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-api"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -934,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "argon2",
  "async-trait",
@@ -951,7 +951,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-proxy"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "bytes",
@@ -971,11 +971,12 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "chrono",
  "gateway-core",
+ "http",
  "redis",
  "sqlx",
  "thiserror 2.0.18",
@@ -984,7 +985,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-telemetry"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "tracing-subscriber",
 ]

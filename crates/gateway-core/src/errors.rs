@@ -38,6 +38,20 @@ pub enum GatewayError {
     RateLimitExceeded { retry_after_seconds: Option<u64> },
     #[error("budget exceeded")]
     BudgetExceeded,
+    #[error("project already exists")]
+    DuplicateProject,
+    #[error("project was not found")]
+    MissingProject,
+    #[error("project is still referenced")]
+    ProjectInUse,
+    #[error("project payload is invalid")]
+    InvalidProjectPayload,
+    #[error("provider configuration already exists")]
+    DuplicateProviderConfig,
+    #[error("provider configuration was not found")]
+    MissingProviderConfig,
+    #[error("provider configuration payload is invalid")]
+    InvalidProviderConfigPayload,
     #[error("service registration already exists")]
     DuplicateService,
     #[error("service registration was not found")]
@@ -87,7 +101,14 @@ impl GatewayError {
             Self::PolicyDenied => StatusCode::FORBIDDEN,
             Self::RateLimitExceeded { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::BudgetExceeded => StatusCode::PAYMENT_REQUIRED,
-            Self::DuplicateService => StatusCode::CONFLICT,
+            Self::DuplicateProject | Self::DuplicateProviderConfig | Self::DuplicateService => {
+                StatusCode::CONFLICT
+            }
+            Self::ProjectInUse => StatusCode::CONFLICT,
+            Self::MissingProject | Self::MissingProviderConfig => StatusCode::NOT_FOUND,
+            Self::InvalidProjectPayload | Self::InvalidProviderConfigPayload => {
+                StatusCode::BAD_REQUEST
+            }
             Self::MissingService => StatusCode::NOT_FOUND,
             Self::DisabledService => StatusCode::FORBIDDEN,
             Self::IncompleteService => StatusCode::CONFLICT,
@@ -117,6 +138,13 @@ impl GatewayError {
             Self::PolicyDenied => "policy_denied",
             Self::RateLimitExceeded { .. } => "rate_limit_exceeded",
             Self::BudgetExceeded => "budget_exceeded",
+            Self::DuplicateProject => "duplicate_project",
+            Self::MissingProject => "missing_project",
+            Self::ProjectInUse => "project_in_use",
+            Self::InvalidProjectPayload => "invalid_project_payload",
+            Self::DuplicateProviderConfig => "duplicate_provider_config",
+            Self::MissingProviderConfig => "missing_provider_config",
+            Self::InvalidProviderConfigPayload => "invalid_provider_config_payload",
             Self::DuplicateService => "duplicate_service",
             Self::MissingService => "missing_service",
             Self::DisabledService => "disabled_service",
@@ -145,6 +173,13 @@ impl GatewayError {
             Self::PolicyDenied => "Request is denied by key policy.",
             Self::RateLimitExceeded { .. } => "Rate limit exceeded.",
             Self::BudgetExceeded => "Budget limit exceeded.",
+            Self::DuplicateProject => "Project already exists.",
+            Self::MissingProject => "Project was not found.",
+            Self::ProjectInUse => "Project is still referenced.",
+            Self::InvalidProjectPayload => "Project payload is invalid.",
+            Self::DuplicateProviderConfig => "Provider configuration already exists.",
+            Self::MissingProviderConfig => "Provider configuration was not found.",
+            Self::InvalidProviderConfigPayload => "Provider configuration payload is invalid.",
             Self::DuplicateService => "Service registration already exists.",
             Self::MissingService => "Service registration was not found.",
             Self::DisabledService => "Service registration is disabled.",

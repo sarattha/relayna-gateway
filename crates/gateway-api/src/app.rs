@@ -9,10 +9,12 @@ use axum::{
 use chrono::Utc;
 use gateway_core::{
     auth::VirtualKeyLookup, AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,
-    AdminOpenAiRouteStore, AdminServiceStore, CreatedAdminKeyResponse,
-    CreatedOperatorTokenResponse, GatewayError, GatewayResult, OperatorTokenMaterial,
-    OperatorTokenStore, ServiceCreateRequest, ServicePatchRequest, StudioServiceImportRequest,
-    UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore, VirtualKeyMaterial,
+    AdminOpenAiRouteStore, AdminProjectStore, AdminProviderConfigStore, AdminServiceStore,
+    CreatedAdminKeyResponse, CreatedOperatorTokenResponse, GatewayError, GatewayResult,
+    OperatorTokenMaterial, OperatorTokenStore, ProjectCreateRequest, ProjectPatchRequest,
+    ProviderConfigCreateRequest, ProviderConfigPatchRequest, ServiceCreateRequest,
+    ServicePatchRequest, StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent,
+    UsageQuery, UsageQueryStore, VirtualKeyMaterial,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::Serialize;
@@ -27,6 +29,8 @@ pub trait GatewayData:
     VirtualKeyLookup
     + AdminKeyStore
     + AdminOpenAiRouteStore
+    + AdminProjectStore
+    + AdminProviderConfigStore
     + AdminServiceStore
     + OperatorTokenStore
     + UsageQueryStore
@@ -73,7 +77,30 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin/keys/{key_id}/disable", post(disable_key))
         .route("/admin/keys/{key_id}/enable", post(enable_key))
         .route("/admin/keys/{key_id}/usage", get(key_usage))
+        .route("/admin/projects", post(create_project).get(list_projects))
+        .route(
+            "/admin/projects/{project_id}",
+            get(get_project).patch(patch_project).delete(delete_project),
+        )
         .route("/admin/operator-token/rotate", post(rotate_operator_token))
+        .route(
+            "/admin/providers",
+            post(create_provider).get(list_providers),
+        )
+        .route(
+            "/admin/providers/{provider_id}",
+            get(get_provider)
+                .patch(patch_provider)
+                .delete(delete_provider),
+        )
+        .route(
+            "/admin/providers/{provider_id}/disable",
+            post(disable_provider),
+        )
+        .route(
+            "/admin/providers/{provider_id}/enable",
+            post(enable_provider),
+        )
         .route("/admin/openai-routes", get(list_openai_routes))
         .route(
             "/admin/openai-routes/{route_id}/disable",
@@ -268,6 +295,73 @@ async fn project_usage(
     }
 }
 
+async fn create_project(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ProjectCreateRequest>,
+) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.create_project(request).await
+    })
+    .await
+}
+
+async fn list_projects(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.list_projects().await
+    })
+    .await
+}
+
+async fn get_project(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_id): Path<uuid::Uuid>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match state.store.get_project(project_id).await {
+        Ok(Some(project)) => Json(project).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn patch_project(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_id): Path<uuid::Uuid>,
+    Json(patch): Json<ProjectPatchRequest>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match state.store.patch_project(project_id, patch).await {
+        Ok(Some(project)) => Json(project).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn delete_project(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_id): Path<uuid::Uuid>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match state.store.delete_project(project_id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn rotate_operator_token(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let current_raw_token = match bearer_token(&headers) {
         Ok(token) => token.to_owned(),
@@ -293,6 +387,89 @@ async fn rotate_operator_token(State(state): State<AppState>, headers: HeaderMap
         .into_response(),
         Err(error) => error_response(&headers, error),
     }
+}
+
+async fn create_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ProviderConfigCreateRequest>,
+) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.create_provider_config(request).await
+    })
+    .await
+}
+
+async fn list_providers(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.list_provider_configs().await
+    })
+    .await
+}
+
+async fn get_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(provider_id): Path<uuid::Uuid>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match state.store.get_provider_config(provider_id).await {
+        Ok(Some(provider)) => Json(provider).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn patch_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(provider_id): Path<uuid::Uuid>,
+    Json(patch): Json<ProviderConfigPatchRequest>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match state.store.patch_provider_config(provider_id, patch).await {
+        Ok(Some(provider)) => Json(provider).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn delete_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(provider_id): Path<uuid::Uuid>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match state.store.delete_provider_config(provider_id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn disable_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(provider_id): Path<uuid::Uuid>,
+) -> Response {
+    mutate_provider_enabled(state, headers, provider_id, false).await
+}
+
+async fn enable_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(provider_id): Path<uuid::Uuid>,
+) -> Response {
+    mutate_provider_enabled(state, headers, provider_id, true).await
 }
 
 async fn list_openai_routes(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -669,6 +846,27 @@ async fn mutate_openai_route_enabled(
     }
 }
 
+async fn mutate_provider_enabled(
+    state: AppState,
+    headers: HeaderMap,
+    provider_id: uuid::Uuid,
+    enabled: bool,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match state
+        .store
+        .set_provider_config_enabled(provider_id, enabled)
+        .await
+    {
+        Ok(Some(provider)) => Json(provider).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response> {
     let token = match bearer_token(headers) {
         Ok(token) => token,
@@ -718,9 +916,11 @@ mod tests {
     use gateway_core::{
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
-        OpenAiRouteSetting, OperatorTokenResponse, ProviderHealth, ServiceCostMode,
-        ServiceResponse, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
-        UsageBreakdown, UsageSummary, UsageTimeseriesPoint,
+        OpenAiRouteSetting, OperatorTokenResponse, ProjectCreateRequest, ProjectPatchRequest,
+        ProjectResponse, ProviderConfigCreateRequest, ProviderConfigPatchRequest,
+        ProviderConfigResponse, ProviderHealth, ServiceCostMode, ServiceResponse, ServiceSource,
+        ServiceSyncStatus, ServiceSyncStatusResponse, UsageBreakdown, UsageSummary,
+        UsageTimeseriesPoint,
     };
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -887,6 +1087,43 @@ mod tests {
     }
 
     #[async_trait]
+    impl AdminProjectStore for MemoryStore {
+        async fn create_project(
+            &self,
+            request: ProjectCreateRequest,
+        ) -> GatewayResult<ProjectResponse> {
+            request.validate()?;
+            let now = Utc::now();
+            Ok(ProjectResponse {
+                id: Uuid::new_v4(),
+                name: request.name,
+                created_at: now,
+                updated_at: now,
+            })
+        }
+
+        async fn list_projects(&self) -> GatewayResult<Vec<ProjectResponse>> {
+            Ok(Vec::new())
+        }
+
+        async fn get_project(&self, _project_id: Uuid) -> GatewayResult<Option<ProjectResponse>> {
+            Ok(None)
+        }
+
+        async fn patch_project(
+            &self,
+            _project_id: Uuid,
+            _patch: ProjectPatchRequest,
+        ) -> GatewayResult<Option<ProjectResponse>> {
+            Ok(None)
+        }
+
+        async fn delete_project(&self, _project_id: Uuid) -> GatewayResult<bool> {
+            Ok(false)
+        }
+    }
+
+    #[async_trait]
     impl AdminOpenAiRouteStore for MemoryStore {
         async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
             Ok(self.openai_routes.lock().expect("lock poisoned").clone())
@@ -908,6 +1145,58 @@ mod tests {
     }
 
     #[async_trait]
+    impl AdminProviderConfigStore for MemoryStore {
+        async fn create_provider_config(
+            &self,
+            request: ProviderConfigCreateRequest,
+        ) -> GatewayResult<ProviderConfigResponse> {
+            request.validate()?;
+            let now = Utc::now();
+            Ok(ProviderConfigResponse {
+                id: Uuid::new_v4(),
+                provider: request.provider,
+                name: request.name,
+                base_url: request.base_url,
+                enabled: request.enabled,
+                credential_configured: request.credential.is_some(),
+                created_at: now,
+                updated_at: now,
+            })
+        }
+
+        async fn list_provider_configs(&self) -> GatewayResult<Vec<ProviderConfigResponse>> {
+            Ok(Vec::new())
+        }
+
+        async fn get_provider_config(
+            &self,
+            _provider_id: Uuid,
+        ) -> GatewayResult<Option<ProviderConfigResponse>> {
+            Ok(None)
+        }
+
+        async fn patch_provider_config(
+            &self,
+            _provider_id: Uuid,
+            _patch: ProviderConfigPatchRequest,
+        ) -> GatewayResult<Option<ProviderConfigResponse>> {
+            Ok(None)
+        }
+
+        async fn delete_provider_config(&self, _provider_id: Uuid) -> GatewayResult<bool> {
+            Ok(false)
+        }
+
+        async fn set_provider_config_enabled(
+            &self,
+            _provider_id: Uuid,
+            _enabled: bool,
+        ) -> GatewayResult<Option<ProviderConfigResponse>> {
+            Ok(None)
+        }
+    }
+
+    #[async_trait]
     impl AdminServiceStore for MemoryStore {
         async fn create_service(
             &self,
@@ -921,6 +1210,7 @@ mod tests {
             let now = Utc::now();
             let response = ServiceResponse {
                 name: request.name.clone(),
+                project_id: request.project_id,
                 studio_service_id: request.studio_service_id.clone(),
                 route_pattern: request
                     .route_pattern
@@ -1040,6 +1330,7 @@ mod tests {
                 service.studio_service_id.as_deref() == Some(&request.studio_service_id)
             }) {
                 service.name = request.name;
+                service.project_id = request.project_id;
                 service.route_pattern = request
                     .route_pattern
                     .unwrap_or_else(|| format!("/services/{}/*", service.name));
@@ -1056,6 +1347,7 @@ mod tests {
 
             let response = ServiceResponse {
                 name: request.name.clone(),
+                project_id: request.project_id,
                 studio_service_id: Some(request.studio_service_id),
                 route_pattern: request
                     .route_pattern
@@ -1435,6 +1727,65 @@ mod tests {
             .expect("key prefix")
             .starts_with("rk_live_"));
         assert!(value["key"].get("key_hash").is_none());
+    }
+
+    #[tokio::test]
+    async fn admin_project_create_returns_generated_uuid() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = admin_post(
+            app,
+            "/admin/projects",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"name":"Studio"}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["name"], "Studio");
+        assert!(Uuid::parse_str(value["id"].as_str().expect("project id")).is_ok());
+    }
+
+    #[tokio::test]
+    async fn admin_provider_create_redacts_master_key() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = admin_post(
+            app,
+            "/admin/providers",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"provider":"litellm","name":"LiteLLM","base_url":"http://litellm:4000","credential":"sk-master","enabled":true}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["provider"], "litellm");
+        assert_eq!(value["credential_configured"], true);
+        assert!(value.get("credential").is_none());
     }
 
     #[tokio::test]

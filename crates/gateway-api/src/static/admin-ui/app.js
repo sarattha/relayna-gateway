@@ -2,6 +2,8 @@ const tokenKey = "relayna_gateway_operator_token";
 const state = {
   view: "overview",
   keys: [],
+  projects: [],
+  providers: [],
   openaiRoutes: [],
   services: [],
   editingKeyId: null,
@@ -163,7 +165,9 @@ async function refresh() {
   content.innerHTML = '<section class="panel"><div class="empty-state"><p>Loading...</p></div></section>';
   try {
     if (state.view === "overview") await overview();
+    if (state.view === "projects") await projects();
     if (state.view === "keys") await keys();
+    if (state.view === "providers") await providers();
     if (state.view === "routes") await routes();
     if (state.view === "services") await services();
     if (state.view === "usage") await usage();
@@ -207,8 +211,65 @@ function stat(label, value) {
   return `<section class="panel stat"><span>${esc(label)}</span><strong>${esc(value)}</strong></section>`;
 }
 
+async function projects() {
+  state.projects = await api("/admin/projects");
+  content.innerHTML = `
+    <section class="panel">
+      <div class="panel-heading"><h3>Create project</h3></div>
+      <form id="project-form" class="form-grid">
+        <label>Name<input name="name" required maxlength="120"></label>
+        <div class="form-actions"><button class="primary">Create project</button></div>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Projects</h3><span class="subtle">${state.projects.length} total</span></div>
+      ${projectTable(state.projects)}
+    </section>
+  `;
+  document.querySelector("#project-form").addEventListener("submit", createProject);
+  document.querySelectorAll("[data-project-action]").forEach((button) => {
+    button.addEventListener("click", projectAction);
+  });
+}
+
+function projectTable(rows) {
+  return table(
+    ["Name", "UUID", "Updated", "Actions"],
+    rows.map((row) => [
+      esc(row.name),
+      `<code>${esc(row.id)}</code>`,
+      time(row.updated_at),
+      `<div class="actions">
+        <button data-project-action="usage" data-project-id="${attr(row.id)}">Usage</button>
+        <button class="danger" data-project-action="delete" data-project-id="${attr(row.id)}">Delete</button>
+      </div>`,
+    ]),
+  );
+}
+
+async function createProject(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  await api("/admin/projects", { method: "POST", body: JSON.stringify({ name: form.get("name") }) });
+  setNotice("Project created.", "success");
+  await projects();
+}
+
+async function projectAction(event) {
+  const { projectAction: action, projectId } = event.currentTarget.dataset;
+  if (action === "usage") {
+    const summary = await api(`/admin/projects/${projectId}/usage`);
+    setNotice(`Project usage: ${summary.request_count} requests, ${money(summary.estimated_cost_usd)} cost.`, "success");
+    return;
+  }
+  if (!(await confirmAction("Delete project", "Projects with linked keys, services, or usage cannot be deleted."))) return;
+  await api(`/admin/projects/${projectId}`, { method: "DELETE" });
+  setNotice("Project deleted.", "success");
+  await projects();
+}
+
 async function keys() {
-  state.keys = await api("/admin/keys");
+  [state.keys, state.projects] = await Promise.all([api("/admin/keys"), api("/admin/projects")]);
   const editing = state.keys.find((key) => key.id === state.editingKeyId);
   content.innerHTML = `
     <div class="split">
@@ -217,7 +278,7 @@ async function keys() {
           <h3>Create virtual key</h3>
         </div>
         <form id="key-form" class="form-grid">
-          <label>Project ID<input name="project_id" required placeholder="uuid"></label>
+          <label>Project<select name="project_id" required>${projectOptions()}</select></label>
           <label>Expires at<input name="expires_at" type="datetime-local"></label>
           ${policyFields()}
           <div class="form-actions">
@@ -249,7 +310,7 @@ function policyFields(key = null) {
   return `
     <label>Routes<input name="allowed_routes" value="${attr(listValue(policy.allowed_routes, "/v1/chat/completions,/v1/responses"))}"></label>
     <label>Models<input name="allowed_models" value="${attr(listValue(policy.allowed_models, ""))}" placeholder="gpt-4o-mini"></label>
-    <label>Providers<input name="allowed_providers" value="${attr(listValue(policy.allowed_providers, "litellm"))}"></label>
+    <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers)}</div>
     <label>Services<input name="allowed_services" value="${attr(listValue(policy.allowed_services, ""))}" placeholder="summary,translation"></label>
     <label>RPM limit<input name="rpm_limit" type="number" min="0" value="${attr(policy.rpm_limit ?? "")}"></label>
     <label>TPM limit<input name="tpm_limit" type="number" min="0" value="${attr(policy.tpm_limit ?? "")}"></label>
@@ -367,6 +428,77 @@ async function keyAction(event) {
   await keys();
 }
 
+async function providers() {
+  state.providers = await api("/admin/providers");
+  content.innerHTML = `
+    <section class="panel">
+      <div class="panel-heading"><h3>Create provider</h3></div>
+      <form id="provider-form" class="form-grid">
+        <label>Provider<select name="provider">${option("litellm", "litellm")}${option("internal-service", "")}</select></label>
+        <label>Name<input name="name" required value="LiteLLM"></label>
+        <label>Endpoint<input name="base_url" required placeholder="http://litellm:4000"></label>
+        <label>Master key<input name="credential" type="password" autocomplete="new-password"></label>
+        <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
+        <div class="form-actions"><button class="primary">Create provider</button></div>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Provider configuration</h3><span class="subtle">${state.providers.length} total</span></div>
+      ${providerTable(state.providers)}
+    </section>
+  `;
+  document.querySelector("#provider-form").addEventListener("submit", createProvider);
+  document.querySelectorAll("[data-provider-action]").forEach((button) => {
+    button.addEventListener("click", providerAction);
+  });
+}
+
+function providerTable(rows) {
+  return table(
+    ["Provider", "Endpoint", "State", "Credential", "Updated", "Actions"],
+    rows.map((row) => [
+      `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.provider)}</div>`,
+      `<code>${esc(row.base_url)}</code>`,
+      row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
+      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+      time(row.updated_at),
+      `<div class="actions">
+        <button data-provider-action="${row.enabled ? "disable" : "enable"}" data-provider-id="${attr(row.id)}">${row.enabled ? "Disable" : "Enable"}</button>
+        <button class="danger" data-provider-action="delete" data-provider-id="${attr(row.id)}">Delete</button>
+      </div>`,
+    ]),
+  );
+}
+
+async function createProvider(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  await api("/admin/providers", {
+    method: "POST",
+    body: JSON.stringify({
+      provider: form.get("provider"),
+      name: form.get("name"),
+      base_url: form.get("base_url"),
+      credential: blankToUndefined(form.get("credential")),
+      enabled: form.has("enabled"),
+    }),
+  });
+  setNotice("Provider saved.", "success");
+  await providers();
+}
+
+async function providerAction(event) {
+  const { providerAction: action, providerId } = event.currentTarget.dataset;
+  if (!(await confirmAction(`${action} provider`, "This provider configuration change is written to the database."))) return;
+  if (action === "delete") {
+    await api(`/admin/providers/${providerId}`, { method: "DELETE" });
+  } else {
+    await api(`/admin/providers/${providerId}/${action}`, { method: "POST", body: "{}" });
+  }
+  setNotice(`Provider ${action}d.`, "success");
+  await providers();
+}
+
 async function routes() {
   [state.openaiRoutes, state.services] = await Promise.all([
     api("/admin/openai-routes"),
@@ -424,7 +556,7 @@ async function openaiRouteAction(event) {
 }
 
 async function services() {
-  state.services = await api("/admin/services");
+  [state.services, state.projects] = await Promise.all([api("/admin/services"), api("/admin/projects")]);
   const editing = state.services.find((service) => service.name === state.editingServiceName);
   content.innerHTML = `
     <div class="split">
@@ -432,8 +564,9 @@ async function services() {
         <div class="panel-heading"><h3>Create or import service</h3></div>
         <form id="service-form" class="form-grid">
           <label>Name<input name="name" required></label>
+          <label>Project<select name="project_id"><option value="">None</option>${projectOptions()}</select></label>
           <label>Studio service ID<input name="studio_service_id"></label>
-          <label>Route pattern<input name="route_pattern" placeholder="/services/name/*"></label>
+          <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
           <label>Upstream URL<input name="upstream_base_url"></label>
           <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
           <div class="field"><span>Methods</span>${methodSelect(["POST"])}</div>
@@ -441,6 +574,7 @@ async function services() {
           <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="2097152"></label>
           <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
           <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01"></label>
+          <div class="help">Fixed records the configured estimate per request. Passthrough records provider-reported response cost when the upstream returns one.</div>
           <label>Fallback services<input name="fallback_services" placeholder="backup-a,backup-b"></label>
           <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
           <div class="form-actions">
@@ -457,6 +591,7 @@ async function services() {
       <div class="panel-heading"><h3>Registered services</h3><span class="subtle">${state.services.length} total</span></div>
       ${serviceTable(state.services)}
     </section>
+    <datalist id="service-routes">${serviceRouteOptions()}</datalist>
   `;
   document.querySelector("#service-form").addEventListener("submit", submitService);
   document.querySelector("#service-edit-form")?.addEventListener("submit", patchService);
@@ -469,8 +604,9 @@ function serviceEditForm(service) {
   return `
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
     <form id="service-edit-form" class="form-grid" data-service-name="${attr(service.name)}">
+      <label>Project<select name="project_id"><option value="">None</option>${projectOptions(service.project_id)}</select></label>
       <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
-      <label>Route pattern<input name="route_pattern" value="${attr(service.route_pattern)}"></label>
+      <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
       <label>Upstream URL<input name="upstream_base_url" value="${attr(service.upstream_base_url ?? "")}"></label>
       <label>Credential<input name="credential" type="password" autocomplete="new-password" placeholder="${service.credential_configured ? "configured" : "missing"}"></label>
       <div class="field"><span>Methods</span>${methodSelect(service.allowed_methods)}</div>
@@ -478,6 +614,7 @@ function serviceEditForm(service) {
       <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
       <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
       <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
+      <div class="help">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
       <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       <label>Sync status<select name="sync_status">${["local", "synced", "incomplete", "stale", "failed"].map((value) => option(value, service.sync_status)).join("")}</select></label>
       <label class="check"><input name="enabled" type="checkbox" ${service.enabled ? "checked" : ""}> Enabled</label>
@@ -500,6 +637,7 @@ async function submitService(event) {
       body: JSON.stringify({
         studio_service_id: form.get("studio_service_id"),
         name: form.get("name"),
+        project_id: blankToUndefined(form.get("project_id")),
         route_pattern: blankToUndefined(form.get("route_pattern")),
         default_pricing: form.get("estimated_cost_usd")
           ? { cost_mode: form.get("cost_mode"), estimated_cost_usd: Number(form.get("estimated_cost_usd")) }
@@ -692,7 +830,7 @@ function policyBody(form) {
   const body = {
     allowed_routes: csv(form.get("allowed_routes")),
     allowed_models: csv(form.get("allowed_models")),
-    allowed_providers: csv(form.get("allowed_providers")),
+    allowed_providers: form.getAll("allowed_providers"),
     allowed_services: csv(form.get("allowed_services")),
     rpm_limit: nullableNumber(form.get("rpm_limit")),
     tpm_limit: nullableNumber(form.get("tpm_limit")),
@@ -706,6 +844,7 @@ function policyBody(form) {
 
 function serviceBody(form, patch) {
   const body = {
+    project_id: nullableString(form.get("project_id")),
     studio_service_id: patch ? nullableString(form.get("studio_service_id")) : blankToUndefined(form.get("studio_service_id")),
     route_pattern: form.get("route_pattern") || undefined,
     upstream_base_url: patch ? nullableString(form.get("upstream_base_url")) : blankToUndefined(form.get("upstream_base_url")),
@@ -756,6 +895,25 @@ function nullableNumber(value) {
 
 function nullableString(value) {
   return value === null || String(value).trim() === "" ? null : String(value).trim();
+}
+
+function projectOptions(selected = "") {
+  return state.projects
+    .map((project) => `<option value="${attr(project.id)}" ${project.id === selected ? "selected" : ""}>${esc(project.name)} (${esc(project.id)})</option>`)
+    .join("");
+}
+
+function providerPolicySelect(selected = []) {
+  const values = new Set(Array.isArray(selected) && selected.length ? selected : ["litellm"]);
+  return `<div class="checkbox-group" role="group" aria-label="Providers">
+    ${["litellm", "internal-service"].map((value) => `<label><input name="allowed_providers" type="checkbox" value="${attr(value)}" ${values.has(value) ? "checked" : ""}> ${esc(value)}</label>`).join("")}
+  </div>`;
+}
+
+function serviceRouteOptions() {
+  const builtIns = ["/summary", "/translation", "/ocr", "/embeddings", "/services/name/*"];
+  const routes = [...new Set([...builtIns, ...state.services.map((service) => service.route_pattern)])];
+  return routes.map((route) => `<option value="${attr(route)}"></option>`).join("");
 }
 
 function blankToUndefined(value) {

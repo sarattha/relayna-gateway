@@ -9,6 +9,7 @@ repository.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 gateway-core = { path = "../gateway-core" }
+http.workspace = true
 redis.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true

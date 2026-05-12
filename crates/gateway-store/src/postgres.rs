@@ -2,18 +2,24 @@ use async_trait::async_trait;
 use gateway_core::{
     admin::{AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminPolicyResponse},
     auth::{StoredVirtualKey, VirtualKeyLookup},
-    default_route_pattern, operator_token_prefix,
+    default_route_pattern, operator_token_prefix, parse_provider_config_kind,
+    projects::{ProjectCreateRequest, ProjectPatchRequest, ProjectResponse},
+    provider_config_kind_str,
+    provider_configs::{
+        AdminProviderConfigStore, ProviderConfigCreateRequest, ProviderConfigLookup,
+        ProviderConfigPatchRequest, ProviderConfigResponse, ProviderRuntimeConfig,
+    },
     services::{
         AdminServiceStore, ServiceCostMode, ServiceCreateRequest, ServicePatchRequest,
-        ServiceRegistration, ServiceRegistryLookup, ServiceResponse, ServiceSource,
-        ServiceSyncStatus, ServiceSyncStatusResponse, StudioServiceImportRequest,
+        ServiceRegistration, ServiceRegistryLookup, ServiceResponse, ServiceRouteLookup,
+        ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse, StudioServiceImportRequest,
     },
     verify_stored_operator_token, AdminKeyStore, AdminKeyUsageSummary, AdminOpenAiRouteStore,
-    GatewayError, GatewayResult, KeyPolicy, OpenAiRouteSetting, OpenAiRouteSettingsLookup,
-    OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore, PolicyLookup,
-    ProjectUsageSummary, Provider, ProviderHealth, Route, StoredOperatorToken, UsageBreakdown,
-    UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus,
-    UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
+    AdminProjectStore, GatewayError, GatewayResult, KeyPolicy, OpenAiRouteSetting,
+    OpenAiRouteSettingsLookup, OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore,
+    PolicyLookup, ProjectUsageSummary, Provider, ProviderHealth, Route, StoredOperatorToken,
+    UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore,
+    UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row};
 use thiserror::Error;
@@ -188,6 +194,7 @@ impl PostgresStore {
             r#"
             INSERT INTO service_registrations (
                 name,
+                project_id,
                 studio_service_id,
                 route_pattern,
                 enabled,
@@ -197,10 +204,11 @@ impl PostgresStore {
                 sync_status,
                 last_synced_at
             )
-            VALUES ($1, $2, $3, false, $4, $5, 'studio', 'incomplete', now())
+            VALUES ($1, $2, $3, $4, false, $5, $6, 'studio', 'incomplete', now())
             ON CONFLICT (studio_service_id) WHERE studio_service_id IS NOT NULL
             DO UPDATE SET
                 name = EXCLUDED.name,
+                project_id = EXCLUDED.project_id,
                 studio_service_id = EXCLUDED.studio_service_id,
                 route_pattern = EXCLUDED.route_pattern,
                 cost_mode = EXCLUDED.cost_mode,
@@ -217,6 +225,7 @@ impl PostgresStore {
             "#,
         )
         .bind(&request.name)
+        .bind(request.project_id)
         .bind(&request.studio_service_id)
         .bind(&route_pattern)
         .bind(service_cost_mode_str(cost_mode))
@@ -226,6 +235,8 @@ impl PostgresStore {
         .map_err(|error| {
             if is_unique_violation(&error) {
                 GatewayError::DuplicateService
+            } else if is_foreign_key_violation(&error) {
+                GatewayError::MissingProject
             } else {
                 GatewayError::StoreUnavailable
             }
@@ -416,6 +427,97 @@ impl gateway_core::PolicyLookup for PostgresStore {
 }
 
 #[async_trait]
+impl AdminProjectStore for PostgresStore {
+    async fn create_project(
+        &self,
+        request: ProjectCreateRequest,
+    ) -> GatewayResult<ProjectResponse> {
+        request.validate()?;
+        sqlx::query(
+            r#"
+            INSERT INTO projects (name)
+            VALUES ($1)
+            RETURNING id, name, created_at, updated_at
+            "#,
+        )
+        .bind(request.name.trim())
+        .fetch_one(&self.pool)
+        .await
+        .map(project_response_from_row)
+        .map_err(|error| {
+            if is_unique_violation(&error) {
+                GatewayError::DuplicateProject
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })
+    }
+
+    async fn list_projects(&self) -> GatewayResult<Vec<ProjectResponse>> {
+        sqlx::query("SELECT id, name, created_at, updated_at FROM projects ORDER BY name ASC")
+            .fetch_all(&self.pool)
+            .await
+            .map(|rows| rows.into_iter().map(project_response_from_row).collect())
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn get_project(&self, project_id: Uuid) -> GatewayResult<Option<ProjectResponse>> {
+        sqlx::query("SELECT id, name, created_at, updated_at FROM projects WHERE id = $1")
+            .bind(project_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map(|row| row.map(project_response_from_row))
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn patch_project(
+        &self,
+        project_id: Uuid,
+        patch: ProjectPatchRequest,
+    ) -> GatewayResult<Option<ProjectResponse>> {
+        patch.validate()?;
+        let Some(name) = patch.name else {
+            return self.get_project(project_id).await;
+        };
+        sqlx::query(
+            r#"
+            UPDATE projects
+            SET name = $2, updated_at = now()
+            WHERE id = $1
+            RETURNING id, name, created_at, updated_at
+            "#,
+        )
+        .bind(project_id)
+        .bind(name.trim())
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| row.map(project_response_from_row))
+        .map_err(|error| {
+            if is_unique_violation(&error) {
+                GatewayError::DuplicateProject
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })
+    }
+
+    async fn delete_project(&self, project_id: Uuid) -> GatewayResult<bool> {
+        sqlx::query("DELETE FROM projects WHERE id = $1")
+            .bind(project_id)
+            .execute(&self.pool)
+            .await
+            .map(|result| result.rows_affected() > 0)
+            .map_err(|error| {
+                if is_foreign_key_violation(&error) {
+                    GatewayError::ProjectInUse
+                } else {
+                    GatewayError::StoreUnavailable
+                }
+            })
+    }
+}
+
+#[async_trait]
 impl AdminKeyStore for PostgresStore {
     async fn create_admin_key(
         &self,
@@ -438,7 +540,13 @@ impl AdminKeyStore for PostgresStore {
         .bind(request.expires_at)
         .execute(&self.pool)
         .await
-        .map_err(|_| GatewayError::StoreUnavailable)?;
+        .map_err(|error| {
+            if is_foreign_key_violation(&error) {
+                GatewayError::MissingProject
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })?;
 
         self.upsert_policy(key_id, &policy).await?;
         self.response_for_key(key_id)
@@ -618,7 +726,7 @@ impl AdminKeyStore for PostgresStore {
                 COALESCE(SUM(input_tokens), 0)::bigint,
                 COALESCE(SUM(output_tokens), 0)::bigint,
                 COALESCE(SUM(total_tokens), 0)::bigint,
-                SUM(estimated_cost)::double precision
+                COALESCE(SUM(estimated_cost), 0)::double precision
             FROM usage_events
             WHERE key_id = $1
             "#,
@@ -664,7 +772,7 @@ impl AdminKeyStore for PostgresStore {
                 COALESCE(SUM(input_tokens), 0)::bigint,
                 COALESCE(SUM(output_tokens), 0)::bigint,
                 COALESCE(SUM(total_tokens), 0)::bigint,
-                SUM(estimated_cost)::double precision
+                COALESCE(SUM(estimated_cost), 0)::double precision
             FROM usage_events
             WHERE project_id = $1
             "#,
@@ -894,6 +1002,202 @@ impl OpenAiRouteSettingsLookup for PostgresStore {
 }
 
 #[async_trait]
+impl AdminProviderConfigStore for PostgresStore {
+    async fn create_provider_config(
+        &self,
+        request: ProviderConfigCreateRequest,
+    ) -> GatewayResult<ProviderConfigResponse> {
+        request.validate()?;
+        let row = sqlx::query(
+            r#"
+            INSERT INTO provider_configs (provider, name, base_url, enabled, credential_secret)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            "#,
+        )
+        .bind(provider_config_kind_str(request.provider))
+        .bind(request.name.trim())
+        .bind(request.base_url.trim())
+        .bind(request.enabled)
+        .bind(request.credential)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|error| {
+            if is_unique_violation(&error) {
+                GatewayError::DuplicateProviderConfig
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })?;
+        provider_config_response_from_row(&row)
+    }
+
+    async fn list_provider_configs(&self) -> GatewayResult<Vec<ProviderConfigResponse>> {
+        sqlx::query(
+            r#"
+            SELECT id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            FROM provider_configs
+            ORDER BY provider ASC, name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(|row| provider_config_response_from_row(&row))
+                .collect::<GatewayResult<Vec<_>>>()
+        })
+        .map_err(|_| GatewayError::StoreUnavailable)?
+    }
+
+    async fn get_provider_config(
+        &self,
+        provider_id: Uuid,
+    ) -> GatewayResult<Option<ProviderConfigResponse>> {
+        sqlx::query(
+            r#"
+            SELECT id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            FROM provider_configs
+            WHERE id = $1
+            "#,
+        )
+        .bind(provider_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| {
+            row.map(|row| provider_config_response_from_row(&row))
+                .transpose()
+        })
+        .map_err(|_| GatewayError::StoreUnavailable)?
+    }
+
+    async fn patch_provider_config(
+        &self,
+        provider_id: Uuid,
+        patch: ProviderConfigPatchRequest,
+    ) -> GatewayResult<Option<ProviderConfigResponse>> {
+        patch.validate()?;
+        let Some(row) = sqlx::query(
+            r#"
+            SELECT id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            FROM provider_configs
+            WHERE id = $1
+            "#,
+        )
+        .bind(provider_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        else {
+            return Ok(None);
+        };
+        let mut response = provider_config_response_from_row(&row)?;
+        if let Some(name) = patch.name {
+            response.name = name.trim().to_owned();
+        }
+        if let Some(base_url) = patch.base_url {
+            response.base_url = base_url.trim().to_owned();
+        }
+        if let Some(enabled) = patch.enabled {
+            response.enabled = enabled;
+        }
+        let credential_secret: Option<Option<String>> = patch.credential;
+
+        sqlx::query(
+            r#"
+            UPDATE provider_configs
+            SET name = $2,
+                base_url = $3,
+                enabled = $4,
+                credential_secret = CASE WHEN $5::boolean THEN $6 ELSE credential_secret END,
+                updated_at = now()
+            WHERE id = $1
+            RETURNING id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            "#,
+        )
+        .bind(provider_id)
+        .bind(&response.name)
+        .bind(&response.base_url)
+        .bind(response.enabled)
+        .bind(credential_secret.is_some())
+        .bind(credential_secret.flatten())
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| row.map(|row| provider_config_response_from_row(&row)).transpose())
+        .map_err(|error| {
+            if is_unique_violation(&error) {
+                GatewayError::DuplicateProviderConfig
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })?
+    }
+
+    async fn delete_provider_config(&self, provider_id: Uuid) -> GatewayResult<bool> {
+        sqlx::query("DELETE FROM provider_configs WHERE id = $1")
+            .bind(provider_id)
+            .execute(&self.pool)
+            .await
+            .map(|result| result.rows_affected() > 0)
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn set_provider_config_enabled(
+        &self,
+        provider_id: Uuid,
+        enabled: bool,
+    ) -> GatewayResult<Option<ProviderConfigResponse>> {
+        sqlx::query(
+            r#"
+            UPDATE provider_configs
+            SET enabled = $2, updated_at = now()
+            WHERE id = $1
+            RETURNING id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            "#,
+        )
+        .bind(provider_id)
+        .bind(enabled)
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| row.map(|row| provider_config_response_from_row(&row)).transpose())
+        .map_err(|error| {
+            if is_unique_violation(&error) {
+                GatewayError::DuplicateProviderConfig
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })?
+    }
+}
+
+#[async_trait]
+impl ProviderConfigLookup for PostgresStore {
+    async fn active_litellm_config(&self) -> GatewayResult<Option<ProviderRuntimeConfig>> {
+        sqlx::query_as::<_, (String, String)>(
+            r#"
+            SELECT base_url, credential_secret
+            FROM provider_configs
+            WHERE provider = 'litellm'
+              AND enabled
+              AND credential_secret IS NOT NULL
+            ORDER BY updated_at DESC
+            LIMIT 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| {
+            row.map(|(base_url, credential)| ProviderRuntimeConfig {
+                provider: Provider::LiteLlm,
+                base_url,
+                credential,
+            })
+        })
+        .map_err(|_| GatewayError::StoreUnavailable)
+    }
+}
+
+#[async_trait]
 impl AdminServiceStore for PostgresStore {
     async fn create_service(
         &self,
@@ -919,6 +1223,7 @@ impl AdminServiceStore for PostgresStore {
             r#"
             INSERT INTO service_registrations (
                 name,
+                project_id,
                 studio_service_id,
                 route_pattern,
                 upstream_base_url,
@@ -935,10 +1240,11 @@ impl AdminServiceStore for PostgresStore {
                 last_synced_at,
                 disabled_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CASE WHEN $2 IS NULL THEN NULL ELSE now() END, CASE WHEN $5 THEN NULL ELSE now() END)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $6 THEN NULL ELSE now() END)
             "#,
         )
         .bind(&request.name)
+        .bind(request.project_id)
         .bind(&request.studio_service_id)
         .bind(&route_pattern)
         .bind(&request.upstream_base_url)
@@ -957,6 +1263,8 @@ impl AdminServiceStore for PostgresStore {
         .map_err(|error| {
             if is_unique_violation(&error) {
                 GatewayError::DuplicateService
+            } else if is_foreign_key_violation(&error) {
+                GatewayError::MissingProject
             } else {
                 GatewayError::StoreUnavailable
             }
@@ -1004,6 +1312,9 @@ impl AdminServiceStore for PostgresStore {
             } else {
                 ServiceSource::Gateway
             };
+        }
+        if let Some(project_id) = patch.project_id {
+            registration.project_id = project_id;
         }
         if let Some(route_pattern) = patch.route_pattern {
             registration.route_pattern = route_pattern;
@@ -1053,25 +1364,27 @@ impl AdminServiceStore for PostgresStore {
             UPDATE service_registrations
             SET
                 studio_service_id = $2,
-                route_pattern = $3,
-                upstream_base_url = $4,
-                enabled = $5,
-                allowed_methods = $6,
-                timeout_ms = $7,
-                max_body_bytes = $8,
-                cost_mode = $9,
-                estimated_cost_usd = $10,
-                credential_secret = $11,
-                fallback_services = $12,
-                source = $13,
-                sync_status = $14,
-                disabled_at = CASE WHEN $5 THEN NULL ELSE COALESCE(disabled_at, now()) END,
+                project_id = $3,
+                route_pattern = $4,
+                upstream_base_url = $5,
+                enabled = $6,
+                allowed_methods = $7,
+                timeout_ms = $8,
+                max_body_bytes = $9,
+                cost_mode = $10,
+                estimated_cost_usd = $11,
+                credential_secret = $12,
+                fallback_services = $13,
+                source = $14,
+                sync_status = $15,
+                disabled_at = CASE WHEN $6 THEN NULL ELSE COALESCE(disabled_at, now()) END,
                 updated_at = now()
             WHERE name = $1
             "#,
         )
         .bind(name)
         .bind(&registration.studio_service_id)
+        .bind(registration.project_id)
         .bind(&registration.route_pattern)
         .bind(&registration.upstream_base_url)
         .bind(registration.enabled)
@@ -1089,6 +1402,8 @@ impl AdminServiceStore for PostgresStore {
         .map_err(|error| {
             if is_unique_violation(&error) {
                 GatewayError::DuplicateService
+            } else if is_foreign_key_violation(&error) {
+                GatewayError::MissingProject
             } else {
                 GatewayError::StoreUnavailable
             }
@@ -1177,6 +1492,35 @@ impl ServiceRegistryLookup for PostgresStore {
 }
 
 #[async_trait]
+impl ServiceRouteLookup for PostgresStore {
+    async fn service_registration_for_route(
+        &self,
+        method: &http::Method,
+        path: &str,
+    ) -> GatewayResult<Option<ServiceRegistration>> {
+        let rows =
+            sqlx::query("SELECT * FROM service_registrations ORDER BY length(route_pattern) DESC")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        rows.into_iter()
+            .map(|row| service_registration_from_row(&row))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| GatewayError::StoreUnavailable)
+            .map(|services| {
+                services.into_iter().find(|service| {
+                    route_pattern_matches(&service.route_pattern, path)
+                        && service
+                            .allowed_methods
+                            .iter()
+                            .any(|allowed| allowed.eq_ignore_ascii_case(method.as_str()))
+                })
+            })
+    }
+}
+
+#[async_trait]
 impl UsageQueryStore for PostgresStore {
     async fn usage_summary(&self, query: UsageQuery) -> GatewayResult<UsageSummary> {
         let mut builder = QueryBuilder::<Postgres>::new(
@@ -1188,7 +1532,7 @@ impl UsageQueryStore for PostgresStore {
                 COALESCE(SUM(input_tokens), 0)::bigint,
                 COALESCE(SUM(output_tokens), 0)::bigint,
                 COALESCE(SUM(total_tokens), 0)::bigint,
-                SUM(estimated_cost)::double precision,
+                COALESCE(SUM(estimated_cost), 0)::double precision,
                 COALESCE(SUM(latency_ms), 0)::bigint,
                 COALESCE(SUM(fallback_count), 0)::bigint
             FROM usage_events
@@ -1221,7 +1565,7 @@ impl UsageQueryStore for PostgresStore {
                 COALESCE(SUM(input_tokens), 0)::bigint,
                 COALESCE(SUM(output_tokens), 0)::bigint,
                 COALESCE(SUM(total_tokens), 0)::bigint,
-                SUM(estimated_cost)::double precision,
+                COALESCE(SUM(estimated_cost), 0)::double precision,
                 COALESCE(SUM(latency_ms), 0)::bigint,
                 COALESCE(SUM(fallback_count), 0)::bigint
             FROM usage_events
@@ -1302,7 +1646,7 @@ impl UsageQueryStore for PostgresStore {
                 COALESCE(SUM(input_tokens), 0)::bigint,
                 COALESCE(SUM(output_tokens), 0)::bigint,
                 COALESCE(SUM(total_tokens), 0)::bigint,
-                SUM(estimated_cost)::double precision,
+                COALESCE(SUM(estimated_cost), 0)::double precision,
                 COALESCE(SUM(latency_ms), 0)::bigint,
                 COALESCE(SUM(fallback_count), 0)::bigint
             FROM usage_events
@@ -1495,6 +1839,50 @@ fn openai_route_setting_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<O
     })
 }
 
+fn project_response_from_row(row: sqlx::postgres::PgRow) -> ProjectResponse {
+    ProjectResponse {
+        id: row.try_get("id").expect("project id"),
+        name: row.try_get("name").expect("project name"),
+        created_at: row.try_get("created_at").expect("project created_at"),
+        updated_at: row.try_get("updated_at").expect("project updated_at"),
+    }
+}
+
+fn provider_config_response_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<ProviderConfigResponse> {
+    let provider: String = row
+        .try_get("provider")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let credential_secret: Option<String> = row
+        .try_get("credential_secret")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    Ok(ProviderConfigResponse {
+        id: row
+            .try_get("id")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        provider: parse_provider_config_kind(&provider)?,
+        name: row
+            .try_get("name")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        base_url: row
+            .try_get("base_url")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        enabled: row
+            .try_get("enabled")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        credential_configured: credential_secret
+            .as_deref()
+            .is_some_and(|value| !value.is_empty()),
+        created_at: row
+            .try_get("created_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
 fn admin_key_response_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<AdminKeyResponse> {
     Ok(AdminKeyResponse {
         id: row
@@ -1580,6 +1968,7 @@ fn service_registration_from_row(
     let sync_status: String = row.try_get("sync_status")?;
     Ok(ServiceRegistration {
         name: row.try_get("name")?,
+        project_id: row.try_get("project_id")?,
         studio_service_id: row.try_get("studio_service_id")?,
         route_pattern: row.try_get("route_pattern")?,
         upstream_base_url: row.try_get("upstream_base_url")?,
@@ -1598,6 +1987,17 @@ fn service_registration_from_row(
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
+}
+
+fn route_pattern_matches(route_pattern: &str, path: &str) -> bool {
+    if let Some(prefix) = route_pattern.strip_suffix("/*") {
+        path == prefix
+            || path
+                .strip_prefix(prefix)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+    } else {
+        path == route_pattern
+    }
 }
 
 fn service_cost_mode_str(cost_mode: ServiceCostMode) -> &'static str {
@@ -1679,6 +2079,12 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
         .is_some_and(|database_error| database_error.code().as_deref() == Some("23505"))
 }
 
+fn is_foreign_key_violation(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .is_some_and(|database_error| database_error.code().as_deref() == Some("23503"))
+}
+
 fn is_unique_violation_on(error: &sqlx::Error, constraint: &str) -> bool {
     error.as_database_error().is_some_and(|database_error| {
         database_error.code().as_deref() == Some("23505")
@@ -1750,5 +2156,28 @@ fn summary_from_row(
         estimated_cost_usd,
         total_latency_ms,
         fallback_count,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_from_row_preserves_zero_cost_aggregate() {
+        let summary = summary_from_row((0, 0, 0, 0, 0, 0, Some(0.0), 0, 0));
+
+        assert_eq!(summary.estimated_cost_usd, Some(0.0));
+    }
+
+    #[test]
+    fn persisted_service_route_patterns_match_exact_and_wildcard_paths() {
+        assert!(route_pattern_matches("/summary", "/summary"));
+        assert!(route_pattern_matches(
+            "/services/demo/*",
+            "/services/demo/run"
+        ));
+        assert!(route_pattern_matches("/services/demo/*", "/services/demo"));
+        assert!(!route_pattern_matches("/summary", "/summary/extra"));
     }
 }
