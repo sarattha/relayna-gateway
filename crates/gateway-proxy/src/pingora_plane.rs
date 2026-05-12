@@ -213,7 +213,11 @@ where
                     return Ok(true);
                 }
             };
-            let mut matched = RouteMatch::service(Route::ServiceWildcard, &service_name);
+            let mut matched = service_route_match_for_persisted_registration(
+                &req.method,
+                req.uri.path(),
+                &service_name,
+            );
             matched.timeout_ms = u64::try_from(registration.timeout_ms)
                 .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
             matched.max_body_bytes = usize::try_from(registration.max_body_bytes)
@@ -903,6 +907,19 @@ fn should_check_service_routes(path: &str) -> bool {
     !path.starts_with("/v1/") && !path.starts_with("/providers/openai/")
 }
 
+fn service_route_match_for_persisted_registration(
+    method: &http::Method,
+    path: &str,
+    service_name: &str,
+) -> RouteMatch {
+    match Route::resolve_match(method, path) {
+        Ok(matched) if matched.provider == Provider::InternalService => {
+            RouteMatch::service(matched.route, service_name)
+        }
+        _ => RouteMatch::service(Route::ServiceWildcard, service_name),
+    }
+}
+
 fn observe_response_body_chunk(ctx: &mut PingoraContext, body: &[u8]) {
     if ctx.is_streaming && !ctx.first_chunk_recorded {
         ctx.first_chunk_recorded = true;
@@ -1057,6 +1074,27 @@ mod tests {
             service_wildcard_suffix("/services/custom-ai", "custom-ai").as_deref(),
             Some("/")
         );
+    }
+
+    #[test]
+    fn persisted_service_match_preserves_canonical_route_policy_identity() {
+        let matched = service_route_match_for_persisted_registration(
+            &http::Method::POST,
+            "/summary",
+            "summary",
+        );
+
+        assert_eq!(matched.route, Route::Summary);
+        assert_eq!(matched.provider, Provider::InternalService);
+        assert_eq!(matched.service_name.as_deref(), Some("summary"));
+
+        let custom = service_route_match_for_persisted_registration(
+            &http::Method::POST,
+            "/internal/custom",
+            "custom",
+        );
+        assert_eq!(custom.route, Route::ServiceWildcard);
+        assert_eq!(custom.service_name.as_deref(), Some("custom"));
     }
 
     #[test]

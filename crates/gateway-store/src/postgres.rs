@@ -235,6 +235,8 @@ impl PostgresStore {
         .map_err(|error| {
             if is_unique_violation(&error) {
                 GatewayError::DuplicateService
+            } else if is_foreign_key_violation(&error) {
+                GatewayError::MissingProject
             } else {
                 GatewayError::StoreUnavailable
             }
