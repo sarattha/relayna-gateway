@@ -33,7 +33,7 @@ export DATABASE_URL="postgres://relayna_gateway@localhost:5432/relayna_gateway"
 export REDIS_URL="redis://127.0.0.1:6379"
 export LITELLM_BASE_URL="http://127.0.0.1:4000"
 export LITELLM_SERVICE_KEY="sk-litellm-service-key"
-export RELAYNA_STUDIO_BASE_URL="http://127.0.0.1:3000"
+export RELAYNA_STUDIO_BASE_URL="http://127.0.0.1:8000"
 # Optional when Studio protects the Gateway export endpoint:
 # export RELAYNA_STUDIO_TOKEN="studio-gateway-token"
 export GATEWAY_BIND_ADDR="127.0.0.1:8080"
@@ -56,13 +56,21 @@ Useful endpoints:
 - Readiness: `http://127.0.0.1:8081/readyz`
 - Metrics: `http://127.0.0.1:8081/metrics`
 - Admin portal: `http://127.0.0.1:8081/admin-ui`
+- Studio import preview: `http://127.0.0.1:8081/admin/studio/services`
+
+When Relayna Studio is running, verify the export path before using the Admin
+portal import picker:
+
+```bash
+curl http://127.0.0.1:8000/studio/gateway/services
+```
 
 ## Docker
 
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.0.5 .
+docker build -t relayna-gateway:0.0.6 .
 ```
 
 Run it:
@@ -75,12 +83,12 @@ docker run --rm \
   -e REDIS_URL="redis://host.docker.internal:6379" \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
-  relayna-gateway:0.0.5
+  relayna-gateway:0.0.6
 ```
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.0.5`, and provide `relayna-gateway-secrets` through your cluster secret manager. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.0.6`, and provide `relayna-gateway-secrets` through your cluster secret manager. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Checks
 

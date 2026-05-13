@@ -60,6 +60,47 @@ export DIRECT_OPENAI_BASE_URL="https://api.openai.com"
 export DIRECT_OPENAI_SERVICE_KEY="sk-provider-key"
 ```
 
+## Connect Relayna Studio
+
+If Relayna Studio is running, point Gateway at the Studio backend export API.
+Use the backend URL, not the frontend URL.
+
+Local example:
+
+```bash
+export RELAYNA_STUDIO_BASE_URL="http://127.0.0.1:8000"
+```
+
+If the Gateway process runs in Docker and Studio runs on the host:
+
+```bash
+export RELAYNA_STUDIO_BASE_URL="http://host.docker.internal:8000"
+```
+
+If Studio requires a token for Gateway import:
+
+```bash
+export RELAYNA_STUDIO_TOKEN="studio-gateway-token"
+```
+
+Verify Studio exports services before starting Gateway:
+
+```bash
+curl -sS "$RELAYNA_STUDIO_BASE_URL/studio/gateway/services"
+```
+
+After Gateway starts, verify Gateway can reach Studio:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  http://127.0.0.1:8081/admin/studio/services
+```
+
+The Gateway response should include mapped services with `studio_service_id`,
+`route_pattern`, and `import_request` fields. Open `/admin-ui`, go to Services,
+and use `Import from Studio` to register selected services locally.
+
 ## Run the Gateway
 
 ```bash
@@ -83,6 +124,25 @@ Open the admin portal at:
 ```text
 http://127.0.0.1:8081/admin-ui
 ```
+
+## Create a Non-Expiring Key
+
+In the Admin portal, open Keys and select `No expiration` when creating or
+editing a virtual key. Through the API, use `expires_at: null`:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8081/admin/keys \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "<project-id>",
+    "expires_at": null
+  }'
+```
+
+Use non-expiring keys only for service-to-service workloads that have a separate
+rotation and revocation process. Keep their policies narrow and store the raw
+key in a secret manager.
 
 ## Run Checks
 

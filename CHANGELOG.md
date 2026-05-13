@@ -2,6 +2,37 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.6 - 2026-05-13
+
+### Added
+
+- Admin portal `Import from Studio` flow that fetches Relayna Studio service
+  exports from `GET /studio/gateway/services` and imports selected services
+  into Gateway's service registry.
+- Optional Studio connection configuration through `RELAYNA_STUDIO_BASE_URL`
+  and `RELAYNA_STUDIO_TOKEN`.
+- Explicit `No expiration` controls for virtual key creation and editing in the
+  admin portal.
+- Documentation for connecting Gateway to Relayna Studio, testing the Studio
+  export path, importing services, and operating non-expiring virtual keys.
+
+### Changed
+
+- Workspace crate versions now share the `0.0.6` release version.
+- Deployment examples and the baseline Kubernetes image now target the `0.0.6`
+  gateway image.
+- Studio service re-imports preserve Gateway-owned runtime fields by default,
+  including credentials, enabled state, route overrides, project links, limits,
+  fallback services, and cost settings.
+
+### Fixed
+
+- Persisted wildcard service route aliases now strip the matched alias prefix
+  before forwarding upstream while preserving query strings.
+- Studio catalog fetches now use a bounded request timeout so unavailable or
+  stalled Studio backends return `studio_unavailable` instead of leaving the
+  admin portal import action stuck.
+
 ## 0.0.5 - 2026-05-12
 
 ### Added
