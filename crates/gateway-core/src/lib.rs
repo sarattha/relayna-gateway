@@ -47,10 +47,12 @@ pub use route_settings::{
 };
 pub use routing::{is_retry_safe_status, BackendType, Provider, Route, RouteMatch};
 pub use services::{
-    default_route_pattern, service_wildcard_suffix, validate_service_name, AdminServiceStore,
-    ServiceCostMode, ServiceCreateRequest, ServicePatchRequest, ServiceRegistration,
-    ServiceRegistryLookup, ServiceResponse, ServiceRouteLookup, ServiceSource, ServiceSyncStatus,
-    ServiceSyncStatusResponse, StudioServiceImportRequest, StudioServicePricing,
+    default_route_pattern, route_pattern_wildcard_suffix, service_wildcard_suffix,
+    validate_service_name, AdminServiceStore, ServiceCostMode, ServiceCreateRequest,
+    ServicePatchRequest, ServiceRegistration, ServiceRegistryLookup, ServiceResponse,
+    ServiceRouteLookup, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
+    StudioCatalogService, StudioServiceCatalogResponse, StudioServiceImportPreview,
+    StudioServiceImportRequest, StudioServicePricing,
 };
 pub use usage::{
     extract_estimated_cost_usd, extract_model, extract_usage_tokens, UsageEvent, UsageRecorder,

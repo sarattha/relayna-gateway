@@ -36,6 +36,7 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin/openai-routes",
     "/admin/keys",
     "/admin/services",
+    "/admin/studio/services",
     "/admin/operator-token/rotate",
     "/readyz",
   ]) {
@@ -69,9 +70,18 @@ test("service methods use explicit checkbox controls", () => {
 test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /service-routes/);
   assert.match(js, /function serviceRouteOptions\(\)/);
+  assert.match(js, /Import from Studio/);
+  assert.match(js, /function studioImportTable\(rows\)/);
   assert.match(js, /Fixed records the configured estimate per request/);
   assert.match(js, /Passthrough records provider-reported response cost/);
   assert.match(css, /\.help/);
+});
+
+test("virtual keys expose explicit no-expiration controls", () => {
+  assert.match(js, /name="no_expires_at" type="checkbox"/);
+  assert.match(js, /No expiration/);
+  assert.match(js, /function keyExpiry\(key\)/);
+  assert.match(js, /non-expiring/);
 });
 
 test("service editor closes after a successful save", () => {

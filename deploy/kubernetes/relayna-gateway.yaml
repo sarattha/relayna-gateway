@@ -20,6 +20,8 @@ stringData:
   DIRECT_OPENAI_BASE_URL: ""
   DIRECT_OPENAI_SERVICE_KEY: ""
   RELAYNA_WORKER_TOKEN: ""
+  RELAYNA_STUDIO_BASE_URL: ""
+  RELAYNA_STUDIO_TOKEN: ""
 ---
 apiVersion: apps/v1
 kind: Deployment

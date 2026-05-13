@@ -443,6 +443,10 @@ tr:last-child td {
   box-shadow: 0 22px 60px rgb(21 27 39 / 24%);
 }
 
+.modal.wide {
+  width: min(1040px, 100%);
+}
+
 .modal h3 {
   margin: 0;
   font-size: 16px;

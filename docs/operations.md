@@ -21,6 +21,8 @@ Optional variables:
 | `DIRECT_OPENAI_BASE_URL` | Optional direct provider base URL. |
 | `DIRECT_OPENAI_SERVICE_KEY` | Optional direct provider credential. |
 | `RELAYNA_WORKER_TOKEN` | Optional shared token for Relayna worker integration. |
+| `RELAYNA_STUDIO_BASE_URL` | Optional Relayna Studio backend base URL for Admin portal service import. |
+| `RELAYNA_STUDIO_TOKEN` | Optional bearer token used when Gateway fetches the Studio service catalog. |
 
 ## Health and Metrics
 
@@ -32,7 +34,7 @@ Use readiness probes for traffic routing and liveness probes for process restart
 
 ## Secret Handling
 
-- Store `DATABASE_URL`, `REDIS_URL`, provider credentials, LiteLLM credentials, and operator tokens in a secret manager.
+- Store `DATABASE_URL`, `REDIS_URL`, provider credentials, LiteLLM credentials, Studio tokens, and operator tokens in a secret manager.
 - Never log raw virtual keys, operator tokens, provider keys, prompts, or request bodies.
 - Rotate the bootstrap operator token after first startup.
 - Prefer private control-plane access for `/admin/*`, `/admin-ui`, and `/metrics`.

@@ -103,7 +103,7 @@ pub struct ServicePatchRequest {
     pub sync_status: Option<ServiceSyncStatus>,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct StudioServiceImportRequest {
     pub studio_service_id: String,
     pub name: String,
@@ -112,16 +112,67 @@ pub struct StudioServiceImportRequest {
     #[serde(default)]
     pub route_pattern: Option<String>,
     #[serde(default)]
+    pub upstream_base_url: Option<String>,
+    #[serde(default = "default_allowed_methods")]
+    pub allowed_methods: Vec<String>,
+    #[serde(default)]
     pub category: Option<String>,
     #[serde(default)]
     pub default_pricing: Option<StudioServicePricing>,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct StudioServicePricing {
     pub cost_mode: ServiceCostMode,
     #[serde(default)]
     pub estimated_cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct StudioServiceCatalogResponse {
+    #[serde(default)]
+    pub services: Vec<StudioCatalogService>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct StudioCatalogService {
+    #[serde(alias = "service_id")]
+    pub studio_service_id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub gateway_service_name: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub environment: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub auth_mode: Option<String>,
+    #[serde(default, alias = "route_pattern")]
+    pub default_route_pattern: Option<String>,
+    #[serde(default)]
+    pub allowed_methods: Option<Vec<String>>,
+    #[serde(default)]
+    pub default_pricing: Option<StudioServicePricing>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct StudioServiceImportPreview {
+    pub studio_service_id: String,
+    pub name: String,
+    pub display_name: Option<String>,
+    pub environment: Option<String>,
+    pub status: Option<String>,
+    pub base_url: Option<String>,
+    pub tags: Vec<String>,
+    pub route_pattern: String,
+    pub import_request: StudioServiceImportRequest,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -349,10 +400,75 @@ impl StudioServiceImportRequest {
         if let Some(route_pattern) = self.route_pattern.as_deref() {
             validate_route_pattern(route_pattern)?;
         }
+        validate_optional_upstream(self.upstream_base_url.as_deref())?;
+        validate_allowed_methods(&self.allowed_methods)?;
         if let Some(pricing) = &self.default_pricing {
             validate_cost(pricing.cost_mode, pricing.estimated_cost_usd)?;
         }
         Ok(())
+    }
+}
+
+impl StudioCatalogService {
+    pub fn into_preview(self) -> GatewayResult<StudioServiceImportPreview> {
+        let name = self.gateway_name()?;
+        let route_pattern = self
+            .default_route_pattern
+            .clone()
+            .or_else(|| default_route_pattern(&name))
+            .unwrap_or_else(|| format!("/services/{name}/*"));
+        validate_route_pattern(&route_pattern)?;
+        validate_optional_upstream(self.base_url.as_deref())?;
+        let allowed_methods = self
+            .allowed_methods
+            .clone()
+            .filter(|methods| !methods.is_empty())
+            .unwrap_or_else(default_allowed_methods);
+        validate_allowed_methods(&allowed_methods)?;
+        if let Some(pricing) = &self.default_pricing {
+            validate_cost(pricing.cost_mode, pricing.estimated_cost_usd)?;
+        }
+
+        let import_request = StudioServiceImportRequest {
+            studio_service_id: self.studio_service_id.clone(),
+            name: name.clone(),
+            project_id: None,
+            route_pattern: Some(route_pattern.clone()),
+            upstream_base_url: self.base_url.clone(),
+            allowed_methods,
+            category: self.environment.clone(),
+            default_pricing: self.default_pricing.clone(),
+        };
+        import_request.validate()?;
+
+        Ok(StudioServiceImportPreview {
+            studio_service_id: self.studio_service_id,
+            name,
+            display_name: self.display_name,
+            environment: self.environment,
+            status: self.status,
+            base_url: self.base_url,
+            tags: self.tags,
+            route_pattern,
+            import_request,
+        })
+    }
+
+    fn gateway_name(&self) -> GatewayResult<String> {
+        for candidate in [
+            self.gateway_service_name.as_deref(),
+            self.name.as_deref(),
+            Some(self.studio_service_id.as_str()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let normalized = normalize_gateway_service_name(candidate);
+            if validate_service_name(&normalized).is_ok() {
+                return Ok(normalized);
+            }
+        }
+        Err(GatewayError::InvalidServicePayload)
     }
 }
 
@@ -459,6 +575,35 @@ pub fn service_wildcard_suffix(path: &str, service_name: &str) -> Option<String>
     } else {
         None
     }
+}
+
+pub fn route_pattern_wildcard_suffix(path: &str, route_pattern: &str) -> Option<String> {
+    let prefix = route_pattern.strip_suffix("/*")?;
+    let suffix = path.strip_prefix(prefix)?;
+    if suffix.is_empty() {
+        Some("/".to_owned())
+    } else if suffix.starts_with('?') {
+        Some(format!("/{suffix}"))
+    } else if suffix.starts_with('/') {
+        Some(suffix.to_owned())
+    } else {
+        None
+    }
+}
+
+fn normalize_gateway_service_name(value: &str) -> String {
+    let mut output = String::new();
+    let mut previous_dash = false;
+    for character in value.chars().flat_map(char::to_lowercase) {
+        if character.is_ascii_lowercase() || character.is_ascii_digit() {
+            output.push(character);
+            previous_dash = false;
+        } else if !previous_dash {
+            output.push('-');
+            previous_dash = true;
+        }
+    }
+    output.trim_matches('-').chars().take(64).collect()
 }
 
 fn validate_route_pattern(route_pattern: &str) -> GatewayResult<()> {
@@ -611,12 +756,71 @@ mod tests {
     }
 
     #[test]
+    fn maps_persisted_wildcard_route_to_upstream_suffix() {
+        assert_eq!(
+            route_pattern_wildcard_suffix(
+                "/services/translation/translations?trace=1",
+                "/services/translation/*",
+            )
+            .as_deref(),
+            Some("/translations?trace=1")
+        );
+        assert_eq!(
+            route_pattern_wildcard_suffix("/services/translation", "/services/translation/*")
+                .as_deref(),
+            Some("/")
+        );
+        assert_eq!(
+            route_pattern_wildcard_suffix(
+                "/services/translation?trace=1",
+                "/services/translation/*",
+            )
+            .as_deref(),
+            Some("/?trace=1")
+        );
+        assert_eq!(
+            route_pattern_wildcard_suffix("/translations", "/translations").as_deref(),
+            None
+        );
+    }
+
+    #[test]
+    fn maps_studio_catalog_service_to_import_preview_without_secrets() {
+        let preview = StudioCatalogService {
+            studio_service_id: "Payments API".to_owned(),
+            name: Some("Payments API".to_owned()),
+            gateway_service_name: None,
+            display_name: Some("Payments API".to_owned()),
+            base_url: Some("https://payments.example.test".to_owned()),
+            environment: Some("prod".to_owned()),
+            tags: vec!["core".to_owned()],
+            status: Some("healthy".to_owned()),
+            auth_mode: Some("internal_network".to_owned()),
+            default_route_pattern: None,
+            allowed_methods: Some(vec!["GET".to_owned(), "POST".to_owned()]),
+            default_pricing: None,
+        }
+        .into_preview()
+        .expect("preview");
+
+        assert_eq!(preview.name, "payments-api");
+        assert_eq!(preview.route_pattern, "/services/payments-api/*");
+        assert_eq!(
+            preview.import_request.upstream_base_url.as_deref(),
+            Some("https://payments.example.test")
+        );
+        assert_eq!(preview.import_request.allowed_methods, ["GET", "POST"]);
+    }
+
+    #[test]
     fn studio_import_allows_incomplete_runtime_fields() {
         let request = StudioServiceImportRequest {
             studio_service_id: "svc_1".to_owned(),
             name: "translation".to_owned(),
             project_id: None,
             route_pattern: Some("/translation".to_owned()),
+            upstream_base_url: None,
+            allowed_methods: vec!["POST".to_owned()],
             category: None,
             default_pricing: Some(StudioServicePricing {
                 cost_mode: ServiceCostMode::Fixed,

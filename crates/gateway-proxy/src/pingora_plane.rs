@@ -4,10 +4,11 @@ use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
     evaluate_policy, extract_estimated_cost_usd, extract_generation_features, extract_model,
-    extract_usage_tokens, is_retry_safe_status, service_wildcard_suffix, AuthenticatedKey,
-    BudgetDecision, BudgetStore, GatewayError, GatewayResult, OpenAiRouteSettingsLookup,
-    PolicyLookup, Provider, ProviderConfigLookup, RateLimitDecision, RateLimitStore, Route,
-    RouteMatch, ServiceRegistryLookup, ServiceRouteLookup, UsageEvent, UsageRecorder,
+    extract_usage_tokens, is_retry_safe_status, route_pattern_wildcard_suffix,
+    service_wildcard_suffix, AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError,
+    GatewayResult, OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
+    RateLimitDecision, RateLimitStore, Route, RouteMatch, ServiceRegistryLookup,
+    ServiceRouteLookup, UsageEvent, UsageRecorder,
 };
 use http::Uri;
 use pingora_core::{
@@ -130,6 +131,7 @@ pub struct PingoraContext {
     fallback_count: i32,
     terminal_usage_recorded: bool,
     service_upstream: Option<PingoraUpstreamConfig>,
+    service_route_pattern: Option<String>,
     litellm_upstream: Option<PingoraUpstreamConfig>,
 }
 
@@ -169,6 +171,7 @@ where
             fallback_count: 0,
             terminal_usage_recorded: false,
             service_upstream: None,
+            service_route_pattern: None,
             litellm_upstream: None,
         }
     }
@@ -223,6 +226,7 @@ where
             matched.max_body_bytes = usize::try_from(registration.max_body_bytes)
                 .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
             matched.estimated_cost_usd = registration.estimated_cost_usd;
+            ctx.service_route_pattern = Some(registration.route_pattern);
             ctx.service_upstream = Some(upstream);
             matched
         } else {
@@ -291,6 +295,7 @@ where
                     matched.max_body_bytes = usize::try_from(registration.max_body_bytes)
                         .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
                     matched.estimated_cost_usd = registration.estimated_cost_usd;
+                    ctx.service_route_pattern = Some(registration.route_pattern);
                     ctx.service_upstream = Some(upstream);
                 }
                 if matched.provider == Provider::LiteLlm {
@@ -529,7 +534,11 @@ where
         if let Some(matched) = &ctx.route_match {
             if matched.route == Route::ServiceWildcard {
                 if let Some(service_name) = matched.service_name.as_deref() {
-                    rewrite_service_wildcard_uri(upstream_request, service_name)?;
+                    rewrite_service_wildcard_uri(
+                        upstream_request,
+                        service_name,
+                        ctx.service_route_pattern.as_deref(),
+                    )?;
                 }
             }
         }
@@ -879,6 +888,7 @@ fn direct_openai_path_and_query(path_and_query: &str) -> String {
 fn rewrite_service_wildcard_uri(
     upstream_request: &mut RequestHeader,
     service_name: &str,
+    route_pattern: Option<&str>,
 ) -> PingoraResult<()> {
     let Some(path_and_query) = upstream_request
         .uri
@@ -887,7 +897,10 @@ fn rewrite_service_wildcard_uri(
     else {
         return Ok(());
     };
-    let Some(rewritten) = service_wildcard_suffix(path_and_query, service_name) else {
+    let Some(rewritten) = route_pattern
+        .and_then(|pattern| route_pattern_wildcard_suffix(path_and_query, pattern))
+        .or_else(|| service_wildcard_suffix(path_and_query, service_name))
+    else {
         return Ok(());
     };
     let uri = Uri::builder()
@@ -986,6 +999,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         fallback_count: 0,
         terminal_usage_recorded: false,
         service_upstream: None,
+        service_route_pattern: None,
         litellm_upstream: None,
     }
 }
@@ -1073,6 +1087,18 @@ mod tests {
         assert_eq!(
             service_wildcard_suffix("/services/custom-ai", "custom-ai").as_deref(),
             Some("/")
+        );
+        assert_eq!(
+            route_pattern_wildcard_suffix(
+                "/services/translation/translations?trace=1",
+                "/services/translation/*"
+            )
+            .as_deref(),
+            Some("/translations?trace=1")
+        );
+        assert_eq!(
+            route_pattern_wildcard_suffix("/translations?trace=1", "/translations").as_deref(),
+            None
         );
     }
 
