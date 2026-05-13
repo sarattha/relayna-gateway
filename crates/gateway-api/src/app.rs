@@ -19,7 +19,7 @@ use gateway_core::{
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::Serialize;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
@@ -62,6 +62,8 @@ pub struct AppState {
     studio: Option<StudioCatalogClient>,
 }
 
+const STUDIO_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
+
 #[derive(Clone)]
 pub struct StudioCatalogClient {
     base_url: String,
@@ -80,7 +82,7 @@ impl StudioCatalogClient {
 
     async fn services(&self) -> GatewayResult<Vec<StudioServiceImportPreview>> {
         let url = format!("{}/studio/gateway/services", self.base_url);
-        let mut request = self.client.get(url);
+        let mut request = self.client.get(url).timeout(STUDIO_CATALOG_TIMEOUT);
         if let Some(token) = &self.token {
             request = request.bearer_auth(token);
         }
