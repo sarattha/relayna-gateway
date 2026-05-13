@@ -13,12 +13,13 @@ use gateway_core::{
     CreatedAdminKeyResponse, CreatedOperatorTokenResponse, GatewayError, GatewayResult,
     OperatorTokenMaterial, OperatorTokenStore, ProjectCreateRequest, ProjectPatchRequest,
     ProviderConfigCreateRequest, ProviderConfigPatchRequest, ServiceCreateRequest,
-    ServicePatchRequest, StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent,
-    UsageQuery, UsageQueryStore, VirtualKeyMaterial,
+    ServicePatchRequest, StudioServiceCatalogResponse, StudioServiceImportPreview,
+    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore,
+    VirtualKeyMaterial,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::Serialize;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
@@ -58,12 +59,79 @@ impl GatewayData for PostgresStore {
 pub struct AppState {
     store: Arc<dyn GatewayData>,
     redis: RedisReadiness,
+    studio: Option<StudioCatalogClient>,
+}
+
+const STUDIO_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
+
+#[derive(Clone)]
+pub struct StudioCatalogClient {
+    base_url: String,
+    token: Option<String>,
+    client: reqwest::Client,
+}
+
+impl StudioCatalogClient {
+    pub fn new(base_url: impl Into<String>, token: Option<String>) -> Self {
+        Self {
+            base_url: base_url.into().trim_end_matches('/').to_owned(),
+            token,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    async fn services(&self) -> GatewayResult<Vec<StudioServiceImportPreview>> {
+        let url = format!("{}/studio/gateway/services", self.base_url);
+        let mut request = self.client.get(url).timeout(STUDIO_CATALOG_TIMEOUT);
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|_| GatewayError::StudioUnavailable)?;
+        if !response.status().is_success() {
+            return Err(GatewayError::StudioUnavailable);
+        }
+        let value = response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|_| GatewayError::StudioUnavailable)?;
+        let catalog = if value.is_array() {
+            StudioServiceCatalogResponse {
+                services: serde_json::from_value(value)
+                    .map_err(|_| GatewayError::StudioUnavailable)?,
+            }
+        } else {
+            serde_json::from_value::<StudioServiceCatalogResponse>(value)
+                .map_err(|_| GatewayError::StudioUnavailable)?
+        };
+
+        catalog
+            .services
+            .into_iter()
+            .map(|service| service.into_preview())
+            .collect()
+    }
 }
 
 pub fn router(store: PostgresStore, redis: RedisReadiness) -> Router {
     router_with_state(AppState {
         store: Arc::new(store),
         redis,
+        studio: None,
+    })
+}
+
+pub fn router_with_studio(
+    store: PostgresStore,
+    redis: RedisReadiness,
+    studio: Option<StudioCatalogClient>,
+) -> Router {
+    router_with_state(AppState {
+        store: Arc::new(store),
+        redis,
+        studio,
     })
 }
 
@@ -111,6 +179,7 @@ pub fn router_with_state(state: AppState) -> Router {
             post(enable_openai_route),
         )
         .route("/admin/services", post(create_service).get(list_services))
+        .route("/admin/studio/services", get(studio_services))
         .route("/admin/services/import", post(import_service))
         .route("/admin/services/sync", post(sync_service))
         .route(
@@ -589,6 +658,21 @@ async fn import_service(
     .await
 }
 
+async fn studio_services(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    let Some(studio) = state.studio.as_ref() else {
+        return error_response(&headers, GatewayError::InvalidConfiguration);
+    };
+
+    match studio.services().await {
+        Ok(services) => Json(services).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn sync_service(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1016,9 +1100,19 @@ mod tests {
         async fn patch_admin_key(
             &self,
             _key_id: Uuid,
-            _patch: AdminKeyPatch,
+            patch: AdminKeyPatch,
         ) -> GatewayResult<Option<AdminKeyResponse>> {
-            Ok(self.admin_key.lock().expect("lock poisoned").clone())
+            let mut key = self.admin_key.lock().expect("lock poisoned");
+            if let Some(key) = key.as_mut() {
+                if let Some(expires_at) = patch.expires_at {
+                    key.expires_at = expires_at;
+                }
+                if let Some(disabled) = patch.disabled {
+                    key.disabled = disabled;
+                }
+                key.updated_at = Utc::now();
+            }
+            Ok(key.clone())
         }
 
         async fn revoke_admin_key(&self, _key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>> {
@@ -1276,8 +1370,14 @@ mod tests {
             if let Some(enabled) = patch.enabled {
                 service.enabled = enabled;
             }
+            if let Some(route_pattern) = patch.route_pattern {
+                service.route_pattern = route_pattern;
+            }
             if let Some(upstream_base_url) = patch.upstream_base_url {
                 service.upstream_base_url = upstream_base_url;
+            }
+            if let Some(allowed_methods) = patch.allowed_methods {
+                service.allowed_methods = allowed_methods;
             }
             if let Some(credential) = patch.credential {
                 service.credential_configured = credential.is_some();
@@ -1330,10 +1430,6 @@ mod tests {
                 service.studio_service_id.as_deref() == Some(&request.studio_service_id)
             }) {
                 service.name = request.name;
-                service.project_id = request.project_id;
-                service.route_pattern = request
-                    .route_pattern
-                    .unwrap_or_else(|| format!("/services/{}/*", service.name));
                 service.source = ServiceSource::Studio;
                 service.sync_status = if service.missing_runtime_fields.is_empty() {
                     ServiceSyncStatus::Synced
@@ -1352,9 +1448,9 @@ mod tests {
                 route_pattern: request
                     .route_pattern
                     .unwrap_or_else(|| format!("/services/{}/*", request.name)),
-                upstream_base_url: None,
+                upstream_base_url: request.upstream_base_url.clone(),
                 enabled: false,
-                allowed_methods: vec!["POST".to_owned()],
+                allowed_methods: request.allowed_methods.clone(),
                 credential_configured: false,
                 timeout_ms: 60_000,
                 max_body_bytes: 2_097_152,
@@ -1374,10 +1470,10 @@ mod tests {
                 disabled_at: None,
                 created_at: now,
                 updated_at: now,
-                missing_runtime_fields: vec![
-                    "upstream_base_url".to_owned(),
-                    "credential".to_owned(),
-                ],
+                missing_runtime_fields: missing_runtime_fields(
+                    request.upstream_base_url.as_deref(),
+                    None,
+                ),
             };
             services.push(response.clone());
             Ok(response)
@@ -1525,6 +1621,7 @@ mod tests {
         AppState {
             store: Arc::new(store),
             redis,
+            studio: None,
         }
     }
 
@@ -1727,6 +1824,63 @@ mod tests {
             .expect("key prefix")
             .starts_with("rk_live_"));
         assert!(value["key"].get("key_hash").is_none());
+    }
+
+    #[tokio::test]
+    async fn admin_key_create_and_patch_support_no_expiration() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let project_id = Uuid::new_v4();
+        let response = admin_post(
+            app.clone(),
+            "/admin/keys",
+            Some(TEST_OPERATOR_TOKEN),
+            &format!(r#"{{"project_id":"{project_id}","expires_at":null}}"#),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        let key_id = value["key"]["id"].as_str().expect("key id");
+        assert!(value["key"]["expires_at"].is_null());
+
+        let response = admin_patch(
+            app.clone(),
+            &format!("/admin/keys/{key_id}"),
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"expires_at":"2030-01-01T00:00:00Z"}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["expires_at"], "2030-01-01T00:00:00Z");
+
+        let response = admin_patch(
+            app,
+            &format!("/admin/keys/{key_id}"),
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"expires_at":null}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert!(value["key"]["expires_at"].is_null());
     }
 
     #[tokio::test]
@@ -2144,6 +2298,76 @@ mod tests {
         assert_eq!(value["sync_status"], "incomplete");
         assert_eq!(value["missing_runtime_fields"][0], "upstream_base_url");
         assert_eq!(value["missing_runtime_fields"][1], "credential");
+    }
+
+    #[tokio::test]
+    async fn admin_service_reimport_preserves_gateway_owned_runtime_fields() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+        };
+        let app = router_with_state(test_state(store));
+        let response = admin_post(
+            app.clone(),
+            "/admin/services/import",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{
+                "studio_service_id":"svc_1",
+                "name":"translation",
+                "route_pattern":"/services/translation/*",
+                "upstream_base_url":"http://studio-suggested.internal:8080",
+                "allowed_methods":["POST"]
+            }"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = admin_patch(
+            app.clone(),
+            "/admin/services/translation",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{
+                "route_pattern":"/services/local-translation/*",
+                "upstream_base_url":"http://gateway-owned.internal:8080",
+                "credential":"token",
+                "enabled":true,
+                "allowed_methods":["POST"]
+            }"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = admin_post(
+            app,
+            "/admin/services/import",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{
+                "studio_service_id":"svc_1",
+                "name":"translation",
+                "route_pattern":"/services/studio-updated/*",
+                "upstream_base_url":"http://studio-updated.internal:8080",
+                "allowed_methods":["GET"]
+            }"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["route_pattern"], "/services/local-translation/*");
+        assert_eq!(
+            value["upstream_base_url"],
+            "http://gateway-owned.internal:8080"
+        );
+        assert_eq!(value["allowed_methods"][0], "POST");
+        assert_eq!(value["enabled"], true);
+        assert_eq!(value["sync_status"], "synced");
     }
 
     #[tokio::test]

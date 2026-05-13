@@ -197,22 +197,20 @@ impl PostgresStore {
                 project_id,
                 studio_service_id,
                 route_pattern,
+                upstream_base_url,
                 enabled,
+                allowed_methods,
                 cost_mode,
                 estimated_cost_usd,
                 source,
                 sync_status,
                 last_synced_at
             )
-            VALUES ($1, $2, $3, $4, false, $5, $6, 'studio', 'incomplete', now())
+            VALUES ($1, $2, $3, $4, $5, false, $6, $7, $8, 'studio', 'incomplete', now())
             ON CONFLICT (studio_service_id) WHERE studio_service_id IS NOT NULL
             DO UPDATE SET
                 name = EXCLUDED.name,
-                project_id = EXCLUDED.project_id,
                 studio_service_id = EXCLUDED.studio_service_id,
-                route_pattern = EXCLUDED.route_pattern,
-                cost_mode = EXCLUDED.cost_mode,
-                estimated_cost_usd = EXCLUDED.estimated_cost_usd,
                 source = 'studio',
                 sync_status = CASE
                     WHEN service_registrations.upstream_base_url IS NULL
@@ -228,6 +226,8 @@ impl PostgresStore {
         .bind(request.project_id)
         .bind(&request.studio_service_id)
         .bind(&route_pattern)
+        .bind(&request.upstream_base_url)
+        .bind(&request.allowed_methods)
         .bind(service_cost_mode_str(cost_mode))
         .bind(estimated_cost_usd)
         .execute(&self.pool)

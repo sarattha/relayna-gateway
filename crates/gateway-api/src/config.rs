@@ -10,6 +10,8 @@ pub struct Config {
     pub direct_openai_base_url: Option<String>,
     pub direct_openai_service_key: Option<String>,
     pub relayna_worker_token: Option<String>,
+    pub relayna_studio_base_url: Option<String>,
+    pub relayna_studio_token: Option<String>,
     pub gateway_bind_addr: SocketAddr,
     pub gateway_control_bind_addr: SocketAddr,
     pub log_level: String,
@@ -24,6 +26,8 @@ impl Config {
         let direct_openai_base_url = optional("DIRECT_OPENAI_BASE_URL");
         let direct_openai_service_key = optional("DIRECT_OPENAI_SERVICE_KEY");
         let relayna_worker_token = optional("RELAYNA_WORKER_TOKEN");
+        let relayna_studio_base_url = optional("RELAYNA_STUDIO_BASE_URL");
+        let relayna_studio_token = optional("RELAYNA_STUDIO_TOKEN");
         let gateway_bind_addr = required("GATEWAY_BIND_ADDR")?
             .parse()
             .map_err(|_| GatewayError::InvalidConfiguration)?;
@@ -40,6 +44,8 @@ impl Config {
             direct_openai_base_url,
             direct_openai_service_key,
             relayna_worker_token,
+            relayna_studio_base_url,
+            relayna_studio_token,
             gateway_bind_addr,
             gateway_control_bind_addr,
             log_level,

@@ -6,6 +6,7 @@ const state = {
   providers: [],
   openaiRoutes: [],
   services: [],
+  studioServices: [],
   editingKeyId: null,
   editingServiceName: null,
 };
@@ -280,6 +281,7 @@ async function keys() {
         <form id="key-form" class="form-grid">
           <label>Project<select name="project_id" required>${projectOptions()}</select></label>
           <label>Expires at<input name="expires_at" type="datetime-local"></label>
+          <label class="check"><input name="no_expires_at" type="checkbox"> No expiration</label>
           ${policyFields()}
           <div class="form-actions">
             <button type="submit" class="primary">Create key</button>
@@ -300,6 +302,7 @@ async function keys() {
   `;
   document.querySelector("#key-form").addEventListener("submit", createKey);
   document.querySelector("#key-edit-form")?.addEventListener("submit", patchKey);
+  bindKeyExpiryControls();
   document.querySelectorAll("[data-key-action]").forEach((button) => {
     button.addEventListener("click", keyAction);
   });
@@ -329,7 +332,7 @@ function keyEditForm(key) {
     </div>
     <form id="key-edit-form" class="form-grid" data-key-id="${attr(key.id)}">
       <label>Expires at<input name="expires_at" type="datetime-local" value="${attr(toLocalInput(key.expires_at))}"></label>
-      <label class="check"><input name="clear_expires_at" type="checkbox"> Clear expiry</label>
+      <label class="check"><input name="no_expires_at" type="checkbox" ${key.expires_at ? "" : "checked"}> No expiration</label>
       <label class="check"><input name="disabled" type="checkbox" ${key.disabled ? "checked" : ""}> Disabled</label>
       ${policyFields(key)}
       <div class="form-actions">
@@ -342,11 +345,12 @@ function keyEditForm(key) {
 
 function keyTable(rows) {
   return table(
-    ["Prefix", "Project", "Status", "Policy", "Updated", "Actions"],
+    ["Prefix", "Project", "Status", "Expiry", "Policy", "Updated", "Actions"],
     rows.map((key) => [
       `<code>${esc(key.key_prefix)}</code>`,
       `<code>${esc(key.project_id)}</code>`,
       keyStatus(key),
+      esc(keyExpiry(key)),
       keyPolicySummary(key),
       time(key.updated_at),
       keyLifecycleActions(key),
@@ -373,10 +377,10 @@ async function createKey(event) {
   const form = new FormData(event.target);
   const body = {
     project_id: form.get("project_id"),
-    expires_at: isoDate(form.get("expires_at")),
+    expires_at: form.has("no_expires_at") ? null : isoDate(form.get("expires_at")),
     policy: policyBody(form),
   };
-  if (!body.expires_at) delete body.expires_at;
+  if (!form.has("no_expires_at") && !body.expires_at) delete body.expires_at;
   const response = await api("/admin/keys", { method: "POST", body: JSON.stringify(body) });
   showRawToken(response.raw_key, "Virtual key shown once");
   state.editingKeyId = response.key.id;
@@ -392,7 +396,7 @@ async function patchKey(event) {
     disabled: form.has("disabled"),
     policy: policyBody(form),
   };
-  if (form.has("clear_expires_at")) {
+  if (form.has("no_expires_at")) {
     body.expires_at = null;
   } else if (form.get("expires_at")) {
     body.expires_at = isoDate(form.get("expires_at"));
@@ -561,11 +565,13 @@ async function services() {
   content.innerHTML = `
     <div class="split">
       <section class="panel">
-        <div class="panel-heading"><h3>Create or import service</h3></div>
+        <div class="panel-heading">
+          <h3>Create service</h3>
+          <button type="button" data-service-action="studio-import">Import from Studio</button>
+        </div>
         <form id="service-form" class="form-grid">
           <label>Name<input name="name" required></label>
           <label>Project<select name="project_id"><option value="">None</option>${projectOptions()}</select></label>
-          <label>Studio service ID<input name="studio_service_id"></label>
           <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
           <label>Upstream URL<input name="upstream_base_url"></label>
           <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
@@ -579,7 +585,6 @@ async function services() {
           <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
           <div class="form-actions">
             <button name="action" value="create" class="primary">Create</button>
-            <button name="action" value="import">Import Studio</button>
           </div>
         </form>
       </section>
@@ -654,6 +659,66 @@ async function submitService(event) {
   await services();
 }
 
+async function openStudioImportPicker() {
+  try {
+    state.studioServices = await api("/admin/studio/services");
+    const backdrop = document.createElement("section");
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `
+      <div class="modal wide">
+        <h3>Import from Studio</h3>
+        <form id="studio-import-form">
+          ${studioImportTable(state.studioServices)}
+          <div class="form-actions">
+            <button class="primary" ${state.studioServices.length ? "" : "disabled"}>Import selected</button>
+            <button type="button" data-close-modal>Cancel</button>
+          </div>
+        </form>
+      </div>
+    `;
+    backdrop.querySelector("[data-close-modal]").addEventListener("click", () => backdrop.remove());
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) backdrop.remove();
+    });
+    backdrop.querySelector("#studio-import-form").addEventListener("submit", importSelectedStudioServices);
+    document.body.appendChild(backdrop);
+  } catch (error) {
+    setNotice(error.message);
+  }
+}
+
+function studioImportTable(rows) {
+  if (!rows.length) return '<div class="empty-state"><p>No Studio services.</p></div>';
+  return `<div class="table-wrap"><table><thead><tr>
+    <th></th><th>Service</th><th>Environment</th><th>Status</th><th>Base URL</th><th>Tags</th><th>Route</th>
+  </tr></thead><tbody>${rows
+    .map((row, index) => `<tr>
+      <td><input name="studio_index" type="checkbox" value="${attr(index)}"></td>
+      <td><strong>${esc(row.display_name || row.name)}</strong><div class="subtle">${esc(row.studio_service_id)}</div></td>
+      <td>${esc(row.environment || "n/a")}</td>
+      <td>${esc(row.status || "n/a")}</td>
+      <td><code>${esc(row.base_url || "missing")}</code></td>
+      <td>${esc(listValue(row.tags, "none"))}</td>
+      <td><code>${esc(row.route_pattern)}</code></td>
+    </tr>`)
+    .join("")}</tbody></table></div>`;
+}
+
+async function importSelectedStudioServices(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const selected = form.getAll("studio_index").map((value) => state.studioServices[Number(value)]).filter(Boolean);
+  for (const service of selected) {
+    await api("/admin/services/import", {
+      method: "POST",
+      body: JSON.stringify(service.import_request),
+    });
+  }
+  document.querySelector(".modal-backdrop")?.remove();
+  setNotice(`${selected.length} Studio service${selected.length === 1 ? "" : "s"} imported.`, "success");
+  await services();
+}
+
 async function patchService(event) {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -669,6 +734,10 @@ async function patchService(event) {
 
 async function serviceAction(event) {
   const { serviceName, serviceAction: action } = event.currentTarget.dataset;
+  if (action === "studio-import") {
+    await openStudioImportPicker();
+    return;
+  }
   if (action === "edit") {
     state.editingServiceName = serviceName;
     await services();
@@ -872,7 +941,26 @@ function keyStatus(key) {
   if (key.revoked_at) return '<span class="badge bad">revoked</span>';
   if (key.disabled) return '<span class="badge bad">disabled</span>';
   if (key.expires_at && new Date(key.expires_at) <= new Date()) return '<span class="badge bad">expired</span>';
+  if (!key.expires_at) return '<span class="badge good">non-expiring</span>';
   return '<span class="badge good">active</span>';
+}
+
+function keyExpiry(key) {
+  return key.expires_at ? time(key.expires_at) : "No expiration";
+}
+
+function bindKeyExpiryControls() {
+  document.querySelectorAll('form input[name="no_expires_at"]').forEach((checkbox) => {
+    const form = checkbox.closest("form");
+    const expiresAt = form?.querySelector('input[name="expires_at"]');
+    const update = () => {
+      if (!expiresAt) return;
+      expiresAt.disabled = checkbox.checked;
+      if (checkbox.checked) expiresAt.value = "";
+    };
+    checkbox.addEventListener("change", update);
+    update();
+  });
 }
 
 function keyPolicySummary(key) {

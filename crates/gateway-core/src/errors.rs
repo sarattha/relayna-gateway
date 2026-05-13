@@ -64,6 +64,8 @@ pub enum GatewayError {
     InvalidServicePayload,
     #[error("service upstream configuration is invalid")]
     InvalidServiceUpstream,
+    #[error("studio catalog is unavailable")]
+    StudioUnavailable,
     #[error("gateway control state is unavailable")]
     ControlStateUnavailable,
     #[error("store unavailable")]
@@ -113,6 +115,7 @@ impl GatewayError {
             Self::DisabledService => StatusCode::FORBIDDEN,
             Self::IncompleteService => StatusCode::CONFLICT,
             Self::InvalidServicePayload | Self::InvalidServiceUpstream => StatusCode::BAD_REQUEST,
+            Self::StudioUnavailable => StatusCode::BAD_GATEWAY,
             Self::UpstreamTimeout => StatusCode::GATEWAY_TIMEOUT,
             Self::UpstreamConnection | Self::StoreUnavailable => StatusCode::BAD_GATEWAY,
             Self::ControlStateUnavailable => StatusCode::SERVICE_UNAVAILABLE,
@@ -151,6 +154,7 @@ impl GatewayError {
             Self::IncompleteService => "incomplete_service",
             Self::InvalidServicePayload => "invalid_service_payload",
             Self::InvalidServiceUpstream => "invalid_service_upstream",
+            Self::StudioUnavailable => "studio_unavailable",
             Self::ControlStateUnavailable => "control_state_unavailable",
             Self::StoreUnavailable => "store_unavailable",
             Self::InvalidConfiguration => "invalid_configuration",
@@ -186,6 +190,7 @@ impl GatewayError {
             Self::IncompleteService => "Service registration is incomplete.",
             Self::InvalidServicePayload => "Service registration payload is invalid.",
             Self::InvalidServiceUpstream => "Service upstream configuration is invalid.",
+            Self::StudioUnavailable => "Relayna Studio catalog is unavailable.",
             Self::UpstreamTimeout => "Upstream provider timed out.",
             Self::UpstreamConnection => "Upstream provider is unavailable.",
             Self::ControlStateUnavailable => "Gateway control state is unavailable.",

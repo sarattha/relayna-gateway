@@ -20,6 +20,8 @@ stringData:
   DIRECT_OPENAI_BASE_URL: ""
   DIRECT_OPENAI_SERVICE_KEY: ""
   RELAYNA_WORKER_TOKEN: ""
+  RELAYNA_STUDIO_BASE_URL: ""
+  RELAYNA_STUDIO_TOKEN: ""
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -42,7 +44,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: gateway
-          image: ghcr.io/sarattha/relayna-gateway:0.0.5
+          image: ghcr.io/sarattha/relayna-gateway:0.0.6
           imagePullPolicy: IfNotPresent
           ports:
             - name: proxy

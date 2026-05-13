@@ -41,7 +41,10 @@ fn main() -> anyhow::Result<()> {
     }
     proxy_config = proxy_config.with_worker_token(config.relayna_worker_token.clone());
 
-    let app = app::router(store.clone(), redis);
+    let studio = config.relayna_studio_base_url.clone().map(|base_url| {
+        app::StudioCatalogClient::new(base_url, config.relayna_studio_token.clone())
+    });
+    let app = app::router_with_studio(store.clone(), redis, studio);
     let control_bind_addr = config.gateway_control_bind_addr;
     thread::spawn(move || {
         let runtime = match tokio::runtime::Runtime::new() {
