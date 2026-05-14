@@ -15,12 +15,19 @@ Rotate the token from the portal after bootstrap or whenever access changes. Rot
 ## Views
 
 - Overview shows readiness, request count, active keys, enabled OpenAI routes, enabled services, failures, cost, and provider health.
-- Projects creates and lists project UUIDs used to link virtual keys and services.
-- Keys creates, edits, disables, enables, revokes, and inspects virtual keys. Use `No expiration` for service keys whose rotation is managed outside Gateway.
+- Projects creates and lists project UUIDs used to link services and
+  project-owned virtual keys. Use `Select services` to open the service picker
+  modal and manage a project's linked services.
+- Keys creates, edits, disables, enables, revokes, and inspects virtual keys.
+  Project-owned keys inherit service access from their selected project.
+  Individual keys use `Select services` to open the service picker modal and
+  choose services directly. Use `No expiration` for service keys whose rotation
+  is managed outside Gateway.
 - Providers configures LiteLLM and internal-service endpoints with write-only credentials.
 - Routes disables and enables the global OpenAI-compatible LiteLLM routes `/v1/chat/completions` and `/v1/responses`, and lists registered service routes with their allowed methods and credential status.
 - Services creates, imports from Relayna Studio, edits, sync-checks, disables, enables, and deletes service registrations. Method selection uses explicit checkboxes for `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
-- Usage filters usage by service, provider, model, and task.
+- Usage filters usage by project, virtual key, service, route, provider, model,
+  and task, then shows project, key, and service breakdown tables.
 - Health shows provider and service request, error, timeout, fallback, and latency status.
 
 ## Security Notes
@@ -146,14 +153,33 @@ forwards `/charges` as `/charges`.
 
 Virtual keys can be created or edited with no expiration date. In the Admin
 portal, open Keys and select `No expiration` in the create or edit form. Through
-the Admin API, send `expires_at: null`:
+the Admin API, send `expires_at: null`. Project-owned keys specify
+`owner_type: "project"` and a `project_id`:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8081/admin/keys \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
+    "owner_type": "project",
     "project_id": "<project-id>",
+    "expires_at": null,
+    "policy": {
+      "allowed_routes": ["/services/*"],
+      "allowed_providers": ["internal-service"]
+    }
+  }'
+```
+
+Individual keys specify `owner_type: "individual"` and direct `service_names`:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8081/admin/keys \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "owner_type": "individual",
+    "service_names": ["payments-api"],
     "expires_at": null,
     "policy": {
       "allowed_routes": ["/services/*"],

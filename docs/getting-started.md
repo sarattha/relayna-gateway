@@ -125,16 +125,24 @@ Open the admin portal at:
 http://127.0.0.1:8081/admin-ui
 ```
 
+In the portal, create Projects first when service access should be shared by a
+team or application. Open a Project's `Select services` picker to link imported
+or locally registered services. In Keys, choose `Project` for keys that inherit
+those links, or choose `Individual` and use `Select services` to link services
+directly to one key.
+
 ## Create a Non-Expiring Key
 
 In the Admin portal, open Keys and select `No expiration` when creating or
-editing a virtual key. Through the API, use `expires_at: null`:
+editing a virtual key. Through the API, use `expires_at: null` with an explicit
+owner type:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8081/admin/keys \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
+    "owner_type": "project",
     "project_id": "<project-id>",
     "expires_at": null
   }'

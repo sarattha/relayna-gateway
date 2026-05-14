@@ -2,6 +2,33 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.7 - 2026-05-14
+
+### Added
+
+- Project-first service ownership in the admin API and portal. Projects can now
+  link multiple services, and project-owned virtual keys inherit access through
+  those service links.
+- Individual virtual key ownership for keys that should access selected
+  services without belonging to a project.
+- Usage drilldown filters for project, virtual key, service, route, provider,
+  model, and task, with project, key, and service breakdown tables.
+- Admin portal service picker modals for Project service links and Individual
+  key service links, matching the Studio import modal flow.
+
+### Changed
+
+- Workspace crate versions now share the `0.0.7` release version.
+- Deployment examples and the baseline Kubernetes image now target the `0.0.7`
+  gateway image.
+- Usage and upstream metadata now preserve `individual` ownership when a key is
+  not linked to a project.
+
+### Fixed
+
+- Studio import and service picker modals now constrain wide service tables so
+  long route and upstream URL columns scroll instead of overlapping.
+
 ## 0.0.6 - 2026-05-13
 
 ### Added
