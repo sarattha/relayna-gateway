@@ -23,7 +23,7 @@ use gateway_core::{
     UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore,
     UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
 };
-use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row};
+use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -65,7 +65,11 @@ impl PostgresStore {
         Ok(())
     }
 
-    async fn upsert_policy(&self, key_id: Uuid, policy: &KeyPolicy) -> GatewayResult<()> {
+    async fn upsert_policy_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        key_id: Uuid,
+        policy: &KeyPolicy,
+    ) -> GatewayResult<()> {
         sqlx::query(
             r#"
             INSERT INTO key_policies (
@@ -107,7 +111,7 @@ impl PostgresStore {
         .bind(policy.monthly_budget_usd)
         .bind(policy.allow_streaming)
         .bind(policy.allow_tools)
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
 
@@ -300,19 +304,14 @@ impl PostgresStore {
             .map_err(|_| GatewayError::StoreUnavailable)
     }
 
-    async fn replace_key_service_links(
-        &self,
+    async fn replace_key_service_links_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
         key_id: Uuid,
         service_names: &[String],
     ) -> GatewayResult<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|_| GatewayError::StoreUnavailable)?;
         sqlx::query("DELETE FROM key_service_links WHERE key_id = $1")
             .bind(key_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(|_| GatewayError::StoreUnavailable)?;
         for service_name in service_names {
@@ -326,7 +325,7 @@ impl PostgresStore {
             )
             .bind(key_id)
             .bind(service_name)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(|error| {
                 if is_foreign_key_violation(&error) {
@@ -336,9 +335,7 @@ impl PostgresStore {
                 }
             })?;
         }
-        tx.commit()
-            .await
-            .map_err(|_| GatewayError::StoreUnavailable)
+        Ok(())
     }
 
     pub async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()> {
@@ -728,6 +725,11 @@ impl AdminKeyStore for PostgresStore {
         let key_id = Uuid::new_v4();
         validate_key_owner(request.owner_type, request.project_id)?;
         let policy = apply_policy_patch(KeyPolicy::default(), request.policy)?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
 
         sqlx::query(
             r#"
@@ -741,7 +743,7 @@ impl AdminKeyStore for PostgresStore {
         .bind(&material.key_prefix)
         .bind(&material.key_hash)
         .bind(request.expires_at)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|error| {
             if is_foreign_key_violation(&error) {
@@ -751,9 +753,11 @@ impl AdminKeyStore for PostgresStore {
             }
         })?;
 
-        self.upsert_policy(key_id, &policy).await?;
-        self.replace_key_service_links(key_id, &request.service_names)
-            .await?;
+        Self::upsert_policy_in_tx(&mut tx, key_id, &policy).await?;
+        Self::replace_key_service_links_in_tx(&mut tx, key_id, &request.service_names).await?;
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         self.response_for_key(key_id)
             .await?
             .ok_or(GatewayError::StoreUnavailable)
@@ -833,6 +837,19 @@ impl AdminKeyStore for PostgresStore {
             )?;
         }
 
+        let policy = if let Some(policy_patch) = patch.policy {
+            let current = self.policy_for_key(key_id).await?;
+            Some(apply_policy_patch(current, policy_patch)?)
+        } else {
+            None
+        };
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+
         let rows = sqlx::query(
             r#"
             UPDATE api_keys
@@ -853,7 +870,7 @@ impl AdminKeyStore for PostgresStore {
         .bind(owner_type.map(key_owner_type_str))
         .bind(update_project_id)
         .bind(project_id)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|error| {
             if is_foreign_key_violation(&error) {
@@ -865,19 +882,22 @@ impl AdminKeyStore for PostgresStore {
         .rows_affected();
 
         if rows == 0 {
+            tx.rollback()
+                .await
+                .map_err(|_| GatewayError::StoreUnavailable)?;
             return self.response_for_key(key_id).await;
         }
 
-        if let Some(policy_patch) = patch.policy {
-            let current = self.policy_for_key(key_id).await?;
-            let policy = apply_policy_patch(current, policy_patch)?;
-            self.upsert_policy(key_id, &policy).await?;
+        if let Some(policy) = policy {
+            Self::upsert_policy_in_tx(&mut tx, key_id, &policy).await?;
         }
         if let Some(service_names) = patch.service_names {
-            self.replace_key_service_links(key_id, &service_names)
-                .await?;
+            Self::replace_key_service_links_in_tx(&mut tx, key_id, &service_names).await?;
         }
 
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         self.response_for_key(key_id).await
     }
 
