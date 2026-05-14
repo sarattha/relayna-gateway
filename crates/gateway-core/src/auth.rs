@@ -47,7 +47,7 @@ impl VirtualKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredVirtualKey {
     pub id: Uuid,
-    pub project_id: Uuid,
+    pub project_id: Option<Uuid>,
     pub key_prefix: String,
     pub key_hash: String,
     pub disabled: bool,
@@ -58,7 +58,7 @@ pub struct StoredVirtualKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthenticatedKey {
     pub key_id: Uuid,
-    pub project_id: Uuid,
+    pub project_id: Option<Uuid>,
     pub key_prefix: String,
 }
 
@@ -169,7 +169,7 @@ mod tests {
     fn stored(raw: &str) -> StoredVirtualKey {
         StoredVirtualKey {
             id: Uuid::new_v4(),
-            project_id: Uuid::new_v4(),
+            project_id: Some(Uuid::new_v4()),
             key_prefix: raw.chars().take(LOOKUP_PREFIX_LEN).collect(),
             key_hash: hash(raw),
             disabled: false,

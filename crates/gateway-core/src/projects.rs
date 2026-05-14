@@ -12,12 +12,14 @@ pub struct ProjectCreateRequest {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 pub struct ProjectPatchRequest {
     pub name: Option<String>,
+    pub service_names: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ProjectResponse {
     pub id: Uuid,
     pub name: String,
+    pub service_names: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

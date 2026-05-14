@@ -1056,7 +1056,9 @@ mod tests {
         ) -> GatewayResult<AdminKeyResponse> {
             let key = AdminKeyResponse {
                 id: Uuid::new_v4(),
+                owner_type: request.owner_type,
                 project_id: request.project_id,
+                service_names: request.service_names,
                 key_prefix: material.key_prefix.clone(),
                 disabled: false,
                 revoked_at: None,
@@ -1191,6 +1193,7 @@ mod tests {
             Ok(ProjectResponse {
                 id: Uuid::new_v4(),
                 name: request.name,
+                service_names: Vec::new(),
                 created_at: now,
                 updated_at: now,
             })
@@ -1576,7 +1579,7 @@ mod tests {
     fn stored_key(raw: &str) -> StoredVirtualKey {
         StoredVirtualKey {
             id: Uuid::new_v4(),
-            project_id: Uuid::new_v4(),
+            project_id: Some(Uuid::new_v4()),
             key_prefix: raw.chars().take(16).collect(),
             key_hash: "not-used-by-control-api".to_owned(),
             disabled: false,

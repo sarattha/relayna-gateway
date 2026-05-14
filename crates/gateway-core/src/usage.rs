@@ -16,7 +16,7 @@ pub enum UsageStatus {
 pub struct UsageEvent {
     pub request_id: String,
     pub key_id: Uuid,
-    pub project_id: Uuid,
+    pub project_id: Option<Uuid>,
     pub route: Route,
     pub model: Option<String>,
     pub provider: Provider,
