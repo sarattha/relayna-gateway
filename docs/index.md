@@ -9,9 +9,11 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - Proxy listener for OpenAI-compatible traffic, including `POST /v1/chat/completions` and `POST /v1/responses`.
 - Registered service wildcard routes under `/services/<service-name>/*`, with per-service allowed method controls.
 - Control listener for health, readiness, metrics, admin APIs, and `/admin-ui`.
-- PostgreSQL-backed virtual keys, route policies, usage records, services, and operator tokens.
+- PostgreSQL-backed projects, virtual keys, route policies, service links,
+  usage records, services, and operator tokens.
 - Redis-backed rate limit and budget state.
-- Embedded static admin UI for key, service, usage, and health operations.
+- Embedded static admin UI for project-first key, service, usage, and health
+  operations.
 
 ## Runtime Requirements
 

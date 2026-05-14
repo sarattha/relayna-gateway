@@ -549,7 +549,9 @@ where
 
         if let Some(key) = &ctx.key {
             upstream_request.insert_header("x-relayna-key-id", key.key_id.to_string())?;
-            upstream_request.insert_header("x-relayna-project-id", key.project_id.to_string())?;
+            if let Some(project_id) = key.project_id {
+                upstream_request.insert_header("x-relayna-project-id", project_id.to_string())?;
+            }
         }
         if let Some(task_id) = &ctx.task_id {
             upstream_request.insert_header("x-relayna-task-id", task_id)?;
@@ -1324,7 +1326,7 @@ mod tests {
         };
         let key = AuthenticatedKey {
             key_id: Uuid::new_v4(),
-            project_id: Uuid::new_v4(),
+            project_id: Some(Uuid::new_v4()),
             key_prefix: "rk_live_test_key".to_owned(),
         };
         let mut ctx = new_pingora_context_for_tests();
@@ -1368,7 +1370,7 @@ mod tests {
         };
         let key = AuthenticatedKey {
             key_id: Uuid::new_v4(),
-            project_id: Uuid::new_v4(),
+            project_id: Some(Uuid::new_v4()),
             key_prefix: "rk_live_test_key".to_owned(),
         };
         let mut ctx = new_pingora_context_for_tests();

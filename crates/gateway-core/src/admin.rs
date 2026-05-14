@@ -13,7 +13,12 @@ const LOOKUP_PREFIX_LEN: usize = 16;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct AdminKeyCreate {
-    pub project_id: Uuid,
+    #[serde(default)]
+    pub owner_type: AdminKeyOwnerType,
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
+    pub service_names: Vec<String>,
     pub expires_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub policy: KeyPolicyPatch,
@@ -21,10 +26,21 @@ pub struct AdminKeyCreate {
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 pub struct AdminKeyPatch {
+    pub owner_type: Option<AdminKeyOwnerType>,
+    pub project_id: Option<Option<Uuid>>,
+    pub service_names: Option<Vec<String>>,
     pub expires_at: Option<Option<DateTime<Utc>>>,
     pub disabled: Option<bool>,
     #[serde(default)]
     pub policy: Option<KeyPolicyPatch>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AdminKeyOwnerType {
+    #[default]
+    Project,
+    Individual,
 }
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
@@ -50,7 +66,9 @@ pub struct CreatedAdminKeyResponse {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct AdminKeyResponse {
     pub id: Uuid,
-    pub project_id: Uuid,
+    pub owner_type: AdminKeyOwnerType,
+    pub project_id: Option<Uuid>,
+    pub service_names: Vec<String>,
     pub key_prefix: String,
     pub disabled: bool,
     pub revoked_at: Option<DateTime<Utc>>,

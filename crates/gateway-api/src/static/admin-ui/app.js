@@ -213,7 +213,7 @@ function stat(label, value) {
 }
 
 async function projects() {
-  state.projects = await api("/admin/projects");
+  [state.projects, state.services] = await Promise.all([api("/admin/projects"), api("/admin/services")]);
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Create project</h3></div>
@@ -228,6 +228,10 @@ async function projects() {
     </section>
   `;
   document.querySelector("#project-form").addEventListener("submit", createProject);
+  document.querySelectorAll("[data-project-services-form]").forEach((form) => {
+    form.addEventListener("submit", patchProjectServices);
+  });
+  bindServicePickerButtons();
   document.querySelectorAll("[data-project-action]").forEach((button) => {
     button.addEventListener("click", projectAction);
   });
@@ -235,10 +239,11 @@ async function projects() {
 
 function projectTable(rows) {
   return table(
-    ["Name", "UUID", "Updated", "Actions"],
+    ["Name", "UUID", "Linked services", "Updated", "Actions"],
     rows.map((row) => [
       esc(row.name),
       `<code>${esc(row.id)}</code>`,
+      projectServiceForm(row),
       time(row.updated_at),
       `<div class="actions">
         <button data-project-action="usage" data-project-id="${attr(row.id)}">Usage</button>
@@ -246,6 +251,13 @@ function projectTable(rows) {
       </div>`,
     ]),
   );
+}
+
+function projectServiceForm(project) {
+  return `<form class="inline-service-form" data-project-services-form data-project-id="${attr(project.id)}">
+    ${serviceSelectionControl(project.service_names || [], "service_names", "Project services")}
+    <div class="form-actions"><button>Save services</button></div>
+  </form>`;
 }
 
 async function createProject(event) {
@@ -269,8 +281,19 @@ async function projectAction(event) {
   await projects();
 }
 
+async function patchProjectServices(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  await api(`/admin/projects/${event.target.dataset.projectId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ service_names: form.getAll("service_names") }),
+  });
+  setNotice("Project services updated.", "success");
+  await projects();
+}
+
 async function keys() {
-  [state.keys, state.projects] = await Promise.all([api("/admin/keys"), api("/admin/projects")]);
+  [state.keys, state.projects, state.services] = await Promise.all([api("/admin/keys"), api("/admin/projects"), api("/admin/services")]);
   const editing = state.keys.find((key) => key.id === state.editingKeyId);
   content.innerHTML = `
     <div class="split">
@@ -279,7 +302,7 @@ async function keys() {
           <h3>Create virtual key</h3>
         </div>
         <form id="key-form" class="form-grid">
-          <label>Project<select name="project_id" required>${projectOptions()}</select></label>
+          ${keyOwnershipFields()}
           <label>Expires at<input name="expires_at" type="datetime-local"></label>
           <label class="check"><input name="no_expires_at" type="checkbox"> No expiration</label>
           ${policyFields()}
@@ -303,6 +326,8 @@ async function keys() {
   document.querySelector("#key-form").addEventListener("submit", createKey);
   document.querySelector("#key-edit-form")?.addEventListener("submit", patchKey);
   bindKeyExpiryControls();
+  bindKeyOwnerControls();
+  bindServicePickerButtons();
   document.querySelectorAll("[data-key-action]").forEach((button) => {
     button.addEventListener("click", keyAction);
   });
@@ -314,13 +339,24 @@ function policyFields(key = null) {
     <label>Routes<input name="allowed_routes" value="${attr(listValue(policy.allowed_routes, "/v1/chat/completions,/v1/responses"))}"></label>
     <label>Models<input name="allowed_models" value="${attr(listValue(policy.allowed_models, ""))}" placeholder="gpt-4o-mini"></label>
     <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers)}</div>
-    <label>Services<input name="allowed_services" value="${attr(listValue(policy.allowed_services, ""))}" placeholder="summary,translation"></label>
     <label>RPM limit<input name="rpm_limit" type="number" min="0" value="${attr(policy.rpm_limit ?? "")}"></label>
     <label>TPM limit<input name="tpm_limit" type="number" min="0" value="${attr(policy.tpm_limit ?? "")}"></label>
     <label>Daily budget<input name="daily_budget_usd" type="number" min="0" step="0.01" value="${attr(policy.daily_budget_usd ?? "")}"></label>
     <label>Monthly budget<input name="monthly_budget_usd" type="number" min="0" step="0.01" value="${attr(policy.monthly_budget_usd ?? "")}"></label>
     <label class="check"><input name="allow_streaming" type="checkbox" ${policy.allow_streaming ? "checked" : ""}> Allow streaming</label>
     <label class="check"><input name="allow_tools" type="checkbox" ${policy.allow_tools ? "checked" : ""}> Allow tools</label>
+  `;
+}
+
+function keyOwnershipFields(key = null) {
+  const ownerType = key?.owner_type || "project";
+  return `
+    <label>Owner<select name="owner_type">
+      <option value="project" ${ownerType === "project" ? "selected" : ""}>Project</option>
+      <option value="individual" ${ownerType === "individual" ? "selected" : ""}>Individual</option>
+    </select></label>
+    <label data-owner-project>Project<select name="project_id">${projectOptions(key?.project_id || "")}</select></label>
+    <div class="field" data-owner-services><span>Services</span>${serviceSelectionControl(key?.service_names || [], "service_names", "Individual key services")}</div>
   `;
 }
 
@@ -331,6 +367,7 @@ function keyEditForm(key) {
       <span class="subtle">${esc(key.key_prefix)}</span>
     </div>
     <form id="key-edit-form" class="form-grid" data-key-id="${attr(key.id)}">
+      ${keyOwnershipFields(key)}
       <label>Expires at<input name="expires_at" type="datetime-local" value="${attr(toLocalInput(key.expires_at))}"></label>
       <label class="check"><input name="no_expires_at" type="checkbox" ${key.expires_at ? "" : "checked"}> No expiration</label>
       <label class="check"><input name="disabled" type="checkbox" ${key.disabled ? "checked" : ""}> Disabled</label>
@@ -345,10 +382,11 @@ function keyEditForm(key) {
 
 function keyTable(rows) {
   return table(
-    ["Prefix", "Project", "Status", "Expiry", "Policy", "Updated", "Actions"],
+    ["Prefix", "Owner", "Services", "Status", "Expiry", "Policy", "Updated", "Actions"],
     rows.map((key) => [
       `<code>${esc(key.key_prefix)}</code>`,
-      `<code>${esc(key.project_id)}</code>`,
+      keyOwnerLabel(key),
+      esc(listValue(key.service_names, "derived")),
       keyStatus(key),
       esc(keyExpiry(key)),
       keyPolicySummary(key),
@@ -376,7 +414,9 @@ async function createKey(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const body = {
-    project_id: form.get("project_id"),
+    owner_type: form.get("owner_type"),
+    project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
+    service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
     expires_at: form.has("no_expires_at") ? null : isoDate(form.get("expires_at")),
     policy: policyBody(form),
   };
@@ -393,6 +433,9 @@ async function patchKey(event) {
   const form = new FormData(event.target);
   const keyId = event.target.dataset.keyId;
   const body = {
+    owner_type: form.get("owner_type"),
+    project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
+    service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
     disabled: form.has("disabled"),
     policy: policyBody(form),
   };
@@ -404,6 +447,11 @@ async function patchKey(event) {
   await api(`/admin/keys/${keyId}`, { method: "PATCH", body: JSON.stringify(body) });
   setNotice("Virtual key updated.", "success");
   await keys();
+}
+
+function keyOwnerLabel(key) {
+  if (key.owner_type === "individual") return '<span class="badge">individual</span>';
+  return `<strong>${esc(projectName(key.project_id))}</strong><div class="subtle"><code>${esc(key.project_id || "")}</code></div>`;
 }
 
 async function keyAction(event) {
@@ -571,7 +619,6 @@ async function services() {
         </div>
         <form id="service-form" class="form-grid">
           <label>Name<input name="name" required></label>
-          <label>Project<select name="project_id"><option value="">None</option>${projectOptions()}</select></label>
           <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
           <label>Upstream URL<input name="upstream_base_url"></label>
           <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
@@ -609,7 +656,6 @@ function serviceEditForm(service) {
   return `
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
     <form id="service-edit-form" class="form-grid" data-service-name="${attr(service.name)}">
-      <label>Project<select name="project_id"><option value="">None</option>${projectOptions(service.project_id)}</select></label>
       <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
       <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
       <label>Upstream URL<input name="upstream_base_url" value="${attr(service.upstream_base_url ?? "")}"></label>
@@ -642,7 +688,6 @@ async function submitService(event) {
       body: JSON.stringify({
         studio_service_id: form.get("studio_service_id"),
         name: form.get("name"),
-        project_id: blankToUndefined(form.get("project_id")),
         route_pattern: blankToUndefined(form.get("route_pattern")),
         default_pricing: form.get("estimated_cost_usd")
           ? { cost_mode: form.get("cost_mode"), estimated_cost_usd: Number(form.get("estimated_cost_usd")) }
@@ -667,8 +712,8 @@ async function openStudioImportPicker() {
     backdrop.innerHTML = `
       <div class="modal wide">
         <h3>Import from Studio</h3>
-        <form id="studio-import-form">
-          ${studioImportTable(state.studioServices)}
+        <form id="studio-import-form" class="modal-form">
+          <div class="modal-scroll">${studioImportTable(state.studioServices)}</div>
           <div class="form-actions">
             <button class="primary" ${state.studioServices.length ? "" : "disabled"}>Import selected</button>
             <button type="button" data-close-modal>Cancel</button>
@@ -689,7 +734,7 @@ async function openStudioImportPicker() {
 
 function studioImportTable(rows) {
   if (!rows.length) return '<div class="empty-state"><p>No Studio services.</p></div>';
-  return `<div class="table-wrap"><table><thead><tr>
+  return `<div class="table-wrap studio-import-table"><table><thead><tr>
     <th></th><th>Service</th><th>Environment</th><th>Status</th><th>Base URL</th><th>Tags</th><th>Route</th>
   </tr></thead><tbody>${rows
     .map((row, index) => `<tr>
@@ -700,6 +745,52 @@ function studioImportTable(rows) {
       <td><code>${esc(row.base_url || "missing")}</code></td>
       <td>${esc(listValue(row.tags, "none"))}</td>
       <td><code>${esc(row.route_pattern)}</code></td>
+    </tr>`)
+    .join("")}</tbody></table></div>`;
+}
+
+function openServiceSelectionPicker(trigger) {
+  const form = trigger.closest("form");
+  const fieldName = trigger.dataset.servicePicker || "service_names";
+  const selected = new Set(selectedServiceNames(form, fieldName));
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal wide">
+      <h3>${esc(trigger.dataset.servicePickerTitle || "Select services")}</h3>
+      <form id="service-picker-form" class="modal-form">
+        <div class="modal-scroll">${servicePickerTable(state.services, selected)}</div>
+        <div class="form-actions">
+          <button class="primary" ${state.services.length ? "" : "disabled"}>Apply selection</button>
+          <button type="button" data-close-modal>Cancel</button>
+        </div>
+      </form>
+    </div>
+  `;
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => backdrop.remove());
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) backdrop.remove();
+  });
+  backdrop.querySelector("#service-picker-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const values = new FormData(event.target).getAll("service_name");
+    setSelectedServiceNames(form, fieldName, values);
+    backdrop.remove();
+  });
+  document.body.appendChild(backdrop);
+}
+
+function servicePickerTable(rows, selected) {
+  if (!rows.length) return '<div class="empty-state"><p>No services registered.</p></div>';
+  return `<div class="table-wrap service-picker-table"><table><thead><tr>
+    <th></th><th>Service</th><th>Status</th><th>Route</th><th>Upstream</th>
+  </tr></thead><tbody>${rows
+    .map((row) => `<tr>
+      <td><input name="service_name" type="checkbox" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
+      <td><strong>${esc(row.name)}</strong><div class="subtle">${esc(row.studio_service_id || "local")}</div></td>
+      <td>${esc(row.sync_status || (row.enabled ? "enabled" : "disabled"))}</td>
+      <td><code>${esc(row.route_pattern)}</code></td>
+      <td><code>${esc(row.upstream_base_url || "missing")}</code></td>
     </tr>`)
     .join("")}</tbody></table></div>`;
 }
@@ -800,18 +891,22 @@ function serviceBadges(row) {
 }
 
 async function usage() {
+  [state.projects, state.services, state.keys] = await Promise.all([api("/admin/projects"), api("/admin/services"), api("/admin/keys")]);
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Usage filters</h3></div>
       <form id="usage-form" class="form-grid">
-        <label>Service<input name="service"></label>
+        <label>Project<select name="project_id"><option value="">All</option>${projectOptions()}</select></label>
+        <label>Virtual key<select name="key_id"><option value="">All</option>${keyOptions()}</select></label>
+        <label>Service<select name="service"><option value="">All</option>${serviceOptions()}</select></label>
+        <label>Route<input name="route"></label>
         <label>Provider<input name="provider"></label>
         <label>Model<input name="model"></label>
         <label>Task<input name="task_id"></label>
         <div class="form-actions"><button class="primary">Apply</button></div>
       </form>
     </section>
-    <section class="panel"><div class="panel-heading"><h3>Usage by service</h3></div><div id="usage-results"></div></section>
+    <section class="panel"><div class="panel-heading"><h3>Usage breakdown</h3></div><div id="usage-results"></div></section>
   `;
   document.querySelector("#usage-form").addEventListener("submit", loadUsage);
   await loadUsage();
@@ -821,15 +916,27 @@ async function loadUsage(event) {
   event?.preventDefault();
   const form = event ? new FormData(event.target) : new FormData();
   const query = new URLSearchParams();
-  for (const key of ["service", "provider", "model", "task_id"]) {
+  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id"]) {
     const value = form.get(key);
     if (value) query.set(key, value);
   }
-  const rows = await api(`/admin/usage/by-service?${query}`);
-  document.querySelector("#usage-results").innerHTML = table(
+  const [projectRows, keyRows, serviceRows] = await Promise.all([
+    api(`/admin/usage/by-project?${query}`),
+    api(`/admin/usage/by-key?${query}`),
+    api(`/admin/usage/by-service?${query}`),
+  ]);
+  document.querySelector("#usage-results").innerHTML = `
+    <h4>Projects</h4>${usageBreakdownTable(projectRows, projectName)}
+    <h4>Keys</h4>${usageBreakdownTable(keyRows, keyName)}
+    <h4>Services</h4>${usageBreakdownTable(serviceRows)}
+  `;
+}
+
+function usageBreakdownTable(rows, label = (value) => value) {
+  return table(
     ["Name", "Requests", "Success", "Failure", "Latency", "Cost"],
     rows.map((row) => [
-      esc(row.name),
+      esc(label(row.name)),
       row.summary.request_count,
       row.summary.success_count,
       row.summary.failure_count,
@@ -913,7 +1020,7 @@ function policyBody(form) {
 
 function serviceBody(form, patch) {
   const body = {
-    project_id: nullableString(form.get("project_id")),
+    project_id: form.has("project_id") ? nullableString(form.get("project_id")) : undefined,
     studio_service_id: patch ? nullableString(form.get("studio_service_id")) : blankToUndefined(form.get("studio_service_id")),
     route_pattern: form.get("route_pattern") || undefined,
     upstream_base_url: patch ? nullableString(form.get("upstream_base_url")) : blankToUndefined(form.get("upstream_base_url")),
@@ -963,6 +1070,29 @@ function bindKeyExpiryControls() {
   });
 }
 
+function bindKeyOwnerControls() {
+  document.querySelectorAll('form select[name="owner_type"]').forEach((select) => {
+    const form = select.closest("form");
+    const projectField = form?.querySelector("[data-owner-project]");
+    const serviceField = form?.querySelector("[data-owner-services]");
+    const update = () => {
+      const project = select.value === "project";
+      projectField?.classList.toggle("hidden", !project);
+      serviceField?.classList.toggle("hidden", project);
+      const projectInput = projectField?.querySelector('select[name="project_id"]');
+      if (projectInput) projectInput.required = project;
+    };
+    select.addEventListener("change", update);
+    update();
+  });
+}
+
+function bindServicePickerButtons() {
+  document.querySelectorAll("[data-service-picker]").forEach((button) => {
+    button.addEventListener("click", () => openServiceSelectionPicker(button));
+  });
+}
+
 function keyPolicySummary(key) {
   const policy = key.policy;
   return `<div>${esc((policy.allowed_routes || []).join(", ") || "no routes")}</div>
@@ -989,6 +1119,66 @@ function projectOptions(selected = "") {
   return state.projects
     .map((project) => `<option value="${attr(project.id)}" ${project.id === selected ? "selected" : ""}>${esc(project.name)} (${esc(project.id)})</option>`)
     .join("");
+}
+
+function serviceOptions(selected = "") {
+  return state.services
+    .map((service) => `<option value="${attr(service.name)}" ${service.name === selected ? "selected" : ""}>${esc(service.name)}</option>`)
+    .join("");
+}
+
+function keyOptions(selected = "") {
+  return state.keys
+    .map((key) => `<option value="${attr(key.id)}" ${key.id === selected ? "selected" : ""}>${esc(key.key_prefix)} (${esc(key.owner_type || "project")})</option>`)
+    .join("");
+}
+
+function serviceCheckboxes(selected = [], name = "service_names") {
+  const values = new Set(Array.isArray(selected) ? selected : []);
+  if (!state.services.length) return '<div class="empty-inline">No services registered.</div>';
+  return `<div class="checkbox-group service-checkboxes" role="group" aria-label="Services">
+    ${state.services.map((service) => `<label title="${attr(service.route_pattern)}"><input name="${attr(name)}" type="checkbox" value="${attr(service.name)}" ${values.has(service.name) ? "checked" : ""}> ${esc(service.name)}</label>`).join("")}
+  </div>`;
+}
+
+function serviceSelectionControl(selected = [], name = "service_names", title = "Select services") {
+  const values = Array.isArray(selected) ? selected : [];
+  return `<div class="service-selection" data-service-selection data-field-name="${attr(name)}">
+    <div class="service-selection-values" data-field-name="${attr(name)}">${serviceHiddenInputs(values, name)}</div>
+    <div class="service-selection-summary">${serviceSelectionSummary(values)}</div>
+    <button type="button" data-service-picker="${attr(name)}" data-service-picker-title="${attr(title)}">Select services</button>
+  </div>`;
+}
+
+function serviceHiddenInputs(values, name) {
+  return values.map((value) => `<input type="hidden" name="${attr(name)}" value="${attr(value)}">`).join("");
+}
+
+function selectedServiceNames(form, name) {
+  return [...form.querySelectorAll(`input[type="hidden"][name="${CSS.escape(name)}"]`)].map((input) => input.value);
+}
+
+function setSelectedServiceNames(form, name, values) {
+  const selection = form.querySelector(`[data-service-selection][data-field-name="${CSS.escape(name)}"]`);
+  const hidden = selection?.querySelector(`[data-field-name="${CSS.escape(name)}"].service-selection-values`);
+  const summary = selection?.querySelector(".service-selection-summary");
+  if (!hidden || !summary) return;
+  hidden.innerHTML = serviceHiddenInputs(values, name);
+  summary.innerHTML = serviceSelectionSummary(values);
+}
+
+function serviceSelectionSummary(values) {
+  if (!values.length) return '<span class="subtle">No services selected.</span>';
+  return `<strong>${values.length} selected</strong><div class="service-selection-list">${esc(values.join(", "))}</div>`;
+}
+
+function projectName(projectId) {
+  if (!projectId) return "Individual";
+  return state.projects.find((project) => project.id === projectId)?.name || projectId;
+}
+
+function keyName(keyId) {
+  return state.keys.find((key) => key.id === keyId)?.key_prefix || keyId;
 }
 
 function providerPolicySelect(selected = []) {

@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use gateway_core::{
-    admin::{AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminPolicyResponse},
+    admin::{
+        AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse, AdminPolicyResponse,
+    },
     auth::{StoredVirtualKey, VirtualKeyLookup},
     default_route_pattern, operator_token_prefix, parse_provider_config_kind,
     projects::{ProjectCreateRequest, ProjectPatchRequest, ProjectResponse},
@@ -21,7 +23,7 @@ use gateway_core::{
     UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore,
     UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
 };
-use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row};
+use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -63,7 +65,11 @@ impl PostgresStore {
         Ok(())
     }
 
-    async fn upsert_policy(&self, key_id: Uuid, policy: &KeyPolicy) -> GatewayResult<()> {
+    async fn upsert_policy_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        key_id: Uuid,
+        policy: &KeyPolicy,
+    ) -> GatewayResult<()> {
         sqlx::query(
             r#"
             INSERT INTO key_policies (
@@ -105,7 +111,7 @@ impl PostgresStore {
         .bind(policy.monthly_budget_usd)
         .bind(policy.allow_streaming)
         .bind(policy.allow_tools)
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
 
@@ -117,6 +123,7 @@ impl PostgresStore {
             r#"
             SELECT
                 k.id,
+                k.owner_type,
                 k.project_id,
                 k.key_prefix,
                 k.disabled,
@@ -124,6 +131,15 @@ impl PostgresStore {
                 k.expires_at,
                 k.created_at,
                 k.updated_at,
+                COALESCE(
+                    ARRAY(
+                        SELECT service_name
+                        FROM key_service_links
+                        WHERE key_id = k.id
+                        ORDER BY service_name
+                    ),
+                    ARRAY[]::text[]
+                ) AS service_names,
                 p.allowed_routes,
                 p.allowed_models,
                 p.allowed_providers,
@@ -247,6 +263,81 @@ impl PostgresStore {
             .ok_or(GatewayError::StoreUnavailable)
     }
 
+    async fn replace_project_service_links(
+        &self,
+        project_id: Uuid,
+        service_names: &[String],
+    ) -> GatewayResult<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        sqlx::query("DELETE FROM project_service_links WHERE project_id = $1")
+            .bind(project_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        for service_name in service_names {
+            gateway_core::validate_service_name(service_name)?;
+            sqlx::query(
+                r#"
+                INSERT INTO project_service_links (project_id, service_name)
+                VALUES ($1, $2)
+                ON CONFLICT DO NOTHING
+                "#,
+            )
+            .bind(project_id)
+            .bind(service_name)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| {
+                if is_foreign_key_violation(&error) {
+                    GatewayError::MissingService
+                } else {
+                    GatewayError::StoreUnavailable
+                }
+            })?;
+        }
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn replace_key_service_links_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        key_id: Uuid,
+        service_names: &[String],
+    ) -> GatewayResult<()> {
+        sqlx::query("DELETE FROM key_service_links WHERE key_id = $1")
+            .bind(key_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        for service_name in service_names {
+            gateway_core::validate_service_name(service_name)?;
+            sqlx::query(
+                r#"
+                INSERT INTO key_service_links (key_id, service_name)
+                VALUES ($1, $2)
+                ON CONFLICT DO NOTHING
+                "#,
+            )
+            .bind(key_id)
+            .bind(service_name)
+            .execute(&mut **tx)
+            .await
+            .map_err(|error| {
+                if is_foreign_key_violation(&error) {
+                    GatewayError::MissingService
+                } else {
+                    GatewayError::StoreUnavailable
+                }
+            })?;
+        }
+        Ok(())
+    }
+
     pub async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()> {
         let route = event.route.as_str();
         let provider = event.provider.as_str();
@@ -320,7 +411,7 @@ impl VirtualKeyLookup for PostgresStore {
             _,
             (
                 uuid::Uuid,
-                uuid::Uuid,
+                Option<uuid::Uuid>,
                 String,
                 String,
                 bool,
@@ -362,6 +453,10 @@ impl gateway_core::PolicyLookup for PostgresStore {
         let row = sqlx::query_as::<
             _,
             (
+                String,
+                Option<Uuid>,
+                Vec<String>,
+                Vec<String>,
                 Vec<String>,
                 Vec<String>,
                 Vec<String>,
@@ -376,18 +471,39 @@ impl gateway_core::PolicyLookup for PostgresStore {
         >(
             r#"
             SELECT
-                allowed_routes,
-                allowed_models,
-                allowed_providers,
-                allowed_services,
-                rpm_limit,
-                tpm_limit,
-                daily_budget_usd,
-                monthly_budget_usd,
-                allow_streaming,
-                allow_tools
-            FROM key_policies
-            WHERE key_id = $1
+                k.owner_type,
+                k.project_id,
+                COALESCE(p.allowed_routes, ARRAY['/v1/chat/completions', '/v1/responses']::text[]),
+                COALESCE(p.allowed_models, ARRAY[]::text[]),
+                COALESCE(p.allowed_providers, ARRAY['litellm']::text[]),
+                COALESCE(p.allowed_services, ARRAY[]::text[]),
+                COALESCE(
+                    ARRAY(
+                        SELECT service_name
+                        FROM project_service_links
+                        WHERE project_id = k.project_id
+                        ORDER BY service_name
+                    ),
+                    ARRAY[]::text[]
+                ),
+                COALESCE(
+                    ARRAY(
+                        SELECT service_name
+                        FROM key_service_links
+                        WHERE key_id = k.id
+                        ORDER BY service_name
+                    ),
+                    ARRAY[]::text[]
+                ),
+                p.rpm_limit,
+                p.tpm_limit,
+                p.daily_budget_usd,
+                p.monthly_budget_usd,
+                COALESCE(p.allow_streaming, false),
+                COALESCE(p.allow_tools, false)
+            FROM api_keys k
+            LEFT JOIN key_policies p ON p.key_id = k.id
+            WHERE k.id = $1
             "#,
         )
         .bind(key_id)
@@ -396,10 +512,14 @@ impl gateway_core::PolicyLookup for PostgresStore {
         .map_err(|_| GatewayError::ControlStateUnavailable)?;
 
         let Some((
+            owner_type,
+            _project_id,
             allowed_routes,
             allowed_models,
             allowed_providers,
             allowed_services,
+            project_services,
+            key_services,
             rpm_limit,
             tpm_limit,
             daily_budget_usd,
@@ -411,11 +531,37 @@ impl gateway_core::PolicyLookup for PostgresStore {
             return Ok(KeyPolicy::default());
         };
 
+        let derived_services = match owner_type.as_str() {
+            "project" if !project_services.is_empty() => project_services,
+            "individual" if !key_services.is_empty() => key_services,
+            _ => allowed_services,
+        };
+        let mut derived_routes = allowed_routes;
+        if !derived_services.is_empty() {
+            let service_route_patterns = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT route_pattern
+                FROM service_registrations
+                WHERE name = ANY($1)
+                "#,
+            )
+            .bind(&derived_services)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+            for route_pattern in service_route_patterns {
+                let policy_route = service_route_policy_route(&route_pattern);
+                if !derived_routes.iter().any(|route| route == policy_route) {
+                    derived_routes.push(policy_route.to_owned());
+                }
+            }
+        }
+
         Ok(KeyPolicy {
-            allowed_routes: parse_routes(&allowed_routes)?,
+            allowed_routes: parse_routes(&derived_routes)?,
             allowed_models,
             allowed_providers: parse_providers(&allowed_providers)?,
-            allowed_services,
+            allowed_services: derived_services,
             rpm_limit,
             tpm_limit,
             daily_budget_usd,
@@ -433,41 +579,85 @@ impl AdminProjectStore for PostgresStore {
         request: ProjectCreateRequest,
     ) -> GatewayResult<ProjectResponse> {
         request.validate()?;
-        sqlx::query(
+        let row = sqlx::query(
             r#"
             INSERT INTO projects (name)
             VALUES ($1)
-            RETURNING id, name, created_at, updated_at
+            RETURNING id, name, created_at, updated_at, ARRAY[]::text[] AS service_names
             "#,
         )
         .bind(request.name.trim())
         .fetch_one(&self.pool)
         .await
-        .map(project_response_from_row)
         .map_err(|error| {
             if is_unique_violation(&error) {
                 GatewayError::DuplicateProject
             } else {
                 GatewayError::StoreUnavailable
             }
-        })
+        })?;
+        project_response_from_row(row)
     }
 
     async fn list_projects(&self) -> GatewayResult<Vec<ProjectResponse>> {
-        sqlx::query("SELECT id, name, created_at, updated_at FROM projects ORDER BY name ASC")
-            .fetch_all(&self.pool)
-            .await
-            .map(|rows| rows.into_iter().map(project_response_from_row).collect())
-            .map_err(|_| GatewayError::StoreUnavailable)
+        sqlx::query(
+            r#"
+            SELECT
+                p.id,
+                p.name,
+                p.created_at,
+                p.updated_at,
+                COALESCE(
+                    ARRAY(
+                        SELECT service_name
+                        FROM project_service_links
+                        WHERE project_id = p.id
+                        ORDER BY service_name
+                    ),
+                    ARRAY[]::text[]
+                ) AS service_names
+            FROM projects p
+            ORDER BY p.name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(project_response_from_row)
+                .collect::<GatewayResult<Vec<_>>>()
+        })
+        .map_err(|_| GatewayError::StoreUnavailable)
+        .and_then(|value| value)
     }
 
     async fn get_project(&self, project_id: Uuid) -> GatewayResult<Option<ProjectResponse>> {
-        sqlx::query("SELECT id, name, created_at, updated_at FROM projects WHERE id = $1")
-            .bind(project_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map(|row| row.map(project_response_from_row))
-            .map_err(|_| GatewayError::StoreUnavailable)
+        sqlx::query(
+            r#"
+            SELECT
+                p.id,
+                p.name,
+                p.created_at,
+                p.updated_at,
+                COALESCE(
+                    ARRAY(
+                        SELECT service_name
+                        FROM project_service_links
+                        WHERE project_id = p.id
+                        ORDER BY service_name
+                    ),
+                    ARRAY[]::text[]
+                ) AS service_names
+            FROM projects p
+            WHERE p.id = $1
+            "#,
+        )
+        .bind(project_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| row.map(project_response_from_row).transpose())
+        .map_err(|_| GatewayError::StoreUnavailable)
+        .and_then(|value| value)
     }
 
     async fn patch_project(
@@ -476,29 +666,37 @@ impl AdminProjectStore for PostgresStore {
         patch: ProjectPatchRequest,
     ) -> GatewayResult<Option<ProjectResponse>> {
         patch.validate()?;
-        let Some(name) = patch.name else {
-            return self.get_project(project_id).await;
-        };
-        sqlx::query(
-            r#"
-            UPDATE projects
-            SET name = $2, updated_at = now()
-            WHERE id = $1
-            RETURNING id, name, created_at, updated_at
-            "#,
-        )
-        .bind(project_id)
-        .bind(name.trim())
-        .fetch_optional(&self.pool)
-        .await
-        .map(|row| row.map(project_response_from_row))
-        .map_err(|error| {
-            if is_unique_violation(&error) {
-                GatewayError::DuplicateProject
-            } else {
-                GatewayError::StoreUnavailable
+        if let Some(name) = patch.name {
+            let rows = sqlx::query(
+                r#"
+                UPDATE projects
+                SET name = $2, updated_at = now()
+                WHERE id = $1
+                "#,
+            )
+            .bind(project_id)
+            .bind(name.trim())
+            .execute(&self.pool)
+            .await
+            .map_err(|error| {
+                if is_unique_violation(&error) {
+                    GatewayError::DuplicateProject
+                } else {
+                    GatewayError::StoreUnavailable
+                }
+            })?
+            .rows_affected();
+            if rows == 0 {
+                return Ok(None);
             }
-        })
+        } else if self.get_project(project_id).await?.is_none() {
+            return Ok(None);
+        }
+        if let Some(service_names) = patch.service_names {
+            self.replace_project_service_links(project_id, &service_names)
+                .await?;
+        }
+        self.get_project(project_id).await
     }
 
     async fn delete_project(&self, project_id: Uuid) -> GatewayResult<bool> {
@@ -525,20 +723,27 @@ impl AdminKeyStore for PostgresStore {
         material: &VirtualKeyMaterial,
     ) -> GatewayResult<AdminKeyResponse> {
         let key_id = Uuid::new_v4();
+        validate_key_owner(request.owner_type, request.project_id)?;
         let policy = apply_policy_patch(KeyPolicy::default(), request.policy)?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
 
         sqlx::query(
             r#"
-            INSERT INTO api_keys (id, project_id, key_prefix, key_hash, expires_at)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO api_keys (id, owner_type, project_id, key_prefix, key_hash, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(key_id)
+        .bind(key_owner_type_str(request.owner_type))
         .bind(request.project_id)
         .bind(&material.key_prefix)
         .bind(&material.key_hash)
         .bind(request.expires_at)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|error| {
             if is_foreign_key_violation(&error) {
@@ -548,7 +753,11 @@ impl AdminKeyStore for PostgresStore {
             }
         })?;
 
-        self.upsert_policy(key_id, &policy).await?;
+        Self::upsert_policy_in_tx(&mut tx, key_id, &policy).await?;
+        Self::replace_key_service_links_in_tx(&mut tx, key_id, &request.service_names).await?;
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         self.response_for_key(key_id)
             .await?
             .ok_or(GatewayError::StoreUnavailable)
@@ -559,6 +768,7 @@ impl AdminKeyStore for PostgresStore {
             r#"
             SELECT
                 k.id,
+                k.owner_type,
                 k.project_id,
                 k.key_prefix,
                 k.disabled,
@@ -566,6 +776,15 @@ impl AdminKeyStore for PostgresStore {
                 k.expires_at,
                 k.created_at,
                 k.updated_at,
+                COALESCE(
+                    ARRAY(
+                        SELECT service_name
+                        FROM key_service_links
+                        WHERE key_id = k.id
+                        ORDER BY service_name
+                    ),
+                    ARRAY[]::text[]
+                ) AS service_names,
                 p.allowed_routes,
                 p.allowed_models,
                 p.allowed_providers,
@@ -601,11 +820,42 @@ impl AdminKeyStore for PostgresStore {
     ) -> GatewayResult<Option<AdminKeyResponse>> {
         let update_expires_at = patch.expires_at.is_some();
         let expires_at = patch.expires_at.flatten();
+        let owner_type = patch.owner_type;
+        let project_id = patch.project_id.flatten();
+        let update_project_id = patch.project_id.is_some();
+        if owner_type.is_some() || update_project_id {
+            let Some(current) = self.response_for_key(key_id).await? else {
+                return Ok(None);
+            };
+            validate_key_owner(
+                owner_type.unwrap_or(current.owner_type),
+                if update_project_id {
+                    project_id
+                } else {
+                    current.project_id
+                },
+            )?;
+        }
+
+        let policy = if let Some(policy_patch) = patch.policy {
+            let current = self.policy_for_key(key_id).await?;
+            Some(apply_policy_patch(current, policy_patch)?)
+        } else {
+            None
+        };
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
 
         let rows = sqlx::query(
             r#"
             UPDATE api_keys
             SET
+                owner_type = COALESCE($5, owner_type),
+                project_id = CASE WHEN $6 THEN $7 ELSE project_id END,
                 expires_at = CASE WHEN $2 THEN $3 ELSE expires_at END,
                 disabled = COALESCE($4, disabled),
                 updated_at = now()
@@ -617,21 +867,37 @@ impl AdminKeyStore for PostgresStore {
         .bind(update_expires_at)
         .bind(expires_at)
         .bind(patch.disabled)
-        .execute(&self.pool)
+        .bind(owner_type.map(key_owner_type_str))
+        .bind(update_project_id)
+        .bind(project_id)
+        .execute(&mut *tx)
         .await
-        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map_err(|error| {
+            if is_foreign_key_violation(&error) {
+                GatewayError::MissingProject
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })?
         .rows_affected();
 
         if rows == 0 {
+            tx.rollback()
+                .await
+                .map_err(|_| GatewayError::StoreUnavailable)?;
             return self.response_for_key(key_id).await;
         }
 
-        if let Some(policy_patch) = patch.policy {
-            let current = self.policy_for_key(key_id).await?;
-            let policy = apply_policy_patch(current, policy_patch)?;
-            self.upsert_policy(key_id, &policy).await?;
+        if let Some(policy) = policy {
+            Self::upsert_policy_in_tx(&mut tx, key_id, &policy).await?;
+        }
+        if let Some(service_names) = patch.service_names {
+            Self::replace_key_service_links_in_tx(&mut tx, key_id, &service_names).await?;
         }
 
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         self.response_for_key(key_id).await
     }
 
@@ -1630,7 +1896,7 @@ impl UsageQueryStore for PostgresStore {
     ) -> GatewayResult<Vec<UsageBreakdown>> {
         let column = match dimension {
             UsageBreakdownDimension::Key => "key_id::text",
-            UsageBreakdownDimension::Project => "project_id::text",
+            UsageBreakdownDimension::Project => "COALESCE(project_id::text, 'individual')",
             UsageBreakdownDimension::Model => "COALESCE(model, 'unknown')",
             UsageBreakdownDimension::Provider => "provider",
             UsageBreakdownDimension::Service => "COALESCE(service_name, 'none')",
@@ -1793,6 +2059,42 @@ fn provider_strings(providers: &[Provider]) -> Vec<String> {
         .collect()
 }
 
+fn key_owner_type_str(owner_type: AdminKeyOwnerType) -> &'static str {
+    match owner_type {
+        AdminKeyOwnerType::Project => "project",
+        AdminKeyOwnerType::Individual => "individual",
+    }
+}
+
+fn parse_key_owner_type(value: &str) -> GatewayResult<AdminKeyOwnerType> {
+    match value {
+        "project" => Ok(AdminKeyOwnerType::Project),
+        "individual" => Ok(AdminKeyOwnerType::Individual),
+        _ => Err(GatewayError::StoreUnavailable),
+    }
+}
+
+fn validate_key_owner(
+    owner_type: AdminKeyOwnerType,
+    project_id: Option<Uuid>,
+) -> GatewayResult<()> {
+    match (owner_type, project_id) {
+        (AdminKeyOwnerType::Project, Some(_)) => Ok(()),
+        (AdminKeyOwnerType::Individual, None) => Ok(()),
+        _ => Err(GatewayError::InvalidProjectPayload),
+    }
+}
+
+fn service_route_policy_route(route_pattern: &str) -> &'static str {
+    match route_pattern {
+        "/summary" => "/summary",
+        "/translation" => "/translation",
+        "/ocr" => "/ocr",
+        "/embeddings" => "/embeddings",
+        _ => "/services/*",
+    }
+}
+
 fn parse_routes(values: &[String]) -> GatewayResult<Vec<Route>> {
     values
         .iter()
@@ -1839,13 +2141,22 @@ fn openai_route_setting_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<O
     })
 }
 
-fn project_response_from_row(row: sqlx::postgres::PgRow) -> ProjectResponse {
-    ProjectResponse {
-        id: row.try_get("id").expect("project id"),
-        name: row.try_get("name").expect("project name"),
-        created_at: row.try_get("created_at").expect("project created_at"),
-        updated_at: row.try_get("updated_at").expect("project updated_at"),
-    }
+fn project_response_from_row(row: sqlx::postgres::PgRow) -> GatewayResult<ProjectResponse> {
+    Ok(ProjectResponse {
+        id: row
+            .try_get("id")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        name: row
+            .try_get("name")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        service_names: row.try_get("service_names").unwrap_or_default(),
+        created_at: row
+            .try_get("created_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
 }
 
 fn provider_config_response_from_row(
@@ -1884,13 +2195,18 @@ fn provider_config_response_from_row(
 }
 
 fn admin_key_response_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<AdminKeyResponse> {
+    let owner_type: String = row
+        .try_get("owner_type")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
     Ok(AdminKeyResponse {
         id: row
             .try_get("id")
             .map_err(|_| GatewayError::StoreUnavailable)?,
+        owner_type: parse_key_owner_type(&owner_type)?,
         project_id: row
             .try_get("project_id")
             .map_err(|_| GatewayError::StoreUnavailable)?,
+        service_names: row.try_get("service_names").unwrap_or_default(),
         key_prefix: row
             .try_get("key_prefix")
             .map_err(|_| GatewayError::StoreUnavailable)?,
@@ -2179,5 +2495,12 @@ mod tests {
         ));
         assert!(route_pattern_matches("/services/demo/*", "/services/demo"));
         assert!(!route_pattern_matches("/summary", "/summary/extra"));
+    }
+
+    #[test]
+    fn linked_service_routes_expand_to_policy_routes() {
+        assert_eq!(service_route_policy_route("/summary"), "/summary");
+        assert_eq!(service_route_policy_route("/translation"), "/translation");
+        assert_eq!(service_route_policy_route("/custom/*"), "/services/*");
     }
 }

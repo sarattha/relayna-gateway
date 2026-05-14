@@ -14,8 +14,8 @@ pub mod services;
 pub mod usage;
 
 pub use admin::{
-    AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore, AdminKeyUsageSummary,
-    CreatedAdminKeyResponse, ProjectUsageSummary, VirtualKeyMaterial,
+    AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,
+    AdminKeyUsageSummary, CreatedAdminKeyResponse, ProjectUsageSummary, VirtualKeyMaterial,
 };
 pub use auth::{AuthenticatedKey, Authenticator, StoredVirtualKey, VirtualKey};
 pub use budgets::{BudgetDecision, BudgetState, BudgetStore};

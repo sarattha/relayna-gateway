@@ -58,7 +58,8 @@ Admin APIs require an operator token. On the first startup, the gateway bootstra
 PostgreSQL is the source of truth for durable state:
 
 - Virtual key metadata and hashed key material.
-- Policy fields for routes, models, providers, services, streaming, tools, rate limits, and budgets.
+- Policy fields for routes, models, providers, project and individual service
+  links, streaming, tools, rate limits, and budgets.
 - Usage events consumed by Relayna Studio and operators.
 - Service registrations and Studio sync state.
 - Global OpenAI route enablement for `/v1/chat/completions` and `/v1/responses`.
