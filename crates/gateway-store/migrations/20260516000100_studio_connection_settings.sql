@@ -6,5 +6,5 @@ CREATE TABLE IF NOT EXISTS studio_connection_settings (
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT studio_connection_settings_singleton CHECK (singleton),
     CONSTRAINT studio_connection_settings_base_url_format
-        CHECK (base_url IS NULL OR base_url ~ '^https?://')
+        CHECK (base_url IS NULL OR base_url ~* '^https?://')
 );

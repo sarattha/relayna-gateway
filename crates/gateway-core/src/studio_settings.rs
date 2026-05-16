@@ -289,4 +289,12 @@ mod tests {
         assert_eq!(value["token_configured"], true);
         assert!(value.get("token").is_none());
     }
+
+    #[test]
+    fn accepts_uppercase_http_scheme() {
+        assert_eq!(
+            normalize_base_url("HTTP://studio.example/").expect("valid url"),
+            "HTTP://studio.example"
+        );
+    }
 }
