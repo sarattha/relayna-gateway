@@ -26,6 +26,7 @@ nav:
   - Architecture: architecture.md
   - Getting Started: getting-started.md
   - Admin Portal: admin-portal.md
+  - Guardrails: guardrails.md
   - Deployment: deployment.md
   - Operations: operations.md
   - Releases: releases.md

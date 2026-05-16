@@ -79,7 +79,7 @@ curl http://127.0.0.1:8000/studio/gateway/services
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.0.8 .
+docker build -t relayna-gateway:0.0.9 .
 ```
 
 Run it:
@@ -92,12 +92,61 @@ docker run --rm \
   -e REDIS_URL="redis://host.docker.internal:6379" \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
-  relayna-gateway:0.0.8
+  relayna-gateway:0.0.9
 ```
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.0.8`, and provide `relayna-gateway-secrets` through your cluster secret manager. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.0.9`, and provide `relayna-gateway-secrets` through your cluster secret manager. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+
+## Guardrails
+
+Guardrails are opt-in policy controls for Relayna virtual keys. The catalog
+defines global guardrail behavior, and each key decides which guardrails are
+mandatory, optional, or forbidden. `pii-redact` is seeded as an enabled built-in
+guardrail, but it is not default-on for existing keys.
+
+Operator setup flow:
+
+1. Open Admin portal Guardrails and review the catalog entry for `pii-redact`.
+2. Edit the catalog runtime config for global defaults, such as
+   `{ "restore_output": true }`.
+3. Add custom HTTP guardrails when an external policy service should run before
+   or after provider calls.
+4. Open Keys and use the guardrail pickers to select mandatory, optional, and
+   forbidden guardrails.
+5. Configure per-key overrides only after a guardrail is selected as mandatory
+   or optional. Override editors are intentionally hidden for unselected
+   guardrails.
+
+Effective config is a shallow merge of catalog `runtime_config` plus the
+per-key override for the selected guardrail. Overrides must be JSON objects, are
+dormant until the guardrail is applied, and are rejected for unknown or
+forbidden guardrails.
+
+Example key policy:
+
+```json
+{
+  "guardrail_policy": {
+    "mandatory_guardrails": ["pii-redact"],
+    "optional_guardrails": ["custom-check"],
+    "forbidden_guardrails": [],
+    "guardrail_config_overrides": {
+      "pii-redact": {
+        "restore_output": false
+      },
+      "custom-check": {
+        "threshold": 0.85
+      }
+    }
+  }
+}
+```
+
+Custom HTTP guardrail endpoint URL, timeout, and bearer token are catalog
+settings. Per-key overrides tune only that guardrail's runtime config, so
+secrets are not copied into key policy.
 
 ## Checks
 
@@ -132,5 +181,6 @@ See:
 - `docs/architecture.md`
 - `docs/getting-started.md`
 - `docs/deployment.md`
+- `docs/guardrails.md`
 - `docs/operations.md`
 - `CHANGELOG.md`
