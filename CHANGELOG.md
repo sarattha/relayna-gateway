@@ -2,6 +2,31 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.8 - 2026-05-16
+
+### Added
+
+- Protected Admin API endpoints for reading, updating, testing, and clearing
+  the Relayna Studio connection after Gateway startup.
+- Admin portal Settings controls for Studio backend URL, write-only bearer
+  token replacement, token clearing, persisted settings clearing, and connection
+  testing.
+- PostgreSQL-backed Studio connection settings with environment-variable
+  fallback from `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN`.
+
+### Changed
+
+- Workspace crate versions now share the `0.0.8` release version.
+- Deployment examples and the baseline Kubernetes image now target the `0.0.8`
+  gateway image.
+- Studio service import now resolves the effective Studio connection at request
+  time, so admin-saved settings take effect without restarting Gateway.
+
+### Security
+
+- Studio bearer token values are write-only in Admin API responses and portal
+  fields.
+
 ## 0.0.7 - 2026-05-14
 
 ### Added
