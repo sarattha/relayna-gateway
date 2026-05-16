@@ -7,7 +7,7 @@ Relayna Gateway ships as one binary and one Docker image. The image serves both 
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.0.7 .
+docker build -t relayna-gateway:0.0.8 .
 ```
 
 Run it with required dependencies:
@@ -24,7 +24,7 @@ docker run --rm \
   -e GATEWAY_BIND_ADDR="0.0.0.0:8080" \
   -e GATEWAY_CONTROL_BIND_ADDR="0.0.0.0:8081" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.0.7
+  relayna-gateway:0.0.8
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -67,13 +67,13 @@ The repository includes a baseline manifest at `deploy/kubernetes/relayna-gatewa
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.0.7
+   ghcr.io/sarattha/relayna-gateway:0.0.8
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.0.7"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.0.8"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -81,7 +81,7 @@ The repository includes a baseline manifest at `deploy/kubernetes/relayna-gatewa
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.0.7
+   image: <your-registry>/<your-org>/relayna-gateway:0.0.8
    ```
 
 3. Store secrets through your cluster secret manager:
@@ -117,8 +117,11 @@ Expose the proxy port to clients that need LLM traffic. Keep the control port pr
 ## Studio Import Connectivity
 
 Gateway imports Studio services by calling the Studio backend endpoint
-`GET /studio/gateway/services`. The configured `RELAYNA_STUDIO_BASE_URL` should
-therefore be the backend base URL:
+`GET /studio/gateway/services`. The configured Studio base URL should therefore
+be the backend base URL. `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN`
+remain startup fallbacks; operators can override them in Admin portal Settings
+without restarting Gateway. Clearing the persisted base URL returns Gateway to
+the environment fallback.
 
 | Deployment shape | Example value |
 | --- | --- |
@@ -138,10 +141,15 @@ Test through Gateway after startup:
 ```bash
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  -X POST \
+  http://127.0.0.1:8081/admin/studio/connection/test
+
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   http://127.0.0.1:8081/admin/studio/services
 ```
 
 If Gateway returns `studio_unavailable`, check that the backend URL is reachable
 from the Gateway process, that the path `/studio/gateway/services` exists, that
-`RELAYNA_STUDIO_TOKEN` matches Studio's expected token when authentication is
+the effective token matches Studio's expected token when authentication is
 enabled, and that Studio returns valid service names and route patterns.

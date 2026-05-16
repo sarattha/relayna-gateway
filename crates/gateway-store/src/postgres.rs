@@ -16,6 +16,10 @@ use gateway_core::{
         ServiceRegistration, ServiceRegistryLookup, ServiceResponse, ServiceRouteLookup,
         ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse, StudioServiceImportRequest,
     },
+    studio_settings::{
+        normalize_base_url, normalize_secret, AdminStudioConnectionStore, PatchValue,
+        StoredStudioConnection, StudioConnectionPatchRequest,
+    },
     verify_stored_operator_token, AdminKeyStore, AdminKeyUsageSummary, AdminOpenAiRouteStore,
     AdminProjectStore, GatewayError, GatewayResult, KeyPolicy, OpenAiRouteSetting,
     OpenAiRouteSettingsLookup, OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore,
@@ -1464,6 +1468,78 @@ impl ProviderConfigLookup for PostgresStore {
 }
 
 #[async_trait]
+impl AdminStudioConnectionStore for PostgresStore {
+    async fn studio_connection_settings(&self) -> GatewayResult<Option<StoredStudioConnection>> {
+        sqlx::query(
+            r#"
+            SELECT base_url, bearer_token_secret, updated_at
+            FROM studio_connection_settings
+            WHERE singleton = true
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| row.map(|row| studio_connection_from_row(&row)).transpose())
+        .map_err(|_| GatewayError::StoreUnavailable)?
+    }
+
+    async fn patch_studio_connection_settings(
+        &self,
+        patch: StudioConnectionPatchRequest,
+    ) -> GatewayResult<StoredStudioConnection> {
+        patch.validate()?;
+        let current = self.studio_connection_settings().await?.unwrap_or_default();
+
+        let mut base_url = current.base_url;
+        let mut bearer_token_secret = current.bearer_token_secret;
+
+        match patch.base_url {
+            PatchValue::Unchanged => {}
+            PatchValue::Clear => {
+                base_url = None;
+                bearer_token_secret = None;
+            }
+            PatchValue::Set(value) => {
+                base_url = Some(normalize_base_url(&value)?);
+            }
+        }
+
+        match patch.token {
+            PatchValue::Unchanged => {}
+            PatchValue::Clear => {
+                bearer_token_secret = None;
+            }
+            PatchValue::Set(value) => {
+                bearer_token_secret = Some(normalize_secret(&value)?);
+            }
+        }
+
+        let row = sqlx::query(
+            r#"
+            INSERT INTO studio_connection_settings (
+                singleton,
+                base_url,
+                bearer_token_secret
+            )
+            VALUES (true, $1, $2)
+            ON CONFLICT (singleton) DO UPDATE SET
+                base_url = EXCLUDED.base_url,
+                bearer_token_secret = EXCLUDED.bearer_token_secret,
+                updated_at = now()
+            RETURNING base_url, bearer_token_secret, updated_at
+            "#,
+        )
+        .bind(base_url)
+        .bind(bearer_token_secret)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        studio_connection_from_row(&row)
+    }
+}
+
+#[async_trait]
 impl AdminServiceStore for PostgresStore {
     async fn create_service(
         &self,
@@ -2187,6 +2263,22 @@ fn provider_config_response_from_row(
             .is_some_and(|value| !value.is_empty()),
         created_at: row
             .try_get("created_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
+fn studio_connection_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<StoredStudioConnection> {
+    Ok(StoredStudioConnection {
+        base_url: row
+            .try_get("base_url")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        bearer_token_secret: row
+            .try_get("bearer_token_secret")
             .map_err(|_| GatewayError::StoreUnavailable)?,
         updated_at: row
             .try_get("updated_at")
