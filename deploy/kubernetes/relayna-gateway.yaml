@@ -20,6 +20,7 @@ stringData:
   DIRECT_OPENAI_BASE_URL: ""
   DIRECT_OPENAI_SERVICE_KEY: ""
   RELAYNA_WORKER_TOKEN: ""
+  # Optional Studio fallback. Operators can override this connection in Admin Settings.
   RELAYNA_STUDIO_BASE_URL: ""
   RELAYNA_STUDIO_TOKEN: ""
 ---

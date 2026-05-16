@@ -48,9 +48,12 @@ injection, usage, costs, budgets, and fail-closed routing. The import flow copie
 Studio catalog metadata into Gateway service registrations; it does not copy
 provider credentials or allow Studio metadata to bypass Gateway policy.
 
-Set `RELAYNA_STUDIO_BASE_URL` to the Studio backend base URL, not the Studio
-frontend URL. Gateway appends `/studio/gateway/services` when it fetches the
-catalog.
+Configure the Studio backend in Admin portal Settings, or set
+`RELAYNA_STUDIO_BASE_URL` as a deployment fallback. Use the Studio backend base
+URL, not the frontend URL. Gateway appends `/studio/gateway/services` when it
+fetches the catalog. Admin-saved settings override environment settings until
+the persisted base URL is cleared, at which point the environment fallback is
+effective again.
 
 Local example:
 
@@ -70,8 +73,8 @@ Kubernetes example when Studio is another Service in the same namespace:
 export RELAYNA_STUDIO_BASE_URL="http://relayna-studio-backend:8000"
 ```
 
-If Studio protects the Gateway export endpoint, also set `RELAYNA_STUDIO_TOKEN`.
-Gateway sends it as:
+If Studio protects the Gateway export endpoint, set the optional bearer token in
+Admin portal Settings or with `RELAYNA_STUDIO_TOKEN`. Gateway sends it as:
 
 ```http
 Authorization: Bearer <RELAYNA_STUDIO_TOKEN>
@@ -107,30 +110,39 @@ Before opening the Gateway Admin portal, test Studio directly:
 curl -sS "$RELAYNA_STUDIO_BASE_URL/studio/gateway/services"
 ```
 
-Then test the Gateway-to-Studio connection through the protected Gateway admin
-route:
+Then test the Gateway-to-Studio connection through Admin portal Settings or the
+protected Gateway admin route:
 
 ```bash
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  -X POST \
+  http://127.0.0.1:8081/admin/studio/connection/test
+
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   http://127.0.0.1:8081/admin/studio/services
 ```
 
-The Gateway response is the mapped import preview used by the portal. It should
-show `studio_service_id`, `name`, `route_pattern`, and an `import_request` for
-each service. If Studio is unreachable, stalls, returns non-JSON, or returns an
-invalid service shape, Gateway returns `studio_unavailable`.
+The test route returns `ok` and `service_count` when the catalog is reachable.
+The services route returns the mapped import preview used by the portal. It
+should show `studio_service_id`, `name`, `route_pattern`, and an
+`import_request` for each service. If Studio is unreachable, stalls, returns
+non-JSON, or returns an invalid service shape, Gateway returns
+`studio_unavailable`.
 
 Operator flow:
 
 1. Start Studio backend and verify `/studio/gateway/services`.
-2. Start Gateway with `RELAYNA_STUDIO_BASE_URL` and optional
-   `RELAYNA_STUDIO_TOKEN`.
+2. Start Gateway with optional `RELAYNA_STUDIO_BASE_URL` and
+   `RELAYNA_STUDIO_TOKEN`, or configure the connection in Admin Settings.
 3. Open `/admin-ui`, sign in with the Gateway operator token, and go to
-   Services.
-4. Click `Import from Studio`.
-5. Select one or more services and click `Import selected`.
-6. Configure Gateway-owned runtime fields such as credentials, enabled state,
+   Settings.
+4. Save or test the Studio connection. Token values are write-only and are never
+   returned by the API.
+5. Go to Services and click `Import from Studio`.
+6. Select one or more services and click `Import selected`.
+7. Configure Gateway-owned runtime fields such as credentials, enabled state,
    route overrides, limits, fallback services, project links, and cost mode.
 
 Imported services are created with `source = studio`. They remain disabled or

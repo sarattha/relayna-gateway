@@ -117,8 +117,11 @@ Expose the proxy port to clients that need LLM traffic. Keep the control port pr
 ## Studio Import Connectivity
 
 Gateway imports Studio services by calling the Studio backend endpoint
-`GET /studio/gateway/services`. The configured `RELAYNA_STUDIO_BASE_URL` should
-therefore be the backend base URL:
+`GET /studio/gateway/services`. The configured Studio base URL should therefore
+be the backend base URL. `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN`
+remain startup fallbacks; operators can override them in Admin portal Settings
+without restarting Gateway. Clearing the persisted base URL returns Gateway to
+the environment fallback.
 
 | Deployment shape | Example value |
 | --- | --- |
@@ -138,10 +141,15 @@ Test through Gateway after startup:
 ```bash
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  -X POST \
+  http://127.0.0.1:8081/admin/studio/connection/test
+
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   http://127.0.0.1:8081/admin/studio/services
 ```
 
 If Gateway returns `studio_unavailable`, check that the backend URL is reachable
 from the Gateway process, that the path `/studio/gateway/services` exists, that
-`RELAYNA_STUDIO_TOKEN` matches Studio's expected token when authentication is
+the effective token matches Studio's expected token when authentication is
 enabled, and that Studio returns valid service names and route patterns.

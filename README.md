@@ -56,10 +56,15 @@ Useful endpoints:
 - Readiness: `http://127.0.0.1:8081/readyz`
 - Metrics: `http://127.0.0.1:8081/metrics`
 - Admin portal: `http://127.0.0.1:8081/admin-ui`
+- Studio connection status: `http://127.0.0.1:8081/admin/studio/connection`
 - Studio import preview: `http://127.0.0.1:8081/admin/studio/services`
 
-When Relayna Studio is running, verify the export path before using the Admin
-portal import picker:
+`RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are startup fallback
+settings. Operators can also open Admin portal Settings after Gateway starts to
+set, replace, test, or clear the Studio backend connection. Admin-saved settings
+override the env fallback until the persisted base URL is cleared.
+
+When Relayna Studio is running, verify the export path before importing:
 
 ```bash
 curl http://127.0.0.1:8000/studio/gateway/services

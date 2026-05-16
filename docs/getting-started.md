@@ -63,7 +63,9 @@ export DIRECT_OPENAI_SERVICE_KEY="sk-provider-key"
 ## Connect Relayna Studio
 
 If Relayna Studio is running, point Gateway at the Studio backend export API.
-Use the backend URL, not the frontend URL.
+Use the backend URL, not the frontend URL. You can set the connection in Admin
+portal Settings after Gateway starts, or provide environment variables as a
+startup fallback.
 
 Local example:
 
@@ -83,6 +85,10 @@ If Studio requires a token for Gateway import:
 export RELAYNA_STUDIO_TOKEN="studio-gateway-token"
 ```
 
+Admin-saved Studio settings override these environment values. Clearing the
+persisted base URL in Settings reveals the environment fallback again. Token
+values are write-only in Gateway API responses.
+
 Verify Studio exports services before starting Gateway:
 
 ```bash
@@ -92,6 +98,11 @@ curl -sS "$RELAYNA_STUDIO_BASE_URL/studio/gateway/services"
 After Gateway starts, verify Gateway can reach Studio:
 
 ```bash
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  -X POST \
+  http://127.0.0.1:8081/admin/studio/connection/test
+
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   http://127.0.0.1:8081/admin/studio/services

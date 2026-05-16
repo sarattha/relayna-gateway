@@ -20,12 +20,12 @@ function test(name, fn) {
 }
 
 test("admin portal shell exposes all release-critical views", () => {
-  for (const view of ["overview", "projects", "keys", "providers", "routes", "services", "usage", "health"]) {
+  for (const view of ["overview", "projects", "keys", "providers", "routes", "services", "usage", "health", "settings"]) {
     assert.match(html, new RegExp(`data-view="${view}"`));
   }
   assert.match(
     html,
-    /data-view="overview"[\s\S]*data-view="providers"[\s\S]*data-view="services"[\s\S]*data-view="routes"[\s\S]*data-view="projects"[\s\S]*data-view="keys"[\s\S]*data-view="usage"[\s\S]*data-view="health"/,
+    /data-view="overview"[\s\S]*data-view="providers"[\s\S]*data-view="services"[\s\S]*data-view="routes"[\s\S]*data-view="projects"[\s\S]*data-view="keys"[\s\S]*data-view="usage"[\s\S]*data-view="health"[\s\S]*data-view="settings"/,
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
@@ -40,12 +40,24 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin/openai-routes",
     "/admin/keys",
     "/admin/services",
+    "/admin/studio/connection",
+    "/admin/studio/connection/test",
     "/admin/studio/services",
     "/admin/operator-token/rotate",
     "/readyz",
   ]) {
     assert.match(js, new RegExp(endpoint.replaceAll("/", "\\/")));
   }
+});
+
+test("settings view configures studio connection without exposing token values", () => {
+  assert.match(js, /async function settings\(\)/);
+  assert.match(js, /\/admin\/studio\/connection/);
+  assert.match(js, /\/admin\/studio\/connection\/test/);
+  assert.match(js, /name="token" type="password"/);
+  assert.match(js, /token_configured/);
+  assert.match(js, /Check Settings for the Studio connection/);
+  assert.doesNotMatch(js, /state\.studioConnection\.token\b/);
 });
 
 test("admin portal uses structured project and provider controls", () => {

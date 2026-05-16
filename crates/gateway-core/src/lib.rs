@@ -11,6 +11,7 @@ pub mod rate_limits;
 pub mod route_settings;
 pub mod routing;
 pub mod services;
+pub mod studio_settings;
 pub mod usage;
 
 pub use admin::{
@@ -53,6 +54,11 @@ pub use services::{
     ServiceRouteLookup, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
     StudioCatalogService, StudioServiceCatalogResponse, StudioServiceImportPreview,
     StudioServiceImportRequest, StudioServicePricing,
+};
+pub use studio_settings::{
+    normalize_base_url, normalize_secret, AdminStudioConnectionStore, EffectiveStudioConnection,
+    PatchValue, StoredStudioConnection, StudioConnectionEnv, StudioConnectionPatchRequest,
+    StudioConnectionResponse, StudioConnectionSource, StudioConnectionTestResponse,
 };
 pub use usage::{
     extract_estimated_cost_usd, extract_model, extract_usage_tokens, UsageEvent, UsageRecorder,

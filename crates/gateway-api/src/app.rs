@@ -10,12 +10,13 @@ use chrono::Utc;
 use gateway_core::{
     auth::VirtualKeyLookup, AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,
     AdminOpenAiRouteStore, AdminProjectStore, AdminProviderConfigStore, AdminServiceStore,
-    CreatedAdminKeyResponse, CreatedOperatorTokenResponse, GatewayError, GatewayResult,
-    OperatorTokenMaterial, OperatorTokenStore, ProjectCreateRequest, ProjectPatchRequest,
-    ProviderConfigCreateRequest, ProviderConfigPatchRequest, ServiceCreateRequest,
-    ServicePatchRequest, StudioServiceCatalogResponse, StudioServiceImportPreview,
-    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore,
-    VirtualKeyMaterial,
+    AdminStudioConnectionStore, CreatedAdminKeyResponse, CreatedOperatorTokenResponse,
+    EffectiveStudioConnection, GatewayError, GatewayResult, OperatorTokenMaterial,
+    OperatorTokenStore, ProjectCreateRequest, ProjectPatchRequest, ProviderConfigCreateRequest,
+    ProviderConfigPatchRequest, ServiceCreateRequest, ServicePatchRequest, StudioConnectionEnv,
+    StudioConnectionPatchRequest, StudioConnectionTestResponse, StudioServiceCatalogResponse,
+    StudioServiceImportPreview, StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent,
+    UsageQuery, UsageQueryStore, VirtualKeyMaterial,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::Serialize;
@@ -33,6 +34,7 @@ pub trait GatewayData:
     + AdminProjectStore
     + AdminProviderConfigStore
     + AdminServiceStore
+    + AdminStudioConnectionStore
     + OperatorTokenStore
     + UsageQueryStore
     + Send
@@ -59,7 +61,7 @@ impl GatewayData for PostgresStore {
 pub struct AppState {
     store: Arc<dyn GatewayData>,
     redis: RedisReadiness,
-    studio: Option<StudioCatalogClient>,
+    studio_env: StudioConnectionEnv,
 }
 
 const STUDIO_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
@@ -74,7 +76,7 @@ pub struct StudioCatalogClient {
 impl StudioCatalogClient {
     pub fn new(base_url: impl Into<String>, token: Option<String>) -> Self {
         Self {
-            base_url: base_url.into().trim_end_matches('/').to_owned(),
+            base_url: base_url.into().trim().trim_end_matches('/').to_owned(),
             token,
             client: reqwest::Client::new(),
         }
@@ -119,7 +121,7 @@ pub fn router(store: PostgresStore, redis: RedisReadiness) -> Router {
     router_with_state(AppState {
         store: Arc::new(store),
         redis,
-        studio: None,
+        studio_env: StudioConnectionEnv::default(),
     })
 }
 
@@ -128,10 +130,16 @@ pub fn router_with_studio(
     redis: RedisReadiness,
     studio: Option<StudioCatalogClient>,
 ) -> Router {
+    let studio_env = studio
+        .map(|studio| StudioConnectionEnv {
+            base_url: Some(studio.base_url),
+            token: studio.token,
+        })
+        .unwrap_or_default();
     router_with_state(AppState {
         store: Arc::new(store),
         redis,
-        studio,
+        studio_env,
     })
 }
 
@@ -179,6 +187,14 @@ pub fn router_with_state(state: AppState) -> Router {
             post(enable_openai_route),
         )
         .route("/admin/services", post(create_service).get(list_services))
+        .route(
+            "/admin/studio/connection",
+            get(get_studio_connection).patch(patch_studio_connection),
+        )
+        .route(
+            "/admin/studio/connection/test",
+            post(test_studio_connection),
+        )
         .route("/admin/studio/services", get(studio_services))
         .route("/admin/services/import", post(import_service))
         .route("/admin/services/sync", post(sync_service))
@@ -658,15 +674,62 @@ async fn import_service(
     .await
 }
 
+async fn get_studio_connection(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match effective_studio_connection(&state).await {
+        Ok(connection) => Json(connection.response()).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn patch_studio_connection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(patch): Json<StudioConnectionPatchRequest>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match state.store.patch_studio_connection_settings(patch).await {
+        Ok(_) => match effective_studio_connection(&state).await {
+            Ok(connection) => Json(connection.response()).into_response(),
+            Err(error) => error_response(&headers, error),
+        },
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn test_studio_connection(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match effective_studio_client(&state).await {
+        Ok(studio) => match studio.services().await {
+            Ok(services) => Json(StudioConnectionTestResponse {
+                ok: true,
+                service_count: services.len(),
+            })
+            .into_response(),
+            Err(error) => error_response(&headers, error),
+        },
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn studio_services(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
 
-    let Some(studio) = state.studio.as_ref() else {
-        return error_response(&headers, GatewayError::InvalidConfiguration);
+    let studio = match effective_studio_client(&state).await {
+        Ok(studio) => studio,
+        Err(error) => return error_response(&headers, error),
     };
-
     match studio.services().await {
         Ok(services) => Json(services).into_response(),
         Err(error) => error_response(&headers, error),
@@ -951,6 +1014,22 @@ async fn mutate_provider_enabled(
     }
 }
 
+async fn effective_studio_connection(state: &AppState) -> GatewayResult<EffectiveStudioConnection> {
+    let stored = state.store.studio_connection_settings().await?;
+    Ok(EffectiveStudioConnection::from_sources(
+        stored,
+        &state.studio_env,
+    ))
+}
+
+async fn effective_studio_client(state: &AppState) -> GatewayResult<StudioCatalogClient> {
+    let connection = effective_studio_connection(state).await?;
+    let base_url = connection
+        .base_url
+        .ok_or(GatewayError::InvalidConfiguration)?;
+    Ok(StudioCatalogClient::new(base_url, connection.token))
+}
+
 async fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response> {
     let token = match bearer_token(headers) {
         Ok(token) => token,
@@ -1000,10 +1079,11 @@ mod tests {
     use gateway_core::{
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
-        OpenAiRouteSetting, OperatorTokenResponse, ProjectCreateRequest, ProjectPatchRequest,
-        ProjectResponse, ProviderConfigCreateRequest, ProviderConfigPatchRequest,
-        ProviderConfigResponse, ProviderHealth, ServiceCostMode, ServiceResponse, ServiceSource,
-        ServiceSyncStatus, ServiceSyncStatusResponse, UsageBreakdown, UsageSummary,
+        OpenAiRouteSetting, OperatorTokenResponse, PatchValue, ProjectCreateRequest,
+        ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest,
+        ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealth, ServiceCostMode,
+        ServiceResponse, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
+        StoredStudioConnection, StudioConnectionPatchRequest, UsageBreakdown, UsageSummary,
         UsageTimeseriesPoint,
     };
     use std::sync::Mutex;
@@ -1018,6 +1098,7 @@ mod tests {
         openai_routes: Arc<Mutex<Vec<OpenAiRouteSetting>>>,
         operator_tokens: Arc<Mutex<Vec<String>>>,
         events: Arc<Mutex<Vec<UsageEvent>>>,
+        studio_connection: Arc<Mutex<Option<StoredStudioConnection>>>,
         postgres_ready: bool,
     }
 
@@ -1044,6 +1125,53 @@ mod tests {
             } else {
                 Err(GatewayError::StoreUnavailable)
             }
+        }
+    }
+
+    #[async_trait]
+    impl AdminStudioConnectionStore for MemoryStore {
+        async fn studio_connection_settings(
+            &self,
+        ) -> GatewayResult<Option<StoredStudioConnection>> {
+            Ok(self
+                .studio_connection
+                .lock()
+                .expect("lock poisoned")
+                .clone())
+        }
+
+        async fn patch_studio_connection_settings(
+            &self,
+            patch: StudioConnectionPatchRequest,
+        ) -> GatewayResult<StoredStudioConnection> {
+            patch.validate()?;
+            let mut stored = self.studio_connection.lock().expect("lock poisoned");
+            let mut connection = stored.clone().unwrap_or_default();
+
+            match patch.base_url {
+                PatchValue::Unchanged => {}
+                PatchValue::Clear => {
+                    connection.base_url = None;
+                    connection.bearer_token_secret = None;
+                }
+                PatchValue::Set(value) => {
+                    connection.base_url = Some(gateway_core::normalize_base_url(&value)?);
+                }
+            }
+
+            match patch.token {
+                PatchValue::Unchanged => {}
+                PatchValue::Clear => {
+                    connection.bearer_token_secret = None;
+                }
+                PatchValue::Set(value) => {
+                    connection.bearer_token_secret = Some(gateway_core::normalize_secret(&value)?);
+                }
+            }
+
+            connection.updated_at = Some(Utc::now());
+            *stored = Some(connection.clone());
+            Ok(connection)
         }
     }
 
@@ -1624,7 +1752,29 @@ mod tests {
         AppState {
             store: Arc::new(store),
             redis,
-            studio: None,
+            studio_env: StudioConnectionEnv::default(),
+        }
+    }
+
+    fn test_state_with_studio_env(store: MemoryStore, studio_env: StudioConnectionEnv) -> AppState {
+        let redis = RedisReadiness::new("redis://127.0.0.1:6379").expect("redis client");
+        AppState {
+            store: Arc::new(store),
+            redis,
+            studio_env,
+        }
+    }
+
+    fn default_store() -> MemoryStore {
+        MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            studio_connection: Arc::new(Mutex::new(None)),
+            postgres_ready: true,
         }
     }
 
@@ -1721,6 +1871,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
 
         let app = router_with_state(test_state_with_redis_url(store, "redis://127.0.0.1:0"));
@@ -1740,6 +1891,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
 
         let app = router_with_state(test_state(store.clone()));
@@ -1760,6 +1912,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: false,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
 
         let app = router_with_state(test_state(store));
@@ -1778,6 +1931,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -1802,6 +1956,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -1839,6 +1994,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -1896,6 +2052,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -1925,6 +2082,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -1955,6 +2113,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -1991,6 +2150,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -2077,6 +2237,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = request(app, "/metrics").await;
@@ -2094,6 +2255,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_get(app, "/admin/tasks/task-1/usage", Some(TEST_OPERATOR_TOKEN)).await;
@@ -2111,6 +2273,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = request(app, "/admin-ui").await;
@@ -2134,6 +2297,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -2165,6 +2329,107 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn studio_connection_requires_operator_token() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_get(app, "/admin/studio/connection", None).await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn studio_connection_patch_redacts_token_and_overrides_environment() {
+        let app = router_with_state(test_state_with_studio_env(
+            default_store(),
+            StudioConnectionEnv {
+                base_url: Some("http://env-studio.example".to_owned()),
+                token: Some("env-token".to_owned()),
+            },
+        ));
+
+        let response = admin_get(
+            app.clone(),
+            "/admin/studio/connection",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["source"], "environment");
+        assert_eq!(value["base_url"], "http://env-studio.example");
+        assert_eq!(value["token_configured"], true);
+        assert!(value.get("token").is_none());
+
+        let response = admin_patch(
+            app.clone(),
+            "/admin/studio/connection",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"base_url":"http://persisted-studio.example/","token":"persisted-token"}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["source"], "persisted");
+        assert_eq!(value["base_url"], "http://persisted-studio.example");
+        assert_eq!(value["token_configured"], true);
+        assert!(value.get("token").is_none());
+
+        let response = admin_patch(
+            app,
+            "/admin/studio/connection",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"base_url":null}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["source"], "environment");
+        assert_eq!(value["base_url"], "http://env-studio.example");
+        assert_eq!(value["token_configured"], true);
+        assert!(value.get("token").is_none());
+    }
+
+    #[tokio::test]
+    async fn studio_connection_rejects_invalid_base_url() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_patch(
+            app,
+            "/admin/studio/connection",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"base_url":"ftp://studio.example"}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["error"]["code"], "invalid_studio_connection_payload");
+    }
+
+    #[tokio::test]
+    async fn studio_services_reports_missing_connection_config() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_get(app, "/admin/studio/services", Some(TEST_OPERATOR_TOKEN)).await;
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["error"]["code"], "invalid_configuration");
+    }
+
+    #[tokio::test]
     async fn openai_route_settings_can_be_listed_and_toggled() {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
@@ -2174,6 +2439,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
 
@@ -2230,6 +2496,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -2271,6 +2538,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -2313,6 +2581,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -2383,6 +2652,7 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let _ = admin_post(

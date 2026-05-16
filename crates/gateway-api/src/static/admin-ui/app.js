@@ -7,6 +7,7 @@ const state = {
   openaiRoutes: [],
   services: [],
   studioServices: [],
+  studioConnection: null,
   editingKeyId: null,
   editingServiceName: null,
 };
@@ -173,6 +174,7 @@ async function refresh() {
     if (state.view === "services") await services();
     if (state.view === "usage") await usage();
     if (state.view === "health") await health();
+    if (state.view === "settings") await settings();
   } catch (error) {
     setNotice(error.message);
     content.innerHTML = `<section class="panel"><div class="empty-state"><p>${esc(error.message)}</p></div></section>`;
@@ -728,7 +730,76 @@ async function openStudioImportPicker() {
     backdrop.querySelector("#studio-import-form").addEventListener("submit", importSelectedStudioServices);
     document.body.appendChild(backdrop);
   } catch (error) {
-    setNotice(error.message);
+    setNotice(`${error.message}. Check Settings for the Studio connection.`);
+  }
+}
+
+async function settings() {
+  state.studioConnection = await api("/admin/studio/connection");
+  content.innerHTML = `
+    <div class="grid stats">
+      ${stat("Studio source", state.studioConnection.source)}
+      ${stat("Token", state.studioConnection.token_configured ? "Configured" : "Not configured")}
+      ${stat("Base URL", state.studioConnection.base_url || "Unset")}
+    </div>
+    <section class="panel">
+      <div class="panel-heading"><h3>Studio connection</h3><span class="subtle">${esc(state.studioConnection.updated_at ? time(state.studioConnection.updated_at) : "fallback or unset")}</span></div>
+      <form id="studio-connection-form" class="form-grid">
+        <label>Base URL<input name="base_url" type="url" placeholder="http://127.0.0.1:8000" value="${attr(state.studioConnection.base_url || "")}"></label>
+        <label>Bearer token<input name="token" type="password" autocomplete="new-password" placeholder="${state.studioConnection.token_configured ? "Leave blank to keep current token" : "Optional"}"></label>
+        <div class="form-actions">
+          <button class="primary">Save connection</button>
+          <button type="button" data-studio-action="test">Test connection</button>
+          <button type="button" data-studio-action="clear-token">Clear token</button>
+          <button type="button" class="danger" data-studio-action="clear-settings">Clear persisted settings</button>
+        </div>
+      </form>
+    </section>
+  `;
+  document.querySelector("#studio-connection-form").addEventListener("submit", saveStudioConnection);
+  document.querySelectorAll("[data-studio-action]").forEach((button) => {
+    button.addEventListener("click", studioConnectionAction);
+  });
+}
+
+async function saveStudioConnection(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const body = { base_url: form.get("base_url")?.trim() || null };
+  const tokenValue = form.get("token")?.trim();
+  if (tokenValue) body.token = tokenValue;
+  state.studioConnection = await api("/admin/studio/connection", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  setNotice("Studio connection saved.", "success");
+  await settings();
+}
+
+async function studioConnectionAction(event) {
+  const action = event.currentTarget.dataset.studioAction;
+  if (action === "test") {
+    const result = await api("/admin/studio/connection/test", { method: "POST", body: "{}" });
+    setNotice(`Studio connection works. ${result.service_count} service${result.service_count === 1 ? "" : "s"} available.`, "success");
+    return;
+  }
+  if (action === "clear-token") {
+    state.studioConnection = await api("/admin/studio/connection", {
+      method: "PATCH",
+      body: JSON.stringify({ token: null }),
+    });
+    setNotice("Studio token cleared.", "success");
+    await settings();
+    return;
+  }
+  if (action === "clear-settings") {
+    if (!(await confirmAction("Clear Studio settings", "Persisted Studio settings are removed and environment fallback may become active."))) return;
+    state.studioConnection = await api("/admin/studio/connection", {
+      method: "PATCH",
+      body: JSON.stringify({ base_url: null }),
+    });
+    setNotice("Persisted Studio settings cleared.", "success");
+    await settings();
   }
 }
 

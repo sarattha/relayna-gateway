@@ -24,11 +24,14 @@ Optional variables:
 | `RELAYNA_STUDIO_BASE_URL` | Optional Relayna Studio backend base URL for Admin portal service import. |
 | `RELAYNA_STUDIO_TOKEN` | Optional bearer token used when Gateway fetches the Studio service catalog. |
 
-`RELAYNA_STUDIO_BASE_URL` must point to the Studio backend. For local
-development this is commonly `http://127.0.0.1:8000`; for Docker Desktop from a
-container to a host backend use `http://host.docker.internal:8000`; for
-Kubernetes use the backend Service DNS name such as
-`http://relayna-studio-backend:8000`.
+`RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are fallback settings.
+Operators can set, replace, test, or clear the Studio connection in Admin portal
+Settings after startup. Admin-saved settings override environment settings until
+the persisted base URL is cleared. The base URL must point to the Studio
+backend. For local development this is commonly `http://127.0.0.1:8000`; for
+Docker Desktop from a container to a host backend use
+`http://host.docker.internal:8000`; for Kubernetes use the backend Service DNS
+name such as `http://relayna-studio-backend:8000`.
 
 Validate the connection in two steps:
 
@@ -36,11 +39,16 @@ Validate the connection in two steps:
 curl -sS "$RELAYNA_STUDIO_BASE_URL/studio/gateway/services"
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  -X POST \
+  http://127.0.0.1:8081/admin/studio/connection/test
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   http://127.0.0.1:8081/admin/studio/services
 ```
 
-The first command proves Studio exports services. The second proves Gateway can
-fetch and map that export using its configured environment.
+The first command proves Studio exports services. The test route proves Gateway
+can reach the effective configured connection. The services route proves Gateway
+can fetch and map the export.
 
 ## Health and Metrics
 
