@@ -455,7 +455,7 @@ where
                     },
                     client_requested_guardrails: client_requested,
                 })?;
-                if post_call_plan.entries.len() != during_call_plan.entries.len() {
+                if !guardrail_plan_names_match(&post_call_plan, &during_call_plan) {
                     guardrail_error = Some(GatewayError::GuardrailUnavailable);
                     return Ok(Vec::new());
                 }
@@ -818,50 +818,10 @@ where
         {
             apply_streaming_guardrails(body, end_of_stream, ctx);
         }
-        if ctx
-            .post_guardrail_plan
-            .as_ref()
-            .is_some_and(|plan| !plan.entries.is_empty())
-        {
-            if let Some(rewriter) = ctx.response_rewriter.as_mut() {
-                let plan = ctx.post_guardrail_plan.clone().unwrap_or_default();
-                let context = ctx.guardrail_context.clone();
-                let definitions = ctx.guardrail_definitions.clone();
-                let mut events = Vec::new();
-                if rewriter
-                    .filter_chunk(body, end_of_stream, |raw_body| {
-                        if !end_of_stream {
-                            return Ok(raw_body.to_vec());
-                        }
-                        let response_json =
-                            match serde_json::from_slice::<serde_json::Value>(raw_body) {
-                                Ok(value) => value,
-                                Err(_) => return Ok(raw_body.to_vec()),
-                            };
-                        let Some(context) = context.clone() else {
-                            return Ok(raw_body.to_vec());
-                        };
-                        let executor = guardrail_executor_for_definitions(&definitions);
-                        let execution = executor.execute(
-                            &plan,
-                            GuardrailMode::PostCall,
-                            context,
-                            None,
-                            Some(response_json),
-                        )?;
-                        events.extend(execution_events_from_records(
-                            &execution.context,
-                            &execution.records,
-                            Utc::now(),
-                        ));
-                        serde_json::to_vec(&execution.response.unwrap_or(serde_json::Value::Null))
-                            .map_err(|_| GatewayError::InvalidGuardrailRequest)
-                    })
-                    .is_ok()
-                {
-                    ctx.guardrail_events.extend(events);
-                }
-            }
+        if let Err(error) = apply_post_call_guardrails(body, end_of_stream, ctx) {
+            ctx.guardrail_error = Some(error);
+            *body = Some(Bytes::new());
+            return Err(PingoraError::new(ErrorType::InternalError));
         }
         if let Some(body) = body.as_ref() {
             observe_response_body_chunk(ctx, body);
@@ -1213,6 +1173,56 @@ fn observe_response_body_chunk(ctx: &mut PingoraContext, body: &[u8]) {
     }
 }
 
+fn apply_post_call_guardrails(
+    body: &mut Option<Bytes>,
+    end_of_stream: bool,
+    ctx: &mut PingoraContext,
+) -> GatewayResult<()> {
+    if ctx
+        .post_guardrail_plan
+        .as_ref()
+        .is_none_or(|plan| plan.entries.is_empty())
+    {
+        return Ok(());
+    }
+    let Some(rewriter) = ctx.response_rewriter.as_mut() else {
+        return Ok(());
+    };
+    let plan = ctx.post_guardrail_plan.clone().unwrap_or_default();
+    let context = ctx.guardrail_context.clone();
+    let definitions = ctx.guardrail_definitions.clone();
+    let mut events = Vec::new();
+    rewriter.filter_chunk(body, end_of_stream, |raw_body| {
+        if !end_of_stream {
+            return Ok(raw_body.to_vec());
+        }
+        let response_json = match serde_json::from_slice::<serde_json::Value>(raw_body) {
+            Ok(value) => value,
+            Err(_) => return Ok(raw_body.to_vec()),
+        };
+        let Some(context) = context.clone() else {
+            return Ok(raw_body.to_vec());
+        };
+        let executor = guardrail_executor_for_definitions(&definitions);
+        let execution = executor.execute(
+            &plan,
+            GuardrailMode::PostCall,
+            context,
+            None,
+            Some(response_json),
+        )?;
+        events.extend(execution_events_from_records(
+            &execution.context,
+            &execution.records,
+            Utc::now(),
+        ));
+        serde_json::to_vec(&execution.response.unwrap_or(serde_json::Value::Null))
+            .map_err(|_| GatewayError::InvalidGuardrailRequest)
+    })?;
+    ctx.guardrail_events.extend(events);
+    Ok(())
+}
+
 fn apply_streaming_guardrails(
     body: &mut Option<Bytes>,
     end_of_stream: bool,
@@ -1283,6 +1293,16 @@ fn apply_streaming_guardrails(
         let _ = metadata;
         *body = Some(Bytes::from(redacted));
     }
+}
+
+fn guardrail_plan_names_match(left: &GuardrailPlan, right: &GuardrailPlan) -> bool {
+    left.entries
+        .iter()
+        .map(|entry| entry.definition.name.as_str())
+        .eq(right
+            .entries
+            .iter()
+            .map(|entry| entry.definition.name.as_str()))
 }
 
 fn applied_guardrails_header(ctx: &PingoraContext) -> String {
@@ -1504,6 +1524,55 @@ mod tests {
         });
 
         assert_eq!(applied_guardrails_header(&ctx), "pii-redact");
+    }
+
+    #[test]
+    fn streaming_plan_compatibility_compares_guardrail_names() {
+        let first = GuardrailPlan {
+            entries: vec![gateway_core::GuardrailPlanEntry {
+                definition: gateway_core::GuardrailDefinition::new(
+                    "post-only",
+                    "Post only",
+                    vec![GuardrailMode::PostCall],
+                    gateway_core::GuardrailFailurePolicy::FailClosed,
+                ),
+            }],
+        };
+        let second = GuardrailPlan {
+            entries: vec![gateway_core::GuardrailPlanEntry {
+                definition: gateway_core::GuardrailDefinition::new(
+                    "during-only",
+                    "During only",
+                    vec![GuardrailMode::DuringCall],
+                    gateway_core::GuardrailFailurePolicy::FailClosed,
+                ),
+            }],
+        };
+
+        assert!(!guardrail_plan_names_match(&first, &second));
+    }
+
+    #[test]
+    fn post_call_guardrail_errors_are_propagated() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.response_rewriter = Some(BoundedBodyRewriter::new(1024));
+        ctx.guardrail_context = Some(GuardrailContext::default());
+        ctx.post_guardrail_plan = Some(GuardrailPlan {
+            entries: vec![gateway_core::GuardrailPlanEntry {
+                definition: gateway_core::GuardrailDefinition::new(
+                    "missing-handler",
+                    "Missing handler",
+                    vec![GuardrailMode::PostCall],
+                    gateway_core::GuardrailFailurePolicy::FailClosed,
+                ),
+            }],
+        });
+        let mut body = Some(Bytes::from_static(br#"{"choices":[]}"#));
+
+        let error = apply_post_call_guardrails(&mut body, true, &mut ctx).unwrap_err();
+
+        assert_eq!(error, GatewayError::GuardrailUnavailable);
+        assert!(ctx.guardrail_events.is_empty());
     }
 
     #[test]
