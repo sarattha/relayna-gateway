@@ -1482,6 +1482,7 @@ mod tests {
                 default_on: false,
                 failure_policy: gateway_core::GuardrailFailurePolicy::FailClosed,
                 config_schema: serde_json::json!({ "restore_output": "boolean" }),
+                runtime_config: serde_json::json!({ "restore_output": true }),
                 enabled: true,
                 endpoint_configured: false,
                 endpoint_url: None,
@@ -1516,6 +1517,7 @@ mod tests {
                 default_on: request.default_on,
                 failure_policy: request.failure_policy,
                 config_schema: request.config_schema,
+                runtime_config: request.runtime_config,
                 enabled: request.enabled,
                 endpoint_configured: !request.endpoint_url.is_empty(),
                 endpoint_url: Some(request.endpoint_url),
@@ -1554,6 +1556,9 @@ mod tests {
                 config_schema: request
                     .config_schema
                     .unwrap_or_else(|| serde_json::json!({})),
+                runtime_config: request
+                    .runtime_config
+                    .unwrap_or_else(|| serde_json::json!({})),
                 enabled: request.enabled.unwrap_or(true),
                 endpoint_configured: request.endpoint_url.is_some(),
                 endpoint_url: request.endpoint_url,
@@ -1577,6 +1582,9 @@ mod tests {
                 key.guardrail_policy
                     .forbidden_guardrails
                     .retain(|guardrail| guardrail != &name);
+                key.guardrail_policy
+                    .guardrail_config_overrides
+                    .remove(&name);
             }
             Ok(())
         }
@@ -2459,6 +2467,7 @@ mod tests {
         assert_eq!(value["provider_kind"], "http");
         assert_eq!(value["token_configured"], true);
         assert!(value.get("bearer_token").is_none());
+        assert_eq!(value["runtime_config"], serde_json::json!({}));
         assert_eq!(value["endpoint_url"], "https://guardrail.example/check");
         assert_eq!(value["timeout_ms"], 1500);
     }
@@ -2470,7 +2479,7 @@ mod tests {
             app.clone(),
             "/admin/guardrails/pii-redact",
             Some(TEST_OPERATOR_TOKEN),
-            r#"{"enabled":false,"default_on":true,"failure_policy":"dry_run","modes":["pre_call"],"config_schema":{"restore_output":"boolean"}}"#,
+            r#"{"enabled":false,"default_on":true,"failure_policy":"dry_run","modes":["pre_call"],"config_schema":{"restore_output":"boolean"},"runtime_config":{"restore_output":false}}"#,
         )
         .await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -2478,6 +2487,7 @@ mod tests {
         assert_eq!(value["provider_kind"], "built_in");
         assert_eq!(value["enabled"], false);
         assert_eq!(value["default_on"], true);
+        assert_eq!(value["runtime_config"]["restore_output"], false);
 
         let rejected = admin_patch(
             app,
@@ -2502,6 +2512,10 @@ mod tests {
                 mandatory_guardrails: vec!["custom-check".to_owned(), "pii-redact".to_owned()],
                 optional_guardrails: vec!["custom-check".to_owned()],
                 forbidden_guardrails: vec!["custom-check".to_owned()],
+                guardrail_config_overrides: std::collections::BTreeMap::from([(
+                    "custom-check".to_owned(),
+                    serde_json::json!({ "threshold": 0.9 }),
+                )]),
             },
         ));
         let app = router_with_state(test_state(store.clone()));
@@ -2534,6 +2548,7 @@ mod tests {
         );
         assert!(key.guardrail_policy.optional_guardrails.is_empty());
         assert!(key.guardrail_policy.forbidden_guardrails.is_empty());
+        assert!(key.guardrail_policy.guardrail_config_overrides.is_empty());
     }
 
     #[tokio::test]
@@ -2617,6 +2632,39 @@ mod tests {
             .expect("key prefix")
             .starts_with("rk_live_"));
         assert!(value["key"].get("key_hash").is_none());
+    }
+
+    #[tokio::test]
+    async fn admin_key_create_returns_guardrail_config_overrides() {
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(None)),
+            admin_key: Arc::new(Mutex::new(None)),
+            services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
+        };
+        let app = router_with_state(test_state(store));
+        let project_id = Uuid::new_v4();
+        let response = admin_post(
+            app,
+            "/admin/keys",
+            Some(TEST_OPERATOR_TOKEN),
+            &format!(
+                r#"{{"project_id":"{project_id}","guardrail_policy":{{"mandatory_guardrails":["pii-redact"],"guardrail_config_overrides":{{"pii-redact":{{"restore_output":false}}}}}}}}"#
+            ),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(
+            value["key"]["guardrail_policy"]["guardrail_config_overrides"]["pii-redact"]
+                ["restore_output"],
+            false
+        );
     }
 
     #[tokio::test]

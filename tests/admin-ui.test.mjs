@@ -66,8 +66,29 @@ test("guardrails view exposes catalog CRUD drawer controls", () => {
   assert.match(js, /name="bearer_token" type="password"/);
   assert.match(js, /name="clear_token" type="checkbox"/);
   assert.match(js, /providerKind === "built_in"/);
+  assert.match(js, /name="runtime_config"/);
+  assert.match(js, /runtime_config: runtimeConfig/);
   assert.match(css, /\.guardrail-workspace/);
   assert.match(css, /\.guardrail-form/);
+});
+
+test("virtual keys expose per-guardrail config override controls", () => {
+  assert.match(js, /function guardrailOverrideControls\(overrides = \{\}, selectedNames = \[\]\)/);
+  assert.match(js, /function activeConfigurableGuardrails\(policy = \{\}\)/);
+  assert.match(js, /function updateGuardrailOverrideControls\(form\)/);
+  assert.match(js, /guardrail_config_overrides/);
+  assert.match(js, /name="guardrail_override_names"/);
+  assert.match(js, /data-guardrail-overrides/);
+  assert.match(js, /Select mandatory or optional guardrails before setting config overrides/);
+  assert.match(js, /class="check guardrail-override-toggle"/);
+  assert.match(js, /<details>/);
+  assert.match(js, /<summary>Config schema<\/summary>/);
+  assert.match(js, /updateGuardrailOverrideControls\(form\)/);
+  assert.match(js, /guardrail_override_forbidden/);
+  assert.match(js, /invalid_guardrail_override/);
+  assert.match(js, /JSON\.parse\(form\.get\(`guardrail_override_\$\{name\}`\) \|\| "\{\}"\)/);
+  assert.match(css, /\.guardrail-override-toggle/);
+  assert.match(css, /\.guardrail-override-row details/);
 });
 
 test("settings view configures studio connection without exposing token values", () => {
@@ -101,6 +122,20 @@ test("virtual keys use explicit owner and service selection controls", () => {
   assert.match(js, /function serviceSelectionControl\(selected = \[\], name = "service_names", title = "Select services"\)/);
   assert.match(js, /data-service-picker/);
   assert.match(js, /service_names: form\.get\("owner_type"\) === "individual" \? form\.getAll\("service_names"\) : \[\]/);
+});
+
+test("virtual keys use guardrail picker controls for key guardrail policy", () => {
+  assert.match(js, /function guardrailSelectionControl\(selected = \[\], name, title = "Select guardrails"\)/);
+  assert.match(js, /function openGuardrailSelectionPicker\(trigger\)/);
+  assert.match(js, /function guardrailPickerTable\(rows, selected\)/);
+  assert.match(js, /data-guardrail-picker/);
+  assert.match(js, /data-selection-label="guardrails"/);
+  assert.match(js, /No \$\{esc\(label\)\} selected/);
+  assert.match(js, /guardrail_name" type="checkbox"/);
+  assert.match(js, /mandatory_guardrails: form\.getAll\("mandatory_guardrails"\)/);
+  assert.match(js, /optional_guardrails: form\.getAll\("optional_guardrails"\)/);
+  assert.match(js, /const forbidden = form\.getAll\("forbidden_guardrails"\)/);
+  assert.match(css, /\.guardrail-picker-table table/);
 });
 
 test("routes view includes service route registrations", () => {
@@ -162,6 +197,13 @@ test("service editor closes after a successful save", () => {
   assert.match(
     js,
     /async function patchService\(event\) \{[\s\S]*await api\(`\/admin\/services\/\$\{serviceName\}`,[\s\S]*state\.editingServiceName = null;[\s\S]*await services\(\);[\s\S]*\}/,
+  );
+});
+
+test("guardrail drawer closes after a successful save", () => {
+  assert.match(
+    js,
+    /async function submitGuardrail\(event\) \{[\s\S]*await api\(path,[\s\S]*state\.editingGuardrailName = null;[\s\S]*await guardrails\(\);[\s\S]*\}/,
   );
 });
 

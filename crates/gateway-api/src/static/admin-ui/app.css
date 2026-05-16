@@ -107,6 +107,67 @@ label.check input {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
+.guardrail-overrides {
+  display: grid;
+  gap: 10px;
+}
+
+.guardrail-override-row {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #d5dce5;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.guardrail-override-toggle {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  padding-top: 0;
+  color: #172033;
+}
+
+.guardrail-override-toggle span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.guardrail-override-toggle strong,
+.guardrail-override-toggle small {
+  overflow-wrap: anywhere;
+}
+
+.guardrail-override-toggle small {
+  color: #66758a;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.guardrail-override-row textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.guardrail-override-row details {
+  color: #66758a;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.guardrail-override-row summary {
+  cursor: pointer;
+}
+
+.guardrail-override-row details code {
+  display: block;
+  margin-top: 5px;
+  white-space: normal;
+}
+
 .inline-service-form {
   display: grid;
   gap: 8px;
@@ -387,6 +448,10 @@ td code {
   align-items: end;
 }
 
+.form-grid .wide-field {
+  grid-column: 1 / -1;
+}
+
 .guardrail-workspace {
   grid-template-columns: minmax(420px, 1fr) minmax(360px, 420px);
 }
@@ -394,10 +459,6 @@ td code {
 .guardrail-form {
   grid-template-columns: 1fr;
   align-items: stretch;
-}
-
-.guardrail-form .wide-field {
-  grid-column: 1 / -1;
 }
 
 .guardrail-form textarea {
@@ -545,17 +606,27 @@ tr:last-child td {
   table-layout: auto;
 }
 
+.guardrail-picker-table table {
+  width: max-content;
+  min-width: 980px;
+  table-layout: auto;
+}
+
 .studio-import-table th:nth-child(1),
 .studio-import-table td:nth-child(1),
 .service-picker-table th:nth-child(1),
-.service-picker-table td:nth-child(1) {
+.service-picker-table td:nth-child(1),
+.guardrail-picker-table th:nth-child(1),
+.guardrail-picker-table td:nth-child(1) {
   width: 42px;
 }
 
 .studio-import-table th,
 .studio-import-table td,
 .service-picker-table th,
-.service-picker-table td {
+.service-picker-table td,
+.guardrail-picker-table th,
+.guardrail-picker-table td {
   white-space: nowrap;
 }
 

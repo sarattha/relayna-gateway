@@ -150,6 +150,8 @@ pub struct GuardrailPolicy {
     pub optional_guardrails: Vec<String>,
     #[serde(default)]
     pub forbidden_guardrails: Vec<String>,
+    #[serde(default)]
+    pub guardrail_config_overrides: BTreeMap<String, Value>,
 }
 
 impl GuardrailPolicy {
@@ -162,6 +164,19 @@ impl GuardrailPolicy {
         {
             validate_guardrail_name(name)?;
         }
+        for (name, value) in &self.guardrail_config_overrides {
+            validate_guardrail_name(name)?;
+            if !value.is_object() {
+                return Err(GatewayError::InvalidGuardrailRequest);
+            }
+            if self
+                .forbidden_guardrails
+                .iter()
+                .any(|forbidden| forbidden == name)
+            {
+                return Err(GatewayError::GuardrailForbidden);
+            }
+        }
         Ok(())
     }
 }
@@ -171,6 +186,7 @@ pub struct GuardrailPolicyPatch {
     pub mandatory_guardrails: Option<Vec<String>>,
     pub optional_guardrails: Option<Vec<String>>,
     pub forbidden_guardrails: Option<Vec<String>>,
+    pub guardrail_config_overrides: Option<BTreeMap<String, Value>>,
 }
 
 impl GuardrailPolicyPatch {
@@ -183,6 +199,9 @@ impl GuardrailPolicyPatch {
         }
         if let Some(value) = self.forbidden_guardrails {
             policy.forbidden_guardrails = value;
+        }
+        if let Some(value) = self.guardrail_config_overrides {
+            policy.guardrail_config_overrides = value;
         }
         policy.validate()?;
         Ok(policy)
@@ -335,6 +354,8 @@ pub struct GuardrailAdminCreateRequest {
     pub bearer_token: Option<String>,
     #[serde(default)]
     pub config_schema: Value,
+    #[serde(default = "default_json_object")]
+    pub runtime_config: Value,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
 }
@@ -349,6 +370,7 @@ pub struct GuardrailAdminPatchRequest {
     pub timeout_ms: Option<u64>,
     pub bearer_token: Option<Option<String>>,
     pub config_schema: Option<Value>,
+    pub runtime_config: Option<Value>,
     pub enabled: Option<bool>,
 }
 
@@ -361,6 +383,7 @@ pub struct AdminGuardrailDefinitionResponse {
     pub default_on: bool,
     pub failure_policy: GuardrailFailurePolicy,
     pub config_schema: Value,
+    pub runtime_config: Value,
     pub enabled: bool,
     pub endpoint_configured: bool,
     pub endpoint_url: Option<String>,
@@ -1237,9 +1260,12 @@ fn validate_guardrail_name(name: &str) -> GatewayResult<()> {
 }
 
 pub fn resolve_guardrail_plan(request: GuardrailPlanRequest) -> GatewayResult<GuardrailPlan> {
+    validate_guardrail_config_overrides(&request)?;
+
     let mut definitions = BTreeMap::new();
     for definition in request.definitions {
         if definition.supports_mode(request.mode) {
+            let definition = with_effective_config(definition, &request.policies);
             definitions.insert(definition.name.clone(), definition);
         }
     }
@@ -1314,6 +1340,97 @@ fn push_definition_once(plan: &mut GuardrailPlan, definition: GuardrailDefinitio
     plan.entries.push(GuardrailPlanEntry { definition });
 }
 
+fn validate_guardrail_config_overrides(request: &GuardrailPlanRequest) -> GatewayResult<()> {
+    let known_names = request
+        .definitions
+        .iter()
+        .map(|definition| definition.name.as_str())
+        .collect::<Vec<_>>();
+    let forbidden = effective_forbidden_guardrails(&request.policies);
+    for policy in policy_iter(&request.policies) {
+        policy.validate()?;
+        for name in policy.guardrail_config_overrides.keys() {
+            if !known_names.iter().any(|known| known == name) {
+                return Err(GatewayError::InvalidGuardrailRequest);
+            }
+            if forbidden.iter().any(|forbidden| forbidden == name) {
+                return Err(GatewayError::GuardrailForbidden);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn with_effective_config(
+    mut definition: GuardrailDefinition,
+    policies: &GuardrailPolicySet,
+) -> GuardrailDefinition {
+    let mut config = definition.config;
+    for policy in policy_iter(policies) {
+        if let Some(override_config) = policy.guardrail_config_overrides.get(&definition.name) {
+            config = merge_runtime_config(config, override_config);
+        }
+    }
+    definition.config = config;
+    definition
+}
+
+fn merge_runtime_config(base: Value, override_config: &Value) -> Value {
+    if base.get("provider_kind").and_then(Value::as_str) == Some("http") {
+        return merge_http_provider_config(base, override_config);
+    }
+    merge_object_config(base, override_config)
+}
+
+fn merge_http_provider_config(base: Value, override_config: &Value) -> Value {
+    let mut config = base.as_object().cloned().unwrap_or_default();
+    let provider_config = config
+        .remove("provider_config")
+        .unwrap_or_else(|| json!({}));
+    config.insert(
+        "provider_config".to_owned(),
+        merge_object_config(provider_config, override_config),
+    );
+    Value::Object(config)
+}
+
+fn merge_object_config(base: Value, override_config: &Value) -> Value {
+    let mut merged = base.as_object().cloned().unwrap_or_default();
+    if let Some(values) = override_config.as_object() {
+        for (key, value) in values {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    Value::Object(merged)
+}
+
+fn policy_iter(policies: &GuardrailPolicySet) -> Vec<&GuardrailPolicy> {
+    [
+        Some(&policies.key_policy),
+        policies.team_policy.as_ref(),
+        policies.route_policy.as_ref(),
+        policies.model_policy.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn effective_forbidden_guardrails(policies: &GuardrailPolicySet) -> Vec<String> {
+    let mut forbidden = policies.key_policy.forbidden_guardrails.clone();
+    for policy in [
+        policies.team_policy.as_ref(),
+        policies.route_policy.as_ref(),
+        policies.model_policy.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        forbidden.extend(policy.forbidden_guardrails.clone());
+    }
+    forbidden
+}
+
 fn handle_guardrail_failure(
     execution: &mut GuardrailExecution,
     definition: &GuardrailDefinition,
@@ -1345,6 +1462,10 @@ fn handle_guardrail_failure(
 
 fn default_enabled() -> bool {
     true
+}
+
+fn default_json_object() -> Value {
+    Value::Object(Default::default())
 }
 
 #[cfg(test)]
@@ -1505,6 +1626,135 @@ mod tests {
         .expect("plan");
 
         assert_eq!(plan_names(&plan), vec!["default", "mandatory", "optional"]);
+    }
+
+    #[test]
+    fn key_config_override_shallow_merges_over_global_config() {
+        let plan = resolve_guardrail_plan(GuardrailPlanRequest {
+            mode: GuardrailMode::PreCall,
+            definitions: vec![definition("pii-redact").with_config(json!({
+                "restore_output": true,
+                "preserve": "global"
+            }))],
+            policies: GuardrailPolicySet {
+                key_policy: GuardrailPolicy {
+                    mandatory_guardrails: vec!["pii-redact".to_owned()],
+                    guardrail_config_overrides: BTreeMap::from([(
+                        "pii-redact".to_owned(),
+                        json!({ "restore_output": false }),
+                    )]),
+                    ..GuardrailPolicy::default()
+                },
+                ..GuardrailPolicySet::default()
+            },
+            client_requested_guardrails: Vec::new(),
+        })
+        .expect("plan");
+
+        assert_eq!(
+            plan.entries[0].definition.config,
+            json!({ "restore_output": false, "preserve": "global" })
+        );
+    }
+
+    #[test]
+    fn key_config_override_merges_http_provider_config_without_touching_connection_fields() {
+        let plan = resolve_guardrail_plan(GuardrailPlanRequest {
+            mode: GuardrailMode::PreCall,
+            definitions: vec![definition("http-check").with_config(json!({
+                "provider_kind": "http",
+                "endpoint_url": "https://guardrail.example/check",
+                "timeout_ms": 1500,
+                "bearer_token_secret": "secret",
+                "provider_config": {
+                    "threshold": 0.7,
+                    "mode": "strict"
+                }
+            }))],
+            policies: GuardrailPolicySet {
+                key_policy: GuardrailPolicy {
+                    mandatory_guardrails: vec!["http-check".to_owned()],
+                    guardrail_config_overrides: BTreeMap::from([(
+                        "http-check".to_owned(),
+                        json!({ "threshold": 0.9 }),
+                    )]),
+                    ..GuardrailPolicy::default()
+                },
+                ..GuardrailPolicySet::default()
+            },
+            client_requested_guardrails: Vec::new(),
+        })
+        .expect("plan");
+
+        assert_eq!(
+            plan.entries[0].definition.config["provider_config"],
+            json!({ "threshold": 0.9, "mode": "strict" })
+        );
+        assert_eq!(
+            plan.entries[0].definition.config["endpoint_url"],
+            "https://guardrail.example/check"
+        );
+        assert_eq!(
+            plan.entries[0].definition.config["bearer_token_secret"],
+            "secret"
+        );
+    }
+
+    #[test]
+    fn key_config_override_rejects_unknown_guardrail() {
+        let error = resolve_guardrail_plan(GuardrailPlanRequest {
+            mode: GuardrailMode::PreCall,
+            definitions: vec![definition("known")],
+            policies: GuardrailPolicySet {
+                key_policy: GuardrailPolicy {
+                    guardrail_config_overrides: BTreeMap::from([(
+                        "unknown".to_owned(),
+                        json!({ "restore_output": false }),
+                    )]),
+                    ..GuardrailPolicy::default()
+                },
+                ..GuardrailPolicySet::default()
+            },
+            client_requested_guardrails: Vec::new(),
+        })
+        .unwrap_err();
+
+        assert_eq!(error, GatewayError::InvalidGuardrailRequest);
+    }
+
+    #[test]
+    fn key_config_override_rejects_forbidden_guardrail() {
+        let error = resolve_guardrail_plan(GuardrailPlanRequest {
+            mode: GuardrailMode::PreCall,
+            definitions: vec![definition("pii-redact")],
+            policies: GuardrailPolicySet {
+                key_policy: GuardrailPolicy {
+                    forbidden_guardrails: vec!["pii-redact".to_owned()],
+                    guardrail_config_overrides: BTreeMap::from([(
+                        "pii-redact".to_owned(),
+                        json!({ "restore_output": false }),
+                    )]),
+                    ..GuardrailPolicy::default()
+                },
+                ..GuardrailPolicySet::default()
+            },
+            client_requested_guardrails: Vec::new(),
+        })
+        .unwrap_err();
+
+        assert_eq!(error, GatewayError::GuardrailForbidden);
+    }
+
+    #[test]
+    fn key_config_override_rejects_non_object_values() {
+        let error = GuardrailPolicy {
+            guardrail_config_overrides: BTreeMap::from([("pii-redact".to_owned(), json!(false))]),
+            ..GuardrailPolicy::default()
+        }
+        .validate()
+        .unwrap_err();
+
+        assert_eq!(error, GatewayError::InvalidGuardrailRequest);
     }
 
     #[test]
@@ -1681,6 +1931,35 @@ mod tests {
         assert_eq!(
             execution.response,
             Some(json!("data: {\"delta\":\"[EMAIL_1]\"}\n\n"))
+        );
+    }
+
+    #[test]
+    fn pii_redact_restore_output_honors_config_override() {
+        let executor = builtin_guardrail_executor();
+        let context = GuardrailContext {
+            pii_mappings: vec![("[EMAIL_1]".to_owned(), "alice@example.com".to_owned())],
+            ..GuardrailContext::default()
+        };
+        let plan = GuardrailPlan {
+            entries: vec![GuardrailPlanEntry {
+                definition: pii_redact_definition().with_config(json!({ "restore_output": false })),
+            }],
+        };
+
+        let execution = executor
+            .execute(
+                &plan,
+                GuardrailMode::PostCall,
+                context,
+                None,
+                Some(json!({ "content": "Hello [EMAIL_1]" })),
+            )
+            .expect("post-call redaction");
+
+        assert_eq!(
+            execution.response,
+            Some(json!({ "content": "Hello [EMAIL_1]" }))
         );
     }
 
