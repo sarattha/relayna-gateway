@@ -142,6 +142,61 @@ or locally registered services. In Keys, choose `Project` for keys that inherit
 those links, or choose `Individual` and use `Select services` to link services
 directly to one key.
 
+## Configure Guardrails
+
+Guardrails are optional until a key policy selects them. A fresh database seeds
+`pii-redact` in the guardrail catalog as enabled and not default-on, so local
+keys continue to behave normally until you opt in.
+
+In the Admin portal:
+
+1. Open Guardrails and select `pii-redact`.
+2. Set its global `runtime_config`, for example
+   `{ "restore_output": true }`.
+3. Open Keys and create or edit a virtual key.
+4. Use the guardrail pickers to select mandatory, optional, and forbidden
+   guardrails.
+5. After selecting a mandatory or optional guardrail, use the per-key override
+   editor to tune that guardrail for this key.
+
+Per-key overrides are shallow-merged over the catalog `runtime_config`.
+Overrides must be JSON objects, and they only run when the guardrail is selected
+by mandatory, optional, default-on, or client-requested policy. This example
+makes `pii-redact` mandatory for one key and disables response placeholder
+restore only for that key:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8081/admin/keys \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "owner_type": "project",
+    "project_id": "<project-id>",
+    "expires_at": null,
+    "guardrail_policy": {
+      "mandatory_guardrails": ["pii-redact"],
+      "optional_guardrails": [],
+      "forbidden_guardrails": [],
+      "guardrail_config_overrides": {
+        "pii-redact": {
+          "restore_output": false
+        }
+      }
+    }
+  }'
+```
+
+Use the virtual-key authenticated test endpoint to exercise a guardrail without
+calling an upstream provider:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer rk_live_xxx" \
+  -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:8081/v1/guardrails/test \
+  -d '{"guardrails":["pii-redact"],"mode":"pre_call","input":{"messages":[{"role":"user","content":"alice@example.com"}]}}'
+```
+
 ## Create a Non-Expiring Key
 
 In the Admin portal, open Keys and select `No expiration` when creating or

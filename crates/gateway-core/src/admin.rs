@@ -1,4 +1,7 @@
-use crate::errors::{GatewayError, GatewayResult};
+use crate::{
+    errors::{GatewayError, GatewayResult},
+    GuardrailPolicy, GuardrailPolicyPatch,
+};
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
@@ -22,6 +25,8 @@ pub struct AdminKeyCreate {
     pub expires_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub policy: KeyPolicyPatch,
+    #[serde(default)]
+    pub guardrail_policy: GuardrailPolicy,
 }
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
@@ -33,6 +38,8 @@ pub struct AdminKeyPatch {
     pub disabled: Option<bool>,
     #[serde(default)]
     pub policy: Option<KeyPolicyPatch>,
+    #[serde(default)]
+    pub guardrail_policy: Option<GuardrailPolicyPatch>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -74,6 +81,7 @@ pub struct AdminKeyResponse {
     pub revoked_at: Option<DateTime<Utc>>,
     pub expires_at: Option<DateTime<Utc>>,
     pub policy: AdminPolicyResponse,
+    pub guardrail_policy: GuardrailPolicy,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

@@ -6,10 +6,14 @@ const state = {
   providers: [],
   openaiRoutes: [],
   services: [],
+  guardrails: [],
+  guardrailExecutions: [],
+  guardrailSummary: [],
   studioServices: [],
   studioConnection: null,
   editingKeyId: null,
   editingServiceName: null,
+  editingGuardrailName: null,
 };
 
 const login = document.querySelector("#login");
@@ -157,6 +161,7 @@ document.querySelectorAll(".nav").forEach((button) => {
     state.view = button.dataset.view;
     state.editingKeyId = null;
     state.editingServiceName = null;
+    state.editingGuardrailName = null;
     refresh();
   });
 });
@@ -169,6 +174,7 @@ async function refresh() {
     if (state.view === "overview") await overview();
     if (state.view === "projects") await projects();
     if (state.view === "keys") await keys();
+    if (state.view === "guardrails") await guardrails();
     if (state.view === "providers") await providers();
     if (state.view === "routes") await routes();
     if (state.view === "services") await services();
@@ -295,7 +301,12 @@ async function patchProjectServices(event) {
 }
 
 async function keys() {
-  [state.keys, state.projects, state.services] = await Promise.all([api("/admin/keys"), api("/admin/projects"), api("/admin/services")]);
+  [state.keys, state.projects, state.services, state.guardrails] = await Promise.all([
+    api("/admin/keys"),
+    api("/admin/projects"),
+    api("/admin/services"),
+    api("/admin/guardrails"),
+  ]);
   const editing = state.keys.find((key) => key.id === state.editingKeyId);
   content.innerHTML = `
     <div class="split">
@@ -308,6 +319,7 @@ async function keys() {
           <label>Expires at<input name="expires_at" type="datetime-local"></label>
           <label class="check"><input name="no_expires_at" type="checkbox"> No expiration</label>
           ${policyFields()}
+          ${guardrailPolicyFields()}
           <div class="form-actions">
             <button type="submit" class="primary">Create key</button>
           </div>
@@ -330,6 +342,7 @@ async function keys() {
   bindKeyExpiryControls();
   bindKeyOwnerControls();
   bindServicePickerButtons();
+  bindGuardrailPickerButtons();
   document.querySelectorAll("[data-key-action]").forEach((button) => {
     button.addEventListener("click", keyAction);
   });
@@ -348,6 +361,52 @@ function policyFields(key = null) {
     <label class="check"><input name="allow_streaming" type="checkbox" ${policy.allow_streaming ? "checked" : ""}> Allow streaming</label>
     <label class="check"><input name="allow_tools" type="checkbox" ${policy.allow_tools ? "checked" : ""}> Allow tools</label>
   `;
+}
+
+function guardrailPolicyFields(key = null) {
+  const policy = key?.guardrail_policy || {};
+  return `
+    <div class="field"><span>Mandatory guardrails</span>${guardrailSelectionControl(policy.mandatory_guardrails || [], "mandatory_guardrails", "Mandatory guardrails")}</div>
+    <div class="field"><span>Optional guardrails</span>${guardrailSelectionControl(policy.optional_guardrails || [], "optional_guardrails", "Optional guardrails")}</div>
+    <div class="field"><span>Forbidden guardrails</span>${guardrailSelectionControl(policy.forbidden_guardrails || [], "forbidden_guardrails", "Forbidden guardrails")}</div>
+    <div class="wide-field field">
+      <span>Guardrail config overrides</span>
+      <div data-guardrail-overrides>${guardrailOverrideControls(policy.guardrail_config_overrides || {}, activeConfigurableGuardrails(policy))}</div>
+    </div>
+  `;
+}
+
+function activeConfigurableGuardrails(policy = {}) {
+  return [...new Set([...(policy.mandatory_guardrails || []), ...(policy.optional_guardrails || [])])].filter(
+    (name) => !(policy.forbidden_guardrails || []).includes(name),
+  );
+}
+
+function guardrailOverrideControls(overrides = {}, selectedNames = []) {
+  const selected = new Set(selectedNames);
+  const rows = (state.guardrails?.guardrails || []).filter((guardrail) => selected.has(guardrail.name));
+  if (!selectedNames.length) return '<div class="empty-inline">Select mandatory or optional guardrails before setting config overrides.</div>';
+  if (!rows.length) return '<div class="empty-inline">Selected guardrails are not in the current catalog.</div>';
+  return `<div class="guardrail-overrides" role="group" aria-label="Guardrail config overrides">
+    ${rows
+      .map((guardrail) => {
+        const enabled = Object.hasOwn(overrides, guardrail.name);
+        const value = JSON.stringify(enabled ? overrides[guardrail.name] : {}, null, 2);
+        const schema = JSON.stringify(guardrail.config_schema || {});
+        return `<section class="guardrail-override-row">
+          <label class="check guardrail-override-toggle">
+            <input name="guardrail_override_names" type="checkbox" value="${attr(guardrail.name)}" ${enabled ? "checked" : ""}>
+            <span><strong>${esc(guardrail.name)}</strong><small>${esc(guardrail.description || "Custom runtime settings")}</small></span>
+          </label>
+          <textarea name="guardrail_override_${attr(guardrail.name)}" rows="4">${esc(value)}</textarea>
+          <details>
+            <summary>Config schema</summary>
+            <code>${esc(schema)}</code>
+          </details>
+        </section>`;
+      })
+      .join("")}
+  </div>`;
 }
 
 function keyOwnershipFields(key = null) {
@@ -374,6 +433,7 @@ function keyEditForm(key) {
       <label class="check"><input name="no_expires_at" type="checkbox" ${key.expires_at ? "" : "checked"}> No expiration</label>
       <label class="check"><input name="disabled" type="checkbox" ${key.disabled ? "checked" : ""}> Disabled</label>
       ${policyFields(key)}
+      ${guardrailPolicyFields(key)}
       <div class="form-actions">
         <button type="submit" class="primary">Save changes</button>
         <button type="button" data-key-action="cancel-edit">Cancel</button>
@@ -415,12 +475,20 @@ function keyLifecycleActions(key) {
 async function createKey(event) {
   event.preventDefault();
   const form = new FormData(event.target);
+  let guardrailPolicy;
+  try {
+    guardrailPolicy = guardrailPolicyBody(form);
+  } catch (error) {
+    setNotice(error.message);
+    return;
+  }
   const body = {
     owner_type: form.get("owner_type"),
     project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
     service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
     expires_at: form.has("no_expires_at") ? null : isoDate(form.get("expires_at")),
     policy: policyBody(form),
+    guardrail_policy: guardrailPolicy,
   };
   if (!form.has("no_expires_at") && !body.expires_at) delete body.expires_at;
   const response = await api("/admin/keys", { method: "POST", body: JSON.stringify(body) });
@@ -434,12 +502,20 @@ async function patchKey(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const keyId = event.target.dataset.keyId;
+  let guardrailPolicy;
+  try {
+    guardrailPolicy = guardrailPolicyBody(form);
+  } catch (error) {
+    setNotice(error.message);
+    return;
+  }
   const body = {
     owner_type: form.get("owner_type"),
     project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
     service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
     disabled: form.has("disabled"),
     policy: policyBody(form),
+    guardrail_policy: guardrailPolicy,
   };
   if (form.has("no_expires_at")) {
     body.expires_at = null;
@@ -851,6 +927,39 @@ function openServiceSelectionPicker(trigger) {
   document.body.appendChild(backdrop);
 }
 
+function openGuardrailSelectionPicker(trigger) {
+  const form = trigger.closest("form");
+  const fieldName = trigger.dataset.guardrailPicker;
+  const selected = new Set(selectedServiceNames(form, fieldName));
+  const rows = state.guardrails?.guardrails || [];
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal wide">
+      <h3>${esc(trigger.dataset.guardrailPickerTitle || "Select guardrails")}</h3>
+      <form id="guardrail-picker-form" class="modal-form">
+        <div class="modal-scroll">${guardrailPickerTable(rows, selected)}</div>
+        <div class="form-actions">
+          <button class="primary" ${rows.length ? "" : "disabled"}>Apply selection</button>
+          <button type="button" data-close-modal>Cancel</button>
+        </div>
+      </form>
+    </div>
+  `;
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => backdrop.remove());
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) backdrop.remove();
+  });
+  backdrop.querySelector("#guardrail-picker-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const values = new FormData(event.target).getAll("guardrail_name");
+    setSelectedServiceNames(form, fieldName, values);
+    updateGuardrailOverrideControls(form);
+    backdrop.remove();
+  });
+  document.body.appendChild(backdrop);
+}
+
 function servicePickerTable(rows, selected) {
   if (!rows.length) return '<div class="empty-state"><p>No services registered.</p></div>';
   return `<div class="table-wrap service-picker-table"><table><thead><tr>
@@ -862,6 +971,22 @@ function servicePickerTable(rows, selected) {
       <td>${esc(row.sync_status || (row.enabled ? "enabled" : "disabled"))}</td>
       <td><code>${esc(row.route_pattern)}</code></td>
       <td><code>${esc(row.upstream_base_url || "missing")}</code></td>
+    </tr>`)
+    .join("")}</tbody></table></div>`;
+}
+
+function guardrailPickerTable(rows, selected) {
+  if (!rows.length) return '<div class="empty-state"><p>No guardrails configured.</p></div>';
+  return `<div class="table-wrap guardrail-picker-table"><table><thead><tr>
+    <th></th><th>Guardrail</th><th>Provider</th><th>Modes</th><th>Failure</th><th>Default</th>
+  </tr></thead><tbody>${rows
+    .map((row) => `<tr>
+      <td><input name="guardrail_name" type="checkbox" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
+      <td><strong>${esc(row.name)}</strong><div class="subtle">${esc(row.description || "")}</div></td>
+      <td>${esc(row.provider_kind)}</td>
+      <td>${esc(listValue(row.modes, "none"))}</td>
+      <td>${esc(row.failure_policy)}</td>
+      <td>${row.default_on ? '<span class="badge good">default</span>' : '<span class="badge">opt-in</span>'}</td>
     </tr>`)
     .join("")}</tbody></table></div>`;
 }
@@ -1089,6 +1214,223 @@ function policyBody(form) {
   return body;
 }
 
+function guardrailPolicyBody(form) {
+  const forbidden = form.getAll("forbidden_guardrails");
+  const configurable = new Set([...form.getAll("mandatory_guardrails"), ...form.getAll("optional_guardrails")]);
+  const guardrailConfigOverrides = {};
+  for (const name of form.getAll("guardrail_override_names")) {
+    if (forbidden.includes(name)) throw new Error("guardrail_override_forbidden");
+    if (!configurable.has(name)) continue;
+    const value = JSON.parse(form.get(`guardrail_override_${name}`) || "{}");
+    if (!value || Array.isArray(value) || typeof value !== "object") throw new Error("invalid_guardrail_override");
+    guardrailConfigOverrides[name] = value;
+  }
+  return {
+    mandatory_guardrails: form.getAll("mandatory_guardrails"),
+    optional_guardrails: form.getAll("optional_guardrails"),
+    forbidden_guardrails: forbidden,
+    guardrail_config_overrides: guardrailConfigOverrides,
+  };
+}
+
+async function guardrails() {
+  [state.guardrails, state.guardrailExecutions, state.guardrailSummary] = await Promise.all([
+    api("/admin/guardrails"),
+    api("/admin/guardrails/executions?limit=50"),
+    api("/admin/guardrails/summary"),
+  ]);
+  const selected = state.guardrails.guardrails.find((guardrail) => guardrail.name === state.editingGuardrailName);
+  content.innerHTML = `
+    <div class="split guardrail-workspace">
+      <section class="panel">
+        <div class="panel-heading">
+          <h3>Catalog</h3>
+          <div class="actions">
+            <span class="subtle">${state.guardrails.guardrails.length} configured</span>
+            <button type="button" data-guardrail-action="new">New guardrail</button>
+          </div>
+        </div>
+        ${guardrailCatalogTable(state.guardrails.guardrails)}
+      </section>
+      <section class="panel ${state.editingGuardrailName === null ? "muted-panel" : ""}">
+        ${guardrailDrawer(selected)}
+      </section>
+    </div>
+    <section class="panel">
+      <div class="panel-heading"><h3>Summary</h3></div>
+      ${guardrailSummaryTable(state.guardrailSummary.summary)}
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Recent executions</h3></div>
+      ${guardrailExecutionTable(state.guardrailExecutions.executions)}
+    </section>
+  `;
+  document.querySelector("[data-guardrail-action='new']")?.addEventListener("click", () => {
+    state.editingGuardrailName = "";
+    guardrails();
+  });
+  document.querySelector("#guardrail-form")?.addEventListener("submit", submitGuardrail);
+  document.querySelector("[data-guardrail-action='cancel']")?.addEventListener("click", () => {
+    state.editingGuardrailName = null;
+    guardrails();
+  });
+  document.querySelector("[data-guardrail-action='delete']")?.addEventListener("click", deleteGuardrail);
+  document.querySelectorAll("[data-guardrail-edit]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingGuardrailName = button.dataset.guardrailEdit;
+      guardrails();
+    });
+  });
+}
+
+function guardrailCatalogTable(rows) {
+  return table(
+    ["Name", "Provider", "Modes", "Default", "Failure", "Enabled", "Endpoint", "Token", "Actions"],
+    rows.map((row) => [
+      `<code>${esc(row.name)}</code><div class="subtle">${esc(row.description)}</div>`,
+      esc(row.provider_kind),
+      esc(listValue(row.modes, "")),
+      row.default_on ? '<span class="badge good">default</span>' : '<span class="badge">opt-in</span>',
+      esc(row.failure_policy),
+      row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
+      row.endpoint_configured ? '<span class="badge good">configured</span>' : '<span class="badge">built-in</span>',
+      row.token_configured ? '<span class="badge good">configured</span>' : '<span class="badge">none</span>',
+      `<button type="button" data-guardrail-edit="${attr(row.name)}">Edit</button>`,
+    ]),
+  );
+}
+
+function guardrailDrawer(guardrail) {
+  if (state.editingGuardrailName === null) {
+    return '<div class="empty-state"><h3>No guardrail selected</h3></div>';
+  }
+  const creating = state.editingGuardrailName === "";
+  const builtIn = !creating && guardrail?.provider_kind === "built_in";
+  const titleText = creating ? "New guardrail" : `Edit ${guardrail ? guardrail.name : "guardrail"}`;
+  const schemaValue = JSON.stringify(guardrail?.config_schema ?? {}, null, 2);
+  const runtimeConfigValue = JSON.stringify(guardrail?.runtime_config ?? {}, null, 2);
+  return `
+    <div class="panel-heading">
+      <h3>${esc(titleText)}</h3>
+      ${builtIn ? '<span class="badge">built-in</span>' : '<span class="badge good">http</span>'}
+    </div>
+    <form id="guardrail-form" class="form-grid guardrail-form" data-mode="${creating ? "create" : "edit"}" data-guardrail-name="${attr(guardrail?.name || "")}" data-provider-kind="${attr(guardrail?.provider_kind || "http")}">
+      <label>Name<input name="name" required ${creating ? "" : "readonly"} value="${attr(guardrail?.name || "")}" placeholder="custom-policy-check"></label>
+      <label>Description<input name="description" ${builtIn ? "disabled" : "required"} value="${attr(guardrail?.description || "")}"></label>
+      <div class="field"><span>Modes</span>${guardrailModeSelect(guardrail?.modes || ["pre_call"])}</div>
+      <label>Failure policy<select name="failure_policy">${["fail_closed", "fail_open", "dry_run"].map((value) => option(value, guardrail?.failure_policy || "fail_closed")).join("")}</select></label>
+      <label>Timeout ms<input name="timeout_ms" type="number" min="100" max="10000" value="${attr(guardrail?.timeout_ms ?? 1500)}" ${builtIn ? "disabled" : ""}></label>
+      <label>Endpoint URL<input name="endpoint_url" type="url" ${creating ? "required" : ""} value="${attr(guardrail?.endpoint_url || "")}" placeholder="https://guardrail.example/check" ${builtIn ? "disabled" : ""}></label>
+      <label>Bearer token<input name="bearer_token" type="password" autocomplete="new-password" placeholder="${guardrail?.token_configured ? "configured" : "optional"}" ${builtIn ? "disabled" : ""}></label>
+      <label class="check"><input name="clear_token" type="checkbox" ${builtIn || creating ? "disabled" : ""}> Clear token</label>
+      <label class="check"><input name="default_on" type="checkbox" ${guardrail?.default_on ? "checked" : ""}> Default on</label>
+      <label class="check"><input name="enabled" type="checkbox" ${creating || guardrail?.enabled ? "checked" : ""}> Enabled</label>
+      <label class="wide-field">Config schema JSON<textarea name="config_schema" rows="6">${esc(schemaValue)}</textarea></label>
+      <label class="wide-field">Runtime config JSON<textarea name="runtime_config" rows="6">${esc(runtimeConfigValue)}</textarea></label>
+      <div class="help">${builtIn ? "Built-in guardrails protect endpoint and token fields." : "Bearer tokens are write-only; leave blank to keep the current token."}</div>
+      <div class="form-actions wide-field">
+        <button class="primary">${creating ? "Create guardrail" : "Save guardrail"}</button>
+        ${!creating && !builtIn ? '<button type="button" class="danger" data-guardrail-action="delete">Delete</button>' : ""}
+        <button type="button" data-guardrail-action="cancel">Cancel</button>
+      </div>
+    </form>
+  `;
+}
+
+function guardrailModeSelect(selected = []) {
+  const values = new Set(Array.isArray(selected) && selected.length ? selected : ["pre_call"]);
+  return `<div class="checkbox-group" role="group" aria-label="Guardrail modes">
+    ${["pre_call", "post_call", "during_call"].map((value) => `<label><input name="modes" type="checkbox" value="${attr(value)}" ${values.has(value) ? "checked" : ""}> ${esc(value)}</label>`).join("")}
+  </div>`;
+}
+
+function guardrailBody(form, creating, builtIn) {
+  const configSchema = JSON.parse(form.get("config_schema") || "{}");
+  const runtimeConfig = JSON.parse(form.get("runtime_config") || "{}");
+  if (!runtimeConfig || Array.isArray(runtimeConfig) || typeof runtimeConfig !== "object") throw new Error("invalid_runtime_config");
+  const body = {
+    modes: form.getAll("modes"),
+    default_on: form.has("default_on"),
+    failure_policy: form.get("failure_policy"),
+    config_schema: configSchema,
+    runtime_config: runtimeConfig,
+    enabled: form.has("enabled"),
+  };
+  if (creating || !builtIn) {
+    body.description = form.get("description");
+    body.endpoint_url = form.get("endpoint_url");
+    body.timeout_ms = nullableNumber(form.get("timeout_ms"));
+    const tokenValue = blankToUndefined(form.get("bearer_token"));
+    if (tokenValue !== undefined) body.bearer_token = tokenValue;
+    if (!creating && form.has("clear_token")) body.bearer_token = null;
+  }
+  if (creating) body.name = form.get("name");
+  return body;
+}
+
+async function submitGuardrail(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const creating = formElement.dataset.mode === "create";
+  const builtIn = formElement.dataset.providerKind === "built_in";
+  let body;
+  try {
+    body = guardrailBody(form, creating, builtIn);
+  } catch (error) {
+    setNotice(error.message === "invalid_runtime_config" ? "invalid_runtime_config" : "invalid_config_json");
+    return;
+  }
+  const path = creating ? "/admin/guardrails" : `/admin/guardrails/${encodeURIComponent(formElement.dataset.guardrailName)}`;
+  await api(path, {
+    method: creating ? "POST" : "PATCH",
+    body: JSON.stringify(body),
+  });
+  state.editingGuardrailName = null;
+  setNotice(`Guardrail ${creating ? "created" : "saved"}.`, "success");
+  await guardrails();
+}
+
+async function deleteGuardrail(event) {
+  const form = event.currentTarget.closest("form");
+  const name = form.dataset.guardrailName;
+  if (!(await confirmAction(`Delete ${name}`, "The guardrail is removed from key policies. Historical executions remain."))) return;
+  await api(`/admin/guardrails/${encodeURIComponent(name)}`, { method: "DELETE" });
+  state.editingGuardrailName = null;
+  setNotice("Guardrail deleted.", "success");
+  await guardrails();
+}
+
+function guardrailSummaryTable(rows) {
+  return table(
+    ["Guardrail", "Mode", "Action", "Failure policy", "Count", "Total latency"],
+    rows.map((row) => [
+      esc(row.guardrail_name),
+      esc(row.mode),
+      esc(row.action),
+      esc(row.failure_policy),
+      row.count,
+      `${esc(row.total_latency_ms)} ms`,
+    ]),
+  );
+}
+
+function guardrailExecutionTable(rows) {
+  return table(
+    ["Time", "Request", "Key", "Guardrail", "Mode", "Action", "Latency", "Reason"],
+    rows.map((row) => [
+      time(row.created_at),
+      `<code>${esc(row.request_id)}</code>`,
+      row.key_id ? `<code>${esc(row.key_id)}</code>` : "",
+      esc(row.guardrail_name),
+      esc(row.mode),
+      esc(row.action),
+      `${esc(row.latency_ms)} ms`,
+      esc(row.reason || ""),
+    ]),
+  );
+}
+
 function serviceBody(form, patch) {
   const body = {
     project_id: form.has("project_id") ? nullableString(form.get("project_id")) : undefined,
@@ -1164,6 +1506,12 @@ function bindServicePickerButtons() {
   });
 }
 
+function bindGuardrailPickerButtons() {
+  document.querySelectorAll("[data-guardrail-picker]").forEach((button) => {
+    button.addEventListener("click", () => openGuardrailSelectionPicker(button));
+  });
+}
+
 function keyPolicySummary(key) {
   const policy = key.policy;
   return `<div>${esc((policy.allowed_routes || []).join(", ") || "no routes")}</div>
@@ -1214,10 +1562,19 @@ function serviceCheckboxes(selected = [], name = "service_names") {
 
 function serviceSelectionControl(selected = [], name = "service_names", title = "Select services") {
   const values = Array.isArray(selected) ? selected : [];
-  return `<div class="service-selection" data-service-selection data-field-name="${attr(name)}">
+  return `<div class="service-selection" data-service-selection data-field-name="${attr(name)}" data-selection-label="services">
     <div class="service-selection-values" data-field-name="${attr(name)}">${serviceHiddenInputs(values, name)}</div>
-    <div class="service-selection-summary">${serviceSelectionSummary(values)}</div>
+    <div class="service-selection-summary">${serviceSelectionSummary(values, "services")}</div>
     <button type="button" data-service-picker="${attr(name)}" data-service-picker-title="${attr(title)}">Select services</button>
+  </div>`;
+}
+
+function guardrailSelectionControl(selected = [], name, title = "Select guardrails") {
+  const values = Array.isArray(selected) ? selected : [];
+  return `<div class="service-selection guardrail-selection" data-service-selection data-field-name="${attr(name)}" data-selection-label="guardrails">
+    <div class="service-selection-values" data-field-name="${attr(name)}">${serviceHiddenInputs(values, name)}</div>
+    <div class="service-selection-summary">${serviceSelectionSummary(values, "guardrails")}</div>
+    <button type="button" data-guardrail-picker="${attr(name)}" data-guardrail-picker-title="${attr(title)}">Select guardrails</button>
   </div>`;
 }
 
@@ -1235,11 +1592,29 @@ function setSelectedServiceNames(form, name, values) {
   const summary = selection?.querySelector(".service-selection-summary");
   if (!hidden || !summary) return;
   hidden.innerHTML = serviceHiddenInputs(values, name);
-  summary.innerHTML = serviceSelectionSummary(values);
+  summary.innerHTML = serviceSelectionSummary(values, selection.dataset.selectionLabel || "services");
 }
 
-function serviceSelectionSummary(values) {
-  if (!values.length) return '<span class="subtle">No services selected.</span>';
+function updateGuardrailOverrideControls(form) {
+  const field = form.querySelector("[data-guardrail-overrides]");
+  if (!field) return;
+  const formData = new FormData(form);
+  const overrides = {};
+  for (const name of formData.getAll("guardrail_override_names")) {
+    try {
+      overrides[name] = JSON.parse(formData.get(`guardrail_override_${name}`) || "{}");
+    } catch (_) {
+      overrides[name] = {};
+    }
+  }
+  field.innerHTML = guardrailOverrideControls(overrides, [
+    ...selectedServiceNames(form, "mandatory_guardrails"),
+    ...selectedServiceNames(form, "optional_guardrails"),
+  ]);
+}
+
+function serviceSelectionSummary(values, label = "services") {
+  if (!values.length) return `<span class="subtle">No ${esc(label)} selected.</span>`;
   return `<strong>${values.length} selected</strong><div class="service-selection-list">${esc(values.join(", "))}</div>`;
 }
 

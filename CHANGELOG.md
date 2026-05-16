@@ -2,6 +2,36 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.9 - 2026-05-17
+
+### Added
+
+- Guardrail catalog, policy, discovery, test, and proxy enforcement support for
+  JSON requests and responses.
+- Built-in `pii-redact` guardrail with pre-call, post-call, and during-call
+  modes, sanitized execution records, and opt-in key policy controls.
+- Admin portal guardrail catalog CRUD for custom HTTP guardrails, protected
+  built-in editing, and key-level mandatory, optional, and forbidden guardrail
+  selection.
+- Global guardrail runtime config and per-key
+  `guardrail_config_overrides`, including support for tuning each selected
+  guardrail differently per virtual key.
+
+### Changed
+
+- Workspace crate versions now share the `0.0.9` release version.
+- Deployment examples and the baseline Kubernetes image now target the `0.0.9`
+  gateway image.
+- Key create and edit forms now use guardrail picker controls and only show
+  per-key override editors after mandatory or optional guardrails are selected.
+
+### Security
+
+- Guardrail execution records persist sanitized metadata only and never include
+  raw request bodies, response bodies, bearer tokens, or PII mappings.
+- HTTP guardrail bearer tokens remain write-only; guardrail API responses expose
+  sanitized schema and runtime config fields only.
+
 ## 0.0.8 - 2026-05-16
 
 ### Added

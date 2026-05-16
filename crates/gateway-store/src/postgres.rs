@@ -20,14 +20,21 @@ use gateway_core::{
         normalize_base_url, normalize_secret, AdminStudioConnectionStore, PatchValue,
         StoredStudioConnection, StudioConnectionPatchRequest,
     },
-    verify_stored_operator_token, AdminKeyStore, AdminKeyUsageSummary, AdminOpenAiRouteStore,
-    AdminProjectStore, GatewayError, GatewayResult, KeyPolicy, OpenAiRouteSetting,
-    OpenAiRouteSettingsLookup, OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore,
-    PolicyLookup, ProjectUsageSummary, Provider, ProviderHealth, Route, StoredOperatorToken,
-    UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore,
-    UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
+    verify_stored_operator_token, AdminGuardrailDefinitionResponse, AdminKeyStore,
+    AdminKeyUsageSummary, AdminOpenAiRouteStore, AdminProjectStore, GatewayError, GatewayResult,
+    GuardrailAdminCreateRequest, GuardrailAdminPatchRequest, GuardrailDefinition,
+    GuardrailEventQuery, GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode,
+    GuardrailObservabilityStore, GuardrailPolicy, GuardrailProviderKind, GuardrailStore, KeyPolicy,
+    OpenAiRouteSetting, OpenAiRouteSettingsLookup, OperatorTokenMaterial, OperatorTokenResponse,
+    OperatorTokenStore, PolicyLookup, ProjectUsageSummary, Provider, ProviderHealth, Route,
+    StoredOperatorToken, UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageQuery,
+    UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint,
+    VirtualKeyMaterial,
 };
-use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row, Transaction};
+use sqlx::{
+    postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
+};
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -122,6 +129,41 @@ impl PostgresStore {
         Ok(())
     }
 
+    async fn upsert_guardrail_policy_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        key_id: Uuid,
+        policy: &GuardrailPolicy,
+    ) -> GatewayResult<()> {
+        policy.validate()?;
+        sqlx::query(
+            r#"
+            INSERT INTO key_guardrail_policies (
+                key_id,
+                mandatory_guardrails,
+                optional_guardrails,
+                forbidden_guardrails,
+                guardrail_config_overrides
+            )
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (key_id) DO UPDATE SET
+                mandatory_guardrails = EXCLUDED.mandatory_guardrails,
+                optional_guardrails = EXCLUDED.optional_guardrails,
+                forbidden_guardrails = EXCLUDED.forbidden_guardrails,
+                guardrail_config_overrides = EXCLUDED.guardrail_config_overrides,
+                updated_at = now()
+            "#,
+        )
+        .bind(key_id)
+        .bind(&policy.mandatory_guardrails)
+        .bind(&policy.optional_guardrails)
+        .bind(&policy.forbidden_guardrails)
+        .bind(Json(&policy.guardrail_config_overrides))
+        .execute(&mut **tx)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(())
+    }
+
     async fn response_for_key(&self, key_id: Uuid) -> GatewayResult<Option<AdminKeyResponse>> {
         let Some(row) = sqlx::query(
             r#"
@@ -153,9 +195,14 @@ impl PostgresStore {
                 p.daily_budget_usd,
                 p.monthly_budget_usd,
                 p.allow_streaming,
-                p.allow_tools
+                p.allow_tools,
+                COALESCE(gp.mandatory_guardrails, ARRAY[]::text[]) AS mandatory_guardrails,
+                COALESCE(gp.optional_guardrails, ARRAY[]::text[]) AS optional_guardrails,
+                COALESCE(gp.forbidden_guardrails, ARRAY[]::text[]) AS forbidden_guardrails,
+                COALESCE(gp.guardrail_config_overrides, '{}'::jsonb) AS guardrail_config_overrides
             FROM api_keys k
             LEFT JOIN key_policies p ON p.key_id = k.id
+            LEFT JOIN key_guardrail_policies gp ON gp.key_id = k.id
             WHERE k.id = $1
             "#,
         )
@@ -168,6 +215,32 @@ impl PostgresStore {
         };
 
         admin_key_response_from_row(&row).map(Some)
+    }
+
+    async fn validate_guardrail_policy_catalog(
+        &self,
+        policy: &GuardrailPolicy,
+    ) -> GatewayResult<()> {
+        policy.validate()?;
+        let names = referenced_guardrail_policy_names(policy);
+        if names.is_empty() {
+            return Ok(());
+        }
+        let known_count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)::bigint
+            FROM guardrail_definitions
+            WHERE name = ANY($1)
+            "#,
+        )
+        .bind(&names)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        if known_count != i64::try_from(names.len()).unwrap_or(i64::MAX) {
+            return Err(GatewayError::InvalidGuardrailRequest);
+        }
+        Ok(())
     }
 
     async fn stored_operator_token_by_prefix(
@@ -577,6 +650,406 @@ impl gateway_core::PolicyLookup for PostgresStore {
 }
 
 #[async_trait]
+impl GuardrailStore for PostgresStore {
+    async fn list_guardrail_definitions(&self) -> GatewayResult<Vec<GuardrailDefinition>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT name, description, modes, default_on, failure_policy, config_schema, config, enabled
+            FROM guardrail_definitions
+            WHERE enabled = true
+            ORDER BY name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        rows.iter().map(guardrail_definition_from_row).collect()
+    }
+
+    async fn guardrail_policy_for_key(&self, key_id: Uuid) -> GatewayResult<GuardrailPolicy> {
+        let row = sqlx::query(
+            r#"
+            SELECT mandatory_guardrails, optional_guardrails, forbidden_guardrails, guardrail_config_overrides
+            FROM key_guardrail_policies
+            WHERE key_id = $1
+            "#,
+        )
+        .bind(key_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        row.as_ref()
+            .map(guardrail_policy_from_row)
+            .transpose()
+            .map(|policy| policy.unwrap_or_default())
+    }
+
+    async fn upsert_guardrail_policy_for_key(
+        &self,
+        key_id: Uuid,
+        policy: &GuardrailPolicy,
+    ) -> GatewayResult<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Self::upsert_guardrail_policy_in_tx(&mut tx, key_id, policy).await?;
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn insert_guardrail_execution_event(
+        &self,
+        event: &GuardrailExecutionEvent,
+    ) -> GatewayResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO guardrail_execution_events (
+                request_id,
+                key_id,
+                project_id,
+                route,
+                model,
+                provider,
+                guardrail_name,
+                mode,
+                action,
+                failure_policy,
+                latency_ms,
+                reason,
+                metadata,
+                created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            "#,
+        )
+        .bind(&event.request_id)
+        .bind(event.key_id)
+        .bind(event.project_id)
+        .bind(event.route.map(Route::as_str))
+        .bind(&event.model)
+        .bind(event.provider.map(Provider::as_str))
+        .bind(&event.guardrail_name)
+        .bind(event.mode.as_str())
+        .bind(event.action.as_str())
+        .bind(event.failure_policy.as_str())
+        .bind(event.latency_ms)
+        .bind(&event.reason)
+        .bind(Json(&event.metadata))
+        .bind(event.created_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl GuardrailObservabilityStore for PostgresStore {
+    async fn list_admin_guardrail_definitions(
+        &self,
+    ) -> GatewayResult<Vec<AdminGuardrailDefinitionResponse>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT name, description, modes, default_on, failure_policy, config_schema, config, enabled
+            FROM guardrail_definitions
+            ORDER BY name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        rows.iter()
+            .map(admin_guardrail_definition_from_row)
+            .collect()
+    }
+
+    async fn guardrail_execution_events(
+        &self,
+        query: GuardrailEventQuery,
+    ) -> GatewayResult<Vec<GuardrailExecutionEvent>> {
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            SELECT request_id, key_id, project_id, route, model, provider, guardrail_name,
+                   mode, action, failure_policy, latency_ms, reason, metadata, created_at
+            FROM guardrail_execution_events
+            "#,
+        );
+        append_guardrail_event_filters(&mut builder, &query);
+        builder.push(" ORDER BY created_at DESC");
+        builder.push(" LIMIT ");
+        builder.push_bind(query.limit.unwrap_or(100).clamp(1, 500));
+        builder.push(" OFFSET ");
+        builder.push_bind(query.offset.unwrap_or(0).max(0));
+
+        builder
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .iter()
+            .map(guardrail_execution_event_from_row)
+            .collect()
+    }
+
+    async fn guardrail_execution_summary(
+        &self,
+        query: GuardrailEventQuery,
+    ) -> GatewayResult<Vec<GuardrailExecutionSummary>> {
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            SELECT guardrail_name, mode, action, failure_policy,
+                   COUNT(*)::bigint AS count,
+                   COALESCE(SUM(latency_ms), 0)::bigint AS total_latency_ms
+            FROM guardrail_execution_events
+            "#,
+        );
+        append_guardrail_event_filters(&mut builder, &query);
+        builder.push(
+            " GROUP BY guardrail_name, mode, action, failure_policy ORDER BY guardrail_name, mode, action",
+        );
+
+        builder
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .iter()
+            .map(guardrail_summary_from_row)
+            .collect()
+    }
+
+    async fn create_http_guardrail(
+        &self,
+        request: GuardrailAdminCreateRequest,
+    ) -> GatewayResult<AdminGuardrailDefinitionResponse> {
+        ensure_json_object(&request.runtime_config)?;
+        let modes = if request.modes.is_empty() {
+            vec![GuardrailMode::PreCall, GuardrailMode::PostCall]
+        } else {
+            request.modes
+        };
+        let row = sqlx::query(
+            r#"
+            INSERT INTO guardrail_definitions (
+                name, description, modes, default_on, failure_policy, config_schema, config, enabled
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING name, description, modes, default_on, failure_policy, config_schema, config, enabled
+            "#,
+        )
+        .bind(request.name.trim())
+        .bind(request.description.trim())
+        .bind(mode_strings(&modes))
+        .bind(request.default_on)
+        .bind(request.failure_policy.as_str())
+        .bind(Json(&request.config_schema))
+        .bind(Json(&serde_json::json!({
+            "guardrail_name": request.name.trim(),
+            "provider_kind": "http",
+            "endpoint_url": request.endpoint_url.trim(),
+            "timeout_ms": request.timeout_ms.unwrap_or(1500).clamp(100, 10_000),
+            "bearer_token_secret": request.bearer_token,
+            "provider_config": request.runtime_config
+        })))
+        .bind(request.enabled)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|error| {
+            if is_unique_violation(&error) {
+                GatewayError::InvalidGuardrailRequest
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })?;
+        admin_guardrail_definition_from_row(&row)
+    }
+
+    async fn patch_admin_guardrail(
+        &self,
+        name: String,
+        request: GuardrailAdminPatchRequest,
+    ) -> GatewayResult<AdminGuardrailDefinitionResponse> {
+        let current = sqlx::query(
+            r#"
+            SELECT name, description, modes, default_on, failure_policy, config_schema, config, enabled
+            FROM guardrail_definitions
+            WHERE name = $1
+            "#,
+        )
+        .bind(&name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .ok_or(GatewayError::InvalidGuardrailRequest)?;
+        let mut definition = guardrail_definition_from_row(&current)?;
+        let is_http = definition
+            .config
+            .get("provider_kind")
+            .and_then(serde_json::Value::as_str)
+            == Some("http");
+        if let Some(runtime_config) = request.runtime_config.as_ref() {
+            ensure_json_object(runtime_config)?;
+        }
+        if !is_http
+            && (request.description.is_some()
+                || request.endpoint_url.is_some()
+                || request.timeout_ms.is_some()
+                || request.bearer_token.is_some())
+        {
+            return Err(GatewayError::InvalidGuardrailRequest);
+        }
+        let mut config = definition.config.as_object().cloned().unwrap_or_default();
+        if let Some(value) = request.description {
+            definition.description = value;
+        }
+        if let Some(value) = request.modes {
+            definition.modes = value;
+        }
+        if let Some(value) = request.default_on {
+            definition.default_on = value;
+        }
+        if let Some(value) = request.failure_policy {
+            definition.failure_policy = value;
+        }
+        if let Some(value) = request.config_schema {
+            definition.config_schema = value;
+        }
+        if let Some(value) = request.runtime_config {
+            if is_http {
+                config.insert("provider_config".to_owned(), value);
+            } else {
+                definition.config = value;
+            }
+        }
+        if let Some(value) = request.enabled {
+            definition.enabled = value;
+        }
+        if is_http {
+            if let Some(value) = request.endpoint_url {
+                config.insert("endpoint_url".to_owned(), serde_json::Value::String(value));
+            }
+        }
+        if is_http {
+            if let Some(value) = request.timeout_ms {
+                config.insert(
+                    "timeout_ms".to_owned(),
+                    serde_json::Value::Number(serde_json::Number::from(value.clamp(100, 10_000))),
+                );
+            }
+        }
+        if is_http {
+            if let Some(value) = request.bearer_token {
+                config.insert(
+                    "bearer_token_secret".to_owned(),
+                    value
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                );
+            }
+        }
+        if is_http {
+            definition.config = serde_json::Value::Object(config);
+        }
+
+        let row = sqlx::query(
+            r#"
+            UPDATE guardrail_definitions
+            SET description = $2,
+                modes = $3,
+                default_on = $4,
+                failure_policy = $5,
+                config_schema = $6,
+                config = $7,
+                enabled = $8,
+                updated_at = now()
+            WHERE name = $1
+            RETURNING name, description, modes, default_on, failure_policy, config_schema, config, enabled
+            "#,
+        )
+        .bind(&name)
+        .bind(&definition.description)
+        .bind(mode_strings(&definition.modes))
+        .bind(definition.default_on)
+        .bind(definition.failure_policy.as_str())
+        .bind(Json(&definition.config_schema))
+        .bind(Json(&definition.config))
+        .bind(definition.enabled)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        admin_guardrail_definition_from_row(&row)
+    }
+
+    async fn delete_admin_guardrail(&self, name: String) -> GatewayResult<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let current = sqlx::query(
+            r#"
+            SELECT config
+            FROM guardrail_definitions
+            WHERE name = $1
+            FOR UPDATE
+            "#,
+        )
+        .bind(&name)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .ok_or(GatewayError::InvalidGuardrailRequest)?;
+        let config: serde_json::Value = current
+            .try_get("config")
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        if config
+            .get("provider_kind")
+            .and_then(serde_json::Value::as_str)
+            != Some("http")
+        {
+            return Err(GatewayError::InvalidGuardrailRequest);
+        }
+
+        sqlx::query("DELETE FROM guardrail_definitions WHERE name = $1")
+            .bind(&name)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        sqlx::query(
+            r#"
+            UPDATE key_guardrail_policies
+            SET mandatory_guardrails = array_remove(mandatory_guardrails, $1),
+                optional_guardrails = array_remove(optional_guardrails, $1),
+                forbidden_guardrails = array_remove(forbidden_guardrails, $1),
+                guardrail_config_overrides = guardrail_config_overrides - $1,
+                updated_at = now()
+            WHERE $1 = ANY(mandatory_guardrails)
+               OR $1 = ANY(optional_guardrails)
+               OR $1 = ANY(forbidden_guardrails)
+               OR guardrail_config_overrides ? $1
+            "#,
+        )
+        .bind(&name)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl AdminProjectStore for PostgresStore {
     async fn create_project(
         &self,
@@ -729,6 +1202,8 @@ impl AdminKeyStore for PostgresStore {
         let key_id = Uuid::new_v4();
         validate_key_owner(request.owner_type, request.project_id)?;
         let policy = apply_policy_patch(KeyPolicy::default(), request.policy)?;
+        self.validate_guardrail_policy_catalog(&request.guardrail_policy)
+            .await?;
         let mut tx = self
             .pool
             .begin()
@@ -758,6 +1233,7 @@ impl AdminKeyStore for PostgresStore {
         })?;
 
         Self::upsert_policy_in_tx(&mut tx, key_id, &policy).await?;
+        Self::upsert_guardrail_policy_in_tx(&mut tx, key_id, &request.guardrail_policy).await?;
         Self::replace_key_service_links_in_tx(&mut tx, key_id, &request.service_names).await?;
         tx.commit()
             .await
@@ -798,9 +1274,14 @@ impl AdminKeyStore for PostgresStore {
                 p.daily_budget_usd,
                 p.monthly_budget_usd,
                 p.allow_streaming,
-                p.allow_tools
+                p.allow_tools,
+                COALESCE(gp.mandatory_guardrails, ARRAY[]::text[]) AS mandatory_guardrails,
+                COALESCE(gp.optional_guardrails, ARRAY[]::text[]) AS optional_guardrails,
+                COALESCE(gp.forbidden_guardrails, ARRAY[]::text[]) AS forbidden_guardrails,
+                COALESCE(gp.guardrail_config_overrides, '{}'::jsonb) AS guardrail_config_overrides
             FROM api_keys k
             LEFT JOIN key_policies p ON p.key_id = k.id
+            LEFT JOIN key_guardrail_policies gp ON gp.key_id = k.id
             ORDER BY k.created_at DESC, k.id DESC
             "#,
         )
@@ -844,6 +1325,14 @@ impl AdminKeyStore for PostgresStore {
         let policy = if let Some(policy_patch) = patch.policy {
             let current = self.policy_for_key(key_id).await?;
             Some(apply_policy_patch(current, policy_patch)?)
+        } else {
+            None
+        };
+        let guardrail_policy = if let Some(guardrail_patch) = patch.guardrail_policy {
+            let current = self.guardrail_policy_for_key(key_id).await?;
+            let policy = guardrail_patch.apply(current)?;
+            self.validate_guardrail_policy_catalog(&policy).await?;
+            Some(policy)
         } else {
             None
         };
@@ -894,6 +1383,9 @@ impl AdminKeyStore for PostgresStore {
 
         if let Some(policy) = policy {
             Self::upsert_policy_in_tx(&mut tx, key_id, &policy).await?;
+        }
+        if let Some(policy) = guardrail_policy {
+            Self::upsert_guardrail_policy_in_tx(&mut tx, key_id, &policy).await?;
         }
         if let Some(service_names) = patch.service_names {
             Self::replace_key_service_links_in_tx(&mut tx, key_id, &service_names).await?;
@@ -2135,6 +2627,24 @@ fn provider_strings(providers: &[Provider]) -> Vec<String> {
         .collect()
 }
 
+fn mode_strings(modes: &[GuardrailMode]) -> Vec<String> {
+    modes.iter().map(|mode| mode.as_str().to_owned()).collect()
+}
+
+fn parse_route_value(value: &str) -> GatewayResult<Route> {
+    parse_routes(&[value.to_owned()])?
+        .into_iter()
+        .next()
+        .ok_or(GatewayError::StoreUnavailable)
+}
+
+fn parse_provider_value(value: &str) -> GatewayResult<Provider> {
+    parse_providers(&[value.to_owned()])?
+        .into_iter()
+        .next()
+        .ok_or(GatewayError::StoreUnavailable)
+}
+
 fn key_owner_type_str(owner_type: AdminKeyOwnerType) -> &'static str {
     match owner_type {
         AdminKeyOwnerType::Project => "project",
@@ -2198,6 +2708,215 @@ fn parse_providers(values: &[String]) -> GatewayResult<Vec<Provider>> {
             _ => Err(GatewayError::PolicyDenied),
         })
         .collect()
+}
+
+fn parse_guardrail_modes(values: &[String]) -> GatewayResult<Vec<GuardrailMode>> {
+    values.iter().map(|value| value.parse()).collect()
+}
+
+fn guardrail_definition_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<GuardrailDefinition> {
+    let modes: Vec<String> = row
+        .try_get("modes")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let failure_policy: String = row
+        .try_get("failure_policy")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let config_schema: Json<serde_json::Value> = row
+        .try_get("config_schema")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let config: Json<serde_json::Value> = row
+        .try_get("config")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+    Ok(GuardrailDefinition {
+        name: row
+            .try_get("name")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        description: row
+            .try_get("description")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        modes: parse_guardrail_modes(&modes)?,
+        default_on: row
+            .try_get("default_on")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        failure_policy: failure_policy.parse()?,
+        config_schema: config_schema.0,
+        config: config.0,
+        enabled: row
+            .try_get("enabled")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
+fn admin_guardrail_definition_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<AdminGuardrailDefinitionResponse> {
+    let definition = guardrail_definition_from_row(row)?;
+    let provider_kind = if definition
+        .config
+        .get("provider_kind")
+        .and_then(serde_json::Value::as_str)
+        == Some("http")
+    {
+        GuardrailProviderKind::Http
+    } else {
+        GuardrailProviderKind::BuiltIn
+    };
+    Ok(AdminGuardrailDefinitionResponse {
+        name: definition.name,
+        description: definition.description,
+        runtime_config: runtime_config_for_admin(&definition.config, &provider_kind),
+        provider_kind,
+        modes: definition.modes,
+        default_on: definition.default_on,
+        failure_policy: definition.failure_policy,
+        config_schema: definition.config_schema,
+        enabled: definition.enabled,
+        endpoint_configured: definition
+            .config
+            .get("endpoint_url")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|value| !value.is_empty()),
+        endpoint_url: definition
+            .config
+            .get("endpoint_url")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        timeout_ms: definition.config.get("timeout_ms").and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_i64().and_then(|value| u64::try_from(value).ok()))
+        }),
+        token_configured: definition
+            .config
+            .get("bearer_token_secret")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|value| !value.is_empty()),
+    })
+}
+
+fn runtime_config_for_admin(
+    config: &serde_json::Value,
+    provider_kind: &GuardrailProviderKind,
+) -> serde_json::Value {
+    match provider_kind {
+        GuardrailProviderKind::BuiltIn => config.clone(),
+        GuardrailProviderKind::Http => config
+            .get("provider_config")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+    }
+}
+
+fn ensure_json_object(value: &serde_json::Value) -> GatewayResult<()> {
+    if value.is_object() {
+        Ok(())
+    } else {
+        Err(GatewayError::InvalidGuardrailRequest)
+    }
+}
+
+fn guardrail_execution_event_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<GuardrailExecutionEvent> {
+    let mode: String = row
+        .try_get("mode")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let action: String = row
+        .try_get("action")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let failure_policy: String = row
+        .try_get("failure_policy")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let metadata: Json<serde_json::Value> = row
+        .try_get("metadata")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let route: Option<String> = row.try_get("route").ok().flatten();
+    let provider: Option<String> = row.try_get("provider").ok().flatten();
+    Ok(GuardrailExecutionEvent {
+        request_id: row
+            .try_get("request_id")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        key_id: row.try_get("key_id").ok().flatten(),
+        project_id: row.try_get("project_id").ok().flatten(),
+        route: route.as_deref().map(parse_route_value).transpose()?,
+        model: row.try_get("model").ok().flatten(),
+        provider: provider.as_deref().map(parse_provider_value).transpose()?,
+        guardrail_name: row
+            .try_get("guardrail_name")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        mode: mode.parse()?,
+        action: action.parse()?,
+        failure_policy: failure_policy.parse()?,
+        latency_ms: row
+            .try_get("latency_ms")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        reason: row.try_get("reason").ok().flatten(),
+        metadata: metadata.0,
+        created_at: row
+            .try_get("created_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
+fn guardrail_summary_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<GuardrailExecutionSummary> {
+    let mode: String = row
+        .try_get("mode")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let action: String = row
+        .try_get("action")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let failure_policy: String = row
+        .try_get("failure_policy")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    Ok(GuardrailExecutionSummary {
+        guardrail_name: row
+            .try_get("guardrail_name")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        mode: mode.parse()?,
+        action: action.parse()?,
+        failure_policy: failure_policy.parse()?,
+        count: row
+            .try_get("count")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        total_latency_ms: row
+            .try_get("total_latency_ms")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
+fn guardrail_policy_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<GuardrailPolicy> {
+    let policy = GuardrailPolicy {
+        mandatory_guardrails: row.try_get("mandatory_guardrails").unwrap_or_default(),
+        optional_guardrails: row.try_get("optional_guardrails").unwrap_or_default(),
+        forbidden_guardrails: row.try_get("forbidden_guardrails").unwrap_or_default(),
+        guardrail_config_overrides: guardrail_config_overrides_from_row(row)?,
+    };
+    policy.validate()?;
+    Ok(policy)
+}
+
+fn guardrail_config_overrides_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<BTreeMap<String, serde_json::Value>> {
+    let value: Json<serde_json::Value> = row
+        .try_get("guardrail_config_overrides")
+        .unwrap_or_else(|_| Json(serde_json::json!({})));
+    value
+        .0
+        .as_object()
+        .map(|object| {
+            object
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect()
+        })
+        .ok_or(GatewayError::InvalidGuardrailRequest)
 }
 
 fn openai_route_setting_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<OpenAiRouteSetting> {
@@ -2327,6 +3046,12 @@ fn admin_key_response_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<Adm
             allow_streaming: row.try_get("allow_streaming").unwrap_or(false),
             allow_tools: row.try_get("allow_tools").unwrap_or(false),
         },
+        guardrail_policy: GuardrailPolicy {
+            mandatory_guardrails: row.try_get("mandatory_guardrails").unwrap_or_default(),
+            optional_guardrails: row.try_get("optional_guardrails").unwrap_or_default(),
+            forbidden_guardrails: row.try_get("forbidden_guardrails").unwrap_or_default(),
+            guardrail_config_overrides: guardrail_config_overrides_from_row(row)?,
+        },
         created_at: row
             .try_get("created_at")
             .map_err(|_| GatewayError::StoreUnavailable)?,
@@ -2395,6 +3120,19 @@ fn service_registration_from_row(
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
+}
+
+fn referenced_guardrail_policy_names(policy: &GuardrailPolicy) -> Vec<String> {
+    policy
+        .mandatory_guardrails
+        .iter()
+        .chain(policy.optional_guardrails.iter())
+        .chain(policy.forbidden_guardrails.iter())
+        .chain(policy.guardrail_config_overrides.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn route_pattern_matches(route_pattern: &str, path: &str) -> bool {
@@ -2541,6 +3279,54 @@ fn append_usage_filters<'a>(builder: &mut QueryBuilder<'a, Postgres>, query: &'a
     }
 }
 
+fn append_guardrail_event_filters<'a>(
+    builder: &mut QueryBuilder<'a, Postgres>,
+    query: &'a GuardrailEventQuery,
+) {
+    let mut separated = builder.separated(" AND ");
+    separated.push_unseparated(" WHERE true");
+    if let Some(from) = query.from {
+        separated.push("created_at >= ");
+        separated.push_bind_unseparated(from);
+    }
+    if let Some(to) = query.to {
+        separated.push("created_at < ");
+        separated.push_bind_unseparated(to);
+    }
+    if let Some(project_id) = query.project_id {
+        separated.push("project_id = ");
+        separated.push_bind_unseparated(project_id);
+    }
+    if let Some(key_id) = query.key_id {
+        separated.push("key_id = ");
+        separated.push_bind_unseparated(key_id);
+    }
+    if let Some(route) = query.route.as_deref() {
+        separated.push("route = ");
+        separated.push_bind_unseparated(route);
+    }
+    if let Some(provider) = query.provider.as_deref() {
+        separated.push("provider = ");
+        separated.push_bind_unseparated(provider);
+    }
+    if let Some(model) = query.model.as_deref() {
+        separated.push("model = ");
+        separated.push_bind_unseparated(model);
+    }
+    if let Some(guardrail) = query.guardrail.as_deref() {
+        separated.push("guardrail_name = ");
+        separated.push_bind_unseparated(guardrail);
+    }
+    if let Some(mode) = query.mode.as_deref() {
+        separated.push("mode = ");
+        separated.push_bind_unseparated(mode);
+    }
+    if let Some(action) = query.action.as_deref() {
+        separated.push("action = ");
+        separated.push_bind_unseparated(action);
+    }
+}
+
 fn summary_from_row(
     (
         request_count,
@@ -2594,5 +3380,23 @@ mod tests {
         assert_eq!(service_route_policy_route("/summary"), "/summary");
         assert_eq!(service_route_policy_route("/translation"), "/translation");
         assert_eq!(service_route_policy_route("/custom/*"), "/services/*");
+    }
+
+    #[test]
+    fn referenced_guardrail_policy_names_include_all_policy_fields() {
+        let names = referenced_guardrail_policy_names(&GuardrailPolicy {
+            mandatory_guardrails: vec!["pii-redact".to_owned(), "shared".to_owned()],
+            optional_guardrails: vec!["brand".to_owned(), "shared".to_owned()],
+            forbidden_guardrails: vec!["debug".to_owned()],
+            guardrail_config_overrides: BTreeMap::from([
+                ("brand".to_owned(), serde_json::json!({})),
+                ("custom".to_owned(), serde_json::json!({})),
+            ]),
+        });
+
+        assert_eq!(
+            names,
+            vec!["brand", "custom", "debug", "pii-redact", "shared"]
+        );
     }
 }

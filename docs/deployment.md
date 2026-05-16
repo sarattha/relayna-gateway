@@ -7,7 +7,7 @@ Relayna Gateway ships as one binary and one Docker image. The image serves both 
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.0.8 .
+docker build -t relayna-gateway:0.0.9 .
 ```
 
 Run it with required dependencies:
@@ -24,7 +24,7 @@ docker run --rm \
   -e GATEWAY_BIND_ADDR="0.0.0.0:8080" \
   -e GATEWAY_CONTROL_BIND_ADDR="0.0.0.0:8081" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.0.8
+  relayna-gateway:0.0.9
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -67,13 +67,13 @@ The repository includes a baseline manifest at `deploy/kubernetes/relayna-gatewa
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.0.8
+   ghcr.io/sarattha/relayna-gateway:0.0.9
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.0.8"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.0.9"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -81,7 +81,7 @@ The repository includes a baseline manifest at `deploy/kubernetes/relayna-gatewa
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.0.8
+   image: <your-registry>/<your-org>/relayna-gateway:0.0.9
    ```
 
 3. Store secrets through your cluster secret manager:
@@ -113,6 +113,52 @@ The repository includes a baseline manifest at `deploy/kubernetes/relayna-gatewa
 ## Network Exposure
 
 Expose the proxy port to clients that need LLM traffic. Keep the control port private or protected by internal ingress, VPN, identity-aware proxy, or strict network policy.
+
+## Guardrail Configuration
+
+Database migrations create the guardrail catalog, key policy, execution event,
+and per-key override tables/columns on startup. The built-in `pii-redact`
+catalog entry is enabled but not default-on, so existing keys keep unguarded
+behavior until an operator selects guardrails for the key.
+
+Use Admin portal Guardrails to manage global catalog defaults:
+
+- `runtime_config` is the actual default config used when a guardrail runs.
+- `config_schema` documents the shape operators should use for runtime config.
+- HTTP guardrail endpoint URL, timeout, and bearer token are separate catalog
+  fields. Bearer tokens are write-only and are never returned by the API.
+
+Use Admin portal Keys to manage each key:
+
+- `mandatory_guardrails` always run for that key.
+- `optional_guardrails` may run when the client requests them.
+- `forbidden_guardrails` are hidden from discovery and rejected if requested.
+- `guardrail_config_overrides` tunes selected guardrails per key.
+
+Per-key overrides are shallow-merged over the catalog runtime config. They must
+be JSON objects, and they only take effect when the guardrail is applied by
+mandatory, optional, default-on, or client-requested policy. For example, one
+key can restore `pii-redact` placeholders in responses while another leaves
+redacted placeholders in the final output:
+
+```json
+{
+  "guardrail_policy": {
+    "mandatory_guardrails": ["pii-redact"],
+    "optional_guardrails": [],
+    "forbidden_guardrails": [],
+    "guardrail_config_overrides": {
+      "pii-redact": {
+        "restore_output": false
+      }
+    }
+  }
+}
+```
+
+When guarded traffic may stream, ensure every selected response guardrail
+supports `during_call`; otherwise Gateway fails closed with
+`guardrail_unavailable` instead of buffering an unsupported stream.
 
 ## Studio Import Connectivity
 

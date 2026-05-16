@@ -6,7 +6,13 @@ pub fn init(log_level: &str) {
     let _ = fmt().with_env_filter(filter).json().try_init();
 }
 
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicI64, AtomicU64, Ordering},
+        Mutex, OnceLock,
+    },
+};
 
 static REQUESTS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static ERRORS_TOTAL: AtomicU64 = AtomicU64::new(0);
@@ -18,6 +24,23 @@ static ACTIVE_STREAMS: AtomicI64 = AtomicI64::new(0);
 static STREAM_ABORTS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FIRST_TOKEN_LATENCY_MS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FIRST_TOKEN_LATENCY_SAMPLES: AtomicU64 = AtomicU64::new(0);
+static GUARDRAIL_METRICS: OnceLock<Mutex<BTreeMap<GuardrailMetricKey, GuardrailMetricValue>>> =
+    OnceLock::new();
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct GuardrailMetricKey {
+    guardrail: String,
+    mode: String,
+    action: String,
+    failure_policy: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct GuardrailMetricValue {
+    executions: u64,
+    failures: u64,
+    latency_ms_total: u64,
+}
 
 pub fn record_request(status_code: u16) {
     REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
@@ -62,9 +85,34 @@ pub fn record_first_token_latency_ms(latency_ms: u64) {
     FIRST_TOKEN_LATENCY_SAMPLES.fetch_add(1, Ordering::Relaxed);
 }
 
+pub fn record_guardrail_execution(
+    guardrail: &str,
+    mode: &str,
+    action: &str,
+    failure_policy: &str,
+    latency_ms: u64,
+    failed: bool,
+) {
+    let metrics = GUARDRAIL_METRICS.get_or_init(|| Mutex::new(BTreeMap::new()));
+    let mut metrics = metrics.lock().expect("guardrail metric lock poisoned");
+    let value = metrics
+        .entry(GuardrailMetricKey {
+            guardrail: sanitize_label(guardrail),
+            mode: sanitize_label(mode),
+            action: sanitize_label(action),
+            failure_policy: sanitize_label(failure_policy),
+        })
+        .or_default();
+    value.executions = value.executions.saturating_add(1);
+    value.latency_ms_total = value.latency_ms_total.saturating_add(latency_ms);
+    if failed {
+        value.failures = value.failures.saturating_add(1);
+    }
+}
+
 pub fn prometheus() -> String {
     let cost = ESTIMATED_COST_MICRO_USD_TOTAL.load(Ordering::Relaxed) as f64 / 1_000_000.0;
-    format!(
+    let mut metrics = format!(
         "\
 # TYPE gateway_requests_total counter
 gateway_requests_total {}
@@ -97,7 +145,45 @@ gateway_first_token_latency_samples {}
         STREAM_ABORTS_TOTAL.load(Ordering::Relaxed),
         FIRST_TOKEN_LATENCY_MS_TOTAL.load(Ordering::Relaxed),
         FIRST_TOKEN_LATENCY_SAMPLES.load(Ordering::Relaxed),
-    )
+    );
+    metrics.push_str("# TYPE gateway_guardrail_executions_total counter\n");
+    metrics.push_str("# TYPE gateway_guardrail_failures_total counter\n");
+    metrics.push_str("# TYPE gateway_guardrail_latency_ms_total counter\n");
+    if let Some(guardrail_metrics) = GUARDRAIL_METRICS.get() {
+        for (key, value) in guardrail_metrics
+            .lock()
+            .expect("guardrail metric lock poisoned")
+            .iter()
+        {
+            let labels = format!(
+                "guardrail=\"{}\",mode=\"{}\",action=\"{}\",failure_policy=\"{}\"",
+                key.guardrail, key.mode, key.action, key.failure_policy
+            );
+            metrics.push_str(&format!(
+                "gateway_guardrail_executions_total{{{labels}}} {}\n",
+                value.executions
+            ));
+            metrics.push_str(&format!(
+                "gateway_guardrail_failures_total{{{labels}}} {}\n",
+                value.failures
+            ));
+            metrics.push_str(&format!(
+                "gateway_guardrail_latency_ms_total{{{labels}}} {}\n",
+                value.latency_ms_total
+            ));
+        }
+    }
+    metrics
+}
+
+fn sanitize_label(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+        .take(128)
+        .collect()
 }
 
 pub fn is_sensitive_field(name: &str) -> bool {

@@ -20,7 +20,7 @@ function test(name, fn) {
 }
 
 test("admin portal shell exposes all release-critical views", () => {
-  for (const view of ["overview", "projects", "keys", "providers", "routes", "services", "usage", "health", "settings"]) {
+  for (const view of ["overview", "projects", "keys", "guardrails", "providers", "routes", "services", "usage", "health", "settings"]) {
     assert.match(html, new RegExp(`data-view="${view}"`));
   }
   assert.match(
@@ -39,6 +39,9 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin/providers",
     "/admin/openai-routes",
     "/admin/keys",
+    "/admin/guardrails",
+    "/admin/guardrails/executions?limit=50",
+    "/admin/guardrails/summary",
     "/admin/services",
     "/admin/studio/connection",
     "/admin/studio/connection/test",
@@ -46,8 +49,46 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin/operator-token/rotate",
     "/readyz",
   ]) {
-    assert.match(js, new RegExp(endpoint.replaceAll("/", "\\/")));
+    assert.ok(js.includes(endpoint), `expected app.js to call ${endpoint}`);
   }
+});
+
+test("guardrails view exposes catalog CRUD drawer controls", () => {
+  assert.match(js, /New guardrail/);
+  assert.match(js, /function guardrailDrawer\(guardrail\)/);
+  assert.match(js, /id="guardrail-form"/);
+  assert.match(js, /data-guardrail-edit/);
+  assert.match(js, /data-guardrail-action="delete"/);
+  assert.match(js, /method: creating \? "POST" : "PATCH"/);
+  assert.match(js, /method: "DELETE"/);
+  assert.match(js, /\/admin\/guardrails\/\$\{encodeURIComponent\(name\)\}/);
+  assert.match(js, /\/admin\/guardrails\/\$\{encodeURIComponent\(formElement\.dataset\.guardrailName\)\}/);
+  assert.match(js, /name="bearer_token" type="password"/);
+  assert.match(js, /name="clear_token" type="checkbox"/);
+  assert.match(js, /providerKind === "built_in"/);
+  assert.match(js, /name="runtime_config"/);
+  assert.match(js, /runtime_config: runtimeConfig/);
+  assert.match(css, /\.guardrail-workspace/);
+  assert.match(css, /\.guardrail-form/);
+});
+
+test("virtual keys expose per-guardrail config override controls", () => {
+  assert.match(js, /function guardrailOverrideControls\(overrides = \{\}, selectedNames = \[\]\)/);
+  assert.match(js, /function activeConfigurableGuardrails\(policy = \{\}\)/);
+  assert.match(js, /function updateGuardrailOverrideControls\(form\)/);
+  assert.match(js, /guardrail_config_overrides/);
+  assert.match(js, /name="guardrail_override_names"/);
+  assert.match(js, /data-guardrail-overrides/);
+  assert.match(js, /Select mandatory or optional guardrails before setting config overrides/);
+  assert.match(js, /class="check guardrail-override-toggle"/);
+  assert.match(js, /<details>/);
+  assert.match(js, /<summary>Config schema<\/summary>/);
+  assert.match(js, /updateGuardrailOverrideControls\(form\)/);
+  assert.match(js, /guardrail_override_forbidden/);
+  assert.match(js, /invalid_guardrail_override/);
+  assert.match(js, /JSON\.parse\(form\.get\(`guardrail_override_\$\{name\}`\) \|\| "\{\}"\)/);
+  assert.match(css, /\.guardrail-override-toggle/);
+  assert.match(css, /\.guardrail-override-row details/);
 });
 
 test("settings view configures studio connection without exposing token values", () => {
@@ -81,6 +122,20 @@ test("virtual keys use explicit owner and service selection controls", () => {
   assert.match(js, /function serviceSelectionControl\(selected = \[\], name = "service_names", title = "Select services"\)/);
   assert.match(js, /data-service-picker/);
   assert.match(js, /service_names: form\.get\("owner_type"\) === "individual" \? form\.getAll\("service_names"\) : \[\]/);
+});
+
+test("virtual keys use guardrail picker controls for key guardrail policy", () => {
+  assert.match(js, /function guardrailSelectionControl\(selected = \[\], name, title = "Select guardrails"\)/);
+  assert.match(js, /function openGuardrailSelectionPicker\(trigger\)/);
+  assert.match(js, /function guardrailPickerTable\(rows, selected\)/);
+  assert.match(js, /data-guardrail-picker/);
+  assert.match(js, /data-selection-label="guardrails"/);
+  assert.match(js, /No \$\{esc\(label\)\} selected/);
+  assert.match(js, /guardrail_name" type="checkbox"/);
+  assert.match(js, /mandatory_guardrails: form\.getAll\("mandatory_guardrails"\)/);
+  assert.match(js, /optional_guardrails: form\.getAll\("optional_guardrails"\)/);
+  assert.match(js, /const forbidden = form\.getAll\("forbidden_guardrails"\)/);
+  assert.match(css, /\.guardrail-picker-table table/);
 });
 
 test("routes view includes service route registrations", () => {
@@ -142,6 +197,13 @@ test("service editor closes after a successful save", () => {
   assert.match(
     js,
     /async function patchService\(event\) \{[\s\S]*await api\(`\/admin\/services\/\$\{serviceName\}`,[\s\S]*state\.editingServiceName = null;[\s\S]*await services\(\);[\s\S]*\}/,
+  );
+});
+
+test("guardrail drawer closes after a successful save", () => {
+  assert.match(
+    js,
+    /async function submitGuardrail\(event\) \{[\s\S]*await api\(path,[\s\S]*state\.editingGuardrailName = null;[\s\S]*await guardrails\(\);[\s\S]*\}/,
   );
 });
 

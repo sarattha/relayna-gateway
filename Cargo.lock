@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-api"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -941,13 +941,14 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "argon2",
  "async-trait",
  "chrono",
  "http",
  "rand_core 0.6.4",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -958,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-proxy"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "async-trait",
  "bytes",
@@ -978,13 +979,14 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "async-trait",
  "chrono",
  "gateway-core",
  "http",
  "redis",
+ "serde_json",
  "sqlx",
  "thiserror 2.0.18",
  "uuid",
@@ -992,7 +994,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-telemetry"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "tracing-subscriber",
 ]
@@ -2404,7 +2406,9 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64",
  "bytes",
+ "futures-channel",
  "futures-core",
+ "futures-util",
  "http",
  "http-body",
  "http-body-util",
