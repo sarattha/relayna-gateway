@@ -363,6 +363,8 @@ pub struct AdminGuardrailDefinitionResponse {
     pub config_schema: Value,
     pub enabled: bool,
     pub endpoint_configured: bool,
+    pub endpoint_url: Option<String>,
+    pub timeout_ms: Option<u64>,
     pub token_configured: bool,
 }
 
@@ -402,11 +404,13 @@ pub trait GuardrailObservabilityStore: Send + Sync {
         request: GuardrailAdminCreateRequest,
     ) -> GatewayResult<AdminGuardrailDefinitionResponse>;
 
-    async fn patch_http_guardrail(
+    async fn patch_admin_guardrail(
         &self,
         name: String,
         request: GuardrailAdminPatchRequest,
     ) -> GatewayResult<AdminGuardrailDefinitionResponse>;
+
+    async fn delete_admin_guardrail(&self, name: String) -> GatewayResult<()>;
 }
 
 #[async_trait]
@@ -441,12 +445,16 @@ where
         (**self).create_http_guardrail(request).await
     }
 
-    async fn patch_http_guardrail(
+    async fn patch_admin_guardrail(
         &self,
         name: String,
         request: GuardrailAdminPatchRequest,
     ) -> GatewayResult<AdminGuardrailDefinitionResponse> {
-        (**self).patch_http_guardrail(name, request).await
+        (**self).patch_admin_guardrail(name, request).await
+    }
+
+    async fn delete_admin_guardrail(&self, name: String) -> GatewayResult<()> {
+        (**self).delete_admin_guardrail(name).await
     }
 }
 

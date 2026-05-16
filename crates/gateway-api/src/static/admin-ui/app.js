@@ -13,6 +13,7 @@ const state = {
   studioConnection: null,
   editingKeyId: null,
   editingServiceName: null,
+  editingGuardrailName: null,
 };
 
 const login = document.querySelector("#login");
@@ -160,6 +161,7 @@ document.querySelectorAll(".nav").forEach((button) => {
     state.view = button.dataset.view;
     state.editingKeyId = null;
     state.editingServiceName = null;
+    state.editingGuardrailName = null;
     refresh();
   });
 });
@@ -1125,14 +1127,23 @@ async function guardrails() {
     api("/admin/guardrails/executions?limit=50"),
     api("/admin/guardrails/summary"),
   ]);
+  const selected = state.guardrails.guardrails.find((guardrail) => guardrail.name === state.editingGuardrailName);
   content.innerHTML = `
-    <section class="panel">
-      <div class="panel-heading">
-        <h3>Catalog</h3>
-        <span class="subtle">${state.guardrails.guardrails.length} configured</span>
-      </div>
-      ${guardrailCatalogTable(state.guardrails.guardrails)}
-    </section>
+    <div class="split guardrail-workspace">
+      <section class="panel">
+        <div class="panel-heading">
+          <h3>Catalog</h3>
+          <div class="actions">
+            <span class="subtle">${state.guardrails.guardrails.length} configured</span>
+            <button type="button" data-guardrail-action="new">New guardrail</button>
+          </div>
+        </div>
+        ${guardrailCatalogTable(state.guardrails.guardrails)}
+      </section>
+      <section class="panel ${state.editingGuardrailName === null ? "muted-panel" : ""}">
+        ${guardrailDrawer(selected)}
+      </section>
+    </div>
     <section class="panel">
       <div class="panel-heading"><h3>Summary</h3></div>
       ${guardrailSummaryTable(state.guardrailSummary.summary)}
@@ -1142,11 +1153,27 @@ async function guardrails() {
       ${guardrailExecutionTable(state.guardrailExecutions.executions)}
     </section>
   `;
+  document.querySelector("[data-guardrail-action='new']")?.addEventListener("click", () => {
+    state.editingGuardrailName = "";
+    guardrails();
+  });
+  document.querySelector("#guardrail-form")?.addEventListener("submit", submitGuardrail);
+  document.querySelector("[data-guardrail-action='cancel']")?.addEventListener("click", () => {
+    state.editingGuardrailName = null;
+    guardrails();
+  });
+  document.querySelector("[data-guardrail-action='delete']")?.addEventListener("click", deleteGuardrail);
+  document.querySelectorAll("[data-guardrail-edit]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingGuardrailName = button.dataset.guardrailEdit;
+      guardrails();
+    });
+  });
 }
 
 function guardrailCatalogTable(rows) {
   return table(
-    ["Name", "Provider", "Modes", "Default", "Failure", "Enabled", "Endpoint", "Token"],
+    ["Name", "Provider", "Modes", "Default", "Failure", "Enabled", "Endpoint", "Token", "Actions"],
     rows.map((row) => [
       `<code>${esc(row.name)}</code><div class="subtle">${esc(row.description)}</div>`,
       esc(row.provider_kind),
@@ -1156,8 +1183,105 @@ function guardrailCatalogTable(rows) {
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
       row.endpoint_configured ? '<span class="badge good">configured</span>' : '<span class="badge">built-in</span>',
       row.token_configured ? '<span class="badge good">configured</span>' : '<span class="badge">none</span>',
+      `<button type="button" data-guardrail-edit="${attr(row.name)}">Edit</button>`,
     ]),
   );
+}
+
+function guardrailDrawer(guardrail) {
+  if (state.editingGuardrailName === null) {
+    return '<div class="empty-state"><h3>No guardrail selected</h3></div>';
+  }
+  const creating = state.editingGuardrailName === "";
+  const builtIn = !creating && guardrail?.provider_kind === "built_in";
+  const titleText = creating ? "New guardrail" : `Edit ${guardrail ? guardrail.name : "guardrail"}`;
+  const schemaValue = JSON.stringify(guardrail?.config_schema ?? {}, null, 2);
+  return `
+    <div class="panel-heading">
+      <h3>${esc(titleText)}</h3>
+      ${builtIn ? '<span class="badge">built-in</span>' : '<span class="badge good">http</span>'}
+    </div>
+    <form id="guardrail-form" class="form-grid guardrail-form" data-mode="${creating ? "create" : "edit"}" data-guardrail-name="${attr(guardrail?.name || "")}" data-provider-kind="${attr(guardrail?.provider_kind || "http")}">
+      <label>Name<input name="name" required ${creating ? "" : "readonly"} value="${attr(guardrail?.name || "")}" placeholder="custom-policy-check"></label>
+      <label>Description<input name="description" ${builtIn ? "disabled" : "required"} value="${attr(guardrail?.description || "")}"></label>
+      <div class="field"><span>Modes</span>${guardrailModeSelect(guardrail?.modes || ["pre_call"])}</div>
+      <label>Failure policy<select name="failure_policy">${["fail_closed", "fail_open", "dry_run"].map((value) => option(value, guardrail?.failure_policy || "fail_closed")).join("")}</select></label>
+      <label>Timeout ms<input name="timeout_ms" type="number" min="100" max="10000" value="${attr(guardrail?.timeout_ms ?? 1500)}" ${builtIn ? "disabled" : ""}></label>
+      <label>Endpoint URL<input name="endpoint_url" type="url" ${creating ? "required" : ""} value="${attr(guardrail?.endpoint_url || "")}" placeholder="https://guardrail.example/check" ${builtIn ? "disabled" : ""}></label>
+      <label>Bearer token<input name="bearer_token" type="password" autocomplete="new-password" placeholder="${guardrail?.token_configured ? "configured" : "optional"}" ${builtIn ? "disabled" : ""}></label>
+      <label class="check"><input name="clear_token" type="checkbox" ${builtIn || creating ? "disabled" : ""}> Clear token</label>
+      <label class="check"><input name="default_on" type="checkbox" ${guardrail?.default_on ? "checked" : ""}> Default on</label>
+      <label class="check"><input name="enabled" type="checkbox" ${creating || guardrail?.enabled ? "checked" : ""}> Enabled</label>
+      <label class="wide-field">Config schema JSON<textarea name="config_schema" rows="6">${esc(schemaValue)}</textarea></label>
+      <div class="help">${builtIn ? "Built-in guardrails protect endpoint and token fields." : "Bearer tokens are write-only; leave blank to keep the current token."}</div>
+      <div class="form-actions wide-field">
+        <button class="primary">${creating ? "Create guardrail" : "Save guardrail"}</button>
+        ${!creating && !builtIn ? '<button type="button" class="danger" data-guardrail-action="delete">Delete</button>' : ""}
+        <button type="button" data-guardrail-action="cancel">Cancel</button>
+      </div>
+    </form>
+  `;
+}
+
+function guardrailModeSelect(selected = []) {
+  const values = new Set(Array.isArray(selected) && selected.length ? selected : ["pre_call"]);
+  return `<div class="checkbox-group" role="group" aria-label="Guardrail modes">
+    ${["pre_call", "post_call", "during_call"].map((value) => `<label><input name="modes" type="checkbox" value="${attr(value)}" ${values.has(value) ? "checked" : ""}> ${esc(value)}</label>`).join("")}
+  </div>`;
+}
+
+function guardrailBody(form, creating, builtIn) {
+  const configSchema = JSON.parse(form.get("config_schema") || "{}");
+  const body = {
+    modes: form.getAll("modes"),
+    default_on: form.has("default_on"),
+    failure_policy: form.get("failure_policy"),
+    config_schema: configSchema,
+    enabled: form.has("enabled"),
+  };
+  if (creating || !builtIn) {
+    body.description = form.get("description");
+    body.endpoint_url = form.get("endpoint_url");
+    body.timeout_ms = nullableNumber(form.get("timeout_ms"));
+    const tokenValue = blankToUndefined(form.get("bearer_token"));
+    if (tokenValue !== undefined) body.bearer_token = tokenValue;
+    if (!creating && form.has("clear_token")) body.bearer_token = null;
+  }
+  if (creating) body.name = form.get("name");
+  return body;
+}
+
+async function submitGuardrail(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const creating = formElement.dataset.mode === "create";
+  const builtIn = formElement.dataset.providerKind === "built_in";
+  let body;
+  try {
+    body = guardrailBody(form, creating, builtIn);
+  } catch (_) {
+    setNotice("invalid_config_schema");
+    return;
+  }
+  const path = creating ? "/admin/guardrails" : `/admin/guardrails/${encodeURIComponent(formElement.dataset.guardrailName)}`;
+  await api(path, {
+    method: creating ? "POST" : "PATCH",
+    body: JSON.stringify(body),
+  });
+  state.editingGuardrailName = creating ? body.name : formElement.dataset.guardrailName;
+  setNotice(`Guardrail ${creating ? "created" : "saved"}.`, "success");
+  await guardrails();
+}
+
+async function deleteGuardrail(event) {
+  const form = event.currentTarget.closest("form");
+  const name = form.dataset.guardrailName;
+  if (!(await confirmAction(`Delete ${name}`, "The guardrail is removed from key policies. Historical executions remain."))) return;
+  await api(`/admin/guardrails/${encodeURIComponent(name)}`, { method: "DELETE" });
+  state.editingGuardrailName = null;
+  setNotice("Guardrail deleted.", "success");
+  await guardrails();
 }
 
 function guardrailSummaryTable(rows) {

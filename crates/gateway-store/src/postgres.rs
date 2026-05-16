@@ -838,7 +838,7 @@ impl GuardrailObservabilityStore for PostgresStore {
         admin_guardrail_definition_from_row(&row)
     }
 
-    async fn patch_http_guardrail(
+    async fn patch_admin_guardrail(
         &self,
         name: String,
         request: GuardrailAdminPatchRequest,
@@ -856,11 +856,16 @@ impl GuardrailObservabilityStore for PostgresStore {
         .map_err(|_| GatewayError::StoreUnavailable)?
         .ok_or(GatewayError::InvalidGuardrailRequest)?;
         let mut definition = guardrail_definition_from_row(&current)?;
-        if definition
+        let is_http = definition
             .config
             .get("provider_kind")
             .and_then(serde_json::Value::as_str)
-            != Some("http")
+            == Some("http");
+        if !is_http
+            && (request.description.is_some()
+                || request.endpoint_url.is_some()
+                || request.timeout_ms.is_some()
+                || request.bearer_token.is_some())
         {
             return Err(GatewayError::InvalidGuardrailRequest);
         }
@@ -883,22 +888,28 @@ impl GuardrailObservabilityStore for PostgresStore {
         if let Some(value) = request.enabled {
             definition.enabled = value;
         }
-        if let Some(value) = request.endpoint_url {
-            config.insert("endpoint_url".to_owned(), serde_json::Value::String(value));
+        if is_http {
+            if let Some(value) = request.endpoint_url {
+                config.insert("endpoint_url".to_owned(), serde_json::Value::String(value));
+            }
         }
-        if let Some(value) = request.timeout_ms {
-            config.insert(
-                "timeout_ms".to_owned(),
-                serde_json::Value::Number(serde_json::Number::from(value.clamp(100, 10_000))),
-            );
+        if is_http {
+            if let Some(value) = request.timeout_ms {
+                config.insert(
+                    "timeout_ms".to_owned(),
+                    serde_json::Value::Number(serde_json::Number::from(value.clamp(100, 10_000))),
+                );
+            }
         }
-        if let Some(value) = request.bearer_token {
-            config.insert(
-                "bearer_token_secret".to_owned(),
-                value
-                    .map(serde_json::Value::String)
-                    .unwrap_or(serde_json::Value::Null),
-            );
+        if is_http {
+            if let Some(value) = request.bearer_token {
+                config.insert(
+                    "bearer_token_secret".to_owned(),
+                    value
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                );
+            }
         }
         definition.config = serde_json::Value::Object(config);
 
@@ -929,6 +940,66 @@ impl GuardrailObservabilityStore for PostgresStore {
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
         admin_guardrail_definition_from_row(&row)
+    }
+
+    async fn delete_admin_guardrail(&self, name: String) -> GatewayResult<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let current = sqlx::query(
+            r#"
+            SELECT config
+            FROM guardrail_definitions
+            WHERE name = $1
+            FOR UPDATE
+            "#,
+        )
+        .bind(&name)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .ok_or(GatewayError::InvalidGuardrailRequest)?;
+        let config: serde_json::Value = current
+            .try_get("config")
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        if config
+            .get("provider_kind")
+            .and_then(serde_json::Value::as_str)
+            != Some("http")
+        {
+            return Err(GatewayError::InvalidGuardrailRequest);
+        }
+
+        sqlx::query("DELETE FROM guardrail_definitions WHERE name = $1")
+            .bind(&name)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        sqlx::query(
+            r#"
+            UPDATE key_guardrail_policies
+            SET mandatory_guardrails = array_remove(mandatory_guardrails, $1),
+                optional_guardrails = array_remove(optional_guardrails, $1),
+                forbidden_guardrails = array_remove(forbidden_guardrails, $1),
+                updated_at = now()
+            WHERE $1 = ANY(mandatory_guardrails)
+               OR $1 = ANY(optional_guardrails)
+               OR $1 = ANY(forbidden_guardrails)
+            "#,
+        )
+        .bind(&name)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(())
     }
 }
 
@@ -2657,6 +2728,17 @@ fn admin_guardrail_definition_from_row(
             .get("endpoint_url")
             .and_then(serde_json::Value::as_str)
             .is_some_and(|value| !value.is_empty()),
+        endpoint_url: definition
+            .config
+            .get("endpoint_url")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        timeout_ms: definition.config.get("timeout_ms").and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_i64().and_then(|value| u64::try_from(value).ok()))
+        }),
         token_configured: definition
             .config
             .get("bearer_token_secret")

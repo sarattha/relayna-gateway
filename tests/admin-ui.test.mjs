@@ -20,7 +20,7 @@ function test(name, fn) {
 }
 
 test("admin portal shell exposes all release-critical views", () => {
-  for (const view of ["overview", "projects", "keys", "providers", "routes", "services", "usage", "health", "settings"]) {
+  for (const view of ["overview", "projects", "keys", "guardrails", "providers", "routes", "services", "usage", "health", "settings"]) {
     assert.match(html, new RegExp(`data-view="${view}"`));
   }
   assert.match(
@@ -39,6 +39,9 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin/providers",
     "/admin/openai-routes",
     "/admin/keys",
+    "/admin/guardrails",
+    "/admin/guardrails/executions?limit=50",
+    "/admin/guardrails/summary",
     "/admin/services",
     "/admin/studio/connection",
     "/admin/studio/connection/test",
@@ -46,8 +49,25 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin/operator-token/rotate",
     "/readyz",
   ]) {
-    assert.match(js, new RegExp(endpoint.replaceAll("/", "\\/")));
+    assert.ok(js.includes(endpoint), `expected app.js to call ${endpoint}`);
   }
+});
+
+test("guardrails view exposes catalog CRUD drawer controls", () => {
+  assert.match(js, /New guardrail/);
+  assert.match(js, /function guardrailDrawer\(guardrail\)/);
+  assert.match(js, /id="guardrail-form"/);
+  assert.match(js, /data-guardrail-edit/);
+  assert.match(js, /data-guardrail-action="delete"/);
+  assert.match(js, /method: creating \? "POST" : "PATCH"/);
+  assert.match(js, /method: "DELETE"/);
+  assert.match(js, /\/admin\/guardrails\/\$\{encodeURIComponent\(name\)\}/);
+  assert.match(js, /\/admin\/guardrails\/\$\{encodeURIComponent\(formElement\.dataset\.guardrailName\)\}/);
+  assert.match(js, /name="bearer_token" type="password"/);
+  assert.match(js, /name="clear_token" type="checkbox"/);
+  assert.match(js, /providerKind === "built_in"/);
+  assert.match(css, /\.guardrail-workspace/);
+  assert.match(css, /\.guardrail-form/);
 });
 
 test("settings view configures studio connection without exposing token values", () => {

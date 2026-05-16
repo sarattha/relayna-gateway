@@ -387,6 +387,25 @@ td code {
   align-items: end;
 }
 
+.guardrail-workspace {
+  grid-template-columns: minmax(420px, 1fr) minmax(360px, 420px);
+}
+
+.guardrail-form {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.guardrail-form .wide-field {
+  grid-column: 1 / -1;
+}
+
+.guardrail-form textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .form-actions {
   display: flex;
   flex-wrap: wrap;

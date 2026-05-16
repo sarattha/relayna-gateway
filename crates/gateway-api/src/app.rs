@@ -161,7 +161,10 @@ pub fn router_with_state(state: AppState) -> Router {
             "/admin/guardrails",
             get(admin_guardrails).post(create_admin_guardrail),
         )
-        .route("/admin/guardrails/{name}", patch(patch_admin_guardrail))
+        .route(
+            "/admin/guardrails/{name}",
+            patch(patch_admin_guardrail).delete(delete_admin_guardrail),
+        )
         .route(
             "/admin/guardrails/executions",
             get(admin_guardrail_executions),
@@ -447,8 +450,22 @@ async fn patch_admin_guardrail(
     if let Some(response) = require_admin(&state, &headers).await {
         return response;
     }
-    match state.store.patch_http_guardrail(name, request).await {
+    match state.store.patch_admin_guardrail(name, request).await {
         Ok(guardrail) => Json(guardrail).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn delete_admin_guardrail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+    match state.store.delete_admin_guardrail(name).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => error_response(&headers, error),
     }
 }
@@ -1467,6 +1484,8 @@ mod tests {
                 config_schema: serde_json::json!({ "restore_output": "boolean" }),
                 enabled: true,
                 endpoint_configured: false,
+                endpoint_url: None,
+                timeout_ms: None,
                 token_configured: false,
             }])
         }
@@ -1499,20 +1518,35 @@ mod tests {
                 config_schema: request.config_schema,
                 enabled: request.enabled,
                 endpoint_configured: !request.endpoint_url.is_empty(),
+                endpoint_url: Some(request.endpoint_url),
+                timeout_ms: Some(request.timeout_ms.unwrap_or(1500).clamp(100, 10_000)),
                 token_configured: request.bearer_token.is_some(),
             })
         }
 
-        async fn patch_http_guardrail(
+        async fn patch_admin_guardrail(
             &self,
             name: String,
             request: GuardrailAdminPatchRequest,
         ) -> GatewayResult<AdminGuardrailDefinitionResponse> {
+            if name == "pii-redact"
+                && (request.description.is_some()
+                    || request.endpoint_url.is_some()
+                    || request.timeout_ms.is_some()
+                    || request.bearer_token.is_some())
+            {
+                return Err(GatewayError::InvalidGuardrailRequest);
+            }
             Ok(AdminGuardrailDefinitionResponse {
-                name,
-                description: request.description.unwrap_or_default(),
-                provider_kind: gateway_core::GuardrailProviderKind::Http,
-                modes: request.modes.unwrap_or_default(),
+                description: request.description.unwrap_or_else(|| {
+                    "Redacts common PII before provider calls and optionally restores placeholders after responses.".to_owned()
+                }),
+                provider_kind: if name == "pii-redact" {
+                    gateway_core::GuardrailProviderKind::BuiltIn
+                } else {
+                    gateway_core::GuardrailProviderKind::Http
+                },
+                modes: request.modes.unwrap_or_else(|| vec![GuardrailMode::PreCall]),
                 default_on: request.default_on.unwrap_or(false),
                 failure_policy: request
                     .failure_policy
@@ -1522,8 +1556,29 @@ mod tests {
                     .unwrap_or_else(|| serde_json::json!({})),
                 enabled: request.enabled.unwrap_or(true),
                 endpoint_configured: request.endpoint_url.is_some(),
+                endpoint_url: request.endpoint_url,
+                timeout_ms: request.timeout_ms,
                 token_configured: request.bearer_token.flatten().is_some(),
+                name,
             })
+        }
+
+        async fn delete_admin_guardrail(&self, name: String) -> GatewayResult<()> {
+            if name == "pii-redact" || name == "unknown" {
+                return Err(GatewayError::InvalidGuardrailRequest);
+            }
+            if let Some(key) = self.admin_key.lock().expect("lock poisoned").as_mut() {
+                key.guardrail_policy
+                    .mandatory_guardrails
+                    .retain(|guardrail| guardrail != &name);
+                key.guardrail_policy
+                    .optional_guardrails
+                    .retain(|guardrail| guardrail != &name);
+                key.guardrail_policy
+                    .forbidden_guardrails
+                    .retain(|guardrail| guardrail != &name);
+            }
+            Ok(())
         }
     }
 
@@ -2253,6 +2308,20 @@ mod tests {
         .expect("response")
     }
 
+    async fn admin_delete(app: Router, route: &str, token: Option<&str>) -> Response {
+        let mut builder = axum::http::Request::builder()
+            .method(axum::http::Method::DELETE)
+            .uri(route)
+            .header("x-request-id", "req_test");
+        if let Some(token) = token {
+            builder = builder.header("authorization", format!("Bearer {token}"));
+        }
+
+        app.oneshot(builder.body(axum::body::Body::empty()).expect("request"))
+            .await
+            .expect("response")
+    }
+
     async fn response_json(response: Response) -> serde_json::Value {
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -2370,7 +2439,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let value = response_json(response).await;
         assert_eq!(value["guardrails"][0]["name"], "pii-redact");
-        assert!(value["guardrails"][0].get("endpoint_url").is_none());
+        assert!(value["guardrails"][0]["endpoint_url"].is_null());
     }
 
     #[tokio::test]
@@ -2390,6 +2459,81 @@ mod tests {
         assert_eq!(value["provider_kind"], "http");
         assert_eq!(value["token_configured"], true);
         assert!(value.get("bearer_token").is_none());
+        assert_eq!(value["endpoint_url"], "https://guardrail.example/check");
+        assert_eq!(value["timeout_ms"], 1500);
+    }
+
+    #[tokio::test]
+    async fn admin_guardrail_patch_allows_builtin_safe_fields_only() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_patch(
+            app.clone(),
+            "/admin/guardrails/pii-redact",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"enabled":false,"default_on":true,"failure_policy":"dry_run","modes":["pre_call"],"config_schema":{"restore_output":"boolean"}}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["provider_kind"], "built_in");
+        assert_eq!(value["enabled"], false);
+        assert_eq!(value["default_on"], true);
+
+        let rejected = admin_patch(
+            app,
+            "/admin/guardrails/pii-redact",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"endpoint_url":"https://guardrail.example/check"}"#,
+        )
+        .await;
+        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+        let value = response_json(rejected).await;
+        assert_eq!(value["error"]["code"], "invalid_guardrail_request");
+    }
+
+    #[tokio::test]
+    async fn admin_guardrail_delete_rejects_builtin_and_cleans_key_policy() {
+        let raw = "rk_live_guardraildelete";
+        let stored = stored_key(raw);
+        let store = default_store();
+        *store.admin_key.lock().expect("lock poisoned") = Some(admin_key_for(
+            &stored,
+            gateway_core::GuardrailPolicy {
+                mandatory_guardrails: vec!["custom-check".to_owned(), "pii-redact".to_owned()],
+                optional_guardrails: vec!["custom-check".to_owned()],
+                forbidden_guardrails: vec!["custom-check".to_owned()],
+            },
+        ));
+        let app = router_with_state(test_state(store.clone()));
+
+        let rejected = admin_delete(
+            app.clone(),
+            "/admin/guardrails/pii-redact",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+
+        let deleted = admin_delete(
+            app,
+            "/admin/guardrails/custom-check",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+        let key = store
+            .admin_key
+            .lock()
+            .expect("lock poisoned")
+            .clone()
+            .expect("admin key");
+        assert_eq!(
+            key.guardrail_policy.mandatory_guardrails,
+            vec!["pii-redact"]
+        );
+        assert!(key.guardrail_policy.optional_guardrails.is_empty());
+        assert!(key.guardrail_policy.forbidden_guardrails.is_empty());
     }
 
     #[tokio::test]
