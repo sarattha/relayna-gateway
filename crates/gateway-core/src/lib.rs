@@ -2,6 +2,7 @@ pub mod admin;
 pub mod auth;
 pub mod budgets;
 pub mod errors;
+pub mod guardrails;
 pub mod observability;
 pub mod operators;
 pub mod policies;
@@ -21,6 +22,12 @@ pub use admin::{
 pub use auth::{AuthenticatedKey, Authenticator, StoredVirtualKey, VirtualKey};
 pub use budgets::{BudgetDecision, BudgetState, BudgetStore};
 pub use errors::{GatewayError, GatewayResult};
+pub use guardrails::{
+    resolve_guardrail_plan, GuardrailAction, GuardrailContext, GuardrailDefinition,
+    GuardrailExecution, GuardrailExecutionRecord, GuardrailFailurePolicy, GuardrailHandler,
+    GuardrailInput, GuardrailMode, GuardrailPlan, GuardrailPlanEntry, GuardrailPlanRequest,
+    GuardrailPolicy, GuardrailPolicySet, GuardrailResult, InMemoryGuardrailExecutor,
+};
 pub use observability::{
     ProviderHealth, UsageBreakdown, UsageBreakdownDimension, UsageQuery, UsageQueryStore,
     UsageSummary, UsageTimeseriesPoint,

@@ -38,6 +38,14 @@ pub enum GatewayError {
     RateLimitExceeded { retry_after_seconds: Option<u64> },
     #[error("budget exceeded")]
     BudgetExceeded,
+    #[error("request blocked by guardrail")]
+    GuardrailBlocked,
+    #[error("guardrail is not allowed by policy")]
+    GuardrailForbidden,
+    #[error("guardrail is unavailable")]
+    GuardrailUnavailable,
+    #[error("guardrail request is invalid")]
+    InvalidGuardrailRequest,
     #[error("project already exists")]
     DuplicateProject,
     #[error("project was not found")]
@@ -105,6 +113,9 @@ impl GatewayError {
             Self::PolicyDenied => StatusCode::FORBIDDEN,
             Self::RateLimitExceeded { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::BudgetExceeded => StatusCode::PAYMENT_REQUIRED,
+            Self::GuardrailBlocked | Self::GuardrailForbidden => StatusCode::FORBIDDEN,
+            Self::GuardrailUnavailable => StatusCode::BAD_GATEWAY,
+            Self::InvalidGuardrailRequest => StatusCode::BAD_REQUEST,
             Self::DuplicateProject | Self::DuplicateProviderConfig | Self::DuplicateService => {
                 StatusCode::CONFLICT
             }
@@ -145,6 +156,10 @@ impl GatewayError {
             Self::PolicyDenied => "policy_denied",
             Self::RateLimitExceeded { .. } => "rate_limit_exceeded",
             Self::BudgetExceeded => "budget_exceeded",
+            Self::GuardrailBlocked => "guardrail_blocked",
+            Self::GuardrailForbidden => "guardrail_forbidden",
+            Self::GuardrailUnavailable => "guardrail_unavailable",
+            Self::InvalidGuardrailRequest => "invalid_guardrail_request",
             Self::DuplicateProject => "duplicate_project",
             Self::MissingProject => "missing_project",
             Self::ProjectInUse => "project_in_use",
@@ -182,6 +197,10 @@ impl GatewayError {
             Self::PolicyDenied => "Request is denied by key policy.",
             Self::RateLimitExceeded { .. } => "Rate limit exceeded.",
             Self::BudgetExceeded => "Budget limit exceeded.",
+            Self::GuardrailBlocked => "Request was blocked by a gateway guardrail.",
+            Self::GuardrailForbidden => "Guardrail is not allowed by policy.",
+            Self::GuardrailUnavailable => "Gateway guardrail is unavailable.",
+            Self::InvalidGuardrailRequest => "Guardrail request is invalid.",
             Self::DuplicateProject => "Project already exists.",
             Self::MissingProject => "Project was not found.",
             Self::ProjectInUse => "Project is still referenced.",
