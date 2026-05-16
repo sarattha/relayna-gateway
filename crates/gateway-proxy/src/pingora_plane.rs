@@ -1,14 +1,22 @@
+use crate::body_rewrite::{
+    prepare_http1_rewritten_response_headers, prepare_rewritten_request_headers,
+    BoundedBodyRewriter,
+};
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
-    evaluate_policy, extract_estimated_cost_usd, extract_generation_features, extract_model,
-    extract_usage_tokens, is_retry_safe_status, route_pattern_wildcard_suffix,
-    service_wildcard_suffix, AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError,
-    GatewayResult, OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
-    RateLimitDecision, RateLimitStore, Route, RouteMatch, ServiceRegistryLookup,
-    ServiceRouteLookup, UsageEvent, UsageRecorder,
+    evaluate_policy, execution_events_from_records, extract_client_guardrails,
+    extract_estimated_cost_usd, extract_generation_features, extract_model, extract_usage_tokens,
+    guardrail_executor_for_definitions, is_retry_safe_status, redact_pii_text,
+    resolve_guardrail_plan, route_pattern_wildcard_suffix, service_wildcard_suffix,
+    strip_client_guardrails, AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError,
+    GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent, GuardrailMode,
+    GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet, GuardrailStore,
+    OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup, RateLimitDecision,
+    RateLimitStore, Route, RouteMatch, ServiceRegistryLookup, ServiceRouteLookup, UsageEvent,
+    UsageRecorder,
 };
 use http::Uri;
 use pingora_core::{
@@ -100,7 +108,8 @@ where
         + PolicyLookup
         + ServiceRegistryLookup
         + ServiceRouteLookup
-        + OpenAiRouteSettingsLookup,
+        + OpenAiRouteSettingsLookup
+        + GuardrailStore,
     R: RateLimitStore + BudgetStore,
 {
     pub fn new(store: Arc<S>, control_state: Arc<R>, config: PingoraLiteLlmConfig) -> Self {
@@ -122,6 +131,8 @@ pub struct PingoraContext {
     body_prefix: Vec<u8>,
     body_bytes_seen: usize,
     response_body_prefix: Vec<u8>,
+    request_rewriter: Option<BoundedBodyRewriter>,
+    response_rewriter: Option<BoundedBodyRewriter>,
     is_streaming: bool,
     first_chunk_recorded: bool,
     budget_reserved: bool,
@@ -133,6 +144,16 @@ pub struct PingoraContext {
     service_upstream: Option<PingoraUpstreamConfig>,
     service_route_pattern: Option<String>,
     litellm_upstream: Option<PingoraUpstreamConfig>,
+    guardrail_definitions: Vec<GuardrailDefinition>,
+    guardrail_policy: GuardrailPolicy,
+    pre_guardrail_plan: Option<GuardrailPlan>,
+    post_guardrail_plan: Option<GuardrailPlan>,
+    during_guardrail_plan: Option<GuardrailPlan>,
+    guardrail_context: Option<GuardrailContext>,
+    guardrail_events: Vec<GuardrailExecutionEvent>,
+    guardrail_error: Option<GatewayError>,
+    rewritten_request_len: Option<usize>,
+    guardrail_stream_holdback: String,
 }
 
 #[async_trait]
@@ -145,6 +166,7 @@ where
         + ServiceRouteLookup
         + OpenAiRouteSettingsLookup
         + ProviderConfigLookup
+        + GuardrailStore
         + Send
         + Sync
         + 'static,
@@ -162,6 +184,8 @@ where
             body_prefix: Vec::new(),
             body_bytes_seen: 0,
             response_body_prefix: Vec::new(),
+            request_rewriter: None,
+            response_rewriter: None,
             is_streaming: false,
             first_chunk_recorded: false,
             budget_reserved: false,
@@ -173,6 +197,16 @@ where
             service_upstream: None,
             service_route_pattern: None,
             litellm_upstream: None,
+            guardrail_definitions: Vec::new(),
+            guardrail_policy: GuardrailPolicy::default(),
+            pre_guardrail_plan: None,
+            post_guardrail_plan: None,
+            during_guardrail_plan: None,
+            guardrail_context: None,
+            guardrail_events: Vec::new(),
+            guardrail_error: None,
+            rewritten_request_len: None,
+            guardrail_stream_holdback: String::new(),
         }
     }
 
@@ -239,6 +273,8 @@ where
             }
         };
         ctx.route = Some(matched.route);
+        ctx.request_rewriter = Some(BoundedBodyRewriter::new(matched.max_body_bytes));
+        ctx.response_rewriter = Some(BoundedBodyRewriter::new(matched.max_body_bytes));
         ctx.traceparent = header_value(req, "traceparent")
             .filter(|value| is_valid_traceparent(value))
             .map(ToOwned::to_owned);
@@ -256,6 +292,20 @@ where
             .await
         {
             Ok(key) => {
+                match self.store.list_guardrail_definitions().await {
+                    Ok(definitions) => ctx.guardrail_definitions = definitions,
+                    Err(error) => {
+                        respond_error(session, error, &ctx.request_id).await?;
+                        return Ok(true);
+                    }
+                }
+                match self.store.guardrail_policy_for_key(key.key_id).await {
+                    Ok(policy) => ctx.guardrail_policy = policy,
+                    Err(error) => {
+                        respond_error(session, error, &ctx.request_id).await?;
+                        return Ok(true);
+                    }
+                }
                 if let Some(service_name) = matched.service_name.as_deref() {
                     if ctx.service_upstream.is_some() {
                         ctx.route_match = Some(matched);
@@ -335,24 +385,144 @@ where
         &self,
         session: &mut Session,
         body: &mut Option<Bytes>,
-        _end_of_stream: bool,
+        end_of_stream: bool,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<()>
     where
         Self::CTX: Send + Sync,
     {
-        if let Some(body) = body {
-            ctx.body_bytes_seen = ctx.body_bytes_seen.saturating_add(body.len());
+        if let Some(chunk) = body.as_ref() {
+            ctx.body_bytes_seen = ctx.body_bytes_seen.saturating_add(chunk.len());
             if let Some(matched) = &ctx.route_match {
                 if ctx.body_bytes_seen > matched.max_body_bytes {
                     respond_error(session, GatewayError::RequestBodyTooLarge, &ctx.request_id)
                         .await?;
                 }
             }
-            if ctx.body_prefix.len() < 65_536 {
-                let remaining = 65_536 - ctx.body_prefix.len();
+        }
+        let Some(rewriter) = ctx.request_rewriter.as_mut() else {
+            return Ok(());
+        };
+
+        let key = ctx.key.clone();
+        let route = ctx.route;
+        let route_match = ctx.route_match.clone();
+        let request_id = ctx.request_id.clone();
+        let definitions = ctx.guardrail_definitions.clone();
+        let policy = ctx.guardrail_policy.clone();
+        let mut guardrail_context = ctx.guardrail_context.clone();
+        let mut pre_plan = None;
+        let mut post_plan = None;
+        let mut during_plan = None;
+        let mut guardrail_events = Vec::new();
+        let mut guardrail_error = None;
+
+        let result = rewriter.filter_chunk(body, end_of_stream, |raw_body| {
+            if !end_of_stream {
+                return Ok(raw_body.to_vec());
+            }
+            let mut request_json = match serde_json::from_slice::<serde_json::Value>(raw_body) {
+                Ok(value) => value,
+                Err(_) => return Ok(raw_body.to_vec()),
+            };
+            let client_requested = extract_client_guardrails(&request_json)?;
+            let features = extract_generation_features(raw_body);
+            let plan = resolve_guardrail_plan(GuardrailPlanRequest {
+                mode: GuardrailMode::PreCall,
+                definitions: definitions.clone(),
+                policies: GuardrailPolicySet {
+                    key_policy: policy.clone(),
+                    ..GuardrailPolicySet::default()
+                },
+                client_requested_guardrails: client_requested.clone(),
+            })?;
+            let post_call_plan = resolve_guardrail_plan(GuardrailPlanRequest {
+                mode: GuardrailMode::PostCall,
+                definitions: definitions.clone(),
+                policies: GuardrailPolicySet {
+                    key_policy: policy.clone(),
+                    ..GuardrailPolicySet::default()
+                },
+                client_requested_guardrails: client_requested.clone(),
+            })?;
+            let response_plan = if features.stream {
+                let during_call_plan = resolve_guardrail_plan(GuardrailPlanRequest {
+                    mode: GuardrailMode::DuringCall,
+                    definitions: definitions.clone(),
+                    policies: GuardrailPolicySet {
+                        key_policy: policy,
+                        ..GuardrailPolicySet::default()
+                    },
+                    client_requested_guardrails: client_requested,
+                })?;
+                if post_call_plan.entries.len() != during_call_plan.entries.len() {
+                    guardrail_error = Some(GatewayError::GuardrailUnavailable);
+                    return Ok(Vec::new());
+                }
+                during_call_plan
+            } else {
+                post_call_plan
+            };
+            if plan.entries.is_empty() && response_plan.entries.is_empty() {
+                return Ok(raw_body.to_vec());
+            }
+            strip_client_guardrails(&mut request_json);
+            let key = key.as_ref().ok_or(GatewayError::MissingAuthorization)?;
+            let mut context = guardrail_context
+                .take()
+                .unwrap_or_else(|| GuardrailContext {
+                    request_id: request_id.clone(),
+                    key_id: Some(key.key_id),
+                    project_id: key.project_id,
+                    route,
+                    provider: route_match.as_ref().map(|matched| matched.provider),
+                    model: extract_model(raw_body),
+                    ..GuardrailContext::default()
+                });
+            let executor = guardrail_executor_for_definitions(&definitions);
+            let execution = executor.execute(
+                &plan,
+                GuardrailMode::PreCall,
+                context,
+                Some(request_json),
+                None,
+            )?;
+            context = execution.context;
+            guardrail_events.extend(execution_events_from_records(
+                &context,
+                &execution.records,
+                Utc::now(),
+            ));
+            pre_plan = Some(plan);
+            if features.stream {
+                during_plan = Some(response_plan);
+            } else {
+                post_plan = Some(response_plan);
+            }
+            guardrail_context = Some(context);
+            serde_json::to_vec(&execution.request.unwrap_or(serde_json::Value::Null))
+                .map_err(|_| GatewayError::InvalidGuardrailRequest)
+        });
+
+        if let Err(error) = result {
+            ctx.guardrail_error = Some(error);
+            *body = Some(Bytes::new());
+            return Ok(());
+        }
+        if end_of_stream {
+            if let Some(error) = guardrail_error {
+                ctx.guardrail_error = Some(error);
+            }
+            ctx.pre_guardrail_plan = pre_plan;
+            ctx.post_guardrail_plan = post_plan;
+            ctx.during_guardrail_plan = during_plan;
+            ctx.guardrail_context = guardrail_context;
+            ctx.guardrail_events.extend(guardrail_events);
+            if let Some(body) = body.as_ref() {
+                ctx.rewritten_request_len = Some(body.len());
+                ctx.body_prefix.clear();
                 ctx.body_prefix
-                    .extend_from_slice(&body[..body.len().min(remaining)]);
+                    .extend_from_slice(&body[..body.len().min(65_536)]);
             }
         }
         Ok(())
@@ -377,6 +547,12 @@ where
         };
         if self.upstream_for(ctx).is_none() {
             respond_error(session, GatewayError::InvalidConfiguration, &ctx.request_id).await?;
+            return Ok(false);
+        }
+        if let Some(error) = ctx.guardrail_error.clone() {
+            self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), Utc::now())
+                .await;
+            respond_error(session, error, &ctx.request_id).await?;
             return Ok(false);
         }
 
@@ -564,6 +740,15 @@ where
                 upstream_request.insert_header("x-relayna-service", service_name)?;
             }
         }
+        if ctx
+            .pre_guardrail_plan
+            .as_ref()
+            .is_some_and(|plan| !plan.entries.is_empty())
+        {
+            if let Some(rewritten_len) = ctx.rewritten_request_len {
+                prepare_rewritten_request_headers(upstream_request, rewritten_len);
+            }
+        }
 
         Ok(())
     }
@@ -590,12 +775,29 @@ where
         &self,
         _session: &mut Session,
         upstream_response: &mut ResponseHeader,
-        _ctx: &mut Self::CTX,
+        ctx: &mut Self::CTX,
     ) -> PingoraResult<()>
     where
         Self::CTX: Send + Sync,
     {
         upstream_response.remove_header("alt-svc");
+        let has_post_guardrails = ctx
+            .post_guardrail_plan
+            .as_ref()
+            .is_some_and(|plan| !plan.entries.is_empty());
+        let has_during_guardrails = ctx
+            .during_guardrail_plan
+            .as_ref()
+            .is_some_and(|plan| !plan.entries.is_empty());
+        if has_post_guardrails || has_during_guardrails {
+            upstream_response.insert_header(
+                "x-relayna-applied-guardrails",
+                applied_guardrails_header(ctx),
+            )?;
+        }
+        if has_post_guardrails {
+            prepare_http1_rewritten_response_headers(upstream_response);
+        }
         Ok(())
     }
 
@@ -603,13 +805,65 @@ where
         &self,
         _session: &mut Session,
         body: &mut Option<Bytes>,
-        _end_of_stream: bool,
+        end_of_stream: bool,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<Option<std::time::Duration>>
     where
         Self::CTX: Send + Sync,
     {
-        if let Some(body) = body {
+        if ctx
+            .during_guardrail_plan
+            .as_ref()
+            .is_some_and(|plan| !plan.entries.is_empty())
+        {
+            apply_streaming_guardrails(body, end_of_stream, ctx);
+        }
+        if ctx
+            .post_guardrail_plan
+            .as_ref()
+            .is_some_and(|plan| !plan.entries.is_empty())
+        {
+            if let Some(rewriter) = ctx.response_rewriter.as_mut() {
+                let plan = ctx.post_guardrail_plan.clone().unwrap_or_default();
+                let context = ctx.guardrail_context.clone();
+                let definitions = ctx.guardrail_definitions.clone();
+                let mut events = Vec::new();
+                if rewriter
+                    .filter_chunk(body, end_of_stream, |raw_body| {
+                        if !end_of_stream {
+                            return Ok(raw_body.to_vec());
+                        }
+                        let response_json =
+                            match serde_json::from_slice::<serde_json::Value>(raw_body) {
+                                Ok(value) => value,
+                                Err(_) => return Ok(raw_body.to_vec()),
+                            };
+                        let Some(context) = context.clone() else {
+                            return Ok(raw_body.to_vec());
+                        };
+                        let executor = guardrail_executor_for_definitions(&definitions);
+                        let execution = executor.execute(
+                            &plan,
+                            GuardrailMode::PostCall,
+                            context,
+                            None,
+                            Some(response_json),
+                        )?;
+                        events.extend(execution_events_from_records(
+                            &execution.context,
+                            &execution.records,
+                            Utc::now(),
+                        ));
+                        serde_json::to_vec(&execution.response.unwrap_or(serde_json::Value::Null))
+                            .map_err(|_| GatewayError::InvalidGuardrailRequest)
+                    })
+                    .is_ok()
+                {
+                    ctx.guardrail_events.extend(events);
+                }
+            }
+        }
+        if let Some(body) = body.as_ref() {
             observe_response_body_chunk(ctx, body);
         }
         Ok(None)
@@ -695,6 +949,17 @@ where
                 .release_budget_reservation(key.key_id, &ctx.request_id)
                 .await;
         }
+        for event in &ctx.guardrail_events {
+            gateway_telemetry::record_guardrail_execution(
+                &event.guardrail_name,
+                event.mode.as_str(),
+                event.action.as_str(),
+                event.failure_policy.as_str(),
+                u64::try_from(event.latency_ms.max(0)).unwrap_or(u64::MAX),
+                event.reason.is_some(),
+            );
+            let _ = self.store.insert_guardrail_execution_event(event).await;
+        }
         if ctx.is_streaming {
             gateway_telemetry::stream_finished(error.is_some() || status_code >= 500);
         }
@@ -730,7 +995,7 @@ where
 
 impl<S, R> RelaynaPingoraProxy<S, R>
 where
-    S: UsageRecorder,
+    S: UsageRecorder + GuardrailStore,
     R: BudgetStore,
 {
     fn upstream_for<'a>(&'a self, ctx: &'a PingoraContext) -> Option<&'a PingoraUpstreamConfig> {
@@ -948,6 +1213,94 @@ fn observe_response_body_chunk(ctx: &mut PingoraContext, body: &[u8]) {
     }
 }
 
+fn apply_streaming_guardrails(
+    body: &mut Option<Bytes>,
+    end_of_stream: bool,
+    ctx: &mut PingoraContext,
+) {
+    let Some(chunk) = body.take() else {
+        if end_of_stream && !ctx.guardrail_stream_holdback.is_empty() {
+            let flushed = std::mem::take(&mut ctx.guardrail_stream_holdback);
+            let (redacted, _) = redact_pii_text(&flushed);
+            *body = Some(Bytes::from(redacted));
+        }
+        return;
+    };
+    let Ok(text) = std::str::from_utf8(&chunk) else {
+        ctx.guardrail_error = Some(GatewayError::GuardrailUnavailable);
+        *body = Some(Bytes::new());
+        return;
+    };
+    let mut combined = String::new();
+    combined.push_str(&ctx.guardrail_stream_holdback);
+    combined.push_str(text);
+    let split_at = if end_of_stream {
+        combined.len()
+    } else if combined.len() <= 64 {
+        0
+    } else {
+        combined
+            .char_indices()
+            .rev()
+            .nth(64)
+            .map(|(index, _)| index)
+            .unwrap_or(0)
+    };
+    let holdback = combined.split_off(split_at);
+    ctx.guardrail_stream_holdback = holdback;
+    let (redacted, metadata) = redact_pii_text(&combined);
+    if let (Some(plan), Some(context)) = (
+        ctx.during_guardrail_plan.clone(),
+        ctx.guardrail_context.clone(),
+    ) {
+        let executor = guardrail_executor_for_definitions(&ctx.guardrail_definitions);
+        match executor.execute(
+            &plan,
+            GuardrailMode::DuringCall,
+            context,
+            None,
+            Some(serde_json::Value::String(redacted)),
+        ) {
+            Ok(execution) => {
+                ctx.guardrail_context = Some(execution.context.clone());
+                ctx.guardrail_events.extend(execution_events_from_records(
+                    &execution.context,
+                    &execution.records,
+                    Utc::now(),
+                ));
+                let output = execution
+                    .response
+                    .and_then(|value| value.as_str().map(ToOwned::to_owned))
+                    .unwrap_or_default();
+                *body = Some(Bytes::from(output));
+            }
+            Err(error) => {
+                ctx.guardrail_error = Some(error);
+                *body = Some(Bytes::new());
+            }
+        }
+    } else {
+        let _ = metadata;
+        *body = Some(Bytes::from(redacted));
+    }
+}
+
+fn applied_guardrails_header(ctx: &PingoraContext) -> String {
+    ctx.pre_guardrail_plan
+        .iter()
+        .chain(ctx.post_guardrail_plan.iter())
+        .chain(ctx.during_guardrail_plan.iter())
+        .flat_map(|plan| plan.entries.iter())
+        .map(|entry| entry.definition.name.as_str())
+        .fold(Vec::<&str>::new(), |mut names, name| {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+            names
+        })
+        .join(",")
+}
+
 fn provider_for_usage(ctx: &PingoraContext) -> Provider {
     if ctx.fallback_count > 0 {
         return Provider::LiteLlm;
@@ -992,6 +1345,8 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         body_prefix: Vec::new(),
         body_bytes_seen: 0,
         response_body_prefix: Vec::new(),
+        request_rewriter: None,
+        response_rewriter: None,
         is_streaming: false,
         first_chunk_recorded: false,
         budget_reserved: false,
@@ -1003,6 +1358,16 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         service_upstream: None,
         service_route_pattern: None,
         litellm_upstream: None,
+        guardrail_definitions: Vec::new(),
+        guardrail_policy: GuardrailPolicy::default(),
+        pre_guardrail_plan: None,
+        post_guardrail_plan: None,
+        during_guardrail_plan: None,
+        guardrail_context: None,
+        guardrail_events: Vec::new(),
+        guardrail_error: None,
+        rewritten_request_len: None,
+        guardrail_stream_holdback: String::new(),
     }
 }
 
@@ -1126,6 +1491,47 @@ mod tests {
     }
 
     #[test]
+    fn guardrail_header_deduplicates_pre_and_post_plans() {
+        let mut ctx = new_pingora_context_for_tests();
+        let definition = gateway_core::pii_redact_definition();
+        ctx.pre_guardrail_plan = Some(GuardrailPlan {
+            entries: vec![gateway_core::GuardrailPlanEntry {
+                definition: definition.clone(),
+            }],
+        });
+        ctx.post_guardrail_plan = Some(GuardrailPlan {
+            entries: vec![gateway_core::GuardrailPlanEntry { definition }],
+        });
+
+        assert_eq!(applied_guardrails_header(&ctx), "pii-redact");
+    }
+
+    #[test]
+    fn streaming_guardrails_redact_pii_across_chunks() {
+        let mut ctx = new_pingora_context_for_tests();
+        let definition = gateway_core::pii_redact_definition();
+        ctx.guardrail_definitions = vec![definition.clone()];
+        ctx.during_guardrail_plan = Some(GuardrailPlan {
+            entries: vec![gateway_core::GuardrailPlanEntry { definition }],
+        });
+        ctx.guardrail_context = Some(GuardrailContext::default());
+
+        let mut first = Some(Bytes::from("data: {\"delta\":\"alice@"));
+        apply_streaming_guardrails(&mut first, false, &mut ctx);
+        let mut second = Some(Bytes::from("example.com\"}\n\n"));
+        apply_streaming_guardrails(&mut second, true, &mut ctx);
+
+        let output = format!(
+            "{}{}",
+            String::from_utf8(first.unwrap().to_vec()).expect("utf8"),
+            String::from_utf8(second.unwrap().to_vec()).expect("utf8")
+        );
+        assert!(output.contains("[EMAIL_1]"));
+        assert!(!output.contains("alice@example.com"));
+        assert!(!ctx.guardrail_events.is_empty());
+    }
+
+    #[test]
     fn delayed_stream_chunk_records_first_chunk_once_and_caps_prefix() {
         let mut ctx = new_pingora_context_for_tests();
         ctx.started = Instant::now() - Duration::from_millis(25);
@@ -1209,6 +1615,7 @@ mod tests {
 
     struct MemoryUsageStore {
         events: Mutex<Vec<UsageEvent>>,
+        guardrail_events: Mutex<Vec<GuardrailExecutionEvent>>,
         openai_routes_enabled: Mutex<bool>,
     }
 
@@ -1216,6 +1623,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 events: Mutex::new(Vec::new()),
+                guardrail_events: Mutex::new(Vec::new()),
                 openai_routes_enabled: Mutex::new(true),
             }
         }
@@ -1237,6 +1645,36 @@ mod tests {
             } else {
                 Ok(true)
             }
+        }
+    }
+
+    #[async_trait]
+    impl GuardrailStore for MemoryUsageStore {
+        async fn list_guardrail_definitions(&self) -> GatewayResult<Vec<GuardrailDefinition>> {
+            Ok(vec![gateway_core::pii_redact_definition()])
+        }
+
+        async fn guardrail_policy_for_key(&self, _key_id: Uuid) -> GatewayResult<GuardrailPolicy> {
+            Ok(GuardrailPolicy::default())
+        }
+
+        async fn upsert_guardrail_policy_for_key(
+            &self,
+            _key_id: Uuid,
+            _policy: &GuardrailPolicy,
+        ) -> GatewayResult<()> {
+            Ok(())
+        }
+
+        async fn insert_guardrail_execution_event(
+            &self,
+            event: &GuardrailExecutionEvent,
+        ) -> GatewayResult<()> {
+            self.guardrail_events
+                .lock()
+                .expect("guardrail events lock")
+                .push(event.clone());
+            Ok(())
         }
     }
 

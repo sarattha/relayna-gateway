@@ -36,6 +36,9 @@ export LITELLM_SERVICE_KEY="sk-litellm-service-key"
 export RELAYNA_STUDIO_BASE_URL="http://127.0.0.1:8000"
 # Optional when Studio protects the Gateway export endpoint:
 # export RELAYNA_STUDIO_TOKEN="studio-gateway-token"
+# Optional guardrail PII mapping controls:
+# export GUARDRAIL_PII_MAPPING_TTL_SECONDS="3600"
+# export GUARDRAIL_MAPPING_ENCRYPTION_KEY="<base64-32-byte-key>"
 export GATEWAY_BIND_ADDR="127.0.0.1:8080"
 export GATEWAY_CONTROL_BIND_ADDR="127.0.0.1:8081"
 export LOG_LEVEL="gateway_api=info,gateway_proxy=info"
@@ -56,6 +59,7 @@ Useful endpoints:
 - Readiness: `http://127.0.0.1:8081/readyz`
 - Metrics: `http://127.0.0.1:8081/metrics`
 - Admin portal: `http://127.0.0.1:8081/admin-ui`
+- Guardrail catalog: `http://127.0.0.1:8081/admin/guardrails`
 - Studio connection status: `http://127.0.0.1:8081/admin/studio/connection`
 - Studio import preview: `http://127.0.0.1:8081/admin/studio/services`
 

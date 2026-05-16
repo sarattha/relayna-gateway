@@ -6,6 +6,9 @@ const state = {
   providers: [],
   openaiRoutes: [],
   services: [],
+  guardrails: [],
+  guardrailExecutions: [],
+  guardrailSummary: [],
   studioServices: [],
   studioConnection: null,
   editingKeyId: null,
@@ -169,6 +172,7 @@ async function refresh() {
     if (state.view === "overview") await overview();
     if (state.view === "projects") await projects();
     if (state.view === "keys") await keys();
+    if (state.view === "guardrails") await guardrails();
     if (state.view === "providers") await providers();
     if (state.view === "routes") await routes();
     if (state.view === "services") await services();
@@ -295,7 +299,12 @@ async function patchProjectServices(event) {
 }
 
 async function keys() {
-  [state.keys, state.projects, state.services] = await Promise.all([api("/admin/keys"), api("/admin/projects"), api("/admin/services")]);
+  [state.keys, state.projects, state.services, state.guardrails] = await Promise.all([
+    api("/admin/keys"),
+    api("/admin/projects"),
+    api("/admin/services"),
+    api("/admin/guardrails"),
+  ]);
   const editing = state.keys.find((key) => key.id === state.editingKeyId);
   content.innerHTML = `
     <div class="split">
@@ -308,6 +317,7 @@ async function keys() {
           <label>Expires at<input name="expires_at" type="datetime-local"></label>
           <label class="check"><input name="no_expires_at" type="checkbox"> No expiration</label>
           ${policyFields()}
+          ${guardrailPolicyFields()}
           <div class="form-actions">
             <button type="submit" class="primary">Create key</button>
           </div>
@@ -350,6 +360,15 @@ function policyFields(key = null) {
   `;
 }
 
+function guardrailPolicyFields(key = null) {
+  const policy = key?.guardrail_policy || {};
+  return `
+    <label>Mandatory guardrails<input name="mandatory_guardrails" value="${attr(listValue(policy.mandatory_guardrails, ""))}" placeholder="pii-redact"></label>
+    <label>Optional guardrails<input name="optional_guardrails" value="${attr(listValue(policy.optional_guardrails, ""))}" placeholder="pii-redact"></label>
+    <label>Forbidden guardrails<input name="forbidden_guardrails" value="${attr(listValue(policy.forbidden_guardrails, ""))}"></label>
+  `;
+}
+
 function keyOwnershipFields(key = null) {
   const ownerType = key?.owner_type || "project";
   return `
@@ -374,6 +393,7 @@ function keyEditForm(key) {
       <label class="check"><input name="no_expires_at" type="checkbox" ${key.expires_at ? "" : "checked"}> No expiration</label>
       <label class="check"><input name="disabled" type="checkbox" ${key.disabled ? "checked" : ""}> Disabled</label>
       ${policyFields(key)}
+      ${guardrailPolicyFields(key)}
       <div class="form-actions">
         <button type="submit" class="primary">Save changes</button>
         <button type="button" data-key-action="cancel-edit">Cancel</button>
@@ -421,6 +441,7 @@ async function createKey(event) {
     service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
     expires_at: form.has("no_expires_at") ? null : isoDate(form.get("expires_at")),
     policy: policyBody(form),
+    guardrail_policy: guardrailPolicyBody(form),
   };
   if (!form.has("no_expires_at") && !body.expires_at) delete body.expires_at;
   const response = await api("/admin/keys", { method: "POST", body: JSON.stringify(body) });
@@ -440,6 +461,7 @@ async function patchKey(event) {
     service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
     disabled: form.has("disabled"),
     policy: policyBody(form),
+    guardrail_policy: guardrailPolicyBody(form),
   };
   if (form.has("no_expires_at")) {
     body.expires_at = null;
@@ -1087,6 +1109,85 @@ function policyBody(form) {
     allow_tools: form.has("allow_tools"),
   };
   return body;
+}
+
+function guardrailPolicyBody(form) {
+  return {
+    mandatory_guardrails: csv(form.get("mandatory_guardrails")),
+    optional_guardrails: csv(form.get("optional_guardrails")),
+    forbidden_guardrails: csv(form.get("forbidden_guardrails")),
+  };
+}
+
+async function guardrails() {
+  [state.guardrails, state.guardrailExecutions, state.guardrailSummary] = await Promise.all([
+    api("/admin/guardrails"),
+    api("/admin/guardrails/executions?limit=50"),
+    api("/admin/guardrails/summary"),
+  ]);
+  content.innerHTML = `
+    <section class="panel">
+      <div class="panel-heading">
+        <h3>Catalog</h3>
+        <span class="subtle">${state.guardrails.guardrails.length} configured</span>
+      </div>
+      ${guardrailCatalogTable(state.guardrails.guardrails)}
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Summary</h3></div>
+      ${guardrailSummaryTable(state.guardrailSummary.summary)}
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Recent executions</h3></div>
+      ${guardrailExecutionTable(state.guardrailExecutions.executions)}
+    </section>
+  `;
+}
+
+function guardrailCatalogTable(rows) {
+  return table(
+    ["Name", "Provider", "Modes", "Default", "Failure", "Enabled", "Endpoint", "Token"],
+    rows.map((row) => [
+      `<code>${esc(row.name)}</code><div class="subtle">${esc(row.description)}</div>`,
+      esc(row.provider_kind),
+      esc(listValue(row.modes, "")),
+      row.default_on ? '<span class="badge good">default</span>' : '<span class="badge">opt-in</span>',
+      esc(row.failure_policy),
+      row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
+      row.endpoint_configured ? '<span class="badge good">configured</span>' : '<span class="badge">built-in</span>',
+      row.token_configured ? '<span class="badge good">configured</span>' : '<span class="badge">none</span>',
+    ]),
+  );
+}
+
+function guardrailSummaryTable(rows) {
+  return table(
+    ["Guardrail", "Mode", "Action", "Failure policy", "Count", "Total latency"],
+    rows.map((row) => [
+      esc(row.guardrail_name),
+      esc(row.mode),
+      esc(row.action),
+      esc(row.failure_policy),
+      row.count,
+      `${esc(row.total_latency_ms)} ms`,
+    ]),
+  );
+}
+
+function guardrailExecutionTable(rows) {
+  return table(
+    ["Time", "Request", "Key", "Guardrail", "Mode", "Action", "Latency", "Reason"],
+    rows.map((row) => [
+      time(row.created_at),
+      `<code>${esc(row.request_id)}</code>`,
+      row.key_id ? `<code>${esc(row.key_id)}</code>` : "",
+      esc(row.guardrail_name),
+      esc(row.mode),
+      esc(row.action),
+      `${esc(row.latency_ms)} ms`,
+      esc(row.reason || ""),
+    ]),
+  );
 }
 
 function serviceBody(form, patch) {

@@ -3,20 +3,26 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use chrono::Utc;
 use gateway_core::{
-    auth::VirtualKeyLookup, AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,
-    AdminOpenAiRouteStore, AdminProjectStore, AdminProviderConfigStore, AdminServiceStore,
-    AdminStudioConnectionStore, CreatedAdminKeyResponse, CreatedOperatorTokenResponse,
-    EffectiveStudioConnection, GatewayError, GatewayResult, OperatorTokenMaterial,
-    OperatorTokenStore, ProjectCreateRequest, ProjectPatchRequest, ProviderConfigCreateRequest,
-    ProviderConfigPatchRequest, ServiceCreateRequest, ServicePatchRequest, StudioConnectionEnv,
-    StudioConnectionPatchRequest, StudioConnectionTestResponse, StudioServiceCatalogResponse,
-    StudioServiceImportPreview, StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent,
-    UsageQuery, UsageQueryStore, VirtualKeyMaterial,
+    auth::{Authenticator, VirtualKeyLookup},
+    guardrail_executor_for_definitions, resolve_guardrail_plan, AdminGuardrailDefinitionResponse,
+    AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore, AdminOpenAiRouteStore,
+    AdminProjectStore, AdminProviderConfigStore, AdminServiceStore, AdminStudioConnectionStore,
+    CreatedAdminKeyResponse, CreatedOperatorTokenResponse, EffectiveStudioConnection, GatewayError,
+    GatewayResult, GuardrailAdminCreateRequest, GuardrailAdminPatchRequest,
+    GuardrailDefinitionResponse, GuardrailEventQuery, GuardrailExecutionEvent,
+    GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPlanRequest,
+    GuardrailPolicySet, GuardrailStore, GuardrailTestRequest, GuardrailTestResponse,
+    OperatorTokenMaterial, OperatorTokenStore, ProjectCreateRequest, ProjectPatchRequest,
+    ProviderConfigCreateRequest, ProviderConfigPatchRequest, ServiceCreateRequest,
+    ServicePatchRequest, StudioConnectionEnv, StudioConnectionPatchRequest,
+    StudioConnectionTestResponse, StudioServiceCatalogResponse, StudioServiceImportPreview,
+    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore,
+    VirtualKeyMaterial,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::Serialize;
@@ -35,6 +41,8 @@ pub trait GatewayData:
     + AdminProviderConfigStore
     + AdminServiceStore
     + AdminStudioConnectionStore
+    + GuardrailStore
+    + GuardrailObservabilityStore
     + OperatorTokenStore
     + UsageQueryStore
     + Send
@@ -147,6 +155,18 @@ pub fn router_with_state(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .route("/v1/guardrails", get(list_guardrails))
+        .route("/v1/guardrails/test", post(test_guardrails))
+        .route(
+            "/admin/guardrails",
+            get(admin_guardrails).post(create_admin_guardrail),
+        )
+        .route("/admin/guardrails/{name}", patch(patch_admin_guardrail))
+        .route(
+            "/admin/guardrails/executions",
+            get(admin_guardrail_executions),
+        )
+        .route("/admin/guardrails/summary", get(admin_guardrail_summary))
         .route("/admin/keys", post(create_key).get(list_keys))
         .route("/admin/keys/{key_id}", get(get_key).patch(patch_key))
         .route("/admin/keys/{key_id}/revoke", post(revoke_key))
@@ -255,6 +275,181 @@ async fn readyz(State(state): State<AppState>) -> Response {
             }),
         )
             .into_response(),
+    }
+}
+
+async fn list_guardrails(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let key = match require_virtual_key(&state, &headers).await {
+        Ok(key) => key,
+        Err(error) => return error_response(&headers, error),
+    };
+    let definitions = match state.store.list_guardrail_definitions().await {
+        Ok(definitions) => definitions,
+        Err(error) => return error_response(&headers, error),
+    };
+    let policy = match state.store.guardrail_policy_for_key(key.key_id).await {
+        Ok(policy) => policy,
+        Err(error) => return error_response(&headers, error),
+    };
+    let guardrails = definitions
+        .into_iter()
+        .filter(|definition| {
+            definition.default_on
+                || policy
+                    .mandatory_guardrails
+                    .iter()
+                    .any(|name| name == &definition.name)
+                || policy
+                    .optional_guardrails
+                    .iter()
+                    .any(|name| name == &definition.name)
+        })
+        .filter(|definition| {
+            !policy
+                .forbidden_guardrails
+                .iter()
+                .any(|name| name == &definition.name)
+        })
+        .map(|definition| definition.response())
+        .collect();
+
+    Json(GuardrailListResponse { guardrails }).into_response()
+}
+
+async fn test_guardrails(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<GuardrailTestRequest>,
+) -> Response {
+    let key = match require_virtual_key(&state, &headers).await {
+        Ok(key) => key,
+        Err(error) => return error_response(&headers, error),
+    };
+    if request.mode == GuardrailMode::DuringCall {
+        return error_response(&headers, GatewayError::InvalidGuardrailRequest);
+    }
+    let definitions = match state.store.list_guardrail_definitions().await {
+        Ok(definitions) => definitions,
+        Err(error) => return error_response(&headers, error),
+    };
+    let policy = match state.store.guardrail_policy_for_key(key.key_id).await {
+        Ok(policy) => policy,
+        Err(error) => return error_response(&headers, error),
+    };
+    let executor = guardrail_executor_for_definitions(&definitions);
+    let plan = match resolve_guardrail_plan(GuardrailPlanRequest {
+        mode: request.mode,
+        definitions,
+        policies: GuardrailPolicySet {
+            key_policy: policy,
+            ..GuardrailPolicySet::default()
+        },
+        client_requested_guardrails: request.guardrails,
+    }) {
+        Ok(plan) => plan,
+        Err(error) => return error_response(&headers, error),
+    };
+    let context = gateway_core::GuardrailContext {
+        request_id: request_id_from_headers(&headers),
+        key_id: Some(key.key_id),
+        project_id: key.project_id,
+        ..gateway_core::GuardrailContext::default()
+    };
+    let execution = match executor.execute(
+        &plan,
+        request.mode,
+        context,
+        if request.mode == GuardrailMode::PreCall {
+            Some(request.input.clone())
+        } else {
+            None
+        },
+        if request.mode == GuardrailMode::PostCall {
+            Some(request.input.clone())
+        } else {
+            None
+        },
+    ) {
+        Ok(execution) => execution,
+        Err(error) => return error_response(&headers, error),
+    };
+    let input = if request.mode == GuardrailMode::PreCall {
+        execution.request.unwrap_or(request.input)
+    } else {
+        execution.response.unwrap_or(request.input)
+    };
+    Json(GuardrailTestResponse {
+        input,
+        applied_guardrails: execution.context.applied_guardrails,
+        results: execution.records,
+    })
+    .into_response()
+}
+
+async fn admin_guardrails(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+    match state.store.list_admin_guardrail_definitions().await {
+        Ok(guardrails) => Json(AdminGuardrailListResponse { guardrails }).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_guardrail_executions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<GuardrailEventQuery>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+    match state.store.guardrail_execution_events(query).await {
+        Ok(executions) => Json(AdminGuardrailExecutionListResponse { executions }).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_guardrail_summary(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<GuardrailEventQuery>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+    match state.store.guardrail_execution_summary(query).await {
+        Ok(summary) => Json(AdminGuardrailSummaryResponse { summary }).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn create_admin_guardrail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<GuardrailAdminCreateRequest>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+    match state.store.create_http_guardrail(request).await {
+        Ok(guardrail) => Json(guardrail).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn patch_admin_guardrail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+    Json(request): Json<GuardrailAdminPatchRequest>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+    match state.store.patch_http_guardrail(name, request).await {
+        Ok(guardrail) => Json(guardrail).into_response(),
+        Err(error) => error_response(&headers, error),
     }
 }
 
@@ -1042,6 +1237,16 @@ async fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response
     }
 }
 
+async fn require_virtual_key(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> GatewayResult<gateway_core::AuthenticatedKey> {
+    let token = bearer_token(headers)?;
+    Authenticator::new(state.store.clone())
+        .authenticate_authorization(Some(&format!("Bearer {token}")), Utc::now())
+        .await
+}
+
 fn bearer_token(headers: &HeaderMap) -> GatewayResult<&str> {
     let Some(authorization) = headers
         .get("authorization")
@@ -1060,16 +1265,44 @@ fn bearer_token(headers: &HeaderMap) -> GatewayResult<&str> {
 }
 
 fn error_response(headers: &HeaderMap, error: GatewayError) -> Response {
-    let request_id = headers
+    (
+        error.status_code(),
+        Json(error.body(request_id_from_headers(headers))),
+    )
+        .into_response()
+}
+
+fn request_id_from_headers(headers: &HeaderMap) -> String {
+    headers
         .get("x-request-id")
         .and_then(|value| value.to_str().ok())
-        .unwrap_or("unknown");
-    (error.status_code(), Json(error.body(request_id))).into_response()
+        .unwrap_or("unknown")
+        .to_owned()
 }
 
 #[derive(Debug, Serialize)]
 struct StatusBody {
     status: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct GuardrailListResponse {
+    guardrails: Vec<GuardrailDefinitionResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct AdminGuardrailListResponse {
+    guardrails: Vec<AdminGuardrailDefinitionResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct AdminGuardrailExecutionListResponse {
+    executions: Vec<GuardrailExecutionEvent>,
+}
+
+#[derive(Debug, Serialize)]
+struct AdminGuardrailSummaryResponse {
+    summary: Vec<GuardrailExecutionSummary>,
 }
 
 #[cfg(test)]
@@ -1176,6 +1409,125 @@ mod tests {
     }
 
     #[async_trait]
+    impl GuardrailStore for MemoryStore {
+        async fn list_guardrail_definitions(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::GuardrailDefinition>> {
+            Ok(vec![gateway_core::pii_redact_definition()])
+        }
+
+        async fn guardrail_policy_for_key(
+            &self,
+            _key_id: Uuid,
+        ) -> GatewayResult<gateway_core::GuardrailPolicy> {
+            Ok(self
+                .admin_key
+                .lock()
+                .expect("lock poisoned")
+                .as_ref()
+                .map(|key| key.guardrail_policy.clone())
+                .unwrap_or_default())
+        }
+
+        async fn upsert_guardrail_policy_for_key(
+            &self,
+            _key_id: Uuid,
+            policy: &gateway_core::GuardrailPolicy,
+        ) -> GatewayResult<()> {
+            if let Some(key) = self.admin_key.lock().expect("lock poisoned").as_mut() {
+                key.guardrail_policy = policy.clone();
+            }
+            Ok(())
+        }
+
+        async fn insert_guardrail_execution_event(
+            &self,
+            _event: &gateway_core::GuardrailExecutionEvent,
+        ) -> GatewayResult<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl GuardrailObservabilityStore for MemoryStore {
+        async fn list_admin_guardrail_definitions(
+            &self,
+        ) -> GatewayResult<Vec<AdminGuardrailDefinitionResponse>> {
+            Ok(vec![AdminGuardrailDefinitionResponse {
+                name: "pii-redact".to_owned(),
+                description: "Redacts common PII before provider calls and optionally restores placeholders after responses.".to_owned(),
+                provider_kind: gateway_core::GuardrailProviderKind::BuiltIn,
+                modes: vec![
+                    GuardrailMode::PreCall,
+                    GuardrailMode::PostCall,
+                    GuardrailMode::DuringCall,
+                ],
+                default_on: false,
+                failure_policy: gateway_core::GuardrailFailurePolicy::FailClosed,
+                config_schema: serde_json::json!({ "restore_output": "boolean" }),
+                enabled: true,
+                endpoint_configured: false,
+                token_configured: false,
+            }])
+        }
+
+        async fn guardrail_execution_events(
+            &self,
+            _query: GuardrailEventQuery,
+        ) -> GatewayResult<Vec<GuardrailExecutionEvent>> {
+            Ok(Vec::new())
+        }
+
+        async fn guardrail_execution_summary(
+            &self,
+            _query: GuardrailEventQuery,
+        ) -> GatewayResult<Vec<GuardrailExecutionSummary>> {
+            Ok(Vec::new())
+        }
+
+        async fn create_http_guardrail(
+            &self,
+            request: GuardrailAdminCreateRequest,
+        ) -> GatewayResult<AdminGuardrailDefinitionResponse> {
+            Ok(AdminGuardrailDefinitionResponse {
+                name: request.name,
+                description: request.description,
+                provider_kind: gateway_core::GuardrailProviderKind::Http,
+                modes: request.modes,
+                default_on: request.default_on,
+                failure_policy: request.failure_policy,
+                config_schema: request.config_schema,
+                enabled: request.enabled,
+                endpoint_configured: !request.endpoint_url.is_empty(),
+                token_configured: request.bearer_token.is_some(),
+            })
+        }
+
+        async fn patch_http_guardrail(
+            &self,
+            name: String,
+            request: GuardrailAdminPatchRequest,
+        ) -> GatewayResult<AdminGuardrailDefinitionResponse> {
+            Ok(AdminGuardrailDefinitionResponse {
+                name,
+                description: request.description.unwrap_or_default(),
+                provider_kind: gateway_core::GuardrailProviderKind::Http,
+                modes: request.modes.unwrap_or_default(),
+                default_on: request.default_on.unwrap_or(false),
+                failure_policy: request
+                    .failure_policy
+                    .unwrap_or(gateway_core::GuardrailFailurePolicy::FailClosed),
+                config_schema: request
+                    .config_schema
+                    .unwrap_or_else(|| serde_json::json!({})),
+                enabled: request.enabled.unwrap_or(true),
+                endpoint_configured: request.endpoint_url.is_some(),
+                token_configured: request.bearer_token.flatten().is_some(),
+            })
+        }
+    }
+
+    #[async_trait]
     impl AdminKeyStore for MemoryStore {
         async fn create_admin_key(
             &self,
@@ -1206,6 +1558,7 @@ mod tests {
                     allow_streaming: false,
                     allow_tools: false,
                 },
+                guardrail_policy: request.guardrail_policy,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
             };
@@ -1239,6 +1592,9 @@ mod tests {
                 }
                 if let Some(disabled) = patch.disabled {
                     key.disabled = disabled;
+                }
+                if let Some(guardrail_patch) = patch.guardrail_policy {
+                    key.guardrail_policy = guardrail_patch.apply(key.guardrail_policy.clone())?;
                 }
                 key.updated_at = Utc::now();
             }
@@ -1705,14 +2061,50 @@ mod tests {
     }
 
     fn stored_key(raw: &str) -> StoredVirtualKey {
+        let material = VirtualKeyMaterial::from_raw(raw.to_owned()).expect("key material");
         StoredVirtualKey {
             id: Uuid::new_v4(),
             project_id: Some(Uuid::new_v4()),
-            key_prefix: raw.chars().take(16).collect(),
-            key_hash: "not-used-by-control-api".to_owned(),
+            key_prefix: material.key_prefix,
+            key_hash: material.key_hash,
             disabled: false,
             revoked_at: None,
             expires_at: None,
+        }
+    }
+
+    fn admin_key_for(
+        stored: &StoredVirtualKey,
+        guardrail_policy: gateway_core::GuardrailPolicy,
+    ) -> AdminKeyResponse {
+        let now = Utc::now();
+        AdminKeyResponse {
+            id: stored.id,
+            owner_type: gateway_core::AdminKeyOwnerType::Project,
+            project_id: stored.project_id,
+            service_names: Vec::new(),
+            key_prefix: stored.key_prefix.clone(),
+            disabled: false,
+            revoked_at: None,
+            expires_at: None,
+            policy: AdminPolicyResponse {
+                allowed_routes: vec![
+                    "/v1/chat/completions".to_owned(),
+                    "/v1/responses".to_owned(),
+                ],
+                allowed_models: Vec::new(),
+                allowed_providers: vec!["litellm".to_owned()],
+                allowed_services: Vec::new(),
+                rpm_limit: None,
+                tpm_limit: None,
+                daily_budget_usd: None,
+                monthly_budget_usd: None,
+                allow_streaming: false,
+                allow_tools: false,
+            },
+            guardrail_policy,
+            created_at: now,
+            updated_at: now,
         }
     }
 
@@ -1861,6 +2253,13 @@ mod tests {
         .expect("response")
     }
 
+    async fn response_json(response: Response) -> serde_json::Value {
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        serde_json::from_slice(&body).expect("json")
+    }
+
     #[tokio::test]
     async fn healthz_returns_ok() {
         let store = MemoryStore {
@@ -1899,6 +2298,98 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         assert!(store.events.lock().expect("lock poisoned").is_empty());
+    }
+
+    #[tokio::test]
+    async fn guardrail_list_requires_virtual_key_and_returns_allowed_definitions() {
+        let raw = "rk_live_guardrailtest1";
+        let stored = stored_key(raw);
+        let store = default_store();
+        *store.key.lock().expect("lock poisoned") = Some(stored.clone());
+        *store.admin_key.lock().expect("lock poisoned") = Some(admin_key_for(
+            &stored,
+            gateway_core::GuardrailPolicy {
+                mandatory_guardrails: vec!["pii-redact".to_owned()],
+                ..gateway_core::GuardrailPolicy::default()
+            },
+        ));
+        let app = router_with_state(test_state(store));
+
+        let unauthorized = request(app.clone(), "/v1/guardrails").await;
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let response = admin_get(app, "/v1/guardrails", Some(raw)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["guardrails"][0]["name"], "pii-redact");
+    }
+
+    #[tokio::test]
+    async fn guardrail_test_runs_pii_redact_without_provider_call() {
+        let raw = "rk_live_guardrailtest2";
+        let stored = stored_key(raw);
+        let store = default_store();
+        *store.key.lock().expect("lock poisoned") = Some(stored.clone());
+        *store.admin_key.lock().expect("lock poisoned") = Some(admin_key_for(
+            &stored,
+            gateway_core::GuardrailPolicy {
+                optional_guardrails: vec!["pii-redact".to_owned()],
+                ..gateway_core::GuardrailPolicy::default()
+            },
+        ));
+        let app = router_with_state(test_state(store.clone()));
+        let response = admin_post(
+            app,
+            "/v1/guardrails/test",
+            Some(raw),
+            r#"{"guardrails":["pii-redact"],"mode":"pre_call","input":{"messages":[{"role":"user","content":"email john@example.com"}]}}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert!(value.to_string().contains("[EMAIL_1]"));
+        assert!(!value.to_string().contains("john@example.com"));
+        assert!(store.events.lock().expect("lock poisoned").is_empty());
+    }
+
+    #[tokio::test]
+    async fn admin_guardrail_catalog_requires_operator_token() {
+        let app = router_with_state(test_state(default_store()));
+
+        let unauthorized = admin_get(app.clone(), "/admin/guardrails", None).await;
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let response = admin_get(app, "/admin/guardrails", Some(TEST_OPERATOR_TOKEN)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["guardrails"][0]["name"], "pii-redact");
+        assert!(value["guardrails"][0].get("endpoint_url").is_none());
+    }
+
+    #[tokio::test]
+    async fn admin_guardrail_create_redacts_http_provider_secret() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_post(
+            app,
+            "/admin/guardrails",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"name":"custom-check","description":"Custom check","endpoint_url":"https://guardrail.example/check","modes":["pre_call"],"failure_policy":"fail_open","bearer_token":"secret"}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["name"], "custom-check");
+        assert_eq!(value["provider_kind"], "http");
+        assert_eq!(value["token_configured"], true);
+        assert!(value.get("bearer_token").is_none());
     }
 
     #[tokio::test]

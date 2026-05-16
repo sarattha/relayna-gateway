@@ -11,6 +11,7 @@ chrono.workspace = true
 gateway-core = { path = "../gateway-core" }
 http.workspace = true
 redis.workspace = true
+serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 uuid.workspace = true

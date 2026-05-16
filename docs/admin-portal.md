@@ -28,6 +28,9 @@ Rotate the token from the portal after bootstrap or whenever access changes. Rot
 - Services creates, imports from Relayna Studio, edits, sync-checks, disables, enables, and deletes service registrations. Method selection uses explicit checkboxes for `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
 - Usage filters usage by project, virtual key, service, route, provider, model,
   and task, then shows project, key, and service breakdown tables.
+- Guardrails shows the gateway guardrail catalog, recent sanitized execution
+  events, and execution summaries. Key create/edit forms can set mandatory,
+  optional, and forbidden guardrails.
 - Health shows provider and service request, error, timeout, fallback, and latency status.
 
 ## Security Notes
@@ -38,7 +41,75 @@ Rotate the token from the portal after bootstrap or whenever access changes. Rot
 - Studio import reads catalog metadata only. Gateway preserves local credentials, enabled state, route overrides, limits, fallback services, project links, and cost settings on re-import.
 - Disabling an OpenAI route is global and affects every virtual key until the route is enabled again.
 - Service wildcard routes can accept `GET` only when the service registration includes `GET` in its allowed methods.
+- Guardrail execution records never include raw request bodies, response bodies,
+  provider credentials, bearer tokens, or PII mappings.
 - The control listener should be protected by network policy, ingress rules, or private access controls in production.
+
+## Guardrails
+
+Gateway guardrails are configured by operators and enforced by virtual-key
+policy. `pii-redact` is seeded as an opt-in built-in guardrail. Add it to a
+key's `mandatory_guardrails` to apply it even when clients omit the
+`guardrails` request field, or add it to `optional_guardrails` to let callers
+request it explicitly.
+
+Operator APIs:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  http://127.0.0.1:8081/admin/guardrails
+
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  "http://127.0.0.1:8081/admin/guardrails/executions?limit=50"
+
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  http://127.0.0.1:8081/admin/guardrails/summary
+```
+
+Client discovery and test APIs use Relayna virtual keys:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer rk_live_xxx" \
+  http://127.0.0.1:8081/v1/guardrails
+
+curl -sS \
+  -H "Authorization: Bearer rk_live_xxx" \
+  -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:8081/v1/guardrails/test \
+  -d '{"guardrails":["pii-redact"],"mode":"pre_call","input":{"messages":[{"role":"user","content":"email alice@example.com"}]}}'
+```
+
+Custom HTTP guardrails can be added through the admin API. Gateway sends a
+sanitized JSON payload with `request_id`, `guardrail`, `mode`, `context`,
+`config`, and one of `request` or `response`. The provider returns `action`,
+optional modified `request` or `response`, optional `reason`, and sanitized
+`metadata`.
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:8081/admin/guardrails \
+  -d '{
+    "name": "custom-check",
+    "description": "Company policy check",
+    "endpoint_url": "https://guardrails.example/check",
+    "modes": ["pre_call", "post_call", "during_call"],
+    "failure_policy": "fail_open",
+    "timeout_ms": 1500,
+    "bearer_token": "secret-token"
+  }'
+```
+
+Streaming requests with guarded responses require selected response guardrails
+to support `during_call`. `pii-redact` redacts common PII in streaming chunks
+with a small holdback window for values split across chunks. If a required
+guardrail cannot run during streaming, Gateway fails closed with
+`guardrail_unavailable`.
 
 ## Import From Studio
 

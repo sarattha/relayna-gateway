@@ -48,12 +48,19 @@ prefix for policy and usage extraction.
   body rewrite helper with request/response buffering tests and header helpers.
 - [x] (2026-05-16 16:52 +0700) Phase 1: Added guardrail core domain types,
   deterministic resolver, in-memory executor, stable errors, and focused tests.
-- [ ] Phase 2: Persisted guardrail policy and public guardrail discovery/test
-  APIs.
-- [ ] Phase 3: Non-streaming proxy integration and built-in `pii-redact`.
-- [ ] Phase 4: Observability persistence, admin visibility, docs, and release
-  hardening.
-- [ ] Phase 5: Streaming and external/custom guardrail providers.
+- [x] (2026-05-16 17:14 +0700) Phase 2: Added persisted guardrail registry,
+  key-level policy, execution events, admin key policy fields, and
+  virtual-key-authenticated guardrail discovery/test APIs.
+- [x] (2026-05-16 17:14 +0700) Phase 3: Wired non-streaming proxy guardrail
+  execution, request/response JSON rewriting, `x-relayna-applied-guardrails`,
+  execution event persistence, streaming fail-closed behavior, and built-in
+  `pii-redact`.
+- [x] (2026-05-16 18:06 +0700) Phase 4: Added admin guardrail catalog,
+  execution list and summary APIs, embedded Admin UI visibility, low-cardinality
+  telemetry, docs, and release-hardening notes.
+- [x] (2026-05-16 18:06 +0700) Phase 5: Added `during_call` support for
+  `pii-redact`, streaming chunk redaction with holdback, custom HTTP guardrail
+  registration and execution, and guardrail mapping config knobs.
 - [ ] Run `$code-change-verification` before implementation is marked complete.
 
 ## Surprises & Discoveries
@@ -83,6 +90,12 @@ prefix for policy and usage extraction.
   Evidence: Pingora's HTTP/1 proxy path treats `None` as upstream end-of-body;
   `gateway-proxy::body_rewrite` tests now lock the empty-chunk suppression
   behavior for later guardrail proxy integration.
+
+- Observation: Virtual-key-authenticated Axum guardrail routes need real
+  verifiable key hashes in tests, not placeholder hashes.
+  Evidence: The test fixture now builds `StoredVirtualKey` with
+  `VirtualKeyMaterial::from_raw` so `Authenticator` verifies the supplied raw
+  key.
 
 ## Decision Log
 
@@ -124,13 +137,46 @@ prefix for policy and usage extraction.
   changing active request behavior.
   Date/Author: 2026-05-16 / Codex.
 
+- Decision: Seed `pii-redact` as available but not default-on.
+  Rationale: Preserves existing key behavior until operators opt in through
+  key-level guardrail policy.
+  Date/Author: 2026-05-16 / Codex.
+
+- Decision: Guarded streaming requests fail closed in Phase 3.
+  Rationale: Streaming-aware `during_call` inspection is intentionally deferred
+  to Phase 5, and mandatory guardrails must not be silently bypassed.
+  Date/Author: 2026-05-16 / Codex.
+
+- Decision: Phase 4 exposes operator visibility through admin APIs and the
+  embedded static Admin UI before adding Studio-specific dashboards.
+  Rationale: The current repository already has operator-token protected admin
+  routes and a bundled UI, while Studio query contracts can build on the same
+  sanitized execution store later.
+  Date/Author: 2026-05-16 / Codex.
+
+- Decision: Phase 5 starts with a generic custom HTTP guardrail provider
+  contract and keeps Presidio, Azure, and OpenAI-specific connectors out of
+  this phase.
+  Rationale: A single HTTP contract gives operators a useful extension point
+  without baking vendor-specific behavior into the first streaming iteration.
+  Date/Author: 2026-05-16 / Codex.
+
+- Decision: Streaming `pii-redact` redacts chunks instead of only blocking or
+  deferring streaming PII handling.
+  Rationale: This preserves streaming behavior for guarded traffic while
+  avoiding full-response buffering.
+  Date/Author: 2026-05-16 / Codex.
+
 ## Outcomes & Retrospective
 
-Phase 0 and Phase 1 are implemented. The codebase now has an inactive bounded
-body rewrite helper in `gateway-proxy` and framework-agnostic guardrail core
-types, planning, execution, and errors in `gateway-core`. Persistence, public
-guardrail APIs, proxy enforcement, `pii-redact`, and Studio/admin visibility
-remain Phase 2+ work.
+Phases 0 through 3 are implemented. The codebase now has an inactive bounded
+body rewrite helper, framework-agnostic guardrail core types, persisted
+guardrail definitions and key policy, virtual-key-authenticated discovery/test
+APIs, proxy enforcement for non-streaming JSON requests, request/response body
+rewriting, execution event persistence, and built-in `pii-redact`. Rich
+operator dashboards, Studio visualization, streaming-aware `during_call`
+guardrails, external providers, and Redis-backed encrypted PII mappings remain
+Phase 4+ work.
 
 ## Context and Orientation
 
