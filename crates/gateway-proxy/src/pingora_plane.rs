@@ -1,6 +1,5 @@
 use crate::body_rewrite::{
-    prepare_http1_rewritten_response_headers, prepare_rewritten_request_headers,
-    BoundedBodyRewriter,
+    prepare_rewritten_request_headers, prepare_rewritten_response_headers, BoundedBodyRewriter,
 };
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -773,7 +772,7 @@ where
 
     async fn response_filter(
         &self,
-        _session: &mut Session,
+        session: &mut Session,
         upstream_response: &mut ResponseHeader,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<()>
@@ -796,7 +795,10 @@ where
             )?;
         }
         if has_post_guardrails {
-            prepare_http1_rewritten_response_headers(upstream_response);
+            prepare_rewritten_response_headers(
+                upstream_response,
+                !session.as_downstream().is_http2(),
+            );
         }
         Ok(())
     }

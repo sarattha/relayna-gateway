@@ -64,8 +64,15 @@ pub fn prepare_rewritten_request_headers(request: &mut RequestHeader, rewritten_
 }
 
 pub fn prepare_http1_rewritten_response_headers(response: &mut ResponseHeader) {
+    prepare_rewritten_response_headers(response, true);
+}
+
+pub fn prepare_rewritten_response_headers(response: &mut ResponseHeader, use_http1_chunked: bool) {
     response.remove_header("Content-Length");
-    let _ = response.insert_header("Transfer-Encoding", "Chunked");
+    response.remove_header("Transfer-Encoding");
+    if use_http1_chunked {
+        let _ = response.insert_header("Transfer-Encoding", "Chunked");
+    }
 }
 
 #[cfg(test)]
@@ -190,6 +197,9 @@ mod tests {
     fn response_header_helper_removes_content_length_and_sets_chunked() {
         let mut response = ResponseHeader::build(200, None).expect("response");
         response.insert_header("Content-Length", "100").expect("cl");
+        response
+            .insert_header("Transfer-Encoding", "Chunked")
+            .expect("te");
 
         prepare_http1_rewritten_response_headers(&mut response);
 
@@ -201,5 +211,19 @@ mod tests {
                 .and_then(|v| v.to_str().ok()),
             Some("Chunked")
         );
+    }
+
+    #[test]
+    fn response_header_helper_omits_transfer_encoding_for_non_http1() {
+        let mut response = ResponseHeader::build(200, None).expect("response");
+        response.insert_header("Content-Length", "100").expect("cl");
+        response
+            .insert_header("Transfer-Encoding", "Chunked")
+            .expect("te");
+
+        prepare_rewritten_response_headers(&mut response, false);
+
+        assert!(!response.headers.contains_key("Content-Length"));
+        assert!(!response.headers.contains_key("Transfer-Encoding"));
     }
 }

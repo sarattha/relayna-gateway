@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, fmt, time::Duration, time::Instant};
+use std::{collections::BTreeMap, fmt, thread, time::Duration, time::Instant};
 use uuid::Uuid;
 
 pub const PII_REDACT_GUARDRAIL: &str = "pii-redact";
@@ -920,19 +920,15 @@ impl GuardrailHandler for HttpGuardrailHandler {
     fn execute(&self, input: GuardrailInput) -> GatewayResult<GuardrailResult> {
         let config =
             http_guardrail_config(&input.config).ok_or(GatewayError::GuardrailUnavailable)?;
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(config.timeout_ms))
-            .build()
-            .map_err(|_| GatewayError::GuardrailUnavailable)?;
         let guardrail = input
             .config
             .get("guardrail_name")
             .and_then(Value::as_str)
             .unwrap_or("custom")
             .to_owned();
-        let mut request = client
-            .post(&config.endpoint_url)
-            .json(&HttpGuardrailProviderRequest {
+        let response = execute_http_guardrail_request(
+            config,
+            HttpGuardrailProviderRequest {
                 request_id: input.context.request_id.clone(),
                 guardrail,
                 mode: input.mode,
@@ -944,19 +940,8 @@ impl GuardrailHandler for HttpGuardrailHandler {
                     .unwrap_or_else(|| json!({})),
                 request: input.request,
                 response: input.response,
-            });
-        if let Some(token) = config.bearer_token {
-            request = request.bearer_auth(token);
-        }
-        let response = request
-            .send()
-            .map_err(|_| GatewayError::GuardrailUnavailable)?;
-        if !response.status().is_success() {
-            return Err(GatewayError::GuardrailUnavailable);
-        }
-        let response: HttpGuardrailProviderResponse = response
-            .json()
-            .map_err(|_| GatewayError::InvalidGuardrailRequest)?;
+            },
+        )?;
         Ok(GuardrailResult {
             action: response.action,
             request: response.request,
@@ -966,6 +951,45 @@ impl GuardrailHandler for HttpGuardrailHandler {
             pii_mappings: Vec::new(),
         })
     }
+}
+
+fn execute_http_guardrail_request(
+    config: HttpGuardrailConfig,
+    provider_request: HttpGuardrailProviderRequest,
+) -> GatewayResult<HttpGuardrailProviderResponse> {
+    let handle = thread::Builder::new()
+        .name("guardrail-http".to_owned())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| GatewayError::GuardrailUnavailable)?;
+            runtime.block_on(async move {
+                let client = reqwest::Client::builder()
+                    .timeout(Duration::from_millis(config.timeout_ms))
+                    .build()
+                    .map_err(|_| GatewayError::GuardrailUnavailable)?;
+                let mut request = client.post(&config.endpoint_url).json(&provider_request);
+                if let Some(token) = config.bearer_token {
+                    request = request.bearer_auth(token);
+                }
+                let response = request
+                    .send()
+                    .await
+                    .map_err(|_| GatewayError::GuardrailUnavailable)?;
+                if !response.status().is_success() {
+                    return Err(GatewayError::GuardrailUnavailable);
+                }
+                response
+                    .json::<HttpGuardrailProviderResponse>()
+                    .await
+                    .map_err(|_| GatewayError::InvalidGuardrailRequest)
+            })
+        })
+        .map_err(|_| GatewayError::GuardrailUnavailable)?;
+    handle
+        .join()
+        .map_err(|_| GatewayError::GuardrailUnavailable)?
 }
 
 fn http_guardrail_config(value: &Value) -> Option<HttpGuardrailConfig> {

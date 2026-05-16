@@ -34,7 +34,7 @@ use gateway_core::{
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -222,14 +222,10 @@ impl PostgresStore {
         policy: &GuardrailPolicy,
     ) -> GatewayResult<()> {
         policy.validate()?;
-        if policy.guardrail_config_overrides.is_empty() {
+        let names = referenced_guardrail_policy_names(policy);
+        if names.is_empty() {
             return Ok(());
         }
-        let names = policy
-            .guardrail_config_overrides
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
         let known_count = sqlx::query_scalar::<_, i64>(
             r#"
             SELECT COUNT(*)::bigint
@@ -3126,6 +3122,19 @@ fn service_registration_from_row(
     })
 }
 
+fn referenced_guardrail_policy_names(policy: &GuardrailPolicy) -> Vec<String> {
+    policy
+        .mandatory_guardrails
+        .iter()
+        .chain(policy.optional_guardrails.iter())
+        .chain(policy.forbidden_guardrails.iter())
+        .chain(policy.guardrail_config_overrides.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 fn route_pattern_matches(route_pattern: &str, path: &str) -> bool {
     if let Some(prefix) = route_pattern.strip_suffix("/*") {
         path == prefix
@@ -3371,5 +3380,23 @@ mod tests {
         assert_eq!(service_route_policy_route("/summary"), "/summary");
         assert_eq!(service_route_policy_route("/translation"), "/translation");
         assert_eq!(service_route_policy_route("/custom/*"), "/services/*");
+    }
+
+    #[test]
+    fn referenced_guardrail_policy_names_include_all_policy_fields() {
+        let names = referenced_guardrail_policy_names(&GuardrailPolicy {
+            mandatory_guardrails: vec!["pii-redact".to_owned(), "shared".to_owned()],
+            optional_guardrails: vec!["brand".to_owned(), "shared".to_owned()],
+            forbidden_guardrails: vec!["debug".to_owned()],
+            guardrail_config_overrides: BTreeMap::from([
+                ("brand".to_owned(), serde_json::json!({})),
+                ("custom".to_owned(), serde_json::json!({})),
+            ]),
+        });
+
+        assert_eq!(
+            names,
+            vec!["brand", "custom", "debug", "pii-redact", "shared"]
+        );
     }
 }
