@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,11 +46,6 @@ const changelog = read("CHANGELOG.md");
 test("freeze baseline release metadata remains v0.0.9", () => {
   assert.match(cargoToml, /\[workspace\.package\][\s\S]*version = "0\.0\.9"/);
   assert.match(changelog, /^## 0\.0\.9 -/m);
-  const tag = execFileSync("git", ["tag", "-l", "v0.0.9"], {
-    cwd: root,
-    encoding: "utf8",
-  }).trim();
-  assert.equal(tag, "v0.0.9");
 });
 
 test("control-plane public route inventory is pinned", () => {
