@@ -43,8 +43,12 @@ const adminUiTest = read("tests/admin-ui.test.mjs");
 const cargoToml = read("Cargo.toml");
 const changelog = read("CHANGELOG.md");
 
-test("freeze baseline release metadata remains v0.0.9", () => {
-  assert.match(cargoToml, /\[workspace\.package\][\s\S]*version = "0\.0\.9"/);
+test("freeze baseline release remains documented while current version may advance", () => {
+  const currentVersion = cargoToml.match(
+    /\[workspace\.package\][\s\S]*?version = "([^"]+)"/,
+  )?.[1];
+  assert.match(currentVersion, /^\d+\.\d+\.\d+$/);
+  assert.match(changelog, new RegExp(`^## ${currentVersion} -`, "m"));
   assert.match(changelog, /^## 0\.0\.9 -/m);
 });
 
