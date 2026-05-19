@@ -25,6 +25,7 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 ## Documentation Map
 
 - [Architecture](architecture.md) explains the request path, crate ownership, data stores, and trust boundaries.
+- [Database](database.md) documents the PostgreSQL schema, required records, keys, and operational data.
 - [Getting Started](getting-started.md) covers local PostgreSQL, Redis, LiteLLM, and gateway startup.
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
 - [Guardrails](guardrails.md) covers catalog setup, global runtime config, and per-key overrides.
