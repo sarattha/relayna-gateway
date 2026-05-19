@@ -2,6 +2,21 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.10 - 2026-05-19
+
+### Added
+
+- PostgreSQL database reference documentation covering gateway tables, keys,
+  required operational data, and secret-handling expectations.
+- Redis key reference documentation covering request rate-limit counters,
+  budget counters, reservation keys, TTLs, and operational handling.
+
+### Changed
+
+- Workspace crate versions now share the `0.0.10` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.0.10` gateway image.
+
 ## 0.0.9 - 2026-05-17
 
 ### Added
