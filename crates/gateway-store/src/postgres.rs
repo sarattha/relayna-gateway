@@ -71,6 +71,21 @@ impl PostgresStore {
         &self.pool
     }
 
+    pub async fn has_active_operator_token(&self) -> GatewayResult<bool> {
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM operator_tokens
+                WHERE disabled = false AND revoked_at IS NULL
+            )
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
     pub async fn ready(&self) -> Result<(), StoreError> {
         sqlx::query("SELECT 1").execute(&self.pool).await?;
         Ok(())

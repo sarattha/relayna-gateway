@@ -121,7 +121,12 @@ export LOG_LEVEL="gateway_api=info,gateway_proxy=info"
 cargo run -p gateway-api
 ```
 
-The first startup prints a raw operator token once. Use it for the admin portal and store it securely.
+The first startup creates one operator token. To seed a fresh database with a
+known token, set `GATEWAY_ADMIN_TOKEN` to a valid `op_live_...` value before the
+first start; Gateway stores only its hash and does not print the raw env token.
+Without `GATEWAY_ADMIN_TOKEN`, startup prints a generated raw operator token
+once. After an active operator token exists, env changes are ignored; rotate the
+token from the Admin portal to change it.
 
 ## Verify Local Health
 

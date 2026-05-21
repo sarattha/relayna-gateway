@@ -62,7 +62,9 @@ Use readiness probes for traffic routing and liveness probes for process restart
 
 - Store `DATABASE_URL`, `REDIS_URL`, provider credentials, LiteLLM credentials, Studio tokens, and operator tokens in a secret manager.
 - Never log raw virtual keys, operator tokens, provider keys, prompts, or request bodies.
-- Rotate the bootstrap operator token after first startup.
+- Use `GATEWAY_ADMIN_TOKEN` only to seed a fresh database. After an active
+  operator token exists, env changes are ignored; rotate the token from the
+  Admin portal to change it.
 - Prefer private control-plane access for `/admin-ui/admin/*`, `/admin-ui`, and `/admin-ui/metrics`.
 - Treat non-expiring virtual keys as high-risk service credentials. Store them
   only in a secret manager, scope their policies narrowly, rotate them through
@@ -81,5 +83,5 @@ Before deploying a new release:
 2. Build and scan the Docker image.
 3. Run CI, including Rust checks, admin UI tests, and docs build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.0.10`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.0.11`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.

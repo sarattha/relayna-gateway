@@ -7,7 +7,7 @@ Relayna Gateway ships as one binary and one Docker image. The image serves both 
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.0.10 .
+docker build -t relayna-gateway:0.0.11 .
 ```
 
 Run it with required dependencies:
@@ -20,14 +20,21 @@ docker run --rm \
   -e REDIS_URL="redis://host.docker.internal:6379" \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
+  -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
   -e RELAYNA_STUDIO_BASE_URL="http://host.docker.internal:8000" \
   -e GATEWAY_BIND_ADDR="0.0.0.0:8080" \
   -e GATEWAY_CONTROL_BIND_ADDR="0.0.0.0:8081" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.0.10
+  relayna-gateway:0.0.11
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
+
+`GATEWAY_ADMIN_TOKEN` is optional. Set it only for the first startup against a
+fresh database when you want to seed a known `op_live_...` operator token. Omit
+it to let Gateway generate and print a one-time operator token. After an active
+operator token exists in PostgreSQL, env changes are ignored; rotate the token
+from the Admin portal to change it.
 
 ## PostgreSQL Container
 
@@ -67,13 +74,13 @@ The repository includes a baseline manifest at `deploy/kubernetes/relayna-gatewa
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.0.10
+   ghcr.io/sarattha/relayna-gateway:0.0.11
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.0.10"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.0.11"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -81,7 +88,7 @@ The repository includes a baseline manifest at `deploy/kubernetes/relayna-gatewa
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.0.10
+   image: <your-registry>/<your-org>/relayna-gateway:0.0.11
    ```
 
 3. Store secrets through your cluster secret manager:
@@ -92,6 +99,7 @@ The repository includes a baseline manifest at `deploy/kubernetes/relayna-gatewa
      --from-literal=REDIS_URL='redis://redis:6379' \
      --from-literal=LITELLM_BASE_URL='http://litellm:4000' \
      --from-literal=LITELLM_SERVICE_KEY='sk-litellm-service-key' \
+     --from-literal=GATEWAY_ADMIN_TOKEN='op_live_replace_with_secret_value' \
      --from-literal=RELAYNA_STUDIO_BASE_URL='http://relayna-studio-backend:8000' \
      --from-literal=RELAYNA_STUDIO_TOKEN='studio-gateway-token'
    ```

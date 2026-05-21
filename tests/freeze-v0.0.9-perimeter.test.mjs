@@ -220,6 +220,7 @@ test("release configuration environment variables are pinned", () => {
     "DIRECT_OPENAI_BASE_URL",
     "DIRECT_OPENAI_SERVICE_KEY",
     "GATEWAY_BIND_ADDR",
+    "GATEWAY_ADMIN_TOKEN",
     "GATEWAY_CONTROL_BIND_ADDR",
     "GUARDRAIL_MAPPING_ENCRYPTION_KEY",
     "GUARDRAIL_PII_MAPPING_TTL_SECONDS",
