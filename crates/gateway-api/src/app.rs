@@ -153,104 +153,122 @@ pub fn router_with_studio(
 
 pub fn router_with_state(state: AppState) -> Router {
     Router::new()
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-        .route("/v1/guardrails", get(list_guardrails))
-        .route("/v1/guardrails/test", post(test_guardrails))
+        .route("/admin-ui/healthz", get(healthz))
+        .route("/admin-ui/readyz", get(readyz))
+        .route("/admin-ui/v1/guardrails", get(list_guardrails))
+        .route("/admin-ui/v1/guardrails/test", post(test_guardrails))
         .route(
-            "/admin/guardrails",
+            "/admin-ui/admin/guardrails",
             get(admin_guardrails).post(create_admin_guardrail),
         )
         .route(
-            "/admin/guardrails/{name}",
+            "/admin-ui/admin/guardrails/{name}",
             patch(patch_admin_guardrail).delete(delete_admin_guardrail),
         )
         .route(
-            "/admin/guardrails/executions",
+            "/admin-ui/admin/guardrails/executions",
             get(admin_guardrail_executions),
         )
-        .route("/admin/guardrails/summary", get(admin_guardrail_summary))
-        .route("/admin/keys", post(create_key).get(list_keys))
-        .route("/admin/keys/{key_id}", get(get_key).patch(patch_key))
-        .route("/admin/keys/{key_id}/revoke", post(revoke_key))
-        .route("/admin/keys/{key_id}/disable", post(disable_key))
-        .route("/admin/keys/{key_id}/enable", post(enable_key))
-        .route("/admin/keys/{key_id}/usage", get(key_usage))
-        .route("/admin/projects", post(create_project).get(list_projects))
         .route(
-            "/admin/projects/{project_id}",
+            "/admin-ui/admin/guardrails/summary",
+            get(admin_guardrail_summary),
+        )
+        .route("/admin-ui/admin/keys", post(create_key).get(list_keys))
+        .route(
+            "/admin-ui/admin/keys/{key_id}",
+            get(get_key).patch(patch_key),
+        )
+        .route("/admin-ui/admin/keys/{key_id}/revoke", post(revoke_key))
+        .route("/admin-ui/admin/keys/{key_id}/disable", post(disable_key))
+        .route("/admin-ui/admin/keys/{key_id}/enable", post(enable_key))
+        .route("/admin-ui/admin/keys/{key_id}/usage", get(key_usage))
+        .route(
+            "/admin-ui/admin/projects",
+            post(create_project).get(list_projects),
+        )
+        .route(
+            "/admin-ui/admin/projects/{project_id}",
             get(get_project).patch(patch_project).delete(delete_project),
         )
-        .route("/admin/operator-token/rotate", post(rotate_operator_token))
         .route(
-            "/admin/providers",
+            "/admin-ui/admin/operator-token/rotate",
+            post(rotate_operator_token),
+        )
+        .route(
+            "/admin-ui/admin/providers",
             post(create_provider).get(list_providers),
         )
         .route(
-            "/admin/providers/{provider_id}",
+            "/admin-ui/admin/providers/{provider_id}",
             get(get_provider)
                 .patch(patch_provider)
                 .delete(delete_provider),
         )
         .route(
-            "/admin/providers/{provider_id}/disable",
+            "/admin-ui/admin/providers/{provider_id}/disable",
             post(disable_provider),
         )
         .route(
-            "/admin/providers/{provider_id}/enable",
+            "/admin-ui/admin/providers/{provider_id}/enable",
             post(enable_provider),
         )
-        .route("/admin/openai-routes", get(list_openai_routes))
+        .route("/admin-ui/admin/openai-routes", get(list_openai_routes))
         .route(
-            "/admin/openai-routes/{route_id}/disable",
+            "/admin-ui/admin/openai-routes/{route_id}/disable",
             post(disable_openai_route),
         )
         .route(
-            "/admin/openai-routes/{route_id}/enable",
+            "/admin-ui/admin/openai-routes/{route_id}/enable",
             post(enable_openai_route),
         )
-        .route("/admin/services", post(create_service).get(list_services))
         .route(
-            "/admin/studio/connection",
+            "/admin-ui/admin/services",
+            post(create_service).get(list_services),
+        )
+        .route(
+            "/admin-ui/admin/studio/connection",
             get(get_studio_connection).patch(patch_studio_connection),
         )
         .route(
-            "/admin/studio/connection/test",
+            "/admin-ui/admin/studio/connection/test",
             post(test_studio_connection),
         )
-        .route("/admin/studio/services", get(studio_services))
-        .route("/admin/services/import", post(import_service))
-        .route("/admin/services/sync", post(sync_service))
+        .route("/admin-ui/admin/studio/services", get(studio_services))
+        .route("/admin-ui/admin/services/import", post(import_service))
+        .route("/admin-ui/admin/services/sync", post(sync_service))
         .route(
-            "/admin/services/{service_name}",
+            "/admin-ui/admin/services/{service_name}",
             get(get_service).patch(patch_service).delete(delete_service),
         )
         .route(
-            "/admin/services/{service_name}/disable",
+            "/admin-ui/admin/services/{service_name}/disable",
             post(disable_service),
         )
         .route(
-            "/admin/services/{service_name}/enable",
+            "/admin-ui/admin/services/{service_name}/enable",
             post(enable_service),
         )
         .route(
-            "/admin/services/{service_name}/sync-status",
+            "/admin-ui/admin/services/{service_name}/sync-status",
             get(service_sync_status),
         )
-        .route("/admin/projects/{project_id}/usage", get(project_usage))
-        .route("/admin/usage/summary", get(usage_summary))
-        .route("/admin/usage/timeseries", get(usage_timeseries))
-        .route("/admin/usage/by-key", get(usage_by_key))
-        .route("/admin/usage/by-project", get(usage_by_project))
-        .route("/admin/usage/by-model", get(usage_by_model))
-        .route("/admin/usage/by-provider", get(usage_by_provider))
-        .route("/admin/usage/by-service", get(usage_by_service))
-        .route("/admin/usage/by-task", get(usage_by_task))
-        .route("/admin/tasks/{task_id}/usage", get(task_usage))
-        .route("/admin/provider-health", get(provider_health))
+        .route(
+            "/admin-ui/admin/projects/{project_id}/usage",
+            get(project_usage),
+        )
+        .route("/admin-ui/admin/usage/summary", get(usage_summary))
+        .route("/admin-ui/admin/usage/timeseries", get(usage_timeseries))
+        .route("/admin-ui/admin/usage/by-key", get(usage_by_key))
+        .route("/admin-ui/admin/usage/by-project", get(usage_by_project))
+        .route("/admin-ui/admin/usage/by-model", get(usage_by_model))
+        .route("/admin-ui/admin/usage/by-provider", get(usage_by_provider))
+        .route("/admin-ui/admin/usage/by-service", get(usage_by_service))
+        .route("/admin-ui/admin/usage/by-task", get(usage_by_task))
+        .route("/admin-ui/admin/tasks/{task_id}/usage", get(task_usage))
+        .route("/admin-ui/admin/provider-health", get(provider_health))
+        .route("/admin-ui/metrics", get(metrics))
         .route("/admin-ui", get(admin_ui_index))
         .route("/admin-ui/{*path}", get(admin_ui_asset))
-        .route("/metrics", get(metrics))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(TraceLayer::new_for_http())
@@ -2351,7 +2369,7 @@ mod tests {
         };
 
         let app = router_with_state(test_state_with_redis_url(store, "redis://127.0.0.1:0"));
-        let response = request(app, "/healthz").await;
+        let response = request(app, "/admin-ui/healthz").await;
 
         assert_eq!(response.status(), StatusCode::OK);
     }
@@ -2392,10 +2410,10 @@ mod tests {
         ));
         let app = router_with_state(test_state(store));
 
-        let unauthorized = request(app.clone(), "/v1/guardrails").await;
+        let unauthorized = request(app.clone(), "/admin-ui/v1/guardrails").await;
         assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
 
-        let response = admin_get(app, "/v1/guardrails", Some(raw)).await;
+        let response = admin_get(app, "/admin-ui/v1/guardrails", Some(raw)).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -2420,7 +2438,7 @@ mod tests {
         let app = router_with_state(test_state(store.clone()));
         let response = admin_post(
             app,
-            "/v1/guardrails/test",
+            "/admin-ui/v1/guardrails/test",
             Some(raw),
             r#"{"guardrails":["pii-redact"],"mode":"pre_call","input":{"messages":[{"role":"user","content":"email john@example.com"}]}}"#,
         )
@@ -2440,10 +2458,11 @@ mod tests {
     async fn admin_guardrail_catalog_requires_operator_token() {
         let app = router_with_state(test_state(default_store()));
 
-        let unauthorized = admin_get(app.clone(), "/admin/guardrails", None).await;
+        let unauthorized = admin_get(app.clone(), "/admin-ui/admin/guardrails", None).await;
         assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
 
-        let response = admin_get(app, "/admin/guardrails", Some(TEST_OPERATOR_TOKEN)).await;
+        let response =
+            admin_get(app, "/admin-ui/admin/guardrails", Some(TEST_OPERATOR_TOKEN)).await;
         assert_eq!(response.status(), StatusCode::OK);
         let value = response_json(response).await;
         assert_eq!(value["guardrails"][0]["name"], "pii-redact");
@@ -2455,7 +2474,7 @@ mod tests {
         let app = router_with_state(test_state(default_store()));
         let response = admin_post(
             app,
-            "/admin/guardrails",
+            "/admin-ui/admin/guardrails",
             Some(TEST_OPERATOR_TOKEN),
             r#"{"name":"custom-check","description":"Custom check","endpoint_url":"https://guardrail.example/check","modes":["pre_call"],"failure_policy":"fail_open","bearer_token":"secret"}"#,
         )
@@ -2477,7 +2496,7 @@ mod tests {
         let app = router_with_state(test_state(default_store()));
         let response = admin_patch(
             app.clone(),
-            "/admin/guardrails/pii-redact",
+            "/admin-ui/admin/guardrails/pii-redact",
             Some(TEST_OPERATOR_TOKEN),
             r#"{"enabled":false,"default_on":true,"failure_policy":"dry_run","modes":["pre_call"],"config_schema":{"restore_output":"boolean"},"runtime_config":{"restore_output":false}}"#,
         )
@@ -2491,7 +2510,7 @@ mod tests {
 
         let rejected = admin_patch(
             app,
-            "/admin/guardrails/pii-redact",
+            "/admin-ui/admin/guardrails/pii-redact",
             Some(TEST_OPERATOR_TOKEN),
             r#"{"endpoint_url":"https://guardrail.example/check"}"#,
         )
@@ -2522,7 +2541,7 @@ mod tests {
 
         let rejected = admin_delete(
             app.clone(),
-            "/admin/guardrails/pii-redact",
+            "/admin-ui/admin/guardrails/pii-redact",
             Some(TEST_OPERATOR_TOKEN),
         )
         .await;
@@ -2530,7 +2549,7 @@ mod tests {
 
         let deleted = admin_delete(
             app,
-            "/admin/guardrails/custom-check",
+            "/admin-ui/admin/guardrails/custom-check",
             Some(TEST_OPERATOR_TOKEN),
         )
         .await;
@@ -2566,7 +2585,7 @@ mod tests {
         };
 
         let app = router_with_state(test_state(store));
-        let response = request(app, "/readyz").await;
+        let response = request(app, "/admin-ui/readyz").await;
 
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
@@ -2587,7 +2606,7 @@ mod tests {
         let project_id = Uuid::new_v4();
         let response = admin_post(
             app,
-            "/admin/keys",
+            "/admin-ui/admin/keys",
             None,
             &format!(r#"{{"project_id":"{project_id}"}}"#),
         )
@@ -2612,7 +2631,7 @@ mod tests {
         let project_id = Uuid::new_v4();
         let response = admin_post(
             app,
-            "/admin/keys",
+            "/admin-ui/admin/keys",
             Some(TEST_OPERATOR_TOKEN),
             &format!(r#"{{"project_id":"{project_id}"}}"#),
         )
@@ -2650,7 +2669,7 @@ mod tests {
         let project_id = Uuid::new_v4();
         let response = admin_post(
             app,
-            "/admin/keys",
+            "/admin-ui/admin/keys",
             Some(TEST_OPERATOR_TOKEN),
             &format!(
                 r#"{{"project_id":"{project_id}","guardrail_policy":{{"mandatory_guardrails":["pii-redact"],"guardrail_config_overrides":{{"pii-redact":{{"restore_output":false}}}}}}}}"#
@@ -2683,7 +2702,7 @@ mod tests {
         let project_id = Uuid::new_v4();
         let response = admin_post(
             app.clone(),
-            "/admin/keys",
+            "/admin-ui/admin/keys",
             Some(TEST_OPERATOR_TOKEN),
             &format!(r#"{{"project_id":"{project_id}","expires_at":null}}"#),
         )
@@ -2698,7 +2717,7 @@ mod tests {
 
         let response = admin_patch(
             app.clone(),
-            &format!("/admin/keys/{key_id}"),
+            &format!("/admin-ui/admin/keys/{key_id}"),
             Some(TEST_OPERATOR_TOKEN),
             r#"{"expires_at":"2030-01-01T00:00:00Z"}"#,
         )
@@ -2712,7 +2731,7 @@ mod tests {
 
         let response = admin_patch(
             app,
-            &format!("/admin/keys/{key_id}"),
+            &format!("/admin-ui/admin/keys/{key_id}"),
             Some(TEST_OPERATOR_TOKEN),
             r#"{"expires_at":null}"#,
         )
@@ -2740,7 +2759,7 @@ mod tests {
         let app = router_with_state(test_state(store));
         let response = admin_post(
             app,
-            "/admin/projects",
+            "/admin-ui/admin/projects",
             Some(TEST_OPERATOR_TOKEN),
             r#"{"name":"Studio"}"#,
         )
@@ -2770,7 +2789,7 @@ mod tests {
         let app = router_with_state(test_state(store));
         let response = admin_post(
             app,
-            "/admin/providers",
+            "/admin-ui/admin/providers",
             Some(TEST_OPERATOR_TOKEN),
             r#"{"provider":"litellm","name":"LiteLLM","base_url":"http://litellm:4000","credential":"sk-master","enabled":true}"#,
         )
@@ -2802,14 +2821,14 @@ mod tests {
         let project_id = Uuid::new_v4();
         let response = admin_post(
             app.clone(),
-            "/admin/keys",
+            "/admin-ui/admin/keys",
             Some(TEST_OPERATOR_TOKEN),
             &format!(r#"{{"project_id":"{project_id}"}}"#),
         )
         .await;
         assert_eq!(response.status(), StatusCode::OK);
 
-        let response = admin_get(app, "/admin/keys", Some(TEST_OPERATOR_TOKEN)).await;
+        let response = admin_get(app, "/admin-ui/admin/keys", Some(TEST_OPERATOR_TOKEN)).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -2839,7 +2858,7 @@ mod tests {
         let project_id = Uuid::new_v4();
         let response = admin_post(
             app.clone(),
-            "/admin/keys",
+            "/admin-ui/admin/keys",
             Some(TEST_OPERATOR_TOKEN),
             &format!(r#"{{"project_id":"{project_id}"}}"#),
         )
@@ -2853,7 +2872,7 @@ mod tests {
 
         let response = admin_post(
             app.clone(),
-            &format!("/admin/keys/{key_id}/disable"),
+            &format!("/admin-ui/admin/keys/{key_id}/disable"),
             Some(TEST_OPERATOR_TOKEN),
             "{}",
         )
@@ -2867,7 +2886,7 @@ mod tests {
 
         let response = admin_post(
             app.clone(),
-            &format!("/admin/keys/{key_id}/enable"),
+            &format!("/admin-ui/admin/keys/{key_id}/enable"),
             Some(TEST_OPERATOR_TOKEN),
             "{}",
         )
@@ -2881,7 +2900,7 @@ mod tests {
 
         let response = admin_post(
             app.clone(),
-            &format!("/admin/keys/{key_id}/revoke"),
+            &format!("/admin-ui/admin/keys/{key_id}/revoke"),
             Some(TEST_OPERATOR_TOKEN),
             "{}",
         )
@@ -2896,7 +2915,7 @@ mod tests {
 
         let response = admin_post(
             app,
-            &format!("/admin/keys/{key_id}/enable"),
+            &format!("/admin-ui/admin/keys/{key_id}/enable"),
             Some(TEST_OPERATOR_TOKEN),
             "{}",
         )
@@ -2923,9 +2942,25 @@ mod tests {
             studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
-        let response = request(app, "/metrics").await;
+        let response = request(app, "/admin-ui/metrics").await;
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn old_root_control_paths_are_not_registered() {
+        let app = router_with_state(test_state(default_store()));
+
+        for route in [
+            "/healthz",
+            "/readyz",
+            "/metrics",
+            "/admin/keys",
+            "/v1/guardrails",
+        ] {
+            let response = request(app.clone(), route).await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{route}");
+        }
     }
 
     #[tokio::test]
@@ -2941,7 +2976,12 @@ mod tests {
             studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
-        let response = admin_get(app, "/admin/tasks/task-1/usage", Some(TEST_OPERATOR_TOKEN)).await;
+        let response = admin_get(
+            app,
+            "/admin-ui/admin/tasks/task-1/usage",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
 
         assert_eq!(response.status(), StatusCode::OK);
     }
@@ -2959,7 +2999,7 @@ mod tests {
             studio_connection: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
-        let response = request(app, "/admin-ui").await;
+        let response = request(app.clone(), "/admin-ui").await;
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -2968,6 +3008,12 @@ mod tests {
         let body = String::from_utf8(body.to_vec()).expect("utf8");
         assert!(body.contains("Relayna Gateway Admin"));
         assert!(!body.contains(TEST_OPERATOR_TOKEN));
+
+        let response = request(app.clone(), "/admin-ui/app.js").await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = request(app, "/admin-ui/app.css").await;
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -2985,7 +3031,7 @@ mod tests {
         let app = router_with_state(test_state(store));
         let response = admin_post(
             app.clone(),
-            "/admin/operator-token/rotate",
+            "/admin-ui/admin/operator-token/rotate",
             Some(TEST_OPERATOR_TOKEN),
             "{}",
         )
@@ -3002,19 +3048,19 @@ mod tests {
 
         let old_response = admin_get(
             app.clone(),
-            "/admin/usage/summary",
+            "/admin-ui/admin/usage/summary",
             Some(TEST_OPERATOR_TOKEN),
         )
         .await;
         assert_eq!(old_response.status(), StatusCode::UNAUTHORIZED);
-        let new_response = admin_get(app, "/admin/usage/summary", Some(new_token)).await;
+        let new_response = admin_get(app, "/admin-ui/admin/usage/summary", Some(new_token)).await;
         assert_eq!(new_response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
     async fn studio_connection_requires_operator_token() {
         let app = router_with_state(test_state(default_store()));
-        let response = admin_get(app, "/admin/studio/connection", None).await;
+        let response = admin_get(app, "/admin-ui/admin/studio/connection", None).await;
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
@@ -3031,7 +3077,7 @@ mod tests {
 
         let response = admin_get(
             app.clone(),
-            "/admin/studio/connection",
+            "/admin-ui/admin/studio/connection",
             Some(TEST_OPERATOR_TOKEN),
         )
         .await;
@@ -3047,7 +3093,7 @@ mod tests {
 
         let response = admin_patch(
             app.clone(),
-            "/admin/studio/connection",
+            "/admin-ui/admin/studio/connection",
             Some(TEST_OPERATOR_TOKEN),
             r#"{"base_url":"http://persisted-studio.example/","token":"persisted-token"}"#,
         )
@@ -3064,7 +3110,7 @@ mod tests {
 
         let response = admin_patch(
             app,
-            "/admin/studio/connection",
+            "/admin-ui/admin/studio/connection",
             Some(TEST_OPERATOR_TOKEN),
             r#"{"base_url":null}"#,
         )
@@ -3085,7 +3131,7 @@ mod tests {
         let app = router_with_state(test_state(default_store()));
         let response = admin_patch(
             app,
-            "/admin/studio/connection",
+            "/admin-ui/admin/studio/connection",
             Some(TEST_OPERATOR_TOKEN),
             r#"{"base_url":"ftp://studio.example"}"#,
         )
@@ -3102,7 +3148,12 @@ mod tests {
     #[tokio::test]
     async fn studio_services_reports_missing_connection_config() {
         let app = router_with_state(test_state(default_store()));
-        let response = admin_get(app, "/admin/studio/services", Some(TEST_OPERATOR_TOKEN)).await;
+        let response = admin_get(
+            app,
+            "/admin-ui/admin/studio/services",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
 
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -3128,7 +3179,7 @@ mod tests {
 
         let response = admin_get(
             app.clone(),
-            "/admin/openai-routes",
+            "/admin-ui/admin/openai-routes",
             Some(TEST_OPERATOR_TOKEN),
         )
         .await;
@@ -3141,7 +3192,7 @@ mod tests {
 
         let response = admin_post(
             app.clone(),
-            "/admin/openai-routes/chat-completions/disable",
+            "/admin-ui/admin/openai-routes/chat-completions/disable",
             Some(TEST_OPERATOR_TOKEN),
             "{}",
         )
@@ -3156,7 +3207,7 @@ mod tests {
 
         let response = admin_post(
             app,
-            "/admin/openai-routes/chat-completions/enable",
+            "/admin-ui/admin/openai-routes/chat-completions/enable",
             Some(TEST_OPERATOR_TOKEN),
             "{}",
         )
@@ -3184,7 +3235,7 @@ mod tests {
         let app = router_with_state(test_state(store));
         let response = admin_post(
             app,
-            "/admin/services",
+            "/admin-ui/admin/services",
             Some(TEST_OPERATOR_TOKEN),
             r#"{
                 "name":"summary",
@@ -3226,7 +3277,7 @@ mod tests {
         let app = router_with_state(test_state(store));
         let response = admin_post(
             app.clone(),
-            "/admin/services/import",
+            "/admin-ui/admin/services/import",
             Some(TEST_OPERATOR_TOKEN),
             r#"{
                 "studio_service_id":"svc_1",
@@ -3241,7 +3292,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let status = admin_get(
             app,
-            "/admin/services/translation/sync-status",
+            "/admin-ui/admin/services/translation/sync-status",
             Some(TEST_OPERATOR_TOKEN),
         )
         .await;
@@ -3269,7 +3320,7 @@ mod tests {
         let app = router_with_state(test_state(store));
         let response = admin_post(
             app.clone(),
-            "/admin/services/import",
+            "/admin-ui/admin/services/import",
             Some(TEST_OPERATOR_TOKEN),
             r#"{
                 "studio_service_id":"svc_1",
@@ -3284,7 +3335,7 @@ mod tests {
 
         let response = admin_patch(
             app.clone(),
-            "/admin/services/translation",
+            "/admin-ui/admin/services/translation",
             Some(TEST_OPERATOR_TOKEN),
             r#"{
                 "route_pattern":"/services/local-translation/*",
@@ -3299,7 +3350,7 @@ mod tests {
 
         let response = admin_post(
             app,
-            "/admin/services/import",
+            "/admin-ui/admin/services/import",
             Some(TEST_OPERATOR_TOKEN),
             r#"{
                 "studio_service_id":"svc_1",
@@ -3340,14 +3391,14 @@ mod tests {
         let app = router_with_state(test_state(store));
         let _ = admin_post(
             app.clone(),
-            "/admin/services/import",
+            "/admin-ui/admin/services/import",
             Some(TEST_OPERATOR_TOKEN),
             r#"{"studio_service_id":"svc_1","name":"translation","route_pattern":"/translation"}"#,
         )
         .await;
         let response = admin_patch(
             app,
-            "/admin/services/translation",
+            "/admin-ui/admin/services/translation",
             Some(TEST_OPERATOR_TOKEN),
             r#"{"upstream_base_url":"http://translation.internal:8080","credential":"token","enabled":true}"#,
         )

@@ -55,13 +55,13 @@ The first startup runs database migrations and prints one bootstrap operator tok
 Useful endpoints:
 
 - Proxy traffic: `http://127.0.0.1:8080/v1/chat/completions`
-- Health: `http://127.0.0.1:8081/healthz`
-- Readiness: `http://127.0.0.1:8081/readyz`
-- Metrics: `http://127.0.0.1:8081/metrics`
+- Health: `http://127.0.0.1:8081/admin-ui/healthz`
+- Readiness: `http://127.0.0.1:8081/admin-ui/readyz`
+- Metrics: `http://127.0.0.1:8081/admin-ui/metrics`
 - Admin portal: `http://127.0.0.1:8081/admin-ui`
-- Guardrail catalog: `http://127.0.0.1:8081/admin/guardrails`
-- Studio connection status: `http://127.0.0.1:8081/admin/studio/connection`
-- Studio import preview: `http://127.0.0.1:8081/admin/studio/services`
+- Guardrail catalog: `http://127.0.0.1:8081/admin-ui/admin/guardrails`
+- Studio connection status: `http://127.0.0.1:8081/admin-ui/admin/studio/connection`
+- Studio import preview: `http://127.0.0.1:8081/admin-ui/admin/studio/services`
 
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are startup fallback
 settings. Operators can also open Admin portal Settings after Gateway starts to

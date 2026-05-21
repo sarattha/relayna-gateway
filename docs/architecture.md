@@ -37,10 +37,10 @@ flowchart LR
 
 The control listener exposes:
 
-- `/healthz` for process liveness.
-- `/readyz` for PostgreSQL and Redis readiness.
-- `/metrics` for Prometheus scraping.
-- `/admin/*` APIs for operator actions.
+- `/admin-ui/healthz` for process liveness.
+- `/admin-ui/readyz` for PostgreSQL and Redis readiness.
+- `/admin-ui/metrics` for Prometheus scraping.
+- `/admin-ui/admin/*` APIs for operator actions.
 - `/admin-ui` for the embedded operator portal.
 
 Admin APIs require an operator token. On the first startup, the gateway bootstraps one operator token, stores only its hash, and prints the raw token once. Store it in a password manager or secret manager immediately.
@@ -71,7 +71,7 @@ Redis is the fast mutable state layer:
 
 - Request-per-minute and token-per-minute counters.
 - Daily and monthly budget counters.
-- Readiness checks used by `/readyz`.
+- Readiness checks used by `/admin-ui/readyz`.
 
 ## Trust Boundaries
 

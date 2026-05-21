@@ -1,6 +1,6 @@
 # Admin Portal
 
-The admin portal is a static operator console embedded in `gateway-api`. It is served from the control listener at `/admin-ui` and calls the same `/admin/*` APIs used by automation.
+The admin portal is a static operator console embedded in `gateway-api`. It is served from the control listener at `/admin-ui` and calls the same `/admin-ui/admin/*` APIs used by automation.
 
 ## Authentication
 
@@ -121,15 +121,15 @@ Operator APIs:
 ```bash
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
-  http://127.0.0.1:8081/admin/guardrails
+  http://127.0.0.1:8081/admin-ui/admin/guardrails
 
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
-  "http://127.0.0.1:8081/admin/guardrails/executions?limit=50"
+  "http://127.0.0.1:8081/admin-ui/admin/guardrails/executions?limit=50"
 
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
-  http://127.0.0.1:8081/admin/guardrails/summary
+  http://127.0.0.1:8081/admin-ui/admin/guardrails/summary
 ```
 
 Client discovery and test APIs use Relayna virtual keys:
@@ -137,12 +137,12 @@ Client discovery and test APIs use Relayna virtual keys:
 ```bash
 curl -sS \
   -H "Authorization: Bearer rk_live_xxx" \
-  http://127.0.0.1:8081/v1/guardrails
+  http://127.0.0.1:8081/admin-ui/v1/guardrails
 
 curl -sS \
   -H "Authorization: Bearer rk_live_xxx" \
   -H "Content-Type: application/json" \
-  -X POST http://127.0.0.1:8081/v1/guardrails/test \
+  -X POST http://127.0.0.1:8081/admin-ui/v1/guardrails/test \
   -d '{"guardrails":["pii-redact"],"mode":"pre_call","input":{"messages":[{"role":"user","content":"email alice@example.com"}]}}'
 ```
 
@@ -156,7 +156,7 @@ optional modified `request` or `response`, optional `reason`, and sanitized
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
-  -X POST http://127.0.0.1:8081/admin/guardrails \
+  -X POST http://127.0.0.1:8081/admin-ui/admin/guardrails \
   -d '{
     "name": "custom-check",
     "description": "Company policy check",
@@ -251,11 +251,11 @@ protected Gateway admin route:
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -X POST \
-  http://127.0.0.1:8081/admin/studio/connection/test
+  http://127.0.0.1:8081/admin-ui/admin/studio/connection/test
 
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
-  http://127.0.0.1:8081/admin/studio/services
+  http://127.0.0.1:8081/admin-ui/admin/studio/services
 ```
 
 The test route returns `ok` and `service_count` when the catalog is reachable.
@@ -303,7 +303,7 @@ the Admin API, send `expires_at: null`. Project-owned keys specify
 `owner_type: "project"` and a `project_id`:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8081/admin/keys \
+curl -sS -X POST http://127.0.0.1:8081/admin-ui/admin/keys \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -320,7 +320,7 @@ curl -sS -X POST http://127.0.0.1:8081/admin/keys \
 Individual keys specify `owner_type: "individual"` and direct `service_names`:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8081/admin/keys \
+curl -sS -X POST http://127.0.0.1:8081/admin-ui/admin/keys \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -337,7 +337,7 @@ curl -sS -X POST http://127.0.0.1:8081/admin/keys \
 To clear expiration on an existing key:
 
 ```bash
-curl -sS -X PATCH http://127.0.0.1:8081/admin/keys/<key-id> \
+curl -sS -X PATCH http://127.0.0.1:8081/admin-ui/admin/keys/<key-id> \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"expires_at": null}'
@@ -346,7 +346,7 @@ curl -sS -X PATCH http://127.0.0.1:8081/admin/keys/<key-id> \
 To set an expiration again:
 
 ```bash
-curl -sS -X PATCH http://127.0.0.1:8081/admin/keys/<key-id> \
+curl -sS -X PATCH http://127.0.0.1:8081/admin-ui/admin/keys/<key-id> \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"expires_at": "2030-01-01T00:00:00Z"}'

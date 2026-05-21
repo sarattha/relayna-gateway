@@ -141,11 +141,11 @@ Framework boundary:
     * streaming request/response handling
     * upstream retries, timeouts, load balancing, and connection reuse
 * Axum owns the control-plane API:
-    * /healthz
-    * /readyz
-    * /admin/keys
-    * /admin/keys/{key_id}
-    * /admin/keys/{key_id}/usage
+    * /admin-ui/healthz
+    * /admin-ui/readyz
+    * /admin-ui/admin/keys
+    * /admin-ui/admin/keys/{key_id}
+    * /admin-ui/admin/keys/{key_id}/usage
     * future policy, usage, and operator APIs
 * gateway-core must stay framework-agnostic.
     * Authentication, policy, route resolution, usage construction, budget
@@ -265,8 +265,8 @@ Server foundation
 * Create Rust workspace
 * Add Pingora proxy service for /v1/* traffic
 * Add Axum control API service
-* Add /healthz
-* Add /readyz
+* Add /admin-ui/healthz
+* Add /admin-ui/readyz
 * Add structured error response format
 * Add request ID handling shared by Pingora and Axum paths
 * Add tracing middleware/layers for both services
@@ -490,11 +490,11 @@ Admin APIs
 
 Add internal/admin APIs:
 
-POST   /admin/keys
-GET    /admin/keys/{key_id}
-PATCH  /admin/keys/{key_id}
-DELETE /admin/keys/{key_id}
-GET    /admin/keys/{key_id}/usage
+POST   /admin-ui/admin/keys
+GET    /admin-ui/admin/keys/{key_id}
+PATCH  /admin-ui/admin/keys/{key_id}
+DELETE /admin-ui/admin/keys/{key_id}
+GET    /admin-ui/admin/keys/{key_id}/usage
 
 Checklist:
 
@@ -959,7 +959,7 @@ gateway_first_token_latency_ms
 
 Checklist:
 
-* Expose /metrics
+* Expose /admin-ui/metrics
 * Add Kubernetes ServiceMonitor if using Prometheus Operator
 * Add Grafana dashboard JSON later
 

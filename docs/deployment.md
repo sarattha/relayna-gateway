@@ -107,12 +107,20 @@ The repository includes a baseline manifest at `deploy/kubernetes/relayna-gatewa
    ```bash
    kubectl rollout status deployment/relayna-gateway
    kubectl port-forward svc/relayna-gateway 8081:8081
-   curl http://127.0.0.1:8081/readyz
+   curl http://127.0.0.1:8081/admin-ui/readyz
    ```
 
 ## Network Exposure
 
-Expose the proxy port to clients that need LLM traffic. Keep the control port private or protected by internal ingress, VPN, identity-aware proxy, or strict network policy.
+Expose the proxy port to clients that need LLM traffic. Keep the control port
+private or protected by internal ingress, VPN, identity-aware proxy, or strict
+network policy.
+
+All Gateway control-plane paths are rooted under `/admin-ui` so an AKS ingress
+can route `/admin-ui` and `/admin-ui/*` to Relayna Gateway even when another
+gateway owns `/`, `/healthz`, `/readyz`, and `/metrics`. Use
+`/admin-ui/healthz`, `/admin-ui/readyz`, and `/admin-ui/metrics` for probes and
+scrapers.
 
 ## Guardrail Configuration
 
@@ -188,11 +196,11 @@ Test through Gateway after startup:
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -X POST \
-  http://127.0.0.1:8081/admin/studio/connection/test
+  http://127.0.0.1:8081/admin-ui/admin/studio/connection/test
 
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
-  http://127.0.0.1:8081/admin/studio/services
+  http://127.0.0.1:8081/admin-ui/admin/studio/services
 ```
 
 If Gateway returns `studio_unavailable`, check that the backend URL is reachable

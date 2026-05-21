@@ -129,7 +129,7 @@ Virtual keys can discover allowed guardrails:
 ```bash
 curl -sS \
   -H "Authorization: Bearer rk_live_xxx" \
-  http://127.0.0.1:8081/v1/guardrails
+  http://127.0.0.1:8081/admin-ui/v1/guardrails
 ```
 
 Use the test endpoint to run guardrails without calling a provider:
@@ -138,7 +138,7 @@ Use the test endpoint to run guardrails without calling a provider:
 curl -sS \
   -H "Authorization: Bearer rk_live_xxx" \
   -H "Content-Type: application/json" \
-  -X POST http://127.0.0.1:8081/v1/guardrails/test \
+  -X POST http://127.0.0.1:8081/admin-ui/v1/guardrails/test \
   -d '{"guardrails":["pii-redact"],"mode":"pre_call","input":{"messages":[{"role":"user","content":"email alice@example.com"}]}}'
 ```
 

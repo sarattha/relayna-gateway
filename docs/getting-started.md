@@ -101,11 +101,11 @@ After Gateway starts, verify Gateway can reach Studio:
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -X POST \
-  http://127.0.0.1:8081/admin/studio/connection/test
+  http://127.0.0.1:8081/admin-ui/admin/studio/connection/test
 
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
-  http://127.0.0.1:8081/admin/studio/services
+  http://127.0.0.1:8081/admin-ui/admin/studio/services
 ```
 
 The Gateway response should include mapped services with `studio_service_id`,
@@ -126,8 +126,8 @@ The first startup prints a raw operator token once. Use it for the admin portal 
 ## Verify Local Health
 
 ```bash
-curl http://127.0.0.1:8081/healthz
-curl http://127.0.0.1:8081/readyz
+curl http://127.0.0.1:8081/admin-ui/healthz
+curl http://127.0.0.1:8081/admin-ui/readyz
 ```
 
 Open the admin portal at:
@@ -166,7 +166,7 @@ makes `pii-redact` mandatory for one key and disables response placeholder
 restore only for that key:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8081/admin/keys \
+curl -sS -X POST http://127.0.0.1:8081/admin-ui/admin/keys \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -193,7 +193,7 @@ calling an upstream provider:
 curl -sS \
   -H "Authorization: Bearer rk_live_xxx" \
   -H "Content-Type: application/json" \
-  -X POST http://127.0.0.1:8081/v1/guardrails/test \
+  -X POST http://127.0.0.1:8081/admin-ui/v1/guardrails/test \
   -d '{"guardrails":["pii-redact"],"mode":"pre_call","input":{"messages":[{"role":"user","content":"alice@example.com"}]}}'
 ```
 
@@ -204,7 +204,7 @@ editing a virtual key. Through the API, use `expires_at: null` with an explicit
 owner type:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8081/admin/keys \
+curl -sS -X POST http://127.0.0.1:8081/admin-ui/admin/keys \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
