@@ -33,6 +33,16 @@ function setNotice(message, kind = "error") {
   notice.dataset.kind = kind;
 }
 
+function handleAsync(handler) {
+  return async (event) => {
+    try {
+      await handler(event);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+}
+
 async function api(path, options = {}) {
   const response = await fetchWithTimeout(path, {
     ...options,
@@ -235,13 +245,13 @@ async function projects() {
       ${projectTable(state.projects)}
     </section>
   `;
-  document.querySelector("#project-form").addEventListener("submit", createProject);
+  document.querySelector("#project-form").addEventListener("submit", handleAsync(createProject));
   document.querySelectorAll("[data-project-services-form]").forEach((form) => {
-    form.addEventListener("submit", patchProjectServices);
+    form.addEventListener("submit", handleAsync(patchProjectServices));
   });
   bindServicePickerButtons();
   document.querySelectorAll("[data-project-action]").forEach((button) => {
-    button.addEventListener("click", projectAction);
+    button.addEventListener("click", handleAsync(projectAction));
   });
 }
 
@@ -337,14 +347,14 @@ async function keys() {
       ${keyTable(state.keys)}
     </section>
   `;
-  document.querySelector("#key-form").addEventListener("submit", createKey);
-  document.querySelector("#key-edit-form")?.addEventListener("submit", patchKey);
+  document.querySelector("#key-form").addEventListener("submit", handleAsync(createKey));
+  document.querySelector("#key-edit-form")?.addEventListener("submit", handleAsync(patchKey));
   bindKeyExpiryControls();
   bindKeyOwnerControls();
   bindServicePickerButtons();
   bindGuardrailPickerButtons();
   document.querySelectorAll("[data-key-action]").forEach((button) => {
-    button.addEventListener("click", keyAction);
+    button.addEventListener("click", handleAsync(keyAction));
   });
 }
 
@@ -577,9 +587,9 @@ async function providers() {
       ${providerTable(state.providers)}
     </section>
   `;
-  document.querySelector("#provider-form").addEventListener("submit", createProvider);
+  document.querySelector("#provider-form").addEventListener("submit", handleAsync(createProvider));
   document.querySelectorAll("[data-provider-action]").forEach((button) => {
-    button.addEventListener("click", providerAction);
+    button.addEventListener("click", handleAsync(providerAction));
   });
 }
 
@@ -645,7 +655,7 @@ async function routes() {
     </section>
   `;
   document.querySelectorAll("[data-openai-route-action]").forEach((button) => {
-    button.addEventListener("click", openaiRouteAction);
+    button.addEventListener("click", handleAsync(openaiRouteAction));
   });
 }
 
@@ -696,7 +706,7 @@ async function services() {
           <button type="button" data-service-action="studio-import">Import from Studio</button>
         </div>
         <form id="service-form" class="form-grid">
-          <label>Name<input name="name" required></label>
+          <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
           <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
           <label>Upstream URL<input name="upstream_base_url"></label>
           <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
@@ -723,10 +733,10 @@ async function services() {
     </section>
     <datalist id="service-routes">${serviceRouteOptions()}</datalist>
   `;
-  document.querySelector("#service-form").addEventListener("submit", submitService);
-  document.querySelector("#service-edit-form")?.addEventListener("submit", patchService);
+  document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
+  document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
   document.querySelectorAll("[data-service-action]").forEach((button) => {
-    button.addEventListener("click", serviceAction);
+    button.addEventListener("click", handleAsync(serviceAction));
   });
 }
 
@@ -803,7 +813,7 @@ async function openStudioImportPicker() {
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) backdrop.remove();
     });
-    backdrop.querySelector("#studio-import-form").addEventListener("submit", importSelectedStudioServices);
+    backdrop.querySelector("#studio-import-form").addEventListener("submit", handleAsync(importSelectedStudioServices));
     document.body.appendChild(backdrop);
   } catch (error) {
     setNotice(`${error.message}. Check Settings for the Studio connection.`);
@@ -832,9 +842,9 @@ async function settings() {
       </form>
     </section>
   `;
-  document.querySelector("#studio-connection-form").addEventListener("submit", saveStudioConnection);
+  document.querySelector("#studio-connection-form").addEventListener("submit", handleAsync(saveStudioConnection));
   document.querySelectorAll("[data-studio-action]").forEach((button) => {
-    button.addEventListener("click", studioConnectionAction);
+    button.addEventListener("click", handleAsync(studioConnectionAction));
   });
 }
 
@@ -1104,7 +1114,7 @@ async function usage() {
     </section>
     <section class="panel"><div class="panel-heading"><h3>Usage breakdown</h3></div><div id="usage-results"></div></section>
   `;
-  document.querySelector("#usage-form").addEventListener("submit", loadUsage);
+  document.querySelector("#usage-form").addEventListener("submit", handleAsync(loadUsage));
   await loadUsage();
 }
 
@@ -1271,12 +1281,12 @@ async function guardrails() {
     state.editingGuardrailName = "";
     guardrails();
   });
-  document.querySelector("#guardrail-form")?.addEventListener("submit", submitGuardrail);
+  document.querySelector("#guardrail-form")?.addEventListener("submit", handleAsync(submitGuardrail));
   document.querySelector("[data-guardrail-action='cancel']")?.addEventListener("click", () => {
     state.editingGuardrailName = null;
     guardrails();
   });
-  document.querySelector("[data-guardrail-action='delete']")?.addEventListener("click", deleteGuardrail);
+  document.querySelector("[data-guardrail-action='delete']")?.addEventListener("click", handleAsync(deleteGuardrail));
   document.querySelectorAll("[data-guardrail-edit]").forEach((button) => {
     button.addEventListener("click", () => {
       state.editingGuardrailName = button.dataset.guardrailEdit;

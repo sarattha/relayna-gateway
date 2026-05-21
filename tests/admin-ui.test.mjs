@@ -53,6 +53,21 @@ test("admin portal calls the expected gateway admin APIs", () => {
   }
 });
 
+test("admin portal surfaces async action failures", () => {
+  assert.match(js, /function handleAsync\(handler\)/);
+  for (const handler of [
+    "createProject",
+    "createKey",
+    "submitService",
+    "patchService",
+    "createProvider",
+    "saveStudioConnection",
+    "submitGuardrail",
+  ]) {
+    assert.match(js, new RegExp(`handleAsync\\(${handler}\\)`));
+  }
+});
+
 test("guardrails view exposes catalog CRUD drawer controls", () => {
   assert.match(js, /New guardrail/);
   assert.match(js, /function guardrailDrawer\(guardrail\)/);
@@ -155,6 +170,8 @@ test("service methods use explicit checkbox controls", () => {
 
 test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /service-routes/);
+  assert.match(js, /placeholder="temp-service-2"/);
+  assert.match(js, /Use lowercase letters, numbers, and hyphens/);
   assert.match(js, /function serviceRouteOptions\(\)/);
   assert.match(js, /Import from Studio/);
   assert.match(js, /function studioImportTable\(rows\)/);
