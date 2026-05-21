@@ -1121,7 +1121,9 @@ async function loadUsage(event) {
     api(`/admin-ui/admin/usage/by-key?${query}`),
     api(`/admin-ui/admin/usage/by-service?${query}`),
   ]);
-  document.querySelector("#usage-results").innerHTML = `
+  const results = document.querySelector("#usage-results");
+  if (!results) return;
+  results.innerHTML = `
     <h4>Projects</h4>${usageBreakdownTable(projectRows, projectName)}
     <h4>Keys</h4>${usageBreakdownTable(keyRows, keyName)}
     <h4>Services</h4>${usageBreakdownTable(serviceRows)}
