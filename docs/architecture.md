@@ -43,7 +43,7 @@ The control listener exposes:
 - `/admin/*` APIs for operator actions.
 - `/admin-ui` for the embedded operator portal.
 
-Admin APIs require an operator token. On the first startup, the gateway bootstraps one operator token, stores only its hash, and prints the raw token once. Store it in a password manager or secret manager immediately.
+Admin APIs require an operator token. On the first startup, the gateway bootstraps one operator token and stores only its hash. `GATEWAY_ADMIN_TOKEN` can seed that first token in a fresh database; otherwise the gateway generates and prints one raw token once. After an active token exists, env changes are ignored and rotation through the Admin portal is the supported change path.
 
 ## Crate Ownership
 

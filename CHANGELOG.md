@@ -10,6 +10,8 @@ All notable changes to Relayna Gateway are documented in this file.
   required operational data, and secret-handling expectations.
 - Redis key reference documentation covering request rate-limit counters,
   budget counters, reservation keys, TTLs, and operational handling.
+- Optional `GATEWAY_ADMIN_TOKEN` first-start bootstrap seeding for fresh
+  databases.
 
 ### Changed
 

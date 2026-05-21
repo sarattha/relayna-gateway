@@ -62,7 +62,9 @@ Use readiness probes for traffic routing and liveness probes for process restart
 
 - Store `DATABASE_URL`, `REDIS_URL`, provider credentials, LiteLLM credentials, Studio tokens, and operator tokens in a secret manager.
 - Never log raw virtual keys, operator tokens, provider keys, prompts, or request bodies.
-- Rotate the bootstrap operator token after first startup.
+- Use `GATEWAY_ADMIN_TOKEN` only to seed a fresh database. After an active
+  operator token exists, env changes are ignored; rotate the token from the
+  Admin portal to change it.
 - Prefer private control-plane access for `/admin/*`, `/admin-ui`, and `/metrics`.
 - Treat non-expiring virtual keys as high-risk service credentials. Store them
   only in a secret manager, scope their policies narrowly, rotate them through

@@ -15,14 +15,35 @@ fn main() -> anyhow::Result<()> {
     let store = setup_runtime
         .block_on(PostgresStore::connect(&config.database_url))
         .context("connect postgres")?;
-    if let Some(material) = setup_runtime
-        .block_on(bootstrap_operator_token(&store))
+    if setup_runtime
+        .block_on(store.has_active_operator_token())
+        .context("check active operator token")?
+    {
+        if config.gateway_admin_token.is_some() {
+            tracing::info!(
+                "active Relayna Gateway operator token already exists; ignoring GATEWAY_ADMIN_TOKEN because token rotation owns changes after bootstrap"
+            );
+        }
+    } else if let Some(bootstrap) = setup_runtime
+        .block_on(bootstrap_operator_token(
+            &store,
+            config.gateway_admin_token.as_deref(),
+        ))
         .context("bootstrap operator token")?
     {
-        tracing::warn!(
-            "generated first Relayna Gateway operator token; store it securely because it will not be shown again"
-        );
-        println!("Relayna Gateway operator token: {}", material.raw_token);
+        match bootstrap {
+            BootstrapOperatorToken::Configured(_) => {
+                tracing::warn!(
+                    "stored first Relayna Gateway operator token from GATEWAY_ADMIN_TOKEN; future env changes are ignored after bootstrap"
+                );
+            }
+            BootstrapOperatorToken::Generated(material) => {
+                tracing::warn!(
+                    "generated first Relayna Gateway operator token; store it securely because it will not be shown again"
+                );
+                println!("Relayna Gateway operator token: {}", material.raw_token);
+            }
+        }
     }
     let redis = RedisReadiness::new(&config.redis_url).context("create redis client")?;
     let redis_control =
@@ -84,15 +105,42 @@ fn main() -> anyhow::Result<()> {
 
 async fn bootstrap_operator_token(
     store: &PostgresStore,
-) -> anyhow::Result<Option<OperatorTokenMaterial>> {
-    let material = OperatorTokenMaterial::generate().context("generate operator token")?;
+    configured_token: Option<&str>,
+) -> anyhow::Result<Option<BootstrapOperatorToken>> {
+    let bootstrap = bootstrap_operator_token_material(configured_token)?;
     match store
-        .bootstrap_operator_token(&material)
+        .bootstrap_operator_token(bootstrap.material())
         .await
         .context("store bootstrap operator token")?
     {
-        Some(_) => Ok(Some(material)),
+        Some(_) => Ok(Some(bootstrap)),
         None => Ok(None),
+    }
+}
+
+enum BootstrapOperatorToken {
+    Configured(OperatorTokenMaterial),
+    Generated(OperatorTokenMaterial),
+}
+
+impl BootstrapOperatorToken {
+    fn material(&self) -> &OperatorTokenMaterial {
+        match self {
+            Self::Configured(material) | Self::Generated(material) => material,
+        }
+    }
+}
+
+fn bootstrap_operator_token_material(
+    configured_token: Option<&str>,
+) -> anyhow::Result<BootstrapOperatorToken> {
+    match configured_token {
+        Some(raw_token) => OperatorTokenMaterial::from_raw(raw_token.to_owned())
+            .map(BootstrapOperatorToken::Configured)
+            .context("parse GATEWAY_ADMIN_TOKEN"),
+        None => OperatorTokenMaterial::generate()
+            .map(BootstrapOperatorToken::Generated)
+            .context("generate operator token"),
     }
 }
 
@@ -117,5 +165,41 @@ async fn shutdown_signal() {
     tokio::select! {
         () = ctrl_c => {},
         () = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bootstrap_material_uses_configured_admin_token() {
+        let raw_token = "op_live_1234567890abcdef1234567890abcdef";
+        let bootstrap = bootstrap_operator_token_material(Some(raw_token)).unwrap();
+
+        match bootstrap {
+            BootstrapOperatorToken::Configured(material) => {
+                assert_eq!(material.raw_token, raw_token);
+                assert_eq!(material.token_prefix, "op_live_12345678");
+            }
+            BootstrapOperatorToken::Generated(_) => panic!("expected configured token"),
+        }
+    }
+
+    #[test]
+    fn bootstrap_material_rejects_malformed_configured_admin_token() {
+        assert!(bootstrap_operator_token_material(Some("test-admin-token")).is_err());
+    }
+
+    #[test]
+    fn bootstrap_material_generates_when_no_admin_token_is_configured() {
+        let bootstrap = bootstrap_operator_token_material(None).unwrap();
+
+        match bootstrap {
+            BootstrapOperatorToken::Generated(material) => {
+                assert!(material.raw_token.starts_with("op_live_"));
+            }
+            BootstrapOperatorToken::Configured(_) => panic!("expected generated token"),
+        }
     }
 }

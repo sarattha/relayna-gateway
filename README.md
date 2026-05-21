@@ -33,6 +33,9 @@ export DATABASE_URL="postgres://relayna_gateway@localhost:5432/relayna_gateway"
 export REDIS_URL="redis://127.0.0.1:6379"
 export LITELLM_BASE_URL="http://127.0.0.1:4000"
 export LITELLM_SERVICE_KEY="sk-litellm-service-key"
+# Optional first-start admin bootstrap token. Must start with op_live_.
+# Ignored after an active operator token exists in PostgreSQL.
+# export GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value"
 export RELAYNA_STUDIO_BASE_URL="http://127.0.0.1:8000"
 # Optional when Studio protects the Gateway export endpoint:
 # export RELAYNA_STUDIO_TOKEN="studio-gateway-token"
@@ -50,7 +53,7 @@ Run the gateway:
 cargo run -p gateway-api
 ```
 
-The first startup runs database migrations and prints one bootstrap operator token. Store that token securely; only its hash is persisted.
+The first startup runs database migrations and creates one bootstrap operator token. If `GATEWAY_ADMIN_TOKEN` is set, Gateway stores that token hash in a fresh database and does not print the raw token. If it is not set, Gateway generates and prints one raw operator token. After an active operator token exists, later `GATEWAY_ADMIN_TOKEN` changes are ignored; rotate the token from the Admin portal to change it.
 
 Useful endpoints:
 
