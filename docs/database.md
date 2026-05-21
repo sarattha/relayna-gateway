@@ -36,7 +36,10 @@ of that schema.
 
 - At least one active `operator_tokens` row is required for authenticated
   `/admin/*` access after bootstrap. Startup creates one bootstrap token when
-  no active token exists and prints the raw token once.
+  no active token exists. If `GATEWAY_ADMIN_TOKEN` is set, a fresh database is
+  seeded from that token. Otherwise startup generates and prints a raw token
+  once. After an active token exists, env changes are ignored and token changes
+  must go through Admin portal rotation.
 - Project-owned keys require a `projects` row and an `api_keys.project_id`
   value that references it. Individual keys must have `project_id` set to
   `NULL`.
@@ -196,7 +199,7 @@ never stored.
 | Lifecycle fields | `disabled`, `revoked_at`, and `last_used_at`. |
 | Secret fields | `token_hash` stores an Argon2 hash of the raw operator token. |
 | Indexes | `operator_tokens_active_idx` and `operator_tokens_one_active_idx`. |
-| Required data | At least one active row is needed for admin access after bootstrap. |
+| Required data | At least one active row is needed for admin access after bootstrap. `GATEWAY_ADMIN_TOKEN` seeds only a fresh database; existing active rows ignore env changes. |
 
 ### `usage_events`
 

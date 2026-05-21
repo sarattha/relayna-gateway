@@ -4,7 +4,9 @@ The admin portal is a static operator console embedded in `gateway-api`. It is s
 
 ## Authentication
 
-Use the operator token printed on first startup. The token is stored in browser session storage and sent as:
+Use the operator token seeded by `GATEWAY_ADMIN_TOKEN` on first startup, or the
+generated operator token printed when no env token was set. The token is stored
+in browser session storage and sent as:
 
 ```http
 Authorization: Bearer <operator-token>

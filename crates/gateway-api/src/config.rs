@@ -7,6 +7,7 @@ pub struct Config {
     pub redis_url: String,
     pub litellm_base_url: String,
     pub litellm_service_key: String,
+    pub gateway_admin_token: Option<String>,
     pub direct_openai_base_url: Option<String>,
     pub direct_openai_service_key: Option<String>,
     pub relayna_worker_token: Option<String>,
@@ -25,6 +26,7 @@ impl Config {
         let redis_url = required("REDIS_URL")?;
         let litellm_base_url = required("LITELLM_BASE_URL")?;
         let litellm_service_key = required("LITELLM_SERVICE_KEY")?;
+        let gateway_admin_token = optional("GATEWAY_ADMIN_TOKEN");
         let direct_openai_base_url = optional("DIRECT_OPENAI_BASE_URL");
         let direct_openai_service_key = optional("DIRECT_OPENAI_SERVICE_KEY");
         let relayna_worker_token = optional("RELAYNA_WORKER_TOKEN");
@@ -47,6 +49,7 @@ impl Config {
             redis_url,
             litellm_base_url,
             litellm_service_key,
+            gateway_admin_token,
             direct_openai_base_url,
             direct_openai_service_key,
             relayna_worker_token,
