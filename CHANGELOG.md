@@ -2,6 +2,33 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.12 - 2026-05-21
+
+### Added
+
+- AKS-safe admin/control base path support under `/admin-ui/*`, including
+  relocated health, readiness, metrics, Admin API, and guardrail control
+  routes.
+- Documentation and deployment examples for operating Relayna Gateway when
+  another cluster gateway owns `/`, `/healthz`, `/readyz`, and `/metrics`.
+
+### Changed
+
+- Workspace crate versions now share the `0.0.12` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.0.12` gateway image.
+- Root-level admin/control routes are no longer registered; runtime proxy
+  routes such as `/services/*`, `/v1/chat/completions`, and `/v1/responses`
+  remain unchanged.
+- Admin portal requests now use `/admin-ui/admin/*` and `/admin-ui/readyz`.
+
+### Fixed
+
+- Architecture documentation now renders Mermaid diagrams instead of showing
+  raw diagram source.
+- Admin portal async action failures are surfaced in the notice area, and the
+  Services form validates DNS-style service names before submit.
+
 ## 0.0.11 - 2026-05-21
 
 ### Added

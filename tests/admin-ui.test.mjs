@@ -33,23 +33,38 @@ test("admin portal shell exposes all release-critical views", () => {
 
 test("admin portal calls the expected gateway admin APIs", () => {
   for (const endpoint of [
-    "/admin/usage/summary",
-    "/admin/provider-health",
-    "/admin/projects",
-    "/admin/providers",
-    "/admin/openai-routes",
-    "/admin/keys",
-    "/admin/guardrails",
-    "/admin/guardrails/executions?limit=50",
-    "/admin/guardrails/summary",
-    "/admin/services",
-    "/admin/studio/connection",
-    "/admin/studio/connection/test",
-    "/admin/studio/services",
-    "/admin/operator-token/rotate",
-    "/readyz",
+    "/admin-ui/admin/usage/summary",
+    "/admin-ui/admin/provider-health",
+    "/admin-ui/admin/projects",
+    "/admin-ui/admin/providers",
+    "/admin-ui/admin/openai-routes",
+    "/admin-ui/admin/keys",
+    "/admin-ui/admin/guardrails",
+    "/admin-ui/admin/guardrails/executions?limit=50",
+    "/admin-ui/admin/guardrails/summary",
+    "/admin-ui/admin/services",
+    "/admin-ui/admin/studio/connection",
+    "/admin-ui/admin/studio/connection/test",
+    "/admin-ui/admin/studio/services",
+    "/admin-ui/admin/operator-token/rotate",
+    "/admin-ui/readyz",
   ]) {
     assert.ok(js.includes(endpoint), `expected app.js to call ${endpoint}`);
+  }
+});
+
+test("admin portal surfaces async action failures", () => {
+  assert.match(js, /function handleAsync\(handler\)/);
+  for (const handler of [
+    "createProject",
+    "createKey",
+    "submitService",
+    "patchService",
+    "createProvider",
+    "saveStudioConnection",
+    "submitGuardrail",
+  ]) {
+    assert.match(js, new RegExp(`handleAsync\\(${handler}\\)`));
   }
 });
 
@@ -155,6 +170,8 @@ test("service methods use explicit checkbox controls", () => {
 
 test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /service-routes/);
+  assert.match(js, /placeholder="temp-service-2"/);
+  assert.match(js, /Use lowercase letters, numbers, and hyphens/);
   assert.match(js, /function serviceRouteOptions\(\)/);
   assert.match(js, /Import from Studio/);
   assert.match(js, /function studioImportTable\(rows\)/);
@@ -175,15 +192,15 @@ test("studio import modal constrains and scrolls wide service tables", () => {
 });
 
 test("usage view exposes project key service and route drilldown filters", () => {
-  assert.match(js, /api\("\/admin\/projects"\)/);
-  assert.match(js, /api\("\/admin\/keys"\)/);
-  assert.match(js, /api\("\/admin\/services"\)/);
+  assert.match(js, /api\("\/admin-ui\/admin\/projects"\)/);
+  assert.match(js, /api\("\/admin-ui\/admin\/keys"\)/);
+  assert.match(js, /api\("\/admin-ui\/admin\/services"\)/);
   for (const field of ["project_id", "key_id", "service", "route"]) {
     assert.match(js, new RegExp(`name="${field}"`));
   }
-  assert.match(js, /\/admin\/usage\/by-project/);
-  assert.match(js, /\/admin\/usage\/by-key/);
-  assert.match(js, /\/admin\/usage\/by-service/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/by-project/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/by-key/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/by-service/);
 });
 
 test("virtual keys expose explicit no-expiration controls", () => {
@@ -196,7 +213,7 @@ test("virtual keys expose explicit no-expiration controls", () => {
 test("service editor closes after a successful save", () => {
   assert.match(
     js,
-    /async function patchService\(event\) \{[\s\S]*await api\(`\/admin\/services\/\$\{serviceName\}`,[\s\S]*state\.editingServiceName = null;[\s\S]*await services\(\);[\s\S]*\}/,
+    /async function patchService\(event\) \{[\s\S]*await api\(`\/admin-ui\/admin\/services\/\$\{serviceName\}`,[\s\S]*state\.editingServiceName = null;[\s\S]*await services\(\);[\s\S]*\}/,
   );
 });
 

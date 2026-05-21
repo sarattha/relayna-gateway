@@ -40,10 +40,10 @@ curl -sS "$RELAYNA_STUDIO_BASE_URL/studio/gateway/services"
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -X POST \
-  http://127.0.0.1:8081/admin/studio/connection/test
+  http://127.0.0.1:8081/admin-ui/admin/studio/connection/test
 curl -sS \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
-  http://127.0.0.1:8081/admin/studio/services
+  http://127.0.0.1:8081/admin-ui/admin/studio/services
 ```
 
 The first command proves Studio exports services. The test route proves Gateway
@@ -52,11 +52,11 @@ can fetch and map the export.
 
 ## Health and Metrics
 
-- `/healthz` confirms the process can serve the control API.
-- `/readyz` checks PostgreSQL and Redis.
-- `/metrics` exposes Prometheus text format.
+- `/admin-ui/healthz` confirms the process can serve the control API.
+- `/admin-ui/readyz` checks PostgreSQL and Redis.
+- `/admin-ui/metrics` exposes Prometheus text format.
 
-Use readiness probes for traffic routing and liveness probes for process restart decisions. Do not use `/healthz` as a dependency readiness signal.
+Use readiness probes for traffic routing and liveness probes for process restart decisions. Do not use `/admin-ui/healthz` as a dependency readiness signal.
 
 ## Secret Handling
 
@@ -65,7 +65,7 @@ Use readiness probes for traffic routing and liveness probes for process restart
 - Use `GATEWAY_ADMIN_TOKEN` only to seed a fresh database. After an active
   operator token exists, env changes are ignored; rotate the token from the
   Admin portal to change it.
-- Prefer private control-plane access for `/admin/*`, `/admin-ui`, and `/metrics`.
+- Prefer private control-plane access for `/admin-ui/admin/*`, `/admin-ui`, and `/admin-ui/metrics`.
 - Treat non-expiring virtual keys as high-risk service credentials. Store them
   only in a secret manager, scope their policies narrowly, rotate them through
   an external process, and revoke or disable them immediately when ownership or
@@ -83,5 +83,5 @@ Before deploying a new release:
 2. Build and scan the Docker image.
 3. Run CI, including Rust checks, admin UI tests, and docs build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.0.11`.
-6. Roll out one gateway replica and check `/readyz`, `/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.0.12`.
+6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.

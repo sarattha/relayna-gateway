@@ -29,13 +29,13 @@ of that schema.
 | Providers and routes | `provider_configs`, `openai_route_settings`, `route_policies` | Stores upstream provider settings and global OpenAI-compatible route toggles. |
 | Guardrails | `guardrail_definitions`, `guardrail_execution_events` | Stores guardrail catalog entries and execution audit records. |
 | Studio settings | `studio_connection_settings` | Stores the optional Relayna Studio import connection. |
-| Operators | `operator_tokens` | Stores hashed tokens for `/admin/*` and `/admin-ui` access. |
+| Operators | `operator_tokens` | Stores hashed tokens for `/admin-ui/admin/*` and `/admin-ui` access. |
 | Usage | `usage_events` | Stores request accounting for admin usage views and Relayna Studio consumption. |
 
 ## Required Operational Data
 
 - At least one active `operator_tokens` row is required for authenticated
-  `/admin/*` access after bootstrap. Startup creates one bootstrap token when
+  `/admin-ui/admin/*` access after bootstrap. Startup creates one bootstrap token when
   no active token exists. If `GATEWAY_ADMIN_TOKEN` is set, a fresh database is
   seeded from that token. Otherwise startup generates and prints a raw token
   once. After an active token exists, env changes are ignored and token changes

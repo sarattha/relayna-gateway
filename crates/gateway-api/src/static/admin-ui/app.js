@@ -33,6 +33,16 @@ function setNotice(message, kind = "error") {
   notice.dataset.kind = kind;
 }
 
+function handleAsync(handler) {
+  return async (event) => {
+    try {
+      await handler(event);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+}
+
 async function api(path, options = {}) {
   const response = await fetchWithTimeout(path, {
     ...options,
@@ -127,7 +137,7 @@ document.querySelector("#login-form").addEventListener("submit", async (event) =
   const value = document.querySelector("#operator-token").value.trim();
   sessionStorage.setItem(tokenKey, value);
   try {
-    await api("/admin/usage/summary");
+    await api("/admin-ui/admin/usage/summary");
     signedIn();
   } catch (error) {
     sessionStorage.removeItem(tokenKey);
@@ -145,7 +155,7 @@ document.querySelector("#refresh").addEventListener("click", refresh);
 document.querySelector("#rotate-token").addEventListener("click", async () => {
   if (!(await confirmAction("Rotate operator token", "The current token stops working."))) return;
   try {
-    const body = await api("/admin/operator-token/rotate", { method: "POST", body: "{}" });
+    const body = await api("/admin-ui/admin/operator-token/rotate", { method: "POST", body: "{}" });
     sessionStorage.setItem(tokenKey, body.raw_token);
     showRawToken(body.raw_token, "Operator token shown once");
     setNotice("Operator token rotated. Store the new token now.", "success");
@@ -189,12 +199,12 @@ async function refresh() {
 
 async function overview() {
   const [summary, healthRows, ready, keysRows, openaiRoutes, servicesRows] = await Promise.all([
-    api("/admin/usage/summary"),
-    api("/admin/provider-health"),
-    json("/readyz"),
-    api("/admin/keys"),
-    api("/admin/openai-routes"),
-    api("/admin/services"),
+    api("/admin-ui/admin/usage/summary"),
+    api("/admin-ui/admin/provider-health"),
+    json("/admin-ui/readyz"),
+    api("/admin-ui/admin/keys"),
+    api("/admin-ui/admin/openai-routes"),
+    api("/admin-ui/admin/services"),
   ]);
   const activeKeys = keysRows.filter((key) => !key.disabled && !key.revoked_at).length;
   const enabledRoutes = openaiRoutes.filter((route) => route.enabled).length;
@@ -221,7 +231,7 @@ function stat(label, value) {
 }
 
 async function projects() {
-  [state.projects, state.services] = await Promise.all([api("/admin/projects"), api("/admin/services")]);
+  [state.projects, state.services] = await Promise.all([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services")]);
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Create project</h3></div>
@@ -235,13 +245,13 @@ async function projects() {
       ${projectTable(state.projects)}
     </section>
   `;
-  document.querySelector("#project-form").addEventListener("submit", createProject);
+  document.querySelector("#project-form").addEventListener("submit", handleAsync(createProject));
   document.querySelectorAll("[data-project-services-form]").forEach((form) => {
-    form.addEventListener("submit", patchProjectServices);
+    form.addEventListener("submit", handleAsync(patchProjectServices));
   });
   bindServicePickerButtons();
   document.querySelectorAll("[data-project-action]").forEach((button) => {
-    button.addEventListener("click", projectAction);
+    button.addEventListener("click", handleAsync(projectAction));
   });
 }
 
@@ -271,7 +281,7 @@ function projectServiceForm(project) {
 async function createProject(event) {
   event.preventDefault();
   const form = new FormData(event.target);
-  await api("/admin/projects", { method: "POST", body: JSON.stringify({ name: form.get("name") }) });
+  await api("/admin-ui/admin/projects", { method: "POST", body: JSON.stringify({ name: form.get("name") }) });
   setNotice("Project created.", "success");
   await projects();
 }
@@ -279,12 +289,12 @@ async function createProject(event) {
 async function projectAction(event) {
   const { projectAction: action, projectId } = event.currentTarget.dataset;
   if (action === "usage") {
-    const summary = await api(`/admin/projects/${projectId}/usage`);
+    const summary = await api(`/admin-ui/admin/projects/${projectId}/usage`);
     setNotice(`Project usage: ${summary.request_count} requests, ${money(summary.estimated_cost_usd)} cost.`, "success");
     return;
   }
   if (!(await confirmAction("Delete project", "Projects with linked keys, services, or usage cannot be deleted."))) return;
-  await api(`/admin/projects/${projectId}`, { method: "DELETE" });
+  await api(`/admin-ui/admin/projects/${projectId}`, { method: "DELETE" });
   setNotice("Project deleted.", "success");
   await projects();
 }
@@ -292,7 +302,7 @@ async function projectAction(event) {
 async function patchProjectServices(event) {
   event.preventDefault();
   const form = new FormData(event.target);
-  await api(`/admin/projects/${event.target.dataset.projectId}`, {
+  await api(`/admin-ui/admin/projects/${event.target.dataset.projectId}`, {
     method: "PATCH",
     body: JSON.stringify({ service_names: form.getAll("service_names") }),
   });
@@ -302,10 +312,10 @@ async function patchProjectServices(event) {
 
 async function keys() {
   [state.keys, state.projects, state.services, state.guardrails] = await Promise.all([
-    api("/admin/keys"),
-    api("/admin/projects"),
-    api("/admin/services"),
-    api("/admin/guardrails"),
+    api("/admin-ui/admin/keys"),
+    api("/admin-ui/admin/projects"),
+    api("/admin-ui/admin/services"),
+    api("/admin-ui/admin/guardrails"),
   ]);
   const editing = state.keys.find((key) => key.id === state.editingKeyId);
   content.innerHTML = `
@@ -337,14 +347,14 @@ async function keys() {
       ${keyTable(state.keys)}
     </section>
   `;
-  document.querySelector("#key-form").addEventListener("submit", createKey);
-  document.querySelector("#key-edit-form")?.addEventListener("submit", patchKey);
+  document.querySelector("#key-form").addEventListener("submit", handleAsync(createKey));
+  document.querySelector("#key-edit-form")?.addEventListener("submit", handleAsync(patchKey));
   bindKeyExpiryControls();
   bindKeyOwnerControls();
   bindServicePickerButtons();
   bindGuardrailPickerButtons();
   document.querySelectorAll("[data-key-action]").forEach((button) => {
-    button.addEventListener("click", keyAction);
+    button.addEventListener("click", handleAsync(keyAction));
   });
 }
 
@@ -491,7 +501,7 @@ async function createKey(event) {
     guardrail_policy: guardrailPolicy,
   };
   if (!form.has("no_expires_at") && !body.expires_at) delete body.expires_at;
-  const response = await api("/admin/keys", { method: "POST", body: JSON.stringify(body) });
+  const response = await api("/admin-ui/admin/keys", { method: "POST", body: JSON.stringify(body) });
   showRawToken(response.raw_key, "Virtual key shown once");
   state.editingKeyId = response.key.id;
   setNotice("Virtual key created.", "success");
@@ -522,7 +532,7 @@ async function patchKey(event) {
   } else if (form.get("expires_at")) {
     body.expires_at = isoDate(form.get("expires_at"));
   }
-  await api(`/admin/keys/${keyId}`, { method: "PATCH", body: JSON.stringify(body) });
+  await api(`/admin-ui/admin/keys/${keyId}`, { method: "PATCH", body: JSON.stringify(body) });
   setNotice("Virtual key updated.", "success");
   await keys();
 }
@@ -545,7 +555,7 @@ async function keyAction(event) {
     return;
   }
   if (action === "usage") {
-    const summary = await api(`/admin/keys/${keyId}/usage`);
+    const summary = await api(`/admin-ui/admin/keys/${keyId}/usage`);
     setNotice(
       `Key usage: ${summary.request_count} requests, ${summary.failure_count} failures, ${money(summary.estimated_cost_usd)} cost.`,
       "success",
@@ -553,13 +563,13 @@ async function keyAction(event) {
     return;
   }
   if (!(await confirmAction(`${action} virtual key`, "This lifecycle change is written to the database."))) return;
-  await api(`/admin/keys/${keyId}/${action}`, { method: "POST", body: "{}" });
+  await api(`/admin-ui/admin/keys/${keyId}/${action}`, { method: "POST", body: "{}" });
   setNotice(`Virtual key ${action}d.`, "success");
   await keys();
 }
 
 async function providers() {
-  state.providers = await api("/admin/providers");
+  state.providers = await api("/admin-ui/admin/providers");
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Create provider</h3></div>
@@ -577,9 +587,9 @@ async function providers() {
       ${providerTable(state.providers)}
     </section>
   `;
-  document.querySelector("#provider-form").addEventListener("submit", createProvider);
+  document.querySelector("#provider-form").addEventListener("submit", handleAsync(createProvider));
   document.querySelectorAll("[data-provider-action]").forEach((button) => {
-    button.addEventListener("click", providerAction);
+    button.addEventListener("click", handleAsync(providerAction));
   });
 }
 
@@ -603,7 +613,7 @@ function providerTable(rows) {
 async function createProvider(event) {
   event.preventDefault();
   const form = new FormData(event.target);
-  await api("/admin/providers", {
+  await api("/admin-ui/admin/providers", {
     method: "POST",
     body: JSON.stringify({
       provider: form.get("provider"),
@@ -621,9 +631,9 @@ async function providerAction(event) {
   const { providerAction: action, providerId } = event.currentTarget.dataset;
   if (!(await confirmAction(`${action} provider`, "This provider configuration change is written to the database."))) return;
   if (action === "delete") {
-    await api(`/admin/providers/${providerId}`, { method: "DELETE" });
+    await api(`/admin-ui/admin/providers/${providerId}`, { method: "DELETE" });
   } else {
-    await api(`/admin/providers/${providerId}/${action}`, { method: "POST", body: "{}" });
+    await api(`/admin-ui/admin/providers/${providerId}/${action}`, { method: "POST", body: "{}" });
   }
   setNotice(`Provider ${action}d.`, "success");
   await providers();
@@ -631,8 +641,8 @@ async function providerAction(event) {
 
 async function routes() {
   [state.openaiRoutes, state.services] = await Promise.all([
-    api("/admin/openai-routes"),
-    api("/admin/services"),
+    api("/admin-ui/admin/openai-routes"),
+    api("/admin-ui/admin/services"),
   ]);
   content.innerHTML = `
     <section class="panel">
@@ -645,7 +655,7 @@ async function routes() {
     </section>
   `;
   document.querySelectorAll("[data-openai-route-action]").forEach((button) => {
-    button.addEventListener("click", openaiRouteAction);
+    button.addEventListener("click", handleAsync(openaiRouteAction));
   });
 }
 
@@ -680,13 +690,13 @@ function serviceRouteTable(rows) {
 async function openaiRouteAction(event) {
   const { routeId, openaiRouteAction: action } = event.currentTarget.dataset;
   if (!(await confirmAction(`${action} ${routeId}`, "This gateway route change is written to the database."))) return;
-  await api(`/admin/openai-routes/${routeId}/${action}`, { method: "POST", body: "{}" });
+  await api(`/admin-ui/admin/openai-routes/${routeId}/${action}`, { method: "POST", body: "{}" });
   setNotice(`OpenAI route ${action}d.`, "success");
   await routes();
 }
 
 async function services() {
-  [state.services, state.projects] = await Promise.all([api("/admin/services"), api("/admin/projects")]);
+  [state.services, state.projects] = await Promise.all([api("/admin-ui/admin/services"), api("/admin-ui/admin/projects")]);
   const editing = state.services.find((service) => service.name === state.editingServiceName);
   content.innerHTML = `
     <div class="split">
@@ -696,7 +706,7 @@ async function services() {
           <button type="button" data-service-action="studio-import">Import from Studio</button>
         </div>
         <form id="service-form" class="form-grid">
-          <label>Name<input name="name" required></label>
+          <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
           <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
           <label>Upstream URL<input name="upstream_base_url"></label>
           <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
@@ -723,10 +733,10 @@ async function services() {
     </section>
     <datalist id="service-routes">${serviceRouteOptions()}</datalist>
   `;
-  document.querySelector("#service-form").addEventListener("submit", submitService);
-  document.querySelector("#service-edit-form")?.addEventListener("submit", patchService);
+  document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
+  document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
   document.querySelectorAll("[data-service-action]").forEach((button) => {
-    button.addEventListener("click", serviceAction);
+    button.addEventListener("click", handleAsync(serviceAction));
   });
 }
 
@@ -761,7 +771,7 @@ async function submitService(event) {
   const form = new FormData(event.target);
   const action = event.submitter.value;
   if (action === "import") {
-    await api("/admin/services/import", {
+    await api("/admin-ui/admin/services/import", {
       method: "POST",
       body: JSON.stringify({
         studio_service_id: form.get("studio_service_id"),
@@ -773,7 +783,7 @@ async function submitService(event) {
       }),
     });
   } else {
-    await api("/admin/services", {
+    await api("/admin-ui/admin/services", {
       method: "POST",
       body: JSON.stringify(serviceBody(form, false)),
     });
@@ -784,7 +794,7 @@ async function submitService(event) {
 
 async function openStudioImportPicker() {
   try {
-    state.studioServices = await api("/admin/studio/services");
+    state.studioServices = await api("/admin-ui/admin/studio/services");
     const backdrop = document.createElement("section");
     backdrop.className = "modal-backdrop";
     backdrop.innerHTML = `
@@ -803,7 +813,7 @@ async function openStudioImportPicker() {
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) backdrop.remove();
     });
-    backdrop.querySelector("#studio-import-form").addEventListener("submit", importSelectedStudioServices);
+    backdrop.querySelector("#studio-import-form").addEventListener("submit", handleAsync(importSelectedStudioServices));
     document.body.appendChild(backdrop);
   } catch (error) {
     setNotice(`${error.message}. Check Settings for the Studio connection.`);
@@ -811,7 +821,7 @@ async function openStudioImportPicker() {
 }
 
 async function settings() {
-  state.studioConnection = await api("/admin/studio/connection");
+  state.studioConnection = await api("/admin-ui/admin/studio/connection");
   content.innerHTML = `
     <div class="grid stats">
       ${stat("Studio source", state.studioConnection.source)}
@@ -832,9 +842,9 @@ async function settings() {
       </form>
     </section>
   `;
-  document.querySelector("#studio-connection-form").addEventListener("submit", saveStudioConnection);
+  document.querySelector("#studio-connection-form").addEventListener("submit", handleAsync(saveStudioConnection));
   document.querySelectorAll("[data-studio-action]").forEach((button) => {
-    button.addEventListener("click", studioConnectionAction);
+    button.addEventListener("click", handleAsync(studioConnectionAction));
   });
 }
 
@@ -844,7 +854,7 @@ async function saveStudioConnection(event) {
   const body = { base_url: form.get("base_url")?.trim() || null };
   const tokenValue = form.get("token")?.trim();
   if (tokenValue) body.token = tokenValue;
-  state.studioConnection = await api("/admin/studio/connection", {
+  state.studioConnection = await api("/admin-ui/admin/studio/connection", {
     method: "PATCH",
     body: JSON.stringify(body),
   });
@@ -855,12 +865,12 @@ async function saveStudioConnection(event) {
 async function studioConnectionAction(event) {
   const action = event.currentTarget.dataset.studioAction;
   if (action === "test") {
-    const result = await api("/admin/studio/connection/test", { method: "POST", body: "{}" });
+    const result = await api("/admin-ui/admin/studio/connection/test", { method: "POST", body: "{}" });
     setNotice(`Studio connection works. ${result.service_count} service${result.service_count === 1 ? "" : "s"} available.`, "success");
     return;
   }
   if (action === "clear-token") {
-    state.studioConnection = await api("/admin/studio/connection", {
+    state.studioConnection = await api("/admin-ui/admin/studio/connection", {
       method: "PATCH",
       body: JSON.stringify({ token: null }),
     });
@@ -870,7 +880,7 @@ async function studioConnectionAction(event) {
   }
   if (action === "clear-settings") {
     if (!(await confirmAction("Clear Studio settings", "Persisted Studio settings are removed and environment fallback may become active."))) return;
-    state.studioConnection = await api("/admin/studio/connection", {
+    state.studioConnection = await api("/admin-ui/admin/studio/connection", {
       method: "PATCH",
       body: JSON.stringify({ base_url: null }),
     });
@@ -996,7 +1006,7 @@ async function importSelectedStudioServices(event) {
   const form = new FormData(event.target);
   const selected = form.getAll("studio_index").map((value) => state.studioServices[Number(value)]).filter(Boolean);
   for (const service of selected) {
-    await api("/admin/services/import", {
+    await api("/admin-ui/admin/services/import", {
       method: "POST",
       body: JSON.stringify(service.import_request),
     });
@@ -1010,7 +1020,7 @@ async function patchService(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const serviceName = event.target.dataset.serviceName;
-  await api(`/admin/services/${serviceName}`, {
+  await api(`/admin-ui/admin/services/${serviceName}`, {
     method: "PATCH",
     body: JSON.stringify(serviceBody(form, true)),
   });
@@ -1036,7 +1046,7 @@ async function serviceAction(event) {
     return;
   }
   if (action === "sync-status") {
-    const body = await api(`/admin/services/${serviceName}/sync-status`);
+    const body = await api(`/admin-ui/admin/services/${serviceName}/sync-status`);
     setNotice(
       `${body.name}: ${body.sync_status}${body.missing_runtime_fields.length ? `, missing ${body.missing_runtime_fields.join(", ")}` : ""}.`,
       body.sync_status === "synced" || body.sync_status === "local" ? "success" : "error",
@@ -1050,9 +1060,9 @@ async function serviceAction(event) {
     return;
   }
   if (action === "delete") {
-    await api(`/admin/services/${serviceName}`, { method: "DELETE" });
+    await api(`/admin-ui/admin/services/${serviceName}`, { method: "DELETE" });
   } else {
-    await api(`/admin/services/${serviceName}/${action}`, { method: "POST", body: "{}" });
+    await api(`/admin-ui/admin/services/${serviceName}/${action}`, { method: "POST", body: "{}" });
   }
   setNotice(`Service ${action}d.`, "success");
   await services();
@@ -1087,7 +1097,7 @@ function serviceBadges(row) {
 }
 
 async function usage() {
-  [state.projects, state.services, state.keys] = await Promise.all([api("/admin/projects"), api("/admin/services"), api("/admin/keys")]);
+  [state.projects, state.services, state.keys] = await Promise.all([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services"), api("/admin-ui/admin/keys")]);
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Usage filters</h3></div>
@@ -1104,7 +1114,7 @@ async function usage() {
     </section>
     <section class="panel"><div class="panel-heading"><h3>Usage breakdown</h3></div><div id="usage-results"></div></section>
   `;
-  document.querySelector("#usage-form").addEventListener("submit", loadUsage);
+  document.querySelector("#usage-form").addEventListener("submit", handleAsync(loadUsage));
   await loadUsage();
 }
 
@@ -1117,11 +1127,13 @@ async function loadUsage(event) {
     if (value) query.set(key, value);
   }
   const [projectRows, keyRows, serviceRows] = await Promise.all([
-    api(`/admin/usage/by-project?${query}`),
-    api(`/admin/usage/by-key?${query}`),
-    api(`/admin/usage/by-service?${query}`),
+    api(`/admin-ui/admin/usage/by-project?${query}`),
+    api(`/admin-ui/admin/usage/by-key?${query}`),
+    api(`/admin-ui/admin/usage/by-service?${query}`),
   ]);
-  document.querySelector("#usage-results").innerHTML = `
+  const results = document.querySelector("#usage-results");
+  if (!results) return;
+  results.innerHTML = `
     <h4>Projects</h4>${usageBreakdownTable(projectRows, projectName)}
     <h4>Keys</h4>${usageBreakdownTable(keyRows, keyName)}
     <h4>Services</h4>${usageBreakdownTable(serviceRows)}
@@ -1144,8 +1156,8 @@ function usageBreakdownTable(rows, label = (value) => value) {
 
 async function health() {
   const [ready, rows] = await Promise.all([
-    json("/readyz"),
-    api("/admin/provider-health"),
+    json("/admin-ui/readyz"),
+    api("/admin-ui/admin/provider-health"),
   ]);
   const requestCount = rows.reduce((sum, row) => sum + row.request_count, 0);
   const errorCount = rows.reduce((sum, row) => sum + row.error_count, 0);
@@ -1235,9 +1247,9 @@ function guardrailPolicyBody(form) {
 
 async function guardrails() {
   [state.guardrails, state.guardrailExecutions, state.guardrailSummary] = await Promise.all([
-    api("/admin/guardrails"),
-    api("/admin/guardrails/executions?limit=50"),
-    api("/admin/guardrails/summary"),
+    api("/admin-ui/admin/guardrails"),
+    api("/admin-ui/admin/guardrails/executions?limit=50"),
+    api("/admin-ui/admin/guardrails/summary"),
   ]);
   const selected = state.guardrails.guardrails.find((guardrail) => guardrail.name === state.editingGuardrailName);
   content.innerHTML = `
@@ -1269,12 +1281,12 @@ async function guardrails() {
     state.editingGuardrailName = "";
     guardrails();
   });
-  document.querySelector("#guardrail-form")?.addEventListener("submit", submitGuardrail);
+  document.querySelector("#guardrail-form")?.addEventListener("submit", handleAsync(submitGuardrail));
   document.querySelector("[data-guardrail-action='cancel']")?.addEventListener("click", () => {
     state.editingGuardrailName = null;
     guardrails();
   });
-  document.querySelector("[data-guardrail-action='delete']")?.addEventListener("click", deleteGuardrail);
+  document.querySelector("[data-guardrail-action='delete']")?.addEventListener("click", handleAsync(deleteGuardrail));
   document.querySelectorAll("[data-guardrail-edit]").forEach((button) => {
     button.addEventListener("click", () => {
       state.editingGuardrailName = button.dataset.guardrailEdit;
@@ -1381,7 +1393,7 @@ async function submitGuardrail(event) {
     setNotice(error.message === "invalid_runtime_config" ? "invalid_runtime_config" : "invalid_config_json");
     return;
   }
-  const path = creating ? "/admin/guardrails" : `/admin/guardrails/${encodeURIComponent(formElement.dataset.guardrailName)}`;
+  const path = creating ? "/admin-ui/admin/guardrails" : `/admin-ui/admin/guardrails/${encodeURIComponent(formElement.dataset.guardrailName)}`;
   await api(path, {
     method: creating ? "POST" : "PATCH",
     body: JSON.stringify(body),
@@ -1395,7 +1407,7 @@ async function deleteGuardrail(event) {
   const form = event.currentTarget.closest("form");
   const name = form.dataset.guardrailName;
   if (!(await confirmAction(`Delete ${name}`, "The guardrail is removed from key policies. Historical executions remain."))) return;
-  await api(`/admin/guardrails/${encodeURIComponent(name)}`, { method: "DELETE" });
+  await api(`/admin-ui/admin/guardrails/${encodeURIComponent(name)}`, { method: "DELETE" });
   state.editingGuardrailName = null;
   setNotice("Guardrail deleted.", "success");
   await guardrails();

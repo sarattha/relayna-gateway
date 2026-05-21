@@ -47,7 +47,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: gateway
-          image: ghcr.io/sarattha/relayna-gateway:0.0.11
+          image: ghcr.io/sarattha/relayna-gateway:0.0.12
           imagePullPolicy: IfNotPresent
           ports:
             - name: proxy
@@ -61,13 +61,13 @@ spec:
                 name: relayna-gateway-secrets
           readinessProbe:
             httpGet:
-              path: /readyz
+              path: /admin-ui/readyz
               port: control
             periodSeconds: 10
             timeoutSeconds: 2
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /admin-ui/healthz
               port: control
             periodSeconds: 20
             timeoutSeconds: 2
@@ -138,7 +138,7 @@ spec:
       app.kubernetes.io/name: relayna-gateway
   endpoints:
     - port: control
-      path: /metrics
+      path: /admin-ui/metrics
       interval: 30s
 ---
 apiVersion: networking.k8s.io/v1
