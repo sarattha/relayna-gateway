@@ -47,7 +47,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: gateway
-          image: ghcr.io/sarattha/relayna-gateway:0.0.10
+          image: ghcr.io/sarattha/relayna-gateway:0.0.11
           imagePullPolicy: IfNotPresent
           ports:
             - name: proxy

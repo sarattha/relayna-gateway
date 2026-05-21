@@ -22,6 +22,7 @@ is the existing Admin portal/operator-token rotation endpoint.
 - [x] (2026-05-21 00:00Z) Implement env-seeded bootstrap behavior and focused tests.
 - [x] (2026-05-21 00:00Z) Update freeze env inventory, deployment manifest, and operator docs.
 - [x] (2026-05-21 00:00Z) Run available non-Rust checks.
+- [x] (2026-05-21 00:00Z) Bump current release target to `0.0.11` and update release docs.
 - [ ] Run Rust formatting and code-change verification once `cargo` is available.
 
 ## Surprises & Discoveries
@@ -63,9 +64,10 @@ Implemented the bootstrap-only `GATEWAY_ADMIN_TOKEN` path. Startup now checks
 for an existing active operator token before parsing the env token, so env
 changes are ignored when the database already has an active token. Fresh
 databases use the env token when present, or generate and print a token when
-absent. Freeze and admin UI static tests pass. Rust formatting, clippy, and
-workspace tests remain blocked because `cargo` is not installed in this
-environment.
+absent. The current release target is now `0.0.11`, with release docs and
+deployment examples updated to match. Freeze, release metadata, and admin UI
+static tests pass. Rust formatting, clippy, and workspace tests remain blocked
+because `cargo` is not installed in this environment.
 
 ## Context and Orientation
 
@@ -108,6 +110,7 @@ and later changes are ignored until rotating through the Admin portal.
     cargo fmt --all --check
     bash .codex/skills/code-change-verification/scripts/run.sh
     node tests/admin-ui.test.mjs
+    python3 scripts/validate-release-metadata.py v0.0.11
     git diff --check
 
 ## Validation and Acceptance

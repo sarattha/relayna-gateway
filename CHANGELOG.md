@@ -2,6 +2,24 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.11 - 2026-05-21
+
+### Added
+
+- Optional `GATEWAY_ADMIN_TOKEN` first-start bootstrap seeding for fresh
+  databases. When set to a valid `op_live_...` operator token before first
+  startup, Gateway stores only its hash and does not print the raw token.
+
+### Changed
+
+- Workspace crate versions now share the `0.0.11` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.0.11` gateway image.
+- Operator-token documentation now clarifies that PostgreSQL remains
+  authoritative after bootstrap: later `GATEWAY_ADMIN_TOKEN` changes are
+  ignored once an active token exists, and Admin portal rotation is the
+  supported post-bootstrap change path.
+
 ## 0.0.10 - 2026-05-19
 
 ### Added
@@ -10,8 +28,6 @@ All notable changes to Relayna Gateway are documented in this file.
   required operational data, and secret-handling expectations.
 - Redis key reference documentation covering request rate-limit counters,
   budget counters, reservation keys, TTLs, and operational handling.
-- Optional `GATEWAY_ADMIN_TOKEN` first-start bootstrap seeding for fresh
-  databases.
 
 ### Changed
 
