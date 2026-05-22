@@ -31,7 +31,9 @@ flowchart LR
 4. `gateway-core` verifies the key secret, disabled state, revocation state, expiry, allowed route, allowed model, allowed provider, streaming permission, service method permission, rate limit, and budget.
 5. Redis request-per-minute, token-per-minute, and budget counters are checked
    and updated for rate limit and budget decisions.
-6. The proxy strips client credentials and forwards the request with the configured internal upstream credential.
+6. The proxy strips client credentials and the downstream `Host`, then forwards
+   the request with the configured internal upstream credential and a `Host`
+   header derived from the selected upstream.
 7. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields.
 
 ## Control Plane

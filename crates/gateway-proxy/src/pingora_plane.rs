@@ -733,15 +733,8 @@ where
     where
         Self::CTX: Send + Sync,
     {
-        upstream_request.remove_header("authorization");
-        upstream_request.remove_header("host");
-        upstream_request.remove_header("proxy-authorization");
-        upstream_request.remove_header("x-api-key");
-        upstream_request.remove_header("x-relayna-worker-token");
         let upstream = self.upstream_for(ctx).unwrap_or(&self.config.litellm);
-        upstream_request.insert_header("host", upstream.host_header_value())?;
-        upstream_request
-            .insert_header("authorization", format!("Bearer {}", upstream.service_key))?;
+        prepare_upstream_authority_and_credentials(upstream_request, upstream)?;
         if ctx
             .route_match
             .as_ref()
@@ -1119,6 +1112,20 @@ fn is_valid_traceparent(value: &str) -> bool {
         && parts
             .iter()
             .all(|part| part.chars().all(|character| character.is_ascii_hexdigit()))
+}
+
+fn prepare_upstream_authority_and_credentials(
+    upstream_request: &mut RequestHeader,
+    upstream: &PingoraUpstreamConfig,
+) -> PingoraResult<()> {
+    upstream_request.remove_header("authorization");
+    upstream_request.remove_header("host");
+    upstream_request.remove_header("proxy-authorization");
+    upstream_request.remove_header("x-api-key");
+    upstream_request.remove_header("x-relayna-worker-token");
+    upstream_request.insert_header("host", upstream.host_header_value())?;
+    upstream_request.insert_header("authorization", format!("Bearer {}", upstream.service_key))?;
+    Ok(())
 }
 
 fn rewrite_direct_openai_uri(upstream_request: &mut RequestHeader) -> PingoraResult<()> {
@@ -1505,6 +1512,53 @@ mod tests {
         let ipv6 = PingoraUpstreamConfig::from_base_url("http://[::1]:8886", "service-key")
             .expect("ipv6 config");
         assert_eq!(ipv6.host_header_value(), "[::1]:8886");
+    }
+
+    #[test]
+    fn upstream_header_preparation_replaces_downstream_host() {
+        let upstream = PingoraUpstreamConfig::from_base_url(
+            "http://document-upload-api-service.default.svc.cluster.local:8886",
+            "internal-service-key",
+        )
+        .expect("service config");
+        let mut request = RequestHeader::build("GET", b"/services/document-ingestion/health", None)
+            .expect("request");
+        request
+            .insert_header("host", "relayna-gateway-proxy.relayna.svc.cluster.local")
+            .expect("client host");
+        request
+            .insert_header("authorization", "Bearer rk_live_client_key")
+            .expect("client authorization");
+        request
+            .insert_header("proxy-authorization", "Bearer proxy-client")
+            .expect("client proxy authorization");
+        request
+            .insert_header("x-api-key", "client-api-key")
+            .expect("client api key");
+        request
+            .insert_header("x-relayna-worker-token", "client-worker-token")
+            .expect("client worker token");
+
+        prepare_upstream_authority_and_credentials(&mut request, &upstream)
+            .expect("prepared upstream headers");
+
+        assert_eq!(
+            request
+                .headers
+                .get("host")
+                .and_then(|value| value.to_str().ok()),
+            Some("document-upload-api-service.default.svc.cluster.local:8886")
+        );
+        assert_eq!(
+            request
+                .headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer internal-service-key")
+        );
+        assert!(!request.headers.contains_key("proxy-authorization"));
+        assert!(!request.headers.contains_key("x-api-key"));
+        assert!(!request.headers.contains_key("x-relayna-worker-token"));
     }
 
     #[test]
