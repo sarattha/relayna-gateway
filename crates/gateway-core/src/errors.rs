@@ -36,6 +36,8 @@ pub enum GatewayError {
     PolicyDenied,
     #[error("request rate limit exceeded")]
     RateLimitExceeded { retry_after_seconds: Option<u64> },
+    #[error("token rate limit exceeded")]
+    TokenRateLimitExceeded { retry_after_seconds: Option<u64> },
     #[error("budget exceeded")]
     BudgetExceeded,
     #[error("request blocked by guardrail")]
@@ -111,7 +113,9 @@ impl GatewayError {
             Self::DisabledRoute => StatusCode::FORBIDDEN,
             Self::RequestBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::PolicyDenied => StatusCode::FORBIDDEN,
-            Self::RateLimitExceeded { .. } => StatusCode::TOO_MANY_REQUESTS,
+            Self::RateLimitExceeded { .. } | Self::TokenRateLimitExceeded { .. } => {
+                StatusCode::TOO_MANY_REQUESTS
+            }
             Self::BudgetExceeded => StatusCode::PAYMENT_REQUIRED,
             Self::GuardrailBlocked | Self::GuardrailForbidden => StatusCode::FORBIDDEN,
             Self::GuardrailUnavailable => StatusCode::BAD_GATEWAY,
@@ -155,6 +159,7 @@ impl GatewayError {
             Self::UpstreamConnection => "upstream_connection",
             Self::PolicyDenied => "policy_denied",
             Self::RateLimitExceeded { .. } => "rate_limit_exceeded",
+            Self::TokenRateLimitExceeded { .. } => "token_rate_limit_exceeded",
             Self::BudgetExceeded => "budget_exceeded",
             Self::GuardrailBlocked => "guardrail_blocked",
             Self::GuardrailForbidden => "guardrail_forbidden",
@@ -196,6 +201,7 @@ impl GatewayError {
             Self::RequestBodyTooLarge => "Request body exceeds the route limit.",
             Self::PolicyDenied => "Request is denied by key policy.",
             Self::RateLimitExceeded { .. } => "Rate limit exceeded.",
+            Self::TokenRateLimitExceeded { .. } => "Token rate limit exceeded.",
             Self::BudgetExceeded => "Budget limit exceeded.",
             Self::GuardrailBlocked => "Request was blocked by a gateway guardrail.",
             Self::GuardrailForbidden => "Guardrail is not allowed by policy.",
@@ -232,6 +238,9 @@ impl GatewayError {
                 request_id: request_id.into(),
                 retry_after_seconds: match self {
                     Self::RateLimitExceeded {
+                        retry_after_seconds,
+                    }
+                    | Self::TokenRateLimitExceeded {
                         retry_after_seconds,
                     } => *retry_after_seconds,
                     _ => None,

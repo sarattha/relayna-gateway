@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Datelike;
 use gateway_core::{
     admin::{
         AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse, AdminPolicyResponse,
@@ -53,6 +54,13 @@ pub struct PostgresStore {
     pool: PgPool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct BudgetCounterSeed {
+    pub key_id: Uuid,
+    pub daily_spend_usd: f64,
+    pub monthly_spend_usd: f64,
+}
+
 impl PostgresStore {
     pub async fn connect(database_url: &str) -> Result<Self, StoreError> {
         let pool = PgPoolOptions::new()
@@ -89,6 +97,56 @@ impl PostgresStore {
     pub async fn ready(&self) -> Result<(), StoreError> {
         sqlx::query("SELECT 1").execute(&self.pool).await?;
         Ok(())
+    }
+
+    pub async fn budget_counter_seeds(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> GatewayResult<Vec<BudgetCounterSeed>> {
+        let (day_start, month_start) = budget_counter_windows(now)?;
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                p.key_id,
+                COALESCE(
+                    SUM(u.estimated_cost) FILTER (
+                        WHERE u.created_at >= $2
+                    ),
+                    0
+                )::double precision AS daily_spend_usd,
+                COALESCE(SUM(u.estimated_cost), 0)::double precision AS monthly_spend_usd
+            FROM key_policies p
+            INNER JOIN api_keys k ON k.id = p.key_id
+            LEFT JOIN usage_events u
+                ON u.key_id = p.key_id
+               AND u.created_at >= $3
+               AND u.estimated_cost IS NOT NULL
+               AND u.estimated_cost > 0
+            WHERE (p.daily_budget_usd IS NOT NULL OR p.monthly_budget_usd IS NOT NULL)
+              AND k.disabled = false
+              AND k.revoked_at IS NULL
+              AND (k.expires_at IS NULL OR k.expires_at > $1)
+            GROUP BY p.key_id
+            "#,
+        )
+        .bind(now)
+        .bind(day_start)
+        .bind(month_start)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        rows.iter()
+            .map(|row| {
+                Ok(BudgetCounterSeed {
+                    key_id: row.try_get("key_id")?,
+                    daily_spend_usd: row.try_get("daily_spend_usd")?,
+                    monthly_spend_usd: row.try_get("monthly_spend_usd")?,
+                })
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()
+            .map_err(|_| GatewayError::StoreUnavailable)
     }
 
     async fn upsert_policy_in_tx(
@@ -487,6 +545,21 @@ impl PostgresStore {
 
         Ok(())
     }
+}
+
+fn budget_counter_windows(
+    now: chrono::DateTime<chrono::Utc>,
+) -> GatewayResult<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> {
+    let day_start = now
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .map(|value| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(value, chrono::Utc))
+        .ok_or(GatewayError::StoreUnavailable)?;
+    let month_start = chrono::NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .map(|value| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(value, chrono::Utc))
+        .ok_or(GatewayError::StoreUnavailable)?;
+    Ok((day_start, month_start))
 }
 
 #[async_trait]
@@ -3377,6 +3450,18 @@ mod tests {
         let summary = summary_from_row((0, 0, 0, 0, 0, 0, Some(0.0), 0, 0));
 
         assert_eq!(summary.estimated_cost_usd, Some(0.0));
+    }
+
+    #[test]
+    fn budget_counter_windows_use_current_utc_day_and_month() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-05-22T16:45:11Z")
+            .expect("time")
+            .with_timezone(&chrono::Utc);
+
+        let (day_start, month_start) = budget_counter_windows(now).expect("windows");
+
+        assert_eq!(day_start.to_rfc3339(), "2026-05-22T00:00:00+00:00");
+        assert_eq!(month_start.to_rfc3339(), "2026-05-01T00:00:00+00:00");
     }
 
     #[test]

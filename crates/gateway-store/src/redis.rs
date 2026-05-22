@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use gateway_core::{
     budgets::{budget_reservation_key, daily_budget_key, evaluate_budget, monthly_budget_key},
-    rate_limits::request_rate_limit_key,
+    rate_limits::{request_rate_limit_key, token_rate_limit_key},
     BudgetDecision, BudgetState, BudgetStore, GatewayError, GatewayResult, RateLimitDecision,
     RateLimitStore,
 };
@@ -66,6 +66,40 @@ impl RedisControlState {
             .and_then(|value| value.parse::<f64>().ok())
             .unwrap_or(0.0))
     }
+
+    pub async fn seed_budget_counters(
+        &self,
+        key_id: Uuid,
+        daily_spend_usd: f64,
+        monthly_spend_usd: f64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        let daily_key = daily_budget_key(key_id, now);
+        let monthly_key = monthly_budget_key(key_id, now);
+        let mut connection = self.connection().await?;
+        let _: () = redis::pipe()
+            .atomic()
+            .cmd("SET")
+            .arg(&daily_key)
+            .arg(daily_spend_usd.max(0.0))
+            .ignore()
+            .cmd("EXPIRE")
+            .arg(&daily_key)
+            .arg(172_800)
+            .ignore()
+            .cmd("SET")
+            .arg(&monthly_key)
+            .arg(monthly_spend_usd.max(0.0))
+            .ignore()
+            .cmd("EXPIRE")
+            .arg(&monthly_key)
+            .arg(5_356_800)
+            .ignore()
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -95,6 +129,50 @@ impl RateLimitStore for RedisControlState {
             .map_err(|_| GatewayError::ControlStateUnavailable)?;
 
         if count > i64::from(rpm_limit) {
+            let ttl: i64 = connection
+                .ttl(&key)
+                .await
+                .map_err(|_| GatewayError::ControlStateUnavailable)?;
+            return Ok(RateLimitDecision::Exceeded {
+                count,
+                retry_after_seconds: u64::try_from(ttl).ok().filter(|ttl| *ttl > 0),
+            });
+        }
+
+        Ok(RateLimitDecision::Allowed { count })
+    }
+
+    async fn check_token_rate_limit(
+        &self,
+        key_id: Uuid,
+        tpm_limit: Option<i32>,
+        estimated_tokens: i64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<RateLimitDecision> {
+        let Some(tpm_limit) = tpm_limit else {
+            return Ok(RateLimitDecision::Allowed { count: 0 });
+        };
+        let estimated_tokens = estimated_tokens.max(0);
+        if estimated_tokens == 0 {
+            return Ok(RateLimitDecision::Allowed { count: 0 });
+        }
+
+        let key = token_rate_limit_key(key_id, now);
+        let mut connection = self.connection().await?;
+        let (count,): (i64,) = redis::pipe()
+            .atomic()
+            .cmd("INCRBY")
+            .arg(&key)
+            .arg(estimated_tokens)
+            .cmd("EXPIRE")
+            .arg(&key)
+            .arg(70)
+            .ignore()
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+
+        if count > i64::from(tpm_limit) {
             let ttl: i64 = connection
                 .ttl(&key)
                 .await

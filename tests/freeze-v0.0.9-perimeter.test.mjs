@@ -183,6 +183,7 @@ test("public gateway error codes are pinned", () => {
     "revoked_virtual_key",
     "store_unavailable",
     "studio_unavailable",
+    "token_rate_limit_exceeded",
     "unsupported_route",
     "upstream_connection",
     "upstream_timeout",
@@ -256,6 +257,7 @@ test("PostgreSQL migration inventory is pinned", () => {
 
 test("Redis key formats and TTLs are pinned", () => {
   assert.match(rateLimits, /format!\("rl:req:\{key_id\}:\{\}", now\.format\("%Y%m%d%H%M"\)\)/);
+  assert.match(rateLimits, /format!\("rl:tpm:\{key_id\}:\{\}", now\.format\("%Y%m%d%H%M"\)\)/);
   assert.match(budgets, /format!\("budget:daily:\{key_id\}:\{\}", now\.format\("%Y%m%d"\)\)/);
   assert.match(budgets, /format!\("budget:monthly:\{key_id\}:\{\}", now\.format\("%Y%m"\)\)/);
   assert.match(budgets, /format!\("budget:reservation:\{key_id\}:\{request_id\}"\)/);

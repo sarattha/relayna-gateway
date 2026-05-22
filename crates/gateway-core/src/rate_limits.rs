@@ -22,6 +22,14 @@ pub trait RateLimitStore: Send + Sync {
         rpm_limit: Option<i32>,
         now: DateTime<Utc>,
     ) -> GatewayResult<RateLimitDecision>;
+
+    async fn check_token_rate_limit(
+        &self,
+        key_id: Uuid,
+        tpm_limit: Option<i32>,
+        estimated_tokens: i64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<RateLimitDecision>;
 }
 
 #[async_trait]
@@ -39,10 +47,26 @@ where
             .check_request_rate_limit(key_id, rpm_limit, now)
             .await
     }
+
+    async fn check_token_rate_limit(
+        &self,
+        key_id: Uuid,
+        tpm_limit: Option<i32>,
+        estimated_tokens: i64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<RateLimitDecision> {
+        (**self)
+            .check_token_rate_limit(key_id, tpm_limit, estimated_tokens, now)
+            .await
+    }
 }
 
 pub fn request_rate_limit_key(key_id: Uuid, now: DateTime<Utc>) -> String {
     format!("rl:req:{key_id}:{}", now.format("%Y%m%d%H%M"))
+}
+
+pub fn token_rate_limit_key(key_id: Uuid, now: DateTime<Utc>) -> String {
+    format!("rl:tpm:{key_id}:{}", now.format("%Y%m%d%H%M"))
 }
 
 #[cfg(test)]
@@ -59,6 +83,19 @@ mod tests {
         assert_eq!(
             request_rate_limit_key(key_id, now),
             "rl:req:018f8d31-86a7-7c48-8f36-4d1fa4d99101:202605091403"
+        );
+    }
+
+    #[test]
+    fn builds_tpm_counter_key() {
+        let key_id = Uuid::parse_str("018f8d31-86a7-7c48-8f36-4d1fa4d99101").expect("uuid");
+        let now = DateTime::parse_from_rfc3339("2026-05-09T14:03:02Z")
+            .expect("time")
+            .with_timezone(&Utc);
+
+        assert_eq!(
+            token_rate_limit_key(key_id, now),
+            "rl:tpm:018f8d31-86a7-7c48-8f36-4d1fa4d99101:202605091403"
         );
     }
 }

@@ -75,6 +75,6 @@ pub use studio_settings::{
     StudioConnectionResponse, StudioConnectionSource, StudioConnectionTestResponse,
 };
 pub use usage::{
-    extract_estimated_cost_usd, extract_model, extract_usage_tokens, UsageEvent, UsageRecorder,
-    UsageStatus,
+    estimate_generation_tokens, extract_estimated_cost_usd, extract_model, extract_usage_tokens,
+    UsageEvent, UsageRecorder, UsageStatus,
 };
