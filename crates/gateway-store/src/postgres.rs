@@ -21,12 +21,13 @@ use gateway_core::{
         normalize_base_url, normalize_secret, AdminStudioConnectionStore, PatchValue,
         StoredStudioConnection, StudioConnectionPatchRequest,
     },
-    verify_stored_operator_token, AdminGuardrailDefinitionResponse, AdminKeyStore,
-    AdminKeyUsageSummary, AdminOpenAiRouteStore, AdminProjectStore, GatewayError, GatewayResult,
-    GuardrailAdminCreateRequest, GuardrailAdminPatchRequest, GuardrailDefinition,
-    GuardrailEventQuery, GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode,
-    GuardrailObservabilityStore, GuardrailPolicy, GuardrailProviderKind, GuardrailStore, KeyPolicy,
-    OpenAiRouteSetting, OpenAiRouteSettingsLookup, OperatorTokenMaterial, OperatorTokenResponse,
+    verify_stored_operator_token, AdminAuditStore, AdminGuardrailDefinitionResponse, AdminKeyStore,
+    AdminKeyUsageSummary, AdminOpenAiRouteStore, AdminProjectStore, AuditEvent, AuditEventCreate,
+    AuditEventQuery, GatewayError, GatewayResult, GuardrailAdminCreateRequest,
+    GuardrailAdminPatchRequest, GuardrailDefinition, GuardrailEventQuery, GuardrailExecutionEvent,
+    GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPolicy,
+    GuardrailProviderKind, GuardrailStore, KeyPolicy, OpenAiRouteSetting,
+    OpenAiRouteSettingsLookup, OperatorAuthorization, OperatorTokenMaterial, OperatorTokenResponse,
     OperatorTokenStore, PolicyLookup, ProjectUsageSummary, Provider, ProviderHealth, Route,
     StoredOperatorToken, UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageExport,
     UsageExportRow, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary,
@@ -322,7 +323,7 @@ impl PostgresStore {
     ) -> GatewayResult<Option<StoredOperatorToken>> {
         sqlx::query(
             r#"
-            SELECT id, token_prefix, token_hash, disabled, revoked_at
+            SELECT id, token_prefix, token_hash, roles, scopes, disabled, revoked_at
             FROM operator_tokens
             WHERE token_prefix = $1
             "#,
@@ -1674,7 +1675,7 @@ impl OperatorTokenStore for PostgresStore {
                 FROM operator_tokens
                 WHERE disabled = false AND revoked_at IS NULL
             )
-            RETURNING id, token_prefix, disabled, revoked_at, last_used_at, created_at, updated_at
+            RETURNING id, token_prefix, roles, scopes, disabled, revoked_at, last_used_at, created_at, updated_at
             "#,
         )
         .bind(token_id)
@@ -1695,13 +1696,13 @@ impl OperatorTokenStore for PostgresStore {
         &self,
         raw_token: &str,
         now: chrono::DateTime<chrono::Utc>,
-    ) -> GatewayResult<()> {
+    ) -> GatewayResult<OperatorAuthorization> {
         let prefix = operator_token_prefix(raw_token)?;
         let stored = self
             .stored_operator_token_by_prefix(&prefix)
             .await?
             .ok_or(GatewayError::InvalidOperatorToken)?;
-        verify_stored_operator_token(raw_token, &stored)?;
+        let authorization = verify_stored_operator_token(raw_token, &stored)?;
 
         sqlx::query(
             r#"
@@ -1715,7 +1716,7 @@ impl OperatorTokenStore for PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
-        Ok(())
+        Ok(authorization)
     }
 
     async fn rotate_operator_token(
@@ -1753,7 +1754,7 @@ impl OperatorTokenStore for PostgresStore {
             r#"
             INSERT INTO operator_tokens (id, token_prefix, token_hash)
             VALUES ($1, $2, $3)
-            RETURNING id, token_prefix, disabled, revoked_at, last_used_at, created_at, updated_at
+            RETURNING id, token_prefix, roles, scopes, disabled, revoked_at, last_used_at, created_at, updated_at
             "#,
         )
         .bind(token_id)
@@ -1768,6 +1769,93 @@ impl OperatorTokenStore for PostgresStore {
             .map_err(|_| GatewayError::StoreUnavailable)?;
 
         Ok(response)
+    }
+}
+
+#[async_trait]
+impl AdminAuditStore for PostgresStore {
+    async fn record_audit_event(&self, event: AuditEventCreate) -> GatewayResult<AuditEvent> {
+        sqlx::query(
+            r#"
+            INSERT INTO audit_events (
+                actor_token_id,
+                action,
+                target_type,
+                target_id,
+                before_json,
+                after_json,
+                request_id,
+                ip,
+                user_agent
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING
+                id,
+                actor_token_id,
+                action,
+                target_type,
+                target_id,
+                before_json,
+                after_json,
+                request_id,
+                ip,
+                user_agent,
+                created_at
+            "#,
+        )
+        .bind(event.actor_token_id)
+        .bind(event.action)
+        .bind(event.target_type)
+        .bind(event.target_id)
+        .bind(event.before.map(Json))
+        .bind(event.after.map(Json))
+        .bind(event.request_id)
+        .bind(event.ip)
+        .bind(event.user_agent)
+        .fetch_one(&self.pool)
+        .await
+        .and_then(audit_event_from_row)
+        .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn list_audit_events(&self, query: AuditEventQuery) -> GatewayResult<Vec<AuditEvent>> {
+        let limit = query.limit.clamp(1, 500);
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                id,
+                actor_token_id,
+                action,
+                target_type,
+                target_id,
+                before_json,
+                after_json,
+                request_id,
+                ip,
+                user_agent,
+                created_at
+            FROM audit_events
+            WHERE ($1::uuid IS NULL OR actor_token_id = $1)
+              AND ($2::text IS NULL OR action = $2)
+              AND ($3::text IS NULL OR target_type = $3)
+              AND ($4::text IS NULL OR target_id = $4)
+            ORDER BY created_at DESC
+            LIMIT $5
+            "#,
+        )
+        .bind(query.actor_token_id)
+        .bind(query.action)
+        .bind(query.target_type)
+        .bind(query.target_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        rows.into_iter()
+            .map(audit_event_from_row)
+            .collect::<Result<Vec<_>, sqlx::Error>>()
+            .map_err(|_| GatewayError::StoreUnavailable)
     }
 }
 
@@ -3227,6 +3315,8 @@ fn operator_token_response_from_row(row: sqlx::postgres::PgRow) -> OperatorToken
     OperatorTokenResponse {
         id: row.try_get("id").expect("operator token id"),
         token_prefix: row.try_get("token_prefix").expect("operator token prefix"),
+        roles: row.try_get("roles").expect("operator token roles"),
+        scopes: row.try_get("scopes").expect("operator token scopes"),
         disabled: row.try_get("disabled").expect("operator token disabled"),
         revoked_at: row
             .try_get("revoked_at")
@@ -3250,8 +3340,28 @@ fn stored_operator_token_from_row(
         id: row.try_get("id")?,
         token_prefix: row.try_get("token_prefix")?,
         token_hash: row.try_get("token_hash")?,
+        roles: row.try_get("roles")?,
+        scopes: row.try_get("scopes")?,
         disabled: row.try_get("disabled")?,
         revoked_at: row.try_get("revoked_at")?,
+    })
+}
+
+fn audit_event_from_row(row: sqlx::postgres::PgRow) -> Result<AuditEvent, sqlx::Error> {
+    let before: Option<Json<serde_json::Value>> = row.try_get("before_json")?;
+    let after: Option<Json<serde_json::Value>> = row.try_get("after_json")?;
+    Ok(AuditEvent {
+        id: row.try_get("id")?,
+        actor_token_id: row.try_get("actor_token_id")?,
+        action: row.try_get("action")?,
+        target_type: row.try_get("target_type")?,
+        target_id: row.try_get("target_id")?,
+        before: before.map(|value| value.0),
+        after: after.map(|value| value.0),
+        request_id: row.try_get("request_id")?,
+        ip: row.try_get("ip")?,
+        user_agent: row.try_get("user_agent")?,
+        created_at: row.try_get("created_at")?,
     })
 }
 

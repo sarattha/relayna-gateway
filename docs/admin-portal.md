@@ -14,6 +14,15 @@ Authorization: Bearer <operator-token>
 
 Rotate the token from the portal after bootstrap or whenever access changes. Rotation returns the new raw token once.
 
+Operator tokens are bound to roles and scopes in PostgreSQL. Bootstrap and
+rotated owner tokens keep the existing `op_live_` token format and receive role
+`owner` with wildcard scope `*`. Scoped operators may be limited to capability
+strings such as `keys:create`, `keys:disable`, `policies:update`,
+`guardrails:update`, `usage:read`, `usage:export`, `providers:update`,
+`services:update`, `settings:update`, `operators:manage`, and `audit:read`.
+Admin APIs return `insufficient_operator_scope` when a valid token lacks the
+required scope.
+
 ## Views
 
 - Overview shows readiness, request count, active keys, enabled OpenAI routes, enabled services, failures, cost, and provider health.
@@ -47,6 +56,23 @@ Rotate the token from the portal after bootstrap or whenever access changes. Rot
 - Guardrail execution records never include raw request bodies, response bodies,
   provider credentials, bearer tokens, or PII mappings.
 - The control listener should be protected by network policy, ingress rules, or private access controls in production.
+
+## Audit Events
+
+Admin mutations write append-only audit events with the operator token ID,
+action, target type, target ID when available, before/after JSON snapshots when
+safe, request ID, IP, user agent, and timestamp. Audit rows are available to
+operators with `audit:read`:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  "http://127.0.0.1:8081/admin-ui/admin/audit-events?limit=100"
+```
+
+Audit snapshots must not contain raw virtual keys, operator tokens, provider
+credentials, LiteLLM credentials, internal service tokens, prompts, or full
+provider responses.
 
 ## Usage Export
 

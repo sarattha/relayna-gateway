@@ -22,6 +22,8 @@ pub enum GatewayError {
     InvalidOperatorToken,
     #[error("operator token is disabled")]
     DisabledOperatorToken,
+    #[error("operator token lacks required scope")]
+    InsufficientOperatorScope,
     #[error("unsupported route")]
     UnsupportedRoute,
     #[error("route is disabled")]
@@ -109,6 +111,7 @@ impl GatewayError {
             | Self::RevokedVirtualKey
             | Self::ExpiredVirtualKey => StatusCode::UNAUTHORIZED,
             Self::InvalidOperatorToken | Self::DisabledOperatorToken => StatusCode::UNAUTHORIZED,
+            Self::InsufficientOperatorScope => StatusCode::FORBIDDEN,
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
             Self::DisabledRoute => StatusCode::FORBIDDEN,
             Self::RequestBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
@@ -152,6 +155,7 @@ impl GatewayError {
             Self::ExpiredVirtualKey => "expired_virtual_key",
             Self::InvalidOperatorToken => "invalid_operator_token",
             Self::DisabledOperatorToken => "disabled_operator_token",
+            Self::InsufficientOperatorScope => "insufficient_operator_scope",
             Self::UnsupportedRoute => "unsupported_route",
             Self::DisabledRoute => "disabled_route",
             Self::RequestBodyTooLarge => "request_body_too_large",
@@ -196,6 +200,7 @@ impl GatewayError {
             Self::ExpiredVirtualKey => "Virtual key has expired.",
             Self::InvalidOperatorToken => "Operator token is invalid.",
             Self::DisabledOperatorToken => "Operator token is disabled.",
+            Self::InsufficientOperatorScope => "Operator token lacks the required scope.",
             Self::UnsupportedRoute => "Route is not supported by this gateway.",
             Self::DisabledRoute => "Route is disabled by gateway policy.",
             Self::RequestBodyTooLarge => "Request body exceeds the route limit.",

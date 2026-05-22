@@ -61,6 +61,7 @@ test("control-plane public route inventory is pinned", () => {
   assert.deepEqual(sorted(routes), sorted([
     "/admin-ui",
     "/admin-ui/{*path}",
+    "/admin-ui/admin/audit-events",
     "/admin-ui/admin/guardrails",
     "/admin-ui/admin/guardrails/{name}",
     "/admin-ui/admin/guardrails/executions",
@@ -165,6 +166,7 @@ test("public gateway error codes are pinned", () => {
     "guardrail_forbidden",
     "guardrail_unavailable",
     "incomplete_service",
+    "insufficient_operator_scope",
     "invalid_configuration",
     "invalid_guardrail_request",
     "invalid_operator_token",
@@ -255,6 +257,7 @@ test("PostgreSQL migration inventory is pinned", () => {
     "20260516000100_studio_connection_settings.sql",
     "20260516000200_guardrail_registry_policy_events.sql",
     "20260516000600_key_guardrail_config_overrides.sql",
+    "20260522000100_operator_scopes_audit_events.sql",
   ]);
 });
 

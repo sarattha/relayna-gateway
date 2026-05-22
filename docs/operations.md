@@ -83,7 +83,18 @@ Gateway includes retry timing in the response.
 - Use `GATEWAY_ADMIN_TOKEN` only to seed a fresh database. After an active
   operator token exists, env changes are ignored; rotate the token from the
   Admin portal to change it.
+- Assign the narrowest operator scopes practical for automation. Use
+  `audit:read` for audit-only readers, `usage:read` and `usage:export` for
+  analytics workflows, and mutation scopes such as `keys:create`,
+  `keys:disable`, `providers:update`, or `services:update` only where needed.
+- Review `/admin-ui/admin/audit-events` after key, policy, guardrail, provider,
+  service, Studio settings, or operator token changes. Audit rows include
+  request ID, actor token ID, action, target, IP, user agent, and redacted
+  before/after snapshots.
 - Prefer private control-plane access for `/admin-ui/admin/*`, `/admin-ui`, and `/admin-ui/metrics`.
+- Configure `RELAYNA_WORKER_TOKEN` only through secret management. Worker token
+  verification uses constant-time comparison, and the gateway strips
+  `x-relayna-worker-token` before forwarding upstream.
 - Treat non-expiring virtual keys as high-risk service credentials. Store them
   only in a secret manager, scope their policies narrowly, rotate them through
   an external process, and revoke or disable them immediately when ownership or

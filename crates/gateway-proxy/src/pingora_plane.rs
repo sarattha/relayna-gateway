@@ -1025,8 +1025,20 @@ where
         let Some(expected) = self.config.worker_token.as_deref() else {
             return false;
         };
-        header_value(req, "x-relayna-worker-token").is_some_and(|actual| actual == expected)
+        header_value(req, "x-relayna-worker-token")
+            .is_some_and(|actual| constant_time_eq(actual.as_bytes(), expected.as_bytes()))
     }
+}
+
+fn constant_time_eq(actual: &[u8], expected: &[u8]) -> bool {
+    let mut diff = actual.len() ^ expected.len();
+    let max_len = actual.len().max(expected.len());
+    for index in 0..max_len {
+        let actual_byte = actual.get(index).copied().unwrap_or(0);
+        let expected_byte = expected.get(index).copied().unwrap_or(0);
+        diff |= usize::from(actual_byte ^ expected_byte);
+    }
+    diff == 0
 }
 
 impl<S, R> RelaynaPingoraProxy<S, R>
@@ -1576,6 +1588,14 @@ mod tests {
             .with_worker_token(Some("worker-token".to_owned()));
 
         assert_eq!(config.worker_token.as_deref(), Some("worker-token"));
+    }
+
+    #[test]
+    fn worker_token_comparison_accepts_only_exact_match() {
+        assert!(constant_time_eq(b"worker-token", b"worker-token"));
+        assert!(!constant_time_eq(b"worker-token", b"worker-tokem"));
+        assert!(!constant_time_eq(b"worker-token", b"worker-token-extra"));
+        assert!(!constant_time_eq(b"", b"worker-token"));
     }
 
     #[test]
