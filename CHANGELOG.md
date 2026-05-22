@@ -2,6 +2,21 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.14 - 2026-05-22
+
+### Changed
+
+- Workspace crate versions now share the `0.0.14` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.0.14` gateway image.
+
+### Fixed
+
+- Pingora proxy requests now replace the stripped downstream `Host` header with
+  the selected upstream host and port before forwarding. This keeps HTTP/1.1
+  registered service traffic valid for strict upstream servers such as
+  Uvicorn/FastAPI services.
+
 ## 0.0.13 - 2026-05-22
 
 ### Added
