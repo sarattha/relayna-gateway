@@ -92,6 +92,20 @@ impl PingoraUpstreamConfig {
             service_key: service_key.into(),
         })
     }
+
+    fn host_header_value(&self) -> String {
+        let host = if self.host.contains(':') && !self.host.starts_with('[') {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        };
+
+        if (self.tls && self.port == 443) || (!self.tls && self.port == 80) {
+            host
+        } else {
+            format!("{host}:{}", self.port)
+        }
+    }
 }
 
 pub struct RelaynaPingoraProxy<S, R> {
@@ -725,6 +739,7 @@ where
         upstream_request.remove_header("x-api-key");
         upstream_request.remove_header("x-relayna-worker-token");
         let upstream = self.upstream_for(ctx).unwrap_or(&self.config.litellm);
+        upstream_request.insert_header("host", upstream.host_header_value())?;
         upstream_request
             .insert_header("authorization", format!("Bearer {}", upstream.service_key))?;
         if ctx
@@ -1463,6 +1478,33 @@ mod tests {
         assert_eq!(config.litellm.port, 4000);
         assert!(!config.litellm.tls);
         assert_eq!(config.litellm.sni, "127.0.0.1");
+    }
+
+    #[test]
+    fn formats_upstream_host_header_for_default_and_custom_ports() {
+        let https_default =
+            PingoraUpstreamConfig::from_base_url("https://litellm.internal", "service-key")
+                .expect("https config");
+        assert_eq!(https_default.host_header_value(), "litellm.internal");
+
+        let http_default =
+            PingoraUpstreamConfig::from_base_url("http://example.internal", "service-key")
+                .expect("http config");
+        assert_eq!(http_default.host_header_value(), "example.internal");
+
+        let service = PingoraUpstreamConfig::from_base_url(
+            "http://document-upload-api-service.default.svc.cluster.local:8886",
+            "service-key",
+        )
+        .expect("service config");
+        assert_eq!(
+            service.host_header_value(),
+            "document-upload-api-service.default.svc.cluster.local:8886"
+        );
+
+        let ipv6 = PingoraUpstreamConfig::from_base_url("http://[::1]:8886", "service-key")
+            .expect("ipv6 config");
+        assert_eq!(ipv6.host_header_value(), "[::1]:8886");
     }
 
     #[test]
