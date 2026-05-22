@@ -36,8 +36,8 @@ pub use guardrails::{
     InMemoryGuardrailExecutor, PII_REDACT_GUARDRAIL,
 };
 pub use observability::{
-    ProviderHealth, UsageBreakdown, UsageBreakdownDimension, UsageQuery, UsageQueryStore,
-    UsageSummary, UsageTimeseriesPoint,
+    ProviderHealth, UsageBreakdown, UsageBreakdownDimension, UsageExport, UsageExportRow,
+    UsageQuery, UsageQueryStore, UsageSummary, UsageTimeseriesPoint,
 };
 pub use operators::{
     operator_token_prefix, verify_stored_operator_token, CreatedOperatorTokenResponse,

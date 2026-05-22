@@ -28,9 +28,9 @@ use gateway_core::{
     GuardrailObservabilityStore, GuardrailPolicy, GuardrailProviderKind, GuardrailStore, KeyPolicy,
     OpenAiRouteSetting, OpenAiRouteSettingsLookup, OperatorTokenMaterial, OperatorTokenResponse,
     OperatorTokenStore, PolicyLookup, ProjectUsageSummary, Provider, ProviderHealth, Route,
-    StoredOperatorToken, UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageQuery,
-    UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint,
-    VirtualKeyMaterial,
+    StoredOperatorToken, UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageExport,
+    UsageExportRow, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary,
+    UsageTimeseriesPoint, VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -2615,6 +2615,76 @@ impl UsageQueryStore for PostgresStore {
             .map_err(|_| GatewayError::StoreUnavailable)
     }
 
+    async fn usage_export(&self, query: UsageQuery) -> GatewayResult<UsageExport> {
+        let summary = self.usage_summary(query.clone()).await?;
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            SELECT
+                u.request_id,
+                u.key_id,
+                u.project_id,
+                u.route,
+                u.model,
+                u.provider,
+                u.status,
+                u.status_code,
+                u.latency_ms,
+                COALESCE(u.input_tokens, 0)::bigint,
+                COALESCE(u.output_tokens, 0)::bigint,
+                COALESCE(u.total_tokens, 0)::bigint,
+                u.estimated_cost::double precision,
+                u.service_name,
+                u.task_id,
+                u.run_id,
+                u.fallback_count,
+                COALESCE(g.guardrail_action_count, 0)::bigint,
+                u.created_at
+            FROM usage_events u
+            LEFT JOIN (
+                SELECT request_id, COUNT(*)::bigint AS guardrail_action_count
+                FROM guardrail_execution_events
+                GROUP BY request_id
+            ) g ON g.request_id = u.request_id
+            "#,
+        );
+        append_usage_filters_with_alias(&mut builder, &query, "u");
+        builder.push(" ORDER BY u.created_at ASC, u.request_id ASC");
+
+        let rows = builder
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .into_iter()
+            .map(|row| {
+                Ok(UsageExportRow {
+                    request_id: row.try_get("request_id")?,
+                    key_id: row.try_get("key_id")?,
+                    project_id: row.try_get("project_id")?,
+                    route: row.try_get("route")?,
+                    model: row.try_get("model")?,
+                    provider: row.try_get("provider")?,
+                    status: row.try_get("status")?,
+                    status_code: row.try_get("status_code")?,
+                    latency_ms: row.try_get("latency_ms")?,
+                    input_tokens: row.try_get("input_tokens")?,
+                    output_tokens: row.try_get("output_tokens")?,
+                    total_tokens: row.try_get("total_tokens")?,
+                    estimated_cost_usd: row.try_get("estimated_cost_usd")?,
+                    service_name: row.try_get("service_name")?,
+                    task_id: row.try_get("task_id")?,
+                    run_id: row.try_get("run_id")?,
+                    fallback_count: row.try_get("fallback_count")?,
+                    guardrail_action_count: row.try_get("guardrail_action_count")?,
+                    created_at: row.try_get("created_at")?,
+                })
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        Ok(UsageExport { summary, rows })
+    }
+
     async fn provider_health(&self, query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
         let mut builder = QueryBuilder::<Postgres>::new(
             r#"
@@ -3327,43 +3397,72 @@ fn is_unique_violation_on(error: &sqlx::Error, constraint: &str) -> bool {
 }
 
 fn append_usage_filters<'a>(builder: &mut QueryBuilder<'a, Postgres>, query: &'a UsageQuery) {
+    append_usage_filters_with_alias(builder, query, "");
+}
+
+fn append_usage_filters_with_alias<'a>(
+    builder: &mut QueryBuilder<'a, Postgres>,
+    query: &'a UsageQuery,
+    alias: &str,
+) {
+    let column = |name: &str| {
+        if alias.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{alias}.{name}")
+        }
+    };
     let mut separated = builder.separated(" AND ");
     separated.push_unseparated(" WHERE true");
     if let Some(from) = query.from {
-        separated.push("created_at >= ");
+        separated.push(column("created_at"));
+        separated.push(" >= ");
         separated.push_bind_unseparated(from);
     }
     if let Some(to) = query.to {
-        separated.push("created_at < ");
+        separated.push(column("created_at"));
+        separated.push(" < ");
         separated.push_bind_unseparated(to);
     }
     if let Some(project_id) = query.project_id {
-        separated.push("project_id = ");
+        separated.push(column("project_id"));
+        separated.push(" = ");
         separated.push_bind_unseparated(project_id);
     }
     if let Some(key_id) = query.key_id {
-        separated.push("key_id = ");
+        separated.push(column("key_id"));
+        separated.push(" = ");
         separated.push_bind_unseparated(key_id);
     }
     if let Some(route) = query.route.as_deref() {
-        separated.push("route = ");
+        separated.push(column("route"));
+        separated.push(" = ");
         separated.push_bind_unseparated(route);
     }
     if let Some(provider) = query.provider.as_deref() {
-        separated.push("provider = ");
+        separated.push(column("provider"));
+        separated.push(" = ");
         separated.push_bind_unseparated(provider);
     }
     if let Some(service) = query.service.as_deref() {
-        separated.push("service_name = ");
+        separated.push(column("service_name"));
+        separated.push(" = ");
         separated.push_bind_unseparated(service);
     }
     if let Some(task_id) = query.task_id.as_deref() {
-        separated.push("task_id = ");
+        separated.push(column("task_id"));
+        separated.push(" = ");
         separated.push_bind_unseparated(task_id);
     }
     if let Some(model) = query.model.as_deref() {
-        separated.push("model = ");
+        separated.push(column("model"));
+        separated.push(" = ");
         separated.push_bind_unseparated(model);
+    }
+    if let Some(status) = query.status.as_deref() {
+        separated.push(column("status"));
+        separated.push(" = ");
+        separated.push_bind_unseparated(status);
     }
 }
 

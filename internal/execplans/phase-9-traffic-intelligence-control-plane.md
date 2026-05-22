@@ -46,11 +46,11 @@ decision explicitly expands scope.
 - [ ] Implement budget reservation and token-per-minute enforcement. Completed:
       TPM Redis key format, stable `token_rate_limit_exceeded` error, proxy
       enforcement, request token estimation, and budget reservation for any
-      route with a configured preflight estimated cost. Remaining: Redis-backed
-      concurrency integration tests.
+      route with a configured preflight estimated cost, plus Redis-backed
+      integration coverage for shared TPM counters.
 - [ ] Implement direct provider routing with safe credential handling.
 - [ ] Implement fallback and provider health-aware routing.
-- [ ] Implement usage export and billing-grade analytics.
+- [x] (2026-05-22 00:00 +07) Implement usage export and billing-grade analytics.
 - [ ] Expand the guardrail pipeline and audit surface.
 - [x] (2026-05-22 00:00 +07) Run `$code-change-verification` before marking runtime, migration, test,
       packaging, or build/test changes complete.
@@ -69,6 +69,13 @@ decision explicitly expands scope.
   proxy reserved only streaming requests.
   Evidence: `RedisControlState::reserve_budget` existed, and proxy reservation
   was guarded by `ctx.is_streaming`.
+
+- Observation: Admin usage summary, timeseries, breakdown, and provider health
+  APIs already existed, so billing export could reuse the same `UsageQuery`
+  filters and add JSON/CSV export without changing existing response shapes.
+  Evidence: `crates/gateway-api/src/app.rs` already exposes
+  `/admin-ui/admin/usage/*` summary and breakdown routes backed by
+  `UsageQueryStore`.
 
 ## Decision Log
 
@@ -97,8 +104,9 @@ decision explicitly expands scope.
 
 Partially implemented. TPM enforcement is active in the proxy, budget
 reservation now applies to all requests with configured preflight cost, and the
-freeze perimeter pins the new TPM Redis key and error code. Remaining Stage 1,
-3, 4, 5, and 6 items are still open.
+freeze perimeter pins the new TPM Redis key and error code. Usage export now
+provides protected JSON and CSV output with stable filters and totals.
+Remaining Stage 1, 3, 4, and 6 items are still open.
 
 Verification on 2026-05-22: `node tests/freeze-v0.0.9-perimeter.test.mjs`,
 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets

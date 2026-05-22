@@ -99,6 +99,8 @@ test("control-plane public route inventory is pinned", () => {
     "/admin-ui/admin/usage/by-provider",
     "/admin-ui/admin/usage/by-service",
     "/admin-ui/admin/usage/by-task",
+    "/admin-ui/admin/usage/export.csv",
+    "/admin-ui/admin/usage/export.json",
     "/admin-ui/admin/usage/summary",
     "/admin-ui/admin/usage/timeseries",
     "/admin-ui/healthz",

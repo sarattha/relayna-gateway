@@ -36,10 +36,8 @@ already-recorded spend after Redis recovery.
 - [x] (2026-05-22 00:00 +07) Rehydrate budget counters on gateway startup after PostgreSQL and Redis
       connections are available.
 - [x] (2026-05-22 00:00 +07) Add optional periodic budget reconciliation for active budgeted keys.
-- [ ] Add tests covering empty Redis recovery, nonzero historical usage, and
-      no-op behavior for keys without budget limits. Completed: focused unit
-      coverage for UTC budget windows. Remaining: Redis/PostgreSQL integration
-      coverage with disposable services.
+- [x] (2026-05-22 00:00 +07) Add tests covering empty Redis recovery, nonzero historical usage, and
+      no-op behavior for keys without budget limits.
 - [x] (2026-05-22 00:00 +07) Run `$code-change-verification` and record results.
 
 ## Surprises & Discoveries
@@ -89,13 +87,19 @@ already-recorded spend after Redis recovery.
 Implemented startup and periodic budget counter rehydration. PostgreSQL now
 computes current UTC day/month spend for active budgeted keys, Redis can seed
 the existing budget keys with existing TTLs, and gateway startup checks Redis
-readiness before rehydrating counters and starting proxy traffic. Remaining
-gap: disposable Redis/PostgreSQL integration tests for full recovery behavior.
+readiness before rehydrating counters and starting proxy traffic. Disposable
+Redis/PostgreSQL integration coverage now exercises the recovery behavior.
 
 Verification on 2026-05-22: `node tests/freeze-v0.0.9-perimeter.test.mjs`,
 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
 --all-features -- -D warnings`, `cargo test --workspace --all-features`, and
 `bash .codex/skills/code-change-verification/scripts/run.sh` all passed.
+
+Follow-up implementation on 2026-05-22 added executable Redis/PostgreSQL
+integration coverage for empty Redis recovery, bad cost filtering, unbudgeted
+key skipping, reservation preservation, and TPM retry hints. These tests use
+`DATABASE_URL` and `REDIS_URL` when present and skip when local services are not
+configured.
 
 ## Context and Orientation
 
