@@ -17,6 +17,8 @@ pub struct UsageQuery {
     pub model: Option<String>,
     pub status: Option<String>,
     pub interval: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]

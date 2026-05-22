@@ -2649,6 +2649,10 @@ impl UsageQueryStore for PostgresStore {
         );
         append_usage_filters_with_alias(&mut builder, &query, "u");
         builder.push(" ORDER BY u.created_at ASC, u.request_id ASC");
+        builder.push(" LIMIT ");
+        builder.push_bind(query.limit.unwrap_or(1_000).clamp(1, 10_000));
+        builder.push(" OFFSET ");
+        builder.push_bind(query.offset.unwrap_or_default().max(0));
 
         let rows = builder
             .build()

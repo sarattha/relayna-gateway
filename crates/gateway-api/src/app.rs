@@ -1148,7 +1148,14 @@ fn usage_export_csv_body(export: &UsageExport) -> String {
     csv
 }
 
-fn csv_escape(value: String) -> String {
+fn csv_escape(mut value: String) -> String {
+    if value
+        .chars()
+        .next()
+        .is_some_and(|first| matches!(first, '=' | '+' | '-' | '@' | '\t'))
+    {
+        value.insert(0, '\'');
+    }
     if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r') {
         format!("\"{}\"", value.replace('"', "\"\""))
     } else {
@@ -2248,10 +2255,11 @@ mod tests {
                     created_at: event.created_at,
                 })
                 .collect();
-            Ok(UsageExport {
-                summary: usage_summary_from_rows(&rows),
-                rows,
-            })
+            let summary = usage_summary_from_rows(&rows);
+            let offset = query.offset.unwrap_or_default().max(0) as usize;
+            let limit = query.limit.unwrap_or(1_000).clamp(1, 10_000) as usize;
+            let rows = rows.into_iter().skip(offset).take(limit).collect();
+            Ok(UsageExport { summary, rows })
         }
 
         async fn provider_health(&self, _query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
@@ -3214,7 +3222,7 @@ mod tests {
                 created_at: Utc::now(),
             },
             UsageEvent {
-                request_id: "req-failure".to_owned(),
+                request_id: "=req-failure".to_owned(),
                 key_id,
                 project_id: Some(project_id),
                 route: Route::ChatCompletions,
@@ -3263,7 +3271,7 @@ mod tests {
             .expect("body");
         let csv = String::from_utf8(body.to_vec()).expect("csv");
         assert!(csv.starts_with("request_id,key_id,project_id"));
-        assert!(csv.contains("req-failure"));
+        assert!(csv.contains("'=req-failure"));
         assert!(!csv.contains("req-success"));
     }
 
