@@ -30,7 +30,7 @@ of that schema.
 | Guardrails | `guardrail_definitions`, `guardrail_execution_events` | Stores guardrail catalog entries and execution audit records. |
 | Studio settings | `studio_connection_settings` | Stores the optional Relayna Studio import connection. |
 | Operators | `operator_tokens` | Stores hashed tokens for `/admin-ui/admin/*` and `/admin-ui` access. |
-| Usage | `usage_events` | Stores request accounting for admin usage views and Relayna Studio consumption. |
+| Usage | `usage_events` | Stores request accounting for admin usage views, exports, budget rehydration, and Relayna Studio consumption. |
 
 ## Required Operational Data
 
@@ -55,7 +55,8 @@ of that schema.
   `key_guardrail_policies`. Migrations seed the built-in `pii-redact`
   definition as enabled but not default-on.
 - `usage_events` and `guardrail_execution_events` are append-only operational
-  records used by admin usage, observability, and audit workflows.
+  records used by admin usage, exports, budget rehydration, observability, and
+  audit workflows.
 
 ## Table Reference
 
@@ -213,7 +214,12 @@ operator visibility.
 | Request fields | `request_id`, `route`, `model`, `provider`, `service_name`, `task_id`, `run_id`, and `fallback_count`. |
 | Accounting fields | `status`, `status_code`, `latency_ms`, `input_tokens`, `output_tokens`, `total_tokens`, and `estimated_cost`. |
 | Indexes | Lookup indexes cover key, project, request ID, provider, service, model, and task time-series queries. |
-| Required data | Written for successful and failed request paths. Preserve this table for billing, diagnostics, and Relayna Studio usage views. |
+| Required data | Written for successful and failed request paths. Preserve this table for billing, diagnostics, budget counter rehydration, usage exports, and Relayna Studio usage views. |
+
+Admin usage export endpoints read this table with the same filters used by the
+usage dashboard. JSON exports include summary totals plus row details. CSV
+exports include row details only and neutralize spreadsheet formula prefixes
+before sending the response.
 
 ### `guardrail_definitions`
 

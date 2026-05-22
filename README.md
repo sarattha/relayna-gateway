@@ -65,6 +65,8 @@ Useful endpoints:
 - Guardrail catalog: `http://127.0.0.1:8081/admin-ui/admin/guardrails`
 - Studio connection status: `http://127.0.0.1:8081/admin-ui/admin/studio/connection`
 - Studio import preview: `http://127.0.0.1:8081/admin-ui/admin/studio/services`
+- Usage export JSON: `http://127.0.0.1:8081/admin-ui/admin/usage/export.json`
+- Usage export CSV: `http://127.0.0.1:8081/admin-ui/admin/usage/export.csv`
 
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are startup fallback
 settings. Operators can also open Admin portal Settings after Gateway starts to
@@ -82,7 +84,7 @@ curl http://127.0.0.1:8000/studio/gateway/services
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.0.12 .
+docker build -t relayna-gateway:0.0.13 .
 ```
 
 Run it:
@@ -96,7 +98,7 @@ docker run --rm \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
   -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.0.12
+  relayna-gateway:0.0.13
 ```
 
 `GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
@@ -106,7 +108,36 @@ Admin portal instead.
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.0.12`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.0.13`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+
+## Budgets, TPM, and Usage Exports
+
+Virtual key policies can enforce request-per-minute, token-per-minute, daily
+budget, and monthly budget limits. Redis stores the fast control counters, and
+PostgreSQL usage events remain the durable ledger.
+
+Gateway rehydrates current daily and monthly Redis budget counters from
+PostgreSQL usage events after Redis readiness succeeds, then keeps reconciling
+periodically while the process runs. This lets budget enforcement recover after
+Redis loss without treating Redis as the source of truth. Token-per-minute
+limits use Redis minute buckets and return `token_rate_limit_exceeded` when the
+estimated request token impact exceeds the key policy.
+
+Operators can export usage data from the protected admin endpoints:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  "http://127.0.0.1:8081/admin-ui/admin/usage/export.json?limit=1000"
+
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  "http://127.0.0.1:8081/admin-ui/admin/usage/export.csv?limit=1000"
+```
+
+Exports support the dashboard filters, including `from`, `to`, `project_id`,
+`key_id`, `route`, `provider`, `service`, `task_id`, `model`, and `status`.
+CSV exports escape cells and neutralize spreadsheet formula prefixes.
 
 ## Guardrails
 

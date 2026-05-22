@@ -21,6 +21,7 @@ state plus readiness checks.
 | Area | Redis key family | Required when |
 | --- | --- | --- |
 | Request rate limit | `rl:req:<key_id>:<yyyymmddhhmm>` | A virtual key policy has `rpm_limit` set. |
+| Token rate limit | `rl:tpm:<key_id>:<yyyymmddhhmm>` | A virtual key policy has `tpm_limit` set. |
 | Daily budget | `budget:daily:<key_id>:<yyyymmdd>` | A virtual key policy has a daily budget or a request records/reserves positive cost. |
 | Monthly budget | `budget:monthly:<key_id>:<yyyymm>` | A virtual key policy has a monthly budget or a request records/reserves positive cost. |
 | Budget reservation | `budget:reservation:<key_id>:<request_id>` | A request reserves estimated cost before final usage reconciliation. |
@@ -29,6 +30,11 @@ Redis can be treated as volatile for normal operations. Restarting or flushing
 Redis clears rate-limit windows, budget counters, and in-flight budget
 reservations, but does not delete virtual keys, policies, usage events, or
 operator state from PostgreSQL.
+
+For budgeted keys, Gateway rebuilds current daily and monthly budget counters
+from PostgreSQL usage events during startup after Redis readiness succeeds, and
+continues periodic reconciliation while the process runs. PostgreSQL remains the
+durable billing ledger; Redis is reconstructed control state.
 
 ## Key Reference
 
@@ -48,6 +54,24 @@ Request-per-minute counter for one virtual key and one UTC minute.
 
 The 70-second TTL intentionally outlives the exact minute boundary so late
 requests and clock skew do not immediately erase the active bucket.
+
+### `rl:tpm:<key_id>:<yyyymmddhhmm>`
+
+Token-per-minute counter for one virtual key and one UTC minute.
+
+| Field | Details |
+| --- | --- |
+| Example | `rl:tpm:018f8d31-86a7-7c48-8f36-4d1fa4d99101:202605091403` |
+| Owner | `RateLimitStore::check_token_rate_limit`. |
+| Value | Integer counter incremented with `INCRBY` using the gateway's estimated request token impact. |
+| Time bucket | UTC minute formatted as `YYYYMMDDHHMM`. |
+| TTL | 70 seconds. |
+| Created when | `key_policies.tpm_limit` is not `NULL` and the key makes a request with a positive token estimate. |
+| Used for | Comparing the incremented token estimate with `tpm_limit`; exceeded requests return `token_rate_limit_exceeded` and retry timing based on Redis TTL when available. |
+
+TPM enforcement uses preflight token estimates so Gateway can reject traffic
+before forwarding it upstream. Final provider usage is still recorded in
+PostgreSQL usage events.
 
 ### `budget:daily:<key_id>:<yyyymmdd>`
 
@@ -108,6 +132,11 @@ reservation, even if the request crosses a UTC day or month boundary.
   prompts, or request bodies in Redis.
 - Use PostgreSQL usage events for durable billing and audit history. Redis
   budget counters are control-plane state, not the billing ledger.
+- A Redis flush no longer requires manually rebuilding daily or monthly budget
+  spend for keys with configured budgets; Gateway rehydrates current counters
+  from PostgreSQL after Redis readiness succeeds. In-flight reservations cannot
+  be reconstructed and should be allowed to expire or be reconciled by the
+  request that created them.
 - Avoid manual edits unless recovering from a known operational incident. If a
   counter must be corrected, update both the daily and monthly counter for the
   same `key_id` consistently.
