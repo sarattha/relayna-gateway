@@ -58,6 +58,24 @@ can fetch and map the export.
 
 Use readiness probes for traffic routing and liveness probes for process restart decisions. Do not use `/admin-ui/healthz` as a dependency readiness signal.
 
+## Budgets and Rate Limits
+
+Virtual key policies can set request-per-minute (`rpm_limit`),
+token-per-minute (`tpm_limit`), daily budget, and monthly budget limits. Request
+and token rate limits are Redis minute counters. Budget checks use Redis daily
+and monthly counters for fast enforcement, while PostgreSQL usage events remain
+the durable accounting ledger.
+
+On startup, Gateway waits for Redis readiness before rehydrating current daily
+and monthly budget counters for keys with configured budgets. It also runs
+periodic reconciliation so a Redis restart or flush can recover budget spend
+from PostgreSQL usage events without manual counter repair. In-flight
+reservation keys are short-lived control state and are not reconstructed.
+
+Requests that exceed `tpm_limit` return the stable
+`token_rate_limit_exceeded` error. When Redis exposes the active bucket TTL,
+Gateway includes retry timing in the response.
+
 ## Secret Handling
 
 - Store `DATABASE_URL`, `REDIS_URL`, provider credentials, LiteLLM credentials, Studio tokens, and operator tokens in a secret manager.
@@ -73,7 +91,7 @@ Use readiness probes for traffic routing and liveness probes for process restart
 
 ## Backup and Retention
 
-Back up PostgreSQL because it contains virtual key metadata, policies, usage events, service registry state, and operator token hashes. Redis can be treated as volatile for rate-limit and budget counters unless your operating model requires counter persistence across restarts.
+Back up PostgreSQL because it contains virtual key metadata, policies, usage events, service registry state, and operator token hashes. Redis can be treated as volatile for rate-limit and budget counters unless your operating model requires counter persistence across restarts. Budget counters for configured budgets are rehydrated from PostgreSQL, but request-per-minute, token-per-minute, and in-flight reservation keys remain transient.
 
 ## Upgrade Notes
 
@@ -83,5 +101,5 @@ Before deploying a new release:
 2. Build and scan the Docker image.
 3. Run CI, including Rust checks, admin UI tests, and docs build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.0.12`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.0.13`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.

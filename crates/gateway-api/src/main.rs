@@ -6,6 +6,7 @@ use gateway_store::{PostgresStore, RedisControlState, RedisReadiness};
 use pingora_core::server::Server;
 use std::{sync::Arc, thread};
 use tokio::net::TcpListener;
+use tokio::time::{self, Duration};
 
 fn main() -> anyhow::Result<()> {
     let config = Config::from_env().context("load gateway configuration")?;
@@ -48,6 +49,12 @@ fn main() -> anyhow::Result<()> {
     let redis = RedisReadiness::new(&config.redis_url).context("create redis client")?;
     let redis_control =
         RedisControlState::new(&config.redis_url).context("create redis control client")?;
+    setup_runtime
+        .block_on(redis.ready())
+        .context("check redis readiness before budget rehydration")?;
+    setup_runtime
+        .block_on(rehydrate_budget_counters(&store, &redis_control))
+        .context("rehydrate budget counters")?;
     let mut proxy_config =
         PingoraLiteLlmConfig::from_base_url(&config.litellm_base_url, &config.litellm_service_key)
             .context("create pingora LiteLLM proxy config")?;
@@ -67,6 +74,8 @@ fn main() -> anyhow::Result<()> {
     });
     let app = app::router_with_studio(store.clone(), redis, studio);
     let control_bind_addr = config.gateway_control_bind_addr;
+    let reconciler_store = store.clone();
+    let reconciler_redis = redis_control.clone();
     thread::spawn(move || {
         let runtime = match tokio::runtime::Runtime::new() {
             Ok(runtime) => runtime,
@@ -84,12 +93,17 @@ fn main() -> anyhow::Result<()> {
                 }
             };
             tracing::info!(addr = %listener.local_addr().unwrap_or(control_bind_addr), "gateway control API listening");
+            let budget_reconciler = tokio::spawn(run_budget_counter_reconciler(
+                reconciler_store,
+                reconciler_redis,
+            ));
             if let Err(error) = axum::serve(listener, app)
                 .with_graceful_shutdown(shutdown_signal())
                 .await
             {
                 tracing::error!(%error, "gateway control API stopped with error");
             }
+            budget_reconciler.abort();
         });
     });
 
@@ -101,6 +115,45 @@ fn main() -> anyhow::Result<()> {
     tracing::info!(addr = %config.gateway_bind_addr, "gateway Pingora proxy listening");
     pingora.add_service(proxy_service);
     pingora.run_forever()
+}
+
+async fn rehydrate_budget_counters(
+    store: &PostgresStore,
+    redis: &RedisControlState,
+) -> anyhow::Result<usize> {
+    let now = chrono::Utc::now();
+    let seeds = store
+        .budget_counter_seeds(now)
+        .await
+        .context("load budget counter seeds from postgres")?;
+    for seed in &seeds {
+        redis
+            .seed_budget_counters(
+                seed.key_id,
+                seed.daily_spend_usd,
+                seed.monthly_spend_usd,
+                now,
+            )
+            .await
+            .context("seed redis budget counters")?;
+    }
+    tracing::info!(seeded_keys = seeds.len(), "rehydrated budget counters");
+    Ok(seeds.len())
+}
+
+async fn run_budget_counter_reconciler(store: PostgresStore, redis: RedisControlState) {
+    let mut interval = time::interval(Duration::from_secs(300));
+    loop {
+        interval.tick().await;
+        match rehydrate_budget_counters(&store, &redis).await {
+            Ok(seeded_keys) => {
+                tracing::debug!(seeded_keys, "reconciled budget counters");
+            }
+            Err(error) => {
+                tracing::warn!(%error, "budget counter reconciliation failed");
+            }
+        }
+    }
 }
 
 async fn bootstrap_operator_token(

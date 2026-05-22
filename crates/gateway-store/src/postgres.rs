@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Datelike;
 use gateway_core::{
     admin::{
         AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse, AdminPolicyResponse,
@@ -27,9 +28,9 @@ use gateway_core::{
     GuardrailObservabilityStore, GuardrailPolicy, GuardrailProviderKind, GuardrailStore, KeyPolicy,
     OpenAiRouteSetting, OpenAiRouteSettingsLookup, OperatorTokenMaterial, OperatorTokenResponse,
     OperatorTokenStore, PolicyLookup, ProjectUsageSummary, Provider, ProviderHealth, Route,
-    StoredOperatorToken, UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageQuery,
-    UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint,
-    VirtualKeyMaterial,
+    StoredOperatorToken, UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageExport,
+    UsageExportRow, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary,
+    UsageTimeseriesPoint, VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -51,6 +52,13 @@ pub enum StoreError {
 #[derive(Clone)]
 pub struct PostgresStore {
     pool: PgPool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BudgetCounterSeed {
+    pub key_id: Uuid,
+    pub daily_spend_usd: f64,
+    pub monthly_spend_usd: f64,
 }
 
 impl PostgresStore {
@@ -89,6 +97,56 @@ impl PostgresStore {
     pub async fn ready(&self) -> Result<(), StoreError> {
         sqlx::query("SELECT 1").execute(&self.pool).await?;
         Ok(())
+    }
+
+    pub async fn budget_counter_seeds(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> GatewayResult<Vec<BudgetCounterSeed>> {
+        let (day_start, month_start) = budget_counter_windows(now)?;
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                p.key_id,
+                COALESCE(
+                    SUM(u.estimated_cost) FILTER (
+                        WHERE u.created_at >= $2
+                    ),
+                    0
+                )::double precision AS daily_spend_usd,
+                COALESCE(SUM(u.estimated_cost), 0)::double precision AS monthly_spend_usd
+            FROM key_policies p
+            INNER JOIN api_keys k ON k.id = p.key_id
+            LEFT JOIN usage_events u
+                ON u.key_id = p.key_id
+               AND u.created_at >= $3
+               AND u.estimated_cost IS NOT NULL
+               AND u.estimated_cost > 0
+            WHERE (p.daily_budget_usd IS NOT NULL OR p.monthly_budget_usd IS NOT NULL)
+              AND k.disabled = false
+              AND k.revoked_at IS NULL
+              AND (k.expires_at IS NULL OR k.expires_at > $1)
+            GROUP BY p.key_id
+            "#,
+        )
+        .bind(now)
+        .bind(day_start)
+        .bind(month_start)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        rows.iter()
+            .map(|row| {
+                Ok(BudgetCounterSeed {
+                    key_id: row.try_get("key_id")?,
+                    daily_spend_usd: row.try_get("daily_spend_usd")?,
+                    monthly_spend_usd: row.try_get("monthly_spend_usd")?,
+                })
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()
+            .map_err(|_| GatewayError::StoreUnavailable)
     }
 
     async fn upsert_policy_in_tx(
@@ -487,6 +545,21 @@ impl PostgresStore {
 
         Ok(())
     }
+}
+
+fn budget_counter_windows(
+    now: chrono::DateTime<chrono::Utc>,
+) -> GatewayResult<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> {
+    let day_start = now
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .map(|value| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(value, chrono::Utc))
+        .ok_or(GatewayError::StoreUnavailable)?;
+    let month_start = chrono::NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .map(|value| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(value, chrono::Utc))
+        .ok_or(GatewayError::StoreUnavailable)?;
+    Ok((day_start, month_start))
 }
 
 #[async_trait]
@@ -2542,6 +2615,80 @@ impl UsageQueryStore for PostgresStore {
             .map_err(|_| GatewayError::StoreUnavailable)
     }
 
+    async fn usage_export(&self, query: UsageQuery) -> GatewayResult<UsageExport> {
+        let summary = self.usage_summary(query.clone()).await?;
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            SELECT
+                u.request_id,
+                u.key_id,
+                u.project_id,
+                u.route,
+                u.model,
+                u.provider,
+                u.status,
+                u.status_code,
+                u.latency_ms,
+                COALESCE(u.input_tokens, 0)::bigint,
+                COALESCE(u.output_tokens, 0)::bigint,
+                COALESCE(u.total_tokens, 0)::bigint,
+                u.estimated_cost::double precision,
+                u.service_name,
+                u.task_id,
+                u.run_id,
+                u.fallback_count,
+                COALESCE(g.guardrail_action_count, 0)::bigint,
+                u.created_at
+            FROM usage_events u
+            LEFT JOIN (
+                SELECT request_id, COUNT(*)::bigint AS guardrail_action_count
+                FROM guardrail_execution_events
+                GROUP BY request_id
+            ) g ON g.request_id = u.request_id
+            "#,
+        );
+        append_usage_filters_with_alias(&mut builder, &query, "u");
+        builder.push(" ORDER BY u.created_at ASC, u.request_id ASC");
+        builder.push(" LIMIT ");
+        builder.push_bind(query.limit.unwrap_or(1_000).clamp(1, 10_000));
+        builder.push(" OFFSET ");
+        builder.push_bind(query.offset.unwrap_or_default().max(0));
+
+        let rows = builder
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .into_iter()
+            .map(|row| {
+                Ok(UsageExportRow {
+                    request_id: row.try_get("request_id")?,
+                    key_id: row.try_get("key_id")?,
+                    project_id: row.try_get("project_id")?,
+                    route: row.try_get("route")?,
+                    model: row.try_get("model")?,
+                    provider: row.try_get("provider")?,
+                    status: row.try_get("status")?,
+                    status_code: row.try_get("status_code")?,
+                    latency_ms: row.try_get("latency_ms")?,
+                    input_tokens: row.try_get("input_tokens")?,
+                    output_tokens: row.try_get("output_tokens")?,
+                    total_tokens: row.try_get("total_tokens")?,
+                    estimated_cost_usd: row.try_get("estimated_cost_usd")?,
+                    service_name: row.try_get("service_name")?,
+                    task_id: row.try_get("task_id")?,
+                    run_id: row.try_get("run_id")?,
+                    fallback_count: row.try_get("fallback_count")?,
+                    guardrail_action_count: row.try_get("guardrail_action_count")?,
+                    created_at: row.try_get("created_at")?,
+                })
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        Ok(UsageExport { summary, rows })
+    }
+
     async fn provider_health(&self, query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
         let mut builder = QueryBuilder::<Postgres>::new(
             r#"
@@ -3254,43 +3401,72 @@ fn is_unique_violation_on(error: &sqlx::Error, constraint: &str) -> bool {
 }
 
 fn append_usage_filters<'a>(builder: &mut QueryBuilder<'a, Postgres>, query: &'a UsageQuery) {
+    append_usage_filters_with_alias(builder, query, "");
+}
+
+fn append_usage_filters_with_alias<'a>(
+    builder: &mut QueryBuilder<'a, Postgres>,
+    query: &'a UsageQuery,
+    alias: &str,
+) {
+    let column = |name: &str| {
+        if alias.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{alias}.{name}")
+        }
+    };
     let mut separated = builder.separated(" AND ");
     separated.push_unseparated(" WHERE true");
     if let Some(from) = query.from {
-        separated.push("created_at >= ");
+        separated.push(column("created_at"));
+        separated.push(" >= ");
         separated.push_bind_unseparated(from);
     }
     if let Some(to) = query.to {
-        separated.push("created_at < ");
+        separated.push(column("created_at"));
+        separated.push(" < ");
         separated.push_bind_unseparated(to);
     }
     if let Some(project_id) = query.project_id {
-        separated.push("project_id = ");
+        separated.push(column("project_id"));
+        separated.push(" = ");
         separated.push_bind_unseparated(project_id);
     }
     if let Some(key_id) = query.key_id {
-        separated.push("key_id = ");
+        separated.push(column("key_id"));
+        separated.push(" = ");
         separated.push_bind_unseparated(key_id);
     }
     if let Some(route) = query.route.as_deref() {
-        separated.push("route = ");
+        separated.push(column("route"));
+        separated.push(" = ");
         separated.push_bind_unseparated(route);
     }
     if let Some(provider) = query.provider.as_deref() {
-        separated.push("provider = ");
+        separated.push(column("provider"));
+        separated.push(" = ");
         separated.push_bind_unseparated(provider);
     }
     if let Some(service) = query.service.as_deref() {
-        separated.push("service_name = ");
+        separated.push(column("service_name"));
+        separated.push(" = ");
         separated.push_bind_unseparated(service);
     }
     if let Some(task_id) = query.task_id.as_deref() {
-        separated.push("task_id = ");
+        separated.push(column("task_id"));
+        separated.push(" = ");
         separated.push_bind_unseparated(task_id);
     }
     if let Some(model) = query.model.as_deref() {
-        separated.push("model = ");
+        separated.push(column("model"));
+        separated.push(" = ");
         separated.push_bind_unseparated(model);
+    }
+    if let Some(status) = query.status.as_deref() {
+        separated.push(column("status"));
+        separated.push(" = ");
+        separated.push_bind_unseparated(status);
     }
 }
 
@@ -3377,6 +3553,18 @@ mod tests {
         let summary = summary_from_row((0, 0, 0, 0, 0, 0, Some(0.0), 0, 0));
 
         assert_eq!(summary.estimated_cost_usd, Some(0.0));
+    }
+
+    #[test]
+    fn budget_counter_windows_use_current_utc_day_and_month() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-05-22T16:45:11Z")
+            .expect("time")
+            .with_timezone(&chrono::Utc);
+
+        let (day_start, month_start) = budget_counter_windows(now).expect("windows");
+
+        assert_eq!(day_start.to_rfc3339(), "2026-05-22T00:00:00+00:00");
+        assert_eq!(month_start.to_rfc3339(), "2026-05-01T00:00:00+00:00");
     }
 
     #[test]

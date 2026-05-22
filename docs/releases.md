@@ -1,6 +1,6 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.0.12` is the current release target.
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.0.13` is the current release target.
 
 ## Release Checklist
 
@@ -9,7 +9,7 @@ Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.0.12` is the curr
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.0.12
+   python3 scripts/validate-release-metadata.py v0.0.13
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -20,23 +20,23 @@ Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.0.12` is the curr
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.0.12 .
+   docker build -t relayna-gateway:0.0.13 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.0.12 -m "Release v0.0.12"
-   git push origin v0.0.12
+   git tag -a v0.0.13 -m "Release v0.0.13"
+   git push origin v0.0.13
    ```
 
 The GitHub release workflow validates that the tag version, workspace package version, and matching `CHANGELOG.md` section agree before it builds or publishes anything. It then extracts release notes from the matching changelog section and publishes the Docker image to GitHub Container Registry.
 
-For `v0.0.12`, the workflow publishes:
+For `v0.0.13`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.0.12
+ghcr.io/sarattha/relayna-gateway:0.0.13
 ghcr.io/sarattha/relayna-gateway:0.0
 ghcr.io/sarattha/relayna-gateway:latest
 ```

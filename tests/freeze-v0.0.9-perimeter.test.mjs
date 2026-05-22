@@ -99,6 +99,8 @@ test("control-plane public route inventory is pinned", () => {
     "/admin-ui/admin/usage/by-provider",
     "/admin-ui/admin/usage/by-service",
     "/admin-ui/admin/usage/by-task",
+    "/admin-ui/admin/usage/export.csv",
+    "/admin-ui/admin/usage/export.json",
     "/admin-ui/admin/usage/summary",
     "/admin-ui/admin/usage/timeseries",
     "/admin-ui/healthz",
@@ -183,6 +185,7 @@ test("public gateway error codes are pinned", () => {
     "revoked_virtual_key",
     "store_unavailable",
     "studio_unavailable",
+    "token_rate_limit_exceeded",
     "unsupported_route",
     "upstream_connection",
     "upstream_timeout",
@@ -256,6 +259,7 @@ test("PostgreSQL migration inventory is pinned", () => {
 
 test("Redis key formats and TTLs are pinned", () => {
   assert.match(rateLimits, /format!\("rl:req:\{key_id\}:\{\}", now\.format\("%Y%m%d%H%M"\)\)/);
+  assert.match(rateLimits, /format!\("rl:tpm:\{key_id\}:\{\}", now\.format\("%Y%m%d%H%M"\)\)/);
   assert.match(budgets, /format!\("budget:daily:\{key_id\}:\{\}", now\.format\("%Y%m%d"\)\)/);
   assert.match(budgets, /format!\("budget:monthly:\{key_id\}:\{\}", now\.format\("%Y%m"\)\)/);
   assert.match(budgets, /format!\("budget:reservation:\{key_id\}:\{request_id\}"\)/);

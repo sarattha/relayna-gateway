@@ -12,7 +12,8 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
   `/admin-ui/*`.
 - PostgreSQL-backed projects, virtual keys, route policies, service links,
   usage records, services, and operator tokens.
-- Redis-backed rate limit and budget state.
+- Redis-backed request rate-limit, token rate-limit, budget, and reservation
+  state, with budget counters rehydrated from PostgreSQL usage records.
 - Embedded static admin UI for project-first key, service, usage, and health
   operations.
 

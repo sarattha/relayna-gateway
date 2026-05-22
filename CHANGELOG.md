@@ -2,6 +2,38 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.0.13 - 2026-05-22
+
+### Added
+
+- Redis budget counter rehydration from PostgreSQL usage events during startup
+  and periodic reconciliation. Budgeted keys can recover daily and monthly
+  spend counters after Redis loss without treating Redis as the billing ledger.
+- Token-per-minute enforcement for virtual key `tpm_limit` policy settings
+  using Redis minute buckets and the stable `token_rate_limit_exceeded` error.
+- Protected admin usage export endpoints:
+  `/admin-ui/admin/usage/export.json` and
+  `/admin-ui/admin/usage/export.csv`.
+- Integration coverage for empty-Redis budget recovery, invalid cost filtering,
+  unbudgeted key skipping, reservation preservation, and shared TPM counters.
+
+### Changed
+
+- Workspace crate versions now share the `0.0.13` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.0.13` gateway image.
+- Budget reservations now apply to requests with configured preflight estimated
+  cost, including non-streaming registered service traffic.
+- Usage exports use the same admin usage filters and summary totals as the
+  usage dashboard, with default pagination and a maximum page-size clamp.
+
+### Security
+
+- CSV usage exports neutralize spreadsheet formula prefixes before escaping
+  cells to reduce spreadsheet injection risk for operator-downloaded reports.
+- The new usage export routes require the existing operator token and do not
+  expose provider credentials, LiteLLM service keys, or raw virtual keys.
+
 ## 0.0.12 - 2026-05-21
 
 ### Added

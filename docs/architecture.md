@@ -29,7 +29,8 @@ flowchart LR
 2. The proxy extracts the key prefix and loads the hashed key record from PostgreSQL.
 3. Globally disabled OpenAI-compatible LiteLLM routes are rejected before policy, rate-limit, and budget checks.
 4. `gateway-core` verifies the key secret, disabled state, revocation state, expiry, allowed route, allowed model, allowed provider, streaming permission, service method permission, rate limit, and budget.
-5. Redis counters are checked and updated for rate limit and budget decisions.
+5. Redis request-per-minute, token-per-minute, and budget counters are checked
+   and updated for rate limit and budget decisions.
 6. The proxy strips client credentials and forwards the request with the configured internal upstream credential.
 7. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields.
 
@@ -44,6 +45,15 @@ The control listener exposes:
 - `/admin-ui` for the embedded operator portal.
 
 Admin APIs require an operator token. On the first startup, the gateway bootstraps one operator token and stores only its hash. `GATEWAY_ADMIN_TOKEN` can seed that first token in a fresh database; otherwise the gateway generates and prints one raw token once. After an active token exists, env changes are ignored and rotation through the Admin portal is the supported change path.
+
+Usage export endpoints are part of the admin surface:
+
+- `/admin-ui/admin/usage/export.json`
+- `/admin-ui/admin/usage/export.csv`
+
+They use the same usage filters as the dashboard, include summary totals, and
+return paginated rows. CSV output is escaped and spreadsheet formula prefixes
+are neutralized before the response is sent.
 
 ## Crate Ownership
 
@@ -71,7 +81,12 @@ Redis is the fast mutable state layer:
 
 - Request-per-minute and token-per-minute counters.
 - Daily and monthly budget counters.
+- In-flight budget reservation keys.
 - Readiness checks used by `/admin-ui/readyz`.
+
+PostgreSQL remains the durable usage ledger. On startup and periodic
+reconciliation, Gateway can rebuild current daily and monthly Redis budget
+counters from PostgreSQL usage events for keys that have configured budgets.
 
 ## Trust Boundaries
 

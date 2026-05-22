@@ -26,19 +26,19 @@ already-recorded spend after Redis recovery.
 
 - [x] (2026-05-10 00:00 +07) Draft Phase 8 ExecPlan for budget counter
       rehydration and Redis recovery behavior.
-- [ ] Establish compatibility boundary for Redis budget key formats,
+- [x] (2026-05-22 00:00 +07) Establish compatibility boundary for Redis budget key formats,
       PostgreSQL usage queries, startup behavior, and operator-visible recovery
       semantics.
-- [ ] Add PostgreSQL usage-cost aggregation by key for current UTC day and
+- [x] (2026-05-22 00:00 +07) Add PostgreSQL usage-cost aggregation by key for current UTC day and
       current UTC month.
-- [ ] Add Redis budget counter seed or set methods that preserve existing TTL
+- [x] (2026-05-22 00:00 +07) Add Redis budget counter seed or set methods that preserve existing TTL
       semantics.
-- [ ] Rehydrate budget counters on gateway startup after PostgreSQL and Redis
+- [x] (2026-05-22 00:00 +07) Rehydrate budget counters on gateway startup after PostgreSQL and Redis
       connections are available.
-- [ ] Add optional periodic budget reconciliation for active budgeted keys.
-- [ ] Add tests covering empty Redis recovery, nonzero historical usage, and
+- [x] (2026-05-22 00:00 +07) Add optional periodic budget reconciliation for active budgeted keys.
+- [x] (2026-05-22 00:00 +07) Add tests covering empty Redis recovery, nonzero historical usage, and
       no-op behavior for keys without budget limits.
-- [ ] Run `$code-change-verification` and record results.
+- [x] (2026-05-22 00:00 +07) Run `$code-change-verification` and record results.
 
 ## Surprises & Discoveries
 
@@ -49,6 +49,11 @@ already-recorded spend after Redis recovery.
 - Observation: Current budget enforcement reads Redis counters only.
   Evidence: `crates/gateway-store/src/redis.rs` reads `budget:daily:*` and
   `budget:monthly:*` keys in `RedisControlState::check_budget`.
+
+- Observation: Redis readiness must be checked even when no budgeted keys need
+  seeding.
+  Evidence: startup now calls `RedisReadiness::ready` before budget
+  rehydration, so an empty seed set cannot hide an unavailable Redis instance.
 
 ## Decision Log
 
@@ -70,10 +75,31 @@ already-recorded spend after Redis recovery.
   volume and operational complexity.
   Date/Author: 2026-05-10 / Codex.
 
+- Decision: Overwrite current daily and monthly Redis budget counters from the
+  PostgreSQL ledger during startup and periodic reconciliation.
+  Rationale: rehydration must converge after Redis loss or stale cache state,
+  while reservation keys remain request-local and are not reconstructed from
+  durable usage history.
+  Date/Author: 2026-05-22 / Codex.
+
 ## Outcomes & Retrospective
 
-Not implemented yet. This plan captures the target behavior and engineering
-shape for Phase 8.
+Implemented startup and periodic budget counter rehydration. PostgreSQL now
+computes current UTC day/month spend for active budgeted keys, Redis can seed
+the existing budget keys with existing TTLs, and gateway startup checks Redis
+readiness before rehydrating counters and starting proxy traffic. Disposable
+Redis/PostgreSQL integration coverage now exercises the recovery behavior.
+
+Verification on 2026-05-22: `node tests/freeze-v0.0.9-perimeter.test.mjs`,
+`cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+--all-features -- -D warnings`, `cargo test --workspace --all-features`, and
+`bash .codex/skills/code-change-verification/scripts/run.sh` all passed.
+
+Follow-up implementation on 2026-05-22 added executable Redis/PostgreSQL
+integration coverage for empty Redis recovery, bad cost filtering, unbudgeted
+key skipping, reservation preservation, and TPM retry hints. These tests use
+`DATABASE_URL` and `REDIS_URL` when present and skip when local services are not
+configured.
 
 ## Context and Orientation
 

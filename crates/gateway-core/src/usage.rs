@@ -177,6 +177,43 @@ pub fn extract_usage_tokens(body: &[u8]) -> (Option<i64>, Option<i64>, Option<i6
     (input, output, total)
 }
 
+pub fn estimate_generation_tokens(body: &[u8]) -> i64 {
+    let Ok(value) = serde_json::from_slice::<Value>(body) else {
+        return estimate_text_tokens(body.len());
+    };
+    let input_tokens = estimate_value_tokens(&value);
+    let reserved_output_tokens = value
+        .get("max_completion_tokens")
+        .or_else(|| value.get("max_tokens"))
+        .and_then(Value::as_i64)
+        .filter(|tokens| *tokens > 0)
+        .unwrap_or(0);
+
+    (input_tokens + reserved_output_tokens).max(1)
+}
+
+fn estimate_value_tokens(value: &Value) -> i64 {
+    match value {
+        Value::String(value) => estimate_text_tokens(value.len()),
+        Value::Array(values) => values.iter().map(estimate_value_tokens).sum(),
+        Value::Object(values) => values
+            .iter()
+            .filter(|(key, _)| {
+                key.as_str() != "max_tokens" && key.as_str() != "max_completion_tokens"
+            })
+            .map(|(_, value)| estimate_value_tokens(value))
+            .sum(),
+        Value::Number(_) | Value::Bool(_) => 1,
+        Value::Null => 0,
+    }
+}
+
+fn estimate_text_tokens(byte_len: usize) -> i64 {
+    i64::try_from(byte_len.div_ceil(4))
+        .unwrap_or(i64::MAX)
+        .max(1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +256,16 @@ mod tests {
             extract_usage_tokens(br#"{"usage":{"input_tokens":4,"output_tokens":6}}"#),
             (Some(4), Some(6), Some(10))
         );
+    }
+
+    #[test]
+    fn estimates_generation_tokens_from_prompt_and_reserved_output() {
+        assert_eq!(
+            estimate_generation_tokens(
+                br#"{"messages":[{"role":"user","content":"abcdefgh"}],"max_tokens":12}"#
+            ),
+            15
+        );
+        assert_eq!(estimate_generation_tokens(b"not json"), 2);
     }
 }

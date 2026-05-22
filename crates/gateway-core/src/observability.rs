@@ -15,7 +15,10 @@ pub struct UsageQuery {
     pub service: Option<String>,
     pub task_id: Option<String>,
     pub model: Option<String>,
+    pub status: Option<String>,
     pub interval: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
@@ -44,6 +47,35 @@ pub struct UsageBreakdown {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageExportRow {
+    pub request_id: String,
+    pub key_id: Uuid,
+    pub project_id: Option<Uuid>,
+    pub route: String,
+    pub model: Option<String>,
+    pub provider: String,
+    pub status: String,
+    pub status_code: i32,
+    pub latency_ms: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
+    pub estimated_cost_usd: Option<f64>,
+    pub service_name: Option<String>,
+    pub task_id: Option<String>,
+    pub run_id: Option<String>,
+    pub fallback_count: i32,
+    pub guardrail_action_count: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageExport {
+    pub summary: UsageSummary,
+    pub rows: Vec<UsageExportRow>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ProviderHealth {
     pub name: String,
     pub request_count: i64,
@@ -65,6 +97,8 @@ pub trait UsageQueryStore: Send + Sync {
         query: UsageQuery,
         dimension: UsageBreakdownDimension,
     ) -> GatewayResult<Vec<UsageBreakdown>>;
+
+    async fn usage_export(&self, query: UsageQuery) -> GatewayResult<UsageExport>;
 
     async fn provider_health(&self, query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>>;
 }
@@ -101,6 +135,10 @@ where
         dimension: UsageBreakdownDimension,
     ) -> GatewayResult<Vec<UsageBreakdown>> {
         (**self).usage_breakdown(query, dimension).await
+    }
+
+    async fn usage_export(&self, query: UsageQuery) -> GatewayResult<UsageExport> {
+        (**self).usage_export(query).await
     }
 
     async fn provider_health(&self, query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {

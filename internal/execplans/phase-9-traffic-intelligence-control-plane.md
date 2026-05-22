@@ -36,25 +36,46 @@ decision explicitly expands scope.
 
 - [x] (2026-05-20 00:00 +07) Create the internal next-phase plan covering the
       requested feature set.
-- [ ] Confirm the latest release tag and compare all planned public behavior
+- [x] (2026-05-22 00:00 +07) Confirm the latest release tag and compare all planned public behavior
       against the v0.0.9 production freeze perimeter.
-- [ ] Run `$implementation-strategy` before editing streaming, routing, budget,
+- [x] (2026-05-22 00:00 +07) Run `$implementation-strategy` before editing streaming, routing, budget,
       policy, usage, Redis, telemetry, schema, or admin API behavior.
-- [ ] Run `$production-freeze-guard` before any public route, exported API,
+- [x] (2026-05-22 00:00 +07) Run `$production-freeze-guard` before any public route, exported API,
       config, schema, Redis key, policy, usage, telemetry, or admin UI change.
 - [ ] Implement streaming proxy hardening and lifecycle metrics.
-- [ ] Implement budget reservation and token-per-minute enforcement.
+- [ ] Implement budget reservation and token-per-minute enforcement. Completed:
+      TPM Redis key format, stable `token_rate_limit_exceeded` error, proxy
+      enforcement, request token estimation, and budget reservation for any
+      route with a configured preflight estimated cost, plus Redis-backed
+      integration coverage for shared TPM counters.
 - [ ] Implement direct provider routing with safe credential handling.
 - [ ] Implement fallback and provider health-aware routing.
-- [ ] Implement usage export and billing-grade analytics.
+- [x] (2026-05-22 00:00 +07) Implement usage export and billing-grade analytics.
 - [ ] Expand the guardrail pipeline and audit surface.
-- [ ] Run `$code-change-verification` before marking runtime, migration, test,
+- [x] (2026-05-22 00:00 +07) Run `$code-change-verification` before marking runtime, migration, test,
       packaging, or build/test changes complete.
 
 ## Surprises & Discoveries
 
 - Observation: None yet.
-  Evidence: This plan is newly drafted before implementation.
+  Evidence: This plan was newly drafted before implementation.
+
+- Observation: `tpm_limit` already existed in key policy persistence and admin
+  responses, but the proxy enforced only request-per-minute limits.
+  Evidence: `KeyPolicy` contains `tpm_limit`; `RelaynaPingoraProxy` previously
+  called only `check_request_rate_limit`.
+
+- Observation: Budget reservation support already existed in Redis, but the
+  proxy reserved only streaming requests.
+  Evidence: `RedisControlState::reserve_budget` existed, and proxy reservation
+  was guarded by `ctx.is_streaming`.
+
+- Observation: Admin usage summary, timeseries, breakdown, and provider health
+  APIs already existed, so billing export could reuse the same `UsageQuery`
+  filters and add JSON/CSV export without changing existing response shapes.
+  Evidence: `crates/gateway-api/src/app.rs` already exposes
+  `/admin-ui/admin/usage/*` summary and breakdown routes backed by
+  `UsageQueryStore`.
 
 ## Decision Log
 
@@ -72,10 +93,25 @@ decision explicitly expands scope.
   policy, usage, Redis state, telemetry, routing, and admin surfaces.
   Date/Author: 2026-05-20 / Codex.
 
+- Decision: Add TPM as an additive freeze surface with a new Redis key and
+  stable error code instead of reusing the RPM error code.
+  Rationale: operators and clients need to distinguish request count throttles
+  from token throughput throttles, and the freeze perimeter should pin the new
+  key format and public error name.
+  Date/Author: 2026-05-22 / Codex.
+
 ## Outcomes & Retrospective
 
-Not implemented yet. This document defines the next-phase scope, sequencing,
-acceptance criteria, and validation gates.
+Partially implemented. TPM enforcement is active in the proxy, budget
+reservation now applies to all requests with configured preflight cost, and the
+freeze perimeter pins the new TPM Redis key and error code. Usage export now
+provides protected JSON and CSV output with stable filters and totals.
+Remaining Stage 1, 3, 4, and 6 items are still open.
+
+Verification on 2026-05-22: `node tests/freeze-v0.0.9-perimeter.test.mjs`,
+`cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+--all-features -- -D warnings`, `cargo test --workspace --all-features`, and
+`bash .codex/skills/code-change-verification/scripts/run.sh` all passed.
 
 ## Context and Orientation
 

@@ -29,7 +29,8 @@ Rotate the token from the portal after bootstrap or whenever access changes. Rot
 - Routes disables and enables the global OpenAI-compatible LiteLLM routes `/v1/chat/completions` and `/v1/responses`, and lists registered service routes with their allowed methods and credential status.
 - Services creates, imports from Relayna Studio, edits, sync-checks, disables, enables, and deletes service registrations. Method selection uses explicit checkboxes for `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
 - Usage filters usage by project, virtual key, service, route, provider, model,
-  and task, then shows project, key, and service breakdown tables.
+  task, and status, then shows project, key, service, and exportable row-level
+  usage data.
 - Guardrails shows the gateway guardrail catalog, recent sanitized execution
   events, and execution summaries. Key create/edit forms can set mandatory,
   optional, and forbidden guardrails.
@@ -46,6 +47,30 @@ Rotate the token from the portal after bootstrap or whenever access changes. Rot
 - Guardrail execution records never include raw request bodies, response bodies,
   provider credentials, bearer tokens, or PII mappings.
 - The control listener should be protected by network policy, ingress rules, or private access controls in production.
+
+## Usage Export
+
+Operators can export usage rows through admin-token-protected endpoints:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  "http://127.0.0.1:8081/admin-ui/admin/usage/export.json?status=success&limit=1000"
+
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  "http://127.0.0.1:8081/admin-ui/admin/usage/export.csv?status=failure&limit=1000"
+```
+
+Supported filters match the usage dashboard query model: `from`, `to`,
+`project_id`, `key_id`, `route`, `provider`, `service`, `task_id`, `model`,
+and `status`. Export rows are ordered by creation time and request ID. `limit`
+defaults to `1000`, is clamped to `10000`, and `offset` can be used for
+pagination.
+
+JSON exports include a `summary` object plus `rows`. CSV exports include the row
+fields directly and neutralize spreadsheet formula prefixes before escaping
+cells.
 
 ## Guardrails
 

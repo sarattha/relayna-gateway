@@ -36,8 +36,8 @@ pub use guardrails::{
     InMemoryGuardrailExecutor, PII_REDACT_GUARDRAIL,
 };
 pub use observability::{
-    ProviderHealth, UsageBreakdown, UsageBreakdownDimension, UsageQuery, UsageQueryStore,
-    UsageSummary, UsageTimeseriesPoint,
+    ProviderHealth, UsageBreakdown, UsageBreakdownDimension, UsageExport, UsageExportRow,
+    UsageQuery, UsageQueryStore, UsageSummary, UsageTimeseriesPoint,
 };
 pub use operators::{
     operator_token_prefix, verify_stored_operator_token, CreatedOperatorTokenResponse,
@@ -75,6 +75,6 @@ pub use studio_settings::{
     StudioConnectionResponse, StudioConnectionSource, StudioConnectionTestResponse,
 };
 pub use usage::{
-    extract_estimated_cost_usd, extract_model, extract_usage_tokens, UsageEvent, UsageRecorder,
-    UsageStatus,
+    estimate_generation_tokens, extract_estimated_cost_usd, extract_model, extract_usage_tokens,
+    UsageEvent, UsageRecorder, UsageStatus,
 };

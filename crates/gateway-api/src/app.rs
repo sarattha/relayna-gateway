@@ -21,8 +21,8 @@ use gateway_core::{
     ProviderConfigCreateRequest, ProviderConfigPatchRequest, ServiceCreateRequest,
     ServicePatchRequest, StudioConnectionEnv, StudioConnectionPatchRequest,
     StudioConnectionTestResponse, StudioServiceCatalogResponse, StudioServiceImportPreview,
-    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageQuery, UsageQueryStore,
-    VirtualKeyMaterial,
+    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery,
+    UsageQueryStore, VirtualKeyMaterial,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::Serialize;
@@ -264,6 +264,8 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin-ui/admin/usage/by-provider", get(usage_by_provider))
         .route("/admin-ui/admin/usage/by-service", get(usage_by_service))
         .route("/admin-ui/admin/usage/by-task", get(usage_by_task))
+        .route("/admin-ui/admin/usage/export.json", get(usage_export_json))
+        .route("/admin-ui/admin/usage/export.csv", get(usage_export_csv))
         .route("/admin-ui/admin/tasks/{task_id}/usage", get(task_usage))
         .route("/admin-ui/admin/provider-health", get(provider_health))
         .route("/admin-ui/metrics", get(metrics))
@@ -1063,6 +1065,36 @@ async fn usage_by_task(
     usage_breakdown(state, headers, query, UsageBreakdownDimension::Task).await
 }
 
+async fn usage_export_json(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    admin_query(headers, &state, |store| async move {
+        store.usage_export(query).await
+    })
+    .await
+}
+
+async fn usage_export_csv(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+    match state.store.usage_export(query).await {
+        Ok(export) => (
+            StatusCode::OK,
+            [("content-type", "text/csv; charset=utf-8")],
+            usage_export_csv_body(&export),
+        )
+            .into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn task_usage(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1074,6 +1106,61 @@ async fn task_usage(
         store.usage_summary(query).await
     })
     .await
+}
+
+fn usage_export_csv_body(export: &UsageExport) -> String {
+    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,task_id,run_id,fallback_count,guardrail_action_count,created_at\n".to_owned();
+    for row in &export.rows {
+        let fields = [
+            row.request_id.clone(),
+            row.key_id.to_string(),
+            row.project_id
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            row.route.clone(),
+            row.model.clone().unwrap_or_default(),
+            row.provider.clone(),
+            row.status.clone(),
+            row.status_code.to_string(),
+            row.latency_ms.to_string(),
+            row.input_tokens.to_string(),
+            row.output_tokens.to_string(),
+            row.total_tokens.to_string(),
+            row.estimated_cost_usd
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            row.service_name.clone().unwrap_or_default(),
+            row.task_id.clone().unwrap_or_default(),
+            row.run_id.clone().unwrap_or_default(),
+            row.fallback_count.to_string(),
+            row.guardrail_action_count.to_string(),
+            row.created_at.to_rfc3339(),
+        ];
+        csv.push_str(
+            &fields
+                .into_iter()
+                .map(csv_escape)
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        csv.push('\n');
+    }
+    csv
+}
+
+fn csv_escape(mut value: String) -> String {
+    if value
+        .chars()
+        .next()
+        .is_some_and(|first| matches!(first, '=' | '+' | '-' | '@' | '\t'))
+    {
+        value.insert(0, '\'');
+    }
+    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r') {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value
+    }
 }
 
 async fn usage_breakdown(
@@ -1349,10 +1436,10 @@ mod tests {
         auth::StoredVirtualKey,
         OpenAiRouteSetting, OperatorTokenResponse, PatchValue, ProjectCreateRequest,
         ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest,
-        ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealth, ServiceCostMode,
+        ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealth, Route, ServiceCostMode,
         ServiceResponse, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
-        StoredStudioConnection, StudioConnectionPatchRequest, UsageBreakdown, UsageSummary,
-        UsageTimeseriesPoint,
+        StoredStudioConnection, StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow,
+        UsageStatus, UsageSummary, UsageTimeseriesPoint,
     };
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -2136,8 +2223,130 @@ mod tests {
             Ok(Vec::new())
         }
 
+        async fn usage_export(&self, query: UsageQuery) -> GatewayResult<UsageExport> {
+            let rows: Vec<UsageExportRow> = self
+                .events
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .filter(|event| usage_event_matches_query(event, &query))
+                .map(|event| UsageExportRow {
+                    request_id: event.request_id.clone(),
+                    key_id: event.key_id,
+                    project_id: event.project_id,
+                    route: event.route.as_str().to_owned(),
+                    model: event.model.clone(),
+                    provider: event.provider.as_str().to_owned(),
+                    status: match event.status {
+                        gateway_core::UsageStatus::Success => "success".to_owned(),
+                        gateway_core::UsageStatus::Failure => "failure".to_owned(),
+                    },
+                    status_code: i32::from(event.status_code),
+                    latency_ms: event.latency_ms,
+                    input_tokens: event.input_tokens.unwrap_or_default(),
+                    output_tokens: event.output_tokens.unwrap_or_default(),
+                    total_tokens: event.total_tokens.unwrap_or_default(),
+                    estimated_cost_usd: event.estimated_cost_usd,
+                    service_name: event.service_name.clone(),
+                    task_id: event.task_id.clone(),
+                    run_id: event.run_id.clone(),
+                    fallback_count: event.fallback_count,
+                    guardrail_action_count: 0,
+                    created_at: event.created_at,
+                })
+                .collect();
+            let summary = usage_summary_from_rows(&rows);
+            let offset = query.offset.unwrap_or_default().max(0) as usize;
+            let limit = query.limit.unwrap_or(1_000).clamp(1, 10_000) as usize;
+            let rows = rows.into_iter().skip(offset).take(limit).collect();
+            Ok(UsageExport { summary, rows })
+        }
+
         async fn provider_health(&self, _query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
             Ok(Vec::new())
+        }
+    }
+
+    fn usage_event_matches_query(event: &UsageEvent, query: &UsageQuery) -> bool {
+        if query.from.is_some_and(|from| event.created_at < from) {
+            return false;
+        }
+        if query.to.is_some_and(|to| event.created_at >= to) {
+            return false;
+        }
+        if query
+            .project_id
+            .is_some_and(|project_id| event.project_id != Some(project_id))
+        {
+            return false;
+        }
+        if query.key_id.is_some_and(|key_id| event.key_id != key_id) {
+            return false;
+        }
+        if query
+            .route
+            .as_deref()
+            .is_some_and(|route| event.route.as_str() != route)
+        {
+            return false;
+        }
+        if query
+            .provider
+            .as_deref()
+            .is_some_and(|provider| event.provider.as_str() != provider)
+        {
+            return false;
+        }
+        if query
+            .service
+            .as_deref()
+            .is_some_and(|service| event.service_name.as_deref() != Some(service))
+        {
+            return false;
+        }
+        if query
+            .task_id
+            .as_deref()
+            .is_some_and(|task_id| event.task_id.as_deref() != Some(task_id))
+        {
+            return false;
+        }
+        if query
+            .model
+            .as_deref()
+            .is_some_and(|model| event.model.as_deref() != Some(model))
+        {
+            return false;
+        }
+        if query.status.as_deref().is_some_and(|status| {
+            let event_status = match event.status {
+                gateway_core::UsageStatus::Success => "success",
+                gateway_core::UsageStatus::Failure => "failure",
+            };
+            event_status != status
+        }) {
+            return false;
+        }
+        true
+    }
+
+    fn usage_summary_from_rows(rows: &[UsageExportRow]) -> UsageSummary {
+        UsageSummary {
+            request_count: i64::try_from(rows.len()).unwrap_or(i64::MAX),
+            success_count: i64::try_from(rows.iter().filter(|row| row.status == "success").count())
+                .unwrap_or(i64::MAX),
+            failure_count: i64::try_from(rows.iter().filter(|row| row.status == "failure").count())
+                .unwrap_or(i64::MAX),
+            input_tokens: rows.iter().map(|row| row.input_tokens).sum(),
+            output_tokens: rows.iter().map(|row| row.output_tokens).sum(),
+            total_tokens: rows.iter().map(|row| row.total_tokens).sum(),
+            estimated_cost_usd: Some(
+                rows.iter()
+                    .filter_map(|row| row.estimated_cost_usd)
+                    .sum::<f64>(),
+            ),
+            total_latency_ms: rows.iter().map(|row| row.latency_ms).sum(),
+            fallback_count: rows.iter().map(|row| i64::from(row.fallback_count)).sum(),
         }
     }
 
@@ -2984,6 +3193,86 @@ mod tests {
         .await;
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn usage_export_json_and_csv_filter_by_status() {
+        let store = default_store();
+        let key_id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+        store.events.lock().expect("events lock").extend([
+            UsageEvent {
+                request_id: "req-success".to_owned(),
+                key_id,
+                project_id: Some(project_id),
+                route: Route::ChatCompletions,
+                model: Some("gpt-test".to_owned()),
+                provider: gateway_core::Provider::LiteLlm,
+                status: UsageStatus::Success,
+                status_code: 200,
+                latency_ms: 25,
+                input_tokens: Some(3),
+                output_tokens: Some(4),
+                total_tokens: Some(7),
+                estimated_cost_usd: Some(0.25),
+                service_name: None,
+                task_id: Some("task-1".to_owned()),
+                run_id: Some("run-1".to_owned()),
+                fallback_count: 1,
+                created_at: Utc::now(),
+            },
+            UsageEvent {
+                request_id: "=req-failure".to_owned(),
+                key_id,
+                project_id: Some(project_id),
+                route: Route::ChatCompletions,
+                model: Some("gpt-test".to_owned()),
+                provider: gateway_core::Provider::LiteLlm,
+                status: UsageStatus::Failure,
+                status_code: 502,
+                latency_ms: 50,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: None,
+                service_name: None,
+                task_id: Some("task-1".to_owned()),
+                run_id: Some("run-2".to_owned()),
+                fallback_count: 0,
+                created_at: Utc::now(),
+            },
+        ]);
+        let app = router_with_state(test_state(store));
+
+        let response = admin_get(
+            app.clone(),
+            "/admin-ui/admin/usage/export.json?status=success",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["summary"]["request_count"], 1);
+        assert_eq!(value["summary"]["estimated_cost_usd"], 0.25);
+        assert_eq!(value["rows"][0]["request_id"], "req-success");
+
+        let response = admin_get(
+            app,
+            "/admin-ui/admin/usage/export.csv?status=failure",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let csv = String::from_utf8(body.to_vec()).expect("csv");
+        assert!(csv.starts_with("request_id,key_id,project_id"));
+        assert!(csv.contains("'=req-failure"));
+        assert!(!csv.contains("req-success"));
     }
 
     #[tokio::test]

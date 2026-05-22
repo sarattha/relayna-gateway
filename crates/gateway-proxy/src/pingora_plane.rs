@@ -6,16 +6,16 @@ use bytes::Bytes;
 use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
-    evaluate_policy, execution_events_from_records, extract_client_guardrails,
-    extract_estimated_cost_usd, extract_generation_features, extract_model, extract_usage_tokens,
-    guardrail_executor_for_definitions, is_retry_safe_status, redact_pii_text,
-    resolve_guardrail_plan, route_pattern_wildcard_suffix, service_wildcard_suffix,
-    strip_client_guardrails, AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError,
-    GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent, GuardrailMode,
-    GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet, GuardrailStore,
-    OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup, RateLimitDecision,
-    RateLimitStore, Route, RouteMatch, ServiceRegistryLookup, ServiceRouteLookup, UsageEvent,
-    UsageRecorder,
+    estimate_generation_tokens, evaluate_policy, execution_events_from_records,
+    extract_client_guardrails, extract_estimated_cost_usd, extract_generation_features,
+    extract_model, extract_usage_tokens, guardrail_executor_for_definitions, is_retry_safe_status,
+    redact_pii_text, resolve_guardrail_plan, route_pattern_wildcard_suffix,
+    service_wildcard_suffix, strip_client_guardrails, AuthenticatedKey, BudgetDecision,
+    BudgetStore, GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition,
+    GuardrailExecutionEvent, GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy,
+    GuardrailPolicySet, GuardrailStore, OpenAiRouteSettingsLookup, PolicyLookup, Provider,
+    ProviderConfigLookup, RateLimitDecision, RateLimitStore, Route, RouteMatch,
+    ServiceRegistryLookup, ServiceRouteLookup, UsageEvent, UsageRecorder,
 };
 use http::Uri;
 use pingora_core::{
@@ -612,6 +612,34 @@ where
             }
         }
 
+        let estimated_tokens = estimate_generation_tokens(&ctx.body_prefix);
+        match self
+            .control_state
+            .check_token_rate_limit(key.key_id, policy.tpm_limit, estimated_tokens, now)
+            .await
+        {
+            Ok(RateLimitDecision::Allowed { .. }) => {}
+            Ok(RateLimitDecision::Exceeded {
+                retry_after_seconds,
+                ..
+            }) => {
+                gateway_telemetry::record_rate_limit_rejection();
+                let error = GatewayError::TokenRateLimitExceeded {
+                    retry_after_seconds,
+                };
+                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                    .await;
+                respond_error(session, error, &ctx.request_id).await?;
+                return Ok(false);
+            }
+            Err(error) => {
+                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                    .await;
+                respond_error(session, error, &ctx.request_id).await?;
+                return Ok(false);
+            }
+        }
+
         match self
             .control_state
             .check_budget(
@@ -623,25 +651,25 @@ where
             .await
         {
             Ok(BudgetDecision::Allowed(_)) => {
-                if ctx.is_streaming {
-                    if let Some(estimated_cost_usd) = matched.estimated_cost_usd {
-                        if let Err(error) = self
-                            .control_state
-                            .reserve_budget(key.key_id, &ctx.request_id, estimated_cost_usd, now)
-                            .await
-                        {
-                            self.record_terminal_usage(
-                                ctx,
-                                &key,
-                                route,
-                                error.status_code().as_u16(),
-                                now,
-                            )
-                            .await;
-                            respond_error(session, error, &ctx.request_id).await?;
-                            return Ok(false);
-                        }
-                        ctx.budget_reserved = true;
+                if let Some(estimated_cost_usd) = matched.estimated_cost_usd {
+                    if let Err(error) = self
+                        .control_state
+                        .reserve_budget(key.key_id, &ctx.request_id, estimated_cost_usd, now)
+                        .await
+                    {
+                        self.record_terminal_usage(
+                            ctx,
+                            &key,
+                            route,
+                            error.status_code().as_u16(),
+                            now,
+                        )
+                        .await;
+                        respond_error(session, error, &ctx.request_id).await?;
+                        return Ok(false);
+                    }
+                    ctx.budget_reserved = true;
+                    if ctx.is_streaming {
                         gateway_telemetry::stream_started();
                     }
                 }
@@ -1817,6 +1845,16 @@ mod tests {
             &self,
             _key_id: Uuid,
             _rpm_limit: Option<i32>,
+            _now: DateTime<Utc>,
+        ) -> GatewayResult<RateLimitDecision> {
+            Ok(RateLimitDecision::Allowed { count: 1 })
+        }
+
+        async fn check_token_rate_limit(
+            &self,
+            _key_id: Uuid,
+            _tpm_limit: Option<i32>,
+            _estimated_tokens: i64,
             _now: DateTime<Utc>,
         ) -> GatewayResult<RateLimitDecision> {
             Ok(RateLimitDecision::Allowed { count: 1 })
