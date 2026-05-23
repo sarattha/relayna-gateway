@@ -317,23 +317,6 @@ where
                         return Ok(true);
                     }
                 }
-                match self
-                    .store
-                    .effective_policy_for_context(
-                        key.key_id,
-                        key.project_id,
-                        None,
-                        Some(matched.route),
-                        None,
-                    )
-                    .await
-                {
-                    Ok(effective) => ctx.guardrail_policy = effective.guardrail_policy,
-                    Err(error) => {
-                        respond_error(session, error, &ctx.request_id).await?;
-                        return Ok(true);
-                    }
-                }
                 if let Some(service_name) = matched.service_name.as_deref() {
                     if ctx.service_upstream.is_some() {
                         ctx.route_match = Some(matched);
@@ -437,7 +420,41 @@ where
         let route_match = ctx.route_match.clone();
         let request_id = ctx.request_id.clone();
         let definitions = ctx.guardrail_definitions.clone();
-        let policy = ctx.guardrail_policy.clone();
+        let mut policy = ctx.guardrail_policy.clone();
+        if end_of_stream {
+            let raw_body = match rewriter.preview_with_chunk(body.as_ref()) {
+                Ok(raw_body) => raw_body,
+                Err(error) => {
+                    ctx.guardrail_error = Some(error);
+                    *body = Some(Bytes::new());
+                    return Ok(());
+                }
+            };
+            let features = extract_generation_features(&raw_body);
+            if let Some(key) = key.as_ref() {
+                match self
+                    .store
+                    .effective_policy_for_context(
+                        key.key_id,
+                        key.project_id,
+                        None,
+                        route,
+                        features.model.clone(),
+                    )
+                    .await
+                {
+                    Ok(effective) => {
+                        policy = effective.guardrail_policy;
+                        ctx.guardrail_policy = policy.clone();
+                    }
+                    Err(error) => {
+                        ctx.guardrail_error = Some(error);
+                        *body = Some(Bytes::new());
+                        return Ok(());
+                    }
+                }
+            }
+        }
         let mut guardrail_context = ctx.guardrail_context.clone();
         let mut pre_plan = None;
         let mut post_plan = None;

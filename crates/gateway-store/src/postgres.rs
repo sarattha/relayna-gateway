@@ -30,10 +30,10 @@ use gateway_core::{
     GuardrailEventQuery, GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode,
     GuardrailObservabilityStore, GuardrailPolicy, GuardrailProviderKind, GuardrailStore, KeyPolicy,
     OpenAiRouteSetting, OpenAiRouteSettingsLookup, OperatorAuthorization, OperatorTokenMaterial,
-    OperatorTokenResponse, OperatorTokenStore, PolicyLayer, PolicyLayerKind, PolicyLookup,
-    ProjectUsageSummary, Provider, ProviderHealth, Route, StoredOperatorToken, UsageBreakdown,
-    UsageBreakdownDimension, UsageEvent, UsageExport, UsageExportRow, UsageQuery, UsageQueryStore,
-    UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
+    OperatorTokenResponse, OperatorTokenStore, PolicyLayer, PolicyLayerKind, ProjectUsageSummary,
+    Provider, ProviderHealth, Route, StoredOperatorToken, UsageBreakdown, UsageBreakdownDimension,
+    UsageEvent, UsageExport, UsageExportRow, UsageQuery, UsageQueryStore, UsageRecorder,
+    UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -469,6 +469,130 @@ impl PostgresStore {
         .map(|row| stored_operator_token_from_row(&row))
         .transpose()
         .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn stored_policy_for_key(&self, key_id: Uuid) -> GatewayResult<KeyPolicy> {
+        let Some(row) = sqlx::query(
+            r#"
+            SELECT
+                COALESCE(p.allowed_routes, ARRAY['/v1/chat/completions', '/v1/responses']::text[]) AS allowed_routes,
+                COALESCE(p.allowed_models, ARRAY[]::text[]) AS allowed_models,
+                COALESCE(p.allowed_providers, ARRAY['litellm']::text[]) AS allowed_providers,
+                COALESCE(p.allowed_services, ARRAY[]::text[]) AS allowed_services,
+                p.rpm_limit,
+                p.tpm_limit,
+                p.daily_budget_usd,
+                p.monthly_budget_usd,
+                COALESCE(p.allow_streaming, false) AS allow_streaming,
+                COALESCE(p.allow_tools, false) AS allow_tools,
+                COALESCE(p.deny, false) AS deny,
+                p.max_requests_per_day,
+                p.max_tokens_per_day,
+                p.max_cost_per_request,
+                p.max_input_tokens_per_request,
+                p.max_output_tokens_per_request,
+                COALESCE(p.allowed_hours_utc, ARRAY[]::integer[]) AS allowed_hours_utc,
+                p.unused_key_auto_disable_after_days,
+                p.max_request_body_bytes,
+                p.max_response_body_bytes,
+                p.max_stream_duration_seconds,
+                p.max_sse_event_bytes,
+                p.max_tool_call_count,
+                p.max_tool_schema_bytes,
+                COALESCE(p.policy_version, 1) AS policy_version
+            FROM api_keys k
+            LEFT JOIN key_policies p ON p.key_id = k.id
+            WHERE k.id = $1
+            "#,
+        )
+        .bind(key_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        else {
+            return Ok(KeyPolicy::default());
+        };
+
+        let allowed_routes: Vec<String> = row
+            .try_get("allowed_routes")
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let allowed_models: Vec<String> = row
+            .try_get("allowed_models")
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let allowed_providers: Vec<String> = row
+            .try_get("allowed_providers")
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let allowed_services: Vec<String> = row
+            .try_get("allowed_services")
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(KeyPolicy {
+            deny: row.try_get("deny").unwrap_or(false),
+            allowed_routes: parse_routes(&allowed_routes)?,
+            allowed_models,
+            allowed_providers: parse_providers(&allowed_providers)?,
+            allowed_services,
+            rpm_limit: row.try_get("rpm_limit").ok().flatten(),
+            tpm_limit: row.try_get("tpm_limit").ok().flatten(),
+            daily_budget_usd: row.try_get("daily_budget_usd").ok().flatten(),
+            monthly_budget_usd: row.try_get("monthly_budget_usd").ok().flatten(),
+            allow_streaming: row.try_get("allow_streaming").unwrap_or(false),
+            allow_tools: row.try_get("allow_tools").unwrap_or(false),
+            max_requests_per_day: row.try_get("max_requests_per_day").ok().flatten(),
+            max_tokens_per_day: row.try_get("max_tokens_per_day").ok().flatten(),
+            max_cost_per_request: row.try_get("max_cost_per_request").ok().flatten(),
+            max_input_tokens_per_request: row
+                .try_get("max_input_tokens_per_request")
+                .ok()
+                .flatten(),
+            max_output_tokens_per_request: row
+                .try_get("max_output_tokens_per_request")
+                .ok()
+                .flatten(),
+            allowed_hours_utc: row.try_get("allowed_hours_utc").unwrap_or_default(),
+            unused_key_auto_disable_after_days: row
+                .try_get("unused_key_auto_disable_after_days")
+                .ok()
+                .flatten(),
+            max_request_body_bytes: row.try_get("max_request_body_bytes").ok().flatten(),
+            max_response_body_bytes: row.try_get("max_response_body_bytes").ok().flatten(),
+            max_stream_duration_seconds: row.try_get("max_stream_duration_seconds").ok().flatten(),
+            max_sse_event_bytes: row.try_get("max_sse_event_bytes").ok().flatten(),
+            max_tool_call_count: row.try_get("max_tool_call_count").ok().flatten(),
+            max_tool_schema_bytes: row.try_get("max_tool_schema_bytes").ok().flatten(),
+            policy_version: row.try_get("policy_version").unwrap_or(1),
+        })
+    }
+
+    async fn apply_daily_cap_denials(
+        &self,
+        key_id: Uuid,
+        policy: &mut KeyPolicy,
+    ) -> GatewayResult<()> {
+        if policy.max_requests_per_day.is_none() && policy.max_tokens_per_day.is_none() {
+            return Ok(());
+        }
+        let (daily_requests, daily_tokens) = sqlx::query_as::<_, (i64, i64)>(
+            r#"
+            SELECT COUNT(*)::bigint, COALESCE(SUM(total_tokens), 0)::bigint
+            FROM usage_events
+            WHERE key_id = $1
+              AND created_at >= date_trunc('day', now())
+            "#,
+        )
+        .bind(key_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        if policy
+            .max_requests_per_day
+            .is_some_and(|limit| daily_requests >= i64::from(limit))
+            || policy
+                .max_tokens_per_day
+                .is_some_and(|limit| daily_tokens >= i64::from(limit))
+        {
+            policy.deny = true;
+        }
+        Ok(())
     }
 
     async fn upsert_studio_service(
@@ -979,7 +1103,7 @@ impl gateway_core::PolicyLookup for PostgresStore {
             }
         }
 
-        let mut key_policy = KeyPolicy {
+        let key_policy = KeyPolicy {
             deny,
             allowed_routes: parse_routes(&derived_routes)?,
             allowed_models,
@@ -1006,29 +1130,6 @@ impl gateway_core::PolicyLookup for PostgresStore {
             max_tool_schema_bytes,
             policy_version,
         };
-        if key_policy.max_requests_per_day.is_some() || key_policy.max_tokens_per_day.is_some() {
-            let (daily_requests, daily_tokens) = sqlx::query_as::<_, (i64, i64)>(
-                r#"
-                SELECT COUNT(*)::bigint, COALESCE(SUM(total_tokens), 0)::bigint
-                FROM usage_events
-                WHERE key_id = $1
-                  AND created_at >= date_trunc('day', now())
-                "#,
-            )
-            .bind(key_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
-            if key_policy
-                .max_requests_per_day
-                .is_some_and(|limit| daily_requests >= i64::from(limit))
-                || key_policy
-                    .max_tokens_per_day
-                    .is_some_and(|limit| daily_tokens >= i64::from(limit))
-            {
-                key_policy.deny = true;
-            }
-        }
         let mut layers = self
             .policy_layers_for_context(project_id, team_id, route, model, &key_policy)
             .await?;
@@ -1042,7 +1143,10 @@ impl gateway_core::PolicyLookup for PostgresStore {
                 .unwrap_or_default(),
             policy_version,
         });
-        Ok(resolve_effective_policy(layers)?.policy)
+        let mut effective_policy = resolve_effective_policy(layers)?.policy;
+        self.apply_daily_cap_denials(key_id, &mut effective_policy)
+            .await?;
+        Ok(effective_policy)
     }
 }
 
@@ -1744,7 +1848,7 @@ impl AdminKeyStore for PostgresStore {
         }
 
         let policy = if let Some(policy_patch) = patch.policy {
-            let current = self.policy_for_key(key_id).await?;
+            let current = self.stored_policy_for_key(key_id).await?;
             Some(apply_policy_patch(current, policy_patch)?)
         } else {
             None
