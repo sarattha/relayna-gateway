@@ -15,8 +15,8 @@ use gateway_core::{
     GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent, GuardrailMode,
     GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet, GuardrailStore,
     KeyPolicy, OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
-    RateLimitDecision, RateLimitStore, Route, RouteMatch, ServiceRegistryLookup,
-    ServiceRouteLookup, UsageEvent, UsageRecorder,
+    ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route, RouteMatch,
+    ServiceRegistryLookup, ServiceRouteLookup, UsageEvent, UsageRecorder,
 };
 use http::Uri;
 use pingora_core::{
@@ -26,6 +26,8 @@ use pingora_core::{
 use pingora_http::{RequestHeader, ResponseHeader};
 use pingora_proxy::{ProxyHttp, Session};
 use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -183,6 +185,7 @@ where
         + OpenAiRouteSettingsLookup
         + ProviderConfigLookup
         + GuardrailStore
+        + ProviderIntelligenceStore
         + Send
         + Sync
         + 'static,
@@ -744,6 +747,7 @@ where
                         gateway_telemetry::stream_started();
                     }
                 }
+                gateway_telemetry::record_provider_selection();
                 Ok(true)
             }
             Ok(BudgetDecision::Exceeded(_)) => {
@@ -1006,6 +1010,10 @@ where
         .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
         .with_fallback_count(ctx.fallback_count);
         let _ = self.store.insert_usage_event(&event).await;
+        let _ = self
+            .store
+            .insert_debug_bundle(debug_bundle_for_ctx(ctx, status_code))
+            .await;
         gateway_telemetry::record_request(status_code);
         if let Some(tokens) = event.total_tokens {
             gateway_telemetry::record_tokens(tokens);
@@ -1107,6 +1115,7 @@ where
             return false;
         }
         ctx.fallback_count = 1;
+        gateway_telemetry::record_provider_fallback();
         true
     }
 
@@ -1145,7 +1154,7 @@ where
 
 impl<S, R> RelaynaPingoraProxy<S, R>
 where
-    S: UsageRecorder,
+    S: UsageRecorder + ProviderIntelligenceStore,
     R: BudgetStore,
 {
     async fn record_terminal_usage(
@@ -1185,6 +1194,10 @@ where
         .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
         .with_fallback_count(ctx.fallback_count);
         let _ = self.store.insert_usage_event(&event).await;
+        let _ = self
+            .store
+            .insert_debug_bundle(debug_bundle_for_ctx(ctx, status_code))
+            .await;
         gateway_telemetry::record_request(status_code);
         if ctx.budget_reserved {
             let _ = self
@@ -1482,6 +1495,74 @@ fn provider_for_usage(ctx: &PingoraContext) -> Provider {
         .as_ref()
         .map(|matched| matched.provider)
         .unwrap_or(Provider::LiteLlm)
+}
+
+fn debug_bundle_for_ctx(ctx: &PingoraContext, status_code: u16) -> gateway_core::DebugBundle {
+    let provider = provider_for_usage(ctx);
+    let route = ctx.route;
+    let service_name = ctx
+        .route_match
+        .as_ref()
+        .and_then(|matched| matched.service_name.clone());
+    let mut selection_trace = vec![format!("provider={}", provider.as_str())];
+    if let Some(matched) = &ctx.route_match {
+        selection_trace.push(format!("backend={:?}", matched.backend));
+        selection_trace.push(format!("timeout_ms={}", matched.timeout_ms));
+    }
+    let fallback_history = if ctx.fallback_count > 0 {
+        vec![gateway_core::FallbackAttempt {
+            from_provider: Provider::OpenAiCompatible.as_str().to_owned(),
+            to_provider: Provider::LiteLlm.as_str().to_owned(),
+            reason: "retry_safe_upstream_failure".to_owned(),
+            status_code: Some(status_code),
+            latency_ms: Some(i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX)),
+        }]
+    } else {
+        Vec::new()
+    };
+    gateway_core::DebugBundle {
+        request_id: ctx.request_id.clone(),
+        route,
+        provider: Some(provider),
+        service_name,
+        policy_trace: ctx
+            .policy
+            .as_ref()
+            .map(|policy| {
+                vec![
+                    format!("policy_version={}", policy.policy_version),
+                    format!("deny={}", policy.deny),
+                ]
+            })
+            .unwrap_or_else(|| vec!["policy_not_loaded".to_owned()]),
+        guardrail_trace: ctx
+            .guardrail_events
+            .iter()
+            .map(|event| format!("{}:{}", event.mode.as_str(), event.guardrail_name))
+            .collect(),
+        selection_trace,
+        fallback_history,
+        upstream_latency_ms: Some(
+            i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX),
+        ),
+        request_hash: hash_prefix(&ctx.body_prefix),
+        response_hash: hash_prefix(&ctx.response_body_prefix),
+        redaction_version: 1,
+        created_at: Utc::now(),
+    }
+}
+
+fn hash_prefix(bytes: &[u8]) -> Option<String> {
+    if bytes.is_empty() {
+        return None;
+    }
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    Some(format!(
+        "siphash:{:016x}:len={}",
+        hasher.finish(),
+        bytes.len()
+    ))
 }
 
 fn service_upstream_from_registration(
@@ -1921,6 +2002,7 @@ mod tests {
 
     struct MemoryUsageStore {
         events: Mutex<Vec<UsageEvent>>,
+        debug_bundles: Mutex<Vec<gateway_core::DebugBundle>>,
         guardrail_events: Mutex<Vec<GuardrailExecutionEvent>>,
         openai_routes_enabled: Mutex<bool>,
     }
@@ -1929,6 +2011,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 events: Mutex::new(Vec::new()),
+                debug_bundles: Mutex::new(Vec::new()),
                 guardrail_events: Mutex::new(Vec::new()),
                 openai_routes_enabled: Mutex::new(true),
             }
@@ -1940,6 +2023,85 @@ mod tests {
         async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()> {
             self.events.lock().expect("events lock").push(event.clone());
             Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl ProviderIntelligenceStore for MemoryUsageStore {
+        async fn list_provider_health_states(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::ProviderHealthState>> {
+            Ok(Vec::new())
+        }
+
+        async fn provider_health_check_targets(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::ProviderHealthCheckTarget>> {
+            Ok(Vec::new())
+        }
+
+        async fn upsert_provider_health_state(
+            &self,
+            state: gateway_core::ProviderHealthState,
+        ) -> GatewayResult<gateway_core::ProviderHealthState> {
+            Ok(state)
+        }
+
+        async fn get_debug_bundle(
+            &self,
+            request_id: &str,
+        ) -> GatewayResult<Option<gateway_core::DebugBundle>> {
+            Ok(self
+                .debug_bundles
+                .lock()
+                .expect("debug bundles lock")
+                .iter()
+                .find(|bundle| bundle.request_id == request_id)
+                .cloned())
+        }
+
+        async fn insert_debug_bundle(
+            &self,
+            bundle: gateway_core::DebugBundle,
+        ) -> GatewayResult<()> {
+            self.debug_bundles
+                .lock()
+                .expect("debug bundles lock")
+                .push(bundle);
+            Ok(())
+        }
+
+        async fn list_service_registry_snapshots(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::ServiceRegistrySnapshot>> {
+            Ok(Vec::new())
+        }
+
+        async fn insert_service_registry_snapshot(
+            &self,
+            snapshot: gateway_core::ServiceRegistrySnapshot,
+        ) -> GatewayResult<gateway_core::ServiceRegistrySnapshot> {
+            Ok(snapshot)
+        }
+
+        async fn service_registry_snapshot(
+            &self,
+            _version: i64,
+        ) -> GatewayResult<Option<gateway_core::ServiceRegistrySnapshot>> {
+            Ok(None)
+        }
+
+        async fn activate_service_registry_import(
+            &self,
+            _source: String,
+            _diff: gateway_core::ServiceImportDiff,
+            _services: Vec<gateway_core::StudioServiceImportRequest>,
+            _rolled_back_from_version: Option<i64>,
+        ) -> GatewayResult<(
+            gateway_core::ServiceRegistrySnapshot,
+            Vec<gateway_core::ServiceResponse>,
+        )> {
+            Err(GatewayError::StoreUnavailable)
         }
     }
 
@@ -2146,5 +2308,34 @@ mod tests {
         assert_eq!(events[0].request_id, "req_fallback");
         assert_eq!(events[0].provider, Provider::LiteLlm);
         assert_eq!(events[0].fallback_count, 1);
+    }
+
+    #[test]
+    fn debug_bundle_hashes_prefixes_without_storing_prompt_text() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.request_id = "req_debug".to_owned();
+        ctx.route = Some(Route::ChatCompletions);
+        ctx.route_match =
+            Some(Route::resolve_match(&http::Method::POST, "/v1/chat/completions").expect("route"));
+        ctx.body_prefix = br#"{"messages":[{"content":"secret prompt"}]}"#.to_vec();
+        ctx.response_body_prefix =
+            br#"{"choices":[{"message":{"content":"secret answer"}}]}"#.to_vec();
+
+        let bundle = debug_bundle_for_ctx(&ctx, 200);
+
+        assert_eq!(bundle.request_id, "req_debug");
+        assert!(bundle
+            .request_hash
+            .as_ref()
+            .expect("request hash")
+            .starts_with("siphash:"));
+        assert!(bundle
+            .response_hash
+            .as_ref()
+            .expect("response hash")
+            .starts_with("siphash:"));
+        let encoded = serde_json::to_string(&bundle).expect("json");
+        assert!(!encoded.contains("secret prompt"));
+        assert!(!encoded.contains("secret answer"));
     }
 }

@@ -35,6 +35,8 @@ test("admin portal calls the expected gateway admin APIs", () => {
   for (const endpoint of [
     "/admin-ui/admin/usage/summary",
     "/admin-ui/admin/provider-health",
+    "/admin-ui/admin/provider-health/check",
+    "/admin-ui/admin/provider-health/state",
     "/admin-ui/admin/projects",
     "/admin-ui/admin/providers",
     "/admin-ui/admin/openai-routes",
@@ -48,6 +50,11 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin-ui/admin/studio/connection",
     "/admin-ui/admin/studio/connection/test",
     "/admin-ui/admin/studio/services",
+    "/admin-ui/admin/services/import/preview",
+    "/admin-ui/admin/services/import/activate",
+    "/admin-ui/admin/services/import/versions",
+    "/admin-ui/admin/services/import/rollback",
+    "/admin-ui/admin/debug-bundles",
     "/admin-ui/admin/operator-token/rotate",
     "/admin-ui/readyz",
   ]) {

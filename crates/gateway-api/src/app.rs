@@ -7,6 +7,7 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
+use gateway_core::CircuitBreakerState;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
     evaluate_policy, evaluate_policy_limits, extract_generation_features,
@@ -22,14 +23,15 @@ use gateway_core::{
     GuardrailTestRequest, GuardrailTestResponse, KeyPolicy, OperatorAuthorization,
     OperatorTokenMaterial, OperatorTokenStore, PolicyLookup, ProjectCreateRequest,
     ProjectPatchRequest, ProjectResponse, Provider, ProviderConfigCreateRequest,
-    ProviderConfigPatchRequest, ProviderConfigResponse, Route, ServiceCreateRequest,
-    ServicePatchRequest, ServiceResponse, StudioConnectionEnv, StudioConnectionPatchRequest,
-    StudioConnectionTestResponse, StudioServiceCatalogResponse, StudioServiceImportPreview,
-    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery,
-    UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE,
-    SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE,
-    SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT,
-    SCOPE_USAGE_READ,
+    ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus,
+    ProviderIntelligenceStore, Route, ServiceCreateRequest, ServiceImportDiff,
+    ServiceImportValidationIssue, ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse,
+    StudioConnectionEnv, StudioConnectionPatchRequest, StudioConnectionTestResponse,
+    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
+    UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery, UsageQueryStore,
+    VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE,
+    SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE,
+    SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::{Deserialize, Serialize};
@@ -53,6 +55,7 @@ pub trait GatewayData:
     + AdminStudioConnectionStore
     + GuardrailStore
     + GuardrailObservabilityStore
+    + ProviderIntelligenceStore
     + OperatorTokenStore
     + AdminAuditStore
     + UsageQueryStore
@@ -289,6 +292,34 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin-ui/admin/usage/export.csv", get(usage_export_csv))
         .route("/admin-ui/admin/tasks/{task_id}/usage", get(task_usage))
         .route("/admin-ui/admin/provider-health", get(provider_health))
+        .route(
+            "/admin-ui/admin/provider-health/state",
+            get(provider_health_state).post(upsert_provider_health_state),
+        )
+        .route(
+            "/admin-ui/admin/provider-health/check",
+            post(run_provider_health_checks),
+        )
+        .route(
+            "/admin-ui/admin/debug-bundles/{request_id}",
+            get(get_debug_bundle),
+        )
+        .route(
+            "/admin-ui/admin/services/import/preview",
+            post(preview_service_import),
+        )
+        .route(
+            "/admin-ui/admin/services/import/activate",
+            post(activate_service_import),
+        )
+        .route(
+            "/admin-ui/admin/services/import/versions",
+            get(service_import_versions),
+        )
+        .route(
+            "/admin-ui/admin/services/import/rollback/{version}",
+            post(rollback_service_import),
+        )
         .route("/admin-ui/metrics", get(metrics))
         .route("/admin-ui", get(admin_ui_index))
         .route("/admin-ui/{*path}", get(admin_ui_asset))
@@ -1978,6 +2009,145 @@ async fn provider_health(
     .await
 }
 
+async fn provider_health_state(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+        store.list_provider_health_states().await
+    })
+    .await
+}
+
+async fn upsert_provider_health_state(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ProviderHealthState>,
+) -> Response {
+    admin_query(
+        headers,
+        &state,
+        SCOPE_PROVIDERS_UPDATE,
+        |store| async move { store.upsert_provider_health_state(request).await },
+    )
+    .await
+}
+
+async fn run_provider_health_checks(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    admin_query(
+        headers,
+        &state,
+        SCOPE_PROVIDERS_UPDATE,
+        |store| async move {
+            let targets = store.provider_health_check_targets().await?;
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(3))
+                .build()
+                .map_err(|_| GatewayError::InvalidConfiguration)?;
+            let mut results = Vec::new();
+
+            for target in targets {
+                let checked = active_health_check(
+                    &client,
+                    &target.name,
+                    target.base_url.clone(),
+                    target.credential.as_deref(),
+                )
+                .await;
+                let state = provider_health_state_from_check(target.name, target.provider, checked);
+                results.push(store.upsert_provider_health_state(state).await?);
+            }
+
+            Ok(ProviderHealthCheckResponse { results })
+        },
+    )
+    .await
+}
+
+async fn get_debug_bundle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(request_id): Path<String>,
+) -> Response {
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_USAGE_READ).await {
+        return response;
+    }
+    match state.store.get_debug_bundle(&request_id).await {
+        Ok(Some(bundle)) => Json(bundle).into_response(),
+        Ok(None) => error_response(&headers, GatewayError::UnsupportedRoute),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn preview_service_import(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ServiceImportBatchRequest>,
+) -> Response {
+    admin_query(headers, &state, SCOPE_SERVICES_UPDATE, |store| async move {
+        let existing = store.list_services().await?;
+        let diff = service_import_diff(&existing, &request.services);
+        Ok(ServiceImportPreviewResponse { diff })
+    })
+    .await
+}
+
+async fn activate_service_import(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ServiceImportBatchRequest>,
+) -> Response {
+    admin_query(headers, &state, SCOPE_SERVICES_UPDATE, |store| async move {
+        let existing = store.list_services().await?;
+        let diff = service_import_diff(&existing, &request.services);
+        if !diff.invalid.is_empty() {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+        let (snapshot, services) = store
+            .activate_service_registry_import(
+                request.source.unwrap_or_else(|| "admin-api".to_owned()),
+                diff,
+                request.services,
+                None,
+            )
+            .await?;
+        Ok(ServiceImportActivationResponse { snapshot, services })
+    })
+    .await
+}
+
+async fn service_import_versions(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    admin_query(headers, &state, SCOPE_SERVICES_UPDATE, |store| async move {
+        store.list_service_registry_snapshots().await
+    })
+    .await
+}
+
+async fn rollback_service_import(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(version): Path<i64>,
+) -> Response {
+    admin_query(headers, &state, SCOPE_SERVICES_UPDATE, |store| async move {
+        let Some(snapshot) = store.service_registry_snapshot(version).await? else {
+            return Err(GatewayError::MissingService);
+        };
+        let services: Vec<StudioServiceImportRequest> =
+            serde_json::from_value(snapshot.services_json.clone())
+                .map_err(|_| GatewayError::InvalidServicePayload)?;
+        let (rollback_snapshot, activated) = store
+            .activate_service_registry_import(
+                "rollback".to_owned(),
+                snapshot.diff.clone(),
+                services,
+                Some(version),
+            )
+            .await?;
+        Ok(ServiceImportActivationResponse {
+            snapshot: rollback_snapshot,
+            services: activated,
+        })
+    })
+    .await
+}
+
 async fn admin_query<T, Fut>(
     headers: HeaderMap,
     state: &AppState,
@@ -2426,6 +2596,203 @@ struct AdminGuardrailExecutionListResponse {
 #[derive(Debug, Serialize)]
 struct AdminGuardrailSummaryResponse {
     summary: Vec<GuardrailExecutionSummary>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ServiceImportBatchRequest {
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    services: Vec<StudioServiceImportRequest>,
+}
+
+#[derive(Debug, Serialize)]
+struct ServiceImportPreviewResponse {
+    diff: ServiceImportDiff,
+}
+
+#[derive(Debug, Serialize)]
+struct ServiceImportActivationResponse {
+    snapshot: ServiceRegistrySnapshot,
+    services: Vec<ServiceResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProviderHealthCheckResponse {
+    results: Vec<ProviderHealthState>,
+}
+
+struct ActiveHealthCheck {
+    ok: bool,
+    latency_ms: Option<i64>,
+    error_code: Option<String>,
+    checked_at: chrono::DateTime<Utc>,
+}
+
+async fn active_health_check(
+    client: &reqwest::Client,
+    name: &str,
+    base_url: Option<String>,
+    credential: Option<&str>,
+) -> ActiveHealthCheck {
+    let checked_at = Utc::now();
+    let Some(base_url) = base_url else {
+        return ActiveHealthCheck {
+            ok: false,
+            latency_ms: None,
+            error_code: Some("missing_upstream_url".to_owned()),
+            checked_at,
+        };
+    };
+    let Ok(url) = reqwest::Url::parse(&base_url) else {
+        return ActiveHealthCheck {
+            ok: false,
+            latency_ms: None,
+            error_code: Some("invalid_upstream_url".to_owned()),
+            checked_at,
+        };
+    };
+    let started = std::time::Instant::now();
+    let mut request = client.get(url);
+    if let Some(credential) = credential.filter(|value| !value.trim().is_empty()) {
+        request = request.bearer_auth(credential);
+    }
+    match request.send().await {
+        Ok(response) if response.status().is_success() => ActiveHealthCheck {
+            ok: true,
+            latency_ms: Some(i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX)),
+            error_code: None,
+            checked_at,
+        },
+        Ok(response) => ActiveHealthCheck {
+            ok: false,
+            latency_ms: Some(i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX)),
+            error_code: Some(format!("http_{}", response.status().as_u16())),
+            checked_at,
+        },
+        Err(error) => ActiveHealthCheck {
+            ok: false,
+            latency_ms: Some(i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX)),
+            error_code: Some(if error.is_timeout() {
+                "timeout".to_owned()
+            } else {
+                format!("health_check_failed:{name}")
+            }),
+            checked_at,
+        },
+    }
+}
+
+fn provider_health_state_from_check(
+    name: String,
+    provider: Provider,
+    checked: ActiveHealthCheck,
+) -> ProviderHealthState {
+    ProviderHealthState {
+        name,
+        provider,
+        status: if checked.ok {
+            ProviderHealthStatus::Healthy
+        } else {
+            ProviderHealthStatus::Unhealthy
+        },
+        circuit_state: if checked.ok {
+            CircuitBreakerState::Closed
+        } else {
+            CircuitBreakerState::Open
+        },
+        active_check_ok: Some(checked.ok),
+        passive_success_count: i64::from(checked.ok),
+        passive_failure_count: i64::from(!checked.ok),
+        consecutive_failures: i32::from(!checked.ok),
+        average_latency_ms: checked.latency_ms,
+        last_error_code: checked.error_code,
+        cooldown_until: None,
+        checked_at: Some(checked.checked_at),
+        updated_at: Utc::now(),
+    }
+}
+
+fn service_import_diff(
+    existing: &[ServiceResponse],
+    requested: &[StudioServiceImportRequest],
+) -> ServiceImportDiff {
+    let requested_names: std::collections::BTreeSet<_> = requested
+        .iter()
+        .map(|service| service.name.clone())
+        .collect();
+    let existing_names: std::collections::BTreeSet<_> = existing
+        .iter()
+        .map(|service| service.name.clone())
+        .collect();
+    let added = requested_names
+        .difference(&existing_names)
+        .cloned()
+        .collect::<Vec<_>>();
+    let removed = existing
+        .iter()
+        .filter(|service| service.source == gateway_core::ServiceSource::Studio)
+        .filter(|service| !requested_names.contains(&service.name))
+        .map(|service| service.name.clone())
+        .collect::<Vec<_>>();
+    let changed = requested
+        .iter()
+        .filter_map(|request| {
+            existing
+                .iter()
+                .find(|service| {
+                    service.name == request.name
+                        || service.studio_service_id.as_deref()
+                            == Some(request.studio_service_id.as_str())
+                })
+                .filter(|service| {
+                    request
+                        .route_pattern
+                        .as_ref()
+                        .is_some_and(|route_pattern| route_pattern != &service.route_pattern)
+                        || request.upstream_base_url != service.upstream_base_url
+                        || request.allowed_methods != service.allowed_methods
+                })
+                .map(|_| request.name.clone())
+        })
+        .collect::<Vec<_>>();
+    let invalid = requested
+        .iter()
+        .flat_map(service_import_validation_issues)
+        .collect();
+
+    ServiceImportDiff {
+        added,
+        changed,
+        removed,
+        invalid,
+    }
+}
+
+fn service_import_validation_issues(
+    request: &StudioServiceImportRequest,
+) -> Vec<ServiceImportValidationIssue> {
+    let mut issues = Vec::new();
+    if request.validate().is_err() {
+        issues.push(ServiceImportValidationIssue {
+            service_name: request.name.clone(),
+            field: "request".to_owned(),
+            message: "service import payload is invalid".to_owned(),
+        });
+    }
+    if let Some(base_url) = request.upstream_base_url.as_deref() {
+        let valid_url = reqwest::Url::parse(base_url).ok().is_some_and(|url| {
+            matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
+        });
+        if !valid_url {
+            issues.push(ServiceImportValidationIssue {
+                service_name: request.name.clone(),
+                field: "upstream_base_url".to_owned(),
+                message: "upstream URL must be absolute http or https".to_owned(),
+            });
+        }
+    }
+    issues
 }
 
 #[cfg(test)]
@@ -3479,6 +3846,87 @@ mod tests {
 
         async fn provider_health(&self, _query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
             Ok(Vec::new())
+        }
+    }
+
+    #[async_trait]
+    impl ProviderIntelligenceStore for MemoryStore {
+        async fn list_provider_health_states(&self) -> GatewayResult<Vec<ProviderHealthState>> {
+            Ok(Vec::new())
+        }
+
+        async fn provider_health_check_targets(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::ProviderHealthCheckTarget>> {
+            Ok(Vec::new())
+        }
+
+        async fn upsert_provider_health_state(
+            &self,
+            state: ProviderHealthState,
+        ) -> GatewayResult<ProviderHealthState> {
+            Ok(state)
+        }
+
+        async fn get_debug_bundle(
+            &self,
+            _request_id: &str,
+        ) -> GatewayResult<Option<gateway_core::DebugBundle>> {
+            Ok(None)
+        }
+
+        async fn insert_debug_bundle(
+            &self,
+            _bundle: gateway_core::DebugBundle,
+        ) -> GatewayResult<()> {
+            Ok(())
+        }
+
+        async fn list_service_registry_snapshots(
+            &self,
+        ) -> GatewayResult<Vec<ServiceRegistrySnapshot>> {
+            Ok(Vec::new())
+        }
+
+        async fn insert_service_registry_snapshot(
+            &self,
+            mut snapshot: ServiceRegistrySnapshot,
+        ) -> GatewayResult<ServiceRegistrySnapshot> {
+            snapshot.version = 1;
+            Ok(snapshot)
+        }
+
+        async fn service_registry_snapshot(
+            &self,
+            _version: i64,
+        ) -> GatewayResult<Option<ServiceRegistrySnapshot>> {
+            Ok(None)
+        }
+
+        async fn activate_service_registry_import(
+            &self,
+            source: String,
+            diff: ServiceImportDiff,
+            services: Vec<StudioServiceImportRequest>,
+            rolled_back_from_version: Option<i64>,
+        ) -> GatewayResult<(ServiceRegistrySnapshot, Vec<ServiceResponse>)> {
+            let mut activated = Vec::new();
+            for service in services.clone() {
+                activated.push(self.import_studio_service(service).await?);
+            }
+            Ok((
+                ServiceRegistrySnapshot {
+                    version: 1,
+                    source,
+                    diff,
+                    services_json: serde_json::to_value(services)
+                        .map_err(|_| GatewayError::InvalidServicePayload)?,
+                    activated_at: Some(Utc::now()),
+                    rolled_back_from_version,
+                    created_at: Utc::now(),
+                },
+                activated,
+            ))
         }
     }
 

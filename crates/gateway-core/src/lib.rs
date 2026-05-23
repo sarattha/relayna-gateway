@@ -8,6 +8,7 @@ pub mod operators;
 pub mod policies;
 pub mod projects;
 pub mod provider_configs;
+pub mod provider_intelligence;
 pub mod rate_limits;
 pub mod route_settings;
 pub mod routing;
@@ -61,6 +62,13 @@ pub use provider_configs::{
     parse_provider_config_kind, provider_config_kind_str, AdminProviderConfigStore,
     ProviderConfigCreateRequest, ProviderConfigKind, ProviderConfigLookup,
     ProviderConfigPatchRequest, ProviderConfigResponse, ProviderRuntimeConfig,
+};
+pub use provider_intelligence::{
+    circuit_state_after_passive_result, select_provider, CircuitBreakerState, DebugBundle,
+    FallbackAttempt, FallbackPolicy, ProviderCandidate, ProviderHealthCheckTarget,
+    ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore, ProviderRejection,
+    ProviderSelection, RoutingDecisionRequest, RoutingStrategy, ServiceImportDiff,
+    ServiceImportValidationIssue, ServiceRegistrySnapshot,
 };
 pub use rate_limits::{RateLimitDecision, RateLimitStore};
 pub use route_settings::{

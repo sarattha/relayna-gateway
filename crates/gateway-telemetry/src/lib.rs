@@ -24,6 +24,9 @@ static ACTIVE_STREAMS: AtomicI64 = AtomicI64::new(0);
 static STREAM_ABORTS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FIRST_TOKEN_LATENCY_MS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FIRST_TOKEN_LATENCY_SAMPLES: AtomicU64 = AtomicU64::new(0);
+static PROVIDER_SELECTIONS_TOTAL: AtomicU64 = AtomicU64::new(0);
+static PROVIDER_FALLBACKS_TOTAL: AtomicU64 = AtomicU64::new(0);
+static CIRCUIT_TRANSITIONS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static GUARDRAIL_METRICS: OnceLock<Mutex<BTreeMap<GuardrailMetricKey, GuardrailMetricValue>>> =
     OnceLock::new();
 
@@ -85,6 +88,18 @@ pub fn record_first_token_latency_ms(latency_ms: u64) {
     FIRST_TOKEN_LATENCY_SAMPLES.fetch_add(1, Ordering::Relaxed);
 }
 
+pub fn record_provider_selection() {
+    PROVIDER_SELECTIONS_TOTAL.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn record_provider_fallback() {
+    PROVIDER_FALLBACKS_TOTAL.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn record_circuit_transition() {
+    CIRCUIT_TRANSITIONS_TOTAL.fetch_add(1, Ordering::Relaxed);
+}
+
 pub fn record_guardrail_execution(
     guardrail: &str,
     mode: &str,
@@ -134,6 +149,12 @@ gateway_stream_aborts_total {}
 gateway_first_token_latency_ms {}
 # TYPE gateway_first_token_latency_samples counter
 gateway_first_token_latency_samples {}
+# TYPE gateway_provider_selections_total counter
+gateway_provider_selections_total {}
+# TYPE gateway_provider_fallbacks_total counter
+gateway_provider_fallbacks_total {}
+# TYPE gateway_circuit_transitions_total counter
+gateway_circuit_transitions_total {}
 ",
         REQUESTS_TOTAL.load(Ordering::Relaxed),
         ERRORS_TOTAL.load(Ordering::Relaxed),
@@ -145,6 +166,9 @@ gateway_first_token_latency_samples {}
         STREAM_ABORTS_TOTAL.load(Ordering::Relaxed),
         FIRST_TOKEN_LATENCY_MS_TOTAL.load(Ordering::Relaxed),
         FIRST_TOKEN_LATENCY_SAMPLES.load(Ordering::Relaxed),
+        PROVIDER_SELECTIONS_TOTAL.load(Ordering::Relaxed),
+        PROVIDER_FALLBACKS_TOTAL.load(Ordering::Relaxed),
+        CIRCUIT_TRANSITIONS_TOTAL.load(Ordering::Relaxed),
     );
     metrics.push_str("# TYPE gateway_guardrail_executions_total counter\n");
     metrics.push_str("# TYPE gateway_guardrail_failures_total counter\n");
@@ -205,6 +229,8 @@ mod tests {
         assert!(metrics.contains("gateway_requests_total"));
         assert!(metrics.contains("gateway_active_streams"));
         assert!(metrics.contains("gateway_first_token_latency_ms"));
+        assert!(metrics.contains("gateway_provider_selections_total"));
+        assert!(metrics.contains("gateway_provider_fallbacks_total"));
     }
 
     #[test]
