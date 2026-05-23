@@ -1752,14 +1752,16 @@ impl OperatorTokenStore for PostgresStore {
         .map_err(|_| GatewayError::StoreUnavailable)?;
         let response = sqlx::query(
             r#"
-            INSERT INTO operator_tokens (id, token_prefix, token_hash)
-            VALUES ($1, $2, $3)
+            INSERT INTO operator_tokens (id, token_prefix, token_hash, roles, scopes)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id, token_prefix, roles, scopes, disabled, revoked_at, last_used_at, created_at, updated_at
             "#,
         )
         .bind(token_id)
         .bind(&material.token_prefix)
         .bind(&material.token_hash)
+        .bind(&stored.roles)
+        .bind(&stored.scopes)
         .fetch_one(&mut *tx)
         .await
         .map(operator_token_response_from_row)

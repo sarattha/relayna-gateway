@@ -631,7 +631,8 @@ async fn patch_key(
     Path(key_id): Path<uuid::Uuid>,
     Json(patch): Json<AdminKeyPatch>,
 ) -> Response {
-    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+    let required_scopes = key_patch_required_scopes(&patch);
+    let actor = match require_admin_scopes(&state, &headers, &required_scopes).await {
         Ok(actor) => actor,
         Err(response) => return response,
     };
@@ -661,6 +662,26 @@ async fn patch_key(
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
+}
+
+fn key_patch_required_scopes(patch: &AdminKeyPatch) -> Vec<&'static str> {
+    let mut scopes = Vec::new();
+    if patch.disabled.is_some() {
+        scopes.push(SCOPE_KEYS_DISABLE);
+    }
+    if patch.owner_type.is_some()
+        || patch.project_id.is_some()
+        || patch.service_names.is_some()
+        || patch.expires_at.is_some()
+        || patch.policy.is_some()
+        || patch.guardrail_policy.is_some()
+    {
+        scopes.push(SCOPE_POLICIES_UPDATE);
+    }
+    if scopes.is_empty() {
+        scopes.push(SCOPE_POLICIES_UPDATE);
+    }
+    scopes
 }
 
 async fn revoke_key(
@@ -1835,13 +1856,27 @@ async fn require_admin_scope(
     headers: &HeaderMap,
     required_scope: &str,
 ) -> Result<OperatorAuthorization, Response> {
+    require_admin_scopes(state, headers, &[required_scope]).await
+}
+
+async fn require_admin_scopes(
+    state: &AppState,
+    headers: &HeaderMap,
+    required_scopes: &[&str],
+) -> Result<OperatorAuthorization, Response> {
     let token = match bearer_token(headers) {
         Ok(token) => token,
         Err(error) => return Err(error_response(headers, error)),
     };
 
     match state.store.verify_operator_token(token, Utc::now()).await {
-        Ok(authorization) if authorization.has_scope(required_scope) => Ok(authorization),
+        Ok(authorization)
+            if required_scopes
+                .iter()
+                .all(|required_scope| authorization.has_scope(required_scope)) =>
+        {
+            Ok(authorization)
+        }
         Ok(_) => Err(error_response(
             headers,
             GatewayError::InsufficientOperatorScope,
@@ -2729,10 +2764,10 @@ mod tests {
                 .iter()
                 .any(|token| token == raw_token)
             {
-                let scopes = if raw_token == TEST_USAGE_OPERATOR_TOKEN {
-                    vec![SCOPE_USAGE_READ.to_owned()]
-                } else {
-                    default_operator_scopes()
+                let scopes = match raw_token {
+                    TEST_USAGE_OPERATOR_TOKEN => vec![SCOPE_USAGE_READ.to_owned()],
+                    TEST_POLICY_OPERATOR_TOKEN => vec![SCOPE_POLICIES_UPDATE.to_owned()],
+                    _ => default_operator_scopes(),
                 };
                 Ok(OperatorAuthorization {
                     token_id: Uuid::nil(),
@@ -2987,6 +3022,8 @@ mod tests {
         "op_live_testoperator000000000000000000000000000000000000000000000000";
     const TEST_USAGE_OPERATOR_TOKEN: &str =
         "op_live_usageoperator000000000000000000000000000000000000000000000";
+    const TEST_POLICY_OPERATOR_TOKEN: &str =
+        "op_live_policyoperator00000000000000000000000000000000000000000000";
 
     fn test_state(store: MemoryStore) -> AppState {
         test_state_with_redis_url(store, "redis://127.0.0.1:6379")
@@ -3589,6 +3626,38 @@ mod tests {
             .expect("body");
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert!(value["key"]["expires_at"].is_null());
+    }
+
+    #[tokio::test]
+    async fn admin_key_patch_requires_key_disable_scope_for_disabled_field() {
+        let raw = "rk_live_patchdisabled";
+        let stored = stored_key(raw);
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(Some(stored.clone()))),
+            admin_key: Arc::new(Mutex::new(Some(admin_key_for(
+                &stored,
+                gateway_core::GuardrailPolicy::default(),
+            )))),
+            services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_POLICY_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
+        };
+        let app = router_with_state(test_state(store));
+        let response = admin_patch(
+            app,
+            &format!("/admin-ui/admin/keys/{}", stored.id),
+            Some(TEST_POLICY_OPERATOR_TOKEN),
+            r#"{"disabled":true}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let value = response_json(response).await;
+        assert_eq!(value["error"]["code"], "insufficient_operator_scope");
     }
 
     #[tokio::test]
