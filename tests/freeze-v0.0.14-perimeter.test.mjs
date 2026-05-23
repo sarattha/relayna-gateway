@@ -374,7 +374,7 @@ test("release workflow publishes supply-chain artifacts", () => {
     /attestations: write/,
     /anchore\/sbom-action\/download-syft@v0/,
     /spdx-json=relayna-gateway-\$\{\{ github\.ref_name \}\}\.spdx\.json/,
-    /aquasecurity\/trivy-action@0\.28\.0/,
+    /aquasecurity\/trivy-action@v0\.36\.0/,
     /sigstore\/cosign-installer@v3/,
     /cosign sign/,
     /actions\/attest-build-provenance@v2/,
