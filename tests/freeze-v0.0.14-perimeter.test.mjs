@@ -43,6 +43,7 @@ const adminUiTest = read("tests/admin-ui.test.mjs");
 const kubernetes = read("deploy/kubernetes/relayna-gateway.yaml");
 const cargoToml = read("Cargo.toml");
 const changelog = read("CHANGELOG.md");
+const releaseWorkflow = read(".github/workflows/release.yml");
 const freezeVersion = "0.0.14";
 
 test("v0.0.14 freeze baseline release remains documented while current version may advance", () => {
@@ -314,4 +315,12 @@ test("kubernetes control probes use the admin-ui base path", () => {
   assert.match(kubernetes, /path: \/admin-ui\/healthz/);
   assert.match(kubernetes, /path: \/admin-ui\/metrics/);
   assert.doesNotMatch(kubernetes, /path: \/(readyz|healthz|metrics)\b/);
+});
+
+test("release image latest tag is gated only by explicit metadata tag", () => {
+  assert.match(releaseWorkflow, /flavor:\s*\|\s*\n\s*latest=false/);
+  assert.match(
+    releaseWorkflow,
+    /type=raw,value=latest,enable=\$\{\{ steps\.latest_tag\.outputs\.enabled == 'true' \}\}/,
+  );
 });
