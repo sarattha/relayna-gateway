@@ -341,10 +341,44 @@ test("kubernetes control probes use the admin-ui base path", () => {
   assert.doesNotMatch(kubernetes, /path: \/(readyz|healthz|metrics)\b/);
 });
 
+test("kubernetes production hardening remains enabled", () => {
+  for (const expected of [
+    /runAsNonRoot: true/,
+    /runAsUser: 10001/,
+    /runAsGroup: 10001/,
+    /fsGroup: 10001/,
+    /seccompProfile:\s*\n\s*type: RuntimeDefault/,
+    /readOnlyRootFilesystem: true/,
+    /allowPrivilegeEscalation: false/,
+    /drop:\s*\n\s*- ALL/,
+    /name: relayna-gateway-proxy/,
+    /name: relayna-gateway-control/,
+  ]) {
+    assert.match(kubernetes, expected);
+  }
+  assert.doesNotMatch(kubernetes, /ingress:\s*\n\s*- \{\}/);
+  assert.doesNotMatch(kubernetes, /egress:\s*\n\s*- \{\}/);
+});
+
 test("release image latest tag is gated only by explicit metadata tag", () => {
   assert.match(releaseWorkflow, /flavor:\s*\|\s*\n\s*latest=false/);
   assert.match(
     releaseWorkflow,
     /type=raw,value=latest,enable=\$\{\{ steps\.latest_tag\.outputs\.enabled == 'true' \}\}/,
   );
+});
+
+test("release workflow publishes supply-chain artifacts", () => {
+  for (const expected of [
+    /id-token: write/,
+    /attestations: write/,
+    /anchore\/sbom-action\/download-syft@v0/,
+    /spdx-json=relayna-gateway-\$\{\{ github\.ref_name \}\}\.spdx\.json/,
+    /aquasecurity\/trivy-action@v0\.36\.0/,
+    /sigstore\/cosign-installer@v3/,
+    /cosign sign/,
+    /actions\/attest-build-provenance@v2/,
+  ]) {
+    assert.match(releaseWorkflow, expected);
+  }
 });

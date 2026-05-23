@@ -18,7 +18,8 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10001 --create-home --home-dir /home/relayna relayna
+    && groupadd --system --gid 10001 relayna \
+    && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent --no-create-home relayna
 
 COPY --from=builder /app/target/release/gateway-api /usr/local/bin/relayna-gateway
 

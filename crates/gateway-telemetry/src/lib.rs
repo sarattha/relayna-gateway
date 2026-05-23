@@ -583,6 +583,7 @@ pub fn is_sensitive_field(name: &str) -> bool {
 mod tests {
     #[test]
     fn renders_expected_metric_names() {
+        super::record_request_with_dimensions("chat_completions", "litellm", 200, 42, false);
         super::record_upstream_duration_ms("chat_completions", "litellm", false, 24);
         super::record_guardrail_execution(
             "pii_redact",

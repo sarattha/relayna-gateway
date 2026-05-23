@@ -45,6 +45,11 @@ spec:
       terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
           image: ghcr.io/sarattha/relayna-gateway:0.0.14
@@ -79,6 +84,7 @@ spec:
               cpu: "1"
               memory: 1Gi
           securityContext:
+            readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             capabilities:
               drop:
@@ -87,7 +93,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: relayna-gateway
+  name: relayna-gateway-proxy
+  labels:
+    app.kubernetes.io/name: relayna-gateway
+    relayna.io/service: proxy
 spec:
   selector:
     app.kubernetes.io/name: relayna-gateway
@@ -95,6 +104,18 @@ spec:
     - name: proxy
       port: 80
       targetPort: proxy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: relayna-gateway-control
+  labels:
+    app.kubernetes.io/name: relayna-gateway
+    relayna.io/service: control
+spec:
+  selector:
+    app.kubernetes.io/name: relayna-gateway
+  ports:
     - name: control
       port: 8081
       targetPort: control
@@ -136,6 +157,7 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: relayna-gateway
+      relayna.io/service: control
   endpoints:
     - port: control
       path: /admin-ui/metrics
@@ -155,9 +177,30 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: relayna-gateway
+                name: relayna-gateway-proxy
                 port:
                   name: proxy
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: relayna-gateway-control
+  annotations:
+    # Example only: bind this ingress to an internal/VPN/IAP-protected class.
+    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8"
+spec:
+  ingressClassName: nginx-internal
+  rules:
+    - host: gateway-admin.relayna.local
+      http:
+        paths:
+          - path: /admin-ui
+            pathType: Prefix
+            backend:
+              service:
+                name: relayna-gateway-control
+                port:
+                  name: control
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -171,6 +214,73 @@ spec:
     - Ingress
     - Egress
   ingress:
-    - {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              relayna.io/control-plane-access: "true"
+      ports:
+        - protocol: TCP
+          port: 8081
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8081
   egress:
-    - {}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - protocol: TCP
+          port: 4000
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: relayna-studio-backend
+      ports:
+        - protocol: TCP
+          port: 8000
+    - to:
+        # Replace this placeholder with approved provider egress CIDRs or a
+        # cluster egress gateway selector before production use.
+        - ipBlock:
+            cidr: 203.0.113.0/24
+      ports:
+        - protocol: TCP
+          port: 443

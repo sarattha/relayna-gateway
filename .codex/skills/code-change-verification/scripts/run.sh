@@ -28,5 +28,12 @@ run_step() {
 run_step cargo fmt --all --check
 run_step cargo clippy --workspace --all-targets --all-features -- -D warnings
 run_step cargo test --workspace --all-features
+run_step cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437
+run_step cargo deny check
+run_step cargo machete
+run_step cargo nextest run --workspace --all-features
+run_step trivy fs --severity HIGH,CRITICAL --exit-code 1 --skip-dirs target --skip-dirs site .
+run_step gitleaks detect --source . --redact
+run_step semgrep scan --config .semgrep.yml
 
 echo "code-change-verification: all commands passed."

@@ -1,0 +1,27 @@
+# Historical fake fixtures and example tokens that predate the strict scanner.
+# New findings must be fixed or documented in docs/security-exceptions.md.
+c73c2722f55512d31e0241bf4bd7b20ac355249f:crates/gateway-api/src/app.rs:relayna-live-token:3026
+6ce38c27f8b5c99e0af21bab9589922d62697069:crates/gateway-api/src/app.rs:relayna-live-token:3024
+6ce38c27f8b5c99e0af21bab9589922d62697069:crates/gateway-api/src/app.rs:relayna-live-token:3026
+b868c8fc49cc88ed8690dbb513963ebe10a09867:crates/gateway-api/src/app.rs:relayna-live-token:2989
+413dec9234810437c2df6fd6e5896a8537817619:scripts/run-gateway.sh:relayna-live-token:11
+413dec9234810437c2df6fd6e5896a8537817619:crates/gateway-api/src/main.rs:generic-api-key:183
+413dec9234810437c2df6fd6e5896a8537817619:crates/gateway-api/src/main.rs:relayna-live-token:177
+e666debf3e1076de9c9baddd41b8e34f543d4c5a:crates/gateway-core/src/auth.rs:relayna-live-token:246
+3cccc98a678b640661ae2f62a9772596a2984785:crates/gateway-api/src/app.rs:relayna-live-token:1106
+36956417ca28c2a75d984b0ada2f502a17f1071f:crates/gateway-api/src/app.rs:relayna-live-token:414
+ebaba772371b96181f66ccc01efdf019ad0c3c10:crates/gateway-api/src/app.rs:relayna-live-token:390
+ebaba772371b96181f66ccc01efdf019ad0c3c10:crates/gateway-api/src/app.rs:relayna-live-token:427
+ebaba772371b96181f66ccc01efdf019ad0c3c10:crates/gateway-api/src/app.rs:relayna-live-token:445
+ebaba772371b96181f66ccc01efdf019ad0c3c10:crates/gateway-api/src/app.rs:relayna-live-token:463
+ebaba772371b96181f66ccc01efdf019ad0c3c10:crates/gateway-api/src/app.rs:stripe-access-token:419
+538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-proxy/src/litellm.rs:generic-api-key:181
+538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-core/src/auth.rs:relayna-live-token:177
+538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-core/src/auth.rs:relayna-live-token:191
+538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-core/src/auth.rs:relayna-live-token:206
+538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-core/src/auth.rs:relayna-live-token:223
+538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-core/src/auth.rs:generic-api-key:201
+538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-api/src/app.rs:relayna-live-token:310
+538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-api/src/app.rs:relayna-live-token:338
+538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-api/src/app.rs:relayna-live-token:379
+538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-api/src/app.rs:relayna-live-token:409

@@ -69,7 +69,9 @@ redis://host.docker.internal:6379
 
 ## Kubernetes
 
-The repository includes a baseline manifest at `deploy/kubernetes/relayna-gateway.yaml`.
+The repository includes a production-hardened example manifest at
+`deploy/kubernetes/relayna-gateway.yaml`. It keeps public proxy traffic and the
+private control plane on separate Services.
 
 1. Use the image published by the tag-based release workflow:
 
@@ -114,21 +116,45 @@ The repository includes a baseline manifest at `deploy/kubernetes/relayna-gatewa
 
    ```bash
    kubectl rollout status deployment/relayna-gateway
-   kubectl port-forward svc/relayna-gateway 8081:8081
+   kubectl port-forward svc/relayna-gateway-control 8081:8081
    curl http://127.0.0.1:8081/admin-ui/readyz
+   ```
+
+6. Validate the manifest before applying cluster-specific edits:
+
+   ```bash
+   kubectl apply --dry-run=client -f deploy/kubernetes/relayna-gateway.yaml
    ```
 
 ## Network Exposure
 
-Expose the proxy port to clients that need LLM traffic. Keep the control port
-private or protected by internal ingress, VPN, identity-aware proxy, or strict
-network policy.
+Expose only `relayna-gateway-proxy` to clients that need LLM traffic. Keep
+`relayna-gateway-control` private or protected by internal ingress, VPN,
+identity-aware proxy, or strict network policy.
 
 All Gateway control-plane paths are rooted under `/admin-ui` so an AKS ingress
 can route `/admin-ui` and `/admin-ui/*` to Relayna Gateway even when another
 gateway owns `/`, `/healthz`, `/readyz`, and `/metrics`. Use
 `/admin-ui/healthz`, `/admin-ui/readyz`, and `/admin-ui/metrics` for probes and
 scrapers.
+
+The Kubernetes example uses restricted pod security defaults:
+
+- non-root UID/GID `10001`
+- `readOnlyRootFilesystem: true`
+- `seccompProfile: RuntimeDefault`
+- `allowPrivilegeEscalation: false`
+- all Linux capabilities dropped
+
+The included NetworkPolicy is intentionally restrictive. Replace the example
+namespace labels, service selectors, and provider egress CIDR with values that
+match your cluster. The placeholder provider egress block uses documentation
+CIDR `203.0.113.0/24` and will not reach real providers until you replace it or
+route provider traffic through an approved egress gateway.
+
+For local development, port-forward the control Service or run the container
+directly. Do not expose `/admin-ui/admin/*`, `/admin-ui/metrics`, or operator
+token workflows on a public ingress.
 
 ## Guardrail Configuration
 
