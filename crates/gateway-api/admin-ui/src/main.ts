@@ -416,7 +416,7 @@ async function keys() {
         <label>Scope<input name="scope_id" placeholder="project UUID, team, route, or model"></label>
         ${policyFields(null, true)}
         ${guardrailPolicyFields()}
-        <div class="form-actions">
+        <div class="form-actions wide-field">
           <button type="submit" class="primary">Save layer</button>
         </div>
       </form>

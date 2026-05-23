@@ -312,6 +312,12 @@ td code {
   line-height: 1.4;
 }
 
+#content {
+  display: grid;
+  gap: var(--rg-space-4);
+  align-content: start;
+}
+
 .notice,
 .error-text {
   color: var(--rg-status-bad);
@@ -382,14 +388,12 @@ td code {
 .stats,
 .metric-strip {
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  margin-bottom: var(--rg-space-4);
 }
 
 .split {
   display: grid;
   grid-template-columns: minmax(320px, 1.1fr) minmax(320px, 0.9fr);
   gap: var(--rg-space-4);
-  margin-bottom: var(--rg-space-4);
   align-items: start;
 }
 
@@ -479,6 +483,10 @@ td code {
   overflow-x: auto;
   border: 1px solid var(--rg-color-border);
   border-radius: var(--rg-radius-md);
+}
+
+.form-grid + .table-wrap {
+  margin-top: var(--rg-space-5);
 }
 
 table {
