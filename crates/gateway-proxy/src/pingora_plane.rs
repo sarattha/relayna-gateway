@@ -6,16 +6,17 @@ use bytes::Bytes;
 use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
-    estimate_generation_tokens, evaluate_policy, execution_events_from_records,
-    extract_client_guardrails, extract_estimated_cost_usd, extract_generation_features,
-    extract_model, extract_usage_tokens, guardrail_executor_for_definitions, is_retry_safe_status,
-    redact_pii_text, resolve_guardrail_plan, route_pattern_wildcard_suffix,
-    service_wildcard_suffix, strip_client_guardrails, AuthenticatedKey, BudgetDecision,
-    BudgetStore, GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition,
-    GuardrailExecutionEvent, GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy,
-    GuardrailPolicySet, GuardrailStore, OpenAiRouteSettingsLookup, PolicyLookup, Provider,
-    ProviderConfigLookup, RateLimitDecision, RateLimitStore, Route, RouteMatch,
-    ServiceRegistryLookup, ServiceRouteLookup, UsageEvent, UsageRecorder,
+    estimate_generation_tokens, evaluate_policy, evaluate_policy_limits,
+    execution_events_from_records, extract_client_guardrails, extract_estimated_cost_usd,
+    extract_generation_features, extract_model, extract_usage_tokens,
+    guardrail_executor_for_definitions, is_retry_safe_status, redact_pii_text,
+    resolve_guardrail_plan, route_pattern_wildcard_suffix, service_wildcard_suffix,
+    strip_client_guardrails, AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError,
+    GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent, GuardrailMode,
+    GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet, GuardrailStore,
+    KeyPolicy, OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
+    RateLimitDecision, RateLimitStore, Route, RouteMatch, ServiceRegistryLookup,
+    ServiceRouteLookup, UsageEvent, UsageRecorder,
 };
 use http::Uri;
 use pingora_core::{
@@ -144,6 +145,8 @@ pub struct PingoraContext {
     body_prefix: Vec<u8>,
     body_bytes_seen: usize,
     response_body_prefix: Vec<u8>,
+    response_bytes_seen: usize,
+    policy: Option<KeyPolicy>,
     request_rewriter: Option<BoundedBodyRewriter>,
     response_rewriter: Option<BoundedBodyRewriter>,
     is_streaming: bool,
@@ -197,6 +200,8 @@ where
             body_prefix: Vec::new(),
             body_bytes_seen: 0,
             response_body_prefix: Vec::new(),
+            response_bytes_seen: 0,
+            policy: None,
             request_rewriter: None,
             response_rewriter: None,
             is_streaming: false,
@@ -312,8 +317,18 @@ where
                         return Ok(true);
                     }
                 }
-                match self.store.guardrail_policy_for_key(key.key_id).await {
-                    Ok(policy) => ctx.guardrail_policy = policy,
+                match self
+                    .store
+                    .effective_policy_for_context(
+                        key.key_id,
+                        key.project_id,
+                        None,
+                        Some(matched.route),
+                        None,
+                    )
+                    .await
+                {
+                    Ok(effective) => ctx.guardrail_policy = effective.guardrail_policy,
                     Err(error) => {
                         respond_error(session, error, &ctx.request_id).await?;
                         return Ok(true);
@@ -582,7 +597,17 @@ where
             features.service_name = matched.service_name.clone();
         }
         ctx.is_streaming = features.stream;
-        let policy = match self.store.policy_for_key(key.key_id).await {
+        let policy = match self
+            .store
+            .policy_for_context(
+                key.key_id,
+                key.project_id,
+                None,
+                Some(route),
+                features.model.clone(),
+            )
+            .await
+        {
             Ok(policy) => policy,
             Err(error) => {
                 self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
@@ -598,6 +623,22 @@ where
             respond_error(session, error, &ctx.request_id).await?;
             return Ok(false);
         }
+        let estimated_tokens = estimate_generation_tokens(&ctx.body_prefix);
+        if let Err(error) = evaluate_policy_limits(
+            &policy,
+            now,
+            i64::try_from(ctx.body_bytes_seen).ok(),
+            None,
+            i32::try_from(estimated_tokens).ok(),
+            None,
+            matched.estimated_cost_usd,
+        ) {
+            self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                .await;
+            respond_error(session, error, &ctx.request_id).await?;
+            return Ok(false);
+        }
+        ctx.policy = Some(policy.clone());
 
         match self
             .control_state
@@ -626,7 +667,6 @@ where
             }
         }
 
-        let estimated_tokens = estimate_generation_tokens(&ctx.body_prefix);
         match self
             .control_state
             .check_token_rate_limit(key.key_id, policy.tpm_limit, estimated_tokens, now)
@@ -862,7 +902,39 @@ where
             return Err(PingoraError::new(ErrorType::InternalError));
         }
         if let Some(body) = body.as_ref() {
+            ctx.response_bytes_seen = ctx.response_bytes_seen.saturating_add(body.len());
+            if let Some(policy) = &ctx.policy {
+                if let Err(error) = evaluate_policy_limits(
+                    policy,
+                    Utc::now(),
+                    None,
+                    i64::try_from(ctx.response_bytes_seen).ok(),
+                    None,
+                    None,
+                    None,
+                ) {
+                    ctx.guardrail_error = Some(error);
+                    return Err(PingoraError::new(ErrorType::InternalError));
+                }
+            }
             observe_response_body_chunk(ctx, body);
+            if end_of_stream {
+                if let Some(policy) = &ctx.policy {
+                    let (_, output_tokens, _) = extract_usage_tokens(&ctx.response_body_prefix);
+                    if let Err(error) = evaluate_policy_limits(
+                        policy,
+                        Utc::now(),
+                        None,
+                        None,
+                        None,
+                        output_tokens.and_then(|tokens| i32::try_from(tokens).ok()),
+                        extract_estimated_cost_usd(&ctx.response_body_prefix),
+                    ) {
+                        ctx.guardrail_error = Some(error);
+                        return Err(PingoraError::new(ErrorType::InternalError));
+                    }
+                }
+            }
         }
         Ok(None)
     }
@@ -1429,6 +1501,8 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         body_prefix: Vec::new(),
         body_bytes_seen: 0,
         response_body_prefix: Vec::new(),
+        response_bytes_seen: 0,
+        policy: None,
         request_rewriter: None,
         response_rewriter: None,
         is_streaming: false,

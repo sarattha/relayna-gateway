@@ -65,6 +65,10 @@ pub struct AuthenticatedKey {
 #[async_trait]
 pub trait VirtualKeyLookup: Send + Sync {
     async fn find_by_prefix(&self, prefix: &str) -> GatewayResult<Option<StoredVirtualKey>>;
+
+    async fn mark_key_used(&self, _key_id: Uuid, _used_at: DateTime<Utc>) -> GatewayResult<()> {
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -74,6 +78,10 @@ where
 {
     async fn find_by_prefix(&self, prefix: &str) -> GatewayResult<Option<StoredVirtualKey>> {
         (**self).find_by_prefix(prefix).await
+    }
+
+    async fn mark_key_used(&self, key_id: Uuid, used_at: DateTime<Utc>) -> GatewayResult<()> {
+        (**self).mark_key_used(key_id, used_at).await
     }
 }
 
@@ -119,6 +127,7 @@ where
         }
 
         verify_secret(key.raw(), &stored.key_hash)?;
+        let _ = self.store.mark_key_used(stored.id, now).await;
 
         Ok(AuthenticatedKey {
             key_id: stored.id,

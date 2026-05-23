@@ -33,7 +33,21 @@ required scope.
   Project-owned keys inherit service access from their selected project.
   Individual keys use `Select services` to open the service picker modal and
   choose services directly. Use `No expiration` for service keys whose rotation
-  is managed outside Gateway.
+  is managed outside Gateway. The key form includes safe presets for developer,
+  production worker, read-only service, external partner, and temporary
+  debugging keys; presets seed conservative policy limits and can be tightened
+  before creation. Lifecycle fields show rotation due dates and last-used
+  metadata when available.
+- The Keys view also includes a policy simulator. Operators can dry-run a route,
+  model, provider, stream/tools flags, and request/response byte projections
+  against a stored key or the default policy before issuing or changing access.
+  Simulator output reports auth source, route match, policy version and merge
+  summary, guardrail plan, rate/budget projections, and final decision.
+- Inherited policy layers can be managed from the Keys view. Global layers use
+  no scope. Project, team, route, and model layers use a scope value such as a
+  project UUID, team identifier, route string like `/v1/chat/completions`, or
+  model name. These layers are additive governance overlays on top of key
+  policy and use neutral defaults unless an operator sets a field.
 - Providers configures LiteLLM and internal-service endpoints with write-only credentials.
 - Routes disables and enables the global OpenAI-compatible LiteLLM routes `/v1/chat/completions` and `/v1/responses`, and lists registered service routes with their allowed methods and credential status.
 - Services creates, imports from Relayna Studio, edits, sync-checks, disables, enables, and deletes service registrations. Method selection uses explicit checkboxes for `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
@@ -168,6 +182,48 @@ Unknown override guardrails, forbidden override guardrails, and non-object
 override values are rejected with stable guardrail error envelopes. HTTP
 guardrail endpoint URL, timeout, and bearer token remain catalog-level provider
 settings; per-key overrides only tune runtime config.
+
+## Policy and Size Limits
+
+Virtual-key policy is evaluated as an effective policy. Global and project
+ layers combine with team, key, route, and model layers when the relevant
+ context is present. They use the same deterministic rules:
+
+- Explicit deny wins.
+- Route, model, provider, service, and allowed-hour lists intersect. A disjoint
+  intersection denies the request.
+- Lower-level rate, budget, cost, token, and byte limits can only become
+  stricter.
+- Streaming and tool permissions are only allowed when every applied layer
+  allows them.
+- Mandatory guardrails are additive. Forbidden guardrails remove optional
+  requests.
+
+Request body limits return `request_body_too_large`. Response body limits return
+`response_body_too_large`. Both use the standard structured error envelope and
+HTTP 413 status.
+
+Policy layer APIs:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  http://127.0.0.1:8081/admin-ui/admin/policy-layers
+
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:8081/admin-ui/admin/policy-layers \
+  -d '{
+    "kind": "route",
+    "scope_id": "/v1/chat/completions",
+    "policy": {
+      "max_response_body_bytes": 1048576,
+      "allow_streaming": true,
+      "allow_tools": true
+    }
+  }'
+```
 
 Operator APIs:
 

@@ -11,6 +11,8 @@ const state = {
   guardrailSummary: [],
   studioServices: [],
   studioConnection: null,
+  policySimulation: null,
+  policyLayers: [],
   editingKeyId: null,
   editingServiceName: null,
   editingGuardrailName: null,
@@ -311,11 +313,12 @@ async function patchProjectServices(event) {
 }
 
 async function keys() {
-  [state.keys, state.projects, state.services, state.guardrails] = await Promise.all([
+  [state.keys, state.projects, state.services, state.guardrails, state.policyLayers] = await Promise.all([
     api("/admin-ui/admin/keys"),
     api("/admin-ui/admin/projects"),
     api("/admin-ui/admin/services"),
     api("/admin-ui/admin/guardrails"),
+    api("/admin-ui/admin/policy-layers"),
   ]);
   const editing = state.keys.find((key) => key.id === state.editingKeyId);
   content.innerHTML = `
@@ -325,8 +328,17 @@ async function keys() {
           <h3>Create virtual key</h3>
         </div>
         <form id="key-form" class="form-grid">
+          <label>Preset<select name="preset">
+            <option value="">Custom</option>
+            <option value="developer">Developer</option>
+            <option value="production_worker">Production worker</option>
+            <option value="read_only_service">Read-only service</option>
+            <option value="external_partner">External partner</option>
+            <option value="temporary_debugging">Temporary debugging</option>
+          </select></label>
           ${keyOwnershipFields()}
           <label>Expires at<input name="expires_at" type="datetime-local"></label>
+          <label>Rotation due<input name="rotation_due_at" type="datetime-local"></label>
           <label class="check"><input name="no_expires_at" type="checkbox"> No expiration</label>
           ${policyFields()}
           ${guardrailPolicyFields()}
@@ -341,14 +353,64 @@ async function keys() {
     </div>
     <section class="panel">
       <div class="panel-heading">
+        <h3>Inherited policy layers</h3>
+        <span class="subtle">${state.policyLayers.length} configured</span>
+      </div>
+      <form id="policy-layer-form" class="form-grid">
+        <label>Layer<select name="kind">
+          <option value="global">Global</option>
+          <option value="project">Project</option>
+          <option value="team">Team</option>
+          <option value="route">Route</option>
+          <option value="model">Model</option>
+        </select></label>
+        <label>Scope<input name="scope_id" placeholder="project UUID, team, route, or model"></label>
+        ${policyFields(null, true)}
+        ${guardrailPolicyFields()}
+        <div class="form-actions">
+          <button type="submit" class="primary">Save layer</button>
+        </div>
+      </form>
+      ${policyLayerTable(state.policyLayers)}
+    </section>
+    <section class="panel">
+      <div class="panel-heading">
         <h3>Virtual keys</h3>
         <span class="subtle">${state.keys.length} total</span>
       </div>
       ${keyTable(state.keys)}
     </section>
+    <section class="panel">
+      <div class="panel-heading">
+        <h3>Policy simulator</h3>
+        <span class="subtle">Dry-run key governance</span>
+      </div>
+      <form id="policy-sim-form" class="form-grid">
+        <label>Key<select name="key_id"><option value="">Default policy</option>${state.keys.map((key) => `<option value="${attr(key.id)}">${esc(key.key_prefix)}</option>`).join("")}</select></label>
+        <label>Team scope<input name="team_id" placeholder="team identifier"></label>
+        <label>Path<input name="path" value="/v1/chat/completions"></label>
+        <label>Provider<select name="provider">
+          <option value="">Route default</option>
+          <option value="litellm">LiteLLM</option>
+          <option value="openai-compatible">OpenAI-compatible</option>
+          <option value="internal-service">Internal service</option>
+        </select></label>
+        <label>Model<input name="model" value="gpt-4.1-mini"></label>
+        <label>Request bytes<input name="request_body_bytes" type="number" min="0"></label>
+        <label>Response bytes<input name="response_body_bytes" type="number" min="0"></label>
+        <label class="check"><input name="stream" type="checkbox"> Stream</label>
+        <label class="check"><input name="tools" type="checkbox"> Tools</label>
+        <div class="form-actions">
+          <button type="submit" class="primary">Simulate</button>
+        </div>
+      </form>
+      <div id="policy-sim-result">${policySimulationResult()}</div>
+    </section>
   `;
   document.querySelector("#key-form").addEventListener("submit", handleAsync(createKey));
   document.querySelector("#key-edit-form")?.addEventListener("submit", handleAsync(patchKey));
+  document.querySelector("#policy-sim-form").addEventListener("submit", handleAsync(simulatePolicy));
+  document.querySelector("#policy-layer-form").addEventListener("submit", handleAsync(savePolicyLayer));
   bindKeyExpiryControls();
   bindKeyOwnerControls();
   bindServicePickerButtons();
@@ -358,18 +420,27 @@ async function keys() {
   });
 }
 
-function policyFields(key = null) {
+function policyFields(key = null, neutral = false) {
   const policy = key?.policy || {};
   return `
-    <label>Routes<input name="allowed_routes" value="${attr(listValue(policy.allowed_routes, "/v1/chat/completions,/v1/responses"))}"></label>
+    <label>Routes<input name="allowed_routes" value="${attr(listValue(policy.allowed_routes, neutral ? "" : "/v1/chat/completions,/v1/responses"))}"></label>
     <label>Models<input name="allowed_models" value="${attr(listValue(policy.allowed_models, ""))}" placeholder="gpt-4o-mini"></label>
-    <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers)}</div>
+    <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers, neutral)}</div>
     <label>RPM limit<input name="rpm_limit" type="number" min="0" value="${attr(policy.rpm_limit ?? "")}"></label>
     <label>TPM limit<input name="tpm_limit" type="number" min="0" value="${attr(policy.tpm_limit ?? "")}"></label>
     <label>Daily budget<input name="daily_budget_usd" type="number" min="0" step="0.01" value="${attr(policy.daily_budget_usd ?? "")}"></label>
     <label>Monthly budget<input name="monthly_budget_usd" type="number" min="0" step="0.01" value="${attr(policy.monthly_budget_usd ?? "")}"></label>
-    <label class="check"><input name="allow_streaming" type="checkbox" ${policy.allow_streaming ? "checked" : ""}> Allow streaming</label>
-    <label class="check"><input name="allow_tools" type="checkbox" ${policy.allow_tools ? "checked" : ""}> Allow tools</label>
+    <label>Max daily requests<input name="max_requests_per_day" type="number" min="0" value="${attr(policy.max_requests_per_day ?? "")}"></label>
+    <label>Max daily tokens<input name="max_tokens_per_day" type="number" min="0" value="${attr(policy.max_tokens_per_day ?? "")}"></label>
+    <label>Max cost/request<input name="max_cost_per_request" type="number" min="0" step="0.01" value="${attr(policy.max_cost_per_request ?? "")}"></label>
+    <label>Max input tokens<input name="max_input_tokens_per_request" type="number" min="0" value="${attr(policy.max_input_tokens_per_request ?? "")}"></label>
+    <label>Max output tokens<input name="max_output_tokens_per_request" type="number" min="0" value="${attr(policy.max_output_tokens_per_request ?? "")}"></label>
+    <label>Allowed UTC hours<input name="allowed_hours_utc" value="${attr(listValue(policy.allowed_hours_utc, ""))}" placeholder="0,8,17"></label>
+    <label>Stale disable days<input name="unused_key_auto_disable_after_days" type="number" min="0" value="${attr(policy.unused_key_auto_disable_after_days ?? "")}"></label>
+    <label>Max request bytes<input name="max_request_body_bytes" type="number" min="0" value="${attr(policy.max_request_body_bytes ?? "")}"></label>
+    <label>Max response bytes<input name="max_response_body_bytes" type="number" min="0" value="${attr(policy.max_response_body_bytes ?? "")}"></label>
+    <label class="check"><input name="allow_streaming" type="checkbox" ${policy.allow_streaming || neutral ? "checked" : ""}> Allow streaming</label>
+    <label class="check"><input name="allow_tools" type="checkbox" ${policy.allow_tools || neutral ? "checked" : ""}> Allow tools</label>
   `;
 }
 
@@ -440,6 +511,7 @@ function keyEditForm(key) {
     <form id="key-edit-form" class="form-grid" data-key-id="${attr(key.id)}">
       ${keyOwnershipFields(key)}
       <label>Expires at<input name="expires_at" type="datetime-local" value="${attr(toLocalInput(key.expires_at))}"></label>
+      <label>Rotation due<input name="rotation_due_at" type="datetime-local" value="${attr(toLocalInput(key.rotation_due_at))}"></label>
       <label class="check"><input name="no_expires_at" type="checkbox" ${key.expires_at ? "" : "checked"}> No expiration</label>
       <label class="check"><input name="disabled" type="checkbox" ${key.disabled ? "checked" : ""}> Disabled</label>
       ${policyFields(key)}
@@ -464,6 +536,19 @@ function keyTable(rows) {
       keyPolicySummary(key),
       time(key.updated_at),
       keyLifecycleActions(key),
+    ]),
+  );
+}
+
+function policyLayerTable(rows) {
+  return table(
+    ["Layer", "Scope", "Version", "Policy", "Updated"],
+    rows.map((layer) => [
+      esc(layer.kind),
+      esc(layer.scope_id || "all"),
+      esc(layer.policy?.policy_version ?? "1"),
+      keyPolicySummary({ policy: layer.policy, rotation_due_at: null, last_used_at: null }),
+      time(layer.updated_at),
     ]),
   );
 }
@@ -496,11 +581,14 @@ async function createKey(event) {
     owner_type: form.get("owner_type"),
     project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
     service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
+    preset: form.get("preset") || null,
     expires_at: form.has("no_expires_at") ? null : isoDate(form.get("expires_at")),
+    rotation_due_at: isoDate(form.get("rotation_due_at")),
     policy: policyBody(form),
     guardrail_policy: guardrailPolicy,
   };
   if (!form.has("no_expires_at") && !body.expires_at) delete body.expires_at;
+  if (!body.rotation_due_at) delete body.rotation_due_at;
   const response = await api("/admin-ui/admin/keys", { method: "POST", body: JSON.stringify(body) });
   showRawToken(response.raw_key, "Virtual key shown once");
   state.editingKeyId = response.key.id;
@@ -524,6 +612,7 @@ async function patchKey(event) {
     project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
     service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
     disabled: form.has("disabled"),
+    rotation_due_at: form.get("rotation_due_at") ? isoDate(form.get("rotation_due_at")) : null,
     policy: policyBody(form),
     guardrail_policy: guardrailPolicy,
   };
@@ -534,6 +623,52 @@ async function patchKey(event) {
   }
   await api(`/admin-ui/admin/keys/${keyId}`, { method: "PATCH", body: JSON.stringify(body) });
   setNotice("Virtual key updated.", "success");
+  await keys();
+}
+
+async function simulatePolicy(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const body = {
+    key_id: form.get("key_id") || null,
+    team_id: form.get("team_id") || null,
+    path: form.get("path"),
+    provider: form.get("provider") || null,
+    request_body_bytes: nullableNumber(form.get("request_body_bytes")),
+    response_body_bytes: nullableNumber(form.get("response_body_bytes")),
+    body: {
+      model: form.get("model") || undefined,
+      stream: form.has("stream"),
+      tools: form.has("tools") ? [{ type: "function" }] : undefined,
+    },
+  };
+  if (!body.key_id) delete body.key_id;
+  if (!body.team_id) delete body.team_id;
+  if (!body.provider) delete body.provider;
+  if (body.request_body_bytes === null) delete body.request_body_bytes;
+  if (body.response_body_bytes === null) delete body.response_body_bytes;
+  state.policySimulation = await api("/admin-ui/admin/policy/simulate", { method: "POST", body: JSON.stringify(body) });
+  document.querySelector("#policy-sim-result").innerHTML = policySimulationResult();
+}
+
+async function savePolicyLayer(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  let guardrailPolicy;
+  try {
+    guardrailPolicy = guardrailPolicyBody(form);
+  } catch (error) {
+    setNotice(error.message);
+    return;
+  }
+  const body = {
+    kind: form.get("kind"),
+    scope_id: form.get("kind") === "global" ? null : form.get("scope_id"),
+    policy: policyBody(form),
+    guardrail_policy: guardrailPolicy,
+  };
+  await api("/admin-ui/admin/policy-layers", { method: "POST", body: JSON.stringify(body) });
+  setNotice("Policy layer saved.", "success");
   await keys();
 }
 
@@ -1220,6 +1355,15 @@ function policyBody(form) {
     tpm_limit: nullableNumber(form.get("tpm_limit")),
     daily_budget_usd: nullableNumber(form.get("daily_budget_usd")),
     monthly_budget_usd: nullableNumber(form.get("monthly_budget_usd")),
+    max_requests_per_day: nullableNumber(form.get("max_requests_per_day")),
+    max_tokens_per_day: nullableNumber(form.get("max_tokens_per_day")),
+    max_cost_per_request: nullableNumber(form.get("max_cost_per_request")),
+    max_input_tokens_per_request: nullableNumber(form.get("max_input_tokens_per_request")),
+    max_output_tokens_per_request: nullableNumber(form.get("max_output_tokens_per_request")),
+    allowed_hours_utc: csv(form.get("allowed_hours_utc")).map((value) => Number(value)).filter((value) => Number.isInteger(value)),
+    unused_key_auto_disable_after_days: nullableNumber(form.get("unused_key_auto_disable_after_days")),
+    max_request_body_bytes: nullableNumber(form.get("max_request_body_bytes")),
+    max_response_body_bytes: nullableNumber(form.get("max_response_body_bytes")),
     allow_streaming: form.has("allow_streaming"),
     allow_tools: form.has("allow_tools"),
   };
@@ -1528,7 +1672,24 @@ function keyPolicySummary(key) {
   const policy = key.policy;
   return `<div>${esc((policy.allowed_routes || []).join(", ") || "no routes")}</div>
     <div class="subtle">${esc((policy.allowed_providers || []).join(", ") || "no providers")}</div>
-    <div class="subtle">RPM ${esc(policy.rpm_limit ?? "none")} / daily ${esc(money(policy.daily_budget_usd))}</div>`;
+    <div class="subtle">RPM ${esc(policy.rpm_limit ?? "none")} / daily ${esc(money(policy.daily_budget_usd))}</div>
+    <div class="subtle">Req ${esc(policy.max_request_body_bytes ?? "route")} / Resp ${esc(policy.max_response_body_bytes ?? "route")}</div>
+    <div class="subtle">Rotate ${esc(key.rotation_due_at ? time(key.rotation_due_at) : "none")} / Last used ${esc(key.last_used_at ? time(key.last_used_at) : "never")}</div>`;
+}
+
+function policySimulationResult() {
+  const result = state.policySimulation;
+  if (!result) return '<div class="empty-inline">No simulation run.</div>';
+  const decision = result.final_decision || {};
+  return `<div class="kv">
+    <div><strong>Decision</strong><span>${esc(decision.allowed ? "allowed" : decision.error_code || "denied")}</span></div>
+    <div><strong>Route</strong><span>${esc(result.route_match?.route || "")}</span></div>
+    <div><strong>Provider</strong><span>${esc(result.route_match?.provider || "")}</span></div>
+    <div><strong>Policy version</strong><span>${esc(result.policy_merge?.policy_version ?? "n/a")}</span></div>
+    <div><strong>Guardrails</strong><span>${esc((result.guardrail_plan || []).join(", ") || "none")}</span></div>
+    <div><strong>Rate</strong><span>RPM ${esc(result.rate_limit_projection?.rpm_limit ?? "none")} / TPM ${esc(result.rate_limit_projection?.tpm_limit ?? "none")}</span></div>
+    <div><strong>Budget</strong><span>${esc(money(result.budget_projection?.daily_budget_usd))} daily</span></div>
+  </div>`;
 }
 
 function csv(value) {
@@ -1639,8 +1800,8 @@ function keyName(keyId) {
   return state.keys.find((key) => key.id === keyId)?.key_prefix || keyId;
 }
 
-function providerPolicySelect(selected = []) {
-  const values = new Set(Array.isArray(selected) && selected.length ? selected : ["litellm"]);
+function providerPolicySelect(selected = [], neutral = false) {
+  const values = new Set(Array.isArray(selected) && selected.length ? selected : neutral ? [] : ["litellm"]);
   return `<div class="checkbox-group" role="group" aria-label="Providers">
     ${["litellm", "internal-service"].map((value) => `<label><input name="allowed_providers" type="checkbox" value="${attr(value)}" ${values.has(value) ? "checked" : ""}> ${esc(value)}</label>`).join("")}
   </div>`;

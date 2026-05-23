@@ -77,6 +77,9 @@ test("control-plane public route inventory is pinned", () => {
     "/admin-ui/admin/openai-routes/{route_id}/disable",
     "/admin-ui/admin/openai-routes/{route_id}/enable",
     "/admin-ui/admin/operator-token/rotate",
+    "/admin-ui/admin/policy-layers",
+    "/admin-ui/admin/policy-layers/{layer_id}",
+    "/admin-ui/admin/policy/simulate",
     "/admin-ui/admin/projects",
     "/admin-ui/admin/projects/{project_id}",
     "/admin-ui/admin/projects/{project_id}/usage",
@@ -186,6 +189,7 @@ test("public gateway error codes are pinned", () => {
     "project_in_use",
     "rate_limit_exceeded",
     "request_body_too_large",
+    "response_body_too_large",
     "revoked_virtual_key",
     "store_unavailable",
     "studio_unavailable",
@@ -259,6 +263,7 @@ test("PostgreSQL migration inventory is pinned", () => {
     "20260516000200_guardrail_registry_policy_events.sql",
     "20260516000600_key_guardrail_config_overrides.sql",
     "20260522000100_operator_scopes_audit_events.sql",
+    "20260523000100_policy_governance_lifecycle.sql",
   ]);
 });
 

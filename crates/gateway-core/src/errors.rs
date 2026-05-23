@@ -30,6 +30,8 @@ pub enum GatewayError {
     DisabledRoute,
     #[error("request body too large")]
     RequestBodyTooLarge,
+    #[error("response body too large")]
+    ResponseBodyTooLarge,
     #[error("upstream timed out")]
     UpstreamTimeout,
     #[error("upstream connection failed")]
@@ -114,7 +116,7 @@ impl GatewayError {
             Self::InsufficientOperatorScope => StatusCode::FORBIDDEN,
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
             Self::DisabledRoute => StatusCode::FORBIDDEN,
-            Self::RequestBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::RequestBodyTooLarge | Self::ResponseBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::PolicyDenied => StatusCode::FORBIDDEN,
             Self::RateLimitExceeded { .. } | Self::TokenRateLimitExceeded { .. } => {
                 StatusCode::TOO_MANY_REQUESTS
@@ -159,6 +161,7 @@ impl GatewayError {
             Self::UnsupportedRoute => "unsupported_route",
             Self::DisabledRoute => "disabled_route",
             Self::RequestBodyTooLarge => "request_body_too_large",
+            Self::ResponseBodyTooLarge => "response_body_too_large",
             Self::UpstreamTimeout => "upstream_timeout",
             Self::UpstreamConnection => "upstream_connection",
             Self::PolicyDenied => "policy_denied",
@@ -204,6 +207,7 @@ impl GatewayError {
             Self::UnsupportedRoute => "Route is not supported by this gateway.",
             Self::DisabledRoute => "Route is disabled by gateway policy.",
             Self::RequestBodyTooLarge => "Request body exceeds the route limit.",
+            Self::ResponseBodyTooLarge => "Response body exceeds the policy limit.",
             Self::PolicyDenied => "Request is denied by key policy.",
             Self::RateLimitExceeded { .. } => "Rate limit exceeded.",
             Self::TokenRateLimitExceeded { .. } => "Token rate limit exceeded.",

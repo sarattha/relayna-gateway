@@ -39,6 +39,8 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin-ui/admin/providers",
     "/admin-ui/admin/openai-routes",
     "/admin-ui/admin/keys",
+    "/admin-ui/admin/policy/simulate",
+    "/admin-ui/admin/policy-layers",
     "/admin-ui/admin/guardrails",
     "/admin-ui/admin/guardrails/executions?limit=50",
     "/admin-ui/admin/guardrails/summary",
@@ -124,7 +126,7 @@ test("admin portal uses structured project and provider controls", () => {
   assert.match(js, /data-project-services-form/);
   assert.match(js, /serviceSelectionControl\(project\.service_names \|\| \[\], "service_names", "Project services"\)/);
   assert.match(js, /service_names: form\.getAll\("service_names"\)/);
-  assert.match(js, /function providerPolicySelect\(selected = \[\]\)/);
+  assert.match(js, /function providerPolicySelect\(selected = \[\], neutral = false\)/);
   assert.match(js, /name="allowed_providers" type="checkbox"/);
 });
 
@@ -208,6 +210,28 @@ test("virtual keys expose explicit no-expiration controls", () => {
   assert.match(js, /No expiration/);
   assert.match(js, /function keyExpiry\(key\)/);
   assert.match(js, /non-expiring/);
+});
+
+test("virtual keys expose policy simulator presets and lifecycle controls", () => {
+  for (const field of [
+    "preset",
+    "rotation_due_at",
+    "max_requests_per_day",
+    "max_tokens_per_day",
+    "max_cost_per_request",
+    "max_request_body_bytes",
+    "max_response_body_bytes",
+    "allowed_hours_utc",
+  ]) {
+    assert.match(js, new RegExp(`name="${field}"`));
+  }
+  assert.match(js, /developer/);
+  assert.match(js, /production_worker/);
+  assert.match(js, /external_partner/);
+  assert.match(js, /async function simulatePolicy\(event\)/);
+  assert.match(js, /async function savePolicyLayer\(event\)/);
+  assert.match(js, /api\("\/admin-ui\/admin\/policy\/simulate"/);
+  assert.match(js, /api\("\/admin-ui\/admin\/policy-layers"/);
 });
 
 test("service editor closes after a successful save", () => {
