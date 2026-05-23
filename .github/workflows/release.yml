@@ -23,6 +23,21 @@ jobs:
       - name: Validate release metadata
         run: python3 scripts/validate-release-metadata.py "${{ github.ref_name }}"
 
+      - name: Determine latest stable image tag eligibility
+        id: latest_tag
+        run: |
+          git fetch --force --tags
+
+          if [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            latest_stable_tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)"
+            if [ "${latest_stable_tag}" = "${GITHUB_REF_NAME}" ]; then
+              echo "enabled=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+
       - name: Detect Cargo workspace
         id: cargo
         run: |
@@ -85,7 +100,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ steps.latest_tag.outputs.enabled == 'true' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
