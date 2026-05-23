@@ -4,6 +4,11 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
+Current branch work after the `v0.0.14` freeze baseline adds Admin UI 2.0,
+scoped operator governance, policy simulation and inherited layers, provider
+intelligence, richer usage analytics, and supply-chain hardening. See
+`docs/current-features.md` for the public feature delta and screenshots.
+
 ## What This Repository Contains
 
 - `crates/gateway-api`: Axum control API, health, readiness, metrics, admin APIs, embedded admin UI, and process startup.
@@ -67,6 +72,11 @@ Useful endpoints:
 - Studio import preview: `http://127.0.0.1:8081/admin-ui/admin/studio/services`
 - Usage export JSON: `http://127.0.0.1:8081/admin-ui/admin/usage/export.json`
 - Usage export CSV: `http://127.0.0.1:8081/admin-ui/admin/usage/export.csv`
+
+Post-freeze admin endpoints also include scoped audit events, policy
+simulation, policy layers, provider health state, debug bundles, service import
+preview/activation/version/rollback, and expanded usage analytics. These are
+documented in `docs/current-features.md`.
 
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are startup fallback
 settings. Operators can also open Admin portal Settings after Gateway starts to
@@ -222,5 +232,7 @@ See:
 - `docs/getting-started.md`
 - `docs/deployment.md`
 - `docs/guardrails.md`
+- `docs/current-features.md`
+- `docs/provider-intelligence.md`
 - `docs/operations.md`
 - `CHANGELOG.md`

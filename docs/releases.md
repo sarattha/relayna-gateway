@@ -2,6 +2,12 @@
 
 Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.0.14` is the current release target.
 
+The current branch is ahead of `v0.0.14` with unreleased feature work covering
+Admin UI 2.0, operator governance, policy governance, provider intelligence,
+observability analytics, and supply-chain hardening. See
+[Current Feature Highlights](current-features.md) for the feature delta that
+should feed the next release notes.
+
 ## Release Checklist
 
 1. Update workspace crate versions.
@@ -57,3 +63,8 @@ ghcr.io/sarattha/relayna-gateway:latest
 Release artifacts include `CHANGELOG.md` and an SPDX JSON SBOM named
 `relayna-gateway-<tag>.spdx.json`. Verify image signatures with Cosign against
 the GHCR image digest published by the release workflow.
+
+The v0.0.14 production freeze perimeter is pinned by
+`tests/freeze-v0.0.14-perimeter.test.mjs`. Post-freeze features should preserve
+that perimeter unless a release intentionally updates the compatibility notes
+and the matching test expectations.

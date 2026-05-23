@@ -2,6 +2,10 @@
 
 The admin portal is a static operator console embedded in `gateway-api`. It is served from the control listener at `/admin-ui` and calls the same `/admin-ui/admin/*` APIs used by automation.
 
+For a current-branch tour of the current Admin UI 2.0 redesign and
+related governance, provider intelligence, usage analytics, and supply-chain
+features, see [Current Feature Highlights](current-features.md).
+
 ## Frontend Source
 
 Admin UI 2.0 source files live in
@@ -17,6 +21,13 @@ The generated files remain checked in under
 `crates/gateway-api/src/static/admin-ui` so the Rust control-plane binary can
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
+
+The Admin UI 2.0 shell groups operator work into Monitor, Discover, and Govern
+navigation domains. Monitor contains overview, health, and usage workflows;
+Discover contains providers, services, routes, and projects; Govern contains
+keys, guardrails, audit, and settings. The source package owns design-system
+tokens, view metadata, templates, and reusable components, while the generated
+asset paths stay stable for deployed gateways.
 
 ## Authentication
 

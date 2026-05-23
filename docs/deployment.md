@@ -2,6 +2,12 @@
 
 Relayna Gateway ships as one binary and one Docker image. The image serves both the core proxy and the admin portal because the admin UI is embedded in the `gateway-api` binary.
 
+Current branch work after `v0.0.14` keeps that deployment shape: Admin UI 2.0 is
+compiled into the same static asset contract, and provider intelligence,
+operator governance, usage analytics, and audit features remain on the private
+control listener. See [Current Feature Highlights](current-features.md) for the
+public feature delta.
+
 ## Docker Image
 
 Build the image:
@@ -145,6 +151,12 @@ The Kubernetes example uses restricted pod security defaults:
 - `seccompProfile: RuntimeDefault`
 - `allowPrivilegeEscalation: false`
 - all Linux capabilities dropped
+
+The post-freeze supply-chain work also adds strict CI security checks, release
+metadata validation, SBOM generation, image signing, provenance, and documented
+temporary security exceptions. Treat failures in those checks as blocking
+unless an exception is explicitly documented in
+[Security Exceptions](security-exceptions.md).
 
 The included NetworkPolicy is intentionally restrictive. Replace the example
 namespace labels, service selectors, and provider egress CIDR with values that

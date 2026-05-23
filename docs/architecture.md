@@ -46,6 +46,12 @@ The control listener exposes:
 - `/admin-ui/admin/*` APIs for operator actions.
 - `/admin-ui` for the embedded operator portal.
 
+Current branch additions after `v0.0.14` extend this control plane with scoped
+operator authorization, audit events, policy simulation, policy layers,
+provider health state, debug bundles, service import versioning and rollback,
+and expanded usage analytics. The public feature overview is in
+[Current Feature Highlights](current-features.md).
+
 Admin APIs require an operator token. On the first startup, the gateway bootstraps one operator token and stores only its hash. `GATEWAY_ADMIN_TOKEN` can seed that first token in a fresh database; otherwise the gateway generates and prints one raw token once. After an active token exists, env changes are ignored and rotation through the Admin portal is the supported change path.
 
 Usage export endpoints are part of the admin surface:
@@ -75,7 +81,8 @@ PostgreSQL is the source of truth for durable state:
 - Usage events consumed by Relayna Studio and operators.
 - Service registrations and Studio sync state.
 - Global OpenAI route enablement for `/v1/chat/completions` and `/v1/responses`.
-- Operator token hashes.
+- Operator token hashes, roles, scopes, and append-only admin audit events.
+- Provider health state, request debug bundles, and service import snapshots.
 
 Registered service routes support wildcard paths under `/services/<service-name>/*`. The route resolver can match `GET` for service wildcard traffic, but forwarding still requires the service registration to include `GET` in its allowed method set. OpenAI-compatible routes, direct provider routes, and legacy named service routes remain `POST` routes.
 
