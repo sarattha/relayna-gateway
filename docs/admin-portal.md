@@ -57,7 +57,10 @@ required scope.
 - Guardrails shows the gateway guardrail catalog, recent sanitized execution
   events, and execution summaries. Key create/edit forms can set mandatory,
   optional, and forbidden guardrails.
-- Health shows provider and service request, error, timeout, fallback, and latency status.
+- Health shows provider and service request, error, timeout, fallback, and
+  latency status. Provider health state also exposes active check status,
+  passive success/failure counters, circuit state, cooldown, and last error
+  metadata.
 
 ## Security Notes
 
@@ -69,6 +72,10 @@ required scope.
 - Service wildcard routes can accept `GET` only when the service registration includes `GET` in its allowed methods.
 - Guardrail execution records never include raw request bodies, response bodies,
   provider credentials, bearer tokens, or PII mappings.
+- Debug bundles are keyed by request ID and contain route, selection, policy,
+  guardrail, latency, fallback, and request/response hash data only. They do not
+  contain raw prompts, raw responses, bearer tokens, provider credentials, or
+  LiteLLM credentials.
 - The control listener should be protected by network policy, ingress rules, or private access controls in production.
 
 ## Audit Events

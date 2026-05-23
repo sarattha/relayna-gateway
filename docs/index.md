@@ -33,5 +33,7 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - [Getting Started](getting-started.md) covers local PostgreSQL, Redis, LiteLLM, and gateway startup.
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
 - [Guardrails](guardrails.md) covers catalog setup, global runtime config, and per-key overrides.
+- [Provider Intelligence](provider-intelligence.md) covers routing strategies,
+  fallback, circuit breakers, debug bundles, and service import rollback.
 - [Deployment](deployment.md) covers Docker and Kubernetes.
 - [Operations](operations.md) covers readiness, logs, metrics, secrets, and releases.

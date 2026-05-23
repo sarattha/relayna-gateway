@@ -13,6 +13,9 @@ const state = {
   studioConnection: null,
   policySimulation: null,
   policyLayers: [],
+  providerHealthState: [],
+  serviceImportVersions: [],
+  debugBundle: null,
   editingKeyId: null,
   editingServiceName: null,
   editingGuardrailName: null,
@@ -938,6 +941,7 @@ async function openStudioImportPicker() {
         <form id="studio-import-form" class="modal-form">
           <div class="modal-scroll">${studioImportTable(state.studioServices)}</div>
           <div class="form-actions">
+            <button type="button" data-import-preview ${state.studioServices.length ? "" : "disabled"}>Preview selected</button>
             <button class="primary" ${state.studioServices.length ? "" : "disabled"}>Import selected</button>
             <button type="button" data-close-modal>Cancel</button>
           </div>
@@ -949,6 +953,7 @@ async function openStudioImportPicker() {
       if (event.target === backdrop) backdrop.remove();
     });
     backdrop.querySelector("#studio-import-form").addEventListener("submit", handleAsync(importSelectedStudioServices));
+    backdrop.querySelector("[data-import-preview]").addEventListener("click", handleAsync(previewSelectedStudioServices));
     document.body.appendChild(backdrop);
   } catch (error) {
     setNotice(`${error.message}. Check Settings for the Studio connection.`);
@@ -1140,15 +1145,23 @@ async function importSelectedStudioServices(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const selected = form.getAll("studio_index").map((value) => state.studioServices[Number(value)]).filter(Boolean);
-  for (const service of selected) {
-    await api("/admin-ui/admin/services/import", {
-      method: "POST",
-      body: JSON.stringify(service.import_request),
-    });
-  }
+  await api("/admin-ui/admin/services/import/activate", {
+    method: "POST",
+    body: JSON.stringify({ source: "studio", services: selected.map((service) => service.import_request) }),
+  });
   document.querySelector(".modal-backdrop")?.remove();
   setNotice(`${selected.length} Studio service${selected.length === 1 ? "" : "s"} imported.`, "success");
   await services();
+}
+
+async function previewSelectedStudioServices(event) {
+  const form = new FormData(document.querySelector("#studio-import-form"));
+  const selected = form.getAll("studio_index").map((value) => state.studioServices[Number(value)]).filter(Boolean);
+  const preview = await api("/admin-ui/admin/services/import/preview", {
+    method: "POST",
+    body: JSON.stringify({ source: "studio", services: selected.map((service) => service.import_request) }),
+  });
+  setNotice(`Import preview: +${preview.diff.added.length} changed ${preview.diff.changed.length} removed ${preview.diff.removed.length} invalid ${preview.diff.invalid.length}.`, preview.diff.invalid.length ? "error" : "success");
 }
 
 async function patchService(event) {
@@ -1290,10 +1303,14 @@ function usageBreakdownTable(rows, label = (value) => value) {
 }
 
 async function health() {
-  const [ready, rows] = await Promise.all([
+  const [ready, rows, healthState, importVersions] = await Promise.all([
     json("/admin-ui/readyz"),
     api("/admin-ui/admin/provider-health"),
+    api("/admin-ui/admin/provider-health/state"),
+    api("/admin-ui/admin/services/import/versions"),
   ]);
+  state.providerHealthState = healthState;
+  state.serviceImportVersions = importVersions;
   const requestCount = rows.reduce((sum, row) => sum + row.request_count, 0);
   const errorCount = rows.reduce((sum, row) => sum + row.error_count, 0);
   const fallbackCount = rows.reduce((sum, row) => sum + row.fallback_count, 0);
@@ -1309,7 +1326,31 @@ async function health() {
       <div class="panel-heading"><h3>Provider and service health</h3></div>
       ${healthTable(rows)}
     </section>
+    <section class="panel">
+      <div class="panel-heading">
+        <h3>Health state</h3>
+        <button type="button" data-health-action="check">Run checks</button>
+      </div>
+      ${healthStateTable(healthState)}
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Debug bundle</h3></div>
+      <form id="debug-bundle-form" class="inline-form">
+        <input name="request_id" placeholder="request ID" required>
+        <button>Load</button>
+      </form>
+      ${state.debugBundle ? debugBundleView(state.debugBundle) : ""}
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Service import versions</h3></div>
+      ${serviceImportVersionsTable(importVersions)}
+    </section>
   `;
+  document.querySelector("[data-health-action='check']").addEventListener("click", handleAsync(runHealthChecks));
+  document.querySelector("#debug-bundle-form").addEventListener("submit", handleAsync(loadDebugBundle));
+  document.querySelectorAll("[data-import-rollback]").forEach((button) => {
+    button.addEventListener("click", handleAsync(rollbackImportVersion));
+  });
 }
 
 function healthTable(rows) {
@@ -1336,6 +1377,71 @@ function healthBadge(row) {
 function averageLatency(row) {
   if (!row.request_count) return 0;
   return Math.round(row.total_latency_ms / row.request_count);
+}
+
+function healthStateTable(rows) {
+  return table(
+    ["Name", "Provider", "Status", "Circuit", "Active check", "Latency", "Last error", "Cooldown"],
+    rows.map((row) => [
+      esc(row.name),
+      esc(row.provider),
+      esc(row.status),
+      esc(row.circuit_state),
+      row.active_check_ok === true ? '<span class="badge good">ok</span>' : row.active_check_ok === false ? '<span class="badge bad">failed</span>' : '<span class="badge">unknown</span>',
+      esc(row.average_latency_ms ?? ""),
+      esc(row.last_error_code ?? ""),
+      esc(row.cooldown_until ? time(row.cooldown_until) : ""),
+    ]),
+  );
+}
+
+function debugBundleView(bundle) {
+  return `<div class="details">
+    <p><strong>${esc(bundle.request_id)}</strong> ${esc(bundle.route ?? "")} ${esc(bundle.provider ?? "")}</p>
+    <p class="subtle">Request hash ${esc(bundle.request_hash ?? "none")} · Response hash ${esc(bundle.response_hash ?? "none")}</p>
+    <pre>${esc(JSON.stringify({
+      policy_trace: bundle.policy_trace,
+      guardrail_trace: bundle.guardrail_trace,
+      selection_trace: bundle.selection_trace,
+      fallback_history: bundle.fallback_history,
+      upstream_latency_ms: bundle.upstream_latency_ms,
+    }, null, 2))}</pre>
+  </div>`;
+}
+
+function serviceImportVersionsTable(rows) {
+  return table(
+    ["Version", "Source", "Activated", "Rollback", "Diff", "Actions"],
+    rows.map((row) => [
+      row.version,
+      esc(row.source),
+      esc(row.activated_at ? time(row.activated_at) : ""),
+      esc(row.rolled_back_from_version ?? ""),
+      esc(`+${row.diff.added.length} changed ${row.diff.changed.length} removed ${row.diff.removed.length}`),
+      `<button type="button" data-import-rollback="${attr(row.version)}">Rollback</button>`,
+    ]),
+  );
+}
+
+async function runHealthChecks() {
+  await api("/admin-ui/admin/provider-health/check", { method: "POST", body: "{}" });
+  setNotice("Provider health checks completed.", "success");
+  await health();
+}
+
+async function loadDebugBundle(event) {
+  event.preventDefault();
+  const requestId = new FormData(event.target).get("request_id");
+  state.debugBundle = await api(`/admin-ui/admin/debug-bundles/${encodeURIComponent(requestId)}`);
+  await health();
+}
+
+async function rollbackImportVersion(event) {
+  const version = event.currentTarget.dataset.importRollback;
+  if (!(await confirmAction(`Rollback import ${version}`, "This activates the stored service registry snapshot."))) return;
+  await api(`/admin-ui/admin/services/import/rollback/${version}`, { method: "POST", body: "{}" });
+  setNotice(`Service registry rolled back to ${version}.`, "success");
+  await health();
 }
 
 function table(headers, rows) {

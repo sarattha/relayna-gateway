@@ -25,15 +25,17 @@ use gateway_core::{
     },
     verify_stored_operator_token, AdminAuditStore, AdminGuardrailDefinitionResponse, AdminKeyStore,
     AdminKeyUsageSummary, AdminOpenAiRouteStore, AdminPolicyLayerStore, AdminProjectStore,
-    AuditEvent, AuditEventCreate, AuditEventQuery, GatewayError, GatewayResult,
-    GuardrailAdminCreateRequest, GuardrailAdminPatchRequest, GuardrailDefinition,
-    GuardrailEventQuery, GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode,
-    GuardrailObservabilityStore, GuardrailPolicy, GuardrailProviderKind, GuardrailStore, KeyPolicy,
-    OpenAiRouteSetting, OpenAiRouteSettingsLookup, OperatorAuthorization, OperatorTokenMaterial,
-    OperatorTokenResponse, OperatorTokenStore, PolicyLayer, PolicyLayerKind, ProjectUsageSummary,
-    Provider, ProviderHealth, Route, StoredOperatorToken, UsageBreakdown, UsageBreakdownDimension,
-    UsageEvent, UsageExport, UsageExportRow, UsageQuery, UsageQueryStore, UsageRecorder,
-    UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
+    AuditEvent, AuditEventCreate, AuditEventQuery, CircuitBreakerState, DebugBundle,
+    FallbackAttempt, GatewayError, GatewayResult, GuardrailAdminCreateRequest,
+    GuardrailAdminPatchRequest, GuardrailDefinition, GuardrailEventQuery, GuardrailExecutionEvent,
+    GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPolicy,
+    GuardrailProviderKind, GuardrailStore, KeyPolicy, OpenAiRouteSetting,
+    OpenAiRouteSettingsLookup, OperatorAuthorization, OperatorTokenMaterial, OperatorTokenResponse,
+    OperatorTokenStore, PolicyLayer, PolicyLayerKind, ProjectUsageSummary, Provider,
+    ProviderHealth, ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore, Route,
+    ServiceImportDiff, ServiceRegistrySnapshot, StoredOperatorToken, UsageBreakdown,
+    UsageBreakdownDimension, UsageEvent, UsageExport, UsageExportRow, UsageQuery, UsageQueryStore,
+    UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -3397,6 +3399,282 @@ impl UsageQueryStore for PostgresStore {
     }
 }
 
+#[async_trait]
+impl ProviderIntelligenceStore for PostgresStore {
+    async fn list_provider_health_states(&self) -> GatewayResult<Vec<ProviderHealthState>> {
+        sqlx::query(
+            r#"
+            SELECT
+                name,
+                provider,
+                status,
+                circuit_state,
+                active_check_ok,
+                passive_success_count,
+                passive_failure_count,
+                consecutive_failures,
+                average_latency_ms,
+                last_error_code,
+                cooldown_until,
+                checked_at,
+                updated_at
+            FROM provider_health_states
+            ORDER BY name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(|row| provider_health_state_from_row(&row))
+                .collect::<GatewayResult<Vec<_>>>()
+        })
+        .map_err(|_| GatewayError::StoreUnavailable)?
+    }
+
+    async fn upsert_provider_health_state(
+        &self,
+        state: ProviderHealthState,
+    ) -> GatewayResult<ProviderHealthState> {
+        let row = sqlx::query(
+            r#"
+            INSERT INTO provider_health_states (
+                name,
+                provider,
+                status,
+                circuit_state,
+                active_check_ok,
+                passive_success_count,
+                passive_failure_count,
+                consecutive_failures,
+                average_latency_ms,
+                last_error_code,
+                cooldown_until,
+                checked_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
+            ON CONFLICT (name) DO UPDATE SET
+                provider = EXCLUDED.provider,
+                status = EXCLUDED.status,
+                circuit_state = EXCLUDED.circuit_state,
+                active_check_ok = EXCLUDED.active_check_ok,
+                passive_success_count = EXCLUDED.passive_success_count,
+                passive_failure_count = EXCLUDED.passive_failure_count,
+                consecutive_failures = EXCLUDED.consecutive_failures,
+                average_latency_ms = EXCLUDED.average_latency_ms,
+                last_error_code = EXCLUDED.last_error_code,
+                cooldown_until = EXCLUDED.cooldown_until,
+                checked_at = EXCLUDED.checked_at,
+                updated_at = now()
+            RETURNING
+                name,
+                provider,
+                status,
+                circuit_state,
+                active_check_ok,
+                passive_success_count,
+                passive_failure_count,
+                consecutive_failures,
+                average_latency_ms,
+                last_error_code,
+                cooldown_until,
+                checked_at,
+                updated_at
+            "#,
+        )
+        .bind(&state.name)
+        .bind(provider_str(state.provider))
+        .bind(provider_health_status_str(state.status))
+        .bind(circuit_state_str(state.circuit_state))
+        .bind(state.active_check_ok)
+        .bind(state.passive_success_count)
+        .bind(state.passive_failure_count)
+        .bind(state.consecutive_failures)
+        .bind(state.average_latency_ms)
+        .bind(&state.last_error_code)
+        .bind(state.cooldown_until)
+        .bind(state.checked_at)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        provider_health_state_from_row(&row)
+    }
+
+    async fn get_debug_bundle(&self, request_id: &str) -> GatewayResult<Option<DebugBundle>> {
+        sqlx::query(
+            r#"
+            SELECT
+                request_id,
+                route,
+                provider,
+                service_name,
+                policy_trace,
+                guardrail_trace,
+                selection_trace,
+                fallback_history,
+                upstream_latency_ms,
+                request_hash,
+                response_hash,
+                redaction_version,
+                created_at
+            FROM request_debug_bundles
+            WHERE request_id = $1
+            "#,
+        )
+        .bind(request_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| row.map(|row| debug_bundle_from_row(&row)).transpose())
+        .map_err(|_| GatewayError::StoreUnavailable)?
+    }
+
+    async fn insert_debug_bundle(&self, bundle: DebugBundle) -> GatewayResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO request_debug_bundles (
+                request_id,
+                route,
+                provider,
+                service_name,
+                policy_trace,
+                guardrail_trace,
+                selection_trace,
+                fallback_history,
+                upstream_latency_ms,
+                request_hash,
+                response_hash,
+                redaction_version,
+                created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (request_id) DO UPDATE SET
+                route = EXCLUDED.route,
+                provider = EXCLUDED.provider,
+                service_name = EXCLUDED.service_name,
+                policy_trace = EXCLUDED.policy_trace,
+                guardrail_trace = EXCLUDED.guardrail_trace,
+                selection_trace = EXCLUDED.selection_trace,
+                fallback_history = EXCLUDED.fallback_history,
+                upstream_latency_ms = EXCLUDED.upstream_latency_ms,
+                request_hash = EXCLUDED.request_hash,
+                response_hash = EXCLUDED.response_hash,
+                redaction_version = EXCLUDED.redaction_version
+            "#,
+        )
+        .bind(&bundle.request_id)
+        .bind(bundle.route.map(route_str))
+        .bind(bundle.provider.map(provider_str))
+        .bind(&bundle.service_name)
+        .bind(Json(&bundle.policy_trace))
+        .bind(Json(&bundle.guardrail_trace))
+        .bind(Json(&bundle.selection_trace))
+        .bind(Json(&bundle.fallback_history))
+        .bind(bundle.upstream_latency_ms)
+        .bind(&bundle.request_hash)
+        .bind(&bundle.response_hash)
+        .bind(bundle.redaction_version)
+        .bind(bundle.created_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        Ok(())
+    }
+
+    async fn list_service_registry_snapshots(&self) -> GatewayResult<Vec<ServiceRegistrySnapshot>> {
+        sqlx::query(
+            r#"
+            SELECT
+                version,
+                source,
+                diff,
+                services_json,
+                activated_at,
+                rolled_back_from_version,
+                created_at
+            FROM service_registry_snapshots
+            ORDER BY version DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(|row| service_registry_snapshot_from_row(&row))
+                .collect::<GatewayResult<Vec<_>>>()
+        })
+        .map_err(|_| GatewayError::StoreUnavailable)?
+    }
+
+    async fn insert_service_registry_snapshot(
+        &self,
+        snapshot: ServiceRegistrySnapshot,
+    ) -> GatewayResult<ServiceRegistrySnapshot> {
+        let row = sqlx::query(
+            r#"
+            INSERT INTO service_registry_snapshots (
+                source,
+                diff,
+                services_json,
+                activated_at,
+                rolled_back_from_version,
+                created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING
+                version,
+                source,
+                diff,
+                services_json,
+                activated_at,
+                rolled_back_from_version,
+                created_at
+            "#,
+        )
+        .bind(&snapshot.source)
+        .bind(Json(&snapshot.diff))
+        .bind(Json(&snapshot.services_json))
+        .bind(snapshot.activated_at)
+        .bind(snapshot.rolled_back_from_version)
+        .bind(snapshot.created_at)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        service_registry_snapshot_from_row(&row)
+    }
+
+    async fn service_registry_snapshot(
+        &self,
+        version: i64,
+    ) -> GatewayResult<Option<ServiceRegistrySnapshot>> {
+        sqlx::query(
+            r#"
+            SELECT
+                version,
+                source,
+                diff,
+                services_json,
+                activated_at,
+                rolled_back_from_version,
+                created_at
+            FROM service_registry_snapshots
+            WHERE version = $1
+            "#,
+        )
+        .bind(version)
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| {
+            row.map(|row| service_registry_snapshot_from_row(&row))
+                .transpose()
+        })
+        .map_err(|_| GatewayError::StoreUnavailable)?
+    }
+}
+
 fn apply_policy_patch(
     mut policy: KeyPolicy,
     patch: gateway_core::admin::KeyPolicyPatch,
@@ -4389,6 +4667,158 @@ fn summary_from_row(
         total_latency_ms,
         fallback_count,
     }
+}
+
+fn provider_str(provider: Provider) -> &'static str {
+    match provider {
+        Provider::LiteLlm => "litellm",
+        Provider::OpenAiCompatible => "openai-compatible",
+        Provider::InternalService => "internal-service",
+    }
+}
+
+fn route_str(route: Route) -> &'static str {
+    route.as_str()
+}
+
+fn provider_health_status_str(status: ProviderHealthStatus) -> &'static str {
+    match status {
+        ProviderHealthStatus::Healthy => "healthy",
+        ProviderHealthStatus::Degraded => "degraded",
+        ProviderHealthStatus::Unhealthy => "unhealthy",
+        ProviderHealthStatus::Unknown => "unknown",
+    }
+}
+
+fn parse_provider_health_status(value: &str) -> GatewayResult<ProviderHealthStatus> {
+    match value {
+        "healthy" => Ok(ProviderHealthStatus::Healthy),
+        "degraded" => Ok(ProviderHealthStatus::Degraded),
+        "unhealthy" => Ok(ProviderHealthStatus::Unhealthy),
+        "unknown" => Ok(ProviderHealthStatus::Unknown),
+        _ => Err(GatewayError::StoreUnavailable),
+    }
+}
+
+fn circuit_state_str(state: CircuitBreakerState) -> &'static str {
+    match state {
+        CircuitBreakerState::Closed => "closed",
+        CircuitBreakerState::Open => "open",
+        CircuitBreakerState::HalfOpen => "half_open",
+    }
+}
+
+fn parse_circuit_state(value: &str) -> GatewayResult<CircuitBreakerState> {
+    match value {
+        "closed" => Ok(CircuitBreakerState::Closed),
+        "open" => Ok(CircuitBreakerState::Open),
+        "half_open" => Ok(CircuitBreakerState::HalfOpen),
+        _ => Err(GatewayError::StoreUnavailable),
+    }
+}
+
+fn provider_health_state_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<ProviderHealthState> {
+    let provider: String = row
+        .try_get("provider")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let status: String = row
+        .try_get("status")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let circuit_state: String = row
+        .try_get("circuit_state")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    Ok(ProviderHealthState {
+        name: row
+            .try_get("name")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        provider: parse_provider_value(&provider)?,
+        status: parse_provider_health_status(&status)?,
+        circuit_state: parse_circuit_state(&circuit_state)?,
+        active_check_ok: row.try_get("active_check_ok").ok().flatten(),
+        passive_success_count: row
+            .try_get("passive_success_count")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        passive_failure_count: row
+            .try_get("passive_failure_count")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        consecutive_failures: row
+            .try_get("consecutive_failures")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        average_latency_ms: row.try_get("average_latency_ms").ok().flatten(),
+        last_error_code: row.try_get("last_error_code").ok().flatten(),
+        cooldown_until: row.try_get("cooldown_until").ok().flatten(),
+        checked_at: row.try_get("checked_at").ok().flatten(),
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
+fn debug_bundle_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<DebugBundle> {
+    let route: Option<String> = row.try_get("route").ok().flatten();
+    let provider: Option<String> = row.try_get("provider").ok().flatten();
+    let policy_trace: Json<Vec<String>> = row
+        .try_get("policy_trace")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let guardrail_trace: Json<Vec<String>> = row
+        .try_get("guardrail_trace")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let selection_trace: Json<Vec<String>> = row
+        .try_get("selection_trace")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let fallback_history: Json<Vec<FallbackAttempt>> = row
+        .try_get("fallback_history")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+    Ok(DebugBundle {
+        request_id: row
+            .try_get("request_id")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        route: route.as_deref().map(parse_route_value).transpose()?,
+        provider: provider.as_deref().map(parse_provider_value).transpose()?,
+        service_name: row.try_get("service_name").ok().flatten(),
+        policy_trace: policy_trace.0,
+        guardrail_trace: guardrail_trace.0,
+        selection_trace: selection_trace.0,
+        fallback_history: fallback_history.0,
+        upstream_latency_ms: row.try_get("upstream_latency_ms").ok().flatten(),
+        request_hash: row.try_get("request_hash").ok().flatten(),
+        response_hash: row.try_get("response_hash").ok().flatten(),
+        redaction_version: row
+            .try_get("redaction_version")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        created_at: row
+            .try_get("created_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
+fn service_registry_snapshot_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<ServiceRegistrySnapshot> {
+    let diff: Json<ServiceImportDiff> = row
+        .try_get("diff")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let services_json: Json<serde_json::Value> = row
+        .try_get("services_json")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    Ok(ServiceRegistrySnapshot {
+        version: row
+            .try_get("version")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        source: row
+            .try_get("source")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        diff: diff.0,
+        services_json: services_json.0,
+        activated_at: row.try_get("activated_at").ok().flatten(),
+        rolled_back_from_version: row.try_get("rolled_back_from_version").ok().flatten(),
+        created_at: row
+            .try_get("created_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
 }
 
 #[cfg(test)]
