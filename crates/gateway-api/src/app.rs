@@ -9,20 +9,24 @@ use axum::{
 use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
-    guardrail_executor_for_definitions, resolve_guardrail_plan, AdminGuardrailDefinitionResponse,
-    AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore, AdminOpenAiRouteStore,
-    AdminProjectStore, AdminProviderConfigStore, AdminServiceStore, AdminStudioConnectionStore,
+    guardrail_executor_for_definitions, resolve_guardrail_plan, AdminAuditStore,
+    AdminGuardrailDefinitionResponse, AdminKeyCreate, AdminKeyPatch, AdminKeyResponse,
+    AdminKeyStore, AdminOpenAiRouteStore, AdminProjectStore, AdminProviderConfigStore,
+    AdminServiceStore, AdminStudioConnectionStore, AuditEvent, AuditEventCreate, AuditEventQuery,
     CreatedAdminKeyResponse, CreatedOperatorTokenResponse, EffectiveStudioConnection, GatewayError,
     GatewayResult, GuardrailAdminCreateRequest, GuardrailAdminPatchRequest,
     GuardrailDefinitionResponse, GuardrailEventQuery, GuardrailExecutionEvent,
     GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPlanRequest,
     GuardrailPolicySet, GuardrailStore, GuardrailTestRequest, GuardrailTestResponse,
-    OperatorTokenMaterial, OperatorTokenStore, ProjectCreateRequest, ProjectPatchRequest,
-    ProviderConfigCreateRequest, ProviderConfigPatchRequest, ServiceCreateRequest,
-    ServicePatchRequest, StudioConnectionEnv, StudioConnectionPatchRequest,
-    StudioConnectionTestResponse, StudioServiceCatalogResponse, StudioServiceImportPreview,
-    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery,
-    UsageQueryStore, VirtualKeyMaterial,
+    OperatorAuthorization, OperatorTokenMaterial, OperatorTokenStore, ProjectCreateRequest,
+    ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest, ProviderConfigPatchRequest,
+    ProviderConfigResponse, ServiceCreateRequest, ServicePatchRequest, ServiceResponse,
+    StudioConnectionEnv, StudioConnectionPatchRequest, StudioConnectionTestResponse,
+    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
+    UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery, UsageQueryStore,
+    VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE,
+    SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE,
+    SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::Serialize;
@@ -44,6 +48,7 @@ pub trait GatewayData:
     + GuardrailStore
     + GuardrailObservabilityStore
     + OperatorTokenStore
+    + AdminAuditStore
     + UsageQueryStore
     + Send
     + Sync
@@ -173,6 +178,7 @@ pub fn router_with_state(state: AppState) -> Router {
             "/admin-ui/admin/guardrails/summary",
             get(admin_guardrail_summary),
         )
+        .route("/admin-ui/admin/audit-events", get(list_audit_events))
         .route("/admin-ui/admin/keys", post(create_key).get(list_keys))
         .route(
             "/admin-ui/admin/keys/{key_id}",
@@ -447,16 +453,44 @@ async fn admin_guardrail_summary(
     }
 }
 
+async fn list_audit_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<AuditEventQuery>,
+) -> Response {
+    admin_query(headers, &state, SCOPE_AUDIT_READ, |store| async move {
+        store.list_audit_events(query).await
+    })
+    .await
+}
+
 async fn create_admin_guardrail(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(request): Json<GuardrailAdminCreateRequest>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_GUARDRAILS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
     match state.store.create_http_guardrail(request).await {
-        Ok(guardrail) => Json(guardrail).into_response(),
+        Ok(guardrail) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "guardrails:create",
+                "guardrail",
+                Some(guardrail.name.clone()),
+                None,
+                audit_json(&guardrail),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(guardrail).into_response()
+        }
         Err(error) => error_response(&headers, error),
     }
 }
@@ -467,11 +501,28 @@ async fn patch_admin_guardrail(
     Path(name): Path<String>,
     Json(request): Json<GuardrailAdminPatchRequest>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_GUARDRAILS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
     match state.store.patch_admin_guardrail(name, request).await {
-        Ok(guardrail) => Json(guardrail).into_response(),
+        Ok(guardrail) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "guardrails:update",
+                "guardrail",
+                Some(guardrail.name.clone()),
+                None,
+                audit_json(&guardrail),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(guardrail).into_response()
+        }
         Err(error) => error_response(&headers, error),
     }
 }
@@ -481,11 +532,28 @@ async fn delete_admin_guardrail(
     headers: HeaderMap,
     Path(name): Path<String>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
-    match state.store.delete_admin_guardrail(name).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+    let actor = match require_admin_scope(&state, &headers, SCOPE_GUARDRAILS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state.store.delete_admin_guardrail(name.clone()).await {
+        Ok(()) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "guardrails:delete",
+                "guardrail",
+                Some(name),
+                None,
+                None,
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(error) => error_response(&headers, error),
     }
 }
@@ -495,20 +563,37 @@ async fn create_key(
     headers: HeaderMap,
     Json(request): Json<AdminKeyCreate>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_KEYS_CREATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
 
     let material = match VirtualKeyMaterial::generate() {
         Ok(material) => material,
         Err(error) => return error_response(&headers, error),
     };
     match state.store.create_admin_key(request, &material).await {
-        Ok(key) => Json(CreatedAdminKeyResponse {
-            key,
-            raw_key: material.raw_key,
-        })
-        .into_response(),
+        Ok(key) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "keys:create",
+                "key",
+                Some(key.id.to_string()),
+                None,
+                audit_json(&key),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(CreatedAdminKeyResponse {
+                key,
+                raw_key: material.raw_key,
+            })
+            .into_response()
+        }
         Err(error) => error_response(&headers, error),
     }
 }
@@ -546,15 +631,57 @@ async fn patch_key(
     Path(key_id): Path<uuid::Uuid>,
     Json(patch): Json<AdminKeyPatch>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let required_scopes = key_patch_required_scopes(&patch);
+    let actor = match require_admin_scopes(&state, &headers, &required_scopes).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_admin_key(key_id).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
 
     match state.store.patch_admin_key(key_id, patch).await {
-        Ok(Some(key)) => Json(key).into_response(),
+        Ok(Some(key)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "keys:update",
+                "key",
+                Some(key.id.to_string()),
+                before.as_ref().and_then(audit_json),
+                audit_json(&key),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(key).into_response()
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
+}
+
+fn key_patch_required_scopes(patch: &AdminKeyPatch) -> Vec<&'static str> {
+    let mut scopes = Vec::new();
+    if patch.disabled.is_some() {
+        scopes.push(SCOPE_KEYS_DISABLE);
+    }
+    if patch.owner_type.is_some()
+        || patch.project_id.is_some()
+        || patch.service_names.is_some()
+        || patch.expires_at.is_some()
+        || patch.policy.is_some()
+        || patch.guardrail_policy.is_some()
+    {
+        scopes.push(SCOPE_POLICIES_UPDATE);
+    }
+    if scopes.is_empty() {
+        scopes.push(SCOPE_POLICIES_UPDATE);
+    }
+    scopes
 }
 
 async fn revoke_key(
@@ -617,14 +744,20 @@ async fn create_project(
     headers: HeaderMap,
     Json(request): Json<ProjectCreateRequest>,
 ) -> Response {
-    admin_query(headers, &state, |store| async move {
-        store.create_project(request).await
-    })
+    admin_mutation(
+        headers,
+        &state,
+        SCOPE_SETTINGS_UPDATE,
+        "projects:create",
+        "project",
+        |project: &ProjectResponse| Some(project.id.to_string()),
+        |store| async move { store.create_project(request).await },
+    )
     .await
 }
 
 async fn list_projects(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    admin_query(headers, &state, |store| async move {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
         store.list_projects().await
     })
     .await
@@ -652,12 +785,33 @@ async fn patch_project(
     Path(project_id): Path<uuid::Uuid>,
     Json(patch): Json<ProjectPatchRequest>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_SETTINGS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_project(project_id).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
 
     match state.store.patch_project(project_id, patch).await {
-        Ok(Some(project)) => Json(project).into_response(),
+        Ok(Some(project)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "projects:update",
+                "project",
+                Some(project.id.to_string()),
+                before.as_ref().and_then(audit_json),
+                audit_json(&project),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(project).into_response()
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
@@ -668,12 +822,33 @@ async fn delete_project(
     headers: HeaderMap,
     Path(project_id): Path<uuid::Uuid>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_SETTINGS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_project(project_id).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
 
     match state.store.delete_project(project_id).await {
-        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(true) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "projects:delete",
+                "project",
+                Some(project_id.to_string()),
+                before.as_ref().and_then(audit_json),
+                None,
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
@@ -684,9 +859,10 @@ async fn rotate_operator_token(State(state): State<AppState>, headers: HeaderMap
         Ok(token) => token.to_owned(),
         Err(error) => return error_response(&headers, error),
     };
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
 
     let material = match OperatorTokenMaterial::generate() {
         Ok(material) => material,
@@ -697,11 +873,27 @@ async fn rotate_operator_token(State(state): State<AppState>, headers: HeaderMap
         .rotate_operator_token(&current_raw_token, &material, Utc::now())
         .await
     {
-        Ok(token) => Json(CreatedOperatorTokenResponse {
-            token,
-            raw_token: material.raw_token,
-        })
-        .into_response(),
+        Ok(token) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "operators:rotate",
+                "operator_token",
+                Some(token.id.to_string()),
+                None,
+                audit_json(&token),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(CreatedOperatorTokenResponse {
+                token,
+                raw_token: material.raw_token,
+            })
+            .into_response()
+        }
         Err(error) => error_response(&headers, error),
     }
 }
@@ -711,14 +903,20 @@ async fn create_provider(
     headers: HeaderMap,
     Json(request): Json<ProviderConfigCreateRequest>,
 ) -> Response {
-    admin_query(headers, &state, |store| async move {
-        store.create_provider_config(request).await
-    })
+    admin_mutation(
+        headers,
+        &state,
+        SCOPE_PROVIDERS_UPDATE,
+        "providers:create",
+        "provider",
+        |provider: &ProviderConfigResponse| Some(provider.id.to_string()),
+        |store| async move { store.create_provider_config(request).await },
+    )
     .await
 }
 
 async fn list_providers(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    admin_query(headers, &state, |store| async move {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
         store.list_provider_configs().await
     })
     .await
@@ -746,12 +944,33 @@ async fn patch_provider(
     Path(provider_id): Path<uuid::Uuid>,
     Json(patch): Json<ProviderConfigPatchRequest>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_PROVIDERS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_provider_config(provider_id).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
 
     match state.store.patch_provider_config(provider_id, patch).await {
-        Ok(Some(provider)) => Json(provider).into_response(),
+        Ok(Some(provider)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "providers:update",
+                "provider",
+                Some(provider.id.to_string()),
+                before.as_ref().and_then(audit_json),
+                audit_json(&provider),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(provider).into_response()
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
@@ -762,12 +981,33 @@ async fn delete_provider(
     headers: HeaderMap,
     Path(provider_id): Path<uuid::Uuid>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_PROVIDERS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_provider_config(provider_id).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
 
     match state.store.delete_provider_config(provider_id).await {
-        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(true) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "providers:delete",
+                "provider",
+                Some(provider_id.to_string()),
+                before.as_ref().and_then(audit_json),
+                None,
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
@@ -790,7 +1030,7 @@ async fn enable_provider(
 }
 
 async fn list_openai_routes(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    admin_query(headers, &state, |store| async move {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
         store.list_openai_route_settings().await
     })
     .await
@@ -817,14 +1057,20 @@ async fn create_service(
     headers: HeaderMap,
     Json(request): Json<ServiceCreateRequest>,
 ) -> Response {
-    admin_query(headers, &state, |store| async move {
-        store.create_service(request).await
-    })
+    admin_mutation(
+        headers,
+        &state,
+        SCOPE_SERVICES_UPDATE,
+        "services:create",
+        "service",
+        |service: &ServiceResponse| Some(service.name.clone()),
+        |store| async move { store.create_service(request).await },
+    )
     .await
 }
 
 async fn list_services(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    admin_query(headers, &state, |store| async move {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
         store.list_services().await
     })
     .await
@@ -852,12 +1098,33 @@ async fn patch_service(
     Path(service_name): Path<String>,
     Json(patch): Json<ServicePatchRequest>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_SERVICES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_service(&service_name).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
 
     match state.store.patch_service(&service_name, patch).await {
-        Ok(Some(service)) => Json(service).into_response(),
+        Ok(Some(service)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "services:update",
+                "service",
+                Some(service.name.clone()),
+                before.as_ref().and_then(audit_json),
+                audit_json(&service),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(service).into_response()
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
@@ -868,12 +1135,33 @@ async fn delete_service(
     headers: HeaderMap,
     Path(service_name): Path<String>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_SERVICES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_service(&service_name).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
 
     match state.store.delete_service(&service_name).await {
-        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(true) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "services:delete",
+                "service",
+                Some(service_name),
+                before.as_ref().and_then(audit_json),
+                None,
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
@@ -900,9 +1188,15 @@ async fn import_service(
     headers: HeaderMap,
     Json(request): Json<StudioServiceImportRequest>,
 ) -> Response {
-    admin_query(headers, &state, |store| async move {
-        store.import_studio_service(request).await
-    })
+    admin_mutation(
+        headers,
+        &state,
+        SCOPE_SERVICES_UPDATE,
+        "services:import",
+        "service",
+        |service: &ServiceResponse| Some(service.name.clone()),
+        |store| async move { store.import_studio_service(request).await },
+    )
     .await
 }
 
@@ -922,13 +1216,36 @@ async fn patch_studio_connection(
     headers: HeaderMap,
     Json(patch): Json<StudioConnectionPatchRequest>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_SETTINGS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match effective_studio_connection(&state).await {
+        Ok(connection) => Some(connection.response()),
+        Err(GatewayError::InvalidConfiguration) => None,
+        Err(error) => return error_response(&headers, error),
+    };
 
     match state.store.patch_studio_connection_settings(patch).await {
         Ok(_) => match effective_studio_connection(&state).await {
-            Ok(connection) => Json(connection.response()).into_response(),
+            Ok(connection) => {
+                let response = connection.response();
+                if let Err(error) = record_admin_audit(
+                    &state,
+                    &headers,
+                    &actor,
+                    "settings:studio_connection_update",
+                    "studio_connection",
+                    Some("singleton".to_owned()),
+                    before.as_ref().and_then(audit_json),
+                    audit_json(&response),
+                )
+                .await
+                {
+                    return error_response(&headers, error);
+                }
+                Json(response).into_response()
+            }
             Err(error) => error_response(&headers, error),
         },
         Err(error) => error_response(&headers, error),
@@ -973,9 +1290,15 @@ async fn sync_service(
     headers: HeaderMap,
     Json(request): Json<StudioServiceImportRequest>,
 ) -> Response {
-    admin_query(headers, &state, |store| async move {
-        store.sync_studio_service(request).await
-    })
+    admin_mutation(
+        headers,
+        &state,
+        SCOPE_SERVICES_UPDATE,
+        "services:sync",
+        "service",
+        |service: &ServiceResponse| Some(service.name.clone()),
+        |store| async move { store.sync_studio_service(request).await },
+    )
     .await
 }
 
@@ -1000,7 +1323,7 @@ async fn usage_summary(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    admin_query(headers, &state, |store| async move {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
         store.usage_summary(query).await
     })
     .await
@@ -1011,7 +1334,7 @@ async fn usage_timeseries(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    admin_query(headers, &state, |store| async move {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
         store.usage_timeseries(query).await
     })
     .await
@@ -1070,7 +1393,7 @@ async fn usage_export_json(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    admin_query(headers, &state, |store| async move {
+    admin_query(headers, &state, SCOPE_USAGE_EXPORT, |store| async move {
         store.usage_export(query).await
     })
     .await
@@ -1081,7 +1404,7 @@ async fn usage_export_csv(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_USAGE_EXPORT).await {
         return response;
     }
     match state.store.usage_export(query).await {
@@ -1102,7 +1425,7 @@ async fn task_usage(
     Query(mut query): Query<UsageQuery>,
 ) -> Response {
     query.task_id = Some(task_id);
-    admin_query(headers, &state, |store| async move {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
         store.usage_summary(query).await
     })
     .await
@@ -1169,7 +1492,7 @@ async fn usage_breakdown(
     query: UsageQuery,
     dimension: UsageBreakdownDimension,
 ) -> Response {
-    admin_query(headers, &state, |store| async move {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
         store.usage_breakdown(query, dimension).await
     })
     .await
@@ -1180,7 +1503,7 @@ async fn provider_health(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    admin_query(headers, &state, |store| async move {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
         store.provider_health(query).await
     })
     .await
@@ -1189,19 +1512,102 @@ async fn provider_health(
 async fn admin_query<T, Fut>(
     headers: HeaderMap,
     state: &AppState,
+    required_scope: &'static str,
     query: impl FnOnce(Arc<dyn GatewayData>) -> Fut,
 ) -> Response
 where
     T: Serialize,
     Fut: std::future::Future<Output = GatewayResult<T>>,
 {
-    if let Some(response) = require_admin(state, &headers).await {
+    if let Err(response) = require_admin_scope(state, &headers, required_scope).await {
         return response;
     }
     match query(state.store.clone()).await {
         Ok(value) => Json(value).into_response(),
         Err(error) => error_response(&headers, error),
     }
+}
+
+async fn admin_mutation<T, Fut>(
+    headers: HeaderMap,
+    state: &AppState,
+    required_scope: &'static str,
+    action: &'static str,
+    target_type: &'static str,
+    target_id: impl FnOnce(&T) -> Option<String>,
+    mutation: impl FnOnce(Arc<dyn GatewayData>) -> Fut,
+) -> Response
+where
+    T: Serialize,
+    Fut: std::future::Future<Output = GatewayResult<T>>,
+{
+    let actor = match require_admin_scope(state, &headers, required_scope).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match mutation(state.store.clone()).await {
+        Ok(value) => {
+            if let Err(error) = record_admin_audit(
+                state,
+                &headers,
+                &actor,
+                action,
+                target_type,
+                target_id(&value),
+                None,
+                audit_json(&value),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(value).into_response()
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn record_admin_audit(
+    state: &AppState,
+    headers: &HeaderMap,
+    actor: &OperatorAuthorization,
+    action: impl Into<String>,
+    target_type: impl Into<String>,
+    target_id: Option<String>,
+    before: Option<serde_json::Value>,
+    after: Option<serde_json::Value>,
+) -> GatewayResult<AuditEvent> {
+    state
+        .store
+        .record_audit_event(AuditEventCreate {
+            actor_token_id: actor.token_id,
+            action: action.into(),
+            target_type: target_type.into(),
+            target_id,
+            before,
+            after,
+            request_id: request_id_from_headers(headers),
+            ip: forwarded_for(headers),
+            user_agent: headers
+                .get("user-agent")
+                .and_then(|value| value.to_str().ok())
+                .map(ToOwned::to_owned),
+        })
+        .await
+}
+
+fn audit_json<T: Serialize>(value: &T) -> Option<serde_json::Value> {
+    serde_json::to_value(value).ok()
+}
+
+fn forwarded_for(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-forwarded-for")
+        .or_else(|| headers.get("x-real-ip"))
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.split(',').next().unwrap_or(value).trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 async fn metrics() -> Response {
@@ -1239,6 +1645,7 @@ fn static_response(content_type: &'static str, body: &'static str) -> Response {
     (StatusCode::OK, [("content-type", content_type)], body).into_response()
 }
 
+#[derive(Clone, Copy)]
 enum KeyLifecycleAction {
     Revoke,
     Disable,
@@ -1251,9 +1658,14 @@ async fn mutate_key_lifecycle(
     key_id: uuid::Uuid,
     action: KeyLifecycleAction,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_KEYS_DISABLE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_admin_key(key_id).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
 
     let result: GatewayResult<Option<AdminKeyResponse>> = match action {
         KeyLifecycleAction::Revoke => state.store.revoke_admin_key(key_id).await,
@@ -1262,7 +1674,28 @@ async fn mutate_key_lifecycle(
     };
 
     match result {
-        Ok(Some(key)) => Json(key).into_response(),
+        Ok(Some(key)) => {
+            let action_name = match action {
+                KeyLifecycleAction::Revoke => "keys:revoke",
+                KeyLifecycleAction::Disable => "keys:disable",
+                KeyLifecycleAction::Enable => "keys:enable",
+            };
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                action_name,
+                "key",
+                Some(key.id.to_string()),
+                before.as_ref().and_then(audit_json),
+                audit_json(&key),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(key).into_response()
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
@@ -1274,16 +1707,41 @@ async fn mutate_service_enabled(
     service_name: String,
     enabled: bool,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_SERVICES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_service(&service_name).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
 
     match state
         .store
         .set_service_enabled(&service_name, enabled)
         .await
     {
-        Ok(Some(service)) => Json(service).into_response(),
+        Ok(Some(service)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                if enabled {
+                    "services:enable"
+                } else {
+                    "services:disable"
+                },
+                "service",
+                Some(service.name.clone()),
+                before.as_ref().and_then(audit_json),
+                audit_json(&service),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(service).into_response()
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
@@ -1295,16 +1753,37 @@ async fn mutate_openai_route_enabled(
     route_id: String,
     enabled: bool,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
 
     match state
         .store
         .set_openai_route_enabled(&route_id, enabled)
         .await
     {
-        Ok(Some(setting)) => Json(setting).into_response(),
+        Ok(Some(setting)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                if enabled {
+                    "policies:route_enable"
+                } else {
+                    "policies:route_disable"
+                },
+                "openai_route",
+                Some(route_id),
+                None,
+                audit_json(&setting),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(setting).into_response()
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
@@ -1316,16 +1795,41 @@ async fn mutate_provider_enabled(
     provider_id: uuid::Uuid,
     enabled: bool,
 ) -> Response {
-    if let Some(response) = require_admin(&state, &headers).await {
-        return response;
-    }
+    let actor = match require_admin_scope(&state, &headers, SCOPE_PROVIDERS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_provider_config(provider_id).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
 
     match state
         .store
         .set_provider_config_enabled(provider_id, enabled)
         .await
     {
-        Ok(Some(provider)) => Json(provider).into_response(),
+        Ok(Some(provider)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                if enabled {
+                    "providers:enable"
+                } else {
+                    "providers:disable"
+                },
+                "provider",
+                Some(provider.id.to_string()),
+                before.as_ref().and_then(audit_json),
+                audit_json(&provider),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(provider).into_response()
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
@@ -1347,16 +1851,44 @@ async fn effective_studio_client(state: &AppState) -> GatewayResult<StudioCatalo
     Ok(StudioCatalogClient::new(base_url, connection.token))
 }
 
-async fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+async fn require_admin_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+    required_scope: &str,
+) -> Result<OperatorAuthorization, Response> {
+    require_admin_scopes(state, headers, &[required_scope]).await
+}
+
+async fn require_admin_scopes(
+    state: &AppState,
+    headers: &HeaderMap,
+    required_scopes: &[&str],
+) -> Result<OperatorAuthorization, Response> {
     let token = match bearer_token(headers) {
         Ok(token) => token,
-        Err(error) => return Some(error_response(headers, error)),
+        Err(error) => return Err(error_response(headers, error)),
     };
 
     match state.store.verify_operator_token(token, Utc::now()).await {
-        Ok(()) => None,
-        Err(error) => Some(error_response(headers, error)),
+        Ok(authorization)
+            if required_scopes
+                .iter()
+                .all(|required_scope| authorization.has_scope(required_scope)) =>
+        {
+            Ok(authorization)
+        }
+        Ok(_) => Err(error_response(
+            headers,
+            GatewayError::InsufficientOperatorScope,
+        )),
+        Err(error) => Err(error_response(headers, error)),
     }
+}
+
+async fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+    require_admin_scope(state, headers, SCOPE_OPERATORS_MANAGE)
+        .await
+        .err()
 }
 
 async fn require_virtual_key(
@@ -1434,12 +1966,12 @@ mod tests {
     use gateway_core::{
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
-        OpenAiRouteSetting, OperatorTokenResponse, PatchValue, ProjectCreateRequest,
-        ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest,
-        ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealth, Route, ServiceCostMode,
-        ServiceResponse, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
-        StoredStudioConnection, StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow,
-        UsageStatus, UsageSummary, UsageTimeseriesPoint,
+        default_operator_roles, default_operator_scopes, OpenAiRouteSetting, OperatorTokenResponse,
+        PatchValue, ProjectCreateRequest, ProjectPatchRequest, ProjectResponse,
+        ProviderConfigCreateRequest, ProviderConfigPatchRequest, ProviderConfigResponse,
+        ProviderHealth, Route, ServiceCostMode, ServiceResponse, ServiceSource, ServiceSyncStatus,
+        ServiceSyncStatusResponse, StoredStudioConnection, StudioConnectionPatchRequest,
+        UsageBreakdown, UsageExportRow, UsageStatus, UsageSummary, UsageTimeseriesPoint,
     };
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -1453,6 +1985,7 @@ mod tests {
         openai_routes: Arc<Mutex<Vec<OpenAiRouteSetting>>>,
         operator_tokens: Arc<Mutex<Vec<String>>>,
         events: Arc<Mutex<Vec<UsageEvent>>>,
+        audit_events: Arc<Mutex<Vec<AuditEvent>>>,
         studio_connection: Arc<Mutex<Option<StoredStudioConnection>>>,
         postgres_ready: bool,
     }
@@ -1480,6 +2013,57 @@ mod tests {
             } else {
                 Err(GatewayError::StoreUnavailable)
             }
+        }
+    }
+
+    #[async_trait]
+    impl AdminAuditStore for MemoryStore {
+        async fn record_audit_event(&self, event: AuditEventCreate) -> GatewayResult<AuditEvent> {
+            let audit_event = AuditEvent {
+                id: Uuid::new_v4(),
+                actor_token_id: event.actor_token_id,
+                action: event.action,
+                target_type: event.target_type,
+                target_id: event.target_id,
+                before: event.before,
+                after: event.after,
+                request_id: event.request_id,
+                ip: event.ip,
+                user_agent: event.user_agent,
+                created_at: Utc::now(),
+            };
+            self.audit_events
+                .lock()
+                .expect("lock poisoned")
+                .push(audit_event.clone());
+            Ok(audit_event)
+        }
+
+        async fn list_audit_events(
+            &self,
+            query: AuditEventQuery,
+        ) -> GatewayResult<Vec<AuditEvent>> {
+            let mut events = self.audit_events.lock().expect("lock poisoned").clone();
+            events.retain(|event| {
+                query
+                    .actor_token_id
+                    .is_none_or(|actor_token_id| event.actor_token_id == actor_token_id)
+                    && query
+                        .action
+                        .as_ref()
+                        .is_none_or(|action| event.action == *action)
+                    && query
+                        .target_type
+                        .as_ref()
+                        .is_none_or(|target_type| event.target_type == *target_type)
+                    && query
+                        .target_id
+                        .as_ref()
+                        .is_none_or(|target_id| event.target_id.as_ref() == Some(target_id))
+            });
+            events.sort_by_key(|event| std::cmp::Reverse(event.created_at));
+            events.truncate(query.limit.clamp(1, 500) as usize);
+            Ok(events)
         }
     }
 
@@ -2172,7 +2756,7 @@ mod tests {
             &self,
             raw_token: &str,
             _now: chrono::DateTime<Utc>,
-        ) -> GatewayResult<()> {
+        ) -> GatewayResult<OperatorAuthorization> {
             if self
                 .operator_tokens
                 .lock()
@@ -2180,7 +2764,17 @@ mod tests {
                 .iter()
                 .any(|token| token == raw_token)
             {
-                Ok(())
+                let scopes = match raw_token {
+                    TEST_USAGE_OPERATOR_TOKEN => vec![SCOPE_USAGE_READ.to_owned()],
+                    TEST_POLICY_OPERATOR_TOKEN => vec![SCOPE_POLICIES_UPDATE.to_owned()],
+                    _ => default_operator_scopes(),
+                };
+                Ok(OperatorAuthorization {
+                    token_id: Uuid::nil(),
+                    token_prefix: raw_token.chars().take(16).collect(),
+                    roles: default_operator_roles(),
+                    scopes,
+                })
             } else {
                 Err(GatewayError::InvalidOperatorToken)
             }
@@ -2414,6 +3008,8 @@ mod tests {
         OperatorTokenResponse {
             id: Uuid::new_v4(),
             token_prefix: token_prefix.to_owned(),
+            roles: default_operator_roles(),
+            scopes: default_operator_scopes(),
             disabled: false,
             revoked_at: None,
             last_used_at: None,
@@ -2424,6 +3020,10 @@ mod tests {
 
     const TEST_OPERATOR_TOKEN: &str =
         "op_live_testoperator000000000000000000000000000000000000000000000000";
+    const TEST_USAGE_OPERATOR_TOKEN: &str =
+        "op_live_usageoperator000000000000000000000000000000000000000000000";
+    const TEST_POLICY_OPERATOR_TOKEN: &str =
+        "op_live_policyoperator00000000000000000000000000000000000000000000";
 
     fn test_state(store: MemoryStore) -> AppState {
         test_state_with_redis_url(store, "redis://127.0.0.1:6379")
@@ -2455,6 +3055,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             studio_connection: Arc::new(Mutex::new(None)),
             postgres_ready: true,
         }
@@ -2573,6 +3174,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -2593,6 +3195,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -2789,6 +3392,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: false,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -2808,6 +3412,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -2833,6 +3438,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -2863,6 +3469,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_create_key_denies_operator_without_key_scope() {
+        let store = MemoryStore {
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_USAGE_OPERATOR_TOKEN.to_owned()])),
+            ..default_store()
+        };
+        let app = router_with_state(test_state(store));
+        let project_id = Uuid::new_v4();
+        let response = admin_post(
+            app,
+            "/admin-ui/admin/keys",
+            Some(TEST_USAGE_OPERATOR_TOKEN),
+            &format!(r#"{{"project_id":"{project_id}"}}"#),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["error"]["code"], "insufficient_operator_scope");
+        assert_eq!(value["error"]["request_id"], "req_test");
+    }
+
+    #[tokio::test]
+    async fn admin_create_key_writes_audit_event_without_raw_key() {
+        let store = default_store();
+        let audit_events = store.audit_events.clone();
+        let app = router_with_state(test_state(store));
+        let project_id = Uuid::new_v4();
+        let response = admin_post(
+            app.clone(),
+            "/admin-ui/admin/keys",
+            Some(TEST_OPERATOR_TOKEN),
+            &format!(r#"{{"project_id":"{project_id}"}}"#),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        {
+            let events = audit_events.lock().expect("lock poisoned");
+            assert_eq!(events.len(), 1);
+            let event = &events[0];
+            assert_eq!(event.action, "keys:create");
+            assert_eq!(event.target_type, "key");
+            assert_eq!(event.request_id, "req_test");
+            let after = event.after.as_ref().expect("after json");
+            assert!(after.get("key_hash").is_none());
+            assert!(after.get("raw_key").is_none());
+        }
+
+        let response = admin_get(
+            app,
+            "/admin-ui/admin/audit-events",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value[0]["action"], "keys:create");
+        assert_eq!(value[0]["target_type"], "key");
+    }
+
+    #[tokio::test]
     async fn admin_key_create_returns_guardrail_config_overrides() {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
@@ -2871,6 +3544,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -2904,6 +3578,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -2954,6 +3629,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_key_patch_requires_key_disable_scope_for_disabled_field() {
+        let raw = "rk_live_patchdisabled";
+        let stored = stored_key(raw);
+        let store = MemoryStore {
+            key: Arc::new(Mutex::new(Some(stored.clone()))),
+            admin_key: Arc::new(Mutex::new(Some(admin_key_for(
+                &stored,
+                gateway_core::GuardrailPolicy::default(),
+            )))),
+            services: Arc::new(Mutex::new(Vec::new())),
+            openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            operator_tokens: Arc::new(Mutex::new(vec![TEST_POLICY_OPERATOR_TOKEN.to_owned()])),
+            events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
+            postgres_ready: true,
+            studio_connection: Arc::new(Mutex::new(None)),
+        };
+        let app = router_with_state(test_state(store));
+        let response = admin_patch(
+            app,
+            &format!("/admin-ui/admin/keys/{}", stored.id),
+            Some(TEST_POLICY_OPERATOR_TOKEN),
+            r#"{"disabled":true}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let value = response_json(response).await;
+        assert_eq!(value["error"]["code"], "insufficient_operator_scope");
+    }
+
+    #[tokio::test]
     async fn admin_project_create_returns_generated_uuid() {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
@@ -2962,6 +3669,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -2992,6 +3700,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3023,6 +3732,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3060,6 +3770,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3147,6 +3858,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3181,6 +3893,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3284,6 +3997,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3314,6 +4028,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3461,6 +4176,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3518,6 +4234,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3560,6 +4277,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3603,6 +4321,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };
@@ -3674,6 +4393,7 @@ mod tests {
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
+            audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
         };

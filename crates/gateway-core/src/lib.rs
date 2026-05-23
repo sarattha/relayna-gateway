@@ -40,8 +40,13 @@ pub use observability::{
     UsageQuery, UsageQueryStore, UsageSummary, UsageTimeseriesPoint,
 };
 pub use operators::{
-    operator_token_prefix, verify_stored_operator_token, CreatedOperatorTokenResponse,
-    OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore, StoredOperatorToken,
+    default_operator_roles, default_operator_scopes, operator_token_prefix,
+    verify_stored_operator_token, AdminAuditStore, AuditEvent, AuditEventCreate, AuditEventQuery,
+    CreatedOperatorTokenResponse, OperatorAuthorization, OperatorTokenMaterial,
+    OperatorTokenResponse, OperatorTokenStore, StoredOperatorToken, SCOPE_AUDIT_READ,
+    SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_KEYS_ROTATE,
+    SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE,
+    SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
 pub use policies::{
     evaluate_policy, extract_generation_features, GenerationFeatures, KeyPolicy, PolicyLookup,

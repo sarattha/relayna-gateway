@@ -197,10 +197,25 @@ never stored.
 | --- | --- |
 | Primary key | `id uuid` generated with `gen_random_uuid()`. |
 | Unique keys | `token_prefix` is unique. A partial unique index allows only one active token where `disabled = false` and `revoked_at IS NULL`. |
+| Governance fields | `roles` and `scopes` bind the token to operator capabilities. Bootstrap and rotated owner tokens default to role `owner` and wildcard scope `*`. |
 | Lifecycle fields | `disabled`, `revoked_at`, and `last_used_at`. |
 | Secret fields | `token_hash` stores an Argon2 hash of the raw operator token. |
 | Indexes | `operator_tokens_active_idx` and `operator_tokens_one_active_idx`. |
 | Required data | At least one active row is needed for admin access after bootstrap. `GATEWAY_ADMIN_TOKEN` seeds only a fresh database; existing active rows ignore env changes. |
+
+### `audit_events`
+
+`audit_events` is the append-only admin audit trail. It records admin mutations
+and is queryable through the scoped admin audit API.
+
+| Key | Details |
+| --- | --- |
+| Primary key | `id uuid` generated with `gen_random_uuid()`. |
+| Actor | `actor_token_id` references the operator token that authorized the action. |
+| Action fields | `action`, `target_type`, and optional `target_id` describe the mutation. |
+| Change fields | `before_json` and `after_json` store redacted structured snapshots when available. Raw virtual keys, operator tokens, provider credentials, and internal service tokens must not be written. |
+| Request fields | `request_id`, optional `ip`, optional `user_agent`, and `created_at`. |
+| Indexes | `audit_events_created_at_idx`, `audit_events_actor_created_at_idx`, and `audit_events_target_created_at_idx`. |
 
 ### `usage_events`
 
