@@ -2034,6 +2034,12 @@ mod tests {
             Ok(Vec::new())
         }
 
+        async fn provider_health_check_targets(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::ProviderHealthCheckTarget>> {
+            Ok(Vec::new())
+        }
+
         async fn upsert_provider_health_state(
             &self,
             state: gateway_core::ProviderHealthState,
@@ -2083,6 +2089,19 @@ mod tests {
             _version: i64,
         ) -> GatewayResult<Option<gateway_core::ServiceRegistrySnapshot>> {
             Ok(None)
+        }
+
+        async fn activate_service_registry_import(
+            &self,
+            _source: String,
+            _diff: gateway_core::ServiceImportDiff,
+            _services: Vec<gateway_core::StudioServiceImportRequest>,
+            _rolled_back_from_version: Option<i64>,
+        ) -> GatewayResult<(
+            gateway_core::ServiceRegistrySnapshot,
+            Vec<gateway_core::ServiceResponse>,
+        )> {
+            Err(GatewayError::StoreUnavailable)
         }
     }
 

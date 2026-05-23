@@ -23,16 +23,15 @@ use gateway_core::{
     GuardrailTestRequest, GuardrailTestResponse, KeyPolicy, OperatorAuthorization,
     OperatorTokenMaterial, OperatorTokenStore, PolicyLookup, ProjectCreateRequest,
     ProjectPatchRequest, ProjectResponse, Provider, ProviderConfigCreateRequest,
-    ProviderConfigKind, ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealthState,
-    ProviderHealthStatus, ProviderIntelligenceStore, Route, ServiceCreateRequest,
-    ServiceImportDiff, ServiceImportValidationIssue, ServicePatchRequest, ServiceRegistrySnapshot,
-    ServiceResponse, StudioConnectionEnv, StudioConnectionPatchRequest,
-    StudioConnectionTestResponse, StudioServiceCatalogResponse, StudioServiceImportPreview,
-    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery,
-    UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE,
-    SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE,
-    SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT,
-    SCOPE_USAGE_READ,
+    ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus,
+    ProviderIntelligenceStore, Route, ServiceCreateRequest, ServiceImportDiff,
+    ServiceImportValidationIssue, ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse,
+    StudioConnectionEnv, StudioConnectionPatchRequest, StudioConnectionTestResponse,
+    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
+    UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery, UsageQueryStore,
+    VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE,
+    SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE,
+    SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::{Deserialize, Serialize};
@@ -2037,38 +2036,22 @@ async fn run_provider_health_checks(State(state): State<AppState>, headers: Head
         &state,
         SCOPE_PROVIDERS_UPDATE,
         |store| async move {
-            let providers = store.list_provider_configs().await?;
-            let services = store.list_services().await?;
+            let targets = store.provider_health_check_targets().await?;
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(3))
                 .build()
                 .map_err(|_| GatewayError::InvalidConfiguration)?;
             let mut results = Vec::new();
 
-            for provider in providers.into_iter().filter(|provider| provider.enabled) {
-                let checked =
-                    active_health_check(&client, &provider.name, Some(provider.base_url.clone()))
-                        .await;
-                let state = provider_health_state_from_check(
-                    provider.name,
-                    provider_kind_to_provider(provider.provider),
-                    checked,
-                );
-                results.push(store.upsert_provider_health_state(state).await?);
-            }
-
-            for service in services
-                .into_iter()
-                .filter(|service| service.enabled && service.upstream_base_url.is_some())
-            {
-                let checked =
-                    active_health_check(&client, &service.name, service.upstream_base_url.clone())
-                        .await;
-                let state = provider_health_state_from_check(
-                    service.name,
-                    Provider::InternalService,
-                    checked,
-                );
+            for target in targets {
+                let checked = active_health_check(
+                    &client,
+                    &target.name,
+                    target.base_url.clone(),
+                    target.credential.as_deref(),
+                )
+                .await;
+                let state = provider_health_state_from_check(target.name, target.provider, checked);
                 results.push(store.upsert_provider_health_state(state).await?);
             }
 
@@ -2117,23 +2100,14 @@ async fn activate_service_import(
         if !diff.invalid.is_empty() {
             return Err(GatewayError::InvalidServicePayload);
         }
-        let services_json = serde_json::to_value(&request.services)
-            .map_err(|_| GatewayError::InvalidServicePayload)?;
-        let snapshot = store
-            .insert_service_registry_snapshot(ServiceRegistrySnapshot {
-                version: 0,
-                source: request.source.unwrap_or_else(|| "admin-api".to_owned()),
+        let (snapshot, services) = store
+            .activate_service_registry_import(
+                request.source.unwrap_or_else(|| "admin-api".to_owned()),
                 diff,
-                services_json,
-                activated_at: Some(Utc::now()),
-                rolled_back_from_version: None,
-                created_at: Utc::now(),
-            })
+                request.services,
+                None,
+            )
             .await?;
-        let mut services = Vec::new();
-        for service in request.services {
-            services.push(store.import_studio_service(service).await?);
-        }
         Ok(ServiceImportActivationResponse { snapshot, services })
     })
     .await
@@ -2158,23 +2132,14 @@ async fn rollback_service_import(
         let services: Vec<StudioServiceImportRequest> =
             serde_json::from_value(snapshot.services_json.clone())
                 .map_err(|_| GatewayError::InvalidServicePayload)?;
-        let services_json =
-            serde_json::to_value(&services).map_err(|_| GatewayError::InvalidServicePayload)?;
-        let rollback_snapshot = store
-            .insert_service_registry_snapshot(ServiceRegistrySnapshot {
-                version: 0,
-                source: "rollback".to_owned(),
-                diff: snapshot.diff.clone(),
-                services_json,
-                activated_at: Some(Utc::now()),
-                rolled_back_from_version: Some(version),
-                created_at: Utc::now(),
-            })
+        let (rollback_snapshot, activated) = store
+            .activate_service_registry_import(
+                "rollback".to_owned(),
+                snapshot.diff.clone(),
+                services,
+                Some(version),
+            )
             .await?;
-        let mut activated = Vec::new();
-        for service in services {
-            activated.push(store.import_studio_service(service).await?);
-        }
         Ok(ServiceImportActivationResponse {
             snapshot: rollback_snapshot,
             services: activated,
@@ -2668,6 +2633,7 @@ async fn active_health_check(
     client: &reqwest::Client,
     name: &str,
     base_url: Option<String>,
+    credential: Option<&str>,
 ) -> ActiveHealthCheck {
     let checked_at = Utc::now();
     let Some(base_url) = base_url else {
@@ -2687,7 +2653,11 @@ async fn active_health_check(
         };
     };
     let started = std::time::Instant::now();
-    match client.get(url).send().await {
+    let mut request = client.get(url);
+    if let Some(credential) = credential.filter(|value| !value.trim().is_empty()) {
+        request = request.bearer_auth(credential);
+    }
+    match request.send().await {
         Ok(response) if response.status().is_success() => ActiveHealthCheck {
             ok: true,
             latency_ms: Some(i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX)),
@@ -2740,13 +2710,6 @@ fn provider_health_state_from_check(
         cooldown_until: None,
         checked_at: Some(checked.checked_at),
         updated_at: Utc::now(),
-    }
-}
-
-fn provider_kind_to_provider(kind: ProviderConfigKind) -> Provider {
-    match kind {
-        ProviderConfigKind::LiteLlm => Provider::LiteLlm,
-        ProviderConfigKind::InternalService => Provider::InternalService,
     }
 }
 
@@ -3892,6 +3855,12 @@ mod tests {
             Ok(Vec::new())
         }
 
+        async fn provider_health_check_targets(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::ProviderHealthCheckTarget>> {
+            Ok(Vec::new())
+        }
+
         async fn upsert_provider_health_state(
             &self,
             state: ProviderHealthState,
@@ -3932,6 +3901,32 @@ mod tests {
             _version: i64,
         ) -> GatewayResult<Option<ServiceRegistrySnapshot>> {
             Ok(None)
+        }
+
+        async fn activate_service_registry_import(
+            &self,
+            source: String,
+            diff: ServiceImportDiff,
+            services: Vec<StudioServiceImportRequest>,
+            rolled_back_from_version: Option<i64>,
+        ) -> GatewayResult<(ServiceRegistrySnapshot, Vec<ServiceResponse>)> {
+            let mut activated = Vec::new();
+            for service in services.clone() {
+                activated.push(self.import_studio_service(service).await?);
+            }
+            Ok((
+                ServiceRegistrySnapshot {
+                    version: 1,
+                    source,
+                    diff,
+                    services_json: serde_json::to_value(services)
+                        .map_err(|_| GatewayError::InvalidServicePayload)?,
+                    activated_at: Some(Utc::now()),
+                    rolled_back_from_version,
+                    created_at: Utc::now(),
+                },
+                activated,
+            ))
         }
     }
 

@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS provider_health_states (
-    name text PRIMARY KEY,
+    name text NOT NULL,
     provider text NOT NULL,
     status text NOT NULL DEFAULT 'unknown',
     circuit_state text NOT NULL DEFAULT 'closed',
@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS provider_health_states (
         passive_success_count >= 0
         AND passive_failure_count >= 0
         AND consecutive_failures >= 0
-    )
+    ),
+    PRIMARY KEY (provider, name)
 );
 
 CREATE INDEX IF NOT EXISTS provider_health_states_provider_idx

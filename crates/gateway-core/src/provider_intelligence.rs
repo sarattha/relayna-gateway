@@ -103,6 +103,15 @@ pub struct ProviderHealthState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderHealthCheckTarget {
+    pub name: String,
+    pub provider: Provider,
+    pub base_url: Option<String>,
+    #[serde(skip_serializing)]
+    pub credential: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DebugBundle {
     pub request_id: String,
     pub route: Option<Route>,
@@ -157,6 +166,7 @@ pub struct ServiceRegistrySnapshot {
 #[async_trait]
 pub trait ProviderIntelligenceStore: Send + Sync {
     async fn list_provider_health_states(&self) -> GatewayResult<Vec<ProviderHealthState>>;
+    async fn provider_health_check_targets(&self) -> GatewayResult<Vec<ProviderHealthCheckTarget>>;
     async fn upsert_provider_health_state(
         &self,
         state: ProviderHealthState,
@@ -172,6 +182,13 @@ pub trait ProviderIntelligenceStore: Send + Sync {
         &self,
         version: i64,
     ) -> GatewayResult<Option<ServiceRegistrySnapshot>>;
+    async fn activate_service_registry_import(
+        &self,
+        source: String,
+        diff: ServiceImportDiff,
+        services: Vec<crate::StudioServiceImportRequest>,
+        rolled_back_from_version: Option<i64>,
+    ) -> GatewayResult<(ServiceRegistrySnapshot, Vec<crate::ServiceResponse>)>;
 }
 
 #[async_trait]
@@ -181,6 +198,10 @@ where
 {
     async fn list_provider_health_states(&self) -> GatewayResult<Vec<ProviderHealthState>> {
         (**self).list_provider_health_states().await
+    }
+
+    async fn provider_health_check_targets(&self) -> GatewayResult<Vec<ProviderHealthCheckTarget>> {
+        (**self).provider_health_check_targets().await
     }
 
     async fn upsert_provider_health_state(
@@ -214,6 +235,18 @@ where
         version: i64,
     ) -> GatewayResult<Option<ServiceRegistrySnapshot>> {
         (**self).service_registry_snapshot(version).await
+    }
+
+    async fn activate_service_registry_import(
+        &self,
+        source: String,
+        diff: ServiceImportDiff,
+        services: Vec<crate::StudioServiceImportRequest>,
+        rolled_back_from_version: Option<i64>,
+    ) -> GatewayResult<(ServiceRegistrySnapshot, Vec<crate::ServiceResponse>)> {
+        (**self)
+            .activate_service_registry_import(source, diff, services, rolled_back_from_version)
+            .await
     }
 }
 

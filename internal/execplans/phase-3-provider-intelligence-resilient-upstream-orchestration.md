@@ -87,6 +87,12 @@ Verification on 2026-05-23: `node tests/admin-ui.test.mjs`,
 `cargo test --workspace --all-features`, and
 `bash .codex/skills/code-change-verification/scripts/run.sh` all passed.
 
+Review follow-up on 2026-05-23: provider health persistence now uses
+`(provider, name)` so provider and service namespaces cannot collide; active
+health checks use stored gateway-managed bearer credentials; and service import
+activation/rollback applies service changes and snapshot creation in one
+PostgreSQL transaction.
+
 ## Context and Orientation
 
 Relayna Gateway accepts Relayna virtual keys, evaluates policy, selects an

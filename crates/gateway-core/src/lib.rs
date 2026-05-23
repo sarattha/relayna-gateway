@@ -65,9 +65,10 @@ pub use provider_configs::{
 };
 pub use provider_intelligence::{
     circuit_state_after_passive_result, select_provider, CircuitBreakerState, DebugBundle,
-    FallbackAttempt, FallbackPolicy, ProviderCandidate, ProviderHealthState, ProviderHealthStatus,
-    ProviderIntelligenceStore, ProviderRejection, ProviderSelection, RoutingDecisionRequest,
-    RoutingStrategy, ServiceImportDiff, ServiceImportValidationIssue, ServiceRegistrySnapshot,
+    FallbackAttempt, FallbackPolicy, ProviderCandidate, ProviderHealthCheckTarget,
+    ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore, ProviderRejection,
+    ProviderSelection, RoutingDecisionRequest, RoutingStrategy, ServiceImportDiff,
+    ServiceImportValidationIssue, ServiceRegistrySnapshot,
 };
 pub use rate_limits::{RateLimitDecision, RateLimitStore};
 pub use route_settings::{

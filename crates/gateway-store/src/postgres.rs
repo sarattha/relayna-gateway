@@ -32,10 +32,11 @@ use gateway_core::{
     GuardrailProviderKind, GuardrailStore, KeyPolicy, OpenAiRouteSetting,
     OpenAiRouteSettingsLookup, OperatorAuthorization, OperatorTokenMaterial, OperatorTokenResponse,
     OperatorTokenStore, PolicyLayer, PolicyLayerKind, ProjectUsageSummary, Provider,
-    ProviderHealth, ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore, Route,
-    ServiceImportDiff, ServiceRegistrySnapshot, StoredOperatorToken, UsageBreakdown,
-    UsageBreakdownDimension, UsageEvent, UsageExport, UsageExportRow, UsageQuery, UsageQueryStore,
-    UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
+    ProviderHealth, ProviderHealthCheckTarget, ProviderHealthState, ProviderHealthStatus,
+    ProviderIntelligenceStore, Route, ServiceImportDiff, ServiceRegistrySnapshot,
+    StoredOperatorToken, UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageExport,
+    UsageExportRow, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary,
+    UsageTimeseriesPoint, VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -672,6 +673,88 @@ impl PostgresStore {
         self.get_service(&request.name)
             .await?
             .ok_or(GatewayError::StoreUnavailable)
+    }
+
+    async fn upsert_studio_service_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        request: StudioServiceImportRequest,
+    ) -> GatewayResult<ServiceResponse> {
+        request.validate()?;
+        let route_pattern = request
+            .route_pattern
+            .clone()
+            .or_else(|| default_route_pattern(&request.name))
+            .unwrap_or_else(|| format!("/services/{}/*", request.name));
+        let cost_mode = request
+            .default_pricing
+            .as_ref()
+            .map(|pricing| pricing.cost_mode)
+            .unwrap_or_default();
+        let estimated_cost_usd = request
+            .default_pricing
+            .as_ref()
+            .and_then(|pricing| pricing.estimated_cost_usd);
+
+        sqlx::query(
+            r#"
+            INSERT INTO service_registrations (
+                name,
+                project_id,
+                studio_service_id,
+                route_pattern,
+                upstream_base_url,
+                enabled,
+                allowed_methods,
+                cost_mode,
+                estimated_cost_usd,
+                source,
+                sync_status,
+                last_synced_at
+            )
+            VALUES ($1, $2, $3, $4, $5, false, $6, $7, $8, 'studio', 'incomplete', now())
+            ON CONFLICT (studio_service_id) WHERE studio_service_id IS NOT NULL
+            DO UPDATE SET
+                name = EXCLUDED.name,
+                studio_service_id = EXCLUDED.studio_service_id,
+                source = 'studio',
+                sync_status = CASE
+                    WHEN service_registrations.upstream_base_url IS NULL
+                        OR service_registrations.credential_secret IS NULL
+                    THEN 'incomplete'
+                    ELSE 'synced'
+                END,
+                last_synced_at = now(),
+                updated_at = now()
+            "#,
+        )
+        .bind(&request.name)
+        .bind(request.project_id)
+        .bind(&request.studio_service_id)
+        .bind(&route_pattern)
+        .bind(&request.upstream_base_url)
+        .bind(&request.allowed_methods)
+        .bind(service_cost_mode_str(cost_mode))
+        .bind(estimated_cost_usd)
+        .execute(&mut **tx)
+        .await
+        .map_err(|error| {
+            if is_unique_violation(&error) {
+                GatewayError::DuplicateService
+            } else if is_foreign_key_violation(&error) {
+                GatewayError::MissingProject
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })?;
+
+        let row = sqlx::query("SELECT * FROM service_registrations WHERE studio_service_id = $1")
+            .bind(&request.studio_service_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        service_registration_from_row(&row)
+            .map(|registration| registration.to_response())
+            .map_err(|_| GatewayError::StoreUnavailable)
     }
 
     async fn replace_project_service_links(
@@ -3432,6 +3515,59 @@ impl ProviderIntelligenceStore for PostgresStore {
         .map_err(|_| GatewayError::StoreUnavailable)?
     }
 
+    async fn provider_health_check_targets(&self) -> GatewayResult<Vec<ProviderHealthCheckTarget>> {
+        let mut targets = Vec::new();
+        let provider_rows = sqlx::query(
+            r#"
+            SELECT provider, name, base_url, credential_secret
+            FROM provider_configs
+            WHERE enabled
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        for row in provider_rows {
+            let provider: String = row
+                .try_get("provider")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            targets.push(ProviderHealthCheckTarget {
+                name: row
+                    .try_get("name")
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
+                provider: match parse_provider_config_kind(&provider)? {
+                    gateway_core::ProviderConfigKind::LiteLlm => Provider::LiteLlm,
+                    gateway_core::ProviderConfigKind::InternalService => Provider::InternalService,
+                },
+                base_url: row.try_get("base_url").ok(),
+                credential: row.try_get("credential_secret").ok().flatten(),
+            });
+        }
+
+        let service_rows = sqlx::query(
+            r#"
+            SELECT name, upstream_base_url, credential_secret
+            FROM service_registrations
+            WHERE enabled AND upstream_base_url IS NOT NULL
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        for row in service_rows {
+            targets.push(ProviderHealthCheckTarget {
+                name: row
+                    .try_get("name")
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
+                provider: Provider::InternalService,
+                base_url: row.try_get("upstream_base_url").ok().flatten(),
+                credential: row.try_get("credential_secret").ok().flatten(),
+            });
+        }
+
+        Ok(targets)
+    }
+
     async fn upsert_provider_health_state(
         &self,
         state: ProviderHealthState,
@@ -3454,7 +3590,7 @@ impl ProviderIntelligenceStore for PostgresStore {
                 updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
-            ON CONFLICT (name) DO UPDATE SET
+            ON CONFLICT (provider, name) DO UPDATE SET
                 provider = EXCLUDED.provider,
                 status = EXCLUDED.status,
                 circuit_state = EXCLUDED.circuit_state,
@@ -3672,6 +3808,59 @@ impl ProviderIntelligenceStore for PostgresStore {
                 .transpose()
         })
         .map_err(|_| GatewayError::StoreUnavailable)?
+    }
+
+    async fn activate_service_registry_import(
+        &self,
+        source: String,
+        diff: ServiceImportDiff,
+        services: Vec<StudioServiceImportRequest>,
+        rolled_back_from_version: Option<i64>,
+    ) -> GatewayResult<(ServiceRegistrySnapshot, Vec<ServiceResponse>)> {
+        let services_json =
+            serde_json::to_value(&services).map_err(|_| GatewayError::InvalidServicePayload)?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let mut activated = Vec::new();
+        for service in services {
+            activated.push(Self::upsert_studio_service_in_tx(&mut tx, service).await?);
+        }
+        let row = sqlx::query(
+            r#"
+            INSERT INTO service_registry_snapshots (
+                source,
+                diff,
+                services_json,
+                activated_at,
+                rolled_back_from_version,
+                created_at
+            )
+            VALUES ($1, $2, $3, now(), $4, now())
+            RETURNING
+                version,
+                source,
+                diff,
+                services_json,
+                activated_at,
+                rolled_back_from_version,
+                created_at
+            "#,
+        )
+        .bind(source)
+        .bind(Json(&diff))
+        .bind(Json(&services_json))
+        .bind(rolled_back_from_version)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        let snapshot = service_registry_snapshot_from_row(&row)?;
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok((snapshot, activated))
     }
 }
 
