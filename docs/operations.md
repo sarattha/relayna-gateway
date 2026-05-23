@@ -171,7 +171,25 @@ Before deploying a new release:
 
 1. Read `CHANGELOG.md`.
 2. Build and scan the Docker image.
-3. Run CI, including Rust checks, admin UI tests, and docs build.
+3. Run CI, including Rust checks, security scans, admin UI tests, freeze
+   perimeter tests, and docs build.
 4. Confirm PostgreSQL migrations apply in a staging database.
 5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.0.14`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
+
+## Supply Chain and Runtime Hardening
+
+CI runs dependency, secret, static-analysis, filesystem, and image security
+checks. Treat failures as blocking unless a temporary exception is documented in
+`docs/security-exceptions.md`.
+
+Release images are published to GHCR with SBOM, signature, and provenance
+artifacts. Verify signatures and attestations before promotion into production
+clusters.
+
+Run production pods with the restricted settings from
+`deploy/kubernetes/relayna-gateway.yaml`: non-root UID/GID `10001`, read-only
+root filesystem, default seccomp profile, no privilege escalation, and no Linux
+capabilities. Keep proxy and control-plane Services separate, and expose the
+control plane only through private ingress, VPN, identity-aware proxy, or
+equivalent access control.

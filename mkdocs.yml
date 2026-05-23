@@ -31,6 +31,7 @@ nav:
   - Guardrails: guardrails.md
   - Deployment: deployment.md
   - Operations: operations.md
+  - Security Exceptions: security-exceptions.md
   - Releases: releases.md
 markdown_extensions:
   - admonition

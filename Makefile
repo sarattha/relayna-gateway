@@ -85,6 +85,32 @@ check: ## Run format, lint, and test checks
 	$(MAKE) test
 	$(MAKE) admin-ui-test
 
+.PHONY: security-rust
+security-rust: ## Run Rust dependency and nextest security-oriented checks
+	cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437
+	cargo deny check
+	cargo machete
+	cargo nextest run --workspace --all-features
+
+.PHONY: security-fs
+security-fs: ## Run repository filesystem, secret, and static-analysis checks
+	trivy fs --severity HIGH,CRITICAL --exit-code 1 --skip-dirs target --skip-dirs site .
+	gitleaks detect --source . --redact
+	semgrep scan --config .semgrep.yml
+
+.PHONY: security-image
+security-image: ## Scan a local Docker image; set IMAGE=relayna-gateway:tag
+	@if [[ -z "$${IMAGE:-}" ]]; then \
+		echo "Set IMAGE to the local image tag to scan, for example IMAGE=relayna-gateway:0.0.14"; \
+		exit 2; \
+	fi
+	trivy image --severity HIGH,CRITICAL --exit-code 1 "$${IMAGE}"
+
+.PHONY: security
+security: ## Run all local security checks except image scan
+	$(MAKE) security-rust
+	$(MAKE) security-fs
+
 .PHONY: verify
 verify: ## Run the repository Codex verification helper
 	.codex/skills/code-change-verification/scripts/run.sh

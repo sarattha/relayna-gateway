@@ -1,0 +1,14 @@
+rules:
+  - id: relayna-rust-hardcoded-live-token
+    message: Do not hard-code provider API tokens.
+    severity: ERROR
+    languages:
+      - rust
+    pattern-regex: '"sk-[A-Za-z0-9_-]{20,}[^"]*"'
+
+  - id: relayna-js-hardcoded-live-token
+    message: Do not hard-code provider API tokens.
+    severity: ERROR
+    languages:
+      - javascript
+    pattern-regex: '"sk-[A-Za-z0-9_-]{20,}[^"]*"'

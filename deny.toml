@@ -1,0 +1,39 @@
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    # Transitive through prometheus in pingora-core. Revisit by 2026-08-31.
+    "RUSTSEC-2024-0437",
+    # Transitive through pingora-core. Revisit by 2026-08-31.
+    "RUSTSEC-2024-0388",
+    # Transitive through pingora-core. Revisit by 2026-08-31.
+    "RUSTSEC-2025-0069",
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "OpenSSL",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
