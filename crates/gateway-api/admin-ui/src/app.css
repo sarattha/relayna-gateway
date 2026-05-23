@@ -295,6 +295,49 @@ td code {
   background: var(--rg-status-good-bg);
 }
 
+.message-box {
+  position: fixed;
+  top: var(--rg-space-4);
+  right: var(--rg-space-4);
+  z-index: 9;
+  width: min(420px, calc(100vw - 32px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--rg-space-3);
+  align-items: start;
+  padding: 13px;
+  border: 1px solid #e0aaa1;
+  border-left: 4px solid var(--rg-status-bad);
+  border-radius: var(--rg-radius-md);
+  background: var(--rg-status-bad-bg);
+  box-shadow: var(--rg-shadow-modal);
+  color: var(--rg-color-text);
+}
+
+.message-box[data-kind="success"] {
+  border-color: #9bc8c1;
+  border-left-color: var(--rg-status-good);
+  background: var(--rg-status-good-bg);
+}
+
+.message-box h3,
+.message-box p {
+  margin: 0;
+}
+
+.message-box h3 {
+  color: var(--rg-color-text);
+  font-size: 14px;
+}
+
+.message-box p {
+  margin-top: 4px;
+  color: var(--rg-color-muted);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .grid {
   display: grid;
   gap: var(--rg-space-4);
@@ -740,6 +783,13 @@ tr:last-child td {
 }
 
 @media (max-width: 520px) {
+  .message-box {
+    right: var(--rg-space-3);
+    left: var(--rg-space-3);
+    width: auto;
+    grid-template-columns: 1fr;
+  }
+
   .workspace,
   .sidebar,
   .login-shell {

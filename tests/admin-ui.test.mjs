@@ -74,6 +74,10 @@ test("admin portal calls the expected gateway admin APIs", () => {
 
 test("admin portal surfaces async action failures", () => {
   assert.match(js, /function handleAsync\(handler\)/);
+  assert.match(js, /className = "message-box"/);
+  assert.match(js, /data-close-message/);
+  assert.match(css, /\.message-box/);
+  assert.doesNotMatch(html, /id="notice"/);
   for (const handler of [
     "createProject",
     "createKey",

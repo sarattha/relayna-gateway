@@ -39,7 +39,6 @@ const state = {
 const login = document.querySelector("#login");
 const app = document.querySelector("#app");
 const content = document.querySelector("#content");
-const notice = document.querySelector("#notice");
 const requestTimeoutMs = 8000;
 
 function token() {
@@ -47,9 +46,24 @@ function token() {
 }
 
 function setNotice(message, kind = "error") {
-  notice.textContent = message || "";
-  notice.classList.toggle("hidden", !message);
-  notice.dataset.kind = kind;
+  document.querySelector(".message-box")?.remove();
+  if (!message) return;
+
+  const tone = kind === "success" ? "success" : "error";
+  const box = document.createElement("section");
+  box.className = "message-box";
+  box.dataset.kind = tone;
+  box.setAttribute("role", "alert");
+  box.setAttribute("aria-live", "polite");
+  box.innerHTML = `
+    <div>
+      <h3>${tone === "success" ? "Success" : "Message"}</h3>
+      <p>${esc(message)}</p>
+    </div>
+    <button type="button" data-close-message>Close</button>
+  `;
+  box.querySelector("[data-close-message]").addEventListener("click", () => box.remove());
+  document.body.appendChild(box);
 }
 
 function handleAsync(handler) {
