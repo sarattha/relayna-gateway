@@ -9,25 +9,30 @@ description = "Relayna live virtual or operator token"
 regex = '''\b(rk_live|op_live)_[A-Za-z0-9_=-]{16,}\b'''
 keywords = ["rk_live", "op_live"]
 
-[allowlist]
-description = "Documented examples and scanner configs only"
+[[allowlists]]
+description = "Generated artifacts only"
 paths = [
-    '''^docs/.*\.md$''',
-    '''^README\.md$''',
-    '''^AGENTS\.md$''',
-    '''^internal/.*\.md$''',
     '''^target/.*''',
     '''^site/.*''',
     '''^\.tmp-mkdocs-venv/.*''',
-    '''^\.gitleaks\.toml$''',
 ]
+
+[[allowlists]]
+description = "Documented placeholder tokens and test fixtures only"
+regexTarget = "match"
 regexes = [
     '''rk_live_1234567890abcdef''',
+    '''rk_live_12345678''',
+    '''rk_live_xxx''',
     '''rk_live_guardrailtest[0-9]+''',
     '''rk_live_guardraildelete''',
     '''rk_live_patchdisabled''',
     '''rk_live_test_key''',
+    '''rk_live_localdev[0-9]+''',
     '''op_live_1234567890abcdef1234567890abcdef''',
+    '''op_live_12345678''',
+    '''op_live_localdev[0-9]+''',
+    '''op_live_replace_with_secret_value''',
     '''op_live_testoperator[0-9]+''',
     '''op_live_usageoperator[0-9]+''',
     '''op_live_policyoperator[0-9]+''',
