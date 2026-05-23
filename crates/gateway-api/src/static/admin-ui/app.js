@@ -49,7 +49,7 @@ const viewMeta = {
   usage: {
     title: "Usage",
     domain: "Monitor",
-    summary: "Cost, tokens, denials, fallbacks, guardrail blocks, and exportable usage rows."
+    summary: "Cost, tokens, denials, fallbacks, guardrail blocks, task drilldowns, and exports."
   },
   providers: {
     title: "Providers",
@@ -59,7 +59,7 @@ const viewMeta = {
   services: {
     title: "Services",
     domain: "Discover",
-    summary: "Relayna service catalog, route patterns, Studio imports, and lifecycle controls."
+    summary: "Relayna service catalog, route patterns, Studio imports, sync, and lifecycle controls."
   },
   routes: {
     title: "Routes",
@@ -81,10 +81,15 @@ const viewMeta = {
     domain: "Govern",
     summary: "Catalog controls, execution summaries, and sanitized guardrail events."
   },
+  audit: {
+    title: "Audit",
+    domain: "Govern",
+    summary: "Operator actions, request metadata, targets, and redacted change snapshots."
+  },
   settings: {
     title: "Settings",
     domain: "Govern",
-    summary: "Studio connection settings and write-only integration token controls."
+    summary: "Studio connection settings, integration token controls, and release posture references."
   }
 };
 function metaForView(view) {
@@ -93,6 +98,72 @@ function metaForView(view) {
     domain: "Monitor",
     summary: "Gateway operator workflow."
   };
+}
+function toneForStatus(value) {
+  const status = String(value ?? "").toLowerCase();
+  if (["ready", "ok", "healthy", "enabled", "configured", "active", "success", "non-expiring", "closed"].includes(status)) {
+    return "good";
+  }
+  if (["missing", "failed", "failure", "disabled", "revoked", "expired", "timeout", "unhealthy", "open"].includes(status)) {
+    return "bad";
+  }
+  if (["unknown", "pending", "fallback", "opt-in", "default", "degraded", "half_open", "half-open"].includes(status)) {
+    return "warn";
+  }
+  return "neutral";
+}
+function html(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+function badge(label, tone = toneForStatus(label)) {
+  return `<span class="badge ${tone}">${html(label ?? "unknown")}</span>`;
+}
+function panel(title, body, meta = "") {
+  const heading = title ? `<div class="panel-heading"><h3>${html(title)}</h3>${meta ? `<span class="subtle">${html(meta)}</span>` : ""}</div>` : "";
+  return `<section class="panel">${heading}${body}</section>`;
+}
+function metricTile(label, value, tone = "neutral") {
+  return `<section class="panel stat ${tone}"><span>${html(label)}</span><strong>${html(value)}</strong></section>`;
+}
+function emptyState(message) {
+  return `<div class="empty-state"><p>${html(message)}</p></div>`;
+}
+function tableWrap(tableMarkup) {
+  return `<div class="table-wrap">${tableMarkup}</div>`;
+}
+function actionGroup(actions) {
+  return `<div class="form-actions">${actions}</div>`;
+}
+function jsonBlock(value) {
+  return `<pre>${html(JSON.stringify(value ?? null, null, 2))}</pre>`;
+}
+function filterPanel(title, formMarkup) {
+  return panel(title, `<form class="form-grid" data-filter-form>${formMarkup}</form>`);
+}
+function auditLogTemplate(filterMarkup, tableMarkup) {
+  return `${filterPanel("Audit filters", filterMarkup)}${panel("Audit events", tableMarkup)}`;
+}
+function importDiffTemplate(diff) {
+  const groups = [
+    ["Added", diff.added],
+    ["Changed", diff.changed],
+    ["Removed", diff.removed],
+    ["Invalid", diff.invalid]
+  ];
+  return `<div class="grid">${groups.map(([label, rows]) => {
+    const items = Array.isArray(rows) && rows.length ? tableWrap(`<table><tbody>${rows.map((row) => `<tr><td>${html(nameForDiffRow(row))}</td><td>${html(reasonForDiffRow(row))}</td></tr>`).join("")}</tbody></table>`) : emptyState(`No ${String(label).toLowerCase()} services.`);
+    return panel(String(label), items, Array.isArray(rows) ? `${rows.length} total` : "0 total");
+  }).join("")}</div>`;
+}
+function nameForDiffRow(row) {
+  if (!row || typeof row !== "object") return String(row ?? "");
+  const value = row;
+  return String(value.name ?? value.service_name ?? value.id ?? value.studio_service_id ?? "service");
+}
+function reasonForDiffRow(row) {
+  if (!row || typeof row !== "object") return "";
+  const value = row;
+  return String(value.reason ?? value.change_type ?? value.status ?? "");
 }
 function applyViewChrome(view) {
   const meta = metaForView(view);
@@ -120,6 +191,7 @@ const state = {
   policyLayers: [],
   providerHealthState: [],
   serviceImportVersions: [],
+  auditEvents: [],
   debugBundle: null,
   editingKeyId: null,
   editingServiceName: null,
@@ -202,6 +274,22 @@ function showRawToken(rawToken, label = "Token shown once") {
   });
   document.body.appendChild(node);
 }
+function showTextModal(titleText, value) {
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal wide">
+      <h3>${esc(titleText)}</h3>
+      <textarea readonly rows="18">${esc(value)}</textarea>
+      ${actionGroup('<button type="button" data-close-modal>Close</button>')}
+    </div>
+  `;
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => backdrop.remove());
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) backdrop.remove();
+  });
+  document.body.appendChild(backdrop);
+}
 function confirmAction(titleText, bodyText) {
   return new Promise((resolve) => {
     const backdrop = document.createElement("section");
@@ -275,12 +363,13 @@ document.querySelectorAll(".nav").forEach((button) => {
 async function refresh() {
   setNotice("");
   applyViewChrome(state.view);
-  content.innerHTML = '<section class="panel"><div class="empty-state"><p>Loading...</p></div></section>';
+  content.innerHTML = panel("", emptyState("Loading..."));
   try {
     if (state.view === "overview") await overview();
     if (state.view === "projects") await projects();
     if (state.view === "keys") await keys();
     if (state.view === "guardrails") await guardrails();
+    if (state.view === "audit") await audit();
     if (state.view === "providers") await providers();
     if (state.view === "routes") await routes();
     if (state.view === "services") await services();
@@ -321,7 +410,7 @@ async function overview() {
   `;
 }
 function stat(label, value) {
-  return `<section class="panel stat"><span>${esc(label)}</span><strong>${esc(value)}</strong></section>`;
+  return metricTile(label, value);
 }
 async function projects() {
   [state.projects, state.services] = await Promise.all([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services")]);
@@ -497,6 +586,9 @@ async function keys() {
   (_a = document.querySelector("#key-edit-form")) == null ? void 0 : _a.addEventListener("submit", handleAsync(patchKey));
   document.querySelector("#policy-sim-form").addEventListener("submit", handleAsync(simulatePolicy));
   document.querySelector("#policy-layer-form").addEventListener("submit", handleAsync(savePolicyLayer));
+  document.querySelectorAll("[data-policy-layer-action]").forEach((button) => {
+    button.addEventListener("click", handleAsync(policyLayerAction));
+  });
   bindKeyExpiryControls();
   bindKeyOwnerControls();
   bindServicePickerButtons();
@@ -619,15 +711,17 @@ function keyTable(rows) {
 }
 function policyLayerTable(rows) {
   return table(
-    ["Layer", "Scope", "Version", "Policy", "Updated"],
+    ["Layer", "Scope", "Version", "Policy", "Guardrails", "Updated", "Actions"],
     rows.map((layer) => {
       var _a;
       return [
-        esc(layer.kind),
-        esc(layer.scope_id || "all"),
+        badge(layer.kind),
+        `<code>${esc(layer.scope_id || "all")}</code>`,
         esc(((_a = layer.policy) == null ? void 0 : _a.policy_version) ?? "1"),
         keyPolicySummary({ policy: layer.policy, rotation_due_at: null, last_used_at: null }),
-        time(layer.updated_at)
+        guardrailPolicySummary(layer.guardrail_policy),
+        time(layer.updated_at),
+        `<button type="button" class="danger" data-policy-layer-action="delete" data-layer-id="${attr(layer.id)}">Delete</button>`
       ];
     })
   );
@@ -741,6 +835,54 @@ async function savePolicyLayer(event) {
   await api("/admin-ui/admin/policy-layers", { method: "POST", body: JSON.stringify(body) });
   setNotice("Policy layer saved.", "success");
   await keys();
+}
+async function policyLayerAction(event) {
+  const { policyLayerAction: action, layerId } = event.currentTarget.dataset;
+  if (action !== "delete") return;
+  if (!await confirmAction("Delete policy layer", "Keys will immediately fall back to lower-priority inherited policy.")) return;
+  await api(`/admin-ui/admin/policy-layers/${layerId}`, { method: "DELETE" });
+  setNotice("Policy layer deleted.", "success");
+  await keys();
+}
+async function audit() {
+  const formMarkup = `
+    <label>Action<input name="action" placeholder="operator_token.rotate"></label>
+    <label>Target type<input name="target_type" placeholder="key, policy_layer, provider"></label>
+    <label>Target ID<input name="target_id"></label>
+    <label>Operator token ID<input name="actor_token_id"></label>
+    <label>Limit<input name="limit" type="number" min="1" max="500" value="100"></label>
+    <div class="form-actions"><button class="primary">Apply</button></div>
+  `;
+  content.innerHTML = auditLogTemplate(formMarkup, '<div id="audit-results"></div>');
+  document.querySelector("[data-filter-form]").addEventListener("submit", handleAsync(loadAuditEvents));
+  await loadAuditEvents();
+}
+async function loadAuditEvents(event) {
+  event == null ? void 0 : event.preventDefault();
+  const form = event ? new FormData(event.target) : new FormData();
+  const query = new URLSearchParams();
+  for (const key of ["action", "target_type", "target_id", "actor_token_id", "limit"]) {
+    const value = form.get(key);
+    if (value) query.set(key, value);
+  }
+  state.auditEvents = await api(`/admin-ui/admin/audit-events?${query}`);
+  const results = document.querySelector("#audit-results");
+  if (results) results.innerHTML = auditEventTable(state.auditEvents);
+}
+function auditEventTable(rows) {
+  return table(
+    ["Time", "Actor", "Action", "Target", "Request", "IP", "User agent", "Snapshots"],
+    rows.map((row) => [
+      time(row.created_at),
+      `<code>${esc(row.actor_token_id || "system")}</code>`,
+      badge(row.action),
+      `<strong>${esc(row.target_type)}</strong><div class="subtle"><code>${esc(row.target_id || "")}</code></div>`,
+      `<code>${esc(row.request_id || "")}</code>`,
+      esc(row.ip || ""),
+      esc(row.user_agent || ""),
+      `<details><summary>Before/after</summary>${jsonBlock({ before: row.before, after: row.after })}</details>`
+    ])
+  );
 }
 function keyOwnerLabel(key) {
   if (key.owner_type === "individual") return '<span class="badge">individual</span>';
@@ -993,8 +1135,10 @@ async function openStudioImportPicker() {
         <h3>Import from Studio</h3>
         <form id="studio-import-form" class="modal-form">
           <div class="modal-scroll">${studioImportTable(state.studioServices)}</div>
+          <div id="studio-import-preview"></div>
           <div class="form-actions">
             <button type="button" data-import-preview ${state.studioServices.length ? "" : "disabled"}>Preview selected</button>
+            <button type="button" data-import-sync ${state.studioServices.length ? "" : "disabled"}>Sync selected</button>
             <button class="primary" ${state.studioServices.length ? "" : "disabled"}>Import selected</button>
             <button type="button" data-close-modal>Cancel</button>
           </div>
@@ -1007,6 +1151,7 @@ async function openStudioImportPicker() {
     });
     backdrop.querySelector("#studio-import-form").addEventListener("submit", handleAsync(importSelectedStudioServices));
     backdrop.querySelector("[data-import-preview]").addEventListener("click", handleAsync(previewSelectedStudioServices));
+    backdrop.querySelector("[data-import-sync]").addEventListener("click", handleAsync(syncSelectedStudioServices));
     document.body.appendChild(backdrop);
   } catch (error) {
     setNotice(`${error.message}. Check Settings for the Studio connection.`);
@@ -1032,6 +1177,15 @@ async function settings() {
           <button type="button" class="danger" data-studio-action="clear-settings">Clear persisted settings</button>
         </div>
       </form>
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
+      <div class="kv">
+        <div><strong>Freeze baseline</strong><span>${badge("v0.0.14")}</span></div>
+        <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
+        <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
+        <div><strong>Release guard</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/tests/freeze-v0.0.14-perimeter.test.mjs" target="_blank" rel="noreferrer">freeze perimeter test</a></span></div>
+      </div>
     </section>
   `;
   document.querySelector("#studio-connection-form").addEventListener("submit", handleAsync(saveStudioConnection));
@@ -1195,13 +1349,31 @@ async function importSelectedStudioServices(event) {
   await services();
 }
 async function previewSelectedStudioServices(event) {
+  event.preventDefault();
   const form = new FormData(document.querySelector("#studio-import-form"));
   const selected = form.getAll("studio_index").map((value) => state.studioServices[Number(value)]).filter(Boolean);
   const preview = await api("/admin-ui/admin/services/import/preview", {
     method: "POST",
     body: JSON.stringify({ source: "studio", services: selected.map((service) => service.import_request) })
   });
+  const target = document.querySelector("#studio-import-preview");
+  if (target) target.innerHTML = importDiffTemplate(preview.diff);
   setNotice(`Import preview: +${preview.diff.added.length} changed ${preview.diff.changed.length} removed ${preview.diff.removed.length} invalid ${preview.diff.invalid.length}.`, preview.diff.invalid.length ? "error" : "success");
+}
+async function syncSelectedStudioServices(event) {
+  var _a;
+  event.preventDefault();
+  const form = new FormData(document.querySelector("#studio-import-form"));
+  const selected = form.getAll("studio_index").map((value) => state.studioServices[Number(value)]).filter(Boolean);
+  for (const service of selected) {
+    await api("/admin-ui/admin/services/sync", {
+      method: "POST",
+      body: JSON.stringify(service.import_request)
+    });
+  }
+  (_a = document.querySelector(".modal-backdrop")) == null ? void 0 : _a.remove();
+  setNotice(`${selected.length} Studio service${selected.length === 1 ? "" : "s"} synced.`, "success");
+  await services();
 }
 async function patchService(event) {
   event.preventDefault();
@@ -1288,31 +1460,45 @@ async function usage() {
         <label>Model<input name="model"></label>
         <label>Task<input name="task_id"></label>
         <label>Run<input name="run_id"></label>
+        <label>Trace<input name="trace_id"></label>
         <label>Status<select name="status"><option value="">All</option><option value="success">Success</option><option value="failure">Failure</option></select></label>
         <label>Min cost<input name="min_cost_usd" type="number" min="0" step="0.0001"></label>
-        <div class="form-actions"><button class="primary">Apply</button></div>
+        <div class="form-actions">
+          <button class="primary">Apply</button>
+          <button type="button" data-usage-export="json">Export JSON</button>
+          <button type="button" data-usage-export="csv">Export CSV</button>
+        </div>
       </form>
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Task drilldown</h3></div>
+      <form id="task-usage-form" class="inline-form">
+        <input name="task_lookup" placeholder="task ID" required>
+        <button>Load task usage</button>
+      </form>
+      <div id="task-usage-result"></div>
     </section>
     <section class="panel"><div class="panel-heading"><h3>Usage breakdown</h3></div><div id="usage-results"></div></section>
   `;
   document.querySelector("#usage-form").addEventListener("submit", handleAsync(loadUsage));
+  document.querySelector("#task-usage-form").addEventListener("submit", handleAsync(loadTaskUsage));
+  document.querySelectorAll("[data-usage-export]").forEach((button) => {
+    button.addEventListener("click", handleAsync(loadUsageExport));
+  });
   await loadUsage();
 }
 async function loadUsage(event) {
   event == null ? void 0 : event.preventDefault();
-  const form = event ? new FormData(event.target) : new FormData();
-  const query = new URLSearchParams();
-  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "status", "min_cost_usd"]) {
-    const value = form.get(key);
-    if (value) query.set(key, value);
-  }
-  const [summary, projectRows, keyRows, serviceRows, providerRows, modelRows, unusedKeys] = await Promise.all([
+  const query = usageQueryFromForm(event == null ? void 0 : event.target);
+  const [summary, projectRows, keyRows, serviceRows, providerRows, modelRows, taskRows, timeseriesRows, unusedKeys] = await Promise.all([
     api(`/admin-ui/admin/usage/summary?${query}`),
     api(`/admin-ui/admin/usage/by-project?${query}`),
     api(`/admin-ui/admin/usage/by-key?${query}`),
     api(`/admin-ui/admin/usage/by-service?${query}`),
     api(`/admin-ui/admin/usage/by-provider?${query}`),
     api(`/admin-ui/admin/usage/by-model?${query}`),
+    api(`/admin-ui/admin/usage/by-task?${query}`),
+    api(`/admin-ui/admin/usage/timeseries?${query}`),
     api(`/admin-ui/admin/usage/unused-keys?${query}`)
   ]);
   const results = document.querySelector("#usage-results");
@@ -1331,8 +1517,49 @@ async function loadUsage(event) {
     <h4>Services</h4>${usageBreakdownTable(serviceRows)}
     <h4>Providers</h4>${usageBreakdownTable(providerRows)}
     <h4>Models</h4>${usageBreakdownTable(modelRows)}
+    <h4>Tasks</h4>${usageBreakdownTable(taskRows)}
+    <h4>Timeseries</h4>${usageTimeseriesTable(timeseriesRows)}
     <h4>Unused keys</h4>${unusedKeysTable(unusedKeys)}
   `;
+}
+function usageQueryFromForm(formElement = document.querySelector("#usage-form")) {
+  const form = formElement ? new FormData(formElement) : new FormData();
+  const query = new URLSearchParams();
+  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status", "min_cost_usd"]) {
+    const value = form.get(key);
+    if (value) query.set(key, value);
+  }
+  return query;
+}
+async function loadUsageExport(event) {
+  const format = event.currentTarget.dataset.usageExport;
+  const query = usageQueryFromForm();
+  if (format === "json") {
+    const body = await api(`/admin-ui/admin/usage/export.json?${query}`);
+    showTextModal("Usage export JSON", JSON.stringify(body, null, 2));
+    return;
+  }
+  const response = await fetchWithTimeout(`/admin-ui/admin/usage/export.csv?${query}`, {
+    headers: { authorization: `Bearer ${token()}` }
+  });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  showTextModal("Usage export CSV", await response.text());
+}
+async function loadTaskUsage(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const taskId = form.get("task_lookup");
+  const query = usageQueryFromForm();
+  const summary = await api(`/admin-ui/admin/tasks/${encodeURIComponent(taskId)}/usage?${query}`);
+  const target = document.querySelector("#task-usage-result");
+  if (target) {
+    target.innerHTML = `<div class="grid stats">
+      ${stat("Requests", summary.request_count)}
+      ${stat("Failures", summary.failure_count)}
+      ${stat("Cost", money(summary.estimated_cost_usd))}
+      ${stat("Fallback rate", percent(summary.fallback_rate))}
+    </div>`;
+  }
 }
 function usageBreakdownTable(rows, label = (value) => value) {
   return table(
@@ -1356,6 +1583,21 @@ function unusedKeysTable(rows) {
       time(row.created_at),
       row.last_used_at ? time(row.last_used_at) : "never"
     ])
+  );
+}
+function usageTimeseriesTable(rows) {
+  return table(
+    ["Bucket", "Requests", "Success", "Failure", "Cost"],
+    rows.map((row) => {
+      var _a, _b, _c, _d;
+      return [
+        esc(row.bucket_start || row.bucket || row.name),
+        ((_a = row.summary) == null ? void 0 : _a.request_count) ?? row.request_count ?? 0,
+        ((_b = row.summary) == null ? void 0 : _b.success_count) ?? row.success_count ?? 0,
+        ((_c = row.summary) == null ? void 0 : _c.failure_count) ?? row.failure_count ?? 0,
+        money(((_d = row.summary) == null ? void 0 : _d.estimated_cost_usd) ?? row.estimated_cost_usd)
+      ];
+    })
   );
 }
 async function health() {
@@ -1390,6 +1632,40 @@ async function health() {
       ${healthStateTable(healthState)}
     </section>
     <section class="panel">
+      <div class="panel-heading"><h3>Manage provider health state</h3><span class="subtle">Writes explicit provider intelligence state</span></div>
+      <form id="provider-health-state-form" class="form-grid">
+        <label>Name<input name="name" required placeholder="LiteLLM"></label>
+        <label>Provider<select name="provider">
+          <option value="LiteLlm">LiteLLM</option>
+          <option value="OpenAiCompatible">OpenAI-compatible</option>
+          <option value="InternalService">Internal service</option>
+        </select></label>
+        <label>Status<select name="status">
+          <option value="healthy">Healthy</option>
+          <option value="degraded">Degraded</option>
+          <option value="unhealthy">Unhealthy</option>
+          <option value="unknown">Unknown</option>
+        </select></label>
+        <label>Circuit<select name="circuit_state">
+          <option value="closed">Closed</option>
+          <option value="half_open">Half open</option>
+          <option value="open">Open</option>
+        </select></label>
+        <label>Active check<select name="active_check_ok">
+          <option value="">Unknown</option>
+          <option value="true">OK</option>
+          <option value="false">Failed</option>
+        </select></label>
+        <label>Passive success<input name="passive_success_count" type="number" min="0" value="0"></label>
+        <label>Passive failure<input name="passive_failure_count" type="number" min="0" value="0"></label>
+        <label>Consecutive failures<input name="consecutive_failures" type="number" min="0" value="0"></label>
+        <label>Average latency ms<input name="average_latency_ms" type="number" min="0"></label>
+        <label>Last error<input name="last_error_code"></label>
+        <label>Cooldown until<input name="cooldown_until" type="datetime-local"></label>
+        <div class="form-actions"><button class="primary">Save health state</button></div>
+      </form>
+    </section>
+    <section class="panel">
       <div class="panel-heading"><h3>Debug bundle</h3></div>
       <form id="debug-bundle-form" class="inline-form">
         <input name="request_id" placeholder="request ID" required>
@@ -1403,6 +1679,10 @@ async function health() {
     </section>
   `;
   document.querySelector("[data-health-action='check']").addEventListener("click", handleAsync(runHealthChecks));
+  document.querySelector("#provider-health-state-form").addEventListener("submit", handleAsync(saveProviderHealthState));
+  document.querySelectorAll("[data-health-state-edit]").forEach((button) => {
+    button.addEventListener("click", () => fillProviderHealthStateForm(button.dataset.healthStateEdit));
+  });
   document.querySelector("#debug-bundle-form").addEventListener("submit", handleAsync(loadDebugBundle));
   document.querySelectorAll("[data-import-rollback]").forEach((button) => {
     button.addEventListener("click", handleAsync(rollbackImportVersion));
@@ -1417,7 +1697,7 @@ function healthTable(rows) {
       row.request_count,
       row.error_count,
       row.timeout_count,
-      row.fallback_count,
+      row.fallback_count ? badge(row.fallback_count, "warn") : "0",
       `${averageLatency(row)} ms`
     ])
   );
@@ -1433,16 +1713,18 @@ function averageLatency(row) {
 }
 function healthStateTable(rows) {
   return table(
-    ["Name", "Provider", "Status", "Circuit", "Active check", "Latency", "Last error", "Cooldown"],
+    ["Name", "Provider", "Status", "Circuit", "Active check", "Passive", "Latency", "Last error", "Cooldown", "Actions"],
     rows.map((row) => [
       esc(row.name),
       esc(row.provider),
-      esc(row.status),
-      esc(row.circuit_state),
-      row.active_check_ok === true ? '<span class="badge good">ok</span>' : row.active_check_ok === false ? '<span class="badge bad">failed</span>' : '<span class="badge">unknown</span>',
+      badge(row.status),
+      badge(row.circuit_state),
+      row.active_check_ok === true ? badge("ok", "good") : row.active_check_ok === false ? badge("failed", "bad") : badge("unknown", "warn"),
+      `${badge(`${row.passive_success_count ?? 0} ok`, "good")} ${badge(`${row.passive_failure_count ?? 0} failed`, row.passive_failure_count ? "bad" : "neutral")}`,
       esc(row.average_latency_ms ?? ""),
       esc(row.last_error_code ?? ""),
-      esc(row.cooldown_until ? time(row.cooldown_until) : "")
+      esc(row.cooldown_until ? time(row.cooldown_until) : ""),
+      `<button type="button" data-health-state-edit="${attr(`${row.provider}|${row.name}`)}">Edit state</button>`
     ])
   );
 }
@@ -1477,6 +1759,53 @@ async function runHealthChecks() {
   setNotice("Provider health checks completed.", "success");
   await health();
 }
+async function saveProviderHealthState(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const activeCheck = form.get("active_check_ok");
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const existing = state.providerHealthState.find((row) => row.provider === form.get("provider") && row.name === form.get("name"));
+  const body = {
+    name: form.get("name"),
+    provider: form.get("provider"),
+    status: form.get("status"),
+    circuit_state: form.get("circuit_state"),
+    active_check_ok: activeCheck === "" ? null : activeCheck === "true",
+    passive_success_count: nullableNumber(form.get("passive_success_count")) ?? (existing == null ? void 0 : existing.passive_success_count) ?? 0,
+    passive_failure_count: nullableNumber(form.get("passive_failure_count")) ?? (existing == null ? void 0 : existing.passive_failure_count) ?? 0,
+    consecutive_failures: nullableNumber(form.get("consecutive_failures")) ?? (existing == null ? void 0 : existing.consecutive_failures) ?? 0,
+    average_latency_ms: nullableNumber(form.get("average_latency_ms")),
+    last_error_code: nullableString(form.get("last_error_code")),
+    cooldown_until: isoDate(form.get("cooldown_until")),
+    checked_at: (existing == null ? void 0 : existing.checked_at) ?? now,
+    updated_at: now
+  };
+  await api("/admin-ui/admin/provider-health/state", { method: "POST", body: JSON.stringify(body) });
+  setNotice("Provider health state saved.", "success");
+  await health();
+}
+function fillProviderHealthStateForm(key) {
+  const [provider, name] = key.split("|");
+  const row = state.providerHealthState.find((candidate) => candidate.provider === provider && candidate.name === name);
+  const form = document.querySelector("#provider-health-state-form");
+  if (!row || !form) return;
+  for (const [field, value] of Object.entries({
+    name: row.name,
+    provider: row.provider,
+    status: row.status,
+    circuit_state: row.circuit_state,
+    active_check_ok: row.active_check_ok == null ? "" : String(row.active_check_ok),
+    passive_success_count: row.passive_success_count ?? 0,
+    passive_failure_count: row.passive_failure_count ?? 0,
+    consecutive_failures: row.consecutive_failures ?? 0,
+    average_latency_ms: row.average_latency_ms ?? "",
+    last_error_code: row.last_error_code ?? "",
+    cooldown_until: toLocalInput(row.cooldown_until)
+  })) {
+    const input = form.elements.namedItem(field);
+    if (input) input.value = value;
+  }
+}
 async function loadDebugBundle(event) {
   event.preventDefault();
   const requestId = new FormData(event.target).get("request_id");
@@ -1492,7 +1821,7 @@ async function rollbackImportVersion(event) {
 }
 function table(headers, rows) {
   if (!rows.length) return '<div class="empty-state"><p>No rows.</p></div>';
-  return `<div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  return tableWrap(`<table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
 }
 function policyBody(form) {
   const body = {
@@ -1808,20 +2137,38 @@ function keyPolicySummary(key) {
     <div class="subtle">Req ${esc(policy.max_request_body_bytes ?? "route")} / Resp ${esc(policy.max_response_body_bytes ?? "route")}</div>
     <div class="subtle">Rotate ${esc(key.rotation_due_at ? time(key.rotation_due_at) : "none")} / Last used ${esc(key.last_used_at ? time(key.last_used_at) : "never")}</div>`;
 }
+function guardrailPolicySummary(policy = {}) {
+  const mandatory = policy.mandatory_guardrails || [];
+  const optional = policy.optional_guardrails || [];
+  const forbidden = policy.forbidden_guardrails || [];
+  return `<div>${badge(`${mandatory.length} mandatory`, mandatory.length ? "warn" : "neutral")} ${badge(`${optional.length} optional`)}</div>
+    <div class="subtle">${esc(forbidden.length ? `${forbidden.length} forbidden` : "none forbidden")}</div>`;
+}
 function policySimulationResult() {
   var _a, _b, _c, _d, _e, _f;
   const result = state.policySimulation;
   if (!result) return '<div class="empty-inline">No simulation run.</div>';
   const decision = result.final_decision || {};
   return `<div class="kv">
-    <div><strong>Decision</strong><span>${esc(decision.allowed ? "allowed" : decision.error_code || "denied")}</span></div>
+    <div><strong>Decision</strong><span>${badge(decision.allowed ? "allowed" : decision.error_code || "denied", decision.allowed ? "good" : "bad")}</span></div>
     <div><strong>Route</strong><span>${esc(((_a = result.route_match) == null ? void 0 : _a.route) || "")}</span></div>
     <div><strong>Provider</strong><span>${esc(((_b = result.route_match) == null ? void 0 : _b.provider) || "")}</span></div>
     <div><strong>Policy version</strong><span>${esc(((_c = result.policy_merge) == null ? void 0 : _c.policy_version) ?? "n/a")}</span></div>
     <div><strong>Guardrails</strong><span>${esc((result.guardrail_plan || []).join(", ") || "none")}</span></div>
     <div><strong>Rate</strong><span>RPM ${esc(((_d = result.rate_limit_projection) == null ? void 0 : _d.rpm_limit) ?? "none")} / TPM ${esc(((_e = result.rate_limit_projection) == null ? void 0 : _e.tpm_limit) ?? "none")}</span></div>
     <div><strong>Budget</strong><span>${esc(money((_f = result.budget_projection) == null ? void 0 : _f.daily_budget_usd))} daily</span></div>
-  </div>`;
+  </div>
+  <details class="wide-field">
+    <summary>Simulation trace</summary>
+    ${jsonBlock({
+    policy_merge: result.policy_merge,
+    route_match: result.route_match,
+    rate_limit_projection: result.rate_limit_projection,
+    budget_projection: result.budget_projection,
+    guardrail_plan: result.guardrail_plan,
+    final_decision: result.final_decision
+  })}
+  </details>`;
 }
 function csv(value) {
   return String(value || "").split(",").map((item) => item.trim()).filter(Boolean);

@@ -20,12 +20,12 @@ function test(name, fn) {
 }
 
 test("admin portal shell exposes all release-critical views", () => {
-  for (const view of ["overview", "projects", "keys", "guardrails", "providers", "routes", "services", "usage", "health", "settings"]) {
+  for (const view of ["overview", "projects", "keys", "guardrails", "audit", "providers", "routes", "services", "usage", "health", "settings"]) {
     assert.match(html, new RegExp(`data-view="${view}"`));
   }
   assert.match(
     html,
-    /data-view="overview"[\s\S]*data-view="health"[\s\S]*data-view="usage"[\s\S]*data-view="providers"[\s\S]*data-view="services"[\s\S]*data-view="routes"[\s\S]*data-view="projects"[\s\S]*data-view="keys"[\s\S]*data-view="guardrails"[\s\S]*data-view="settings"/,
+    /data-view="overview"[\s\S]*data-view="health"[\s\S]*data-view="usage"[\s\S]*data-view="providers"[\s\S]*data-view="services"[\s\S]*data-view="routes"[\s\S]*data-view="projects"[\s\S]*data-view="keys"[\s\S]*data-view="guardrails"[\s\S]*data-view="audit"[\s\S]*data-view="settings"/,
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
@@ -36,10 +36,16 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin-ui/admin/usage/summary",
     "/admin-ui/admin/usage/by-model",
     "/admin-ui/admin/usage/by-provider",
+    "/admin-ui/admin/usage/by-task",
+    "/admin-ui/admin/usage/timeseries",
+    "/admin-ui/admin/usage/export.json",
+    "/admin-ui/admin/usage/export.csv",
     "/admin-ui/admin/usage/unused-keys",
     "/admin-ui/admin/provider-health",
     "/admin-ui/admin/provider-health/check",
     "/admin-ui/admin/provider-health/state",
+    "/admin-ui/admin/audit-events",
+    "/admin-ui/admin/tasks",
     "/admin-ui/admin/projects",
     "/admin-ui/admin/providers",
     "/admin-ui/admin/openai-routes",
@@ -53,6 +59,7 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin-ui/admin/studio/connection",
     "/admin-ui/admin/studio/connection/test",
     "/admin-ui/admin/studio/services",
+    "/admin-ui/admin/services/sync",
     "/admin-ui/admin/services/import/preview",
     "/admin-ui/admin/services/import/activate",
     "/admin-ui/admin/services/import/versions",
@@ -187,6 +194,10 @@ test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /function serviceRouteOptions\(\)/);
   assert.match(js, /Import from Studio/);
   assert.match(js, /function studioImportTable\(rows\)/);
+  assert.match(js, /async function syncSelectedStudioServices\(event\)/);
+  assert.match(js, /\/admin-ui\/admin\/services\/sync/);
+  assert.match(js, /data-import-sync/);
+  assert.match(js, /function importDiffTemplate/);
   assert.match(js, /Fixed records the configured estimate per request/);
   assert.match(js, /Passthrough records provider-reported response cost/);
   assert.match(css, /\.help/);
@@ -207,12 +218,45 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /api\("\/admin-ui\/admin\/projects"\)/);
   assert.match(js, /api\("\/admin-ui\/admin\/keys"\)/);
   assert.match(js, /api\("\/admin-ui\/admin\/services"\)/);
-  for (const field of ["project_id", "key_id", "service", "route"]) {
+  for (const field of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status", "min_cost_usd"]) {
     assert.match(js, new RegExp(`name="${field}"`));
   }
   assert.match(js, /\/admin-ui\/admin\/usage\/by-project/);
   assert.match(js, /\/admin-ui\/admin\/usage\/by-key/);
   assert.match(js, /\/admin-ui\/admin\/usage\/by-service/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/by-task/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/timeseries/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/export\.json/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/export\.csv/);
+  assert.match(js, /\/admin-ui\/admin\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/usage/);
+  assert.match(js, /async function loadUsageExport\(event\)/);
+  assert.match(js, /async function loadTaskUsage\(event\)/);
+  assert.match(js, /function usageTimeseriesTable\(rows\)/);
+});
+
+test("audit view exposes read-only operator event filters and redacted snapshots", () => {
+  assert.match(js, /async function audit\(\)/);
+  assert.match(js, /async function loadAuditEvents\(event\)/);
+  assert.match(js, /function auditEventTable\(rows\)/);
+  assert.match(js, /\/admin-ui\/admin\/audit-events/);
+  for (const field of ["action", "target_type", "target_id", "actor_token_id", "limit"]) {
+    assert.match(js, new RegExp(`name="${field}"`));
+  }
+  assert.match(js, /Before\/after/);
+  assert.doesNotMatch(js, /data-audit-action/);
+});
+
+test("post-freeze governance and provider intelligence controls are present", () => {
+  assert.match(js, /async function policyLayerAction\(event\)/);
+  assert.match(js, /data-policy-layer-action="delete"/);
+  assert.match(js, /\/admin-ui\/admin\/policy-layers\/\$\{layerId\}/);
+  assert.match(js, /method: "DELETE"/);
+  assert.match(js, /async function saveProviderHealthState\(event\)/);
+  assert.match(js, /\/admin-ui\/admin\/provider-health\/state", \{ method: "POST"/);
+  assert.match(js, /data-health-state-edit/);
+  assert.match(js, /active_check_ok/);
+  assert.match(js, /passive_success_count/);
+  assert.match(js, /circuit_state/);
 });
 
 test("virtual keys expose explicit no-expiration controls", () => {

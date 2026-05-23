@@ -63,9 +63,11 @@ belongs in `crates/gateway-api/admin-ui/`.
 
 Use existing Admin UI 2.0 tokens and component classes before adding new ones:
 
-- Tokens in `src/app.css`: `--rg-color-*`, `--rg-status-*`,
+- Tokens in `src/design-system/tokens.css`: `--rg-color-*`, `--rg-status-*`,
   `--rg-space-*`, `--rg-radius-*`, `--rg-shadow-*`, and `--rg-focus-ring`.
-- View metadata in `src/design-system.ts`.
+- View metadata in `src/design-system/view-meta.ts`.
+- Reusable helpers exported from `src/design-system/index.ts`, imported by
+  feature code through `./design-system`.
 - Shell classes: `app-shell`, `sidebar`, `nav-groups`, `nav-group`,
   `workspace`, `toolbar`, `eyebrow`, `view-summary`.
 - Component classes: `panel`, `panel-heading`, `stat`, `metric-strip`,
@@ -74,6 +76,8 @@ Use existing Admin UI 2.0 tokens and component classes before adding new ones:
 
 Add new component classes only when existing classes cannot express the needed
 state or layout. Keep components compact and stable across desktop and mobile.
+Add new helper functions under `src/design-system/` only when at least two
+views need the same structure or status semantics.
 
 ### Interaction and Security Rules
 
