@@ -26,6 +26,20 @@ impl BoundedBodyRewriter {
         self.buffer.len()
     }
 
+    pub fn preview_with_chunk(&self, body: Option<&Bytes>) -> GatewayResult<Vec<u8>> {
+        let chunk_len = body.map(Bytes::len).unwrap_or(0);
+        let next_len = self.buffer.len().saturating_add(chunk_len);
+        if next_len > self.max_bytes {
+            return Err(GatewayError::RequestBodyTooLarge);
+        }
+        let mut preview = Vec::with_capacity(next_len);
+        preview.extend_from_slice(&self.buffer);
+        if let Some(chunk) = body {
+            preview.extend_from_slice(chunk);
+        }
+        Ok(preview)
+    }
+
     pub fn filter_chunk<F>(
         &mut self,
         body: &mut Option<Bytes>,
@@ -104,6 +118,23 @@ mod tests {
         assert_eq!(outcome, BodyRewriteOutcome::Emitted);
         assert_eq!(second, Some(Bytes::from_static(br#"{"a":2}"#)));
         assert_eq!(rewriter.buffered_len(), 0);
+    }
+
+    #[test]
+    fn previews_buffered_body_with_current_chunk_without_mutating() {
+        let mut rewriter = BoundedBodyRewriter::new(32);
+        let mut first = Some(Bytes::from_static(b"{\"model\""));
+        rewriter
+            .filter_chunk(&mut first, false, |_| unreachable!("not final"))
+            .expect("first chunk");
+
+        let second = Bytes::from_static(br#":"gpt-4.1"}"#);
+        let preview = rewriter
+            .preview_with_chunk(Some(&second))
+            .expect("preview body");
+
+        assert_eq!(preview, br#"{"model":"gpt-4.1"}"#);
+        assert_eq!(rewriter.buffered_len(), 8);
     }
 
     #[test]

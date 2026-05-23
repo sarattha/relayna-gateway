@@ -24,7 +24,7 @@ of that schema.
 | Area | Tables | Purpose |
 | --- | --- | --- |
 | Projects | `projects` | Groups project-owned virtual keys and service access. |
-| Virtual keys | `api_keys`, `key_policies`, `key_guardrail_policies` | Stores key identity, request policy, limits, budgets, and guardrail policy. |
+| Virtual keys | `api_keys`, `key_policies`, `key_guardrail_policies`, `policy_layers` | Stores key identity, inherited request policy, limits, budgets, lifecycle metadata, and guardrail policy. |
 | Services | `service_registrations`, `project_service_links`, `key_service_links` | Registers `/services/<service-name>/*` routes and grants project or individual-key access. |
 | Providers and routes | `provider_configs`, `openai_route_settings`, `route_policies` | Stores upstream provider settings and global OpenAI-compatible route toggles. |
 | Guardrails | `guardrail_definitions`, `guardrail_execution_events` | Stores guardrail catalog entries and execution audit records. |
@@ -83,7 +83,7 @@ keys are never stored.
 | Unique keys | `key_prefix` is unique and is used for lookup before hash verification. |
 | Foreign keys | `project_id` references `projects(id)` with `ON DELETE RESTRICT` when `owner_type = 'project'`. |
 | Checks | `owner_type` must be `project` or `individual`; project keys require `project_id`, individual keys require `project_id IS NULL`. |
-| Lifecycle fields | `disabled`, `revoked_at`, and `expires_at` determine whether a key can authenticate. |
+| Lifecycle fields | `disabled`, `revoked_at`, and `expires_at` determine whether a key can authenticate. `rotation_due_at` helps operators plan rotation, and `last_used_at` records the last observed key use when populated by runtime paths. |
 | Secret fields | `key_hash` stores an Argon2 hash of the raw `rk_live_...` key. |
 | Referenced by | `key_policies`, `key_guardrail_policies`, `key_service_links`, `usage_events`, `guardrail_execution_events`, and legacy `route_policies`. |
 
@@ -96,10 +96,25 @@ feature permissions for a virtual key.
 | --- | --- |
 | Primary key | `key_id`, also a foreign key to `api_keys(id)` with `ON DELETE CASCADE`. |
 | Defaults | Routes default to `/v1/chat/completions` and `/v1/responses`; providers default to `litellm`; models and services default to empty arrays. |
-| Limits | `rpm_limit`, `tpm_limit`, `daily_budget_usd`, and `monthly_budget_usd` are nullable. `NULL` means no database-configured limit for that field. |
+| Limits | `rpm_limit`, `tpm_limit`, `daily_budget_usd`, `monthly_budget_usd`, daily request/token caps, per-request cost/token caps, UTC-hour allowlists, stale-key auto-disable days, request/response byte caps, stream duration, SSE event, tool call, and tool schema caps are nullable unless otherwise noted. `NULL` means no database-configured limit for that field. |
 | Feature flags | `allow_streaming` and `allow_tools` default to `false`. |
+| Versioning | `policy_version` increments when key policy is updated and is surfaced for simulation and debugging. |
 | Indexes | `idx_key_policies_limits` supports lookups for keys with configured limits or budgets. |
 | Required data | Admin key creation upserts this row. If it is missing, runtime defaults are used. |
+
+### `policy_layers`
+
+`policy_layers` stores optional inherited policy layers for deterministic
+effective-policy resolution.
+
+| Key | Details |
+| --- | --- |
+| Primary key | `id uuid`. |
+| Unique keys | `(layer_kind, scope_id)` is unique. |
+| Layer kinds | `global`, `project`, `team`, `key`, `route`, and `model`. |
+| Payloads | `policy jsonb` stores additive `KeyPolicy` fields; `guardrail_policy jsonb` stores the guardrail layer. |
+| Versioning | `policy_version` identifies the layer version used in simulator and runtime debugging. |
+| Required data | Optional. Existing per-key policy behavior is preserved when this table has no matching rows. Layer JSON uses neutral defaults so empty layers do not narrow routes, providers, streaming, or tools. |
 
 ### `key_guardrail_policies`
 

@@ -1,35 +1,39 @@
 use async_trait::async_trait;
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use chrono::Utc;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
+    evaluate_policy, evaluate_policy_limits, extract_generation_features,
     guardrail_executor_for_definitions, resolve_guardrail_plan, AdminAuditStore,
     AdminGuardrailDefinitionResponse, AdminKeyCreate, AdminKeyPatch, AdminKeyResponse,
-    AdminKeyStore, AdminOpenAiRouteStore, AdminProjectStore, AdminProviderConfigStore,
-    AdminServiceStore, AdminStudioConnectionStore, AuditEvent, AuditEventCreate, AuditEventQuery,
-    CreatedAdminKeyResponse, CreatedOperatorTokenResponse, EffectiveStudioConnection, GatewayError,
-    GatewayResult, GuardrailAdminCreateRequest, GuardrailAdminPatchRequest,
-    GuardrailDefinitionResponse, GuardrailEventQuery, GuardrailExecutionEvent,
-    GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPlanRequest,
-    GuardrailPolicySet, GuardrailStore, GuardrailTestRequest, GuardrailTestResponse,
-    OperatorAuthorization, OperatorTokenMaterial, OperatorTokenStore, ProjectCreateRequest,
-    ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest, ProviderConfigPatchRequest,
-    ProviderConfigResponse, ServiceCreateRequest, ServicePatchRequest, ServiceResponse,
-    StudioConnectionEnv, StudioConnectionPatchRequest, StudioConnectionTestResponse,
-    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
-    UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery, UsageQueryStore,
-    VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE,
-    SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE,
-    SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
+    AdminKeyStore, AdminOpenAiRouteStore, AdminPolicyLayerStore, AdminPolicyLayerUpsert,
+    AdminProjectStore, AdminProviderConfigStore, AdminServiceStore, AdminStudioConnectionStore,
+    AuditEvent, AuditEventCreate, AuditEventQuery, CreatedAdminKeyResponse,
+    CreatedOperatorTokenResponse, EffectiveStudioConnection, GatewayError, GatewayResult,
+    GuardrailAdminCreateRequest, GuardrailAdminPatchRequest, GuardrailDefinitionResponse,
+    GuardrailEventQuery, GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode,
+    GuardrailObservabilityStore, GuardrailPlanRequest, GuardrailPolicySet, GuardrailStore,
+    GuardrailTestRequest, GuardrailTestResponse, KeyPolicy, OperatorAuthorization,
+    OperatorTokenMaterial, OperatorTokenStore, PolicyLookup, ProjectCreateRequest,
+    ProjectPatchRequest, ProjectResponse, Provider, ProviderConfigCreateRequest,
+    ProviderConfigPatchRequest, ProviderConfigResponse, Route, ServiceCreateRequest,
+    ServicePatchRequest, ServiceResponse, StudioConnectionEnv, StudioConnectionPatchRequest,
+    StudioConnectionTestResponse, StudioServiceCatalogResponse, StudioServiceImportPreview,
+    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery,
+    UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE,
+    SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE,
+    SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT,
+    SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -39,7 +43,9 @@ use tower_http::{
 #[async_trait]
 pub trait GatewayData:
     VirtualKeyLookup
+    + PolicyLookup
     + AdminKeyStore
+    + AdminPolicyLayerStore
     + AdminOpenAiRouteStore
     + AdminProjectStore
     + AdminProviderConfigStore
@@ -179,6 +185,15 @@ pub fn router_with_state(state: AppState) -> Router {
             get(admin_guardrail_summary),
         )
         .route("/admin-ui/admin/audit-events", get(list_audit_events))
+        .route("/admin-ui/admin/policy/simulate", post(simulate_policy))
+        .route(
+            "/admin-ui/admin/policy-layers",
+            get(list_policy_layers).post(upsert_policy_layer),
+        )
+        .route(
+            "/admin-ui/admin/policy-layers/{layer_id}",
+            delete(delete_policy_layer),
+        )
         .route("/admin-ui/admin/keys", post(create_key).get(list_keys))
         .route(
             "/admin-ui/admin/keys/{key_id}",
@@ -598,6 +613,459 @@ async fn create_key(
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct PolicySimulationRequest {
+    key_id: Option<uuid::Uuid>,
+    #[serde(default)]
+    team_id: Option<String>,
+    path: String,
+    #[serde(default = "default_simulation_method")]
+    method: String,
+    provider: Option<String>,
+    #[serde(default)]
+    body: Option<Value>,
+    #[serde(default)]
+    request_body_bytes: Option<i64>,
+    #[serde(default)]
+    response_body_bytes: Option<i64>,
+    #[serde(default)]
+    estimated_cost_usd: Option<f64>,
+    #[serde(default)]
+    preset: Option<gateway_core::KeyPreset>,
+    #[serde(default)]
+    policy: Option<gateway_core::admin::KeyPolicyPatch>,
+    #[serde(default)]
+    guardrail_policy: Option<gateway_core::GuardrailPolicyPatch>,
+}
+
+#[derive(Debug, Serialize)]
+struct PolicySimulationResponse {
+    auth: PolicySimulationAuth,
+    route_match: PolicySimulationRoute,
+    policy_merge: PolicySimulationPolicy,
+    guardrail_plan: Vec<String>,
+    rate_limit_projection: PolicySimulationRateLimitProjection,
+    budget_projection: PolicySimulationBudgetProjection,
+    final_decision: PolicySimulationDecision,
+}
+
+#[derive(Debug, Serialize)]
+struct PolicySimulationAuth {
+    key_id: Option<uuid::Uuid>,
+    source: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct PolicySimulationRoute {
+    route: &'static str,
+    provider: &'static str,
+    service_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PolicySimulationPolicy {
+    policy_version: i64,
+    deny: bool,
+    allowed_routes: Vec<&'static str>,
+    allowed_models: Vec<String>,
+    allowed_providers: Vec<&'static str>,
+    allowed_services: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PolicySimulationRateLimitProjection {
+    rpm_limit: Option<i32>,
+    tpm_limit: Option<i32>,
+    max_requests_per_day: Option<i32>,
+    max_tokens_per_day: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+struct PolicySimulationBudgetProjection {
+    daily_budget_usd: Option<f64>,
+    monthly_budget_usd: Option<f64>,
+    max_cost_per_request: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+struct PolicySimulationDecision {
+    allowed: bool,
+    error_code: Option<&'static str>,
+    message: &'static str,
+}
+
+fn default_simulation_method() -> String {
+    "POST".to_owned()
+}
+
+async fn simulate_policy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<PolicySimulationRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+
+    let method = match Method::from_bytes(request.method.as_bytes()) {
+        Ok(method) => method,
+        Err(_) => return error_response(&headers, GatewayError::UnsupportedRoute),
+    };
+    let route_match = match Route::resolve_match(&method, &request.path) {
+        Ok(route_match) => route_match,
+        Err(error) => return error_response(&headers, error),
+    };
+    let provider = match request.provider.as_deref() {
+        Some(value) => match parse_simulation_provider(value) {
+            Ok(provider) => provider,
+            Err(error) => return error_response(&headers, error),
+        },
+        None => route_match.provider,
+    };
+    let body_bytes = request
+        .body
+        .as_ref()
+        .and_then(|value| serde_json::to_vec(value).ok())
+        .unwrap_or_default();
+    let mut features = extract_generation_features(&body_bytes);
+    if features.service_name.is_none() {
+        features.service_name = route_match.service_name.clone();
+    }
+
+    let effective = match request.key_id {
+        Some(key_id) => match state
+            .store
+            .effective_policy_for_context(
+                key_id,
+                None,
+                request.team_id.clone(),
+                Some(route_match.route),
+                features.model.clone(),
+            )
+            .await
+        {
+            Ok(effective) => effective,
+            Err(error) => return error_response(&headers, error),
+        },
+        None => gateway_core::EffectivePolicy {
+            policy: request
+                .preset
+                .map(|preset| preset.apply(KeyPolicy::default()))
+                .unwrap_or_default(),
+            guardrail_policy: Default::default(),
+            applied_layers: Vec::new(),
+        },
+    };
+    let policy = effective.policy;
+    let policy = match request.policy {
+        Some(policy_patch) => match apply_simulation_policy_patch(policy, policy_patch) {
+            Ok(policy) => policy,
+            Err(error) => return error_response(&headers, error),
+        },
+        None => policy,
+    };
+    let guardrail_policy = effective.guardrail_policy;
+    let guardrail_policy = match request.guardrail_policy {
+        Some(patch) => match patch.apply(guardrail_policy) {
+            Ok(policy) => policy,
+            Err(error) => return error_response(&headers, error),
+        },
+        None => guardrail_policy,
+    };
+    let definitions = match state.store.list_guardrail_definitions().await {
+        Ok(definitions) => definitions,
+        Err(error) => return error_response(&headers, error),
+    };
+    let guardrail_plan = resolve_guardrail_plan(GuardrailPlanRequest {
+        mode: GuardrailMode::PreCall,
+        definitions,
+        policies: GuardrailPolicySet {
+            key_policy: guardrail_policy,
+            ..GuardrailPolicySet::default()
+        },
+        client_requested_guardrails: Vec::new(),
+    });
+
+    let decision_error = evaluate_policy(&policy, route_match.route, provider, &features)
+        .and_then(|_| {
+            evaluate_policy_limits(
+                &policy,
+                Utc::now(),
+                request
+                    .request_body_bytes
+                    .or_else(|| i64::try_from(body_bytes.len()).ok()),
+                request.response_body_bytes,
+                None,
+                None,
+                request.estimated_cost_usd,
+            )
+        })
+        .err()
+        .or_else(|| guardrail_plan.as_ref().err().cloned());
+    let final_decision = match decision_error {
+        Some(error) => PolicySimulationDecision {
+            allowed: false,
+            error_code: Some(error.code()),
+            message: error.public_message(),
+        },
+        None => PolicySimulationDecision {
+            allowed: true,
+            error_code: None,
+            message: "Request would be allowed by configured policy.",
+        },
+    };
+    let guardrail_plan = guardrail_plan
+        .map(|plan| {
+            plan.entries
+                .into_iter()
+                .map(|entry| entry.definition.name)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let response = PolicySimulationResponse {
+        auth: PolicySimulationAuth {
+            key_id: request.key_id,
+            source: if request.key_id.is_some() {
+                "stored_key"
+            } else {
+                "default_policy"
+            },
+        },
+        route_match: PolicySimulationRoute {
+            route: route_match.route.as_str(),
+            provider: provider.as_str(),
+            service_name: features.service_name,
+        },
+        policy_merge: PolicySimulationPolicy {
+            policy_version: policy.policy_version,
+            deny: policy.deny,
+            allowed_routes: policy
+                .allowed_routes
+                .iter()
+                .map(|route| route.as_str())
+                .collect(),
+            allowed_models: policy.allowed_models.clone(),
+            allowed_providers: policy
+                .allowed_providers
+                .iter()
+                .map(|provider| provider.as_str())
+                .collect(),
+            allowed_services: policy.allowed_services.clone(),
+        },
+        rate_limit_projection: PolicySimulationRateLimitProjection {
+            rpm_limit: policy.rpm_limit,
+            tpm_limit: policy.tpm_limit,
+            max_requests_per_day: policy.max_requests_per_day,
+            max_tokens_per_day: policy.max_tokens_per_day,
+        },
+        budget_projection: PolicySimulationBudgetProjection {
+            daily_budget_usd: policy.daily_budget_usd,
+            monthly_budget_usd: policy.monthly_budget_usd,
+            max_cost_per_request: policy.max_cost_per_request,
+        },
+        guardrail_plan,
+        final_decision,
+    };
+
+    if let Err(error) = record_admin_audit(
+        &state,
+        &headers,
+        &actor,
+        "policies:simulate",
+        "policy",
+        request.key_id.map(|id| id.to_string()),
+        None,
+        audit_json(&response),
+    )
+    .await
+    {
+        return error_response(&headers, error);
+    }
+    Json(response).into_response()
+}
+
+async fn list_policy_layers(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        return response;
+    }
+    match state.store.list_policy_layers().await {
+        Ok(layers) => Json(layers).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn upsert_policy_layer(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<AdminPolicyLayerUpsert>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state.store.upsert_policy_layer(request).await {
+        Ok(layer) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "policies:upsert-layer",
+                "policy_layer",
+                Some(layer.id.to_string()),
+                None,
+                audit_json(&layer),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(layer).into_response()
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn delete_policy_layer(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(layer_id): Path<uuid::Uuid>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state.store.delete_policy_layer(layer_id).await {
+        Ok(true) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "policies:delete-layer",
+                "policy_layer",
+                Some(layer_id.to_string()),
+                None,
+                None,
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+fn parse_simulation_provider(value: &str) -> GatewayResult<Provider> {
+    match value {
+        "litellm" => Ok(Provider::LiteLlm),
+        "openai-compatible" => Ok(Provider::OpenAiCompatible),
+        "internal-service" => Ok(Provider::InternalService),
+        _ => Err(GatewayError::PolicyDenied),
+    }
+}
+
+fn apply_simulation_policy_patch(
+    mut policy: KeyPolicy,
+    patch: gateway_core::admin::KeyPolicyPatch,
+) -> GatewayResult<KeyPolicy> {
+    if let Some(deny) = patch.deny {
+        policy.deny = deny;
+    }
+    if let Some(routes) = patch.allowed_routes {
+        policy.allowed_routes = routes
+            .iter()
+            .map(|route| match route.as_str() {
+                "/v1/chat/completions" => Ok(Route::ChatCompletions),
+                "/v1/responses" => Ok(Route::Responses),
+                "/providers/openai/*" => Ok(Route::DirectOpenAi),
+                "/summary" => Ok(Route::Summary),
+                "/translation" => Ok(Route::Translation),
+                "/ocr" => Ok(Route::Ocr),
+                "/embeddings" => Ok(Route::Embeddings),
+                "/services/*" => Ok(Route::ServiceWildcard),
+                _ => Err(GatewayError::PolicyDenied),
+            })
+            .collect::<GatewayResult<Vec<_>>>()?;
+    }
+    if let Some(models) = patch.allowed_models {
+        policy.allowed_models = models;
+    }
+    if let Some(providers) = patch.allowed_providers {
+        policy.allowed_providers = providers
+            .iter()
+            .map(|provider| parse_simulation_provider(provider))
+            .collect::<GatewayResult<Vec<_>>>()?;
+    }
+    if let Some(services) = patch.allowed_services {
+        policy.allowed_services = services;
+    }
+    if let Some(value) = patch.rpm_limit {
+        policy.rpm_limit = value;
+    }
+    if let Some(value) = patch.tpm_limit {
+        policy.tpm_limit = value;
+    }
+    if let Some(value) = patch.daily_budget_usd {
+        policy.daily_budget_usd = value;
+    }
+    if let Some(value) = patch.monthly_budget_usd {
+        policy.monthly_budget_usd = value;
+    }
+    if let Some(value) = patch.allow_streaming {
+        policy.allow_streaming = value;
+    }
+    if let Some(value) = patch.allow_tools {
+        policy.allow_tools = value;
+    }
+    if let Some(value) = patch.max_requests_per_day {
+        policy.max_requests_per_day = value;
+    }
+    if let Some(value) = patch.max_tokens_per_day {
+        policy.max_tokens_per_day = value;
+    }
+    if let Some(value) = patch.max_cost_per_request {
+        policy.max_cost_per_request = value;
+    }
+    if let Some(value) = patch.max_input_tokens_per_request {
+        policy.max_input_tokens_per_request = value;
+    }
+    if let Some(value) = patch.max_output_tokens_per_request {
+        policy.max_output_tokens_per_request = value;
+    }
+    if let Some(hours) = patch.allowed_hours_utc {
+        if hours.iter().any(|hour| !(0..=23).contains(hour)) {
+            return Err(GatewayError::PolicyDenied);
+        }
+        policy.allowed_hours_utc = hours;
+    }
+    if let Some(value) = patch.unused_key_auto_disable_after_days {
+        policy.unused_key_auto_disable_after_days = value;
+    }
+    if let Some(value) = patch.max_request_body_bytes {
+        policy.max_request_body_bytes = value;
+    }
+    if let Some(value) = patch.max_response_body_bytes {
+        policy.max_response_body_bytes = value;
+    }
+    if let Some(value) = patch.max_stream_duration_seconds {
+        policy.max_stream_duration_seconds = value;
+    }
+    if let Some(value) = patch.max_sse_event_bytes {
+        policy.max_sse_event_bytes = value;
+    }
+    if let Some(value) = patch.max_tool_call_count {
+        policy.max_tool_call_count = value;
+    }
+    if let Some(value) = patch.max_tool_schema_bytes {
+        policy.max_tool_schema_bytes = value;
+    }
+    Ok(policy)
+}
+
 async fn list_keys(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Some(response) = require_admin(&state, &headers).await {
         return response;
@@ -673,6 +1141,7 @@ fn key_patch_required_scopes(patch: &AdminKeyPatch) -> Vec<&'static str> {
         || patch.project_id.is_some()
         || patch.service_names.is_some()
         || patch.expires_at.is_some()
+        || patch.rotation_due_at.is_some()
         || patch.policy.is_some()
         || patch.guardrail_policy.is_some()
     {
@@ -2115,6 +2584,62 @@ mod tests {
     }
 
     #[async_trait]
+    impl PolicyLookup for MemoryStore {
+        async fn policy_for_key(&self, _key_id: Uuid) -> GatewayResult<KeyPolicy> {
+            let Some(key) = self.admin_key.lock().expect("lock poisoned").clone() else {
+                return Ok(KeyPolicy::default());
+            };
+            Ok(KeyPolicy {
+                deny: key.policy.deny,
+                allowed_routes: key
+                    .policy
+                    .allowed_routes
+                    .iter()
+                    .filter_map(|route| match route.as_str() {
+                        "/v1/chat/completions" => Some(Route::ChatCompletions),
+                        "/v1/responses" => Some(Route::Responses),
+                        "/providers/openai/*" => Some(Route::DirectOpenAi),
+                        "/summary" => Some(Route::Summary),
+                        "/translation" => Some(Route::Translation),
+                        "/ocr" => Some(Route::Ocr),
+                        "/embeddings" => Some(Route::Embeddings),
+                        "/services/*" => Some(Route::ServiceWildcard),
+                        _ => None,
+                    })
+                    .collect(),
+                allowed_models: key.policy.allowed_models,
+                allowed_providers: key
+                    .policy
+                    .allowed_providers
+                    .iter()
+                    .filter_map(|provider| parse_simulation_provider(provider).ok())
+                    .collect(),
+                allowed_services: key.policy.allowed_services,
+                rpm_limit: key.policy.rpm_limit,
+                tpm_limit: key.policy.tpm_limit,
+                daily_budget_usd: key.policy.daily_budget_usd,
+                monthly_budget_usd: key.policy.monthly_budget_usd,
+                allow_streaming: key.policy.allow_streaming,
+                allow_tools: key.policy.allow_tools,
+                max_requests_per_day: key.policy.max_requests_per_day,
+                max_tokens_per_day: key.policy.max_tokens_per_day,
+                max_cost_per_request: key.policy.max_cost_per_request,
+                max_input_tokens_per_request: key.policy.max_input_tokens_per_request,
+                max_output_tokens_per_request: key.policy.max_output_tokens_per_request,
+                allowed_hours_utc: key.policy.allowed_hours_utc,
+                unused_key_auto_disable_after_days: key.policy.unused_key_auto_disable_after_days,
+                max_request_body_bytes: key.policy.max_request_body_bytes,
+                max_response_body_bytes: key.policy.max_response_body_bytes,
+                max_stream_duration_seconds: key.policy.max_stream_duration_seconds,
+                max_sse_event_bytes: key.policy.max_sse_event_bytes,
+                max_tool_call_count: key.policy.max_tool_call_count,
+                max_tool_schema_bytes: key.policy.max_tool_schema_bytes,
+                policy_version: key.policy.policy_version,
+            })
+        }
+    }
+
+    #[async_trait]
     impl GuardrailStore for MemoryStore {
         async fn list_guardrail_definitions(
             &self,
@@ -2286,6 +2811,10 @@ mod tests {
             request: AdminKeyCreate,
             material: &VirtualKeyMaterial,
         ) -> GatewayResult<AdminKeyResponse> {
+            let policy = request
+                .preset
+                .map(|preset| preset.apply(KeyPolicy::default()))
+                .unwrap_or_default();
             let key = AdminKeyResponse {
                 id: Uuid::new_v4(),
                 owner_type: request.owner_type,
@@ -2295,20 +2824,42 @@ mod tests {
                 disabled: false,
                 revoked_at: None,
                 expires_at: request.expires_at,
+                rotation_due_at: request.rotation_due_at,
+                last_used_at: None,
                 policy: AdminPolicyResponse {
-                    allowed_routes: vec![
-                        "/v1/chat/completions".to_owned(),
-                        "/v1/responses".to_owned(),
-                    ],
-                    allowed_models: Vec::new(),
-                    allowed_providers: vec!["litellm".to_owned()],
-                    allowed_services: Vec::new(),
-                    rpm_limit: None,
-                    tpm_limit: None,
-                    daily_budget_usd: None,
-                    monthly_budget_usd: None,
-                    allow_streaming: false,
-                    allow_tools: false,
+                    deny: policy.deny,
+                    allowed_routes: policy
+                        .allowed_routes
+                        .iter()
+                        .map(|route| route.as_str().to_owned())
+                        .collect(),
+                    allowed_models: policy.allowed_models,
+                    allowed_providers: policy
+                        .allowed_providers
+                        .iter()
+                        .map(|provider| provider.as_str().to_owned())
+                        .collect(),
+                    allowed_services: policy.allowed_services,
+                    rpm_limit: policy.rpm_limit,
+                    tpm_limit: policy.tpm_limit,
+                    daily_budget_usd: policy.daily_budget_usd,
+                    monthly_budget_usd: policy.monthly_budget_usd,
+                    allow_streaming: policy.allow_streaming,
+                    allow_tools: policy.allow_tools,
+                    max_requests_per_day: policy.max_requests_per_day,
+                    max_tokens_per_day: policy.max_tokens_per_day,
+                    max_cost_per_request: policy.max_cost_per_request,
+                    max_input_tokens_per_request: policy.max_input_tokens_per_request,
+                    max_output_tokens_per_request: policy.max_output_tokens_per_request,
+                    allowed_hours_utc: policy.allowed_hours_utc,
+                    unused_key_auto_disable_after_days: policy.unused_key_auto_disable_after_days,
+                    max_request_body_bytes: policy.max_request_body_bytes,
+                    max_response_body_bytes: policy.max_response_body_bytes,
+                    max_stream_duration_seconds: policy.max_stream_duration_seconds,
+                    max_sse_event_bytes: policy.max_sse_event_bytes,
+                    max_tool_call_count: policy.max_tool_call_count,
+                    max_tool_schema_bytes: policy.max_tool_schema_bytes,
+                    policy_version: policy.policy_version,
                 },
                 guardrail_policy: request.guardrail_policy,
                 created_at: Utc::now(),
@@ -2341,6 +2892,9 @@ mod tests {
             if let Some(key) = key.as_mut() {
                 if let Some(expires_at) = patch.expires_at {
                     key.expires_at = expires_at;
+                }
+                if let Some(rotation_due_at) = patch.rotation_due_at {
+                    key.rotation_due_at = rotation_due_at;
                 }
                 if let Some(disabled) = patch.disabled {
                     key.disabled = disabled;
@@ -2415,6 +2969,73 @@ mod tests {
                 total_tokens: 0,
                 estimated_cost_usd: None,
             })
+        }
+    }
+
+    #[async_trait]
+    impl AdminPolicyLayerStore for MemoryStore {
+        async fn list_policy_layers(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::AdminPolicyLayerResponse>> {
+            Ok(Vec::new())
+        }
+
+        async fn upsert_policy_layer(
+            &self,
+            request: AdminPolicyLayerUpsert,
+        ) -> GatewayResult<gateway_core::AdminPolicyLayerResponse> {
+            let now = Utc::now();
+            Ok(gateway_core::AdminPolicyLayerResponse {
+                id: Uuid::new_v4(),
+                kind: request.kind,
+                scope_id: request.scope_id,
+                policy: AdminPolicyResponse {
+                    deny: request.policy.deny.unwrap_or(false),
+                    allowed_routes: request.policy.allowed_routes.unwrap_or_default(),
+                    allowed_models: request.policy.allowed_models.unwrap_or_default(),
+                    allowed_providers: request.policy.allowed_providers.unwrap_or_default(),
+                    allowed_services: request.policy.allowed_services.unwrap_or_default(),
+                    rpm_limit: request.policy.rpm_limit.flatten(),
+                    tpm_limit: request.policy.tpm_limit.flatten(),
+                    daily_budget_usd: request.policy.daily_budget_usd.flatten(),
+                    monthly_budget_usd: request.policy.monthly_budget_usd.flatten(),
+                    allow_streaming: request.policy.allow_streaming.unwrap_or(true),
+                    allow_tools: request.policy.allow_tools.unwrap_or(true),
+                    max_requests_per_day: request.policy.max_requests_per_day.flatten(),
+                    max_tokens_per_day: request.policy.max_tokens_per_day.flatten(),
+                    max_cost_per_request: request.policy.max_cost_per_request.flatten(),
+                    max_input_tokens_per_request: request
+                        .policy
+                        .max_input_tokens_per_request
+                        .flatten(),
+                    max_output_tokens_per_request: request
+                        .policy
+                        .max_output_tokens_per_request
+                        .flatten(),
+                    allowed_hours_utc: request.policy.allowed_hours_utc.unwrap_or_default(),
+                    unused_key_auto_disable_after_days: request
+                        .policy
+                        .unused_key_auto_disable_after_days
+                        .flatten(),
+                    max_request_body_bytes: request.policy.max_request_body_bytes.flatten(),
+                    max_response_body_bytes: request.policy.max_response_body_bytes.flatten(),
+                    max_stream_duration_seconds: request
+                        .policy
+                        .max_stream_duration_seconds
+                        .flatten(),
+                    max_sse_event_bytes: request.policy.max_sse_event_bytes.flatten(),
+                    max_tool_call_count: request.policy.max_tool_call_count.flatten(),
+                    max_tool_schema_bytes: request.policy.max_tool_schema_bytes.flatten(),
+                    policy_version: 1,
+                },
+                guardrail_policy: gateway_core::GuardrailPolicy::default(),
+                created_at: now,
+                updated_at: now,
+            })
+        }
+
+        async fn delete_policy_layer(&self, _layer_id: Uuid) -> GatewayResult<bool> {
+            Ok(true)
         }
     }
 
@@ -2971,7 +3592,10 @@ mod tests {
             disabled: false,
             revoked_at: None,
             expires_at: None,
+            rotation_due_at: None,
+            last_used_at: None,
             policy: AdminPolicyResponse {
+                deny: false,
                 allowed_routes: vec![
                     "/v1/chat/completions".to_owned(),
                     "/v1/responses".to_owned(),
@@ -2985,6 +3609,20 @@ mod tests {
                 monthly_budget_usd: None,
                 allow_streaming: false,
                 allow_tools: false,
+                max_requests_per_day: None,
+                max_tokens_per_day: None,
+                max_cost_per_request: None,
+                max_input_tokens_per_request: None,
+                max_output_tokens_per_request: None,
+                allowed_hours_utc: Vec::new(),
+                unused_key_auto_disable_after_days: None,
+                max_request_body_bytes: None,
+                max_response_body_bytes: None,
+                max_stream_duration_seconds: None,
+                max_sse_event_bytes: None,
+                max_tool_call_count: None,
+                max_tool_schema_bytes: None,
+                policy_version: 1,
             },
             guardrail_policy,
             created_at: now,
@@ -3491,6 +4129,87 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(value["error"]["code"], "insufficient_operator_scope");
         assert_eq!(value["error"]["request_id"], "req_test");
+    }
+
+    #[tokio::test]
+    async fn admin_create_key_applies_safe_preset_and_lifecycle_metadata() {
+        let app = router_with_state(test_state(default_store()));
+        let project_id = Uuid::new_v4();
+        let response = admin_post(
+            app,
+            "/admin-ui/admin/keys",
+            Some(TEST_OPERATOR_TOKEN),
+            &format!(
+                r#"{{"project_id":"{project_id}","preset":"external_partner","rotation_due_at":"2030-01-01T00:00:00Z"}}"#
+            ),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["key"]["rotation_due_at"], "2030-01-01T00:00:00Z");
+        assert_eq!(value["key"]["last_used_at"], serde_json::Value::Null);
+        assert_eq!(value["key"]["policy"]["rpm_limit"], 30);
+        assert_eq!(value["key"]["policy"]["max_cost_per_request"], 0.25);
+        assert_eq!(value["key"]["policy"]["max_request_body_bytes"], 262144);
+        assert!(value["raw_key"].as_str().is_some());
+        assert!(value["key"].get("raw_key").is_none());
+    }
+
+    #[tokio::test]
+    async fn admin_policy_simulator_explains_denied_streaming_request() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_post(
+            app,
+            "/admin-ui/admin/policy/simulate",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"path":"/v1/chat/completions","body":{"model":"gpt-4.1-mini","stream":true}}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["auth"]["source"], "default_policy");
+        assert_eq!(value["route_match"]["route"], "/v1/chat/completions");
+        assert_eq!(value["route_match"]["provider"], "litellm");
+        assert_eq!(value["policy_merge"]["policy_version"], 1);
+        assert_eq!(value["final_decision"]["allowed"], false);
+        assert_eq!(value["final_decision"]["error_code"], "policy_denied");
+    }
+
+    #[tokio::test]
+    async fn admin_policy_simulator_accepts_unsaved_policy_patch() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_post(
+            app,
+            "/admin-ui/admin/policy/simulate",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"path":"/v1/chat/completions","body":{"model":"gpt-4.1-mini","stream":true},"policy":{"allow_streaming":true}}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["final_decision"]["allowed"], true);
+    }
+
+    #[tokio::test]
+    async fn admin_policy_layers_can_be_upserted() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_post(
+            app,
+            "/admin-ui/admin/policy-layers",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"kind":"route","scope_id":"/v1/chat/completions","policy":{"max_response_body_bytes":1024,"allow_streaming":true,"allow_tools":true}}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["kind"], "route");
+        assert_eq!(value["scope_id"], "/v1/chat/completions");
+        assert_eq!(value["policy"]["max_response_body_bytes"], 1024);
+        assert!(value.get("raw_key").is_none());
     }
 
     #[tokio::test]

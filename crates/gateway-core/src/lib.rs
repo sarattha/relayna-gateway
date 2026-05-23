@@ -17,7 +17,8 @@ pub mod usage;
 
 pub use admin::{
     AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,
-    AdminKeyUsageSummary, CreatedAdminKeyResponse, ProjectUsageSummary, VirtualKeyMaterial,
+    AdminKeyUsageSummary, AdminPolicyLayerResponse, AdminPolicyLayerStore, AdminPolicyLayerUpsert,
+    CreatedAdminKeyResponse, KeyPreset, ProjectUsageSummary, VirtualKeyMaterial,
 };
 pub use auth::{AuthenticatedKey, Authenticator, StoredVirtualKey, VirtualKey};
 pub use budgets::{BudgetDecision, BudgetState, BudgetStore};
@@ -49,7 +50,8 @@ pub use operators::{
     SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
 pub use policies::{
-    evaluate_policy, extract_generation_features, GenerationFeatures, KeyPolicy, PolicyLookup,
+    evaluate_policy, evaluate_policy_limits, extract_generation_features, resolve_effective_policy,
+    EffectivePolicy, GenerationFeatures, KeyPolicy, PolicyLayer, PolicyLayerKind, PolicyLookup,
 };
 pub use projects::{
     validate_project_name, AdminProjectStore, ProjectCreateRequest, ProjectPatchRequest,
