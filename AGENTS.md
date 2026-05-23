@@ -14,6 +14,17 @@ MVP design source of truth.
 
 ### Mandatory Skill Usage
 
+#### `$karpathy`
+
+Use `$karpathy` when writing, reviewing, or refactoring code in this repository.
+It keeps work assumption-aware, simple, surgically scoped, and tied to explicit
+verification criteria.
+
+Apply it before implementation work so the plan, edits, and final handoff stay
+focused on the user's request. It does not replace `$implementation-strategy`,
+`$production-freeze-guard`, `$code-change-verification`, or
+`$pr-draft-summary`; use those skills when their trigger conditions apply.
+
 #### `$code-change-verification`
 
 Run `$code-change-verification` before marking work complete when changes affect
@@ -77,6 +88,19 @@ Use this by default after runtime code, tests, gateway behavior, build/test
 configuration, or docs with behavior impact are changed. Skip it only for
 trivial conversation-only work, repo-meta/doc-only tasks without behavior
 impact, or when the user explicitly says not to include the PR draft block.
+
+### Admin UI 2.0 Design System
+
+Before changing the Admin UI, read `SKILLS.md` and apply the Admin UI 2.0
+Design System guidance. This applies to changes under
+`crates/gateway-api/admin-ui/`, generated static assets under
+`crates/gateway-api/src/static/admin-ui/`, admin UI tests, and operator-facing
+Admin UI documentation.
+
+Keep the Vite/TypeScript source package as the source of truth and regenerate
+the checked-in static assets with `npm run build:admin-ui`. Preserve the
+existing `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` asset
+contract unless a compatibility review explicitly changes it.
 
 ### ExecPlans
 
@@ -196,8 +220,11 @@ workers that need metered provider access.
 
 - `internal/design-manifesto.md`: MVP mission, architecture principles, and
   phase checklist.
+- `SKILLS.md`: repository-local UI skill guidance, including the Admin UI 2.0
+  Design System rules for future frontend work.
 - `crates/gateway-api/`: Axum control API routes, middleware, errors, request
   IDs, health/readiness, admin APIs, and graceful shutdown.
+- `crates/gateway-api/admin-ui/`: Vite/TypeScript Admin UI 2.0 source package.
 - `crates/gateway-core/`: Authentication, policy, routing, rate limits,
   budgets, usage, and pricing logic.
 - `crates/gateway-proxy/`: Pingora proxy services for LiteLLM, direct provider,

@@ -4,6 +4,7 @@ debug
 target
 site/
 .venv/
+node_modules/
 
 # Local UI/test report screenshots
 internal/test-reports/**/*.png

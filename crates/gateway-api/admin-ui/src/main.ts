@@ -1,108 +1,6 @@
-(function polyfill() {
-  const relList = document.createElement("link").relList;
-  if (relList && relList.supports && relList.supports("modulepreload")) {
-    return;
-  }
-  for (const link of document.querySelectorAll('link[rel="modulepreload"]')) {
-    processPreload(link);
-  }
-  new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      if (mutation.type !== "childList") {
-        continue;
-      }
-      for (const node of mutation.addedNodes) {
-        if (node.tagName === "LINK" && node.rel === "modulepreload")
-          processPreload(node);
-      }
-    }
-  }).observe(document, { childList: true, subtree: true });
-  function getFetchOpts(link) {
-    const fetchOpts = {};
-    if (link.integrity) fetchOpts.integrity = link.integrity;
-    if (link.referrerPolicy) fetchOpts.referrerPolicy = link.referrerPolicy;
-    if (link.crossOrigin === "use-credentials")
-      fetchOpts.credentials = "include";
-    else if (link.crossOrigin === "anonymous") fetchOpts.credentials = "omit";
-    else fetchOpts.credentials = "same-origin";
-    return fetchOpts;
-  }
-  function processPreload(link) {
-    if (link.ep)
-      return;
-    link.ep = true;
-    const fetchOpts = getFetchOpts(link);
-    fetch(link.href, fetchOpts);
-  }
-})();
-const viewMeta = {
-  overview: {
-    title: "Overview",
-    domain: "Monitor",
-    summary: "Gateway posture, traffic, and service availability."
-  },
-  health: {
-    title: "Health",
-    domain: "Monitor",
-    summary: "Provider checks, circuit state, import versions, and debug bundles."
-  },
-  usage: {
-    title: "Usage",
-    domain: "Monitor",
-    summary: "Cost, tokens, denials, fallbacks, guardrail blocks, and exportable usage rows."
-  },
-  providers: {
-    title: "Providers",
-    domain: "Discover",
-    summary: "Upstream provider configuration, write-only credentials, and enabled state."
-  },
-  services: {
-    title: "Services",
-    domain: "Discover",
-    summary: "Relayna service catalog, route patterns, Studio imports, and lifecycle controls."
-  },
-  routes: {
-    title: "Routes",
-    domain: "Discover",
-    summary: "OpenAI-compatible routes and registered service route exposure."
-  },
-  projects: {
-    title: "Projects",
-    domain: "Discover",
-    summary: "Project ownership and service access boundaries for virtual keys."
-  },
-  keys: {
-    title: "Keys",
-    domain: "Govern",
-    summary: "Virtual key lifecycle, policy layers, simulations, scopes, and guardrail policy."
-  },
-  guardrails: {
-    title: "Guardrails",
-    domain: "Govern",
-    summary: "Catalog controls, execution summaries, and sanitized guardrail events."
-  },
-  settings: {
-    title: "Settings",
-    domain: "Govern",
-    summary: "Studio connection settings and write-only integration token controls."
-  }
-};
-function metaForView(view) {
-  return viewMeta[view] ?? {
-    title: view ? view[0].toUpperCase() + view.slice(1) : "Overview",
-    domain: "Monitor",
-    summary: "Gateway operator workflow."
-  };
-}
-function applyViewChrome(view) {
-  const meta = metaForView(view);
-  document.documentElement.dataset.viewDomain = meta.domain.toLowerCase();
-  document.querySelector("#view-title").textContent = meta.title;
-  const domain = document.querySelector("#view-domain");
-  if (domain) domain.textContent = meta.domain;
-  const summary = document.querySelector("#view-summary");
-  if (summary) summary.textContent = meta.summary;
-}
+import "./app.css";
+import { applyViewChrome } from "./design-system";
+
 const tokenKey = "relayna_gateway_operator_token";
 const state = {
   view: "overview",
@@ -123,21 +21,25 @@ const state = {
   debugBundle: null,
   editingKeyId: null,
   editingServiceName: null,
-  editingGuardrailName: null
+  editingGuardrailName: null,
 };
+
 const login = document.querySelector("#login");
 const app = document.querySelector("#app");
 const content = document.querySelector("#content");
 const notice = document.querySelector("#notice");
-const requestTimeoutMs = 8e3;
+const requestTimeoutMs = 8000;
+
 function token() {
   return sessionStorage.getItem(tokenKey);
 }
+
 function setNotice(message, kind = "error") {
   notice.textContent = message || "";
   notice.classList.toggle("hidden", !message);
   notice.dataset.kind = kind;
 }
+
 function handleAsync(handler) {
   return async (event) => {
     try {
@@ -147,40 +49,41 @@ function handleAsync(handler) {
     }
   };
 }
+
 async function api(path, options = {}) {
-  var _a;
   const response = await fetchWithTimeout(path, {
     ...options,
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${token()}`,
-      ...options.headers || {}
-    }
+      ...(options.headers || {}),
+    },
   });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     try {
       const body = await response.json();
-      message = ((_a = body.error) == null ? void 0 : _a.code) || message;
-    } catch (_) {
-    }
+      message = body.error?.code || message;
+    } catch (_) {}
     throw new Error(message);
   }
   if (response.status === 204) return null;
   return response.json();
 }
+
 async function json(path, options = {}) {
   const response = await fetchWithTimeout(path, options);
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json();
 }
+
 async function fetchWithTimeout(path, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   try {
     return await fetch(path, {
       ...options,
-      signal: controller.signal
+      signal: controller.signal,
     });
   } catch (error) {
     if (error.name === "AbortError") {
@@ -191,17 +94,18 @@ async function fetchWithTimeout(path, options = {}) {
     clearTimeout(timeout);
   }
 }
+
 function showRawToken(rawToken, label = "Token shown once") {
   const template = document.querySelector("#raw-token-template");
   const node = template.content.cloneNode(true);
   node.querySelector("h3").textContent = label;
   node.querySelector("textarea").value = rawToken;
   node.querySelector("[data-close-modal]").addEventListener("click", () => {
-    var _a;
-    (_a = document.querySelector(".modal-backdrop")) == null ? void 0 : _a.remove();
+    document.querySelector(".modal-backdrop")?.remove();
   });
   document.body.appendChild(node);
 }
+
 function confirmAction(titleText, bodyText) {
   return new Promise((resolve) => {
     const backdrop = document.createElement("section");
@@ -228,11 +132,13 @@ function confirmAction(titleText, bodyText) {
     document.body.appendChild(backdrop);
   });
 }
+
 function signedIn() {
   login.classList.add("hidden");
   app.classList.remove("hidden");
   refresh();
 }
+
 document.querySelector("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const value = document.querySelector("#operator-token").value.trim();
@@ -245,13 +151,16 @@ document.querySelector("#login-form").addEventListener("submit", async (event) =
     document.querySelector("#login-error").textContent = error.message;
   }
 });
+
 document.querySelector("#sign-out").addEventListener("click", () => {
   sessionStorage.removeItem(tokenKey);
   location.reload();
 });
+
 document.querySelector("#refresh").addEventListener("click", refresh);
+
 document.querySelector("#rotate-token").addEventListener("click", async () => {
-  if (!await confirmAction("Rotate operator token", "The current token stops working.")) return;
+  if (!(await confirmAction("Rotate operator token", "The current token stops working."))) return;
   try {
     const body = await api("/admin-ui/admin/operator-token/rotate", { method: "POST", body: "{}" });
     sessionStorage.setItem(tokenKey, body.raw_token);
@@ -261,6 +170,7 @@ document.querySelector("#rotate-token").addEventListener("click", async () => {
     setNotice(error.message);
   }
 });
+
 document.querySelectorAll(".nav").forEach((button) => {
   button.addEventListener("click", () => {
     document.querySelectorAll(".nav").forEach((item) => item.classList.remove("active"));
@@ -272,6 +182,7 @@ document.querySelectorAll(".nav").forEach((button) => {
     refresh();
   });
 });
+
 async function refresh() {
   setNotice("");
   applyViewChrome(state.view);
@@ -292,6 +203,7 @@ async function refresh() {
     content.innerHTML = `<section class="panel"><div class="empty-state"><p>${esc(error.message)}</p></div></section>`;
   }
 }
+
 async function overview() {
   const [summary, healthRows, ready, keysRows, openaiRoutes, servicesRows] = await Promise.all([
     api("/admin-ui/admin/usage/summary"),
@@ -299,7 +211,7 @@ async function overview() {
     json("/admin-ui/readyz"),
     api("/admin-ui/admin/keys"),
     api("/admin-ui/admin/openai-routes"),
-    api("/admin-ui/admin/services")
+    api("/admin-ui/admin/services"),
   ]);
   const activeKeys = keysRows.filter((key) => !key.disabled && !key.revoked_at).length;
   const enabledRoutes = openaiRoutes.filter((route) => route.enabled).length;
@@ -320,9 +232,11 @@ async function overview() {
     </section>
   `;
 }
+
 function stat(label, value) {
   return `<section class="panel stat"><span>${esc(label)}</span><strong>${esc(value)}</strong></section>`;
 }
+
 async function projects() {
   [state.projects, state.services] = await Promise.all([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services")]);
   content.innerHTML = `
@@ -347,6 +261,7 @@ async function projects() {
     button.addEventListener("click", handleAsync(projectAction));
   });
 }
+
 function projectTable(rows) {
   return table(
     ["Name", "UUID", "Linked services", "Updated", "Actions"],
@@ -358,16 +273,18 @@ function projectTable(rows) {
       `<div class="actions">
         <button data-project-action="usage" data-project-id="${attr(row.id)}">Usage</button>
         <button class="danger" data-project-action="delete" data-project-id="${attr(row.id)}">Delete</button>
-      </div>`
-    ])
+      </div>`,
+    ]),
   );
 }
+
 function projectServiceForm(project) {
   return `<form class="inline-service-form" data-project-services-form data-project-id="${attr(project.id)}">
     ${serviceSelectionControl(project.service_names || [], "service_names", "Project services")}
     <div class="form-actions"><button>Save services</button></div>
   </form>`;
 }
+
 async function createProject(event) {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -375,6 +292,7 @@ async function createProject(event) {
   setNotice("Project created.", "success");
   await projects();
 }
+
 async function projectAction(event) {
   const { projectAction: action, projectId } = event.currentTarget.dataset;
   if (action === "usage") {
@@ -382,29 +300,30 @@ async function projectAction(event) {
     setNotice(`Project usage: ${summary.request_count} requests, ${money(summary.estimated_cost_usd)} cost.`, "success");
     return;
   }
-  if (!await confirmAction("Delete project", "Projects with linked keys, services, or usage cannot be deleted.")) return;
+  if (!(await confirmAction("Delete project", "Projects with linked keys, services, or usage cannot be deleted."))) return;
   await api(`/admin-ui/admin/projects/${projectId}`, { method: "DELETE" });
   setNotice("Project deleted.", "success");
   await projects();
 }
+
 async function patchProjectServices(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   await api(`/admin-ui/admin/projects/${event.target.dataset.projectId}`, {
     method: "PATCH",
-    body: JSON.stringify({ service_names: form.getAll("service_names") })
+    body: JSON.stringify({ service_names: form.getAll("service_names") }),
   });
   setNotice("Project services updated.", "success");
   await projects();
 }
+
 async function keys() {
-  var _a;
   [state.keys, state.projects, state.services, state.guardrails, state.policyLayers] = await Promise.all([
     api("/admin-ui/admin/keys"),
     api("/admin-ui/admin/projects"),
     api("/admin-ui/admin/services"),
     api("/admin-ui/admin/guardrails"),
-    api("/admin-ui/admin/policy-layers")
+    api("/admin-ui/admin/policy-layers"),
   ]);
   const editing = state.keys.find((key) => key.id === state.editingKeyId);
   content.innerHTML = `
@@ -494,7 +413,7 @@ async function keys() {
     </section>
   `;
   document.querySelector("#key-form").addEventListener("submit", handleAsync(createKey));
-  (_a = document.querySelector("#key-edit-form")) == null ? void 0 : _a.addEventListener("submit", handleAsync(patchKey));
+  document.querySelector("#key-edit-form")?.addEventListener("submit", handleAsync(patchKey));
   document.querySelector("#policy-sim-form").addEventListener("submit", handleAsync(simulatePolicy));
   document.querySelector("#policy-layer-form").addEventListener("submit", handleAsync(savePolicyLayer));
   bindKeyExpiryControls();
@@ -505,8 +424,9 @@ async function keys() {
     button.addEventListener("click", handleAsync(keyAction));
   });
 }
+
 function policyFields(key = null, neutral = false) {
-  const policy = (key == null ? void 0 : key.policy) || {};
+  const policy = key?.policy || {};
   return `
     <label>Routes<input name="allowed_routes" value="${attr(listValue(policy.allowed_routes, neutral ? "" : "/v1/chat/completions,/v1/responses"))}"></label>
     <label>Models<input name="allowed_models" value="${attr(listValue(policy.allowed_models, ""))}" placeholder="gpt-4o-mini"></label>
@@ -528,8 +448,9 @@ function policyFields(key = null, neutral = false) {
     <label class="check"><input name="allow_tools" type="checkbox" ${policy.allow_tools || neutral ? "checked" : ""}> Allow tools</label>
   `;
 }
+
 function guardrailPolicyFields(key = null) {
-  const policy = (key == null ? void 0 : key.guardrail_policy) || {};
+  const policy = key?.guardrail_policy || {};
   return `
     <div class="field"><span>Mandatory guardrails</span>${guardrailSelectionControl(policy.mandatory_guardrails || [], "mandatory_guardrails", "Mandatory guardrails")}</div>
     <div class="field"><span>Optional guardrails</span>${guardrailSelectionControl(policy.optional_guardrails || [], "optional_guardrails", "Optional guardrails")}</div>
@@ -540,23 +461,25 @@ function guardrailPolicyFields(key = null) {
     </div>
   `;
 }
+
 function activeConfigurableGuardrails(policy = {}) {
-  return [.../* @__PURE__ */ new Set([...policy.mandatory_guardrails || [], ...policy.optional_guardrails || []])].filter(
-    (name) => !(policy.forbidden_guardrails || []).includes(name)
+  return [...new Set([...(policy.mandatory_guardrails || []), ...(policy.optional_guardrails || [])])].filter(
+    (name) => !(policy.forbidden_guardrails || []).includes(name),
   );
 }
+
 function guardrailOverrideControls(overrides = {}, selectedNames = []) {
-  var _a;
   const selected = new Set(selectedNames);
-  const rows = (((_a = state.guardrails) == null ? void 0 : _a.guardrails) || []).filter((guardrail) => selected.has(guardrail.name));
+  const rows = (state.guardrails?.guardrails || []).filter((guardrail) => selected.has(guardrail.name));
   if (!selectedNames.length) return '<div class="empty-inline">Select mandatory or optional guardrails before setting config overrides.</div>';
   if (!rows.length) return '<div class="empty-inline">Selected guardrails are not in the current catalog.</div>';
   return `<div class="guardrail-overrides" role="group" aria-label="Guardrail config overrides">
-    ${rows.map((guardrail) => {
-    const enabled = Object.hasOwn(overrides, guardrail.name);
-    const value = JSON.stringify(enabled ? overrides[guardrail.name] : {}, null, 2);
-    const schema = JSON.stringify(guardrail.config_schema || {});
-    return `<section class="guardrail-override-row">
+    ${rows
+      .map((guardrail) => {
+        const enabled = Object.hasOwn(overrides, guardrail.name);
+        const value = JSON.stringify(enabled ? overrides[guardrail.name] : {}, null, 2);
+        const schema = JSON.stringify(guardrail.config_schema || {});
+        return `<section class="guardrail-override-row">
           <label class="check guardrail-override-toggle">
             <input name="guardrail_override_names" type="checkbox" value="${attr(guardrail.name)}" ${enabled ? "checked" : ""}>
             <span><strong>${esc(guardrail.name)}</strong><small>${esc(guardrail.description || "Custom runtime settings")}</small></span>
@@ -567,20 +490,23 @@ function guardrailOverrideControls(overrides = {}, selectedNames = []) {
             <code>${esc(schema)}</code>
           </details>
         </section>`;
-  }).join("")}
+      })
+      .join("")}
   </div>`;
 }
+
 function keyOwnershipFields(key = null) {
-  const ownerType = (key == null ? void 0 : key.owner_type) || "project";
+  const ownerType = key?.owner_type || "project";
   return `
     <label>Owner<select name="owner_type">
       <option value="project" ${ownerType === "project" ? "selected" : ""}>Project</option>
       <option value="individual" ${ownerType === "individual" ? "selected" : ""}>Individual</option>
     </select></label>
-    <label data-owner-project>Project<select name="project_id">${projectOptions((key == null ? void 0 : key.project_id) || "")}</select></label>
-    <div class="field" data-owner-services><span>Services</span>${serviceSelectionControl((key == null ? void 0 : key.service_names) || [], "service_names", "Individual key services")}</div>
+    <label data-owner-project>Project<select name="project_id">${projectOptions(key?.project_id || "")}</select></label>
+    <div class="field" data-owner-services><span>Services</span>${serviceSelectionControl(key?.service_names || [], "service_names", "Individual key services")}</div>
   `;
 }
+
 function keyEditForm(key) {
   return `
     <div class="panel-heading">
@@ -602,6 +528,7 @@ function keyEditForm(key) {
     </form>
   `;
 }
+
 function keyTable(rows) {
   return table(
     ["Prefix", "Owner", "Services", "Status", "Expiry", "Policy", "Updated", "Actions"],
@@ -613,27 +540,30 @@ function keyTable(rows) {
       esc(keyExpiry(key)),
       keyPolicySummary(key),
       time(key.updated_at),
-      keyLifecycleActions(key)
-    ])
+      keyLifecycleActions(key),
+    ]),
   );
 }
+
 function policyLayerTable(rows) {
   return table(
     ["Layer", "Scope", "Version", "Policy", "Updated"],
-    rows.map((layer) => {
-      var _a;
-      return [
-        esc(layer.kind),
-        esc(layer.scope_id || "all"),
-        esc(((_a = layer.policy) == null ? void 0 : _a.policy_version) ?? "1"),
-        keyPolicySummary({ policy: layer.policy, rotation_due_at: null, last_used_at: null }),
-        time(layer.updated_at)
-      ];
-    })
+    rows.map((layer) => [
+      esc(layer.kind),
+      esc(layer.scope_id || "all"),
+      esc(layer.policy?.policy_version ?? "1"),
+      keyPolicySummary({ policy: layer.policy, rotation_due_at: null, last_used_at: null }),
+      time(layer.updated_at),
+    ]),
   );
 }
+
 function keyLifecycleActions(key) {
-  const toggle = key.revoked_at ? "" : key.disabled ? `<button data-key-action="enable" data-key-id="${attr(key.id)}">Enable</button>` : `<button data-key-action="disable" data-key-id="${attr(key.id)}">Disable</button>`;
+  const toggle = key.revoked_at
+    ? ""
+    : key.disabled
+      ? `<button data-key-action="enable" data-key-id="${attr(key.id)}">Enable</button>`
+      : `<button data-key-action="disable" data-key-id="${attr(key.id)}">Disable</button>`;
   return `<div class="actions">
         <button data-key-action="edit" data-key-id="${attr(key.id)}">Edit</button>
         <button data-key-action="usage" data-key-id="${attr(key.id)}">Usage</button>
@@ -641,6 +571,7 @@ function keyLifecycleActions(key) {
         <button class="danger" data-key-action="revoke" data-key-id="${attr(key.id)}" ${key.revoked_at ? "disabled" : ""}>Revoke</button>
       </div>`;
 }
+
 async function createKey(event) {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -659,7 +590,7 @@ async function createKey(event) {
     expires_at: form.has("no_expires_at") ? null : isoDate(form.get("expires_at")),
     rotation_due_at: isoDate(form.get("rotation_due_at")),
     policy: policyBody(form),
-    guardrail_policy: guardrailPolicy
+    guardrail_policy: guardrailPolicy,
   };
   if (!form.has("no_expires_at") && !body.expires_at) delete body.expires_at;
   if (!body.rotation_due_at) delete body.rotation_due_at;
@@ -669,6 +600,7 @@ async function createKey(event) {
   setNotice("Virtual key created.", "success");
   await keys();
 }
+
 async function patchKey(event) {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -687,7 +619,7 @@ async function patchKey(event) {
     disabled: form.has("disabled"),
     rotation_due_at: form.get("rotation_due_at") ? isoDate(form.get("rotation_due_at")) : null,
     policy: policyBody(form),
-    guardrail_policy: guardrailPolicy
+    guardrail_policy: guardrailPolicy,
   };
   if (form.has("no_expires_at")) {
     body.expires_at = null;
@@ -698,6 +630,7 @@ async function patchKey(event) {
   setNotice("Virtual key updated.", "success");
   await keys();
 }
+
 async function simulatePolicy(event) {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -709,10 +642,10 @@ async function simulatePolicy(event) {
     request_body_bytes: nullableNumber(form.get("request_body_bytes")),
     response_body_bytes: nullableNumber(form.get("response_body_bytes")),
     body: {
-      model: form.get("model") || void 0,
+      model: form.get("model") || undefined,
       stream: form.has("stream"),
-      tools: form.has("tools") ? [{ type: "function" }] : void 0
-    }
+      tools: form.has("tools") ? [{ type: "function" }] : undefined,
+    },
   };
   if (!body.key_id) delete body.key_id;
   if (!body.team_id) delete body.team_id;
@@ -722,6 +655,7 @@ async function simulatePolicy(event) {
   state.policySimulation = await api("/admin-ui/admin/policy/simulate", { method: "POST", body: JSON.stringify(body) });
   document.querySelector("#policy-sim-result").innerHTML = policySimulationResult();
 }
+
 async function savePolicyLayer(event) {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -736,16 +670,18 @@ async function savePolicyLayer(event) {
     kind: form.get("kind"),
     scope_id: form.get("kind") === "global" ? null : form.get("scope_id"),
     policy: policyBody(form),
-    guardrail_policy: guardrailPolicy
+    guardrail_policy: guardrailPolicy,
   };
   await api("/admin-ui/admin/policy-layers", { method: "POST", body: JSON.stringify(body) });
   setNotice("Policy layer saved.", "success");
   await keys();
 }
+
 function keyOwnerLabel(key) {
   if (key.owner_type === "individual") return '<span class="badge">individual</span>';
   return `<strong>${esc(projectName(key.project_id))}</strong><div class="subtle"><code>${esc(key.project_id || "")}</code></div>`;
 }
+
 async function keyAction(event) {
   const { keyAction: action, keyId } = event.currentTarget.dataset;
   if (action === "edit") {
@@ -762,15 +698,16 @@ async function keyAction(event) {
     const summary = await api(`/admin-ui/admin/keys/${keyId}/usage`);
     setNotice(
       `Key usage: ${summary.request_count} requests, ${summary.failure_count} failures, ${money(summary.estimated_cost_usd)} cost.`,
-      "success"
+      "success",
     );
     return;
   }
-  if (!await confirmAction(`${action} virtual key`, "This lifecycle change is written to the database.")) return;
+  if (!(await confirmAction(`${action} virtual key`, "This lifecycle change is written to the database."))) return;
   await api(`/admin-ui/admin/keys/${keyId}/${action}`, { method: "POST", body: "{}" });
   setNotice(`Virtual key ${action}d.`, "success");
   await keys();
 }
+
 async function providers() {
   state.providers = await api("/admin-ui/admin/providers");
   content.innerHTML = `
@@ -795,6 +732,7 @@ async function providers() {
     button.addEventListener("click", handleAsync(providerAction));
   });
 }
+
 function providerTable(rows) {
   return table(
     ["Provider", "Endpoint", "State", "Credential", "Updated", "Actions"],
@@ -807,10 +745,11 @@ function providerTable(rows) {
       `<div class="actions">
         <button data-provider-action="${row.enabled ? "disable" : "enable"}" data-provider-id="${attr(row.id)}">${row.enabled ? "Disable" : "Enable"}</button>
         <button class="danger" data-provider-action="delete" data-provider-id="${attr(row.id)}">Delete</button>
-      </div>`
-    ])
+      </div>`,
+    ]),
   );
 }
+
 async function createProvider(event) {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -821,15 +760,16 @@ async function createProvider(event) {
       name: form.get("name"),
       base_url: form.get("base_url"),
       credential: blankToUndefined(form.get("credential")),
-      enabled: form.has("enabled")
-    })
+      enabled: form.has("enabled"),
+    }),
   });
   setNotice("Provider saved.", "success");
   await providers();
 }
+
 async function providerAction(event) {
   const { providerAction: action, providerId } = event.currentTarget.dataset;
-  if (!await confirmAction(`${action} provider`, "This provider configuration change is written to the database.")) return;
+  if (!(await confirmAction(`${action} provider`, "This provider configuration change is written to the database."))) return;
   if (action === "delete") {
     await api(`/admin-ui/admin/providers/${providerId}`, { method: "DELETE" });
   } else {
@@ -838,10 +778,11 @@ async function providerAction(event) {
   setNotice(`Provider ${action}d.`, "success");
   await providers();
 }
+
 async function routes() {
   [state.openaiRoutes, state.services] = await Promise.all([
     api("/admin-ui/admin/openai-routes"),
-    api("/admin-ui/admin/services")
+    api("/admin-ui/admin/services"),
   ]);
   content.innerHTML = `
     <section class="panel">
@@ -857,6 +798,7 @@ async function routes() {
     button.addEventListener("click", handleAsync(openaiRouteAction));
   });
 }
+
 function openaiRouteTable(rows) {
   return table(
     ["Route", "State", "Updated", "Actions"],
@@ -866,10 +808,11 @@ function openaiRouteTable(rows) {
       time(row.updated_at),
       `<div class="actions">
         <button data-openai-route-action="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}">${row.enabled ? "Disable" : "Enable"}</button>
-      </div>`
-    ])
+      </div>`,
+    ]),
   );
 }
+
 function serviceRouteTable(rows) {
   return table(
     ["Service", "Route", "State", "Methods", "Upstream", "Credential"],
@@ -879,19 +822,20 @@ function serviceRouteTable(rows) {
       serviceBadges(row),
       esc(listValue(row.allowed_methods, "none")),
       esc(row.upstream_base_url || "missing"),
-      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>'
-    ])
+      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+    ]),
   );
 }
+
 async function openaiRouteAction(event) {
   const { routeId, openaiRouteAction: action } = event.currentTarget.dataset;
-  if (!await confirmAction(`${action} ${routeId}`, "This gateway route change is written to the database.")) return;
+  if (!(await confirmAction(`${action} ${routeId}`, "This gateway route change is written to the database."))) return;
   await api(`/admin-ui/admin/openai-routes/${routeId}/${action}`, { method: "POST", body: "{}" });
   setNotice(`OpenAI route ${action}d.`, "success");
   await routes();
 }
+
 async function services() {
-  var _a;
   [state.services, state.projects] = await Promise.all([api("/admin-ui/admin/services"), api("/admin-ui/admin/projects")]);
   const editing = state.services.find((service) => service.name === state.editingServiceName);
   content.innerHTML = `
@@ -930,11 +874,12 @@ async function services() {
     <datalist id="service-routes">${serviceRouteOptions()}</datalist>
   `;
   document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
-  (_a = document.querySelector("#service-edit-form")) == null ? void 0 : _a.addEventListener("submit", handleAsync(patchService));
+  document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
   document.querySelectorAll("[data-service-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(serviceAction));
   });
 }
+
 function serviceEditForm(service) {
   return `
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
@@ -960,6 +905,7 @@ function serviceEditForm(service) {
     </form>
   `;
 }
+
 async function submitService(event) {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -971,18 +917,21 @@ async function submitService(event) {
         studio_service_id: form.get("studio_service_id"),
         name: form.get("name"),
         route_pattern: blankToUndefined(form.get("route_pattern")),
-        default_pricing: form.get("estimated_cost_usd") ? { cost_mode: form.get("cost_mode"), estimated_cost_usd: Number(form.get("estimated_cost_usd")) } : void 0
-      })
+        default_pricing: form.get("estimated_cost_usd")
+          ? { cost_mode: form.get("cost_mode"), estimated_cost_usd: Number(form.get("estimated_cost_usd")) }
+          : undefined,
+      }),
     });
   } else {
     await api("/admin-ui/admin/services", {
       method: "POST",
-      body: JSON.stringify(serviceBody(form, false))
+      body: JSON.stringify(serviceBody(form, false)),
     });
   }
   setNotice("Service saved.", "success");
   await services();
 }
+
 async function openStudioImportPicker() {
   try {
     state.studioServices = await api("/admin-ui/admin/studio/services");
@@ -1012,6 +961,7 @@ async function openStudioImportPicker() {
     setNotice(`${error.message}. Check Settings for the Studio connection.`);
   }
 }
+
 async function settings() {
   state.studioConnection = await api("/admin-ui/admin/studio/connection");
   content.innerHTML = `
@@ -1039,20 +989,21 @@ async function settings() {
     button.addEventListener("click", handleAsync(studioConnectionAction));
   });
 }
+
 async function saveStudioConnection(event) {
-  var _a, _b;
   event.preventDefault();
   const form = new FormData(event.target);
-  const body = { base_url: ((_a = form.get("base_url")) == null ? void 0 : _a.trim()) || null };
-  const tokenValue = (_b = form.get("token")) == null ? void 0 : _b.trim();
+  const body = { base_url: form.get("base_url")?.trim() || null };
+  const tokenValue = form.get("token")?.trim();
   if (tokenValue) body.token = tokenValue;
   state.studioConnection = await api("/admin-ui/admin/studio/connection", {
     method: "PATCH",
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
   setNotice("Studio connection saved.", "success");
   await settings();
 }
+
 async function studioConnectionAction(event) {
   const action = event.currentTarget.dataset.studioAction;
   if (action === "test") {
@@ -1063,27 +1014,29 @@ async function studioConnectionAction(event) {
   if (action === "clear-token") {
     state.studioConnection = await api("/admin-ui/admin/studio/connection", {
       method: "PATCH",
-      body: JSON.stringify({ token: null })
+      body: JSON.stringify({ token: null }),
     });
     setNotice("Studio token cleared.", "success");
     await settings();
     return;
   }
   if (action === "clear-settings") {
-    if (!await confirmAction("Clear Studio settings", "Persisted Studio settings are removed and environment fallback may become active.")) return;
+    if (!(await confirmAction("Clear Studio settings", "Persisted Studio settings are removed and environment fallback may become active."))) return;
     state.studioConnection = await api("/admin-ui/admin/studio/connection", {
       method: "PATCH",
-      body: JSON.stringify({ base_url: null })
+      body: JSON.stringify({ base_url: null }),
     });
     setNotice("Persisted Studio settings cleared.", "success");
     await settings();
   }
 }
+
 function studioImportTable(rows) {
   if (!rows.length) return '<div class="empty-state"><p>No Studio services.</p></div>';
   return `<div class="table-wrap studio-import-table"><table><thead><tr>
     <th></th><th>Service</th><th>Environment</th><th>Status</th><th>Base URL</th><th>Tags</th><th>Route</th>
-  </tr></thead><tbody>${rows.map((row, index) => `<tr>
+  </tr></thead><tbody>${rows
+    .map((row, index) => `<tr>
       <td><input name="studio_index" type="checkbox" value="${attr(index)}"></td>
       <td><strong>${esc(row.display_name || row.name)}</strong><div class="subtle">${esc(row.studio_service_id)}</div></td>
       <td>${esc(row.environment || "n/a")}</td>
@@ -1091,8 +1044,10 @@ function studioImportTable(rows) {
       <td><code>${esc(row.base_url || "missing")}</code></td>
       <td>${esc(listValue(row.tags, "none"))}</td>
       <td><code>${esc(row.route_pattern)}</code></td>
-    </tr>`).join("")}</tbody></table></div>`;
+    </tr>`)
+    .join("")}</tbody></table></div>`;
 }
+
 function openServiceSelectionPicker(trigger) {
   const form = trigger.closest("form");
   const fieldName = trigger.dataset.servicePicker || "service_names";
@@ -1123,12 +1078,12 @@ function openServiceSelectionPicker(trigger) {
   });
   document.body.appendChild(backdrop);
 }
+
 function openGuardrailSelectionPicker(trigger) {
-  var _a;
   const form = trigger.closest("form");
   const fieldName = trigger.dataset.guardrailPicker;
   const selected = new Set(selectedServiceNames(form, fieldName));
-  const rows = ((_a = state.guardrails) == null ? void 0 : _a.guardrails) || [];
+  const rows = state.guardrails?.guardrails || [];
   const backdrop = document.createElement("section");
   backdrop.className = "modal-backdrop";
   backdrop.innerHTML = `
@@ -1156,65 +1111,74 @@ function openGuardrailSelectionPicker(trigger) {
   });
   document.body.appendChild(backdrop);
 }
+
 function servicePickerTable(rows, selected) {
   if (!rows.length) return '<div class="empty-state"><p>No services registered.</p></div>';
   return `<div class="table-wrap service-picker-table"><table><thead><tr>
     <th></th><th>Service</th><th>Status</th><th>Route</th><th>Upstream</th>
-  </tr></thead><tbody>${rows.map((row) => `<tr>
+  </tr></thead><tbody>${rows
+    .map((row) => `<tr>
       <td><input name="service_name" type="checkbox" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
       <td><strong>${esc(row.name)}</strong><div class="subtle">${esc(row.studio_service_id || "local")}</div></td>
       <td>${esc(row.sync_status || (row.enabled ? "enabled" : "disabled"))}</td>
       <td><code>${esc(row.route_pattern)}</code></td>
       <td><code>${esc(row.upstream_base_url || "missing")}</code></td>
-    </tr>`).join("")}</tbody></table></div>`;
+    </tr>`)
+    .join("")}</tbody></table></div>`;
 }
+
 function guardrailPickerTable(rows, selected) {
   if (!rows.length) return '<div class="empty-state"><p>No guardrails configured.</p></div>';
   return `<div class="table-wrap guardrail-picker-table"><table><thead><tr>
     <th></th><th>Guardrail</th><th>Provider</th><th>Modes</th><th>Failure</th><th>Default</th>
-  </tr></thead><tbody>${rows.map((row) => `<tr>
+  </tr></thead><tbody>${rows
+    .map((row) => `<tr>
       <td><input name="guardrail_name" type="checkbox" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
       <td><strong>${esc(row.name)}</strong><div class="subtle">${esc(row.description || "")}</div></td>
       <td>${esc(row.provider_kind)}</td>
       <td>${esc(listValue(row.modes, "none"))}</td>
       <td>${esc(row.failure_policy)}</td>
       <td>${row.default_on ? '<span class="badge good">default</span>' : '<span class="badge">opt-in</span>'}</td>
-    </tr>`).join("")}</tbody></table></div>`;
+    </tr>`)
+    .join("")}</tbody></table></div>`;
 }
+
 async function importSelectedStudioServices(event) {
-  var _a;
   event.preventDefault();
   const form = new FormData(event.target);
   const selected = form.getAll("studio_index").map((value) => state.studioServices[Number(value)]).filter(Boolean);
   await api("/admin-ui/admin/services/import/activate", {
     method: "POST",
-    body: JSON.stringify({ source: "studio", services: selected.map((service) => service.import_request) })
+    body: JSON.stringify({ source: "studio", services: selected.map((service) => service.import_request) }),
   });
-  (_a = document.querySelector(".modal-backdrop")) == null ? void 0 : _a.remove();
+  document.querySelector(".modal-backdrop")?.remove();
   setNotice(`${selected.length} Studio service${selected.length === 1 ? "" : "s"} imported.`, "success");
   await services();
 }
+
 async function previewSelectedStudioServices(event) {
   const form = new FormData(document.querySelector("#studio-import-form"));
   const selected = form.getAll("studio_index").map((value) => state.studioServices[Number(value)]).filter(Boolean);
   const preview = await api("/admin-ui/admin/services/import/preview", {
     method: "POST",
-    body: JSON.stringify({ source: "studio", services: selected.map((service) => service.import_request) })
+    body: JSON.stringify({ source: "studio", services: selected.map((service) => service.import_request) }),
   });
   setNotice(`Import preview: +${preview.diff.added.length} changed ${preview.diff.changed.length} removed ${preview.diff.removed.length} invalid ${preview.diff.invalid.length}.`, preview.diff.invalid.length ? "error" : "success");
 }
+
 async function patchService(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const serviceName = event.target.dataset.serviceName;
   await api(`/admin-ui/admin/services/${serviceName}`, {
     method: "PATCH",
-    body: JSON.stringify(serviceBody(form, true))
+    body: JSON.stringify(serviceBody(form, true)),
   });
   state.editingServiceName = null;
   setNotice("Service updated.", "success");
   await services();
 }
+
 async function serviceAction(event) {
   const { serviceName, serviceAction: action } = event.currentTarget.dataset;
   if (action === "studio-import") {
@@ -1235,11 +1199,14 @@ async function serviceAction(event) {
     const body = await api(`/admin-ui/admin/services/${serviceName}/sync-status`);
     setNotice(
       `${body.name}: ${body.sync_status}${body.missing_runtime_fields.length ? `, missing ${body.missing_runtime_fields.join(", ")}` : ""}.`,
-      body.sync_status === "synced" || body.sync_status === "local" ? "success" : "error"
+      body.sync_status === "synced" || body.sync_status === "local" ? "success" : "error",
     );
     return;
   }
-  if (["delete", "disable", "enable"].includes(action) && !await confirmAction(`${action} ${serviceName}`, "This service change is written to the database.")) {
+  if (
+    ["delete", "disable", "enable"].includes(action) &&
+    !(await confirmAction(`${action} ${serviceName}`, "This service change is written to the database."))
+  ) {
     return;
   }
   if (action === "delete") {
@@ -1250,6 +1217,7 @@ async function serviceAction(event) {
   setNotice(`Service ${action}d.`, "success");
   await services();
 }
+
 function serviceTable(rows) {
   return table(
     ["Name", "State", "Route", "Upstream", "Credential", "Cost", "Actions"],
@@ -1265,15 +1233,19 @@ function serviceTable(rows) {
         <button data-service-action="sync-status" data-service-name="${attr(row.name)}">Status</button>
         <button data-service-action="${row.enabled ? "disable" : "enable"}" data-service-name="${attr(row.name)}">${row.enabled ? "Disable" : "Enable"}</button>
         <button class="danger" data-service-action="delete" data-service-name="${attr(row.name)}">Delete</button>
-      </div>`
-    ])
+      </div>`,
+    ]),
   );
 }
+
 function serviceBadges(row) {
   const stateBadge = row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>';
-  const syncBadge = row.sync_status === "synced" || row.sync_status === "local" ? `<span class="badge good">${esc(row.sync_status)}</span>` : `<span class="badge bad">${esc(row.sync_status)}</span>`;
+  const syncBadge = row.sync_status === "synced" || row.sync_status === "local"
+    ? `<span class="badge good">${esc(row.sync_status)}</span>`
+    : `<span class="badge bad">${esc(row.sync_status)}</span>`;
   return `${stateBadge} ${syncBadge}`;
 }
+
 async function usage() {
   [state.projects, state.services, state.keys] = await Promise.all([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services"), api("/admin-ui/admin/keys")]);
   content.innerHTML = `
@@ -1298,8 +1270,9 @@ async function usage() {
   document.querySelector("#usage-form").addEventListener("submit", handleAsync(loadUsage));
   await loadUsage();
 }
+
 async function loadUsage(event) {
-  event == null ? void 0 : event.preventDefault();
+  event?.preventDefault();
   const form = event ? new FormData(event.target) : new FormData();
   const query = new URLSearchParams();
   for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "status", "min_cost_usd"]) {
@@ -1313,7 +1286,7 @@ async function loadUsage(event) {
     api(`/admin-ui/admin/usage/by-service?${query}`),
     api(`/admin-ui/admin/usage/by-provider?${query}`),
     api(`/admin-ui/admin/usage/by-model?${query}`),
-    api(`/admin-ui/admin/usage/unused-keys?${query}`)
+    api(`/admin-ui/admin/usage/unused-keys?${query}`),
   ]);
   const results = document.querySelector("#usage-results");
   if (!results) return;
@@ -1334,6 +1307,7 @@ async function loadUsage(event) {
     <h4>Unused keys</h4>${unusedKeysTable(unusedKeys)}
   `;
 }
+
 function usageBreakdownTable(rows, label = (value) => value) {
   return table(
     ["Name", "Requests", "Success", "Failure", "Latency", "Cost"],
@@ -1343,10 +1317,11 @@ function usageBreakdownTable(rows, label = (value) => value) {
       row.summary.success_count,
       row.summary.failure_count,
       `${row.summary.total_latency_ms} ms`,
-      money(row.summary.estimated_cost_usd)
-    ])
+      money(row.summary.estimated_cost_usd),
+    ]),
   );
 }
+
 function unusedKeysTable(rows) {
   return table(
     ["Key", "Project", "Created", "Last used"],
@@ -1354,23 +1329,24 @@ function unusedKeysTable(rows) {
       `<code>${esc(row.key_prefix)}</code>`,
       esc(projectName(row.project_id || "")),
       time(row.created_at),
-      row.last_used_at ? time(row.last_used_at) : "never"
-    ])
+      row.last_used_at ? time(row.last_used_at) : "never",
+    ]),
   );
 }
+
 async function health() {
   const [ready, rows, healthState, importVersions] = await Promise.all([
     json("/admin-ui/readyz"),
     api("/admin-ui/admin/provider-health"),
     api("/admin-ui/admin/provider-health/state"),
-    api("/admin-ui/admin/services/import/versions")
+    api("/admin-ui/admin/services/import/versions"),
   ]);
   state.providerHealthState = healthState;
   state.serviceImportVersions = importVersions;
   const requestCount = rows.reduce((sum, row) => sum + row.request_count, 0);
   const errorCount = rows.reduce((sum, row) => sum + row.error_count, 0);
   const fallbackCount = rows.reduce((sum, row) => sum + row.fallback_count, 0);
-  const errorRate = requestCount ? `${(errorCount / requestCount * 100).toFixed(1)}%` : "0.0%";
+  const errorRate = requestCount ? `${((errorCount / requestCount) * 100).toFixed(1)}%` : "0.0%";
   content.innerHTML = `
     <div class="grid stats">
       ${stat("Gateway", ready.status)}
@@ -1408,6 +1384,7 @@ async function health() {
     button.addEventListener("click", handleAsync(rollbackImportVersion));
   });
 }
+
 function healthTable(rows) {
   return table(
     ["Name", "Status", "Requests", "Errors", "Timeouts", "Fallbacks", "Avg latency"],
@@ -1418,19 +1395,22 @@ function healthTable(rows) {
       row.error_count,
       row.timeout_count,
       row.fallback_count,
-      `${averageLatency(row)} ms`
-    ])
+      `${averageLatency(row)} ms`,
+    ]),
   );
 }
+
 function healthBadge(row) {
   if (row.timeout_count > 0) return '<span class="badge bad">timeout</span>';
   if (row.error_count > 0 || row.fallback_count > 0) return '<span class="badge bad">degraded</span>';
   return '<span class="badge good">healthy</span>';
 }
+
 function averageLatency(row) {
   if (!row.request_count) return 0;
   return Math.round(row.total_latency_ms / row.request_count);
 }
+
 function healthStateTable(rows) {
   return table(
     ["Name", "Provider", "Status", "Circuit", "Active check", "Latency", "Last error", "Cooldown"],
@@ -1442,23 +1422,25 @@ function healthStateTable(rows) {
       row.active_check_ok === true ? '<span class="badge good">ok</span>' : row.active_check_ok === false ? '<span class="badge bad">failed</span>' : '<span class="badge">unknown</span>',
       esc(row.average_latency_ms ?? ""),
       esc(row.last_error_code ?? ""),
-      esc(row.cooldown_until ? time(row.cooldown_until) : "")
-    ])
+      esc(row.cooldown_until ? time(row.cooldown_until) : ""),
+    ]),
   );
 }
+
 function debugBundleView(bundle) {
   return `<div class="details">
     <p><strong>${esc(bundle.request_id)}</strong> ${esc(bundle.route ?? "")} ${esc(bundle.provider ?? "")}</p>
     <p class="subtle">Request hash ${esc(bundle.request_hash ?? "none")} · Response hash ${esc(bundle.response_hash ?? "none")}</p>
     <pre>${esc(JSON.stringify({
-    policy_trace: bundle.policy_trace,
-    guardrail_trace: bundle.guardrail_trace,
-    selection_trace: bundle.selection_trace,
-    fallback_history: bundle.fallback_history,
-    upstream_latency_ms: bundle.upstream_latency_ms
-  }, null, 2))}</pre>
+      policy_trace: bundle.policy_trace,
+      guardrail_trace: bundle.guardrail_trace,
+      selection_trace: bundle.selection_trace,
+      fallback_history: bundle.fallback_history,
+      upstream_latency_ms: bundle.upstream_latency_ms,
+    }, null, 2))}</pre>
   </div>`;
 }
+
 function serviceImportVersionsTable(rows) {
   return table(
     ["Version", "Source", "Activated", "Rollback", "Diff", "Actions"],
@@ -1468,32 +1450,39 @@ function serviceImportVersionsTable(rows) {
       esc(row.activated_at ? time(row.activated_at) : ""),
       esc(row.rolled_back_from_version ?? ""),
       esc(`+${row.diff.added.length} changed ${row.diff.changed.length} removed ${row.diff.removed.length}`),
-      `<button type="button" data-import-rollback="${attr(row.version)}">Rollback</button>`
-    ])
+      `<button type="button" data-import-rollback="${attr(row.version)}">Rollback</button>`,
+    ]),
   );
 }
+
 async function runHealthChecks() {
   await api("/admin-ui/admin/provider-health/check", { method: "POST", body: "{}" });
   setNotice("Provider health checks completed.", "success");
   await health();
 }
+
 async function loadDebugBundle(event) {
   event.preventDefault();
   const requestId = new FormData(event.target).get("request_id");
   state.debugBundle = await api(`/admin-ui/admin/debug-bundles/${encodeURIComponent(requestId)}`);
   await health();
 }
+
 async function rollbackImportVersion(event) {
   const version = event.currentTarget.dataset.importRollback;
-  if (!await confirmAction(`Rollback import ${version}`, "This activates the stored service registry snapshot.")) return;
+  if (!(await confirmAction(`Rollback import ${version}`, "This activates the stored service registry snapshot."))) return;
   await api(`/admin-ui/admin/services/import/rollback/${version}`, { method: "POST", body: "{}" });
   setNotice(`Service registry rolled back to ${version}.`, "success");
   await health();
 }
+
 function table(headers, rows) {
   if (!rows.length) return '<div class="empty-state"><p>No rows.</p></div>';
-  return `<div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows
+    .map((row) => `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`)
+    .join("")}</tbody></table></div>`;
 }
+
 function policyBody(form) {
   const body = {
     allowed_routes: csv(form.get("allowed_routes")),
@@ -1514,13 +1503,14 @@ function policyBody(form) {
     max_request_body_bytes: nullableNumber(form.get("max_request_body_bytes")),
     max_response_body_bytes: nullableNumber(form.get("max_response_body_bytes")),
     allow_streaming: form.has("allow_streaming"),
-    allow_tools: form.has("allow_tools")
+    allow_tools: form.has("allow_tools"),
   };
   return body;
 }
+
 function guardrailPolicyBody(form) {
   const forbidden = form.getAll("forbidden_guardrails");
-  const configurable = /* @__PURE__ */ new Set([...form.getAll("mandatory_guardrails"), ...form.getAll("optional_guardrails")]);
+  const configurable = new Set([...form.getAll("mandatory_guardrails"), ...form.getAll("optional_guardrails")]);
   const guardrailConfigOverrides = {};
   for (const name of form.getAll("guardrail_override_names")) {
     if (forbidden.includes(name)) throw new Error("guardrail_override_forbidden");
@@ -1533,15 +1523,15 @@ function guardrailPolicyBody(form) {
     mandatory_guardrails: form.getAll("mandatory_guardrails"),
     optional_guardrails: form.getAll("optional_guardrails"),
     forbidden_guardrails: forbidden,
-    guardrail_config_overrides: guardrailConfigOverrides
+    guardrail_config_overrides: guardrailConfigOverrides,
   };
 }
+
 async function guardrails() {
-  var _a, _b, _c, _d;
   [state.guardrails, state.guardrailExecutions, state.guardrailSummary] = await Promise.all([
     api("/admin-ui/admin/guardrails"),
     api("/admin-ui/admin/guardrails/executions?limit=50"),
-    api("/admin-ui/admin/guardrails/summary")
+    api("/admin-ui/admin/guardrails/summary"),
   ]);
   const selected = state.guardrails.guardrails.find((guardrail) => guardrail.name === state.editingGuardrailName);
   content.innerHTML = `
@@ -1569,16 +1559,16 @@ async function guardrails() {
       ${guardrailExecutionTable(state.guardrailExecutions.executions)}
     </section>
   `;
-  (_a = document.querySelector("[data-guardrail-action='new']")) == null ? void 0 : _a.addEventListener("click", () => {
+  document.querySelector("[data-guardrail-action='new']")?.addEventListener("click", () => {
     state.editingGuardrailName = "";
     guardrails();
   });
-  (_b = document.querySelector("#guardrail-form")) == null ? void 0 : _b.addEventListener("submit", handleAsync(submitGuardrail));
-  (_c = document.querySelector("[data-guardrail-action='cancel']")) == null ? void 0 : _c.addEventListener("click", () => {
+  document.querySelector("#guardrail-form")?.addEventListener("submit", handleAsync(submitGuardrail));
+  document.querySelector("[data-guardrail-action='cancel']")?.addEventListener("click", () => {
     state.editingGuardrailName = null;
     guardrails();
   });
-  (_d = document.querySelector("[data-guardrail-action='delete']")) == null ? void 0 : _d.addEventListener("click", handleAsync(deleteGuardrail));
+  document.querySelector("[data-guardrail-action='delete']")?.addEventListener("click", handleAsync(deleteGuardrail));
   document.querySelectorAll("[data-guardrail-edit]").forEach((button) => {
     button.addEventListener("click", () => {
       state.editingGuardrailName = button.dataset.guardrailEdit;
@@ -1586,6 +1576,7 @@ async function guardrails() {
     });
   });
 }
+
 function guardrailCatalogTable(rows) {
   return table(
     ["Name", "Provider", "Modes", "Default", "Failure", "Enabled", "Endpoint", "Token", "Actions"],
@@ -1598,35 +1589,36 @@ function guardrailCatalogTable(rows) {
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
       row.endpoint_configured ? '<span class="badge good">configured</span>' : '<span class="badge">built-in</span>',
       row.token_configured ? '<span class="badge good">configured</span>' : '<span class="badge">none</span>',
-      `<button type="button" data-guardrail-edit="${attr(row.name)}">Edit</button>`
-    ])
+      `<button type="button" data-guardrail-edit="${attr(row.name)}">Edit</button>`,
+    ]),
   );
 }
+
 function guardrailDrawer(guardrail) {
   if (state.editingGuardrailName === null) {
     return '<div class="empty-state"><h3>No guardrail selected</h3></div>';
   }
   const creating = state.editingGuardrailName === "";
-  const builtIn = !creating && (guardrail == null ? void 0 : guardrail.provider_kind) === "built_in";
+  const builtIn = !creating && guardrail?.provider_kind === "built_in";
   const titleText = creating ? "New guardrail" : `Edit ${guardrail ? guardrail.name : "guardrail"}`;
-  const schemaValue = JSON.stringify((guardrail == null ? void 0 : guardrail.config_schema) ?? {}, null, 2);
-  const runtimeConfigValue = JSON.stringify((guardrail == null ? void 0 : guardrail.runtime_config) ?? {}, null, 2);
+  const schemaValue = JSON.stringify(guardrail?.config_schema ?? {}, null, 2);
+  const runtimeConfigValue = JSON.stringify(guardrail?.runtime_config ?? {}, null, 2);
   return `
     <div class="panel-heading">
       <h3>${esc(titleText)}</h3>
       ${builtIn ? '<span class="badge">built-in</span>' : '<span class="badge good">http</span>'}
     </div>
-    <form id="guardrail-form" class="form-grid guardrail-form" data-mode="${creating ? "create" : "edit"}" data-guardrail-name="${attr((guardrail == null ? void 0 : guardrail.name) || "")}" data-provider-kind="${attr((guardrail == null ? void 0 : guardrail.provider_kind) || "http")}">
-      <label>Name<input name="name" required ${creating ? "" : "readonly"} value="${attr((guardrail == null ? void 0 : guardrail.name) || "")}" placeholder="custom-policy-check"></label>
-      <label>Description<input name="description" ${builtIn ? "disabled" : "required"} value="${attr((guardrail == null ? void 0 : guardrail.description) || "")}"></label>
-      <div class="field"><span>Modes</span>${guardrailModeSelect((guardrail == null ? void 0 : guardrail.modes) || ["pre_call"])}</div>
-      <label>Failure policy<select name="failure_policy">${["fail_closed", "fail_open", "dry_run"].map((value) => option(value, (guardrail == null ? void 0 : guardrail.failure_policy) || "fail_closed")).join("")}</select></label>
-      <label>Timeout ms<input name="timeout_ms" type="number" min="100" max="10000" value="${attr((guardrail == null ? void 0 : guardrail.timeout_ms) ?? 1500)}" ${builtIn ? "disabled" : ""}></label>
-      <label>Endpoint URL<input name="endpoint_url" type="url" ${creating ? "required" : ""} value="${attr((guardrail == null ? void 0 : guardrail.endpoint_url) || "")}" placeholder="https://guardrail.example/check" ${builtIn ? "disabled" : ""}></label>
-      <label>Bearer token<input name="bearer_token" type="password" autocomplete="new-password" placeholder="${(guardrail == null ? void 0 : guardrail.token_configured) ? "configured" : "optional"}" ${builtIn ? "disabled" : ""}></label>
+    <form id="guardrail-form" class="form-grid guardrail-form" data-mode="${creating ? "create" : "edit"}" data-guardrail-name="${attr(guardrail?.name || "")}" data-provider-kind="${attr(guardrail?.provider_kind || "http")}">
+      <label>Name<input name="name" required ${creating ? "" : "readonly"} value="${attr(guardrail?.name || "")}" placeholder="custom-policy-check"></label>
+      <label>Description<input name="description" ${builtIn ? "disabled" : "required"} value="${attr(guardrail?.description || "")}"></label>
+      <div class="field"><span>Modes</span>${guardrailModeSelect(guardrail?.modes || ["pre_call"])}</div>
+      <label>Failure policy<select name="failure_policy">${["fail_closed", "fail_open", "dry_run"].map((value) => option(value, guardrail?.failure_policy || "fail_closed")).join("")}</select></label>
+      <label>Timeout ms<input name="timeout_ms" type="number" min="100" max="10000" value="${attr(guardrail?.timeout_ms ?? 1500)}" ${builtIn ? "disabled" : ""}></label>
+      <label>Endpoint URL<input name="endpoint_url" type="url" ${creating ? "required" : ""} value="${attr(guardrail?.endpoint_url || "")}" placeholder="https://guardrail.example/check" ${builtIn ? "disabled" : ""}></label>
+      <label>Bearer token<input name="bearer_token" type="password" autocomplete="new-password" placeholder="${guardrail?.token_configured ? "configured" : "optional"}" ${builtIn ? "disabled" : ""}></label>
       <label class="check"><input name="clear_token" type="checkbox" ${builtIn || creating ? "disabled" : ""}> Clear token</label>
-      <label class="check"><input name="default_on" type="checkbox" ${(guardrail == null ? void 0 : guardrail.default_on) ? "checked" : ""}> Default on</label>
-      <label class="check"><input name="enabled" type="checkbox" ${creating || (guardrail == null ? void 0 : guardrail.enabled) ? "checked" : ""}> Enabled</label>
+      <label class="check"><input name="default_on" type="checkbox" ${guardrail?.default_on ? "checked" : ""}> Default on</label>
+      <label class="check"><input name="enabled" type="checkbox" ${creating || guardrail?.enabled ? "checked" : ""}> Enabled</label>
       <label class="wide-field">Config schema JSON<textarea name="config_schema" rows="6">${esc(schemaValue)}</textarea></label>
       <label class="wide-field">Runtime config JSON<textarea name="runtime_config" rows="6">${esc(runtimeConfigValue)}</textarea></label>
       <div class="help">${builtIn ? "Built-in guardrails protect endpoint and token fields." : "Bearer tokens are write-only; leave blank to keep the current token."}</div>
@@ -1638,12 +1630,14 @@ function guardrailDrawer(guardrail) {
     </form>
   `;
 }
+
 function guardrailModeSelect(selected = []) {
   const values = new Set(Array.isArray(selected) && selected.length ? selected : ["pre_call"]);
   return `<div class="checkbox-group" role="group" aria-label="Guardrail modes">
     ${["pre_call", "post_call", "during_call"].map((value) => `<label><input name="modes" type="checkbox" value="${attr(value)}" ${values.has(value) ? "checked" : ""}> ${esc(value)}</label>`).join("")}
   </div>`;
 }
+
 function guardrailBody(form, creating, builtIn) {
   const configSchema = JSON.parse(form.get("config_schema") || "{}");
   const runtimeConfig = JSON.parse(form.get("runtime_config") || "{}");
@@ -1654,19 +1648,20 @@ function guardrailBody(form, creating, builtIn) {
     failure_policy: form.get("failure_policy"),
     config_schema: configSchema,
     runtime_config: runtimeConfig,
-    enabled: form.has("enabled")
+    enabled: form.has("enabled"),
   };
   if (creating || !builtIn) {
     body.description = form.get("description");
     body.endpoint_url = form.get("endpoint_url");
     body.timeout_ms = nullableNumber(form.get("timeout_ms"));
     const tokenValue = blankToUndefined(form.get("bearer_token"));
-    if (tokenValue !== void 0) body.bearer_token = tokenValue;
+    if (tokenValue !== undefined) body.bearer_token = tokenValue;
     if (!creating && form.has("clear_token")) body.bearer_token = null;
   }
   if (creating) body.name = form.get("name");
   return body;
 }
+
 async function submitGuardrail(event) {
   event.preventDefault();
   const formElement = event.currentTarget;
@@ -1683,21 +1678,23 @@ async function submitGuardrail(event) {
   const path = creating ? "/admin-ui/admin/guardrails" : `/admin-ui/admin/guardrails/${encodeURIComponent(formElement.dataset.guardrailName)}`;
   await api(path, {
     method: creating ? "POST" : "PATCH",
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
   state.editingGuardrailName = null;
   setNotice(`Guardrail ${creating ? "created" : "saved"}.`, "success");
   await guardrails();
 }
+
 async function deleteGuardrail(event) {
   const form = event.currentTarget.closest("form");
   const name = form.dataset.guardrailName;
-  if (!await confirmAction(`Delete ${name}`, "The guardrail is removed from key policies. Historical executions remain.")) return;
+  if (!(await confirmAction(`Delete ${name}`, "The guardrail is removed from key policies. Historical executions remain."))) return;
   await api(`/admin-ui/admin/guardrails/${encodeURIComponent(name)}`, { method: "DELETE" });
   state.editingGuardrailName = null;
   setNotice("Guardrail deleted.", "success");
   await guardrails();
 }
+
 function guardrailSummaryTable(rows) {
   return table(
     ["Guardrail", "Mode", "Action", "Failure policy", "Count", "Total latency"],
@@ -1707,10 +1704,11 @@ function guardrailSummaryTable(rows) {
       esc(row.action),
       esc(row.failure_policy),
       row.count,
-      `${esc(row.total_latency_ms)} ms`
-    ])
+      `${esc(row.total_latency_ms)} ms`,
+    ]),
   );
 }
+
 function guardrailExecutionTable(rows) {
   return table(
     ["Time", "Request", "Key", "Guardrail", "Mode", "Action", "Latency", "Reason"],
@@ -1722,15 +1720,16 @@ function guardrailExecutionTable(rows) {
       esc(row.mode),
       esc(row.action),
       `${esc(row.latency_ms)} ms`,
-      esc(row.reason || "")
-    ])
+      esc(row.reason || ""),
+    ]),
   );
 }
+
 function serviceBody(form, patch) {
   const body = {
-    project_id: form.has("project_id") ? nullableString(form.get("project_id")) : void 0,
+    project_id: form.has("project_id") ? nullableString(form.get("project_id")) : undefined,
     studio_service_id: patch ? nullableString(form.get("studio_service_id")) : blankToUndefined(form.get("studio_service_id")),
-    route_pattern: form.get("route_pattern") || void 0,
+    route_pattern: form.get("route_pattern") || undefined,
     upstream_base_url: patch ? nullableString(form.get("upstream_base_url")) : blankToUndefined(form.get("upstream_base_url")),
     enabled: form.has("enabled"),
     allowed_methods: form.getAll("allowed_methods"),
@@ -1738,7 +1737,7 @@ function serviceBody(form, patch) {
     max_body_bytes: Number(form.get("max_body_bytes")),
     cost_mode: form.get("cost_mode"),
     estimated_cost_usd: nullableNumber(form.get("estimated_cost_usd")),
-    fallback_services: csv(form.get("fallback_services"))
+    fallback_services: csv(form.get("fallback_services")),
   };
   if (!patch) {
     body.name = form.get("name");
@@ -1751,20 +1750,23 @@ function serviceBody(form, patch) {
   if (patch) body.sync_status = form.get("sync_status");
   return body;
 }
+
 function keyStatus(key) {
   if (key.revoked_at) return '<span class="badge bad">revoked</span>';
   if (key.disabled) return '<span class="badge bad">disabled</span>';
-  if (key.expires_at && new Date(key.expires_at) <= /* @__PURE__ */ new Date()) return '<span class="badge bad">expired</span>';
+  if (key.expires_at && new Date(key.expires_at) <= new Date()) return '<span class="badge bad">expired</span>';
   if (!key.expires_at) return '<span class="badge good">non-expiring</span>';
   return '<span class="badge good">active</span>';
 }
+
 function keyExpiry(key) {
   return key.expires_at ? time(key.expires_at) : "No expiration";
 }
+
 function bindKeyExpiryControls() {
   document.querySelectorAll('form input[name="no_expires_at"]').forEach((checkbox) => {
     const form = checkbox.closest("form");
-    const expiresAt = form == null ? void 0 : form.querySelector('input[name="expires_at"]');
+    const expiresAt = form?.querySelector('input[name="expires_at"]');
     const update = () => {
       if (!expiresAt) return;
       expiresAt.disabled = checkbox.checked;
@@ -1774,32 +1776,36 @@ function bindKeyExpiryControls() {
     update();
   });
 }
+
 function bindKeyOwnerControls() {
   document.querySelectorAll('form select[name="owner_type"]').forEach((select) => {
     const form = select.closest("form");
-    const projectField = form == null ? void 0 : form.querySelector("[data-owner-project]");
-    const serviceField = form == null ? void 0 : form.querySelector("[data-owner-services]");
+    const projectField = form?.querySelector("[data-owner-project]");
+    const serviceField = form?.querySelector("[data-owner-services]");
     const update = () => {
       const project = select.value === "project";
-      projectField == null ? void 0 : projectField.classList.toggle("hidden", !project);
-      serviceField == null ? void 0 : serviceField.classList.toggle("hidden", project);
-      const projectInput = projectField == null ? void 0 : projectField.querySelector('select[name="project_id"]');
+      projectField?.classList.toggle("hidden", !project);
+      serviceField?.classList.toggle("hidden", project);
+      const projectInput = projectField?.querySelector('select[name="project_id"]');
       if (projectInput) projectInput.required = project;
     };
     select.addEventListener("change", update);
     update();
   });
 }
+
 function bindServicePickerButtons() {
   document.querySelectorAll("[data-service-picker]").forEach((button) => {
     button.addEventListener("click", () => openServiceSelectionPicker(button));
   });
 }
+
 function bindGuardrailPickerButtons() {
   document.querySelectorAll("[data-guardrail-picker]").forEach((button) => {
     button.addEventListener("click", () => openGuardrailSelectionPicker(button));
   });
 }
+
 function keyPolicySummary(key) {
   const policy = key.policy;
   return `<div>${esc((policy.allowed_routes || []).join(", ") || "no routes")}</div>
@@ -1808,39 +1814,63 @@ function keyPolicySummary(key) {
     <div class="subtle">Req ${esc(policy.max_request_body_bytes ?? "route")} / Resp ${esc(policy.max_response_body_bytes ?? "route")}</div>
     <div class="subtle">Rotate ${esc(key.rotation_due_at ? time(key.rotation_due_at) : "none")} / Last used ${esc(key.last_used_at ? time(key.last_used_at) : "never")}</div>`;
 }
+
 function policySimulationResult() {
-  var _a, _b, _c, _d, _e, _f;
   const result = state.policySimulation;
   if (!result) return '<div class="empty-inline">No simulation run.</div>';
   const decision = result.final_decision || {};
   return `<div class="kv">
     <div><strong>Decision</strong><span>${esc(decision.allowed ? "allowed" : decision.error_code || "denied")}</span></div>
-    <div><strong>Route</strong><span>${esc(((_a = result.route_match) == null ? void 0 : _a.route) || "")}</span></div>
-    <div><strong>Provider</strong><span>${esc(((_b = result.route_match) == null ? void 0 : _b.provider) || "")}</span></div>
-    <div><strong>Policy version</strong><span>${esc(((_c = result.policy_merge) == null ? void 0 : _c.policy_version) ?? "n/a")}</span></div>
+    <div><strong>Route</strong><span>${esc(result.route_match?.route || "")}</span></div>
+    <div><strong>Provider</strong><span>${esc(result.route_match?.provider || "")}</span></div>
+    <div><strong>Policy version</strong><span>${esc(result.policy_merge?.policy_version ?? "n/a")}</span></div>
     <div><strong>Guardrails</strong><span>${esc((result.guardrail_plan || []).join(", ") || "none")}</span></div>
-    <div><strong>Rate</strong><span>RPM ${esc(((_d = result.rate_limit_projection) == null ? void 0 : _d.rpm_limit) ?? "none")} / TPM ${esc(((_e = result.rate_limit_projection) == null ? void 0 : _e.tpm_limit) ?? "none")}</span></div>
-    <div><strong>Budget</strong><span>${esc(money((_f = result.budget_projection) == null ? void 0 : _f.daily_budget_usd))} daily</span></div>
+    <div><strong>Rate</strong><span>RPM ${esc(result.rate_limit_projection?.rpm_limit ?? "none")} / TPM ${esc(result.rate_limit_projection?.tpm_limit ?? "none")}</span></div>
+    <div><strong>Budget</strong><span>${esc(money(result.budget_projection?.daily_budget_usd))} daily</span></div>
   </div>`;
 }
+
 function csv(value) {
-  return String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
+
 function nullableNumber(value) {
   return value === null || value === "" ? null : Number(value);
 }
+
 function nullableString(value) {
   return value === null || String(value).trim() === "" ? null : String(value).trim();
 }
+
 function projectOptions(selected = "") {
-  return state.projects.map((project) => `<option value="${attr(project.id)}" ${project.id === selected ? "selected" : ""}>${esc(project.name)} (${esc(project.id)})</option>`).join("");
+  return state.projects
+    .map((project) => `<option value="${attr(project.id)}" ${project.id === selected ? "selected" : ""}>${esc(project.name)} (${esc(project.id)})</option>`)
+    .join("");
 }
+
 function serviceOptions(selected = "") {
-  return state.services.map((service) => `<option value="${attr(service.name)}" ${service.name === selected ? "selected" : ""}>${esc(service.name)}</option>`).join("");
+  return state.services
+    .map((service) => `<option value="${attr(service.name)}" ${service.name === selected ? "selected" : ""}>${esc(service.name)}</option>`)
+    .join("");
 }
+
 function keyOptions(selected = "") {
-  return state.keys.map((key) => `<option value="${attr(key.id)}" ${key.id === selected ? "selected" : ""}>${esc(key.key_prefix)} (${esc(key.owner_type || "project")})</option>`).join("");
+  return state.keys
+    .map((key) => `<option value="${attr(key.id)}" ${key.id === selected ? "selected" : ""}>${esc(key.key_prefix)} (${esc(key.owner_type || "project")})</option>`)
+    .join("");
 }
+
+function serviceCheckboxes(selected = [], name = "service_names") {
+  const values = new Set(Array.isArray(selected) ? selected : []);
+  if (!state.services.length) return '<div class="empty-inline">No services registered.</div>';
+  return `<div class="checkbox-group service-checkboxes" role="group" aria-label="Services">
+    ${state.services.map((service) => `<label title="${attr(service.route_pattern)}"><input name="${attr(name)}" type="checkbox" value="${attr(service.name)}" ${values.has(service.name) ? "checked" : ""}> ${esc(service.name)}</label>`).join("")}
+  </div>`;
+}
+
 function serviceSelectionControl(selected = [], name = "service_names", title = "Select services") {
   const values = Array.isArray(selected) ? selected : [];
   return `<div class="service-selection" data-service-selection data-field-name="${attr(name)}" data-selection-label="services">
@@ -1849,6 +1879,7 @@ function serviceSelectionControl(selected = [], name = "service_names", title = 
     <button type="button" data-service-picker="${attr(name)}" data-service-picker-title="${attr(title)}">Select services</button>
   </div>`;
 }
+
 function guardrailSelectionControl(selected = [], name, title = "Select guardrails") {
   const values = Array.isArray(selected) ? selected : [];
   return `<div class="service-selection guardrail-selection" data-service-selection data-field-name="${attr(name)}" data-selection-label="guardrails">
@@ -1857,20 +1888,24 @@ function guardrailSelectionControl(selected = [], name, title = "Select guardrai
     <button type="button" data-guardrail-picker="${attr(name)}" data-guardrail-picker-title="${attr(title)}">Select guardrails</button>
   </div>`;
 }
+
 function serviceHiddenInputs(values, name) {
   return values.map((value) => `<input type="hidden" name="${attr(name)}" value="${attr(value)}">`).join("");
 }
+
 function selectedServiceNames(form, name) {
   return [...form.querySelectorAll(`input[type="hidden"][name="${CSS.escape(name)}"]`)].map((input) => input.value);
 }
+
 function setSelectedServiceNames(form, name, values) {
   const selection = form.querySelector(`[data-service-selection][data-field-name="${CSS.escape(name)}"]`);
-  const hidden = selection == null ? void 0 : selection.querySelector(`[data-field-name="${CSS.escape(name)}"].service-selection-values`);
-  const summary = selection == null ? void 0 : selection.querySelector(".service-selection-summary");
+  const hidden = selection?.querySelector(`[data-field-name="${CSS.escape(name)}"].service-selection-values`);
+  const summary = selection?.querySelector(".service-selection-summary");
   if (!hidden || !summary) return;
   hidden.innerHTML = serviceHiddenInputs(values, name);
   summary.innerHTML = serviceSelectionSummary(values, selection.dataset.selectionLabel || "services");
 }
+
 function updateGuardrailOverrideControls(form) {
   const field = form.querySelector("[data-guardrail-overrides]");
   if (!field) return;
@@ -1885,75 +1920,96 @@ function updateGuardrailOverrideControls(form) {
   }
   field.innerHTML = guardrailOverrideControls(overrides, [
     ...selectedServiceNames(form, "mandatory_guardrails"),
-    ...selectedServiceNames(form, "optional_guardrails")
+    ...selectedServiceNames(form, "optional_guardrails"),
   ]);
 }
+
 function serviceSelectionSummary(values, label = "services") {
   if (!values.length) return `<span class="subtle">No ${esc(label)} selected.</span>`;
   return `<strong>${values.length} selected</strong><div class="service-selection-list">${esc(values.join(", "))}</div>`;
 }
+
 function projectName(projectId) {
-  var _a;
   if (!projectId) return "Individual";
-  return ((_a = state.projects.find((project) => project.id === projectId)) == null ? void 0 : _a.name) || projectId;
+  return state.projects.find((project) => project.id === projectId)?.name || projectId;
 }
+
 function keyName(keyId) {
-  var _a;
-  return ((_a = state.keys.find((key) => key.id === keyId)) == null ? void 0 : _a.key_prefix) || keyId;
+  return state.keys.find((key) => key.id === keyId)?.key_prefix || keyId;
 }
+
 function providerPolicySelect(selected = [], neutral = false) {
   const values = new Set(Array.isArray(selected) && selected.length ? selected : neutral ? [] : ["litellm"]);
   return `<div class="checkbox-group" role="group" aria-label="Providers">
     ${["litellm", "internal-service"].map((value) => `<label><input name="allowed_providers" type="checkbox" value="${attr(value)}" ${values.has(value) ? "checked" : ""}> ${esc(value)}</label>`).join("")}
   </div>`;
 }
+
 function serviceRouteOptions() {
   const builtIns = ["/summary", "/translation", "/ocr", "/embeddings", "/services/name/*"];
-  const routes2 = [.../* @__PURE__ */ new Set([...builtIns, ...state.services.map((service) => service.route_pattern)])];
-  return routes2.map((route) => `<option value="${attr(route)}"></option>`).join("");
+  const routes = [...new Set([...builtIns, ...state.services.map((service) => service.route_pattern)])];
+  return routes.map((route) => `<option value="${attr(route)}"></option>`).join("");
 }
+
 function blankToUndefined(value) {
-  return value === null || String(value).trim() === "" ? void 0 : String(value).trim();
+  return value === null || String(value).trim() === "" ? undefined : String(value).trim();
 }
+
 function isoDate(value) {
   return value ? new Date(value).toISOString() : null;
 }
+
 function toLocalInput(value) {
   if (!value) return "";
   const date = new Date(value);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 6e4);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 16);
 }
+
 function listValue(values, fallback) {
   return Array.isArray(values) && values.length ? values.join(",") : fallback;
 }
+
 function methodSelect(selected = []) {
   const selectedMethods = new Set(Array.isArray(selected) && selected.length ? selected : ["POST"]);
   return `<div class="checkbox-group" role="group" aria-label="Methods">
     ${["GET", "POST", "PUT", "PATCH", "DELETE"].map((value) => methodOption(value, selectedMethods)).join("")}
   </div>`;
 }
+
 function methodOption(value, selectedMethods) {
   return `<label><input name="allowed_methods" type="checkbox" value="${attr(value)}" ${selectedMethods.has(value) ? "checked" : ""}> ${esc(value)}</label>`;
 }
+
 function option(value, selected) {
   return `<option value="${attr(value)}" ${value === selected ? "selected" : ""}>${esc(value)}</option>`;
 }
+
 function time(value) {
   return value ? new Date(value).toLocaleString() : "n/a";
 }
+
 function money(value) {
   return value == null ? "n/a" : `$${Number(value).toFixed(4)}`;
 }
+
 function percent(value) {
   return value == null ? "0.0%" : `${(Number(value) * 100).toFixed(1)}%`;
 }
+
 function esc(value) {
-  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
+
 function attr(value) {
   return esc(value);
 }
+
 if (token()) {
   signedIn();
 }

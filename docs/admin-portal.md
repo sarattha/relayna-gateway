@@ -2,6 +2,22 @@
 
 The admin portal is a static operator console embedded in `gateway-api`. It is served from the control listener at `/admin-ui` and calls the same `/admin-ui/admin/*` APIs used by automation.
 
+## Frontend Source
+
+Admin UI 2.0 source files live in
+`crates/gateway-api/admin-ui`. Build the Vite/TypeScript source into the static
+assets embedded by `gateway-api` with:
+
+```bash
+npm ci
+npm run build:admin-ui
+```
+
+The generated files remain checked in under
+`crates/gateway-api/src/static/admin-ui` so the Rust control-plane binary can
+serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
+separate frontend deployment.
+
 ## Authentication
 
 Use the operator token seeded by `GATEWAY_ADMIN_TOKEN` on first startup, or the

@@ -25,7 +25,7 @@ test("admin portal shell exposes all release-critical views", () => {
   }
   assert.match(
     html,
-    /data-view="overview"[\s\S]*data-view="providers"[\s\S]*data-view="services"[\s\S]*data-view="routes"[\s\S]*data-view="projects"[\s\S]*data-view="keys"[\s\S]*data-view="usage"[\s\S]*data-view="health"[\s\S]*data-view="settings"/,
+    /data-view="overview"[\s\S]*data-view="health"[\s\S]*data-view="usage"[\s\S]*data-view="providers"[\s\S]*data-view="services"[\s\S]*data-view="routes"[\s\S]*data-view="projects"[\s\S]*data-view="keys"[\s\S]*data-view="guardrails"[\s\S]*data-view="settings"/,
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
