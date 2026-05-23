@@ -115,6 +115,7 @@ test("control-plane public route inventory is pinned", () => {
     "/admin-ui/admin/usage/export.json",
     "/admin-ui/admin/usage/summary",
     "/admin-ui/admin/usage/timeseries",
+    "/admin-ui/admin/usage/unused-keys",
     "/admin-ui/admin/debug-bundles/{request_id}",
     "/admin-ui/healthz",
     "/admin-ui/metrics",
@@ -272,6 +273,7 @@ test("PostgreSQL migration inventory is pinned", () => {
     "20260522000100_operator_scopes_audit_events.sql",
     "20260523000100_policy_governance_lifecycle.sql",
     "20260523000200_provider_intelligence.sql",
+    "20260523000300_phase_4_observability_analytics.sql",
   ]);
 });
 
@@ -312,9 +314,12 @@ test("admin portal static test covers all control endpoints it depends on", () =
     "/admin-ui/admin/studio/connection/test",
     "/admin-ui/admin/studio/services",
     "/admin-ui/admin/usage/by-key",
+    "/admin-ui/admin/usage/by-model",
     "/admin-ui/admin/usage/by-project",
+    "/admin-ui/admin/usage/by-provider",
     "/admin-ui/admin/usage/by-service",
     "/admin-ui/admin/usage/summary",
+    "/admin-ui/admin/usage/unused-keys",
     "/admin-ui/readyz",
   ];
   for (const endpoint of requiredUiEndpoints) {

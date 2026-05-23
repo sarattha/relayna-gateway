@@ -288,6 +288,7 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin-ui/admin/usage/by-provider", get(usage_by_provider))
         .route("/admin-ui/admin/usage/by-service", get(usage_by_service))
         .route("/admin-ui/admin/usage/by-task", get(usage_by_task))
+        .route("/admin-ui/admin/usage/unused-keys", get(usage_unused_keys))
         .route("/admin-ui/admin/usage/export.json", get(usage_export_json))
         .route("/admin-ui/admin/usage/export.csv", get(usage_export_csv))
         .route("/admin-ui/admin/tasks/{task_id}/usage", get(task_usage))
@@ -1899,6 +1900,17 @@ async fn usage_export_json(
     .await
 }
 
+async fn usage_unused_keys(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+        store.unused_keys(query).await
+    })
+    .await
+}
+
 async fn usage_export_csv(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1932,7 +1944,7 @@ async fn task_usage(
 }
 
 fn usage_export_csv_body(export: &UsageExport) -> String {
-    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,task_id,run_id,fallback_count,guardrail_action_count,created_at\n".to_owned();
+    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,task_id,run_id,trace_id,fallback_count,guardrail_action_count,created_at\n".to_owned();
     for row in &export.rows {
         let fields = [
             row.request_id.clone(),
@@ -1955,6 +1967,7 @@ fn usage_export_csv_body(export: &UsageExport) -> String {
             row.service_name.clone().unwrap_or_default(),
             row.task_id.clone().unwrap_or_default(),
             row.run_id.clone().unwrap_or_default(),
+            row.trace_id.clone().unwrap_or_default(),
             row.fallback_count.to_string(),
             row.guardrail_action_count.to_string(),
             row.created_at.to_rfc3339(),
@@ -3832,6 +3845,7 @@ mod tests {
                     service_name: event.service_name.clone(),
                     task_id: event.task_id.clone(),
                     run_id: event.run_id.clone(),
+                    trace_id: event.trace_id.clone(),
                     fallback_count: event.fallback_count,
                     guardrail_action_count: 0,
                     created_at: event.created_at,
@@ -3845,6 +3859,13 @@ mod tests {
         }
 
         async fn provider_health(&self, _query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
+            Ok(Vec::new())
+        }
+
+        async fn unused_keys(
+            &self,
+            _query: UsageQuery,
+        ) -> GatewayResult<Vec<gateway_core::UnusedKey>> {
             Ok(Vec::new())
         }
     }
@@ -4010,6 +4031,15 @@ mod tests {
             ),
             total_latency_ms: rows.iter().map(|row| row.latency_ms).sum(),
             fallback_count: rows.iter().map(|row| i64::from(row.fallback_count)).sum(),
+            fallback_rate: if rows.is_empty() {
+                0.0
+            } else {
+                rows.iter()
+                    .map(|row| i64::from(row.fallback_count))
+                    .sum::<i64>() as f64
+                    / rows.len() as f64
+            },
+            ..UsageSummary::default()
         }
     }
 
@@ -5098,6 +5128,7 @@ mod tests {
                 service_name: None,
                 task_id: Some("task-1".to_owned()),
                 run_id: Some("run-1".to_owned()),
+                trace_id: Some("4bf92f3577b34da6a3ce929d0e0e4736".to_owned()),
                 fallback_count: 1,
                 created_at: Utc::now(),
             },
@@ -5118,6 +5149,7 @@ mod tests {
                 service_name: None,
                 task_id: Some("task-1".to_owned()),
                 run_id: Some("run-2".to_owned()),
+                trace_id: None,
                 fallback_count: 0,
                 created_at: Utc::now(),
             },

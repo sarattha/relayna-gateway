@@ -52,8 +52,9 @@ required scope.
 - Routes disables and enables the global OpenAI-compatible LiteLLM routes `/v1/chat/completions` and `/v1/responses`, and lists registered service routes with their allowed methods and credential status.
 - Services creates, imports from Relayna Studio, edits, sync-checks, disables, enables, and deletes service registrations. Method selection uses explicit checkboxes for `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
 - Usage filters usage by project, virtual key, service, route, provider, model,
-  task, and status, then shows project, key, service, and exportable row-level
-  usage data.
+  task ID, run ID, status, and minimum cost, then shows cost, errors, fallback
+  rate, guardrail blocks, project/key/service/provider/model breakdowns, unused
+  keys, and exportable row-level usage data.
 - Guardrails shows the gateway guardrail catalog, recent sanitized execution
   events, and execution summaries. Key create/edit forms can set mandatory,
   optional, and forbidden guardrails.
@@ -110,14 +111,28 @@ curl -sS \
 ```
 
 Supported filters match the usage dashboard query model: `from`, `to`,
-`project_id`, `key_id`, `route`, `provider`, `service`, `task_id`, `model`,
-and `status`. Export rows are ordered by creation time and request ID. `limit`
-defaults to `1000`, is clamped to `10000`, and `offset` can be used for
-pagination.
+`project_id`, `key_id`, `route`, `provider`, `service`, `task_id`, `run_id`,
+`model`, `status`, `trace_id`, and `min_cost_usd`. Export rows are ordered by
+creation time and request ID. `limit` defaults to `1000`, is clamped to
+`10000`, and `offset` can be used for pagination.
 
 JSON exports include a `summary` object plus `rows`. CSV exports include the row
 fields directly and neutralize spreadsheet formula prefixes before escaping
-cells.
+cells. Summary responses include request, success, failure, token, cost,
+latency, fallback, denial, guardrail block, expensive request, and fallback-rate
+fields. Row responses include request, key, project, route, model, provider,
+status, latency, token, cost, service, task ID, run ID, trace ID, fallback,
+guardrail action count, and creation timestamp fields.
+
+Unused keys are available at:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
+  "http://127.0.0.1:8081/admin-ui/admin/usage/unused-keys?limit=100"
+```
+
+Usage reads require `usage:read`. JSON and CSV exports require `usage:export`.
 
 ## Guardrails
 

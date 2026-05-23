@@ -38,8 +38,8 @@ pub use guardrails::{
     InMemoryGuardrailExecutor, PII_REDACT_GUARDRAIL,
 };
 pub use observability::{
-    ProviderHealth, UsageBreakdown, UsageBreakdownDimension, UsageExport, UsageExportRow,
-    UsageQuery, UsageQueryStore, UsageSummary, UsageTimeseriesPoint,
+    ProviderHealth, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageExport,
+    UsageExportRow, UsageQuery, UsageQueryStore, UsageSummary, UsageTimeseriesPoint,
 };
 pub use operators::{
     default_operator_roles, default_operator_scopes, operator_token_prefix,

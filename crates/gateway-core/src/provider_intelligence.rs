@@ -117,6 +117,7 @@ pub struct DebugBundle {
     pub route: Option<Route>,
     pub provider: Option<Provider>,
     pub service_name: Option<String>,
+    pub trace_id: Option<String>,
     pub policy_trace: Vec<String>,
     pub guardrail_trace: Vec<String>,
     pub selection_trace: Vec<String>,

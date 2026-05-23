@@ -241,15 +241,16 @@ operator visibility.
 | --- | --- |
 | Primary key | `id uuid` generated with `gen_random_uuid()`. |
 | Foreign keys | `key_id` references `api_keys(id)` with `ON DELETE RESTRICT`. `project_id` is nullable after project-first key support and is not currently constrained by a foreign key. |
-| Request fields | `request_id`, `route`, `model`, `provider`, `service_name`, `task_id`, `run_id`, and `fallback_count`. |
+| Request fields | `request_id`, `trace_id`, `route`, `model`, `provider`, `service_name`, `task_id`, `run_id`, and `fallback_count`. |
 | Accounting fields | `status`, `status_code`, `latency_ms`, `input_tokens`, `output_tokens`, `total_tokens`, and `estimated_cost`. |
-| Indexes | Lookup indexes cover key, project, request ID, provider, service, model, and task time-series queries. |
+| Indexes | Lookup indexes cover key, project, request ID, trace ID, provider, service, model, task, run, status, and expensive-request time-series queries. |
 | Required data | Written for successful and failed request paths. Preserve this table for billing, diagnostics, budget counter rehydration, usage exports, and Relayna Studio usage views. |
 
-Admin usage export endpoints read this table with the same filters used by the
-usage dashboard. JSON exports include summary totals plus row details. CSV
-exports include row details only and neutralize spreadsheet formula prefixes
-before sending the response.
+Admin usage and analytics endpoints read this table with the same filters used
+by the usage dashboard: time range, project, key, route, provider, service,
+task ID, run ID, model, status, trace ID, and minimum cost. JSON exports include
+summary totals plus row details. CSV exports include row details only and
+neutralize spreadsheet formula prefixes before sending the response.
 
 ### `guardrail_definitions`
 

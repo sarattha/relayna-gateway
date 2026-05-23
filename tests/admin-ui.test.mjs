@@ -34,6 +34,9 @@ test("admin portal shell exposes all release-critical views", () => {
 test("admin portal calls the expected gateway admin APIs", () => {
   for (const endpoint of [
     "/admin-ui/admin/usage/summary",
+    "/admin-ui/admin/usage/by-model",
+    "/admin-ui/admin/usage/by-provider",
+    "/admin-ui/admin/usage/unused-keys",
     "/admin-ui/admin/provider-health",
     "/admin-ui/admin/provider-health/check",
     "/admin-ui/admin/provider-health/state",

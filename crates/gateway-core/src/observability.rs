@@ -14,8 +14,11 @@ pub struct UsageQuery {
     pub provider: Option<String>,
     pub service: Option<String>,
     pub task_id: Option<String>,
+    pub run_id: Option<String>,
     pub model: Option<String>,
     pub status: Option<String>,
+    pub trace_id: Option<String>,
+    pub min_cost_usd: Option<f64>,
     pub interval: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
@@ -32,6 +35,12 @@ pub struct UsageSummary {
     pub estimated_cost_usd: Option<f64>,
     pub total_latency_ms: i64,
     pub fallback_count: i64,
+    pub policy_denial_count: i64,
+    pub rate_limit_denial_count: i64,
+    pub budget_denial_count: i64,
+    pub guardrail_block_count: i64,
+    pub expensive_request_count: i64,
+    pub fallback_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -64,6 +73,7 @@ pub struct UsageExportRow {
     pub service_name: Option<String>,
     pub task_id: Option<String>,
     pub run_id: Option<String>,
+    pub trace_id: Option<String>,
     pub fallback_count: i32,
     pub guardrail_action_count: i64,
     pub created_at: DateTime<Utc>,
@@ -73,6 +83,15 @@ pub struct UsageExportRow {
 pub struct UsageExport {
     pub summary: UsageSummary,
     pub rows: Vec<UsageExportRow>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UnusedKey {
+    pub key_id: Uuid,
+    pub key_prefix: String,
+    pub project_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -101,6 +120,8 @@ pub trait UsageQueryStore: Send + Sync {
     async fn usage_export(&self, query: UsageQuery) -> GatewayResult<UsageExport>;
 
     async fn provider_health(&self, query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>>;
+
+    async fn unused_keys(&self, query: UsageQuery) -> GatewayResult<Vec<UnusedKey>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,5 +164,9 @@ where
 
     async fn provider_health(&self, query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
         (**self).provider_health(query).await
+    }
+
+    async fn unused_keys(&self, query: UsageQuery) -> GatewayResult<Vec<UnusedKey>> {
+        (**self).unused_keys(query).await
     }
 }
