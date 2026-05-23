@@ -157,6 +157,7 @@ pub struct PingoraContext {
     task_id: Option<String>,
     run_id: Option<String>,
     traceparent: Option<String>,
+    trace_id: Option<String>,
     fallback_count: i32,
     terminal_usage_recorded: bool,
     service_upstream: Option<PingoraUpstreamConfig>,
@@ -213,6 +214,7 @@ where
             task_id: None,
             run_id: None,
             traceparent: None,
+            trace_id: None,
             fallback_count: 0,
             terminal_usage_recorded: false,
             service_upstream: None,
@@ -246,6 +248,7 @@ where
             .and_then(|value| value.to_str().ok())
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        gateway_telemetry::request_started();
 
         let persisted_service = if should_check_service_routes(req.uri.path()) {
             match self
@@ -299,6 +302,17 @@ where
         ctx.traceparent = header_value(req, "traceparent")
             .filter(|value| is_valid_traceparent(value))
             .map(ToOwned::to_owned);
+        ctx.trace_id = ctx
+            .traceparent
+            .as_deref()
+            .and_then(trace_id_from_traceparent);
+        gateway_telemetry::gateway_request_span(
+            &ctx.request_id,
+            ctx.route.map(Route::as_str),
+            Some(matched.provider.as_str()),
+            ctx.trace_id.as_deref(),
+        )
+        .in_scope(|| tracing::info!("gateway request received"));
         if self.trusted_worker(req) {
             ctx.task_id = header_value(req, "x-relayna-task-id").map(ToOwned::to_owned);
             ctx.run_id = header_value(req, "x-relayna-run-id").map(ToOwned::to_owned);
@@ -313,6 +327,8 @@ where
             .await
         {
             Ok(key) => {
+                gateway_telemetry::phase_span("gateway.auth.verify", &ctx.request_id)
+                    .in_scope(|| tracing::info!("virtual key authenticated"));
                 match self.store.list_guardrail_definitions().await {
                     Ok(definitions) => ctx.guardrail_definitions = definitions,
                     Err(error) => {
@@ -389,6 +405,7 @@ where
                 Ok(false)
             }
             Err(error) => {
+                gateway_telemetry::record_auth_failure(error.code());
                 respond_error(session, error, &ctx.request_id).await?;
                 Ok(true)
             }
@@ -638,6 +655,7 @@ where
         };
 
         if let Err(error) = evaluate_policy(&policy, route, matched.provider, &features) {
+            gateway_telemetry::record_policy_denial(route.as_str(), error.code());
             self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
                 .await;
             respond_error(session, error, &ctx.request_id).await?;
@@ -653,6 +671,7 @@ where
             None,
             matched.estimated_cost_usd,
         ) {
+            gateway_telemetry::record_policy_denial(route.as_str(), error.code());
             self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
                 .await;
             respond_error(session, error, &ctx.request_id).await?;
@@ -670,7 +689,7 @@ where
                 retry_after_seconds,
                 ..
             }) => {
-                gateway_telemetry::record_rate_limit_rejection();
+                gateway_telemetry::record_rate_limit_rejection(route.as_str(), "request");
                 let error = GatewayError::RateLimitExceeded {
                     retry_after_seconds,
                 };
@@ -697,7 +716,7 @@ where
                 retry_after_seconds,
                 ..
             }) => {
-                gateway_telemetry::record_rate_limit_rejection();
+                gateway_telemetry::record_rate_limit_rejection(route.as_str(), "token");
                 let error = GatewayError::TokenRateLimitExceeded {
                     retry_after_seconds,
                 };
@@ -751,7 +770,7 @@ where
                 Ok(true)
             }
             Ok(BudgetDecision::Exceeded(_)) => {
-                gateway_telemetry::record_budget_rejection();
+                gateway_telemetry::record_budget_rejection(route.as_str(), "spend");
                 let error = GatewayError::BudgetExceeded;
                 self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
                     .await;
@@ -966,6 +985,7 @@ where
         error: Option<&pingora_core::Error>,
         ctx: &mut Self::CTX,
     ) {
+        gateway_telemetry::request_finished();
         let Some(route) = ctx.route else {
             return;
         };
@@ -1008,13 +1028,26 @@ where
                 .and_then(|matched| matched.service_name.clone()),
         )
         .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
+        .with_trace_id(ctx.trace_id.clone())
         .with_fallback_count(ctx.fallback_count);
         let _ = self.store.insert_usage_event(&event).await;
         let _ = self
             .store
             .insert_debug_bundle(debug_bundle_for_ctx(ctx, status_code))
             .await;
-        gateway_telemetry::record_request(status_code);
+        gateway_telemetry::record_request_with_dimensions(
+            route.as_str(),
+            provider.as_str(),
+            status_code,
+            u64::try_from(latency_ms.max(0)).unwrap_or(u64::MAX),
+            ctx.is_streaming,
+        );
+        gateway_telemetry::record_upstream_duration_ms(
+            route.as_str(),
+            provider.as_str(),
+            ctx.is_streaming,
+            u64::try_from(latency_ms.max(0)).unwrap_or(u64::MAX),
+        );
         if let Some(tokens) = event.total_tokens {
             gateway_telemetry::record_tokens(tokens);
         }
@@ -1115,7 +1148,11 @@ where
             return false;
         }
         ctx.fallback_count = 1;
-        gateway_telemetry::record_provider_fallback();
+        gateway_telemetry::record_provider_fallback_with_dimensions(
+            matched.provider.as_str(),
+            Provider::LiteLlm.as_str(),
+            "proxy_error",
+        );
         true
     }
 
@@ -1192,13 +1229,20 @@ where
                 .and_then(|matched| matched.service_name.clone()),
         )
         .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
+        .with_trace_id(ctx.trace_id.clone())
         .with_fallback_count(ctx.fallback_count);
         let _ = self.store.insert_usage_event(&event).await;
         let _ = self
             .store
             .insert_debug_bundle(debug_bundle_for_ctx(ctx, status_code))
             .await;
-        gateway_telemetry::record_request(status_code);
+        gateway_telemetry::record_request_with_dimensions(
+            route.as_str(),
+            provider.as_str(),
+            status_code,
+            u64::try_from(latency_ms.max(0)).unwrap_or(u64::MAX),
+            ctx.is_streaming,
+        );
         if ctx.budget_reserved {
             let _ = self
                 .control_state
@@ -1525,6 +1569,7 @@ fn debug_bundle_for_ctx(ctx: &PingoraContext, status_code: u16) -> gateway_core:
         route,
         provider: Some(provider),
         service_name,
+        trace_id: ctx.trace_id.clone(),
         policy_trace: ctx
             .policy
             .as_ref()
@@ -1563,6 +1608,21 @@ fn hash_prefix(bytes: &[u8]) -> Option<String> {
         hasher.finish(),
         bytes.len()
     ))
+}
+
+fn trace_id_from_traceparent(value: &str) -> Option<String> {
+    let mut parts = value.split('-');
+    let _version = parts.next()?;
+    let trace_id = parts.next()?;
+    if trace_id.len() == 32
+        && trace_id
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
+        Some(trace_id.to_ascii_lowercase())
+    } else {
+        None
+    }
 }
 
 fn service_upstream_from_registration(
@@ -1609,6 +1669,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         task_id: None,
         run_id: None,
         traceparent: None,
+        trace_id: None,
         fallback_count: 0,
         terminal_usage_recorded: false,
         service_upstream: None,

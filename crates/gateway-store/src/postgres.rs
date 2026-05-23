@@ -34,9 +34,9 @@ use gateway_core::{
     OperatorTokenStore, PolicyLayer, PolicyLayerKind, ProjectUsageSummary, Provider,
     ProviderHealth, ProviderHealthCheckTarget, ProviderHealthState, ProviderHealthStatus,
     ProviderIntelligenceStore, Route, ServiceImportDiff, ServiceRegistrySnapshot,
-    StoredOperatorToken, UsageBreakdown, UsageBreakdownDimension, UsageEvent, UsageExport,
-    UsageExportRow, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary,
-    UsageTimeseriesPoint, VirtualKeyMaterial,
+    StoredOperatorToken, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageEvent,
+    UsageExport, UsageExportRow, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus,
+    UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -859,10 +859,11 @@ impl PostgresStore {
                 service_name,
                 task_id,
                 run_id,
+                trace_id,
                 fallback_count,
                 created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
             "#,
         )
         .bind(&event.request_id)
@@ -881,6 +882,7 @@ impl PostgresStore {
         .bind(&event.service_name)
         .bind(&event.task_id)
         .bind(&event.run_id)
+        .bind(&event.trace_id)
         .bind(event.fallback_count)
         .bind(event.created_at)
         .execute(&self.pool)
@@ -3209,12 +3211,14 @@ impl UsageQueryStore for PostgresStore {
             "#,
         );
         append_usage_filters(&mut builder, &query);
-        builder
+        let mut summary = builder
             .build_query_as::<(i64, i64, i64, i64, i64, i64, Option<f64>, i64, i64)>()
             .fetch_one(&self.pool)
             .await
             .map(summary_from_row)
-            .map_err(|_| GatewayError::StoreUnavailable)
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        enrich_usage_summary(&self.pool, &query, &mut summary).await?;
+        Ok(summary)
     }
 
     async fn usage_timeseries(
@@ -3285,6 +3289,8 @@ impl UsageQueryStore for PostgresStore {
                                 estimated_cost_usd,
                                 total_latency_ms,
                                 fallback_count,
+                                fallback_rate: fallback_rate(request_count, fallback_count),
+                                ..UsageSummary::default()
                             },
                         },
                     )
@@ -3355,6 +3361,8 @@ impl UsageQueryStore for PostgresStore {
                                 estimated_cost_usd,
                                 total_latency_ms,
                                 fallback_count,
+                                fallback_rate: fallback_rate(request_count, fallback_count),
+                                ..UsageSummary::default()
                             },
                         },
                     )
@@ -3384,6 +3392,7 @@ impl UsageQueryStore for PostgresStore {
                 u.service_name,
                 u.task_id,
                 u.run_id,
+                u.trace_id,
                 u.fallback_count,
                 COALESCE(g.guardrail_action_count, 0)::bigint,
                 u.created_at
@@ -3426,6 +3435,7 @@ impl UsageQueryStore for PostgresStore {
                     service_name: row.try_get("service_name")?,
                     task_id: row.try_get("task_id")?,
                     run_id: row.try_get("run_id")?,
+                    trace_id: row.try_get("trace_id")?,
                     fallback_count: row.try_get("fallback_count")?,
                     guardrail_action_count: row.try_get("guardrail_action_count")?,
                     created_at: row.try_get("created_at")?,
@@ -3478,6 +3488,54 @@ impl UsageQueryStore for PostgresStore {
                     )
                     .collect()
             })
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn unused_keys(&self, query: UsageQuery) -> GatewayResult<Vec<UnusedKey>> {
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            SELECT k.id, k.key_prefix, k.project_id, k.created_at, k.last_used_at
+            FROM api_keys k
+            WHERE k.disabled = false
+              AND k.revoked_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM usage_events u
+                  WHERE u.key_id = k.id
+            "#,
+        );
+        if let Some(from) = query.from {
+            builder.push(" AND u.created_at >= ");
+            builder.push_bind(from);
+        }
+        if let Some(to) = query.to {
+            builder.push(" AND u.created_at < ");
+            builder.push_bind(to);
+        }
+        builder.push(")");
+        if let Some(project_id) = query.project_id {
+            builder.push(" AND k.project_id = ");
+            builder.push_bind(project_id);
+        }
+        builder.push(" ORDER BY k.created_at ASC LIMIT ");
+        builder.push_bind(query.limit.unwrap_or(100).clamp(1, 1_000));
+
+        builder
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .into_iter()
+            .map(|row| {
+                Ok(UnusedKey {
+                    key_id: row.try_get("id")?,
+                    key_prefix: row.try_get("key_prefix")?,
+                    project_id: row.try_get("project_id")?,
+                    created_at: row.try_get("created_at")?,
+                    last_used_at: row.try_get("last_used_at")?,
+                })
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()
             .map_err(|_| GatewayError::StoreUnavailable)
     }
 }
@@ -3646,6 +3704,7 @@ impl ProviderIntelligenceStore for PostgresStore {
                 route,
                 provider,
                 service_name,
+                trace_id,
                 policy_trace,
                 guardrail_trace,
                 selection_trace,
@@ -3674,6 +3733,7 @@ impl ProviderIntelligenceStore for PostgresStore {
                 route,
                 provider,
                 service_name,
+                trace_id,
                 policy_trace,
                 guardrail_trace,
                 selection_trace,
@@ -3684,11 +3744,12 @@ impl ProviderIntelligenceStore for PostgresStore {
                 redaction_version,
                 created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (request_id) DO UPDATE SET
                 route = EXCLUDED.route,
                 provider = EXCLUDED.provider,
                 service_name = EXCLUDED.service_name,
+                trace_id = EXCLUDED.trace_id,
                 policy_trace = EXCLUDED.policy_trace,
                 guardrail_trace = EXCLUDED.guardrail_trace,
                 selection_trace = EXCLUDED.selection_trace,
@@ -3703,6 +3764,7 @@ impl ProviderIntelligenceStore for PostgresStore {
         .bind(bundle.route.map(route_str))
         .bind(bundle.provider.map(provider_str))
         .bind(&bundle.service_name)
+        .bind(&bundle.trace_id)
         .bind(Json(&bundle.policy_trace))
         .bind(Json(&bundle.guardrail_trace))
         .bind(Json(&bundle.selection_trace))
@@ -4772,6 +4834,11 @@ fn append_usage_filters_with_alias<'a>(
         separated.push(" = ");
         separated.push_bind_unseparated(task_id);
     }
+    if let Some(run_id) = query.run_id.as_deref() {
+        separated.push(column("run_id"));
+        separated.push(" = ");
+        separated.push_bind_unseparated(run_id);
+    }
     if let Some(model) = query.model.as_deref() {
         separated.push(column("model"));
         separated.push(" = ");
@@ -4782,6 +4849,70 @@ fn append_usage_filters_with_alias<'a>(
         separated.push(" = ");
         separated.push_bind_unseparated(status);
     }
+    if let Some(trace_id) = query.trace_id.as_deref() {
+        separated.push(column("trace_id"));
+        separated.push(" = ");
+        separated.push_bind_unseparated(trace_id);
+    }
+    if let Some(min_cost_usd) = query.min_cost_usd {
+        separated.push(column("estimated_cost"));
+        separated.push(" >= ");
+        separated.push_bind_unseparated(min_cost_usd.max(0.0));
+    }
+}
+
+async fn enrich_usage_summary(
+    pool: &PgPool,
+    query: &UsageQuery,
+    summary: &mut UsageSummary,
+) -> GatewayResult<()> {
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT
+            COUNT(*) FILTER (WHERE status_code = 403)::bigint,
+            COUNT(*) FILTER (WHERE status_code = 429)::bigint,
+            COUNT(*) FILTER (WHERE status_code = 402)::bigint,
+            COUNT(*) FILTER (WHERE estimated_cost >=
+        "#,
+    );
+    builder.push_bind(query.min_cost_usd.unwrap_or(1.0).max(0.0));
+    builder.push(
+        r#")::bigint
+        FROM usage_events
+        "#,
+    );
+    append_usage_filters(&mut builder, query);
+    let (
+        policy_denial_count,
+        rate_limit_denial_count,
+        budget_denial_count,
+        expensive_request_count,
+    ) = builder
+        .build_query_as::<(i64, i64, i64, i64)>()
+        .fetch_one(pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+    let mut guardrail_builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT COUNT(DISTINCT u.request_id)::bigint
+        FROM usage_events u
+        INNER JOIN guardrail_execution_events g ON g.request_id = u.request_id
+        "#,
+    );
+    append_usage_filters_with_alias(&mut guardrail_builder, query, "u");
+    guardrail_builder.push(" AND g.action = 'block'");
+    summary.guardrail_block_count = guardrail_builder
+        .build_query_scalar::<i64>()
+        .fetch_one(pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+    summary.policy_denial_count = policy_denial_count;
+    summary.rate_limit_denial_count = rate_limit_denial_count;
+    summary.budget_denial_count = budget_denial_count;
+    summary.expensive_request_count = expensive_request_count;
+    Ok(())
 }
 
 fn append_guardrail_event_filters<'a>(
@@ -4855,6 +4986,16 @@ fn summary_from_row(
         estimated_cost_usd,
         total_latency_ms,
         fallback_count,
+        fallback_rate: fallback_rate(request_count, fallback_count),
+        ..UsageSummary::default()
+    }
+}
+
+fn fallback_rate(request_count: i64, fallback_count: i64) -> f64 {
+    if request_count <= 0 {
+        0.0
+    } else {
+        fallback_count as f64 / request_count as f64
     }
 }
 
@@ -4968,6 +5109,7 @@ fn debug_bundle_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<DebugBund
         route: route.as_deref().map(parse_route_value).transpose()?,
         provider: provider.as_deref().map(parse_provider_value).transpose()?,
         service_name: row.try_get("service_name").ok().flatten(),
+        trace_id: row.try_get("trace_id").ok().flatten(),
         policy_trace: policy_trace.0,
         guardrail_trace: guardrail_trace.0,
         selection_trace: selection_trace.0,

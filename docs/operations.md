@@ -58,6 +58,67 @@ can fetch and map the export.
 
 Use readiness probes for traffic routing and liveness probes for process restart decisions. Do not use `/admin-ui/healthz` as a dependency readiness signal.
 
+Prometheus metrics are intentionally low-cardinality. Metric labels are bounded
+to route, provider, status class, decision kind, denial reason, circuit state,
+guardrail name, guardrail mode, guardrail action, failure policy, and stream
+mode. Do not add request IDs, trace IDs, raw virtual keys, prompt text, raw
+paths, or unbounded model/user values as metric labels.
+
+Core metric names:
+
+| Metric | Type | Labels |
+| --- | --- | --- |
+| `gateway_requests_total` | counter | none |
+| `gateway_requests_by_dimension_total` | counter | `route`, `provider`, `status_class` |
+| `gateway_request_duration_ms` | histogram | `route`, `provider`, `stream` |
+| `gateway_upstream_duration_ms` | histogram | `route`, `provider`, `stream` |
+| `gateway_guardrail_duration_ms` | histogram | `route`, `provider`, `stream` |
+| `gateway_first_token_latency_ms` | histogram-compatible counter and buckets | `route`, `provider`, `stream` on buckets |
+| `gateway_auth_failures_total` | counter | none |
+| `gateway_denials_total` | counter | `kind`, `route`, `reason` |
+| `gateway_rate_limit_rejections_total` | counter | none |
+| `gateway_budget_rejections_total` | counter | none |
+| `gateway_provider_fallbacks_by_provider_total` | counter | `from_provider`, `to_provider`, `reason` |
+| `gateway_active_requests` | gauge | none |
+| `gateway_active_streams` | gauge | none |
+| `gateway_circuit_breaker_state` | gauge | `provider`, `name`, `state` |
+
+Example Prometheus scrape configuration:
+
+```yaml
+scrape_configs:
+  - job_name: relayna-gateway
+    metrics_path: /admin-ui/metrics
+    static_configs:
+      - targets: ["relayna-gateway-control:8081"]
+```
+
+Grafana panels should prefer request rate, p95 request/upstream duration,
+first-token latency, denials by kind, guardrail block count, fallback rate,
+active streams, and circuit state. Use `route` and `provider` filters only from
+the bounded label sets emitted by the gateway.
+
+## Tracing
+
+Gateway preserves valid W3C `traceparent` headers on upstream provider and
+service calls. When `traceparent` is present, the 32-character trace ID is stored
+on usage events and request debug bundles so operators can move from Studio
+analytics to provider traces or gateway logs without exposing raw keys or
+prompts.
+
+JSON logs include tracing span fields from gateway request, auth verification,
+policy evaluation, guardrail, rate-limit, budget, upstream, and usage recording
+points. Configure `LOG_LEVEL` with standard Rust tracing filters, for example:
+
+```bash
+LOG_LEVEL=info,gateway_proxy=debug,gateway_api=info
+```
+
+If logs are shipped to an OpenTelemetry collector through the deployment
+platform, map the `otel.trace_id` field and `traceparent` header to the same
+trace context. The gateway does not use request IDs or trace IDs as Prometheus
+labels.
+
 ## Budgets and Rate Limits
 
 Virtual key policies can set request-per-minute (`rpm_limit`),

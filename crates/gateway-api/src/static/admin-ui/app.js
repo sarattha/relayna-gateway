@@ -1257,6 +1257,9 @@ async function usage() {
         <label>Provider<input name="provider"></label>
         <label>Model<input name="model"></label>
         <label>Task<input name="task_id"></label>
+        <label>Run<input name="run_id"></label>
+        <label>Status<select name="status"><option value="">All</option><option value="success">Success</option><option value="failure">Failure</option></select></label>
+        <label>Min cost<input name="min_cost_usd" type="number" min="0" step="0.0001"></label>
         <div class="form-actions"><button class="primary">Apply</button></div>
       </form>
     </section>
@@ -1270,21 +1273,36 @@ async function loadUsage(event) {
   event?.preventDefault();
   const form = event ? new FormData(event.target) : new FormData();
   const query = new URLSearchParams();
-  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id"]) {
+  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "status", "min_cost_usd"]) {
     const value = form.get(key);
     if (value) query.set(key, value);
   }
-  const [projectRows, keyRows, serviceRows] = await Promise.all([
+  const [summary, projectRows, keyRows, serviceRows, providerRows, modelRows, unusedKeys] = await Promise.all([
+    api(`/admin-ui/admin/usage/summary?${query}`),
     api(`/admin-ui/admin/usage/by-project?${query}`),
     api(`/admin-ui/admin/usage/by-key?${query}`),
     api(`/admin-ui/admin/usage/by-service?${query}`),
+    api(`/admin-ui/admin/usage/by-provider?${query}`),
+    api(`/admin-ui/admin/usage/by-model?${query}`),
+    api(`/admin-ui/admin/usage/unused-keys?${query}`),
   ]);
   const results = document.querySelector("#usage-results");
   if (!results) return;
   results.innerHTML = `
+    <div class="grid stats">
+      ${stat("Requests", summary.request_count)}
+      ${stat("Failures", summary.failure_count)}
+      ${stat("Cost", money(summary.estimated_cost_usd))}
+      ${stat("Fallback rate", percent(summary.fallback_rate))}
+      ${stat("Expensive", summary.expensive_request_count || 0)}
+      ${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
+    </div>
     <h4>Projects</h4>${usageBreakdownTable(projectRows, projectName)}
     <h4>Keys</h4>${usageBreakdownTable(keyRows, keyName)}
     <h4>Services</h4>${usageBreakdownTable(serviceRows)}
+    <h4>Providers</h4>${usageBreakdownTable(providerRows)}
+    <h4>Models</h4>${usageBreakdownTable(modelRows)}
+    <h4>Unused keys</h4>${unusedKeysTable(unusedKeys)}
   `;
 }
 
@@ -1298,6 +1316,18 @@ function usageBreakdownTable(rows, label = (value) => value) {
       row.summary.failure_count,
       `${row.summary.total_latency_ms} ms`,
       money(row.summary.estimated_cost_usd),
+    ]),
+  );
+}
+
+function unusedKeysTable(rows) {
+  return table(
+    ["Key", "Project", "Created", "Last used"],
+    rows.map((row) => [
+      `<code>${esc(row.key_prefix)}</code>`,
+      esc(projectName(row.project_id || "")),
+      time(row.created_at),
+      row.last_used_at ? time(row.last_used_at) : "never",
     ]),
   );
 }
@@ -1959,6 +1989,10 @@ function time(value) {
 
 function money(value) {
   return value == null ? "n/a" : `$${Number(value).toFixed(4)}`;
+}
+
+function percent(value) {
+  return value == null ? "0.0%" : `${(Number(value) * 100).toFixed(1)}%`;
 }
 
 function esc(value) {
