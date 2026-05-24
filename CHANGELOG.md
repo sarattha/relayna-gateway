@@ -2,6 +2,23 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.2 - 2026-05-24
+
+### Added
+
+- First-time Admin portal setup manual with step-by-step provider, service,
+  project, policy, and key setup guidance.
+- Real Admin UI screenshots for every first-time setup step, captured with demo
+  values and redacted credentials.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.2` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.2` gateway image.
+- Release documentation now treats `v0.1.2` as the current release target while
+  preserving `v0.1.0` as the production freeze baseline.
+
 ## 0.1.0 - 2026-05-24
 
 ### Added

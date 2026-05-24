@@ -147,6 +147,10 @@ or locally registered services. In Keys, choose `Project` for keys that inherit
 those links, or choose `Individual` and use `Select services` to link services
 directly to one key.
 
+For a screenshot-guided walkthrough of the first portal setup, including
+providers, services, projects, policies, and keys, see the
+[First-Time Admin Setup Manual](admin-portal.md#first-time-admin-setup-manual).
+
 ## Configure Guardrails
 
 Guardrails are optional until a key policy selects them. A fresh database seeds

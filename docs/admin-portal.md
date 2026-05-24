@@ -50,6 +50,183 @@ strings such as `keys:create`, `keys:disable`, `policies:update`,
 Admin APIs return `insufficient_operator_scope` when a valid token lacks the
 required scope.
 
+## First-Time Admin Setup Manual
+
+Use this walkthrough after Relayna Gateway is installed, PostgreSQL and Redis
+are reachable, and the control listener is serving `/admin-ui`. It shows the
+recommended first setup order for an admin who needs to make the portal usable
+for one application or team.
+
+The screenshots use the real Admin UI with demo values. Do not paste real
+provider keys, service credentials, operator tokens, or raw virtual keys into
+screenshots, tickets, or shared documents.
+
+### 1. Sign in to the Admin portal
+
+Open the control-plane URL in a browser:
+
+```text
+http://127.0.0.1:8081/admin-ui
+```
+
+Enter the bootstrap operator token from `GATEWAY_ADMIN_TOKEN` or the token
+printed on first startup. The portal stores it in browser session storage and
+uses it only as an Admin API bearer token.
+
+![Admin portal sign-in form](assets/screenshots/admin-first-time-setup/01-admin-ui-sign-in.png)
+
+What to check: the page title is `Gateway Admin`, the token field is empty, and
+the URL is the control-plane `/admin-ui` path. Keep the operator token private.
+
+### 2. Check Overview and readiness
+
+After sign-in, start on Overview. Confirm `Readiness` is `ready`, OpenAI routes
+are enabled as expected, and the active key/service counts match a fresh or
+existing installation.
+
+![Overview readiness dashboard](assets/screenshots/admin-first-time-setup/02-overview-readiness.png)
+
+What to check: readiness must be healthy before setup. If it is not ready,
+verify the database, Redis, and deployment configuration before creating
+providers, services, projects, or keys.
+
+### 3. Configure the Studio connection when imports are used
+
+Open Settings. If Relayna Studio will provide service catalog entries, set the
+Studio backend base URL and optional bearer token. Use the backend URL, not the
+Studio frontend URL.
+
+![Studio connection settings](assets/screenshots/admin-first-time-setup/03-settings-studio-connection.png)
+
+What to check: the token field is write-only. Save the connection, then use
+`Test connection` to confirm the gateway can read Studio services. If your
+deployment does not use Studio imports, leave these fields unset and create
+services manually.
+
+### 4. Create the provider configuration
+
+Open Providers and create the upstream provider entry. For a LiteLLM-backed
+installation, choose `litellm`, set the LiteLLM base URL, enter the write-only
+service credential, and keep the provider enabled.
+
+![Provider creation form](assets/screenshots/admin-first-time-setup/04-provider-create.png)
+
+What to check: after saving, the provider row should show `enabled` and
+`configured`. The portal should never show the credential value again.
+
+### 5. Create or import services
+
+Open Services. Use `Import from Studio` when Studio is connected, or create a
+local service by entering:
+
+- `Name`: stable lowercase service name, such as `invoice-agent`.
+- `Route pattern`: usually `/services/<service-name>/*`.
+- `Upstream URL`: the service backend reachable by the gateway.
+- `Credential`: write-only service credential when the upstream needs one.
+- `Methods`: the HTTP methods the gateway may forward.
+- `Timeout`, `Max body bytes`, `Cost mode`, and `Estimated cost`: operational
+  limits and usage accounting defaults.
+
+![Service creation and import controls](assets/screenshots/admin-first-time-setup/05-service-create-or-import.png)
+
+What to check: the saved service should be enabled, have the intended route
+pattern, and show credential `configured` when a credential is required. For
+Studio imports, preview changes before importing or syncing.
+
+### 6. Confirm exposed routes
+
+Open Routes. Confirm the OpenAI-compatible routes and registered service routes
+that clients will call.
+
+![Routes confirmation view](assets/screenshots/admin-first-time-setup/06-routes-confirmation.png)
+
+What to check: `/v1/chat/completions` and `/v1/responses` should be enabled
+when clients need OpenAI-compatible traffic. Registered service routes should
+show the expected route pattern, allowed methods, upstream, and credential
+state.
+
+### 7. Create the project
+
+Open Projects and create a project for the application, team, or environment
+that will own the first virtual key.
+
+![Project creation form](assets/screenshots/admin-first-time-setup/07-project-create.png)
+
+What to check: use a name admins can recognize later in usage, audit, and key
+ownership views. Projects are the easiest way to share service access across
+multiple keys for the same application.
+
+### 8. Link services to the project
+
+In the project row, open `Select services`, choose the services the project may
+call, apply the selection, and save the project services.
+
+![Project service selection modal](assets/screenshots/admin-first-time-setup/08-project-link-services.png)
+
+What to check: only link services that this project should be allowed to use.
+Project-owned keys inherit these service links, so avoid adding broad access
+for temporary testing.
+
+### 9. Configure policy before issuing the key
+
+Open Keys. Configure the policy directly on the key, or create an inherited
+policy layer first when the same limits should apply to many keys. For a first
+project key, set the routes, models, providers, rate limits, token limits,
+budgets, request/response byte limits, streaming/tools settings, allowed UTC
+hours, and guardrails that the application needs.
+
+![Key policy controls](assets/screenshots/admin-first-time-setup/09-policy-layer-or-key-policy.png)
+
+What to check: choose the narrowest route, model, provider, and service access
+that still supports the application. Set budgets and rate limits before handing
+the key to clients.
+
+### 10. Create the project-owned virtual key
+
+In Keys, keep `Owner` set to `Project`, choose the project, set expiration or
+`No expiration` intentionally, then create the key. The raw virtual key is shown
+once.
+
+![Virtual key shown once modal](assets/screenshots/admin-first-time-setup/10-key-create.png)
+
+What to check: store the raw key immediately in your secret manager. After the
+modal is closed, the portal only shows the key prefix. Do not paste raw
+`rk_live_` values into screenshots, chat, issue trackers, or logs.
+
+### 11. Simulate policy before sending traffic
+
+Use the Policy simulator on the Keys view. Select the new key, enter the route,
+model, provider, request size, response size, streaming, and tools settings
+that the application will use, then run the simulation.
+
+![Policy simulator result](assets/screenshots/admin-first-time-setup/11-policy-simulator.png)
+
+What to check: the result should allow the request and show the expected route
+match, provider, policy version, guardrail plan, rate-limit projection, and
+budget projection. Fix denials before distributing the key.
+
+### 12. Verify health, usage, and audit
+
+After setup, open Health, Usage, and Audit. Health confirms provider and service
+status, Usage confirms traffic and cost reporting once requests start, and
+Audit confirms setup actions were recorded without exposing secrets.
+
+![Health verification view](assets/screenshots/admin-first-time-setup/12-health-usage-audit-verification.png)
+
+What to check: providers and services should be healthy or intentionally
+disabled, usage filters should show the project/key/service once requests run,
+and audit rows should include provider, service, project, policy, and key
+changes with redacted snapshots.
+
+First-time setup is complete when:
+
+- Provider configuration is enabled and credential status is configured.
+- Required services are enabled and reachable by the gateway.
+- The project is linked to only the services it needs.
+- The virtual key is project-owned and stored in a secret manager.
+- Policy simulation allows the intended route, model, provider, and service.
+- Health, Usage, and Audit show the expected operational state.
+
 ## Views
 
 - Overview shows readiness, request count, active keys, enabled OpenAI routes, enabled services, failures, cost, and provider health.
