@@ -16,6 +16,7 @@ FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 relayna \

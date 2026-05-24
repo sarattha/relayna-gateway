@@ -52,7 +52,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/sarattha/relayna-gateway:0.1.2
+          image: ghcr.io/sarattha/relayna-gateway:0.1.3
           imagePullPolicy: IfNotPresent
           ports:
             - name: proxy
