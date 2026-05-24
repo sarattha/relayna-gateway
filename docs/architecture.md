@@ -46,7 +46,7 @@ The control listener exposes:
 - `/admin-ui/admin/*` APIs for operator actions.
 - `/admin-ui` for the embedded operator portal.
 
-Current branch additions after `v0.0.14` extend this control plane with scoped
+Version `0.1.0` additions after `v0.0.14` extend this control plane with scoped
 operator authorization, audit events, policy simulation, policy layers,
 provider health state, debug bundles, service import versioning and rollback,
 and expanded usage analytics. The public feature overview is in

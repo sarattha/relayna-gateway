@@ -1,8 +1,7 @@
 # Current Feature Highlights
 
-This page summarizes the current branch work after the `v0.0.14` production
-freeze baseline. Treat these capabilities as current-branch additions until a
-new release tag is cut.
+This page summarizes the `v0.1.0` feature set added after the `v0.0.14`
+production freeze baseline.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -109,7 +108,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The post-freeze branch hardens CI and release workflows with strict dependency,
+The `v0.1.0` release hardens CI and release workflows with strict dependency,
 secret, static-analysis, filesystem, and image checks. Release images publish
 with SBOM, signature, and provenance artifacts, and release metadata validation
 guards tag, workspace version, and changelog alignment.

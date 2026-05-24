@@ -1,12 +1,12 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.0.14` is the current release target.
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.0` is the current release target.
 
-The current branch is ahead of `v0.0.14` with unreleased feature work covering
-Admin UI 2.0, operator governance, policy governance, provider intelligence,
-observability analytics, and supply-chain hardening. See
-[Current Feature Highlights](current-features.md) for the feature delta that
-should feed the next release notes.
+Version `0.1.0` is the first feature release after the `v0.0.14` production
+freeze baseline. It covers Admin UI 2.0, operator governance, policy
+governance, provider intelligence, observability analytics, and supply-chain
+hardening. See [Current Feature Highlights](current-features.md) for the
+feature overview.
 
 ## Release Checklist
 
@@ -15,7 +15,7 @@ should feed the next release notes.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.0.14
+   python3 scripts/validate-release-metadata.py v0.1.0
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -34,15 +34,15 @@ should feed the next release notes.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.0.14 .
+   docker build -t relayna-gateway:0.1.0 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.0.14 -m "Release v0.0.14"
-   git push origin v0.0.14
+   git tag -a v0.1.0 -m "Release v0.1.0"
+   git push origin v0.1.0
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -52,11 +52,11 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.0.14`, the workflow publishes:
+For `v0.1.0`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.0.14
-ghcr.io/sarattha/relayna-gateway:0.0
+ghcr.io/sarattha/relayna-gateway:0.1.0
+ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```
 

@@ -2,6 +2,46 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.0 - 2026-05-24
+
+### Added
+
+- Admin UI 2.0 source package and design system, with Monitor, Discover, and
+  Govern navigation, reusable operator-console components, responsive layout
+  rules, and floating message boxes.
+- Scoped operator governance with role/scope metadata, scope-aware admin
+  authorization, `insufficient_operator_scope` failures, and append-only audit
+  event reads.
+- Policy governance workflows for safe key presets, lifecycle metadata,
+  inherited policy layers, policy simulation, stricter per-request limits, and
+  stable request/response size-limit errors.
+- Provider intelligence orchestration with routing strategies, provider health
+  state, circuit breaker state, retry-safe fallback policy, redacted debug
+  bundles, and service import preview, activation, version history, and
+  rollback.
+- Observability analytics for trace-aware usage records, usage breakdowns,
+  timeseries data, unused-key discovery, task drilldowns, JSON/CSV exports, and
+  low-cardinality Prometheus metrics.
+- Supply-chain and deployment hardening, including strict CI security scans,
+  release metadata validation, SBOM, signing, provenance, hardened Kubernetes
+  defaults, and documented temporary security exceptions.
+- Current Feature Highlights documentation with sanitized Admin UI screenshots
+  for the new operator workflows.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.0` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.0` gateway image.
+- Release documentation now treats `v0.0.14` as the production freeze baseline
+  and `v0.1.0` as the next feature release target.
+
+### Security
+
+- Admin UI and provider-intelligence documentation now call out write-only
+  credential handling, show-once token behavior, redacted debug bundles,
+  sanitized audit snapshots, and bounded metric labels.
+
 ## 0.0.14 - 2026-05-22
 
 ### Changed
