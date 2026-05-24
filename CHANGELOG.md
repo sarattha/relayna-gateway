@@ -2,6 +2,22 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.3 - 2026-05-24
+
+### Changed
+
+- Workspace crate versions now share the `0.1.3` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.3` gateway image.
+- Release documentation now treats `v0.1.3` as the current release target while
+  preserving `v0.1.0` as the production freeze baseline.
+
+### Fixed
+
+- Release images now apply available Debian runtime package security upgrades
+  before installing runtime dependencies. This lets the Trivy image scan pick
+  up fixed Debian security packages such as `libgnutls30` during tag releases.
+
 ## 0.1.2 - 2026-05-24
 
 ### Added
