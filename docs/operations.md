@@ -58,6 +58,12 @@ can fetch and map the export.
 
 Use readiness probes for traffic routing and liveness probes for process restart decisions. Do not use `/admin-ui/healthz` as a dependency readiness signal.
 
+Current operator workflows add provider health state, circuit breaker
+status, debug bundles, service import versions, trace-aware usage analytics,
+and audit-event review to the control plane. See
+[Current Feature Highlights](current-features.md) for a feature-oriented
+overview with Admin UI screenshots.
+
 Prometheus metrics are intentionally low-cardinality. Metric labels are bounded
 to route, provider, status class, decision kind, denial reason, circuit state,
 guardrail name, guardrail mode, guardrail action, failure policy, and stream
@@ -174,7 +180,7 @@ Before deploying a new release:
 3. Run CI, including Rust checks, security scans, admin UI tests, freeze
    perimeter tests, and docs build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.0.14`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.0`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
 
 ## Supply Chain and Runtime Hardening

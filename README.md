@@ -4,6 +4,11 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
+Version `0.1.0` establishes the current production freeze baseline with Admin
+UI 2.0, scoped operator governance, policy simulation and inherited layers,
+provider intelligence, richer usage analytics, and supply-chain hardening. See
+`docs/current-features.md` for the public feature highlights and screenshots.
+
 ## What This Repository Contains
 
 - `crates/gateway-api`: Axum control API, health, readiness, metrics, admin APIs, embedded admin UI, and process startup.
@@ -68,6 +73,11 @@ Useful endpoints:
 - Usage export JSON: `http://127.0.0.1:8081/admin-ui/admin/usage/export.json`
 - Usage export CSV: `http://127.0.0.1:8081/admin-ui/admin/usage/export.csv`
 
+Post-freeze admin endpoints also include scoped audit events, policy
+simulation, policy layers, provider health state, debug bundles, service import
+preview/activation/version/rollback, and expanded usage analytics. These are
+documented in `docs/current-features.md`.
+
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are startup fallback
 settings. Operators can also open Admin portal Settings after Gateway starts to
 set, replace, test, or clear the Studio backend connection. Admin-saved settings
@@ -84,7 +94,7 @@ curl http://127.0.0.1:8000/studio/gateway/services
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.0.14 .
+docker build -t relayna-gateway:0.1.0 .
 ```
 
 Run it:
@@ -98,7 +108,7 @@ docker run --rm \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
   -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.0.14
+  relayna-gateway:0.1.0
 ```
 
 `GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
@@ -108,7 +118,7 @@ Admin portal instead.
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.0.14`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.0`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Budgets, TPM, and Usage Exports
 
@@ -222,5 +232,7 @@ See:
 - `docs/getting-started.md`
 - `docs/deployment.md`
 - `docs/guardrails.md`
+- `docs/current-features.md`
+- `docs/provider-intelligence.md`
 - `docs/operations.md`
 - `CHANGELOG.md`

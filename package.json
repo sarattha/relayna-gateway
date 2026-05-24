@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "build:admin-ui": "vite build --config crates/gateway-api/admin-ui/vite.config.ts",
+    "test": "node tests/admin-ui.test.mjs && node tests/admin-ui-design-system.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vite": "^5.4.19"
+  }
+}

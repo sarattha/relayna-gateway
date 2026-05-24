@@ -14,6 +14,17 @@ MVP design source of truth.
 
 ### Mandatory Skill Usage
 
+#### `$karpathy`
+
+Use `$karpathy` when writing, reviewing, or refactoring code in this repository.
+It keeps work assumption-aware, simple, surgically scoped, and tied to explicit
+verification criteria.
+
+Apply it before implementation work so the plan, edits, and final handoff stay
+focused on the user's request. It does not replace `$implementation-strategy`,
+`$production-freeze-guard`, `$code-change-verification`, or
+`$pr-draft-summary`; use those skills when their trigger conditions apply.
+
 #### `$code-change-verification`
 
 Run `$code-change-verification` before marking work complete when changes affect
@@ -47,7 +58,7 @@ external state boundary, or the user explicitly asks for a migration path.
 
 #### `$production-freeze-guard`
 
-Relayna Gateway v0.0.14 is the production freeze baseline. Use
+Relayna Gateway v0.1.0 is the production freeze baseline. Use
 `$production-freeze-guard` before adding features or changing public routes,
 exported APIs, external configuration, persisted schemas, Redis key/value
 formats, authentication behavior, policy decisions, usage event shapes,
@@ -55,11 +66,11 @@ provider routing, streaming behavior, telemetry fields, admin UI contracts,
 release metadata, or CI/build behavior.
 
 The freeze gate is test-based: future features are allowed only when they keep
-the v0.0.14 perimeter tests passing, or when the same change intentionally
+the v0.1.0 perimeter tests passing, or when the same change intentionally
 updates those tests with compatibility notes. Run:
 
 ```bash
-node tests/freeze-v0.0.14-perimeter.test.mjs
+node tests/freeze-v0.1.0-perimeter.test.mjs
 ```
 
 Use `$implementation-strategy` as part of the freeze guard workflow when the
@@ -77,6 +88,19 @@ Use this by default after runtime code, tests, gateway behavior, build/test
 configuration, or docs with behavior impact are changed. Skip it only for
 trivial conversation-only work, repo-meta/doc-only tasks without behavior
 impact, or when the user explicitly says not to include the PR draft block.
+
+### Admin UI 2.0 Design System
+
+Before changing the Admin UI, read `SKILLS.md` and apply the Admin UI 2.0
+Design System guidance. This applies to changes under
+`crates/gateway-api/admin-ui/`, generated static assets under
+`crates/gateway-api/src/static/admin-ui/`, admin UI tests, and operator-facing
+Admin UI documentation.
+
+Keep the Vite/TypeScript source package as the source of truth and regenerate
+the checked-in static assets with `npm run build:admin-ui`. Preserve the
+existing `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` asset
+contract unless a compatibility review explicitly changes it.
 
 ### ExecPlans
 
@@ -151,7 +175,7 @@ For policy, authentication, usage, and proxy behavior, favor tests that prove:
 - Policy denials use stable status codes and error shapes.
 - Usage events are inserted for both success and failure.
 - Streaming paths do not buffer complete responses.
-- Production freeze perimeter tests continue to pin v0.0.14 routes, error codes,
+- Production freeze perimeter tests continue to pin v0.1.0 routes, error codes,
   config names, migrations, Redis key formats, release metadata, and admin UI
   endpoint assumptions.
 
@@ -176,7 +200,7 @@ compatibility or add migration coverage when a change crosses a released API,
 persisted data, or wire-protocol boundary.
 
 For post-freeze changes, also use `$production-freeze-guard` and compare impact
-against v0.0.14. Do not remove, rename, or change the meaning of a frozen surface
+against v0.1.0. Do not remove, rename, or change the meaning of a frozen surface
 without an explicit compatibility decision and matching perimeter test update.
 
 ## Project Structure Guide
@@ -196,8 +220,11 @@ workers that need metered provider access.
 
 - `internal/design-manifesto.md`: MVP mission, architecture principles, and
   phase checklist.
+- `SKILLS.md`: repository-local UI skill guidance, including the Admin UI 2.0
+  Design System rules for future frontend work.
 - `crates/gateway-api/`: Axum control API routes, middleware, errors, request
   IDs, health/readiness, admin APIs, and graceful shutdown.
+- `crates/gateway-api/admin-ui/`: Vite/TypeScript Admin UI 2.0 source package.
 - `crates/gateway-core/`: Authentication, policy, routing, rate limits,
   budgets, usage, and pricing logic.
 - `crates/gateway-proxy/`: Pingora proxy services for LiteLLM, direct provider,

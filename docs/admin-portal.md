@@ -2,6 +2,33 @@
 
 The admin portal is a static operator console embedded in `gateway-api`. It is served from the control listener at `/admin-ui` and calls the same `/admin-ui/admin/*` APIs used by automation.
 
+For a current-branch tour of the current Admin UI 2.0 redesign and
+related governance, provider intelligence, usage analytics, and supply-chain
+features, see [Current Feature Highlights](current-features.md).
+
+## Frontend Source
+
+Admin UI 2.0 source files live in
+`crates/gateway-api/admin-ui`. Build the Vite/TypeScript source into the static
+assets embedded by `gateway-api` with:
+
+```bash
+npm ci
+npm run build:admin-ui
+```
+
+The generated files remain checked in under
+`crates/gateway-api/src/static/admin-ui` so the Rust control-plane binary can
+serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
+separate frontend deployment.
+
+The Admin UI 2.0 shell groups operator work into Monitor, Discover, and Govern
+navigation domains. Monitor contains overview, health, and usage workflows;
+Discover contains providers, services, routes, and projects; Govern contains
+keys, guardrails, audit, and settings. The source package owns design-system
+tokens, view metadata, templates, and reusable components, while the generated
+asset paths stay stable for deployed gateways.
+
 ## Authentication
 
 Use the operator token seeded by `GATEWAY_ADMIN_TOKEN` on first startup, or the
@@ -50,18 +77,31 @@ required scope.
   policy and use neutral defaults unless an operator sets a field.
 - Providers configures LiteLLM and internal-service endpoints with write-only credentials.
 - Routes disables and enables the global OpenAI-compatible LiteLLM routes `/v1/chat/completions` and `/v1/responses`, and lists registered service routes with their allowed methods and credential status.
-- Services creates, imports from Relayna Studio, edits, sync-checks, disables, enables, and deletes service registrations. Method selection uses explicit checkboxes for `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
+- Services creates, imports from Relayna Studio, syncs selected Studio catalog
+  entries, previews added/changed/removed/invalid import diffs, edits,
+  sync-checks, disables, enables, and deletes service registrations. Method
+  selection uses explicit checkboxes for `GET`, `POST`, `PUT`, `PATCH`, and
+  `DELETE`.
 - Usage filters usage by project, virtual key, service, route, provider, model,
-  task ID, run ID, status, and minimum cost, then shows cost, errors, fallback
-  rate, guardrail blocks, project/key/service/provider/model breakdowns, unused
-  keys, and exportable row-level usage data.
+  task ID, run ID, trace ID, status, and minimum cost, then shows cost, errors,
+  fallback rate, guardrail blocks, project/key/service/provider/model/task
+  breakdowns, timeseries rows, unused keys, task drilldowns, and JSON/CSV
+  exportable row-level usage data.
 - Guardrails shows the gateway guardrail catalog, recent sanitized execution
   events, and execution summaries. Key create/edit forms can set mandatory,
   optional, and forbidden guardrails.
+- Audit shows read-only operator audit events with filters for action, target
+  type, target ID, operator token ID, and limit. Rows include timestamp, actor,
+  request ID, IP/user-agent metadata, target, action, and redacted before/after
+  snapshots.
 - Health shows provider and service request, error, timeout, fallback, and
   latency status. Provider health state also exposes active check status,
   passive success/failure counters, circuit state, cooldown, and last error
-  metadata.
+  metadata. Operators with provider update scope can write explicit provider
+  health state for degraded, open-circuit, cooldown, and last-error situations.
+- Settings includes Studio connection controls and static release/security
+  posture references for v0.1.0 freeze boundaries and supply-chain exception
+  guidance.
 
 ## Security Notes
 

@@ -30,7 +30,9 @@ of that schema.
 | Guardrails | `guardrail_definitions`, `guardrail_execution_events` | Stores guardrail catalog entries and execution audit records. |
 | Studio settings | `studio_connection_settings` | Stores the optional Relayna Studio import connection. |
 | Operators | `operator_tokens` | Stores hashed tokens for `/admin-ui/admin/*` and `/admin-ui` access. |
-| Usage | `usage_events` | Stores request accounting for admin usage views, exports, budget rehydration, and Relayna Studio consumption. |
+| Audit | `audit_events` | Stores append-only operator mutation records with redacted snapshots. |
+| Provider intelligence | `provider_health_states`, `request_debug_bundles`, `service_registry_snapshots` | Stores health/circuit state, sanitized request debug bundles, and import version history. |
+| Usage | `usage_events` | Stores request accounting for admin usage views, exports, budget rehydration, Relayna Studio consumption, and trace-aware analytics. |
 
 ## Required Operational Data
 
@@ -57,6 +59,11 @@ of that schema.
 - `usage_events` and `guardrail_execution_events` are append-only operational
   records used by admin usage, exports, budget rehydration, observability, and
   audit workflows.
+- Provider health state, request debug bundles, service registry snapshots,
+  operator scopes, audit events, policy layers, and usage trace indexes are
+  `v0.1.0` additions. See
+  [Current Feature Highlights](current-features.md) for the operator-facing
+  feature summary.
 
 ## Table Reference
 
