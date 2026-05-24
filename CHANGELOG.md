@@ -33,8 +33,8 @@ All notable changes to Relayna Gateway are documented in this file.
 - Workspace crate versions now share the `0.1.0` release version.
 - Deployment examples and the baseline Kubernetes image now target the
   `0.1.0` gateway image.
-- Release documentation now treats `v0.0.14` as the production freeze baseline
-  and `v0.1.0` as the next feature release target.
+- Release documentation now treats `v0.1.0` as both the feature release target
+  and the production freeze baseline for future compatibility checks.
 
 ### Security
 

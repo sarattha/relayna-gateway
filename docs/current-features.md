@@ -1,7 +1,7 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.0` feature set added after the `v0.0.14`
-production freeze baseline.
+This page summarizes the `v0.1.0` feature set that now forms the production
+freeze baseline.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -119,7 +119,7 @@ no privilege escalation, and all Linux capabilities dropped. Proxy and control
 plane Services remain separate, and the control plane should stay private or
 protected by identity-aware access.
 
-The v0.0.14 freeze perimeter test pins the production baseline for public
+The v0.1.0 freeze perimeter test pins the production baseline for public
 routes, admin route inventory, error codes, config names, migrations, Redis key
 formats, release metadata, and Admin UI endpoint assumptions. Future changes
 should keep that perimeter passing unless a compatibility decision explicitly

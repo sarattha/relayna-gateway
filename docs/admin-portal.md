@@ -100,7 +100,7 @@ required scope.
   metadata. Operators with provider update scope can write explicit provider
   health state for degraded, open-circuit, cooldown, and last-error situations.
 - Settings includes Studio connection controls and static release/security
-  posture references for v0.0.14 freeze boundaries and supply-chain exception
+  posture references for v0.1.0 freeze boundaries and supply-chain exception
   guidance.
 
 ## Security Notes

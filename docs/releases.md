@@ -2,8 +2,8 @@
 
 Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.0` is the current release target.
 
-Version `0.1.0` is the first feature release after the `v0.0.14` production
-freeze baseline. It covers Admin UI 2.0, operator governance, policy
+Version `0.1.0` is the current production freeze baseline. It covers Admin UI
+2.0, operator governance, policy
 governance, provider intelligence, observability analytics, and supply-chain
 hardening. See [Current Feature Highlights](current-features.md) for the
 feature overview.
@@ -27,7 +27,7 @@ feature overview.
    gitleaks detect --source . --redact
    semgrep scan --config .semgrep.yml
    node tests/admin-ui.test.mjs
-   node tests/freeze-v0.0.14-perimeter.test.mjs
+   node tests/freeze-v0.1.0-perimeter.test.mjs
    mkdocs build --strict
    ```
 
@@ -64,7 +64,7 @@ Release artifacts include `CHANGELOG.md` and an SPDX JSON SBOM named
 `relayna-gateway-<tag>.spdx.json`. Verify image signatures with Cosign against
 the GHCR image digest published by the release workflow.
 
-The v0.0.14 production freeze perimeter is pinned by
-`tests/freeze-v0.0.14-perimeter.test.mjs`. Post-freeze features should preserve
+The v0.1.0 production freeze perimeter is pinned by
+`tests/freeze-v0.1.0-perimeter.test.mjs`. Post-freeze features should preserve
 that perimeter unless a release intentionally updates the compatibility notes
 and the matching test expectations.

@@ -61,7 +61,7 @@ of that schema.
   audit workflows.
 - Provider health state, request debug bundles, service registry snapshots,
   operator scopes, audit events, policy layers, and usage trace indexes are
-  `v0.1.0` additions after `v0.0.14`. See
+  `v0.1.0` additions. See
   [Current Feature Highlights](current-features.md) for the operator-facing
   feature summary.
 
