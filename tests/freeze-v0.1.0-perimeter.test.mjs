@@ -274,6 +274,7 @@ test("PostgreSQL migration inventory is pinned", () => {
     "20260523000100_policy_governance_lifecycle.sql",
     "20260523000200_provider_intelligence.sql",
     "20260523000300_phase_4_observability_analytics.sql",
+    "20260525000100_service_health_check_paths.sql",
   ]);
 });
 

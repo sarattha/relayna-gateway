@@ -116,6 +116,10 @@ td code {
   display: none !important;
 }
 
+.muted-field {
+  opacity: 0.55;
+}
+
 .login-shell {
   min-height: 100vh;
   display: grid;

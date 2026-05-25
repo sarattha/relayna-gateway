@@ -41,6 +41,8 @@ pub struct ServiceRegistration {
     pub studio_service_id: Option<String>,
     pub route_pattern: String,
     pub upstream_base_url: Option<String>,
+    pub health_check_path: Option<String>,
+    pub health_check_method: String,
     pub enabled: bool,
     pub allowed_methods: Vec<String>,
     pub timeout_ms: i64,
@@ -68,6 +70,10 @@ pub struct ServiceCreateRequest {
     pub route_pattern: Option<String>,
     #[serde(default)]
     pub upstream_base_url: Option<String>,
+    #[serde(default)]
+    pub health_check_path: Option<String>,
+    #[serde(default = "default_health_check_method")]
+    pub health_check_method: String,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     #[serde(default = "default_allowed_methods")]
@@ -92,6 +98,8 @@ pub struct ServicePatchRequest {
     pub studio_service_id: Option<Option<String>>,
     pub route_pattern: Option<String>,
     pub upstream_base_url: Option<Option<String>>,
+    pub health_check_path: Option<Option<String>>,
+    pub health_check_method: Option<String>,
     pub enabled: Option<bool>,
     pub allowed_methods: Option<Vec<String>>,
     pub credential: Option<Option<String>>,
@@ -113,6 +121,10 @@ pub struct StudioServiceImportRequest {
     pub route_pattern: Option<String>,
     #[serde(default)]
     pub upstream_base_url: Option<String>,
+    #[serde(default)]
+    pub health_check_path: Option<String>,
+    #[serde(default = "default_health_check_method")]
+    pub health_check_method: String,
     #[serde(default = "default_allowed_methods")]
     pub allowed_methods: Vec<String>,
     #[serde(default)]
@@ -146,6 +158,10 @@ pub struct StudioCatalogService {
     pub display_name: Option<String>,
     #[serde(default)]
     pub base_url: Option<String>,
+    #[serde(default, alias = "health_path", alias = "capabilities_path")]
+    pub health_check_path: Option<String>,
+    #[serde(default)]
+    pub health_check_method: Option<String>,
     #[serde(default)]
     pub environment: Option<String>,
     #[serde(default)]
@@ -182,6 +198,8 @@ pub struct ServiceResponse {
     pub studio_service_id: Option<String>,
     pub route_pattern: String,
     pub upstream_base_url: Option<String>,
+    pub health_check_path: Option<String>,
+    pub health_check_method: String,
     pub enabled: bool,
     pub allowed_methods: Vec<String>,
     pub credential_configured: bool,
@@ -349,6 +367,8 @@ impl ServiceCreateRequest {
             .unwrap_or_else(|| format!("/services/{}/*", self.name));
         validate_route_pattern(&route_pattern)?;
         validate_optional_upstream(self.upstream_base_url.as_deref())?;
+        validate_optional_health_check_path(self.health_check_path.as_deref())?;
+        validate_health_check_method(&self.health_check_method)?;
         validate_allowed_methods(&self.allowed_methods)?;
         validate_runtime_limits(self.timeout_ms, self.max_body_bytes)?;
         validate_cost(self.cost_mode, self.estimated_cost_usd)?;
@@ -365,6 +385,12 @@ impl ServicePatchRequest {
         }
         if let Some(upstream) = &self.upstream_base_url {
             validate_optional_upstream(upstream.as_deref())?;
+        }
+        if let Some(path) = &self.health_check_path {
+            validate_optional_health_check_path(path.as_deref())?;
+        }
+        if let Some(method) = &self.health_check_method {
+            validate_health_check_method(method)?;
         }
         if let Some(methods) = &self.allowed_methods {
             validate_allowed_methods(methods)?;
@@ -401,6 +427,8 @@ impl StudioServiceImportRequest {
             validate_route_pattern(route_pattern)?;
         }
         validate_optional_upstream(self.upstream_base_url.as_deref())?;
+        validate_optional_health_check_path(self.health_check_path.as_deref())?;
+        validate_health_check_method(&self.health_check_method)?;
         validate_allowed_methods(&self.allowed_methods)?;
         if let Some(pricing) = &self.default_pricing {
             validate_cost(pricing.cost_mode, pricing.estimated_cost_usd)?;
@@ -419,6 +447,10 @@ impl StudioCatalogService {
             .unwrap_or_else(|| format!("/services/{name}/*"));
         validate_route_pattern(&route_pattern)?;
         validate_optional_upstream(self.base_url.as_deref())?;
+        validate_optional_health_check_path(self.health_check_path.as_deref())?;
+        if let Some(method) = &self.health_check_method {
+            validate_health_check_method(method)?;
+        }
         let allowed_methods = self
             .allowed_methods
             .clone()
@@ -435,6 +467,11 @@ impl StudioCatalogService {
             project_id: None,
             route_pattern: Some(route_pattern.clone()),
             upstream_base_url: self.base_url.clone(),
+            health_check_path: self.health_check_path.clone(),
+            health_check_method: self
+                .health_check_method
+                .clone()
+                .unwrap_or_else(default_health_check_method),
             allowed_methods,
             category: self.environment.clone(),
             default_pricing: self.default_pricing.clone(),
@@ -502,6 +539,8 @@ impl ServiceRegistration {
             studio_service_id: self.studio_service_id.clone(),
             route_pattern: self.route_pattern.clone(),
             upstream_base_url: self.upstream_base_url.clone(),
+            health_check_path: self.health_check_path.clone(),
+            health_check_method: self.health_check_method.clone(),
             enabled: self.enabled,
             allowed_methods: self.allowed_methods.clone(),
             credential_configured: self
@@ -625,6 +664,27 @@ fn validate_optional_upstream(upstream: Option<&str>) -> GatewayResult<()> {
     }
 }
 
+fn validate_optional_health_check_path(path: Option<&str>) -> GatewayResult<()> {
+    let Some(path) = path.filter(|value| !value.trim().is_empty()) else {
+        return Ok(());
+    };
+    if path.starts_with('/') && !path.contains("//") {
+        Ok(())
+    } else {
+        Err(GatewayError::InvalidServicePayload)
+    }
+}
+
+fn validate_health_check_method(method: &str) -> GatewayResult<()> {
+    let parsed =
+        Method::from_bytes(method.as_bytes()).map_err(|_| GatewayError::InvalidServicePayload)?;
+    if parsed == Method::GET || parsed == Method::HEAD {
+        Ok(())
+    } else {
+        Err(GatewayError::InvalidServicePayload)
+    }
+}
+
 fn validate_allowed_methods(methods: &[String]) -> GatewayResult<()> {
     if methods.is_empty() {
         return Err(GatewayError::InvalidServicePayload);
@@ -686,6 +746,10 @@ fn default_allowed_methods() -> Vec<String> {
     vec!["POST".to_owned()]
 }
 
+fn default_health_check_method() -> String {
+    "GET".to_owned()
+}
+
 fn default_timeout_ms() -> i64 {
     DEFAULT_TIMEOUT_MS
 }
@@ -721,6 +785,8 @@ mod tests {
             studio_service_id: None,
             route_pattern: "/summary".to_owned(),
             upstream_base_url: Some("http://summary.internal".to_owned()),
+            health_check_path: Some("/health".to_owned()),
+            health_check_method: "GET".to_owned(),
             enabled: true,
             allowed_methods: vec!["POST".to_owned()],
             timeout_ms: 60_000,
@@ -792,6 +858,8 @@ mod tests {
             gateway_service_name: None,
             display_name: Some("Payments API".to_owned()),
             base_url: Some("https://payments.example.test".to_owned()),
+            health_check_path: Some("/relayna/capabilities".to_owned()),
+            health_check_method: Some("HEAD".to_owned()),
             environment: Some("prod".to_owned()),
             tags: vec!["core".to_owned()],
             status: Some("healthy".to_owned()),
@@ -809,6 +877,11 @@ mod tests {
             preview.import_request.upstream_base_url.as_deref(),
             Some("https://payments.example.test")
         );
+        assert_eq!(
+            preview.import_request.health_check_path.as_deref(),
+            Some("/relayna/capabilities")
+        );
+        assert_eq!(preview.import_request.health_check_method, "HEAD");
         assert_eq!(preview.import_request.allowed_methods, ["GET", "POST"]);
     }
 
@@ -820,6 +893,8 @@ mod tests {
             project_id: None,
             route_pattern: Some("/translation".to_owned()),
             upstream_base_url: None,
+            health_check_path: None,
+            health_check_method: "GET".to_owned(),
             allowed_methods: vec!["POST".to_owned()],
             category: None,
             default_pricing: Some(StudioServicePricing {

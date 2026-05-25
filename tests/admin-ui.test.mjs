@@ -280,6 +280,7 @@ test("virtual keys expose policy simulator presets and lifecycle controls", () =
     "max_request_body_bytes",
     "max_response_body_bytes",
     "allowed_hours_utc",
+    "service_name",
   ]) {
     assert.match(js, new RegExp(`name="${field}"`));
   }
@@ -287,9 +288,29 @@ test("virtual keys expose policy simulator presets and lifecycle controls", () =
   assert.match(js, /production_worker/);
   assert.match(js, /external_partner/);
   assert.match(js, /async function simulatePolicy\(event\)/);
+  assert.match(js, /data-policy-sim-service/);
+  assert.match(js, /service_name: serviceName/);
+  assert.match(js, /Use a concrete service path such as/);
   assert.match(js, /async function savePolicyLayer\(event\)/);
   assert.match(js, /api\("\/admin-ui\/admin\/policy\/simulate"/);
   assert.match(js, /api\("\/admin-ui\/admin\/policy-layers"/);
+});
+
+test("floating notifications auto-dismiss and still support manual close", () => {
+  assert.match(js, /let noticeTimer/);
+  assert.match(js, /const delay = tone === "success" \? (4000|4e3) : (9000|9e3)/);
+  assert.match(js, /setTimeout\(dismiss, delay\)/);
+  assert.match(js, /data-close-message/);
+  assert.match(js, /mouseenter/);
+  assert.match(js, /focusin/);
+});
+
+test("service configuration exposes health check endpoint fields", () => {
+  assert.match(js, /name="health_check_path"/);
+  assert.match(js, /name="health_check_method"/);
+  assert.match(js, /function healthCheckLabel\(row\)/);
+  assert.match(js, /health_check_path: patch \? nullableString/);
+  assert.match(js, /health_check_method: form\.get\("health_check_method"\) \|\| "GET"/);
 });
 
 test("service editor closes after a successful save", () => {

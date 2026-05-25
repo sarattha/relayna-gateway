@@ -655,6 +655,8 @@ struct PolicySimulationRequest {
     method: String,
     provider: Option<String>,
     #[serde(default)]
+    service_name: Option<String>,
+    #[serde(default)]
     body: Option<Value>,
     #[serde(default)]
     request_body_bytes: Option<i64>,
@@ -761,6 +763,9 @@ async fn simulate_policy(
         .and_then(|value| serde_json::to_vec(value).ok())
         .unwrap_or_default();
     let mut features = extract_generation_features(&body_bytes);
+    if features.service_name.is_none() {
+        features.service_name = request.service_name.clone();
+    }
     if features.service_name.is_none() {
         features.service_name = route_match.service_name.clone();
     }
@@ -2061,6 +2066,8 @@ async fn run_provider_health_checks(State(state): State<AppState>, headers: Head
                     &client,
                     &target.name,
                     target.base_url.clone(),
+                    target.health_check_path.as_deref(),
+                    &target.health_check_method,
                     target.credential.as_deref(),
                 )
                 .await;
@@ -2646,6 +2653,8 @@ async fn active_health_check(
     client: &reqwest::Client,
     name: &str,
     base_url: Option<String>,
+    health_check_path: Option<&str>,
+    health_check_method: &str,
     credential: Option<&str>,
 ) -> ActiveHealthCheck {
     let checked_at = Utc::now();
@@ -2657,7 +2666,7 @@ async fn active_health_check(
             checked_at,
         };
     };
-    let Ok(url) = reqwest::Url::parse(&base_url) else {
+    let Ok(url) = health_check_url(&base_url, health_check_path) else {
         return ActiveHealthCheck {
             ok: false,
             latency_ms: None,
@@ -2666,7 +2675,12 @@ async fn active_health_check(
         };
     };
     let started = std::time::Instant::now();
-    let mut request = client.get(url);
+    let method = if health_check_method.eq_ignore_ascii_case("HEAD") {
+        reqwest::Method::HEAD
+    } else {
+        reqwest::Method::GET
+    };
+    let mut request = client.request(method, url);
     if let Some(credential) = credential.filter(|value| !value.trim().is_empty()) {
         request = request.bearer_auth(credential);
     }
@@ -2694,6 +2708,15 @@ async fn active_health_check(
             checked_at,
         },
     }
+}
+
+fn health_check_url(base_url: &str, health_check_path: Option<&str>) -> Result<reqwest::Url, ()> {
+    let mut url = reqwest::Url::parse(base_url).map_err(|_| ())?;
+    if let Some(path) = health_check_path.filter(|value| !value.trim().is_empty()) {
+        url.set_path(path);
+        url.set_query(None);
+    }
+    Ok(url)
 }
 
 fn provider_health_state_from_check(
@@ -3551,6 +3574,8 @@ mod tests {
                     .clone()
                     .unwrap_or_else(|| format!("/services/{}/*", request.name)),
                 upstream_base_url: request.upstream_base_url.clone(),
+                health_check_path: request.health_check_path.clone(),
+                health_check_method: request.health_check_method.clone(),
                 enabled: request.enabled,
                 allowed_methods: request.allowed_methods.clone(),
                 credential_configured: request.credential.is_some(),
@@ -3616,6 +3641,12 @@ mod tests {
             if let Some(upstream_base_url) = patch.upstream_base_url {
                 service.upstream_base_url = upstream_base_url;
             }
+            if let Some(health_check_path) = patch.health_check_path {
+                service.health_check_path = health_check_path;
+            }
+            if let Some(health_check_method) = patch.health_check_method {
+                service.health_check_method = health_check_method;
+            }
             if let Some(allowed_methods) = patch.allowed_methods {
                 service.allowed_methods = allowed_methods;
             }
@@ -3670,6 +3701,10 @@ mod tests {
                 service.studio_service_id.as_deref() == Some(&request.studio_service_id)
             }) {
                 service.name = request.name;
+                if service.health_check_path.is_none() && request.health_check_path.is_some() {
+                    service.health_check_path = request.health_check_path;
+                    service.health_check_method = request.health_check_method;
+                }
                 service.source = ServiceSource::Studio;
                 service.sync_status = if service.missing_runtime_fields.is_empty() {
                     ServiceSyncStatus::Synced
@@ -3689,6 +3724,8 @@ mod tests {
                     .route_pattern
                     .unwrap_or_else(|| format!("/services/{}/*", request.name)),
                 upstream_base_url: request.upstream_base_url.clone(),
+                health_check_path: request.health_check_path.clone(),
+                health_check_method: request.health_check_method.clone(),
                 enabled: false,
                 allowed_methods: request.allowed_methods.clone(),
                 credential_configured: false,
@@ -4656,6 +4693,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_policy_simulator_accepts_explicit_service_name() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_post(
+            app,
+            "/admin-ui/admin/policy/simulate",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"path":"/services/ocr-service-api/test","provider":"internal-service","service_name":"ocr-service"}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["route_match"]["route"], "/services/*");
+        assert_eq!(value["route_match"]["provider"], "internal-service");
+        assert_eq!(value["route_match"]["service_name"], "ocr-service");
+    }
+
+    #[tokio::test]
     async fn admin_policy_simulator_accepts_unsaved_policy_patch() {
         let app = router_with_state(test_state(default_store()));
         let response = admin_post(
@@ -5446,6 +5501,8 @@ mod tests {
                 "name":"summary",
                 "route_pattern":"/summary",
                 "upstream_base_url":"http://summary.internal:8080",
+                "health_check_path":"/relayna/capabilities",
+                "health_check_method":"HEAD",
                 "allowed_methods":["POST"],
                 "credential":"internal-summary-token",
                 "timeout_ms":60000,
@@ -5463,8 +5520,24 @@ mod tests {
             .expect("body");
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(value["name"], "summary");
+        assert_eq!(value["health_check_path"], "/relayna/capabilities");
+        assert_eq!(value["health_check_method"], "HEAD");
         assert_eq!(value["credential_configured"], true);
         assert!(value.get("credential").is_none());
+    }
+
+    #[test]
+    fn health_check_url_appends_configured_service_path() {
+        let url = health_check_url(
+            "http://example.internal:8080/base?old=true",
+            Some("/relayna/capabilities"),
+        )
+        .expect("url");
+
+        assert_eq!(
+            url.as_str(),
+            "http://example.internal:8080/relayna/capabilities"
+        );
     }
 
     #[tokio::test]
@@ -5547,6 +5620,8 @@ mod tests {
             r#"{
                 "route_pattern":"/services/local-translation/*",
                 "upstream_base_url":"http://gateway-owned.internal:8080",
+                "health_check_path":"/healthz",
+                "health_check_method":"HEAD",
                 "credential":"token",
                 "enabled":true,
                 "allowed_methods":["POST"]
@@ -5564,6 +5639,8 @@ mod tests {
                 "name":"translation",
                 "route_pattern":"/services/studio-updated/*",
                 "upstream_base_url":"http://studio-updated.internal:8080",
+                "health_check_path":"/relayna/capabilities",
+                "health_check_method":"GET",
                 "allowed_methods":["GET"]
             }"#,
         )
@@ -5578,6 +5655,8 @@ mod tests {
             value["upstream_base_url"],
             "http://gateway-owned.internal:8080"
         );
+        assert_eq!(value["health_check_path"], "/healthz");
+        assert_eq!(value["health_check_method"], "HEAD");
         assert_eq!(value["allowed_methods"][0], "POST");
         assert_eq!(value["enabled"], true);
         assert_eq!(value["sync_status"], "synced");
