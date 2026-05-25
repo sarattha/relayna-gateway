@@ -842,16 +842,18 @@ async function simulatePolicy(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const path = String(form.get("path") || "");
+  const provider = form.get("provider") || null;
+  const serviceMode = provider === "internal-service" || path.startsWith("/services/");
   if (path.trim() === "/services/*") {
     setNotice("Use a concrete service path such as /services/service-name/test.");
     return;
   }
-  const serviceName = form.get("service_name") || null;
+  const serviceName = serviceMode ? form.get("service_name") || null : null;
   const body = {
     key_id: form.get("key_id") || null,
     team_id: form.get("team_id") || null,
     path,
-    provider: form.get("provider") || null,
+    provider,
     service_name: serviceName,
     request_body_bytes: nullableNumber(form.get("request_body_bytes")),
     response_body_bytes: nullableNumber(form.get("response_body_bytes")),
@@ -2202,6 +2204,7 @@ function bindPolicySimulatorControls() {
   const modelField = form.querySelector("[data-policy-sim-model]");
   const serviceField = form.querySelector("[data-policy-sim-service]");
   const serviceHelp = form.querySelector("[data-policy-sim-service-help]");
+  const serviceSelect = form.querySelector('select[name="service_name"]');
   const update = () => {
     const path = (pathInput == null ? void 0 : pathInput.value) || "";
     const provider = (providerSelect == null ? void 0 : providerSelect.value) || "";
@@ -2209,6 +2212,7 @@ function bindPolicySimulatorControls() {
     modelField == null ? void 0 : modelField.classList.toggle("muted-field", serviceMode);
     serviceField == null ? void 0 : serviceField.classList.toggle("hidden", !serviceMode);
     serviceHelp == null ? void 0 : serviceHelp.classList.toggle("hidden", !serviceMode);
+    if (!serviceMode && serviceSelect) serviceSelect.value = "";
   };
   pathInput == null ? void 0 : pathInput.addEventListener("input", update);
   providerSelect == null ? void 0 : providerSelect.addEventListener("change", update);

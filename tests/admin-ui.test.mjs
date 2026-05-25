@@ -289,6 +289,9 @@ test("virtual keys expose policy simulator presets and lifecycle controls", () =
   assert.match(js, /external_partner/);
   assert.match(js, /async function simulatePolicy\(event\)/);
   assert.match(js, /data-policy-sim-service/);
+  assert.match(js, /const serviceMode = provider === "internal-service" \|\| path\.startsWith\("\/services\/"\)/);
+  assert.match(js, /const serviceName = serviceMode \? form\.get\("service_name"\) \|\| null : null/);
+  assert.match(js, /if \(!serviceMode && serviceSelect\) serviceSelect\.value = ""/);
   assert.match(js, /service_name: serviceName/);
   assert.match(js, /Use a concrete service path such as/);
   assert.match(js, /async function savePolicyLayer\(event\)/);
