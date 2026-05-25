@@ -107,6 +107,8 @@ pub struct ProviderHealthCheckTarget {
     pub name: String,
     pub provider: Provider,
     pub base_url: Option<String>,
+    pub health_check_path: Option<String>,
+    pub health_check_method: String,
     #[serde(skip_serializing)]
     pub credential: Option<String>,
 }

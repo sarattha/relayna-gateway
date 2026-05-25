@@ -626,6 +626,8 @@ impl PostgresStore {
                 studio_service_id,
                 route_pattern,
                 upstream_base_url,
+                health_check_path,
+                health_check_method,
                 enabled,
                 allowed_methods,
                 cost_mode,
@@ -634,11 +636,18 @@ impl PostgresStore {
                 sync_status,
                 last_synced_at
             )
-            VALUES ($1, $2, $3, $4, $5, false, $6, $7, $8, 'studio', 'incomplete', now())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, 'studio', 'incomplete', now())
             ON CONFLICT (studio_service_id) WHERE studio_service_id IS NOT NULL
             DO UPDATE SET
                 name = EXCLUDED.name,
                 studio_service_id = EXCLUDED.studio_service_id,
+                health_check_path = COALESCE(service_registrations.health_check_path, EXCLUDED.health_check_path),
+                health_check_method = CASE
+                    WHEN service_registrations.health_check_path IS NULL
+                        AND EXCLUDED.health_check_path IS NOT NULL
+                    THEN EXCLUDED.health_check_method
+                    ELSE service_registrations.health_check_method
+                END,
                 source = 'studio',
                 sync_status = CASE
                     WHEN service_registrations.upstream_base_url IS NULL
@@ -655,6 +664,8 @@ impl PostgresStore {
         .bind(&request.studio_service_id)
         .bind(&route_pattern)
         .bind(&request.upstream_base_url)
+        .bind(&request.health_check_path)
+        .bind(&request.health_check_method)
         .bind(&request.allowed_methods)
         .bind(service_cost_mode_str(cost_mode))
         .bind(estimated_cost_usd)
@@ -703,6 +714,8 @@ impl PostgresStore {
                 studio_service_id,
                 route_pattern,
                 upstream_base_url,
+                health_check_path,
+                health_check_method,
                 enabled,
                 allowed_methods,
                 cost_mode,
@@ -711,11 +724,18 @@ impl PostgresStore {
                 sync_status,
                 last_synced_at
             )
-            VALUES ($1, $2, $3, $4, $5, false, $6, $7, $8, 'studio', 'incomplete', now())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, 'studio', 'incomplete', now())
             ON CONFLICT (studio_service_id) WHERE studio_service_id IS NOT NULL
             DO UPDATE SET
                 name = EXCLUDED.name,
                 studio_service_id = EXCLUDED.studio_service_id,
+                health_check_path = COALESCE(service_registrations.health_check_path, EXCLUDED.health_check_path),
+                health_check_method = CASE
+                    WHEN service_registrations.health_check_path IS NULL
+                        AND EXCLUDED.health_check_path IS NOT NULL
+                    THEN EXCLUDED.health_check_method
+                    ELSE service_registrations.health_check_method
+                END,
                 source = 'studio',
                 sync_status = CASE
                     WHEN service_registrations.upstream_base_url IS NULL
@@ -732,6 +752,8 @@ impl PostgresStore {
         .bind(&request.studio_service_id)
         .bind(&route_pattern)
         .bind(&request.upstream_base_url)
+        .bind(&request.health_check_path)
+        .bind(&request.health_check_method)
         .bind(&request.allowed_methods)
         .bind(service_cost_mode_str(cost_mode))
         .bind(estimated_cost_usd)
@@ -1056,10 +1078,10 @@ impl gateway_core::PolicyLookup for PostgresStore {
             SELECT
                 k.owner_type,
                 k.project_id,
-                COALESCE(p.allowed_routes, ARRAY['/v1/chat/completions', '/v1/responses']::text[]),
-                COALESCE(p.allowed_models, ARRAY[]::text[]),
-                COALESCE(p.allowed_providers, ARRAY['litellm']::text[]),
-                COALESCE(p.allowed_services, ARRAY[]::text[]),
+                COALESCE(p.allowed_routes, ARRAY['/v1/chat/completions', '/v1/responses']::text[]) AS allowed_routes,
+                COALESCE(p.allowed_models, ARRAY[]::text[]) AS allowed_models,
+                COALESCE(p.allowed_providers, ARRAY['litellm']::text[]) AS allowed_providers,
+                COALESCE(p.allowed_services, ARRAY[]::text[]) AS allowed_services,
                 COALESCE(
                     ARRAY(
                         SELECT service_name
@@ -1082,15 +1104,15 @@ impl gateway_core::PolicyLookup for PostgresStore {
                 p.tpm_limit,
                 p.daily_budget_usd,
                 p.monthly_budget_usd,
-                COALESCE(p.allow_streaming, false),
-                COALESCE(p.allow_tools, false),
-                COALESCE(p.deny, false),
+                COALESCE(p.allow_streaming, false) AS allow_streaming,
+                COALESCE(p.allow_tools, false) AS allow_tools,
+                COALESCE(p.deny, false) AS deny,
                 p.max_requests_per_day,
                 p.max_tokens_per_day,
                 p.max_cost_per_request,
                 p.max_input_tokens_per_request,
                 p.max_output_tokens_per_request,
-                COALESCE(p.allowed_hours_utc, ARRAY[]::integer[]),
+                COALESCE(p.allowed_hours_utc, ARRAY[]::integer[]) AS allowed_hours_utc,
                 p.unused_key_auto_disable_after_days,
                 p.max_request_body_bytes,
                 p.max_response_body_bytes,
@@ -1098,7 +1120,7 @@ impl gateway_core::PolicyLookup for PostgresStore {
                 p.max_sse_event_bytes,
                 p.max_tool_call_count,
                 p.max_tool_schema_bytes,
-                COALESCE(p.policy_version, 1)
+                COALESCE(p.policy_version, 1) AS policy_version
             FROM api_keys k
             LEFT JOIN key_policies p ON p.key_id = k.id
             WHERE k.id = $1
@@ -1107,30 +1129,30 @@ impl gateway_core::PolicyLookup for PostgresStore {
         .bind(key_id)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|_| GatewayError::ControlStateUnavailable)?
+        .map_err(|_| GatewayError::StoreUnavailable)?
         else {
             return Ok(KeyPolicy::default());
         };
 
         let owner_type: String = row
             .try_get("owner_type")
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         let stored_project_id: Option<Uuid> = row
             .try_get("project_id")
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         let project_id = context_project_id.or(stored_project_id);
         let allowed_routes: Vec<String> = row
             .try_get("allowed_routes")
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         let allowed_models: Vec<String> = row
             .try_get("allowed_models")
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         let allowed_providers: Vec<String> = row
             .try_get("allowed_providers")
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         let allowed_services: Vec<String> = row
             .try_get("allowed_services")
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         let project_services: Vec<String> = row.try_get("project_services").unwrap_or_default();
         let key_services: Vec<String> = row.try_get("key_services").unwrap_or_default();
         let rpm_limit: Option<i32> = row.try_get("rpm_limit").ok().flatten();
@@ -1181,7 +1203,7 @@ impl gateway_core::PolicyLookup for PostgresStore {
             .bind(&derived_services)
             .fetch_all(&self.pool)
             .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+            .map_err(|_| GatewayError::StoreUnavailable)?;
             for route_pattern in service_route_patterns {
                 let policy_route = service_route_policy_route(&route_pattern);
                 if !derived_routes.iter().any(|route| route == policy_route) {
@@ -2899,6 +2921,8 @@ impl AdminServiceStore for PostgresStore {
                 studio_service_id,
                 route_pattern,
                 upstream_base_url,
+                health_check_path,
+                health_check_method,
                 enabled,
                 allowed_methods,
                 timeout_ms,
@@ -2912,7 +2936,7 @@ impl AdminServiceStore for PostgresStore {
                 last_synced_at,
                 disabled_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $6 THEN NULL ELSE now() END)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END)
             "#,
         )
         .bind(&request.name)
@@ -2920,6 +2944,8 @@ impl AdminServiceStore for PostgresStore {
         .bind(&request.studio_service_id)
         .bind(&route_pattern)
         .bind(&request.upstream_base_url)
+        .bind(&request.health_check_path)
+        .bind(&request.health_check_method)
         .bind(request.enabled)
         .bind(&request.allowed_methods)
         .bind(request.timeout_ms)
@@ -2994,6 +3020,12 @@ impl AdminServiceStore for PostgresStore {
         if let Some(upstream_base_url) = patch.upstream_base_url {
             registration.upstream_base_url = upstream_base_url;
         }
+        if let Some(health_check_path) = patch.health_check_path {
+            registration.health_check_path = health_check_path;
+        }
+        if let Some(health_check_method) = patch.health_check_method {
+            registration.health_check_method = health_check_method;
+        }
         if let Some(enabled) = patch.enabled {
             registration.enabled = enabled;
             registration.disabled_at = None;
@@ -3039,17 +3071,19 @@ impl AdminServiceStore for PostgresStore {
                 project_id = $3,
                 route_pattern = $4,
                 upstream_base_url = $5,
-                enabled = $6,
-                allowed_methods = $7,
-                timeout_ms = $8,
-                max_body_bytes = $9,
-                cost_mode = $10,
-                estimated_cost_usd = $11,
-                credential_secret = $12,
-                fallback_services = $13,
-                source = $14,
-                sync_status = $15,
-                disabled_at = CASE WHEN $6 THEN NULL ELSE COALESCE(disabled_at, now()) END,
+                health_check_path = $6,
+                health_check_method = $7,
+                enabled = $8,
+                allowed_methods = $9,
+                timeout_ms = $10,
+                max_body_bytes = $11,
+                cost_mode = $12,
+                estimated_cost_usd = $13,
+                credential_secret = $14,
+                fallback_services = $15,
+                source = $16,
+                sync_status = $17,
+                disabled_at = CASE WHEN $8 THEN NULL ELSE COALESCE(disabled_at, now()) END,
                 updated_at = now()
             WHERE name = $1
             "#,
@@ -3059,6 +3093,8 @@ impl AdminServiceStore for PostgresStore {
         .bind(registration.project_id)
         .bind(&registration.route_pattern)
         .bind(&registration.upstream_base_url)
+        .bind(&registration.health_check_path)
+        .bind(&registration.health_check_method)
         .bind(registration.enabled)
         .bind(&registration.allowed_methods)
         .bind(registration.timeout_ms)
@@ -3598,13 +3634,15 @@ impl ProviderIntelligenceStore for PostgresStore {
                     gateway_core::ProviderConfigKind::InternalService => Provider::InternalService,
                 },
                 base_url: row.try_get("base_url").ok(),
+                health_check_path: None,
+                health_check_method: "GET".to_owned(),
                 credential: row.try_get("credential_secret").ok().flatten(),
             });
         }
 
         let service_rows = sqlx::query(
             r#"
-            SELECT name, upstream_base_url, credential_secret
+            SELECT name, upstream_base_url, health_check_path, health_check_method, credential_secret
             FROM service_registrations
             WHERE enabled AND upstream_base_url IS NOT NULL
             "#,
@@ -3619,6 +3657,10 @@ impl ProviderIntelligenceStore for PostgresStore {
                     .map_err(|_| GatewayError::StoreUnavailable)?,
                 provider: Provider::InternalService,
                 base_url: row.try_get("upstream_base_url").ok().flatten(),
+                health_check_path: row.try_get("health_check_path").ok().flatten(),
+                health_check_method: row
+                    .try_get("health_check_method")
+                    .unwrap_or_else(|_| "GET".to_owned()),
                 credential: row.try_get("credential_secret").ok().flatten(),
             });
         }
@@ -4643,6 +4685,8 @@ fn service_registration_from_row(
         studio_service_id: row.try_get("studio_service_id")?,
         route_pattern: row.try_get("route_pattern")?,
         upstream_base_url: row.try_get("upstream_base_url")?,
+        health_check_path: row.try_get("health_check_path")?,
+        health_check_method: row.try_get("health_check_method")?,
         enabled: row.try_get("enabled")?,
         allowed_methods: row.try_get("allowed_methods")?,
         timeout_ms: row.try_get("timeout_ms")?,

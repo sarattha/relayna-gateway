@@ -57,6 +57,12 @@ An open circuit excludes the provider until its cooldown has elapsed. A
 half-open provider can be selected for recovery probing, and a successful
 passive result closes the circuit.
 
+Registered services can override the active probe target with
+`health_check_path` and `health_check_method`. When no path is configured,
+Gateway preserves the previous root-probe behavior. When a path is configured,
+Gateway appends it to the service `upstream_base_url` and uses `GET` or `HEAD`
+according to the service registration.
+
 ## Debug Bundles
 
 Request debug bundles are keyed by `request_id` and are designed for operator
@@ -86,3 +92,6 @@ Service registry imports now support an operator workflow:
 
 Rollback snapshots use the same redaction rules as normal service records:
 runtime credentials are write-only and are not returned to clients.
+
+Gateway-owned runtime fields, including health-check path and method, are
+preserved when Studio metadata is re-imported.

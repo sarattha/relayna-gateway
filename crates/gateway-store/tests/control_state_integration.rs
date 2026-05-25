@@ -1,5 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
-use gateway_core::{BudgetDecision, BudgetStore, RateLimitDecision, RateLimitStore};
+use gateway_core::{
+    BudgetDecision, BudgetStore, PolicyLookup, Provider, RateLimitDecision, RateLimitStore, Route,
+};
 use gateway_store::{PostgresStore, RedisControlState};
 use redis::AsyncCommands;
 use uuid::Uuid;
@@ -77,6 +79,47 @@ async fn insert_budgeted_key(
     (project_id, key_id)
 }
 
+async fn insert_policy_key(store: &PostgresStore) -> (Uuid, Uuid) {
+    let project_id = Uuid::new_v4();
+    let key_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO projects (id, name) VALUES ($1, $2)")
+        .bind(project_id)
+        .bind(format!("policy-{project_id}"))
+        .execute(store.pool())
+        .await
+        .expect("insert project");
+    sqlx::query(
+        r#"
+        INSERT INTO api_keys (id, owner_type, project_id, key_prefix, key_hash)
+        VALUES ($1, 'project', $2, $3, 'hash')
+        "#,
+    )
+    .bind(key_id)
+    .bind(project_id)
+    .bind(format!("rk_live_{}", key_id.simple()))
+    .execute(store.pool())
+    .await
+    .expect("insert key");
+    sqlx::query(
+        r#"
+        INSERT INTO key_policies (
+            key_id,
+            allowed_routes,
+            allowed_providers,
+            allowed_services,
+            allow_streaming,
+            policy_version
+        )
+        VALUES ($1, ARRAY['/services/*']::text[], ARRAY['internal-service']::text[], ARRAY['ocr-service']::text[], true, 7)
+        "#,
+    )
+    .bind(key_id)
+    .execute(store.pool())
+    .await
+    .expect("insert policy");
+    (project_id, key_id)
+}
+
 async fn insert_usage(
     store: &PostgresStore,
     key_id: Uuid,
@@ -124,6 +167,32 @@ async fn seed_from_postgres(store: &PostgresStore, redis: &RedisControlState, no
             .await
             .expect("seed redis");
     }
+}
+
+#[tokio::test]
+async fn stored_policy_for_context_decodes_aliased_policy_columns() {
+    let Some(env) = integration_env().await else {
+        return;
+    };
+    let (project_id, key_id) = insert_policy_key(&env.store).await;
+
+    let policy = env
+        .store
+        .policy_for_context(
+            key_id,
+            Some(project_id),
+            None,
+            Some(Route::ServiceWildcard),
+            None,
+        )
+        .await
+        .expect("policy");
+
+    assert_eq!(policy.policy_version, 7);
+    assert_eq!(policy.allowed_routes, [Route::ServiceWildcard]);
+    assert_eq!(policy.allowed_providers, [Provider::InternalService]);
+    assert_eq!(policy.allowed_services, ["ocr-service"]);
+    assert!(policy.allow_streaming);
 }
 
 #[tokio::test]

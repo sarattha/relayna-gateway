@@ -40,6 +40,7 @@ const login = document.querySelector("#login");
 const app = document.querySelector("#app");
 const content = document.querySelector("#content");
 const requestTimeoutMs = 8000;
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function token() {
   return sessionStorage.getItem(tokenKey);
@@ -47,9 +48,14 @@ function token() {
 
 function setNotice(message, kind = "error") {
   document.querySelector(".message-box")?.remove();
+  if (noticeTimer) {
+    clearTimeout(noticeTimer);
+    noticeTimer = null;
+  }
   if (!message) return;
 
   const tone = kind === "success" ? "success" : "error";
+  const delay = tone === "success" ? 4000 : 9000;
   const box = document.createElement("section");
   box.className = "message-box";
   box.dataset.kind = tone;
@@ -62,8 +68,28 @@ function setNotice(message, kind = "error") {
     </div>
     <button type="button" data-close-message>Close</button>
   `;
-  box.querySelector("[data-close-message]").addEventListener("click", () => box.remove());
+  const dismiss = () => {
+    if (noticeTimer) {
+      clearTimeout(noticeTimer);
+      noticeTimer = null;
+    }
+    box.remove();
+  };
+  const schedule = () => {
+    if (noticeTimer) clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(dismiss, delay);
+  };
+  box.querySelector("[data-close-message]").addEventListener("click", dismiss);
+  box.addEventListener("mouseenter", () => {
+    if (noticeTimer) clearTimeout(noticeTimer);
+  });
+  box.addEventListener("mouseleave", schedule);
+  box.addEventListener("focusin", () => {
+    if (noticeTimer) clearTimeout(noticeTimer);
+  });
+  box.addEventListener("focusout", schedule);
   document.body.appendChild(box);
+  schedule();
 }
 
 function handleAsync(handler) {
@@ -437,14 +463,19 @@ async function keys() {
       <form id="policy-sim-form" class="form-grid">
         <label>Key<select name="key_id"><option value="">Default policy</option>${state.keys.map((key) => `<option value="${attr(key.id)}">${esc(key.key_prefix)}</option>`).join("")}</select></label>
         <label>Team scope<input name="team_id" placeholder="team identifier"></label>
-        <label>Path<input name="path" value="/v1/chat/completions"></label>
-        <label>Provider<select name="provider">
+        <label>Path<input name="path" value="/v1/chat/completions" data-policy-sim-path></label>
+        <label>Provider<select name="provider" data-policy-sim-provider>
           <option value="">Route default</option>
           <option value="litellm">LiteLLM</option>
           <option value="openai-compatible">OpenAI-compatible</option>
           <option value="internal-service">Internal service</option>
         </select></label>
-        <label>Model<input name="model" value="gpt-4.1-mini"></label>
+        <label data-policy-sim-model>Model<input name="model" value="gpt-4.1-mini"></label>
+        <label data-policy-sim-service>Service name<select name="service_name">
+          <option value="">Route-derived service</option>
+          ${state.services.map((service) => `<option value="${attr(service.name)}">${esc(service.name)}</option>`).join("")}
+        </select></label>
+        <div class="help wide-field" data-policy-sim-service-help>Use a concrete path such as /services/service-name/test. The simulator reports the matched policy route separately.</div>
         <label>Request bytes<input name="request_body_bytes" type="number" min="0"></label>
         <label>Response bytes<input name="response_body_bytes" type="number" min="0"></label>
         <label class="check"><input name="stream" type="checkbox"> Stream</label>
@@ -467,6 +498,7 @@ async function keys() {
   bindKeyOwnerControls();
   bindServicePickerButtons();
   bindGuardrailPickerButtons();
+  bindPolicySimulatorControls();
   document.querySelectorAll("[data-key-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(keyAction));
   });
@@ -683,15 +715,24 @@ async function patchKey(event) {
 async function simulatePolicy(event) {
   event.preventDefault();
   const form = new FormData(event.target);
+  const path = String(form.get("path") || "");
+  const provider = form.get("provider") || null;
+  const serviceMode = provider === "internal-service" || path.startsWith("/services/");
+  if (path.trim() === "/services/*") {
+    setNotice("Use a concrete service path such as /services/service-name/test.");
+    return;
+  }
+  const serviceName = serviceMode ? form.get("service_name") || null : null;
   const body = {
     key_id: form.get("key_id") || null,
     team_id: form.get("team_id") || null,
-    path: form.get("path"),
-    provider: form.get("provider") || null,
+    path,
+    provider,
+    service_name: serviceName,
     request_body_bytes: nullableNumber(form.get("request_body_bytes")),
     response_body_bytes: nullableNumber(form.get("response_body_bytes")),
     body: {
-      model: form.get("model") || undefined,
+      model: serviceName ? undefined : form.get("model") || undefined,
       stream: form.has("stream"),
       tools: form.has("tools") ? [{ type: "function" }] : undefined,
     },
@@ -699,6 +740,7 @@ async function simulatePolicy(event) {
   if (!body.key_id) delete body.key_id;
   if (!body.team_id) delete body.team_id;
   if (!body.provider) delete body.provider;
+  if (!body.service_name) delete body.service_name;
   if (body.request_body_bytes === null) delete body.request_body_bytes;
   if (body.response_body_bytes === null) delete body.response_body_bytes;
   state.policySimulation = await api("/admin-ui/admin/policy/simulate", { method: "POST", body: JSON.stringify(body) });
@@ -916,13 +958,14 @@ function openaiRouteTable(rows) {
 
 function serviceRouteTable(rows) {
   return table(
-    ["Service", "Route", "State", "Methods", "Upstream", "Credential"],
+    ["Service", "Route", "State", "Methods", "Upstream", "Health check", "Credential"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       `<code>${esc(row.route_pattern)}</code>`,
       serviceBadges(row),
       esc(listValue(row.allowed_methods, "none")),
       esc(row.upstream_base_url || "missing"),
+      esc(healthCheckLabel(row)),
       row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
     ]),
   );
@@ -950,6 +993,8 @@ async function services() {
           <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
           <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
           <label>Upstream URL<input name="upstream_base_url"></label>
+          <label>Health path<input name="health_check_path" placeholder="/health"></label>
+          <label>Health method<select name="health_check_method"><option value="GET">GET</option><option value="HEAD">HEAD</option></select></label>
           <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
           <div class="field"><span>Methods</span>${methodSelect(["POST"])}</div>
           <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="60000"></label>
@@ -988,6 +1033,8 @@ function serviceEditForm(service) {
       <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
       <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
       <label>Upstream URL<input name="upstream_base_url" value="${attr(service.upstream_base_url ?? "")}"></label>
+      <label>Health path<input name="health_check_path" value="${attr(service.health_check_path ?? "")}" placeholder="/health"></label>
+      <label>Health method<select name="health_check_method">${["GET", "HEAD"].map((value) => option(value, service.health_check_method || "GET")).join("")}</select></label>
       <label>Credential<input name="credential" type="password" autocomplete="new-password" placeholder="${service.credential_configured ? "configured" : "missing"}"></label>
       <div class="field"><span>Methods</span>${methodSelect(service.allowed_methods)}</div>
       <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="${attr(service.timeout_ms)}"></label>
@@ -1351,12 +1398,13 @@ async function serviceAction(event) {
 
 function serviceTable(rows) {
   return table(
-    ["Name", "State", "Route", "Upstream", "Credential", "Cost", "Actions"],
+    ["Name", "State", "Route", "Upstream", "Health check", "Credential", "Cost", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       serviceBadges(row),
       `<code>${esc(row.route_pattern)}</code>`,
       esc(row.upstream_base_url || "missing"),
+      esc(healthCheckLabel(row)),
       row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
       `${esc(row.cost_mode)} ${row.estimated_cost_usd == null ? "" : money(row.estimated_cost_usd)}`,
       `<div class="actions">
@@ -1375,6 +1423,10 @@ function serviceBadges(row) {
     ? `<span class="badge good">${esc(row.sync_status)}</span>`
     : `<span class="badge bad">${esc(row.sync_status)}</span>`;
   return `${stateBadge} ${syncBadge}`;
+}
+
+function healthCheckLabel(row) {
+  return row.health_check_path ? `${row.health_check_method || "GET"} ${row.health_check_path}` : "upstream root";
 }
 
 async function usage() {
@@ -2022,6 +2074,8 @@ function serviceBody(form, patch) {
     studio_service_id: patch ? nullableString(form.get("studio_service_id")) : blankToUndefined(form.get("studio_service_id")),
     route_pattern: form.get("route_pattern") || undefined,
     upstream_base_url: patch ? nullableString(form.get("upstream_base_url")) : blankToUndefined(form.get("upstream_base_url")),
+    health_check_path: patch ? nullableString(form.get("health_check_path")) : blankToUndefined(form.get("health_check_path")),
+    health_check_method: form.get("health_check_method") || "GET",
     enabled: form.has("enabled"),
     allowed_methods: form.getAll("allowed_methods"),
     timeout_ms: Number(form.get("timeout_ms")),
@@ -2097,6 +2151,29 @@ function bindGuardrailPickerButtons() {
   });
 }
 
+function bindPolicySimulatorControls() {
+  const form = document.querySelector("#policy-sim-form");
+  if (!form) return;
+  const pathInput = form.querySelector("[data-policy-sim-path]");
+  const providerSelect = form.querySelector("[data-policy-sim-provider]");
+  const modelField = form.querySelector("[data-policy-sim-model]");
+  const serviceField = form.querySelector("[data-policy-sim-service]");
+  const serviceHelp = form.querySelector("[data-policy-sim-service-help]");
+  const serviceSelect = form.querySelector('select[name="service_name"]');
+  const update = () => {
+    const path = pathInput?.value || "";
+    const provider = providerSelect?.value || "";
+    const serviceMode = provider === "internal-service" || path.startsWith("/services/");
+    modelField?.classList.toggle("muted-field", serviceMode);
+    serviceField?.classList.toggle("hidden", !serviceMode);
+    serviceHelp?.classList.toggle("hidden", !serviceMode);
+    if (!serviceMode && serviceSelect) serviceSelect.value = "";
+  };
+  pathInput?.addEventListener("input", update);
+  providerSelect?.addEventListener("change", update);
+  update();
+}
+
 function keyPolicySummary(key) {
   const policy = key.policy;
   return `<div>${esc((policy.allowed_routes || []).join(", ") || "no routes")}</div>
@@ -2120,8 +2197,9 @@ function policySimulationResult() {
   const decision = result.final_decision || {};
   return `<div class="kv">
     <div><strong>Decision</strong><span>${badge(decision.allowed ? "allowed" : decision.error_code || "denied", decision.allowed ? "good" : "bad")}</span></div>
-    <div><strong>Route</strong><span>${esc(result.route_match?.route || "")}</span></div>
+    <div><strong>Matched route</strong><span>${esc(result.route_match?.route || "")}</span></div>
     <div><strong>Provider</strong><span>${esc(result.route_match?.provider || "")}</span></div>
+    <div><strong>Service</strong><span>${esc(result.route_match?.service_name || "none")}</span></div>
     <div><strong>Policy version</strong><span>${esc(result.policy_merge?.policy_version ?? "n/a")}</span></div>
     <div><strong>Guardrails</strong><span>${esc((result.guardrail_plan || []).join(", ") || "none")}</span></div>
     <div><strong>Rate</strong><span>RPM ${esc(result.rate_limit_projection?.rpm_limit ?? "none")} / TPM ${esc(result.rate_limit_projection?.tpm_limit ?? "none")}</span></div>

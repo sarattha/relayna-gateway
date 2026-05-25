@@ -245,6 +245,9 @@ First-time setup is complete when:
 - The Keys view also includes a policy simulator. Operators can dry-run a route,
   model, provider, stream/tools flags, and request/response byte projections
   against a stored key or the default policy before issuing or changing access.
+  For registered service traffic, choose an `internal-service` provider or a
+  `/services/<service-name>/...` path and select the service name so service
+  allowlists are evaluated with the same route context used by the proxy.
   Simulator output reports auth source, route match, policy version and merge
   summary, guardrail plan, rate/budget projections, and final decision.
 - Inherited policy layers can be managed from the Keys view. Global layers use
@@ -258,7 +261,9 @@ First-time setup is complete when:
   entries, previews added/changed/removed/invalid import diffs, edits,
   sync-checks, disables, enables, and deletes service registrations. Method
   selection uses explicit checkboxes for `GET`, `POST`, `PUT`, `PATCH`, and
-  `DELETE`.
+  `DELETE`. Health path and method fields let operators point active checks at
+  a service-specific endpoint when the upstream root is not a valid health
+  target.
 - Usage filters usage by project, virtual key, service, route, provider, model,
   task ID, run ID, trace ID, status, and minimum cost, then shows cost, errors,
   fallback rate, guardrail blocks, project/key/service/provider/model/task

@@ -168,8 +168,8 @@ services.
 | Primary key | `name text`. |
 | Unique keys | `studio_service_id` is unique when present. |
 | Foreign keys | `project_id` references `projects(id)` with `ON DELETE RESTRICT` when present. |
-| Checks | `name` must be lowercase DNS-label style; `source` is `gateway` or `studio`; `sync_status` is `local`, `synced`, `incomplete`, `stale`, or `failed`; `cost_mode` is `fixed`, `passthrough`, or `none`; `timeout_ms` and `max_body_bytes` must be positive. |
-| Runtime fields | `route_pattern`, `upstream_base_url`, `enabled`, `allowed_methods`, `timeout_ms`, `max_body_bytes`, `cost_mode`, `estimated_cost_usd`, `credential_secret`, and `fallback_services`. |
+| Checks | `name` must be lowercase DNS-label style; `source` is `gateway` or `studio`; `sync_status` is `local`, `synced`, `incomplete`, `stale`, or `failed`; `cost_mode` is `fixed`, `passthrough`, or `none`; `health_check_method` is `GET` or `HEAD`; `timeout_ms` and `max_body_bytes` must be positive. |
+| Runtime fields | `route_pattern`, `upstream_base_url`, `health_check_path`, `health_check_method`, `enabled`, `allowed_methods`, `timeout_ms`, `max_body_bytes`, `cost_mode`, `estimated_cost_usd`, `credential_secret`, and `fallback_services`. |
 | Indexes | `service_registrations_studio_service_id_idx`, `service_registrations_source_status_idx`, and `service_registrations_project_id_idx`. |
 | Required data | A service must be enabled and have complete runtime fields before the proxy can forward matching service traffic. |
 
