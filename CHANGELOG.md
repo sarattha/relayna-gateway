@@ -2,6 +2,35 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.4 - 2026-05-25
+
+### Added
+
+- Registered services can now define `health_check_path` and
+  `health_check_method` so active health checks probe a service-specific
+  endpoint instead of only the upstream root.
+- The Admin portal service create/edit flows expose health-check path and
+  method fields, and Studio service imports preserve configured Gateway-owned
+  health-check settings on re-import.
+- The Admin portal policy simulator can evaluate registered service policy by
+  explicit `service_name` for `/services/<service-name>/*` routes.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.4` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.4` gateway image.
+- Release documentation now treats `v0.1.4` as the current release target while
+  preserving `v0.1.0` as the production freeze baseline.
+
+### Fixed
+
+- Database-backed policy simulation now decodes stored policy layers with the
+  expected SQL aliases instead of returning store-state errors.
+- The Admin portal policy simulator no longer submits stale hidden service
+  selections after an operator switches back to non-service routes/providers.
+- Admin portal notices now auto-dismiss after successful async actions.
+
 ## 0.1.3 - 2026-05-24
 
 ### Changed

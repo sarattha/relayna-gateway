@@ -51,6 +51,10 @@ metadata, policy versioning, policy simulation, and inherited policy layers.
 Operators can dry-run route, model, provider, streaming, tools, request-size,
 and response-size inputs before issuing or changing a key.
 
+Post-freeze policy simulation also accepts explicit registered-service context
+so operators can dry-run `/services/<service-name>/*` access against stored keys
+and service allowlists before issuing or editing credentials.
+
 ![Keys policy governance](assets/screenshots/admin-ui-2/keys-policy-governance.png)
 
 Effective policy is resolved from global, project, team, key, route, and model
@@ -80,6 +84,10 @@ Service import workflows now support preview, activation, version history, and
 rollback. Gateway preserves local runtime-owned settings such as credentials,
 enabled state, route overrides, limits, fallback services, project links, and
 cost settings when Studio metadata is re-imported.
+
+Post-freeze service health checks can target a service-specific path and method
+when the upstream root is not a valid health endpoint. The previous root probe
+remains the default for services without explicit health-check settings.
 
 ![Service import workflow](assets/screenshots/admin-ui-2/services-import-workflow.png)
 

@@ -1,6 +1,6 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.3` is the current release target.
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.4` is the current release target.
 
 Version `0.1.0` is the current production freeze baseline. It covers Admin UI
 2.0, operator governance, policy
@@ -15,7 +15,7 @@ feature overview.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.3
+   python3 scripts/validate-release-metadata.py v0.1.4
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -34,15 +34,15 @@ feature overview.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.3 .
+   docker build -t relayna-gateway:0.1.4 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.3 -m "Release v0.1.3"
-   git push origin v0.1.3
+   git tag -a v0.1.4 -m "Release v0.1.4"
+   git push origin v0.1.4
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -52,10 +52,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.3`, the workflow publishes:
+For `v0.1.4`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.3
+ghcr.io/sarattha/relayna-gateway:0.1.4
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```
