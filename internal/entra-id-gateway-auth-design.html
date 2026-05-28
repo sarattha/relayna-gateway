@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Relayna Gateway Entra ID Front Door Design</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5f6c7b;
+      --line: #d7dee8;
+      --surface: #ffffff;
+      --band: #f5f7fa;
+      --relayna: #215c7a;
+      --entra: #5c4f99;
+      --apigee: #28705e;
+      --provider: #8a4f21;
+      --danger: #a43f3f;
+      --ok: #2f6f4f;
+      --code: #eef3f7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--band);
+      color: var(--ink);
+      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 24px 56px;
+      background: var(--surface);
+      min-height: 100vh;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 24px;
+      margin-bottom: 28px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      line-height: 1.18;
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      max-width: 940px;
+    }
+
+    h2 {
+      font-size: 1.5rem;
+      margin-top: 36px;
+      border-top: 1px solid var(--line);
+      padding-top: 28px;
+    }
+
+    h3 {
+      font-size: 1.05rem;
+      margin-top: 22px;
+    }
+
+    p {
+      margin: 12px 0 0;
+    }
+
+    ul,
+    ol {
+      margin: 10px 0 0;
+      padding-left: 1.4rem;
+    }
+
+    li + li {
+      margin-top: 6px;
+    }
+
+    a {
+      color: var(--relayna);
+    }
+
+    code {
+      background: var(--code);
+      border: 1px solid #dce6ef;
+      border-radius: 4px;
+      padding: 0.08rem 0.28rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 14px;
+      font-size: 0.95rem;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #edf2f6;
+      font-weight: 700;
+    }
+
+    .lede {
+      color: var(--muted);
+      font-size: 1.12rem;
+      max-width: 880px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: #fbfcfd;
+      padding: 4px 10px;
+      font-size: 0.86rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+      padding: 16px;
+    }
+
+    .panel h3:first-child {
+      margin-top: 0;
+    }
+
+    .note {
+      border-left: 4px solid var(--relayna);
+      background: #f0f6f9;
+      padding: 12px 14px;
+      margin-top: 14px;
+    }
+
+    .warning {
+      border-left-color: var(--danger);
+      background: #fbf0f0;
+    }
+
+    .success {
+      border-left-color: var(--ok);
+      background: #eef8f2;
+    }
+
+    .diagram-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+      margin-top: 18px;
+      padding: 12px;
+    }
+
+    svg {
+      display: block;
+      min-width: 980px;
+      width: 100%;
+      height: auto;
+    }
+
+    .box {
+      fill: #fff;
+      stroke: #cbd5df;
+      stroke-width: 1.6;
+      rx: 8;
+    }
+
+    .box.relayna {
+      stroke: var(--relayna);
+      fill: #edf7fb;
+    }
+
+    .box.entra {
+      stroke: var(--entra);
+      fill: #f4f1ff;
+    }
+
+    .box.apigee {
+      stroke: var(--apigee);
+      fill: #eef8f5;
+    }
+
+    .box.provider {
+      stroke: var(--provider);
+      fill: #fff4ea;
+    }
+
+    .box.deny {
+      stroke: var(--danger);
+      fill: #fff0f0;
+    }
+
+    .label {
+      fill: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .small {
+      fill: var(--muted);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .arrow {
+      stroke: #667788;
+      stroke-width: 2;
+      fill: none;
+      marker-end: url(#arrowhead);
+    }
+
+    .arrow.strong {
+      stroke: var(--relayna);
+      stroke-width: 2.4;
+    }
+
+    .arrow.reject {
+      stroke: var(--danger);
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 36px;
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+
+    @media (max-width: 760px) {
+      main {
+        padding: 24px 16px 40px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Microsoft Entra ID Front Door for Relayna Gateway</h1>
+    <p class="lede">
+      Future-feature design for placing OAuth2/OIDC identity in front of
+      Relayna Gateway while preserving Relayna virtual keys as the gateway-owned
+      policy and usage anchor.
+    </p>
+    <div class="meta" aria-label="Design metadata">
+      <span class="pill">Status: design proposal</span>
+      <span class="pill">Compatibility boundary: v0.1.4</span>
+      <span class="pill">Production freeze baseline: v0.1.0</span>
+      <span class="pill">Scope: future auth and authorization feature</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Decision</h2>
+    <p>
+      Provider traffic should require two independent credentials before Relayna
+      Gateway forwards a request: a valid Microsoft Entra ID access token and a
+      valid Relayna virtual key. Entra ID proves the caller identity and coarse
+      gateway entitlement. The Relayna virtual key remains the durable Relayna
+      identity for project attribution, model/provider policy, budget, rate
+      limits, guardrails, and usage accounting.
+    </p>
+    <div class="note success">
+      <strong>Recommended request contract:</strong>
+      use <code>Authorization: Bearer &lt;Entra JWT&gt;</code> for OAuth2/OIDC and
+      send the Relayna virtual key in <code>X-Relayna-Key: rk_live_...</code>.
+      Do not replace the current <code>Authorization: Bearer rk_live_...</code>
+      behavior without an explicit migration plan.
+    </div>
+  </section>
+
+  <section>
+    <h2>Architecture</h2>
+    <p>
+      Relayna Gateway has two supported entrances. The direct entrance lets a
+      client call the gateway after acquiring an Entra access token. The Apigee
+      entrance adds an enterprise API-management edge that can also validate the
+      token before the request reaches Relayna Gateway.
+    </p>
+    <div class="diagram-wrap" aria-label="Relayna Gateway Entra ID architecture diagram">
+      <svg viewBox="0 0 1120 640" role="img" aria-labelledby="arch-title arch-desc">
+        <title id="arch-title">Relayna Gateway Entra ID front door architecture</title>
+        <desc id="arch-desc">Direct and Apigee entrances both require Entra identity. Clients use MSAL to acquire tokens, Relayna Gateway validates tokens through a Rust verifier backed by OIDC metadata and JWKS, then applies Relayna key policy before provider forwarding.</desc>
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+            <path d="M0,0 L10,4 L0,8 z" fill="#667788"></path>
+          </marker>
+        </defs>
+
+        <rect class="box" x="40" y="70" width="150" height="70"></rect>
+        <text class="label" x="62" y="102">App / User</text>
+        <text class="small" x="62" y="123">SDK, Studio, worker</text>
+
+        <rect class="box" x="40" y="168" width="150" height="70"></rect>
+        <text class="label" x="75" y="198">MSAL</text>
+        <text class="small" x="62" y="219">Acquire and cache</text>
+        <text class="small" x="62" y="234">Entra access tokens</text>
+
+        <rect class="box entra" x="270" y="45" width="190" height="95"></rect>
+        <text class="label" x="300" y="82">Microsoft Entra ID</text>
+        <text class="small" x="300" y="105">OAuth2/OIDC authority</text>
+        <text class="small" x="300" y="124">Issues access token</text>
+
+        <rect class="box entra" x="270" y="158" width="190" height="68"></rect>
+        <text class="label" x="310" y="186">OIDC metadata</text>
+        <text class="small" x="300" y="209">jwks_uri + signing keys</text>
+
+        <rect class="box apigee" x="270" y="335" width="190" height="95"></rect>
+        <text class="label" x="330" y="372">Apigee</text>
+        <text class="small" x="306" y="395">Edge validation</text>
+        <text class="small" x="300" y="414">VerifyJWT + controls</text>
+
+        <rect class="box relayna" x="540" y="105" width="280" height="355"></rect>
+        <text class="label" x="608" y="139">Relayna Gateway</text>
+
+        <rect class="box" x="568" y="162" width="224" height="82"></rect>
+        <text class="label" x="598" y="191">EntraJwtVerifier</text>
+        <text class="small" x="590" y="214">jsonwebtoken + OIDC/JWKS</text>
+        <text class="small" x="590" y="233">roles, scopes, groups</text>
+
+        <rect class="box" x="568" y="268" width="100" height="54"></rect>
+        <text class="label" x="589" y="292">Axum</text>
+        <text class="small" x="586" y="312">control API</text>
+
+        <rect class="box" x="692" y="268" width="100" height="54"></rect>
+        <text class="label" x="714" y="292">Pingora</text>
+        <text class="small" x="712" y="312">proxy plane</text>
+
+        <text class="small" x="588" y="352">1. Validate Entra JWT</text>
+        <text class="small" x="588" y="374">2. Validate Relayna key</text>
+        <text class="small" x="588" y="396">3. Evaluate Relayna policy</text>
+        <text class="small" x="588" y="418">4. Strip client credentials</text>
+        <text class="small" x="588" y="440">5. Inject provider credential + usage</text>
+
+        <rect class="box provider" x="900" y="145" width="170" height="80"></rect>
+        <text class="label" x="946" y="180">Provider</text>
+        <text class="small" x="930" y="204">LiteLLM / OpenAI</text>
+
+        <rect class="box deny" x="900" y="360" width="170" height="75"></rect>
+        <text class="label" x="949" y="392">Deny</text>
+        <text class="small" x="924" y="416">Fail closed before proxy</text>
+
+        <path class="arrow" d="M115 140 C112 150, 112 158, 115 168"></path>
+        <text class="small" x="44" y="157">Client library</text>
+        <path class="arrow" d="M190 188 C225 145, 232 108, 270 92"></path>
+        <text class="small" x="205" y="124">Request token</text>
+        <path class="arrow" d="M460 194 C490 194, 515 194, 568 202"></path>
+        <text class="small" x="476" y="180">Fetch JWKS</text>
+        <path class="arrow" d="M460 104 C492 110, 510 124, 540 158"></path>
+        <text class="small" x="475" y="91">Direct entrance</text>
+        <path class="arrow" d="M190 222 C224 275, 232 338, 270 370"></path>
+        <text class="small" x="70" y="292">Optional enterprise edge</text>
+        <path class="arrow" d="M460 382 C508 382, 522 345, 540 306"></path>
+        <text class="small" x="478" y="402">Apigee entrance</text>
+        <path class="arrow" d="M680 244 C680 252, 655 258, 626 268"></path>
+        <path class="arrow" d="M680 244 C680 252, 708 258, 734 268"></path>
+        <text class="small" x="600" y="258">Shared identity context</text>
+        <path class="arrow strong" d="M820 204 C850 198, 872 190, 900 184"></path>
+        <text class="small" x="832" y="165">Internal credential only</text>
+        <path class="arrow reject" d="M820 394 C852 398, 872 400, 900 400"></path>
+        <text class="small" x="832" y="374">Auth or policy failure</text>
+      </svg>
+    </div>
+  </section>
+
+  <section>
+    <h2>Request Flows</h2>
+    <div class="grid">
+      <article class="panel">
+        <h3>Direct Entra Entrance</h3>
+        <ol>
+          <li>The app obtains an Entra access token for the Relayna Gateway API audience.</li>
+          <li>The app calls Relayna Gateway with <code>Authorization: Bearer &lt;Entra JWT&gt;</code> and <code>X-Relayna-Key: rk_live_...</code>.</li>
+          <li>Relayna Gateway validates the JWT signature, issuer, audience, timestamps, tenant, version, and accepted algorithm.</li>
+          <li>Relayna Gateway authorizes roles, scopes, and groups before virtual-key authentication.</li>
+          <li>Existing Relayna key authentication, route matching, policy, rate limit, budget, guardrail, and usage logic runs.</li>
+          <li>The gateway strips client credentials and forwards using only internal provider credentials.</li>
+        </ol>
+      </article>
+
+      <article class="panel">
+        <h3>Apigee Entrance</h3>
+        <ol>
+          <li>The app obtains an Entra access token and sends the request through Apigee.</li>
+          <li>Apigee validates the JWT with its VerifyJWT policy and can enforce edge controls such as quotas or threat protection.</li>
+          <li>Default mode forwards the original JWT so Relayna Gateway revalidates it.</li>
+          <li>Trusted mode may forward signed identity headers only over private networking and mTLS.</li>
+          <li>Relayna Gateway verifies either the JWT or the Apigee trust proof before applying Relayna key and policy checks.</li>
+          <li>Provider forwarding remains unchanged: no client JWT, no Relayna virtual key, only internal credentials.</li>
+        </ol>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <h2>Gateway Validation Rules</h2>
+    <p>
+      JWT validation must happen before any upstream provider call and before
+      existing Relayna virtual-key policy permits the request. Validation should
+      be fail-closed and observable without logging token material.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Validation Area</th>
+          <th>Design Rule</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Metadata and keys</td>
+          <td>Resolve Entra OIDC metadata and JWKS from the configured tenant authority. Cache keys with rotation-aware refresh and retry. Reject tokens that cannot be validated against a trusted key.</td>
+        </tr>
+        <tr>
+          <td>Signature and algorithm</td>
+          <td>Accept only configured asymmetric signing algorithms such as RS256. Reject unsigned tokens, algorithm confusion, missing <code>kid</code>, and unknown signing keys.</td>
+        </tr>
+        <tr>
+          <td>Issuer</td>
+          <td>Single-tenant v1 design requires exact issuer match for the configured tenant. Multi-tenant support is future additive work and must require tenant allowlisting.</td>
+        </tr>
+        <tr>
+          <td>Audience</td>
+          <td>Require <code>aud</code> to match the Relayna Gateway API application ID URI or client ID. Reject tokens minted for Microsoft Graph, Apigee, or any unrelated API.</td>
+        </tr>
+        <tr>
+          <td>Time claims</td>
+          <td>Validate <code>exp</code>, <code>nbf</code>, and <code>iat</code> with a small configured clock-skew allowance. Expired and not-yet-valid tokens fail before policy evaluation.</td>
+        </tr>
+        <tr>
+          <td>Tenant and version</td>
+          <td>Validate <code>tid</code> and token <code>ver</code>. The metadata endpoint must match token version expectations.</td>
+        </tr>
+        <tr>
+          <td>Identity context</td>
+          <td>Extract only sanitized identity fields needed for authorization, telemetry, and audit, such as tenant ID, object ID, app ID, scopes, roles, and groups.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Middleware and Library Research</h2>
+    <p>
+      Microsoft positions MSAL as the client-side library family for acquiring
+      and caching tokens. Relayna Gateway is the resource server in this design,
+      so it should validate access tokens instead of using MSAL as the primary
+      server-side enforcement mechanism. In .NET services, Microsoft recommends
+      Microsoft.Identity.Web and JwtBearer middleware; in Relayna's Rust stack,
+      the equivalent should be a gateway-owned verifier built from OIDC metadata,
+      JWKS caching, JWT validation, and existing Axum/Tower/Pingora hooks.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Option</th>
+          <th>Fit for Relayna Gateway</th>
+          <th>Design Decision</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>MSAL client libraries</td>
+          <td>Good for apps, CLIs, workers, or Studio clients that need to acquire Entra access tokens and refresh them.</td>
+          <td>Document for callers, not for gateway-side validation. Clients should request a token for the Relayna Gateway API scope or app role.</td>
+        </tr>
+        <tr>
+          <td>Microsoft.Identity.Web / JwtBearer</td>
+          <td>Best reference implementation for ASP.NET Core APIs. It validates bearer tokens and can customize audiences and validation parameters.</td>
+          <td>Use as a behavior model, not as a direct dependency, because Relayna Gateway is Rust-based.</td>
+        </tr>
+        <tr>
+          <td><code>jsonwebtoken</code> Rust crate</td>
+          <td>Good low-level verifier for decoding and validating JWTs once the correct Entra JWK has been selected by <code>kid</code>.</td>
+          <td>Recommended validation engine candidate. Add with an explicit crypto backend and wrap it behind a gateway-core trait.</td>
+        </tr>
+        <tr>
+          <td><code>openidconnect</code> Rust crate</td>
+          <td>Useful for OIDC discovery types, provider metadata, JWKS structures, and OIDC claim concepts.</td>
+          <td>Candidate for discovery and typed metadata. Validate access-token needs carefully because many OIDC helpers focus on ID tokens and relying-party flows.</td>
+        </tr>
+        <tr>
+          <td><code>oauth2</code> Rust crate</td>
+          <td>Useful when Relayna itself must acquire tokens for outbound calls or on-behalf-of flows.</td>
+          <td>Not required for inbound bearer JWT validation in the first feature slice.</td>
+        </tr>
+        <tr>
+          <td>Custom Axum/Tower middleware</td>
+          <td>Fits the control-plane API because Axum supports middleware functions that inspect headers and short-circuit unauthorized requests.</td>
+          <td>Use for Axum-owned routes that need Entra enforcement. Insert sanitized identity context into request extensions for handlers.</td>
+        </tr>
+        <tr>
+          <td>Pingora proxy hook</td>
+          <td>Required for provider traffic because high-throughput proxy routes are owned by gateway-proxy, not only Axum.</td>
+          <td>Call the same gateway-core verifier before virtual-key auth, policy, budget, and upstream credential injection.</td>
+        </tr>
+        <tr>
+          <td>Apigee VerifyJWT policy</td>
+          <td>Strong edge validation option that can validate signatures, timestamps, selected claims, and JWKS keys before traffic reaches Relayna Gateway.</td>
+          <td>Use at the edge, but keep Relayna Gateway revalidation as the default trust model.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Recommended Rust Shape</h3>
+    <ul>
+      <li>Add a framework-agnostic <code>EntraJwtVerifier</code> in gateway-core with inputs for token string, expected audience, tenant, issuer mode, required roles/scopes, and accepted groups.</li>
+      <li>Use the existing <code>reqwest</code> dependency to fetch the Entra OIDC discovery document and JWKS. Cache metadata and keys with TTLs, refresh on unknown <code>kid</code>, and fail closed if refresh cannot validate the token.</li>
+      <li>Use <code>jsonwebtoken</code> or a similarly audited JWT crate for signature and registered-claim validation. Do not use unsafe decode paths except for reading the untrusted header to choose a JWK by <code>kid</code>.</li>
+      <li>Represent validated identity as a small immutable context containing <code>tid</code>, <code>oid</code> or app identity, <code>azp</code>/<code>appid</code>, roles, scopes, groups, and token mode. Redact raw tokens from logs.</li>
+      <li>Keep authorization rules data-driven through config or policy tables later, but start with static config for tenant, audience, required invoke role/scope, and accepted groups.</li>
+      <li>For group overage claims, fail closed in v1 and document that Microsoft Graph lookup is a later additive feature requiring Graph permissions, cache policy, and failure semantics.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Authorization Model</h2>
+    <p>
+      Entra authorization gates who may connect to Relayna Gateway. Relayna
+      policy still decides what an accepted caller may do with AI traffic.
+    </p>
+    <div class="grid">
+      <article class="panel">
+        <h3>App Roles and Scopes</h3>
+        <ul>
+          <li><code>gateway.invoke</code> permits provider traffic entry.</li>
+          <li><code>gateway.admin.read</code> permits future read-only admin API access.</li>
+          <li><code>gateway.admin.write</code> permits future mutating admin API access.</li>
+          <li>Client-credentials callers should use app roles. Delegated user callers may use scopes.</li>
+        </ul>
+      </article>
+
+      <article class="panel">
+        <h3>Groups</h3>
+        <ul>
+          <li>Group claims may map to Relayna projects, inherited policy layers, or gateway access tiers.</li>
+          <li>Group checks should be allowlist based, not broad tenant membership checks.</li>
+          <li>When Entra emits group overage indicators, Relayna should fail closed until Graph lookup or a dedicated group-resolution service is implemented.</li>
+        </ul>
+      </article>
+    </div>
+
+    <div class="note">
+      <strong>Policy ordering:</strong> Entra role, scope, and group checks only
+      decide whether the caller may enter the gateway. Existing Relayna virtual
+      key policy remains authoritative for routes, models, providers,
+      streaming, tools, tasks, budgets, rate limits, guardrails, and usage.
+    </div>
+  </section>
+
+  <section>
+    <h2>Apigee Trust Modes</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Mode</th>
+          <th>Gateway Behavior</th>
+          <th>When to Use</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>JWT revalidation</td>
+          <td>Apigee validates the Entra JWT and forwards the original JWT. Relayna Gateway validates the same JWT again before virtual-key auth and policy.</td>
+          <td>Recommended default. It gives defense in depth and keeps Relayna Gateway independently secure if Apigee policy is changed or bypassed.</td>
+        </tr>
+        <tr>
+          <td>Trusted internal headers</td>
+          <td>Apigee validates Entra ID and forwards signed identity headers. Relayna Gateway accepts them only after verifying mTLS/private-network controls and a header signature or equivalent trust proof.</td>
+          <td>Use only for tightly controlled private deployments where duplicate JWT validation is intentionally avoided and the Apigee trust boundary is enforced.</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note warning">
+      Trusted-header mode must never be enabled on a public listener. A direct
+      caller must not be able to forge Apigee identity headers.
+    </div>
+  </section>
+
+  <section>
+    <h2>Compatibility and Implementation Notes</h2>
+    <ul>
+      <li>Latest release tag observed during planning: <code>v0.1.4</code>.</li>
+      <li>Production freeze baseline remains <code>v0.1.0</code>.</li>
+      <li>Future implementation touches frozen surfaces: authentication behavior, public request headers, policy decisions, proxy forwarding, telemetry fields, config/env vars, and freeze perimeter tests.</li>
+      <li>Use additive configuration and headers for the first implementation. Do not silently reinterpret <code>Authorization: Bearer rk_live_...</code> as an Entra token.</li>
+      <li>Add stable JWT-specific error codes before implementation, for example missing JWT, malformed JWT, invalid JWT, expired JWT, invalid audience, invalid issuer, and insufficient Entra authorization.</li>
+      <li>Update <code>tests/freeze-v0.1.0-perimeter.test.mjs</code> when the future feature adds public error codes, config names, or request-header contracts.</li>
+      <li>Run the gateway verification stack for future runtime changes: <code>cargo fmt --all --check</code>, <code>cargo clippy --workspace --all-targets --all-features -- -D warnings</code>, and <code>cargo test --workspace --all-features</code>.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Future Implementation Test Plan</h2>
+    <ul>
+      <li>Valid Entra JWT plus valid Relayna key forwards successfully.</li>
+      <li>Missing JWT, invalid signature, wrong audience, wrong issuer, expired token, and missing required scope or role fail before upstream forwarding.</li>
+      <li>Valid JWT with invalid, disabled, revoked, or expired Relayna key still fails under existing virtual-key rules.</li>
+      <li>Apigee revalidation mode rejects tampered, missing, or wrong-audience JWTs.</li>
+      <li>Trusted Apigee-header mode rejects requests without required mTLS, private network, and signed-header trust proof.</li>
+      <li>Provider calls never receive client Entra JWTs or Relayna virtual keys.</li>
+      <li>Usage events include Relayna key/project attribution and only sanitized Entra identity fields selected by the implementation.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>References</h2>
+    <ul>
+      <li><a href="https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens">Microsoft identity platform: access tokens</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference">Microsoft identity platform: access token claims reference</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/entra/identity-platform/claims-validation">Microsoft identity platform: claims validation</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/entra/identity-platform/msal-overview">Microsoft Authentication Library overview</a></li>
+      <li><a href="https://learn.microsoft.com/entra/identity-platform/scenario-protected-web-api-app-configuration">Microsoft protected web API middleware configuration</a></li>
+      <li><a href="https://docs.rs/jsonwebtoken/latest/jsonwebtoken/">Rust jsonwebtoken crate</a></li>
+      <li><a href="https://docs.rs/openidconnect/latest/openidconnect/">Rust openidconnect crate</a></li>
+      <li><a href="https://docs.rs/axum/latest/axum/middleware/fn.from_fn.html">Axum middleware from_fn</a></li>
+      <li><a href="https://docs.rs/tower/latest/tower/">Tower middleware abstractions</a></li>
+      <li><a href="https://docs.cloud.google.com/apigee/docs/api-platform/reference/policies/verify-jwt-policy">Google Cloud Apigee: VerifyJWT policy</a></li>
+    </ul>
+  </section>
+
+  <p class="footer">
+    This document is an internal future-feature design artifact. It does not
+    change runtime behavior until a follow-up implementation updates gateway
+    code, tests, configuration, and compatibility notes.
+  </p>
+</main>
+</body>
+</html>
