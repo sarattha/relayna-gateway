@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-29T16:46:31.306Z",
+  "generatedAt": "2026-05-29T17:00:16.757Z",
   "environment": {
     "gatewayProxyUrl": "http://gateway:8080",
     "gatewayControlUrl": "http://gateway:8081",
@@ -9,14 +9,21 @@
     "audience": "api://relayna-gateway-review",
     "tenantId": "relayna-review-tenant",
     "relaynaKeyHeader": "X-Relayna-Key",
-    "apigeeTrustedHeader": true
+    "apigeeTrustedHeader": true,
+    "coveredRoutes": [
+      "/v1/chat/completions",
+      "/v1/responses",
+      "/providers/openai/*",
+      "/summary",
+      "/services/*"
+    ]
   },
   "checks": {
     "direct_valid_jwt_and_relayna_key": {
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-6b545eeb-e146-4353-aebc-2e3919f5d06d",
+        "id": "chatcmpl-7dd80886-5850-42c8-a257-b229d190cfda",
         "object": "chat.completion",
         "model": "gpt-review",
         "choices": [
@@ -36,6 +43,146 @@
         }
       }
     },
+    "responses_valid_jwt_and_relayna_key": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "mock-925a9c6d-be44-4263-993a-39a8d392bfb2",
+        "object": "mock.response",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "mock upstream ok"
+              }
+            ]
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      }
+    },
+    "direct_provider_route_valid_jwt_and_relayna_key": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "chatcmpl-29fe5381-74f9-4a8e-8f9e-f18337588dd5",
+        "object": "chat.completion",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      }
+    },
+    "builtin_internal_summary_valid_jwt_and_relayna_key": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "mock-64560c46-5137-413a-af4c-66dcd4458ef8",
+        "object": "mock.response",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "mock upstream ok"
+              }
+            ]
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      }
+    },
+    "service_wildcard_valid_jwt_and_relayna_key": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "mock-42ff307b-55b2-4f0f-b907-e35418c2e743",
+        "object": "mock.response",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "mock upstream ok"
+              }
+            ]
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      }
+    },
+    "service_wildcard_missing_jwt_fails_before_upstream": {
+      "ok": true,
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "missing_entra_authorization",
+          "message": "Entra authorization is required.",
+          "request_id": "d62deddd-0402-4bb2-94bc-7b92db76463a"
+        }
+      }
+    },
     "missing_jwt_fails_before_upstream": {
       "ok": true,
       "status": 401,
@@ -43,7 +190,7 @@
         "error": {
           "code": "missing_entra_authorization",
           "message": "Entra authorization is required.",
-          "request_id": "020c461a-5d3a-4435-a8da-33a1e81bbe19"
+          "request_id": "3fe79f34-01e6-46f5-b81d-2929efbfe48c"
         }
       }
     },
@@ -54,7 +201,7 @@
         "error": {
           "code": "invalid_entra_audience",
           "message": "Entra token audience is invalid.",
-          "request_id": "f436bf63-1bbb-463d-b8aa-80709ec50062"
+          "request_id": "12b6fa5d-3603-466b-bc6a-9b55a1496aab"
         }
       }
     },
@@ -65,7 +212,7 @@
         "error": {
           "code": "expired_entra_token",
           "message": "Entra token has expired.",
-          "request_id": "08e21254-c93a-47cc-ad62-e6697e65d518"
+          "request_id": "129ec285-c7dd-456f-be3f-49188e1481b5"
         }
       }
     },
@@ -76,7 +223,7 @@
         "error": {
           "code": "insufficient_entra_authorization",
           "message": "Entra token lacks the required gateway authorization.",
-          "request_id": "e32790e1-4a8f-4ce2-abf7-40f78e128922"
+          "request_id": "cb818330-358b-4d56-88b9-7dc61b3a32d3"
         }
       }
     },
@@ -87,7 +234,7 @@
         "error": {
           "code": "invalid_entra_token",
           "message": "Entra token is invalid.",
-          "request_id": "2a472d5d-3e6e-47a0-8fb6-c8a7545f8c8f"
+          "request_id": "3ddf8558-28bc-4518-b551-a1e6c27cd972"
         }
       }
     },
@@ -98,7 +245,7 @@
         "error": {
           "code": "invalid_virtual_key",
           "message": "Virtual key is invalid.",
-          "request_id": "9b799ad9-d0b9-40fb-819c-80de8b4e4104"
+          "request_id": "892682b0-5298-47eb-9caa-2fd824ed7b15"
         }
       }
     },
@@ -109,7 +256,7 @@
         "error": {
           "code": "missing_authorization",
           "message": "Authorization header is required.",
-          "request_id": "1cc6e481-2678-4067-8676-678b905c84d3"
+          "request_id": "42348038-45ad-40b0-a6ee-21cb17b248ec"
         }
       }
     },
@@ -117,7 +264,7 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-bd150dd5-747a-427e-9541-5fac3fd32a01",
+        "id": "chatcmpl-c8597902-b251-4aab-b5e7-c4a1ec1690a1",
         "object": "chat.completion",
         "model": "gpt-review",
         "choices": [
@@ -153,7 +300,7 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-27da0bf2-5431-4c71-a072-ee36edb828fa",
+        "id": "chatcmpl-7ddb100d-fc59-4c46-8d09-4e0a7a6cef3d",
         "object": "chat.completion",
         "model": "gpt-review",
         "choices": [
@@ -181,21 +328,59 @@
         "error": {
           "code": "untrusted_apigee_identity",
           "message": "Apigee identity proof is untrusted.",
-          "request_id": "a09666ef-f449-4abb-8276-4a25d2d12738"
+          "request_id": "7c23da64-b71a-4db8-88ca-a8d163513344"
         }
       },
       "edgeValidated": true
     },
     "upstream_receives_only_internal_provider_credentials": {
       "ok": true,
-      "upstreamRequestCount": 3,
-      "lastUpstreamAuthorization": "Bearer sk-litellm-review-service-key"
+      "upstreamRequestCount": 7,
+      "lastUpstreamAuthorization": "Bearer sk-litellm-review-service-key",
+      "upstreamAuthorizations": [
+        "Bearer sk-litellm-review-service-key",
+        "Bearer sk-direct-openai-review-service-key",
+        "Bearer sk-internal-summary-review-service-key",
+        "Bearer sk-internal-review-service-key"
+      ]
     }
   },
   "upstreamRequests": [
     {
       "path": "/v1/chat/completions",
       "authorization": "Bearer sk-litellm-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    },
+    {
+      "path": "/v1/responses",
+      "authorization": "Bearer sk-litellm-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    },
+    {
+      "path": "/v1/chat/completions",
+      "authorization": "Bearer sk-direct-openai-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    },
+    {
+      "path": "/summary",
+      "authorization": "Bearer sk-internal-summary-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    },
+    {
+      "path": "/execute",
+      "authorization": "Bearer sk-internal-review-service-key",
       "hasRelaynaKey": false,
       "hasAihKey": false,
       "hasClientJwt": false,

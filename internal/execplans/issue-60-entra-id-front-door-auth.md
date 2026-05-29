@@ -36,6 +36,9 @@ policy, budget, rate-limit, guardrail, and usage anchor.
 - [x] (2026-05-29 23:48 +07) Captured browser screenshots for the live review
       dashboard and raw result evidence under
       `internal/test-reports/entra-front-door-real-env/screenshots/`.
+- [x] (2026-05-30 00:00 +07) Expanded the Docker review harness to cover
+      `/v1/responses`, `/providers/openai/*`, built-in internal service routes,
+      and `/services/*` in addition to `/v1/chat/completions`.
 
 ## Surprises & Discoveries
 
@@ -92,8 +95,10 @@ Verification passed:
 The Docker harness report is
 `internal/test-reports/entra-front-door-real-env/report.md`. It verifies direct
 Entra JWT validation through mock OIDC metadata/JWKS, invalid token rejection,
-configured `X-Relayna-Key` handling, Apigee JWT revalidation, trusted Apigee
-HMAC identity proof rejection on tamper, and upstream credential stripping.
+configured `X-Relayna-Key` handling, LiteLLM routes, direct OpenAI-compatible
+routes, built-in internal service routes, `/services/*` routes, Apigee JWT
+revalidation, trusted Apigee HMAC identity proof rejection on tamper, and
+upstream credential stripping.
 
 ## Context and Orientation
 

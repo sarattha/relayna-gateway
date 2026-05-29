@@ -56,6 +56,8 @@ services:
       REDIS_URL: redis://redis:6379
       LITELLM_BASE_URL: http://mock-app:4000
       LITELLM_SERVICE_KEY: sk-litellm-review-service-key
+      DIRECT_OPENAI_BASE_URL: http://mock-app:4000
+      DIRECT_OPENAI_SERVICE_KEY: sk-direct-openai-review-service-key
       GATEWAY_ADMIN_TOKEN: op_live_entra_real_env_review_token_1234567890
       GATEWAY_BIND_ADDR: 0.0.0.0:8080
       GATEWAY_CONTROL_BIND_ADDR: 0.0.0.0:8081

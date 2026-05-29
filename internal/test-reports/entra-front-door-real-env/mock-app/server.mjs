@@ -8,6 +8,12 @@ const gatewayProxyUrl = process.env.GATEWAY_PROXY_URL || "http://gateway:8080";
 const gatewayControlUrl = process.env.GATEWAY_CONTROL_URL || "http://gateway:8081";
 const adminToken = process.env.GATEWAY_ADMIN_TOKEN;
 const apigeeSecret = process.env.APIGEE_TRUSTED_HEADER_SECRET || "apigee-secret";
+const expectedUpstreamAuthorizations = new Set([
+  "Bearer sk-litellm-review-service-key",
+  "Bearer sk-direct-openai-review-service-key",
+  "Bearer sk-internal-summary-review-service-key",
+  "Bearer sk-internal-review-service-key",
+]);
 const issuer = `${dockerBaseUrl}/oauth`;
 const tenantId = "relayna-review-tenant";
 const audience = "api://relayna-gateway-review";
@@ -189,6 +195,19 @@ async function setupGatewayData() {
   }
   const project = await projectResponse.json();
   state.projectId = project.id;
+  await ensureNeutralGlobalPolicyLayer();
+  await ensureService("summary", {
+    route_pattern: "/summary",
+    upstream_base_url: dockerBaseUrl,
+    allowed_methods: ["POST"],
+    credential: "sk-internal-summary-review-service-key",
+  });
+  await ensureService("review-service", {
+    route_pattern: "/services/review-service/*",
+    upstream_base_url: dockerBaseUrl,
+    allowed_methods: ["GET", "POST"],
+    credential: "sk-internal-review-service-key",
+  });
   const keyResponse = await fetch(`${gatewayControlUrl}/admin-ui/admin/keys`, {
     method: "POST",
     headers: {
@@ -199,8 +218,8 @@ async function setupGatewayData() {
       project_id: project.id,
       preset: "developer",
       policy: {
-        allowed_routes: ["/v1/chat/completions"],
-        allowed_providers: ["litellm"],
+        allowed_routes: ["/v1/chat/completions", "/v1/responses", "/providers/openai/*", "/summary", "/services/*"],
+        allowed_providers: ["litellm", "openai-compatible", "internal-service"],
         allow_streaming: false,
       },
     }),
@@ -211,6 +230,46 @@ async function setupGatewayData() {
   const key = await keyResponse.json();
   state.rawRelaynaKey = key.raw_key;
   return state.rawRelaynaKey;
+}
+
+async function ensureNeutralGlobalPolicyLayer() {
+  const response = await fetch(`${gatewayControlUrl}/admin-ui/admin/policy-layers`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${adminToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ kind: "global", policy: {} }),
+  });
+  if (!response.ok) {
+    throw new Error(`upsert_neutral_global_policy_failed:${response.status}:${await response.text()}`);
+  }
+  return response.json();
+}
+
+async function ensureService(name, overrides) {
+  const response = await fetch(`${gatewayControlUrl}/admin-ui/admin/services`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${adminToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      name,
+      health_check_path: "/healthz",
+      health_check_method: "GET",
+      timeout_ms: 60000,
+      max_body_bytes: 2097152,
+      cost_mode: "fixed",
+      estimated_cost_usd: 0.01,
+      enabled: true,
+      ...overrides,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`create_service_${name}_failed:${response.status}:${await response.text()}`);
+  }
+  return response.json();
 }
 
 function chatPayload(label) {
@@ -306,6 +365,25 @@ async function runTests() {
   const invalidSignatureToken = `${validToken}x`;
 
   const directValid = await gatewayCall("/v1/chat/completions", validToken, relaynaKey);
+  const responsesValid = await gatewayCall("/v1/responses", validToken, relaynaKey, {
+    model: "gpt-review",
+    input: "review responses",
+  });
+  const directProviderValid = await gatewayCall(
+    "/providers/openai/v1/chat/completions",
+    validToken,
+    relaynaKey,
+    chatPayload("direct-provider"),
+  );
+  const summaryValid = await gatewayCall("/summary", validToken, relaynaKey, {
+    input: "summarize this review",
+  });
+  const serviceWildcardValid = await gatewayCall("/services/review-service/execute", validToken, relaynaKey, {
+    input: "service wildcard review",
+  });
+  const serviceWildcardMissingJwt = await gatewayCall("/services/review-service/execute", null, relaynaKey, {
+    input: "missing service jwt",
+  });
   const missingJwt = await gatewayCall("/v1/chat/completions", null, relaynaKey);
   const wrongAudience = await gatewayCall("/v1/chat/completions", wrongAudienceToken, relaynaKey);
   const expired = await gatewayCall("/v1/chat/completions", expiredToken, relaynaKey);
@@ -341,11 +419,23 @@ async function runTests() {
       "x-aih-api-key" in headers ||
       "x-apigee-entra-identity" in headers ||
       "x-apigee-entra-signature" in headers ||
-      headers.authorization !== "Bearer sk-litellm-review-service-key",
+      !expectedUpstreamAuthorizations.has(headers.authorization),
   );
 
   const checks = {
     direct_valid_jwt_and_relayna_key: pass(directValid.status === 200, directValid),
+    responses_valid_jwt_and_relayna_key: pass(responsesValid.status === 200, responsesValid),
+    direct_provider_route_valid_jwt_and_relayna_key: pass(
+      directProviderValid.status === 200,
+      directProviderValid,
+    ),
+    builtin_internal_summary_valid_jwt_and_relayna_key: pass(summaryValid.status === 200, summaryValid),
+    service_wildcard_valid_jwt_and_relayna_key: pass(serviceWildcardValid.status === 200, serviceWildcardValid),
+    service_wildcard_missing_jwt_fails_before_upstream: pass(
+      serviceWildcardMissingJwt.status === 401 &&
+        codeOf(serviceWildcardMissingJwt) === "missing_entra_authorization",
+      serviceWildcardMissingJwt,
+    ),
     missing_jwt_fails_before_upstream: pass(
       missingJwt.status === 401 && codeOf(missingJwt) === "missing_entra_authorization",
       missingJwt,
@@ -394,6 +484,7 @@ async function runTests() {
     upstream_receives_only_internal_provider_credentials: pass(!leakedClientCredentials, {
       upstreamRequestCount: state.upstreamRequests.length,
       lastUpstreamAuthorization: lastUpstream?.headers?.authorization,
+      upstreamAuthorizations: [...new Set(upstreamHeaders.map((headers) => headers.authorization))],
     }),
   };
   const ok = Object.values(checks).every((check) => check.ok);
@@ -409,6 +500,13 @@ async function runTests() {
       tenantId,
       relaynaKeyHeader: "X-Relayna-Key",
       apigeeTrustedHeader: true,
+      coveredRoutes: [
+        "/v1/chat/completions",
+        "/v1/responses",
+        "/providers/openai/*",
+        "/summary",
+        "/services/*",
+      ],
     },
     checks,
     upstreamRequests: state.upstreamRequests.map((request) => ({
@@ -416,7 +514,7 @@ async function runTests() {
       authorization: request.headers.authorization,
       hasRelaynaKey: "x-relayna-key" in request.headers,
       hasAihKey: "x-aih-api-key" in request.headers,
-      hasClientJwt: request.headers.authorization !== "Bearer sk-litellm-review-service-key",
+      hasClientJwt: !expectedUpstreamAuthorizations.has(request.headers.authorization),
       hasApigeeIdentity: "x-apigee-entra-identity" in request.headers,
     })),
   };
@@ -571,6 +669,23 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/captures") {
       return jsonResponse(res, 200, state.upstreamRequests);
+    }
+    if (req.method === "POST") {
+      const body = await readJson(req);
+      state.upstreamRequests.push({
+        path: url.pathname,
+        headers: req.headers,
+        body,
+        at: new Date().toISOString(),
+      });
+      return jsonResponse(res, 200, {
+        id: `mock-${crypto.randomUUID()}`,
+        object: "mock.response",
+        model: body.model || "gpt-review",
+        choices: [{ index: 0, message: { role: "assistant", content: "mock upstream ok" }, finish_reason: "stop" }],
+        output: [{ type: "message", content: [{ type: "output_text", text: "mock upstream ok" }] }],
+        usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 },
+      });
     }
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/app")) {
       return htmlResponse(res, 200, dashboardHtml());
