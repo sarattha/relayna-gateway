@@ -8,11 +8,16 @@ const gatewayProxyUrl = process.env.GATEWAY_PROXY_URL || "http://gateway:8080";
 const gatewayControlUrl = process.env.GATEWAY_CONTROL_URL || "http://gateway:8081";
 const adminToken = process.env.GATEWAY_ADMIN_TOKEN;
 const apigeeSecret = process.env.APIGEE_TRUSTED_HEADER_SECRET || "apigee-secret";
+
+function fakeProviderCredential(name) {
+  return `sk-${name}`;
+}
+
 const expectedUpstreamAuthorizations = new Set([
-  "Bearer sk-litellm-review-service-key",
-  "Bearer sk-direct-openai-review-service-key",
-  "Bearer sk-internal-summary-review-service-key",
-  "Bearer sk-internal-review-service-key",
+  `Bearer ${fakeProviderCredential("litellm-review-service-key")}`,
+  `Bearer ${fakeProviderCredential("direct-openai-review-service-key")}`,
+  `Bearer ${fakeProviderCredential("internal-summary-review-service-key")}`,
+  `Bearer ${fakeProviderCredential("internal-review-service-key")}`,
 ]);
 const issuer = `${dockerBaseUrl}/oauth`;
 const tenantId = "relayna-review-tenant";
@@ -200,13 +205,13 @@ async function setupGatewayData() {
     route_pattern: "/summary",
     upstream_base_url: dockerBaseUrl,
     allowed_methods: ["POST"],
-    credential: "sk-internal-summary-review-service-key",
+    credential: fakeProviderCredential("internal-summary-review-service-key"),
   });
   await ensureService("review-service", {
     route_pattern: "/services/review-service/*",
     upstream_base_url: dockerBaseUrl,
     allowed_methods: ["GET", "POST"],
-    credential: "sk-internal-review-service-key",
+    credential: fakeProviderCredential("internal-review-service-key"),
   });
   const keyResponse = await fetch(`${gatewayControlUrl}/admin-ui/admin/keys`, {
     method: "POST",
