@@ -480,16 +480,11 @@ fn split_scopes(scopes: Option<&str>) -> Vec<String> {
 mod tests {
     use super::*;
     use jsonwebtoken::{encode, EncodingKey, Header};
-    use rand_core::OsRng;
-    use rsa::{
-        pkcs8::{EncodePrivateKey, LineEnding},
-        traits::PublicKeyParts,
-        RsaPrivateKey,
-    };
     use serde_json::json;
     use std::{
         io::{Read, Write},
         net::TcpListener,
+        process::{Command, Stdio},
         thread,
     };
 
@@ -526,23 +521,107 @@ mod tests {
     }
 
     fn signing_key(kid: &str) -> TestSigningKey {
-        let private_key = RsaPrivateKey::new(&mut OsRng, 2048).expect("test rsa key");
-        let public_key = private_key.to_public_key();
-        let private_pem = private_key
-            .to_pkcs8_pem(LineEnding::LF)
-            .expect("test private key pem");
+        let private_pem = generate_test_private_key();
+        let (modulus, exponent) = public_components(&private_pem);
         let jwk = JsonWebKey {
             kid: Some(kid.to_owned()),
             kty: "RSA".to_owned(),
             alg: Some("RS256".to_owned()),
-            n: URL_SAFE_NO_PAD.encode(public_key.n().to_bytes_be()),
-            e: URL_SAFE_NO_PAD.encode(public_key.e().to_bytes_be()),
+            n: URL_SAFE_NO_PAD.encode(modulus),
+            e: URL_SAFE_NO_PAD.encode(exponent),
         };
         TestSigningKey {
             encoding_key: EncodingKey::from_rsa_pem(private_pem.as_bytes())
                 .expect("test encoding key"),
             jwk,
         }
+    }
+
+    fn generate_test_private_key() -> String {
+        let output = Command::new("openssl")
+            .args([
+                "genpkey",
+                "-algorithm",
+                "RSA",
+                "-pkeyopt",
+                "rsa_keygen_bits:2048",
+            ])
+            .output()
+            .expect("run openssl genpkey for Entra JWT tests");
+        assert!(
+            output.status.success(),
+            "openssl genpkey failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).expect("openssl private key pem is utf8")
+    }
+
+    fn public_components(private_pem: &str) -> (Vec<u8>, Vec<u8>) {
+        let mut child = Command::new("openssl")
+            .args(["rsa", "-pubout", "-text", "-noout"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run openssl rsa for Entra JWT tests");
+        child
+            .stdin
+            .as_mut()
+            .expect("openssl stdin")
+            .write_all(private_pem.as_bytes())
+            .expect("write private pem to openssl");
+        let output = child.wait_with_output().expect("openssl rsa output");
+        assert!(
+            output.status.success(),
+            "openssl rsa failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        parse_openssl_public_key_text(&String::from_utf8(output.stdout).expect("openssl text"))
+    }
+
+    fn parse_openssl_public_key_text(text: &str) -> (Vec<u8>, Vec<u8>) {
+        let mut modulus_hex = String::new();
+        let mut in_modulus = false;
+        let mut exponent_hex = None;
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed == "modulus:" {
+                in_modulus = true;
+                continue;
+            }
+            if let Some(exponent) = trimmed.strip_prefix("publicExponent:") {
+                in_modulus = false;
+                let hex = exponent
+                    .split_once("(0x")
+                    .and_then(|(_, rest)| rest.strip_suffix(')'))
+                    .expect("openssl public exponent hex");
+                exponent_hex = Some(hex.to_owned());
+                continue;
+            }
+            if in_modulus {
+                modulus_hex.push_str(&trimmed.replace([':', ' '], ""));
+            }
+        }
+
+        let mut modulus = hex_to_bytes(&modulus_hex);
+        while modulus.first() == Some(&0) {
+            modulus.remove(0);
+        }
+        let exponent = hex_to_bytes(&exponent_hex.expect("openssl public exponent"));
+        (modulus, exponent)
+    }
+
+    fn hex_to_bytes(hex: &str) -> Vec<u8> {
+        let hex = if hex.len().is_multiple_of(2) {
+            hex.to_owned()
+        } else {
+            format!("0{hex}")
+        };
+        (0..hex.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&hex[index..index + 2], 16).expect("hex byte"))
+            .collect()
     }
 
     fn token(key: &TestSigningKey, claims: serde_json::Value) -> String {

@@ -22,6 +22,3 @@ thiserror.workspace = true
 tokio.workspace = true
 uuid.workspace = true
 url.workspace = true
-
-[dev-dependencies]
-rsa = "0.9.10"
