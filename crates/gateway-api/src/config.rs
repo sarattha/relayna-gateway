@@ -1,6 +1,6 @@
 use gateway_core::{
-    ApigeeTrustedHeaderConfig, EntraAuthConfig, GatewayError, GatewayResult,
-    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    validate_relayna_key_header_name, ApigeeTrustedHeaderConfig, EntraAuthConfig, GatewayError,
+    GatewayResult, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use std::{env, net::SocketAddr};
 
@@ -18,6 +18,7 @@ pub struct Config {
     pub relayna_studio_token: Option<String>,
     pub guardrail_pii_mapping_ttl_seconds: u64,
     pub guardrail_mapping_encryption_key: Option<String>,
+    pub relayna_key_header: String,
     pub entra_auth: Option<EntraAuthConfig>,
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
     pub gateway_bind_addr: SocketAddr,
@@ -41,6 +42,9 @@ impl Config {
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(3600);
         let guardrail_mapping_encryption_key = optional("GUARDRAIL_MAPPING_ENCRYPTION_KEY");
+        let relayna_key_header = optional("ENTRA_RELAYNA_KEY_HEADER")
+            .unwrap_or_else(|| ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned());
+        validate_relayna_key_header_name(&relayna_key_header)?;
         let entra_auth = if optional_bool("ENTRA_AUTH_ENABLED")?.unwrap_or(false) {
             let config = EntraAuthConfig {
                 tenant_id: required("ENTRA_TENANT_ID")?,
@@ -54,8 +58,7 @@ impl Config {
                     optional_csv("ENTRA_ACCEPTED_ALGORITHMS"),
                     vec!["RS256".to_owned()],
                 ),
-                relayna_key_header: optional("ENTRA_RELAYNA_KEY_HEADER")
-                    .unwrap_or_else(|| ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned()),
+                relayna_key_header: relayna_key_header.clone(),
                 jwks_cache_ttl_seconds: optional_u64("ENTRA_JWKS_CACHE_TTL_SECONDS").unwrap_or(300),
                 clock_skew_seconds: optional_i64("ENTRA_CLOCK_SKEW_SECONDS").unwrap_or(60),
             };
@@ -95,6 +98,7 @@ impl Config {
             relayna_studio_token,
             guardrail_pii_mapping_ttl_seconds,
             guardrail_mapping_encryption_key,
+            relayna_key_header,
             entra_auth,
             apigee_trusted_header,
             gateway_bind_addr,

@@ -47,13 +47,16 @@ impl EntraAuthConfig {
         {
             return Err(GatewayError::InvalidConfiguration);
         }
-        if self.relayna_key_header.trim().is_empty()
-            || HeaderName::from_bytes(self.relayna_key_header.trim().as_bytes()).is_err()
-        {
-            return Err(GatewayError::InvalidConfiguration);
-        }
+        validate_relayna_key_header_name(&self.relayna_key_header)?;
         Ok(())
     }
+}
+
+pub fn validate_relayna_key_header_name(header: &str) -> GatewayResult<()> {
+    if header.trim().is_empty() || HeaderName::from_bytes(header.trim().as_bytes()).is_err() {
+        return Err(GatewayError::InvalidConfiguration);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -477,6 +480,12 @@ fn split_scopes(scopes: Option<&str>) -> Vec<String> {
 mod tests {
     use super::*;
     use jsonwebtoken::{encode, EncodingKey, Header};
+    use rand_core::OsRng;
+    use rsa::{
+        pkcs8::{EncodePrivateKey, LineEnding},
+        traits::PublicKeyParts,
+        RsaPrivateKey,
+    };
     use serde_json::json;
     use std::{
         io::{Read, Write},
@@ -484,34 +493,10 @@ mod tests {
         thread,
     };
 
-    const PRIVATE_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCWBw7GMq3pLLEk
-ogCzJrPLE98WVdQg2Pc2U73Ip/spFtZ42TzE3QiR+3F7jWzOOWHkwN7tmtyFTRZL
-2xXVs1FyEAH67AbiuITnWCnL8CWIirR9WQqIZNGOetijwCRkJKVw3+7SKAekFasL
-Emc6y+nFFUAJ9C155PjVdgGbus+GPWjJwuDa4qNIG+2khV8ddKRHTO6ouo+ubdjP
-FQwlOJmTvMLDdeeww4WJC6b5xwDfteJaiMBUnfUSuQgrTriWxMdrP6+/BG8+aP0E
-iFuPmP4aOOEIe3JTScxoVaDmWRxYu1DxfRv5rjhSAamyTjRHuIRpwJKY6g9kl0PM
-5jLPiNWbAgMBAAECggEABvCqo/aCNFrR6FI/hV9mn8qlM5ZNgCYpQW/G7rpT6bGv
-GDC3GUWUTj8lym5fYybPutJFPb6VMZbAT6AB4ZHa/v4d6VVJIux1kXIdn4aAu1FB
-9Nkine6erGBNwegd3C1pzc/oxKX/ZygYHSSry9IqV+iaFBvMjWqkgX4PqFGQT12u
-ZyhmC6PpACKD5KkBItswBHE2+6/dF3YGGhwLdswfMwOSprh9yOK+1GfuSPQAxz+m
-H5Z0TLSaZUWfePkW9Bckpqy/IrfE/MkaAadpgOAUnYuD/VsvE+s6BGy3bZNsMnfV
-ycfFJsZyh4CTPOVIJXlh4qhR+MHTdvibM2cwisk0CQKBgQDHg+J3uC3AJVkNQbkj
-CCUnPjZQzyngKz18o6V/SdYcCmZa3x346xhgf3tZCi6JekangY1gcNswtHb+v1gP
-OOBTM9rVx6ZEfVbJjxXJL1eo7fYOMDIiwxx7biPGoocRygs9tOczsLyotoHBfnu4
-2NTGNpWzoLILthxcHT6YUuIjfQKBgQDAgH8A9YF22WTVemTWrh+JOfXuBZKIq3xz
-duLn5hZojiRNvxevmxfYdr1A8RAktM1SuYVOVyUa9b7Oryj3krBKZ6IPS14UTVJd
-yOzjBaC18mg+GNd5d0ThixdvR8YR1B/iAuSHU97YbceQXwM609ZtVEeOZ8ilET47
-phuho2549wKBgBHpqV+OTa0+rSwfhnu6s3s+fqnqr5vMxgx2tNkky/BgjqgB+DLt
-CJdBWtW3sE3viIBphUPvXf6VdUmR7FoRhTJzKWagMjFb/3rBOfeCJKCqHLlRYm70
-jY4XaWbgGLhkJ3Y207s0Vvvexu+UZ49FCHVzWSVzfAjJJOqwRXpvlpYRAoGBAIAP
-e23Z5Ox5prjVmWuvnk8d/dsAXgEJg9sURdLboCCiHsiRzWIHHQ/lvfUL6R9iIA1e
-Wa5KDucmgG7i27AHJ7v3wTnHe6ip35eAaQaF4enofyyAPigSDgK1Ezv2VW/a2/Lw
-1bKpOuBj95S1gGKMNmO443l61WHqXKo10L/xBzb1AoGBAIefdHC6nULpcLA3hZOm
-+dSeN4f/d6rxyEQR6rD/itqjqGCZVw7giFRnHywk6JSKAuC/zeC/aDUaltyePbe7
-ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
-7no3gRoqa7cX+V59YwEV8kCq
------END PRIVATE KEY-----"#;
+    struct TestSigningKey {
+        encoding_key: EncodingKey,
+        jwk: JsonWebKey,
+    }
 
     fn config() -> EntraAuthConfig {
         EntraAuthConfig {
@@ -540,25 +525,30 @@ ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
         );
     }
 
-    fn jwk(kid: &str) -> JsonWebKey {
-        JsonWebKey {
+    fn signing_key(kid: &str) -> TestSigningKey {
+        let private_key = RsaPrivateKey::new(&mut OsRng, 2048).expect("test rsa key");
+        let public_key = private_key.to_public_key();
+        let private_pem = private_key
+            .to_pkcs8_pem(LineEnding::LF)
+            .expect("test private key pem");
+        let jwk = JsonWebKey {
             kid: Some(kid.to_owned()),
             kty: "RSA".to_owned(),
             alg: Some("RS256".to_owned()),
-            n: "lgcOxjKt6SyxJKIAsyazyxPfFlXUINj3NlO9yKf7KRbWeNk8xN0Ikftxe41szjlh5MDe7ZrchU0WS9sV1bNRchAB-uwG4riE51gpy_AliIq0fVkKiGTRjnrYo8AkZCSlcN_u0igHpBWrCxJnOsvpxRVACfQteeT41XYBm7rPhj1oycLg2uKjSBvtpIVfHXSkR0zuqLqPrm3YzxUMJTiZk7zCw3XnsMOFiQum-ccA37XiWojAVJ31ErkIK064lsTHaz-vvwRvPmj9BIhbj5j-GjjhCHtyU0nMaFWg5lkcWLtQ8X0b-a44UgGpsk40R7iEacCSmOoPZJdDzOYyz4jVmw".to_owned(),
-            e: "AQAB".to_owned(),
+            n: URL_SAFE_NO_PAD.encode(public_key.n().to_bytes_be()),
+            e: URL_SAFE_NO_PAD.encode(public_key.e().to_bytes_be()),
+        };
+        TestSigningKey {
+            encoding_key: EncodingKey::from_rsa_pem(private_pem.as_bytes())
+                .expect("test encoding key"),
+            jwk,
         }
     }
 
-    fn token(kid: &str, claims: serde_json::Value) -> String {
+    fn token(key: &TestSigningKey, claims: serde_json::Value) -> String {
         let mut header = Header::new(Algorithm::RS256);
-        header.kid = Some(kid.to_owned());
-        encode(
-            &header,
-            &claims,
-            &EncodingKey::from_rsa_pem(PRIVATE_KEY.as_bytes()).expect("private key"),
-        )
-        .expect("token")
+        header.kid = key.jwk.kid.clone();
+        encode(&header, &claims, &key.encoding_key).expect("token")
     }
 
     fn valid_claims() -> serde_json::Value {
@@ -579,10 +569,11 @@ ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
         })
     }
 
-    fn jwks_json(kid: &str) -> String {
+    fn jwks_json(jwk: &JsonWebKey) -> String {
+        let kid = jwk.kid.as_deref().expect("test kid");
         format!(
-            r#"{{"keys":[{{"kty":"RSA","kid":"{kid}","alg":"RS256","use":"sig","n":"{}","e":"AQAB"}}]}}"#,
-            jwk(kid).n
+            r#"{{"keys":[{{"kty":"RSA","kid":"{kid}","alg":"RS256","use":"sig","n":"{}","e":"{}"}}]}}"#,
+            jwk.n, jwk.e
         )
     }
 
@@ -617,8 +608,9 @@ ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
 
     #[tokio::test]
     async fn accepts_valid_entra_token() {
-        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![jwk("test-kid")]);
-        let token = token("test-kid", valid_claims());
+        let key = signing_key("test-kid");
+        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![key.jwk.clone()]);
+        let token = token(&key, valid_claims());
 
         let identity = verifier
             .verify_authorization(Some(&format!("Bearer {token}")), Utc::now())
@@ -632,10 +624,11 @@ ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
 
     #[tokio::test]
     async fn rejects_wrong_audience() {
-        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![jwk("test-kid")]);
+        let key = signing_key("test-kid");
+        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![key.jwk.clone()]);
         let mut claims = valid_claims();
         claims["aud"] = json!("https://graph.microsoft.com");
-        let token = token("test-kid", claims);
+        let token = token(&key, claims);
 
         let error = verifier.verify_token(&token, Utc::now()).await.unwrap_err();
 
@@ -644,8 +637,9 @@ ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
 
     #[tokio::test]
     async fn rejects_invalid_signature() {
-        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![jwk("test-kid")]);
-        let mut token = token("test-kid", valid_claims());
+        let key = signing_key("test-kid");
+        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![key.jwk.clone()]);
+        let mut token = token(&key, valid_claims());
         token.push('x');
 
         let error = verifier.verify_token(&token, Utc::now()).await.unwrap_err();
@@ -655,10 +649,11 @@ ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
 
     #[tokio::test]
     async fn rejects_expired_token() {
-        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![jwk("test-kid")]);
+        let key = signing_key("test-kid");
+        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![key.jwk.clone()]);
         let mut claims = valid_claims();
         claims["exp"] = json!(Utc::now().timestamp() - 120);
-        let token = token("test-kid", claims);
+        let token = token(&key, claims);
 
         let error = verifier.verify_token(&token, Utc::now()).await.unwrap_err();
 
@@ -667,10 +662,11 @@ ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
 
     #[tokio::test]
     async fn rejects_missing_required_scope() {
-        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![jwk("test-kid")]);
+        let key = signing_key("test-kid");
+        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![key.jwk.clone()]);
         let mut claims = valid_claims();
         claims["scp"] = json!("other.scope");
-        let token = token("test-kid", claims);
+        let token = token(&key, claims);
 
         let error = verifier.verify_token(&token, Utc::now()).await.unwrap_err();
 
@@ -679,10 +675,11 @@ ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
 
     #[tokio::test]
     async fn rejects_group_overage() {
-        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![jwk("test-kid")]);
+        let key = signing_key("test-kid");
+        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![key.jwk.clone()]);
         let mut claims = valid_claims();
         claims["hasgroups"] = json!(true);
-        let token = token("test-kid", claims);
+        let token = token(&key, claims);
 
         let error = verifier.verify_token(&token, Utc::now()).await.unwrap_err();
 
@@ -691,11 +688,12 @@ ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
 
     #[tokio::test]
     async fn fetches_mock_oidc_metadata_and_jwks() {
-        let discovery_url = start_mock_oidc(jwks_json("test-kid"));
+        let key = signing_key("test-kid");
+        let discovery_url = start_mock_oidc(jwks_json(&key.jwk));
         let mut config = config();
         config.oidc_discovery_url = discovery_url;
         let verifier = EntraJwtVerifier::new(config).expect("verifier");
-        let token = token("test-kid", valid_claims());
+        let token = token(&key, valid_claims());
 
         let identity = verifier
             .verify_token(&token, Utc::now())
@@ -708,11 +706,13 @@ ygV7sRNqXIBDTIQ2W00S1AadrU1J69b9jfPi+aXWZGDPK6C0UxWvcB1YAPK03sHP
 
     #[tokio::test]
     async fn rejects_unknown_kid_after_jwks_refresh() {
-        let discovery_url = start_mock_oidc(jwks_json("different-kid"));
+        let key = signing_key("test-kid");
+        let different_key = signing_key("different-kid");
+        let discovery_url = start_mock_oidc(jwks_json(&different_key.jwk));
         let mut config = config();
         config.oidc_discovery_url = discovery_url;
         let verifier = EntraJwtVerifier::new(config).expect("verifier");
-        let token = token("test-kid", valid_claims());
+        let token = token(&key, valid_claims());
 
         let error = verifier.verify_token(&token, Utc::now()).await.unwrap_err();
 

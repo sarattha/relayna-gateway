@@ -11,13 +11,15 @@ use gateway_core::{
     extract_generation_features, extract_model, extract_usage_tokens,
     guardrail_executor_for_definitions, is_retry_safe_status, redact_pii_text,
     resolve_guardrail_plan, route_pattern_wildcard_suffix, service_wildcard_suffix,
-    strip_client_guardrails, verify_apigee_trusted_identity, ApigeeTrustedHeaderConfig,
-    AuthenticatedKey, BudgetDecision, BudgetStore, EntraAuthConfig, EntraIdentityContext,
-    EntraJwtVerifier, GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition,
-    GuardrailExecutionEvent, GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy,
-    GuardrailPolicySet, GuardrailStore, KeyPolicy, OpenAiRouteSettingsLookup, PolicyLookup,
-    Provider, ProviderConfigLookup, ProviderIntelligenceStore, RateLimitDecision, RateLimitStore,
-    Route, RouteMatch, ServiceRegistryLookup, ServiceRouteLookup, UsageEvent, UsageRecorder,
+    strip_client_guardrails, validate_relayna_key_header_name, verify_apigee_trusted_identity,
+    ApigeeTrustedHeaderConfig, AuthenticatedKey, BudgetDecision, BudgetStore, EntraAuthConfig,
+    EntraIdentityContext, EntraJwtVerifier, GatewayError, GatewayResult, GuardrailContext,
+    GuardrailDefinition, GuardrailExecutionEvent, GuardrailMode, GuardrailPlan,
+    GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet, GuardrailStore, KeyPolicy,
+    OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
+    ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route, RouteMatch,
+    ServiceRegistryLookup, ServiceRouteLookup, UsageEvent, UsageRecorder,
+    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use http::Uri;
 use pingora_core::{
@@ -40,6 +42,7 @@ pub struct PingoraLiteLlmConfig {
     pub worker_token: Option<String>,
     pub entra_auth: Option<EntraAuthConfig>,
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
+    pub relayna_key_header: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +65,7 @@ impl PingoraLiteLlmConfig {
             worker_token: None,
             entra_auth: None,
             apigee_trusted_header: None,
+            relayna_key_header: ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned(),
         })
     }
 
@@ -75,7 +79,20 @@ impl PingoraLiteLlmConfig {
         self
     }
 
+    pub fn with_relayna_key_header(
+        mut self,
+        relayna_key_header: impl Into<String>,
+    ) -> gateway_core::GatewayResult<Self> {
+        let relayna_key_header = relayna_key_header.into();
+        validate_relayna_key_header_name(&relayna_key_header)?;
+        self.relayna_key_header = relayna_key_header;
+        Ok(self)
+    }
+
     pub fn with_entra_auth(mut self, entra_auth: Option<EntraAuthConfig>) -> Self {
+        if let Some(config) = entra_auth.as_ref() {
+            self.relayna_key_header = config.relayna_key_header.clone();
+        }
         self.entra_auth = entra_auth;
         self
     }
@@ -88,10 +105,8 @@ impl PingoraLiteLlmConfig {
         self
     }
 
-    fn relayna_key_header(&self) -> Option<&str> {
-        self.entra_auth
-            .as_ref()
-            .map(|config| config.relayna_key_header.as_str())
+    fn relayna_key_header(&self) -> &str {
+        self.relayna_key_header.as_str()
     }
 }
 
@@ -400,12 +415,7 @@ where
                 }
             }
             Authenticator::new(self.store.clone())
-                .authenticate_raw_key(
-                    self.config
-                        .relayna_key_header()
-                        .and_then(|header| header_value(req, header)),
-                    now,
-                )
+                .authenticate_raw_key(header_value(req, self.config.relayna_key_header()), now)
                 .await
         } else {
             Authenticator::new(self.store.clone())
@@ -904,7 +914,7 @@ where
         prepare_upstream_authority_and_credentials(
             upstream_request,
             upstream,
-            self.config.relayna_key_header(),
+            Some(self.config.relayna_key_header()),
         )?;
         if ctx
             .route_match
@@ -1937,6 +1947,27 @@ mod tests {
             .with_worker_token(Some("worker-token".to_owned()));
 
         assert_eq!(config.worker_token.as_deref(), Some("worker-token"));
+    }
+
+    #[test]
+    fn relayna_key_header_is_available_for_apigee_only_mode() {
+        let default_config =
+            PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+                .expect("config")
+                .with_apigee_trusted_header(Some(ApigeeTrustedHeaderConfig {
+                    secret: "trusted-secret".to_owned(),
+                }));
+        assert_eq!(default_config.relayna_key_header(), "X-Relayna-Key");
+
+        let custom_config =
+            PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+                .expect("config")
+                .with_relayna_key_header("X-Custom-Relayna-Key")
+                .expect("key header")
+                .with_apigee_trusted_header(Some(ApigeeTrustedHeaderConfig {
+                    secret: "trusted-secret".to_owned(),
+                }));
+        assert_eq!(custom_config.relayna_key_header(), "X-Custom-Relayna-Key");
     }
 
     #[test]

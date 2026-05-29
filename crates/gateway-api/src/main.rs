@@ -57,7 +57,9 @@ fn main() -> anyhow::Result<()> {
         .context("rehydrate budget counters")?;
     let mut proxy_config =
         PingoraLiteLlmConfig::from_base_url(&config.litellm_base_url, &config.litellm_service_key)
-            .context("create pingora LiteLLM proxy config")?;
+            .context("create pingora LiteLLM proxy config")?
+            .with_relayna_key_header(config.relayna_key_header.clone())
+            .context("configure Relayna key header")?;
     if let (Some(base_url), Some(service_key)) = (
         config.direct_openai_base_url.as_deref(),
         config.direct_openai_service_key.as_deref(),

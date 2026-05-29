@@ -25,9 +25,9 @@ pub use admin::{
 pub use auth::{AuthenticatedKey, Authenticator, StoredVirtualKey, VirtualKey};
 pub use budgets::{BudgetDecision, BudgetState, BudgetStore};
 pub use entra::{
-    sign_apigee_trusted_identity, verify_apigee_trusted_identity, ApigeeTrustedHeaderConfig,
-    EntraAuthConfig, EntraIdentityContext, EntraIdentitySource, EntraJwtVerifier,
-    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    sign_apigee_trusted_identity, validate_relayna_key_header_name, verify_apigee_trusted_identity,
+    ApigeeTrustedHeaderConfig, EntraAuthConfig, EntraIdentityContext, EntraIdentitySource,
+    EntraJwtVerifier, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 pub use errors::{GatewayError, GatewayResult};
 pub use guardrails::{
