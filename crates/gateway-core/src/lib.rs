@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod auth;
 pub mod budgets;
+pub mod entra;
 pub mod errors;
 pub mod guardrails;
 pub mod observability;
@@ -23,6 +24,11 @@ pub use admin::{
 };
 pub use auth::{AuthenticatedKey, Authenticator, StoredVirtualKey, VirtualKey};
 pub use budgets::{BudgetDecision, BudgetState, BudgetStore};
+pub use entra::{
+    sign_apigee_trusted_identity, verify_apigee_trusted_identity, ApigeeTrustedHeaderConfig,
+    EntraAuthConfig, EntraIdentityContext, EntraIdentitySource, EntraJwtVerifier,
+    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+};
 pub use errors::{GatewayError, GatewayResult};
 pub use guardrails::{
     builtin_guardrail_executor, execution_events_from_records, extract_client_guardrails,

@@ -67,7 +67,10 @@ fn main() -> anyhow::Result<()> {
                 .context("create direct OpenAI-compatible upstream config")?,
         ));
     }
-    proxy_config = proxy_config.with_worker_token(config.relayna_worker_token.clone());
+    proxy_config = proxy_config
+        .with_worker_token(config.relayna_worker_token.clone())
+        .with_entra_auth(config.entra_auth.clone())
+        .with_apigee_trusted_header(config.apigee_trusted_header.clone());
 
     let studio = config.relayna_studio_base_url.clone().map(|base_url| {
         app::StudioCatalogClient::new(base_url, config.relayna_studio_token.clone())
