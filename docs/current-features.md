@@ -94,6 +94,30 @@ remains the default for services without explicit health-check settings.
 See [Provider Intelligence](provider-intelligence.md) for the deeper routing,
 fallback, health, debug bundle, and import rollback reference.
 
+## Entra ID Front-Door Auth
+
+Release `0.1.5` adds opt-in Microsoft Entra ID authorization before Relayna
+virtual-key authentication on provider traffic. Existing virtual-key-only
+clients continue using `Authorization: Bearer rk_live_...` when
+`ENTRA_AUTH_ENABLED=false`. When Entra mode is enabled, `Authorization` carries
+the Entra access token and the Relayna virtual key moves to the configured
+Relayna key header, defaulting to `X-Relayna-Key`.
+
+Gateway validates OIDC metadata, JWKS, token signature, `kid`, accepted
+algorithm, issuer, audience, tenant, token version, timestamps, required
+scope, required role, and allowed groups before virtual-key lookup. Group
+overage and ambiguous authorization fail closed. Client tokens and Relayna keys
+are stripped before upstream forwarding.
+
+Apigee deployments can either forward the original JWT for Gateway
+revalidation or use the trusted signed-header path with
+`APIGEE_TRUSTED_HEADER_ENABLED=true` and an HMAC proof. Unsigned or tampered
+Apigee identity headers are rejected.
+
+See [Entra ID Auth](entra-id-auth.md) and
+[Apigee Gateway Path](apigee-gateway-path.md) for the detailed operator
+contracts.
+
 ## Observability Analytics
 
 Usage analytics now expose richer filters, breakdowns, timeseries rows, unused

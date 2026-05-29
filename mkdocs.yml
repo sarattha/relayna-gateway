@@ -29,6 +29,8 @@ nav:
   - Getting Started: getting-started.md
   - Admin Portal: admin-portal.md
   - Current Feature Highlights: current-features.md
+  - Entra ID Auth: entra-id-auth.md
+  - Apigee Gateway Path: apigee-gateway-path.md
   - Guardrails: guardrails.md
   - Provider Intelligence: provider-intelligence.md
   - Deployment: deployment.md

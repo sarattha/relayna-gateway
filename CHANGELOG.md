@@ -2,6 +2,43 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.5 - 2026-05-30
+
+### Added
+
+- Opt-in Microsoft Entra ID front-door authorization for provider traffic.
+  Gateway can now validate Entra JWTs before Relayna virtual-key
+  authentication while preserving the existing virtual-key-only path when
+  Entra mode is disabled.
+- Trusted Apigee gateway mode for deployments that terminate Entra at Apigee
+  and forward a signed, sanitized identity header to Relayna Gateway.
+- Configurable Relayna virtual-key header for Entra and Apigee gateway modes
+  through `ENTRA_RELAYNA_KEY_HEADER`, defaulting to `X-Relayna-Key`.
+- Dedicated Entra ID and Apigee gateway path documentation, including request
+  contracts, config tables, validation behavior, failure modes, Kubernetes
+  rollout guidance, and verification steps.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.5` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.5` gateway image.
+- Release documentation now treats `v0.1.5` as the current release target while
+  preserving `v0.1.0` as the production freeze baseline.
+
+### Security
+
+- Entra mode strips `Authorization`, the configured Relayna key header, legacy
+  `X-AIH-API-Key`, `X-Relayna-Key`, Apigee identity proof headers, and other
+  sensitive client credentials before forwarding upstream.
+- Entra token validation fails closed for malformed bearer headers, unknown
+  `kid`, invalid metadata or JWKS, unsupported algorithms, invalid signature,
+  wrong issuer, wrong audience, expired or not-yet-valid timestamps, group
+  overage, and missing required scope, role, or group.
+- Trusted Apigee header mode is disabled by default and requires
+  `APIGEE_TRUSTED_HEADER_SECRET`; unsigned or incorrectly signed identity
+  headers are rejected with stable Entra/Apigee error codes.
+
 ## 0.1.4 - 2026-05-25
 
 ### Added

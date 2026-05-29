@@ -39,6 +39,9 @@ policy, budget, rate-limit, guardrail, and usage anchor.
 - [x] (2026-05-30 00:00 +07) Expanded the Docker review harness to cover
       `/v1/responses`, `/providers/openai/*`, built-in internal service routes,
       and `/services/*` in addition to `/v1/chat/completions`.
+- [x] (2026-05-30 01:15 +07) Bumped the current release target to `0.1.5`,
+      added changelog notes, and added dedicated operator docs for Entra ID
+      auth and the Apigee gateway path.
 
 ## Surprises & Discoveries
 
@@ -75,6 +78,12 @@ policy, budget, rate-limit, guardrail, and usage anchor.
   and HMAC proof.
   Rationale: Prevents forged public-listener identity headers.
   Date/Author: 2026-05-29 / Codex.
+- Decision: Document Entra and Apigee as additive `0.1.5` release behavior
+  while preserving `v0.1.0` as the production freeze baseline and `v0.1.4` as
+  the compatibility boundary used for implementation.
+  Rationale: The feature is opt-in and does not change default virtual-key
+  authentication.
+  Date/Author: 2026-05-30 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -99,6 +108,9 @@ configured `X-Relayna-Key` handling, LiteLLM routes, direct OpenAI-compatible
 routes, built-in internal service routes, `/services/*` routes, Apigee JWT
 revalidation, trusted Apigee HMAC identity proof rejection on tamper, and
 upstream credential stripping.
+
+Release documentation now targets `0.1.5` and includes dedicated pages:
+`docs/entra-id-auth.md` and `docs/apigee-gateway-path.md`.
 
 ## Context and Orientation
 
