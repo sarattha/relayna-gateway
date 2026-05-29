@@ -30,6 +30,12 @@ policy, budget, rate-limit, guardrail, and usage anchor.
 - [x] (2026-05-29 20:41 +07) Changed the Entra-mode Relayna key header to
       default to `X-Relayna-Key` and made it deployment-configurable through
       `ENTRA_RELAYNA_KEY_HEADER`.
+- [x] (2026-05-29 23:46 +07) Added and ran a Docker-backed real-environment
+      review harness with Postgres, Redis, Gateway, mock OIDC/JWKS authority,
+      mock Apigee paths, and mock provider upstream.
+- [x] (2026-05-29 23:48 +07) Captured browser screenshots for the live review
+      dashboard and raw result evidence under
+      `internal/test-reports/entra-front-door-real-env/screenshots/`.
 
 ## Surprises & Discoveries
 
@@ -45,6 +51,11 @@ policy, budget, rate-limit, guardrail, and usage anchor.
   Evidence: `gateway-core` tests start a local OIDC discovery/JWKS authority,
   sign an RSA JWT, and validate the real discovery, JWKS fetch, and signature
   path.
+- Observation: The Docker real-environment test exposed a Postgres-backed admin
+  key creation bug: `key_policies` inserted 26 columns with only 25 SQL
+  placeholders.
+  Evidence: `crates/gateway-store/src/postgres.rs` and the first Docker harness
+  run returning `store_unavailable` from `POST /admin-ui/admin/keys`.
 
 ## Decision Log
 
@@ -76,6 +87,13 @@ Verification passed:
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace --all-features`
+- `internal/test-reports/entra-front-door-real-env/run.sh`
+
+The Docker harness report is
+`internal/test-reports/entra-front-door-real-env/report.md`. It verifies direct
+Entra JWT validation through mock OIDC metadata/JWKS, invalid token rejection,
+configured `X-Relayna-Key` handling, Apigee JWT revalidation, trusted Apigee
+HMAC identity proof rejection on tamper, and upstream credential stripping.
 
 ## Context and Orientation
 
