@@ -16,7 +16,7 @@ Implement the canonical Relayna Gateway roadmap phases in dependency order:
 #37, #38, #40, #41, then #42. Do not implement #39 directly; treat it as a
 duplicate pointer to #38.
 
-The production freeze baseline is `v0.0.14`. Every implementation phase must
+The production freeze baseline is `v0.1.7`. Every implementation phase must
 use `$production-freeze-guard` and `$implementation-strategy` before changing
 public routes, admin APIs, response shapes, authentication behavior, policy,
 usage event shapes, PostgreSQL schemas, Redis formats, proxy behavior,
@@ -31,7 +31,7 @@ ExecPlan.
 
 Shared completion gates:
 
-- Freeze perimeter: `node tests/freeze-v0.0.14-perimeter.test.mjs` passes
+- Freeze perimeter: `node tests/freeze-v0.1.7-perimeter.test.mjs` passes
   unchanged, or intentional perimeter updates include compatibility notes.
 - Rust verification: `cargo fmt --all --check`, `cargo clippy --workspace
   --all-targets --all-features -- -D warnings`, and `cargo test --workspace
@@ -97,7 +97,7 @@ Acceptance criteria:
 
 Required verification:
 
-- `node tests/freeze-v0.0.14-perimeter.test.mjs`
+- `node tests/freeze-v0.1.7-perimeter.test.mjs`
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace --all-features`
@@ -163,7 +163,7 @@ Acceptance criteria:
 
 Required verification:
 
-- `node tests/freeze-v0.0.14-perimeter.test.mjs`
+- `node tests/freeze-v0.1.7-perimeter.test.mjs`
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace --all-features`
@@ -224,7 +224,7 @@ Acceptance criteria:
 
 Required verification:
 
-- `node tests/freeze-v0.0.14-perimeter.test.mjs`
+- `node tests/freeze-v0.1.7-perimeter.test.mjs`
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace --all-features`
@@ -285,7 +285,7 @@ Acceptance criteria:
 
 Required verification:
 
-- `node tests/freeze-v0.0.14-perimeter.test.mjs`
+- `node tests/freeze-v0.1.7-perimeter.test.mjs`
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace --all-features`
@@ -349,7 +349,7 @@ Acceptance criteria:
 
 Required verification:
 
-- `node tests/freeze-v0.0.14-perimeter.test.mjs`
+- `node tests/freeze-v0.1.7-perimeter.test.mjs`
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace --all-features`

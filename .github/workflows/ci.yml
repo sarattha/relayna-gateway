@@ -125,7 +125,7 @@ jobs:
         run: node tests/admin-ui.test.mjs
 
       - name: Run production freeze perimeter tests
-        run: node tests/freeze-v0.1.0-perimeter.test.mjs
+        run: node tests/freeze-v0.1.7-perimeter.test.mjs
 
   repository-metadata:
     name: repository metadata

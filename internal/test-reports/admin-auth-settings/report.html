@@ -34,7 +34,7 @@
       <tr><td><code>npm run build:admin-ui</code></td><td class="pass">PASS</td><td>Vite regenerated checked-in <code>/admin-ui</code> static assets.</td></tr>
       <tr><td><code>npm test</code></td><td class="pass">PASS</td><td>Admin UI static and design-system tests passed with auth controls included.</td></tr>
       <tr><td><code>internal/test-reports/front-door-penetration/run.sh</code></td><td class="pass">PASS</td><td>27/27 direct, Entra, and Apigee front-door checks passed against real LiteLLM.</td></tr>
-      <tr><td><code>node tests/freeze-v0.1.0-perimeter.test.mjs</code></td><td class="pass">PASS</td><td>Post-freeze route and migration perimeter updated for the additive admin auth settings surface.</td></tr>
+      <tr><td><code>node tests/freeze-v0.1.7-perimeter.test.mjs</code></td><td class="pass">PASS</td><td>Freeze route and migration perimeter includes the additive admin auth settings surface.</td></tr>
       <tr><td><code>bash internal/test-reports/litellm-real-passthrough/run.sh</code></td><td class="pass">PASS</td><td>Docker real-environment harness passed with Entra JWT validation, Apigee trusted headers, Gateway, Redis, PostgreSQL, real LiteLLM, and a mock provider.</td></tr>
     </tbody>
   </table>
@@ -63,7 +63,7 @@
 
   <h2>Compatibility Notes</h2>
   <p>
-    Compatibility boundary is latest release tag <code>v0.1.4</code>; production freeze baseline remains <code>v0.1.0</code>.
+    Compatibility boundary is latest release tag <code>v0.1.4</code>; production freeze baseline for this release branch is <code>v0.1.7</code>.
     The new admin route <code>/admin-ui/admin/auth/front-door</code> and migration
     <code>20260530000200_gateway_auth_settings.sql</code> are additive. Existing environment-variable configuration remains supported,
     and persisted portal settings intentionally override env values, including disabling an env-enabled entrance.

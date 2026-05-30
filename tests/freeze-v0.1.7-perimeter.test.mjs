@@ -44,15 +44,15 @@ const kubernetes = read("deploy/kubernetes/relayna-gateway.yaml");
 const cargoToml = read("Cargo.toml");
 const changelog = read("CHANGELOG.md");
 const releaseWorkflow = read(".github/workflows/release.yml");
-const freezeVersion = "0.1.0";
+const freezeVersion = "0.1.7";
 
-test("v0.1.0 freeze baseline release remains documented while current version may advance", () => {
+test("v0.1.7 freeze baseline matches the current release version", () => {
   const currentVersion = cargoToml.match(
     /\[workspace\.package\][\s\S]*?version = "([^"]+)"/,
   )?.[1];
   assert.match(currentVersion, /^\d+\.\d+\.\d+$/);
+  assert.equal(currentVersion, freezeVersion);
   assert.match(changelog, new RegExp(`^## ${currentVersion} -`, "m"));
-  assert.match(changelog, new RegExp(`^## ${freezeVersion} -`, "m"));
 });
 
 test("control-plane public route inventory is pinned", () => {
@@ -126,7 +126,7 @@ test("control-plane public route inventory is pinned", () => {
   ]));
 });
 
-test("proxy route resolver keeps v0.1.0 public route semantics", () => {
+test("proxy route resolver keeps v0.1.7 public route semantics", () => {
   for (const route of [
     "/v1/chat/completions",
     "/v1/responses",

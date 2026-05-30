@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.0` feature set that now forms the production
+This page summarizes the `v0.1.7` feature set that now forms the production
 freeze baseline.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
@@ -51,7 +51,7 @@ metadata, policy versioning, policy simulation, and inherited policy layers.
 Operators can dry-run route, model, provider, streaming, tools, request-size,
 and response-size inputs before issuing or changing a key.
 
-Post-freeze policy simulation also accepts explicit registered-service context
+Policy simulation also accepts explicit registered-service context
 so operators can dry-run `/services/<service-name>/*` access against stored keys
 and service allowlists before issuing or editing credentials.
 
@@ -85,7 +85,7 @@ rollback. Gateway preserves local runtime-owned settings such as credentials,
 enabled state, route overrides, limits, fallback services, project links, and
 cost settings when Studio metadata is re-imported.
 
-Post-freeze service health checks can target a service-specific path and method
+Service health checks can target a service-specific path and method
 when the upstream root is not a valid health endpoint. The previous root probe
 remains the default for services without explicit health-check settings.
 
@@ -154,7 +154,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.0` release hardens CI and release workflows with strict dependency,
+The `v0.1.7` freeze baseline hardens CI and release workflows with strict dependency,
 secret, static-analysis, filesystem, and image checks. Release images publish
 with SBOM, signature, and provenance artifacts, and release metadata validation
 guards tag, workspace version, and changelog alignment.
@@ -165,7 +165,7 @@ no privilege escalation, and all Linux capabilities dropped. Proxy and control
 plane Services remain separate, and the control plane should stay private or
 protected by identity-aware access.
 
-The v0.1.0 freeze perimeter test pins the production baseline for public
+The v0.1.7 freeze perimeter test pins the production baseline for public
 routes, admin route inventory, error codes, config names, migrations, Redis key
 formats, release metadata, and Admin UI endpoint assumptions. Future changes
 should keep that perimeter passing unless a compatibility decision explicitly

@@ -263,7 +263,7 @@ Useful local checks after changing Entra configuration or code:
 
 ```bash
 python3 scripts/validate-release-metadata.py v0.1.7
-node tests/freeze-v0.1.0-perimeter.test.mjs
+node tests/freeze-v0.1.7-perimeter.test.mjs
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
 cargo test --workspace --all-features

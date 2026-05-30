@@ -282,7 +282,7 @@ First-time setup is complete when:
   metadata. Operators with provider update scope can write explicit provider
   health state for degraded, open-circuit, cooldown, and last-error situations.
 - Settings includes Studio connection controls, Entra ID and Apigee front-door
-  auth controls, and static release/security posture references for v0.1.0
+  auth controls, and static release/security posture references for v0.1.7
   freeze boundaries and supply-chain exception guidance.
 
 ## Entra ID and Apigee Front-Door Settings
