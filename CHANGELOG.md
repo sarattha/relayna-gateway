@@ -2,6 +2,33 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.6 - 2026-05-30
+
+### Added
+
+- LiteLLM passthrough now includes canonical OpenAI-compatible
+  `POST /v1/embeddings` requests alongside `POST /v1/chat/completions` and
+  `POST /v1/responses`.
+- OpenAI route settings and PostgreSQL seed data now include the `embeddings`
+  route so operators can enable or disable embeddings passthrough with the
+  existing route controls.
+- The real LiteLLM passthrough report now validates chat completions,
+  responses, and embeddings through the Entra/Apigee front-door test path.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.6` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.6` gateway image.
+- Release documentation now treats `v0.1.6` as the current release target while
+  preserving `v0.1.0` as the production freeze baseline.
+
+### Fixed
+
+- The LiteLLM real-environment report harness now uses a short non-secret
+  operator-token fixture so committed test configuration does not trip the
+  `relayna-live-token` secret scanning rule.
+
 ## 0.1.5 - 2026-05-30
 
 ### Added

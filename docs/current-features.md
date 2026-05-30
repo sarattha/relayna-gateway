@@ -96,7 +96,7 @@ fallback, health, debug bundle, and import rollback reference.
 
 ## Entra ID Front-Door Auth
 
-Release `0.1.5` adds opt-in Microsoft Entra ID authorization before Relayna
+Release `0.1.6` adds opt-in Microsoft Entra ID authorization before Relayna
 virtual-key authentication on provider traffic. Existing virtual-key-only
 clients continue using `Authorization: Bearer rk_live_...` when
 `ENTRA_AUTH_ENABLED=false`. When Entra mode is enabled, `Authorization` carries
@@ -117,6 +117,14 @@ Apigee identity headers are rejected.
 See [Entra ID Auth](entra-id-auth.md) and
 [Apigee Gateway Path](apigee-gateway-path.md) for the detailed operator
 contracts.
+
+## LiteLLM OpenAI-Compatible Passthrough
+
+Release `0.1.6` routes canonical OpenAI-compatible
+`/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings` requests through
+LiteLLM when they pass Relayna authentication and policy. The singular or alias
+paths `/v1/chatcompletion`, `/v1/response`, `/v1/embedding`, and `/v1/rerank`
+are not passthrough routes and return `unsupported_route`.
 
 ## Observability Analytics
 
