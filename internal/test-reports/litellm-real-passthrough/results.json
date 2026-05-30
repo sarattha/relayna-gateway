@@ -2,7 +2,7 @@
   "ok": true,
   "requestedLiteLlmPathsPassThrough": true,
   "overallOutcome": "PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass through to LiteLLM; literal aliases /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank remain unsupported.",
-  "generatedAt": "2026-05-30T08:32:28.997Z",
+  "generatedAt": "2026-05-30T09:02:17.872Z",
   "environment": {
     "gatewayProxyUrl": "http://gateway:8080",
     "gatewayControlUrl": "http://gateway:8081",
@@ -29,8 +29,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-ab43a1d2-6081-476d-bd29-f5707b241b01",
-        "created": 1780129948,
+        "id": "chatcmpl-7804468c-17af-4776-a26d-077636351838",
+        "created": 1780131737,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -58,8 +58,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "resp_kykf5zKsgKaCeBCjiSr2d9gmmalilEWrZMNCu2EVan4F-mCQOdqKIpkXsQmgA576U7iIxiqCsK83F_eZvvlv1HDMi5JimZvbK-D35UkaAldRn96D-eSLw_yRcX_nJNEKzzvAj2U6oLWMadFRONKP-8WhnIVOtr6vUaGW6CipUzZleSWTscZPokakZr54SxpbCajyHIdj95O9GaRcrsDUUSIlPMTJLu9NIrUZ_j4AX_t-py4heAN8JVNfVXBlMIW2ry_MnPlKzUHiRCMc8Cmz57rhgt74fOx8tEuUJeI0STxqpHnpsSUZurXzor508d_aORU8hkNbwrkmkdq4puYjdHX9ZR2Ngx_ILALjXO33U6zcD8U9M14ZhVpCExhaR7D4D7caIzpYLAMdzrkRhcZJWEibnO63Lq7_gX_VcmHGO8ddX21Tim3AXO8-Zq_KYQ==",
-        "created_at": 1780129948,
+        "id": "resp_byNwBt1pm9MVtGJOSsUmUMa8vvXKn_p8aIq_k9R_CAzDkrM9ubHd1A7qC8i0pnTTs-eAd0Fd1ezZvyPktPuTBvWUl0FoIqzstxzYdFByJWkpyxNbm5h2T00-K0VV4ECUZsNk3bXy3_DogYzAB-0IsPlUNR38YaENwSlwkR87lzyyOj2fy-UjRdUAH_M4P-AG-clqaHioehYK6Pl0OwiZFT7bxJPHrvg1vbHzOnEpnpgObt69mJPQoAA2vQGxgXlwyZ5HFyo8FUUglZO2x3luQ0nLFD_i_KrjZ3NtXFcbHg66Z11Che8iNEG1C3WXzeZ9rtgfi3FlLIJXynOHpHz7bVOV8X1lHyHZz5vdJ841Qu6rpVViT2sZT1wc2t-S8bcAww-Qeg_L1j9WJHYquMyEGcdS1_Q2u0SVVGlZwz65_T4pow2c67cbZ6vWO3jebA==",
+        "created_at": 1780131737,
         "error": null,
         "incomplete_details": null,
         "instructions": null,
@@ -69,7 +69,7 @@
         "output": [
           {
             "type": "message",
-            "id": "msg-b84e92cf-702c-4634-a7ee-7741b28bba5b",
+            "id": "msg-6553c1d8-59e7-4eba-a3d3-67c2abfba1b7",
             "status": "completed",
             "role": "assistant",
             "content": [
@@ -133,8 +133,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-ea90fe6f-ef57-43cf-bcee-fdaf9cb7b3ec",
-        "created": 1780129948,
+        "id": "chatcmpl-3464f1c0-015b-42ea-8b89-61442254637b",
+        "created": 1780131737,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -237,7 +237,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "4cde0d6f-3c21-47c9-98cc-6f57d844a12b"
+          "request_id": "bcdcc3f4-adde-43f1-9bc6-48a9c0bb8f1c"
         }
       }
     },
@@ -248,7 +248,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "d767adfe-c3c3-42fe-8472-465a8097b6e5"
+          "request_id": "919615eb-a433-4887-8d83-a949d88f4f4a"
         }
       }
     },
@@ -259,7 +259,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "e2ad45f9-082e-4c83-98e6-19ac199dca43"
+          "request_id": "c33a6d52-8569-4505-a251-460c7387151d"
         }
       }
     },
@@ -270,7 +270,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "fc81e746-42ad-4829-b2b5-69e842e8380b"
+          "request_id": "3a7b6fa9-8454-49ed-b087-7e9bb6a7bb02"
         }
       }
     }
