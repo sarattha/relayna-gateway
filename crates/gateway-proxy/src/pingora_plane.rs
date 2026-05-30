@@ -1956,6 +1956,9 @@ mod tests {
                 .expect("config")
                 .with_apigee_trusted_header(Some(ApigeeTrustedHeaderConfig {
                     secret: "trusted-secret".to_owned(),
+                    required_scope: None,
+                    required_role: None,
+                    allowed_groups: Vec::new(),
                 }));
         assert_eq!(default_config.relayna_key_header(), "X-Relayna-Key");
 
@@ -1966,6 +1969,9 @@ mod tests {
                 .expect("key header")
                 .with_apigee_trusted_header(Some(ApigeeTrustedHeaderConfig {
                     secret: "trusted-secret".to_owned(),
+                    required_scope: None,
+                    required_role: None,
+                    allowed_groups: Vec::new(),
                 }));
         assert_eq!(custom_config.relayna_key_header(), "X-Custom-Relayna-Key");
     }

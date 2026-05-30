@@ -71,6 +71,9 @@ impl Config {
             if optional_bool("APIGEE_TRUSTED_HEADER_ENABLED")?.unwrap_or(false) {
                 let config = ApigeeTrustedHeaderConfig {
                     secret: required("APIGEE_TRUSTED_HEADER_SECRET")?,
+                    required_scope: optional("ENTRA_REQUIRED_SCOPE"),
+                    required_role: optional("ENTRA_REQUIRED_ROLE"),
+                    allowed_groups: optional_csv("ENTRA_ALLOWED_GROUPS"),
                 };
                 config.validate()?;
                 Some(config)

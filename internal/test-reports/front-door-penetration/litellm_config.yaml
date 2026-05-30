@@ -1,0 +1,17 @@
+model_list:
+  - model_name: gpt-pentest
+    litellm_params:
+      model: openai/gpt-pentest
+      api_key: sk-local-provider-pentest-key
+      api_base: http://mock-provider:4000/v1
+  - model_name: text-embedding-pentest
+    litellm_params:
+      model: openai/text-embedding-pentest
+      api_key: sk-local-provider-pentest-key
+      api_base: http://mock-provider:4000/v1
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: sk-litellm-pentest-service-key

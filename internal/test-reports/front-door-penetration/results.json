@@ -1,0 +1,355 @@
+{
+  "ok": true,
+  "generatedAt": "2026-05-30T09:57:34.626Z",
+  "environment": {
+    "publicBaseUrl": "http://localhost:18282",
+    "litellmUrl": "http://litellm:4000",
+    "issuer": "http://mock-provider:4000/oauth",
+    "audience": "api://relayna-gateway-pentest",
+    "tenantId": "relayna-pentest-tenant",
+    "requiredScope": "gateway.invoke",
+    "allowedGroup": "relayna-pentest-group",
+    "frontDoors": {
+      "no_entra": {
+        "label": "No EntraID",
+        "proxyUrl": "http://gateway-no-entra:8080",
+        "controlUrl": "http://gateway-no-entra:8081"
+      },
+      "entra": {
+        "label": "EntraID",
+        "proxyUrl": "http://gateway-entra:8080",
+        "controlUrl": "http://gateway-entra:8081"
+      },
+      "apigee": {
+        "label": "Apigee trusted header",
+        "proxyUrl": "http://gateway-apigee:8080",
+        "controlUrl": "http://gateway-apigee:8081"
+      }
+    }
+  },
+  "summary": {
+    "checks": 27,
+    "passed": 27,
+    "failed": 0,
+    "providerCaptures": 10
+  },
+  "checks": {
+    "no_entra_v1_chat_completions_passes_to_litellm": {
+      "ok": true,
+      "status": 200,
+      "error_code": null,
+      "notes": "LiteLLM forwarded to mock provider"
+    },
+    "no_entra_v1_responses_passes_to_litellm": {
+      "ok": true,
+      "status": 200,
+      "error_code": null,
+      "notes": "LiteLLM forwarded to mock provider"
+    },
+    "no_entra_v1_embeddings_passes_to_litellm": {
+      "ok": true,
+      "status": 200,
+      "error_code": null,
+      "notes": "LiteLLM forwarded to mock provider"
+    },
+    "entra_v1_chat_completions_passes_to_litellm": {
+      "ok": true,
+      "status": 200,
+      "error_code": null,
+      "notes": "LiteLLM forwarded to mock provider"
+    },
+    "entra_v1_responses_passes_to_litellm": {
+      "ok": true,
+      "status": 200,
+      "error_code": null,
+      "notes": "LiteLLM forwarded to mock provider"
+    },
+    "entra_v1_embeddings_passes_to_litellm": {
+      "ok": true,
+      "status": 200,
+      "error_code": null,
+      "notes": "LiteLLM forwarded to mock provider"
+    },
+    "apigee_v1_chat_completions_passes_to_litellm": {
+      "ok": true,
+      "status": 200,
+      "error_code": null,
+      "notes": "LiteLLM forwarded to mock provider"
+    },
+    "apigee_v1_responses_passes_to_litellm": {
+      "ok": true,
+      "status": 200,
+      "error_code": null,
+      "notes": "LiteLLM forwarded to mock provider"
+    },
+    "apigee_v1_embeddings_passes_to_litellm": {
+      "ok": true,
+      "status": 200,
+      "error_code": null,
+      "notes": "LiteLLM forwarded to mock provider"
+    },
+    "no_entra_missing_authorization_rejected": {
+      "ok": true,
+      "status": 401,
+      "error_code": "missing_authorization",
+      "notes": ""
+    },
+    "no_entra_x_relayna_key_without_authorization_rejected": {
+      "ok": true,
+      "status": 401,
+      "error_code": "missing_authorization",
+      "notes": "No-Entra mode must not accept the Entra header as a bypass"
+    },
+    "entra_missing_jwt_rejected": {
+      "ok": true,
+      "status": 401,
+      "error_code": "missing_entra_authorization",
+      "notes": ""
+    },
+    "entra_legacy_relayna_authorization_bypass_rejected": {
+      "ok": true,
+      "status": 401,
+      "error_code": "malformed_entra_authorization",
+      "notes": ""
+    },
+    "entra_expired_token_rejected": {
+      "ok": true,
+      "status": 401,
+      "error_code": "expired_entra_token",
+      "notes": ""
+    },
+    "entra_wrong_audience_rejected": {
+      "ok": true,
+      "status": 401,
+      "error_code": "invalid_entra_audience",
+      "notes": ""
+    },
+    "entra_missing_scope_rejected": {
+      "ok": true,
+      "status": 403,
+      "error_code": "insufficient_entra_authorization",
+      "notes": ""
+    },
+    "entra_tampered_signature_rejected": {
+      "ok": true,
+      "status": 401,
+      "error_code": "invalid_entra_token",
+      "notes": ""
+    },
+    "apigee_missing_identity_proof_rejected": {
+      "ok": true,
+      "status": 401,
+      "error_code": "missing_entra_authorization",
+      "notes": ""
+    },
+    "apigee_missing_signature_rejected": {
+      "ok": true,
+      "status": 401,
+      "error_code": "untrusted_apigee_identity",
+      "notes": ""
+    },
+    "apigee_bad_signature_rejected": {
+      "ok": true,
+      "status": 401,
+      "error_code": "untrusted_apigee_identity",
+      "notes": ""
+    },
+    "apigee_missing_scope_rejected": {
+      "ok": true,
+      "status": 403,
+      "error_code": "insufficient_entra_authorization",
+      "notes": ""
+    },
+    "apigee_client_jwt_header_does_not_break_trusted_path": {
+      "ok": true,
+      "status": 200,
+      "error_code": null,
+      "notes": ""
+    },
+    "alias_embedding_path_rejected_before_litellm": {
+      "ok": true,
+      "status": 404,
+      "error_code": "unsupported_route",
+      "notes": ""
+    },
+    "no_entra_rerank_path_rejected_before_litellm": {
+      "ok": true,
+      "status": 404,
+      "error_code": "unsupported_route",
+      "notes": ""
+    },
+    "entra_rerank_path_rejected_before_litellm": {
+      "ok": true,
+      "status": 404,
+      "error_code": "unsupported_route",
+      "notes": ""
+    },
+    "apigee_rerank_path_rejected_before_litellm": {
+      "ok": true,
+      "status": 404,
+      "error_code": "unsupported_route",
+      "notes": ""
+    },
+    "no_client_or_front_door_credentials_reached_provider": {
+      "ok": true,
+      "status": null,
+      "error_code": null,
+      "notes": "Mock provider only saw the LiteLLM provider credential"
+    }
+  },
+  "providerRequests": [
+    {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "authorization": "Bearer sk-local-provider-pentest-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "front-door pentest no_entra"
+          }
+        ],
+        "model": "gpt-pentest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer sk-local-provider-pentest-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "model": "gpt-pentest",
+        "input": "front-door pentest no_entra"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/embeddings",
+      "authorization": "Bearer sk-local-provider-pentest-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "input": "front-door pentest no_entra",
+        "model": "text-embedding-pentest",
+        "encoding_format": "float"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "authorization": "Bearer sk-local-provider-pentest-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "front-door pentest entra"
+          }
+        ],
+        "model": "gpt-pentest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer sk-local-provider-pentest-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "model": "gpt-pentest",
+        "input": "front-door pentest entra"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/embeddings",
+      "authorization": "Bearer sk-local-provider-pentest-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "input": "front-door pentest entra",
+        "model": "text-embedding-pentest",
+        "encoding_format": "float"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "authorization": "Bearer sk-local-provider-pentest-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "front-door pentest apigee"
+          }
+        ],
+        "model": "gpt-pentest"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "authorization": "Bearer sk-local-provider-pentest-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "model": "gpt-pentest",
+        "input": "front-door pentest apigee"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/embeddings",
+      "authorization": "Bearer sk-local-provider-pentest-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "input": "front-door pentest apigee",
+        "model": "text-embedding-pentest",
+        "encoding_format": "float"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "authorization": "Bearer sk-local-provider-pentest-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "front-door pentest apigee"
+          }
+        ],
+        "model": "gpt-pentest"
+      }
+    }
+  ]
+}

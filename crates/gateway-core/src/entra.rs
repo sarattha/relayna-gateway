@@ -7,7 +7,6 @@ use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::{
-    collections::HashSet,
     sync::Mutex,
     time::{Duration, Instant},
 };
@@ -264,7 +263,14 @@ impl EntraJwtVerifier {
         let scopes = split_scopes(claims.scp.as_deref());
         let roles = claims.roles.unwrap_or_default();
         let groups = claims.groups.unwrap_or_default();
-        self.validate_authorization(&scopes, &roles, &groups)?;
+        validate_entra_authorization(
+            self.config.required_scope.as_deref(),
+            self.config.required_role.as_deref(),
+            &self.config.allowed_groups,
+            &scopes,
+            &roles,
+            &groups,
+        )?;
 
         Ok(EntraIdentityContext {
             tenant_id: claims.tid,
@@ -278,36 +284,6 @@ impl EntraJwtVerifier {
             token_version: claims.ver,
             source: EntraIdentitySource::Jwt,
         })
-    }
-
-    fn validate_authorization(
-        &self,
-        scopes: &[String],
-        roles: &[String],
-        groups: &[String],
-    ) -> GatewayResult<()> {
-        if let Some(required_scope) = self.config.required_scope.as_deref() {
-            if !scopes.iter().any(|scope| scope == required_scope) {
-                return Err(GatewayError::InsufficientEntraAuthorization);
-            }
-        }
-        if let Some(required_role) = self.config.required_role.as_deref() {
-            if !roles.iter().any(|role| role == required_role) {
-                return Err(GatewayError::InsufficientEntraAuthorization);
-            }
-        }
-        if !self.config.allowed_groups.is_empty() {
-            let groups: HashSet<&str> = groups.iter().map(String::as_str).collect();
-            if !self
-                .config
-                .allowed_groups
-                .iter()
-                .any(|allowed| groups.contains(allowed.as_str()))
-            {
-                return Err(GatewayError::InsufficientEntraAuthorization);
-            }
-        }
-        Ok(())
     }
 
     #[cfg(test)]
@@ -326,6 +302,9 @@ impl EntraJwtVerifier {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApigeeTrustedHeaderConfig {
     pub secret: String,
+    pub required_scope: Option<String>,
+    pub required_role: Option<String>,
+    pub allowed_groups: Vec<String>,
 }
 
 impl ApigeeTrustedHeaderConfig {
@@ -334,6 +313,20 @@ impl ApigeeTrustedHeaderConfig {
             return Err(GatewayError::InvalidConfiguration);
         }
         Ok(())
+    }
+
+    fn validate_identity_authorization(
+        &self,
+        identity: &EntraIdentityContext,
+    ) -> GatewayResult<()> {
+        validate_entra_authorization(
+            self.required_scope.as_deref(),
+            self.required_role.as_deref(),
+            &self.allowed_groups,
+            &identity.scopes,
+            &identity.roles,
+            &identity.groups,
+        )
     }
 }
 
@@ -355,6 +348,7 @@ pub fn verify_apigee_trusted_identity(
     let mut identity: EntraIdentityContext = serde_json::from_slice(&identity_json)
         .map_err(|_| GatewayError::UntrustedApigeeIdentity)?;
     identity.source = EntraIdentitySource::ApigeeTrustedHeader;
+    config.validate_identity_authorization(&identity)?;
     Ok(identity)
 }
 
@@ -381,6 +375,34 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         .zip(right.iter())
         .fold(0_u8, |acc, (left, right)| acc | (left ^ right))
         == 0
+}
+
+fn validate_entra_authorization(
+    required_scope: Option<&str>,
+    required_role: Option<&str>,
+    allowed_groups: &[String],
+    scopes: &[String],
+    roles: &[String],
+    groups: &[String],
+) -> GatewayResult<()> {
+    if let Some(required_scope) = required_scope {
+        if !scopes.iter().any(|scope| scope == required_scope) {
+            return Err(GatewayError::InsufficientEntraAuthorization);
+        }
+    }
+    if let Some(required_role) = required_role {
+        if !roles.iter().any(|role| role == required_role) {
+            return Err(GatewayError::InsufficientEntraAuthorization);
+        }
+    }
+    if !allowed_groups.is_empty()
+        && !allowed_groups
+            .iter()
+            .any(|allowed| groups.iter().any(|group| group == allowed))
+    {
+        return Err(GatewayError::InsufficientEntraAuthorization);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -802,6 +824,9 @@ mod tests {
     fn verifies_apigee_trusted_identity_signature() {
         let config = ApigeeTrustedHeaderConfig {
             secret: "trusted-secret".to_owned(),
+            required_scope: Some("gateway.invoke".to_owned()),
+            required_role: None,
+            allowed_groups: Vec::new(),
         };
         let identity = EntraIdentityContext {
             tenant_id: "tenant-1".to_owned(),
@@ -824,5 +849,67 @@ mod tests {
                 .expect("trusted");
 
         assert_eq!(verified.source, EntraIdentitySource::ApigeeTrustedHeader);
+    }
+
+    #[test]
+    fn rejects_apigee_trusted_identity_without_required_scope() {
+        let config = ApigeeTrustedHeaderConfig {
+            secret: "trusted-secret".to_owned(),
+            required_scope: Some("gateway.invoke".to_owned()),
+            required_role: None,
+            allowed_groups: Vec::new(),
+        };
+        let identity = EntraIdentityContext {
+            tenant_id: "tenant-1".to_owned(),
+            subject: Some("subject-1".to_owned()),
+            object_id: None,
+            app_id: None,
+            authorized_party: None,
+            scopes: Vec::new(),
+            roles: Vec::new(),
+            groups: Vec::new(),
+            token_version: "2.0".to_owned(),
+            source: EntraIdentitySource::Jwt,
+        };
+        let identity_header =
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&identity).expect("identity json"));
+        let signature = sign_apigee_trusted_identity(&identity_header, &config).expect("signature");
+
+        let error =
+            verify_apigee_trusted_identity(Some(&identity_header), Some(&signature), &config)
+                .unwrap_err();
+
+        assert_eq!(error, GatewayError::InsufficientEntraAuthorization);
+    }
+
+    #[test]
+    fn rejects_apigee_trusted_identity_without_allowed_group() {
+        let config = ApigeeTrustedHeaderConfig {
+            secret: "trusted-secret".to_owned(),
+            required_scope: None,
+            required_role: None,
+            allowed_groups: vec!["allowed-group".to_owned()],
+        };
+        let identity = EntraIdentityContext {
+            tenant_id: "tenant-1".to_owned(),
+            subject: Some("subject-1".to_owned()),
+            object_id: None,
+            app_id: None,
+            authorized_party: None,
+            scopes: Vec::new(),
+            roles: Vec::new(),
+            groups: vec!["other-group".to_owned()],
+            token_version: "2.0".to_owned(),
+            source: EntraIdentitySource::Jwt,
+        };
+        let identity_header =
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&identity).expect("identity json"));
+        let signature = sign_apigee_trusted_identity(&identity_header, &config).expect("signature");
+
+        let error =
+            verify_apigee_trusted_identity(Some(&identity_header), Some(&signature), &config)
+                .unwrap_err();
+
+        assert_eq!(error, GatewayError::InsufficientEntraAuthorization);
     }
 }

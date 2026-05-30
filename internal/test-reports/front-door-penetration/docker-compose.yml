@@ -1,0 +1,197 @@
+services:
+  postgres-no-entra:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: relayna_gateway
+      POSTGRES_PASSWORD: relayna_gateway
+      POSTGRES_DB: relayna_gateway
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relayna_gateway -d relayna_gateway"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  postgres-entra:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: relayna_gateway
+      POSTGRES_PASSWORD: relayna_gateway
+      POSTGRES_DB: relayna_gateway
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relayna_gateway -d relayna_gateway"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  postgres-apigee:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: relayna_gateway
+      POSTGRES_PASSWORD: relayna_gateway
+      POSTGRES_DB: relayna_gateway
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relayna_gateway -d relayna_gateway"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mock-provider:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["node", "server.mjs"]
+    environment:
+      PUBLIC_BASE_URL: http://localhost:18282
+      DOCKER_BASE_URL: http://mock-provider:4000
+      NO_ENTRA_PROXY_URL: http://gateway-no-entra:8080
+      NO_ENTRA_CONTROL_URL: http://gateway-no-entra:8081
+      ENTRA_PROXY_URL: http://gateway-entra:8080
+      ENTRA_CONTROL_URL: http://gateway-entra:8081
+      APIGEE_PROXY_URL: http://gateway-apigee:8080
+      APIGEE_CONTROL_URL: http://gateway-apigee:8081
+      GATEWAY_ADMIN_TOKEN: op_live_ci_token1
+      APIGEE_TRUSTED_HEADER_SECRET: apigee-pentest-secret
+    ports:
+      - "18282:4000"
+    volumes:
+      - ./mock-provider:/app:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  litellm:
+    image: litellm/litellm:latest
+    command:
+      [
+        "--config",
+        "/app/litellm_config.yaml",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "4000",
+        "--telemetry",
+        "False",
+      ]
+    environment:
+      LITELLM_MASTER_KEY: sk-litellm-pentest-service-key
+    ports:
+      - "18283:4000"
+    volumes:
+      - ./litellm_config.yaml:/app/litellm_config.yaml:ro
+    depends_on:
+      mock-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=2)"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  gateway-no-entra:
+    image: front-door-penetration-gateway
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    depends_on:
+      postgres-no-entra:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://relayna_gateway:relayna_gateway@postgres-no-entra:5432/relayna_gateway
+      REDIS_URL: redis://redis:6379
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_SERVICE_KEY: sk-litellm-pentest-service-key
+      GATEWAY_ADMIN_TOKEN: op_live_ci_token1
+      GATEWAY_BIND_ADDR: 0.0.0.0:8080
+      GATEWAY_CONTROL_BIND_ADDR: 0.0.0.0:8081
+      LOG_LEVEL: gateway_api=info,gateway_proxy=info
+      ENTRA_AUTH_ENABLED: "false"
+      APIGEE_TRUSTED_HEADER_ENABLED: "false"
+    ports:
+      - "18280:8080"
+      - "18281:8081"
+
+  gateway-entra:
+    image: front-door-penetration-gateway
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    depends_on:
+      postgres-entra:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock-provider:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://relayna_gateway:relayna_gateway@postgres-entra:5432/relayna_gateway
+      REDIS_URL: redis://redis:6379
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_SERVICE_KEY: sk-litellm-pentest-service-key
+      GATEWAY_ADMIN_TOKEN: op_live_ci_token1
+      GATEWAY_BIND_ADDR: 0.0.0.0:8080
+      GATEWAY_CONTROL_BIND_ADDR: 0.0.0.0:8081
+      LOG_LEVEL: gateway_api=info,gateway_proxy=info
+      ENTRA_AUTH_ENABLED: "true"
+      ENTRA_TENANT_ID: relayna-pentest-tenant
+      ENTRA_AUDIENCE: api://relayna-gateway-pentest
+      ENTRA_ISSUER: http://mock-provider:4000/oauth
+      ENTRA_OIDC_DISCOVERY_URL: http://mock-provider:4000/oauth/.well-known/openid-configuration
+      ENTRA_REQUIRED_SCOPE: gateway.invoke
+      ENTRA_ALLOWED_GROUPS: relayna-pentest-group
+      ENTRA_RELAYNA_KEY_HEADER: X-Relayna-Key
+      APIGEE_TRUSTED_HEADER_ENABLED: "false"
+    ports:
+      - "18290:8080"
+      - "18291:8081"
+
+  gateway-apigee:
+    image: front-door-penetration-gateway
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    depends_on:
+      postgres-apigee:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock-provider:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://relayna_gateway:relayna_gateway@postgres-apigee:5432/relayna_gateway
+      REDIS_URL: redis://redis:6379
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_SERVICE_KEY: sk-litellm-pentest-service-key
+      GATEWAY_ADMIN_TOKEN: op_live_ci_token1
+      GATEWAY_BIND_ADDR: 0.0.0.0:8080
+      GATEWAY_CONTROL_BIND_ADDR: 0.0.0.0:8081
+      LOG_LEVEL: gateway_api=info,gateway_proxy=info
+      ENTRA_AUTH_ENABLED: "false"
+      ENTRA_TENANT_ID: relayna-pentest-tenant
+      ENTRA_AUDIENCE: api://relayna-gateway-pentest
+      ENTRA_ISSUER: http://mock-provider:4000/oauth
+      ENTRA_OIDC_DISCOVERY_URL: http://mock-provider:4000/oauth/.well-known/openid-configuration
+      ENTRA_REQUIRED_SCOPE: gateway.invoke
+      ENTRA_ALLOWED_GROUPS: relayna-pentest-group
+      ENTRA_RELAYNA_KEY_HEADER: X-Relayna-Key
+      APIGEE_TRUSTED_HEADER_ENABLED: "true"
+      APIGEE_TRUSTED_HEADER_SECRET: apigee-pentest-secret
+    ports:
+      - "18300:8080"
+      - "18301:8081"
