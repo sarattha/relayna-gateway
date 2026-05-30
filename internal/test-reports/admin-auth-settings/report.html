@@ -16,7 +16,7 @@
 </head>
 <body>
   <h1>Admin UI Entra ID and Apigee Auth Settings Report</h1>
-  <p class="note">Generated on 2026-05-30 for the Relayna Gateway Admin UI auth entrance settings change.</p>
+  <p class="note">Generated on 2026-05-30 and refreshed against current head <code>00eff4a</code> for the Relayna Gateway Admin UI auth entrance settings change.</p>
 
   <h2>Scope</h2>
   <p>
@@ -33,6 +33,7 @@
       <tr><td><code>cargo test -p gateway-api --lib</code></td><td class="pass">PASS</td><td>44 API tests passed, including auth settings patch and redaction tests.</td></tr>
       <tr><td><code>npm run build:admin-ui</code></td><td class="pass">PASS</td><td>Vite regenerated checked-in <code>/admin-ui</code> static assets.</td></tr>
       <tr><td><code>npm test</code></td><td class="pass">PASS</td><td>Admin UI static and design-system tests passed with auth controls included.</td></tr>
+      <tr><td><code>internal/test-reports/front-door-penetration/run.sh</code></td><td class="pass">PASS</td><td>27/27 direct, Entra, and Apigee front-door checks passed against real LiteLLM.</td></tr>
       <tr><td><code>node tests/freeze-v0.1.0-perimeter.test.mjs</code></td><td class="pass">PASS</td><td>Post-freeze route and migration perimeter updated for the additive admin auth settings surface.</td></tr>
       <tr><td><code>bash internal/test-reports/litellm-real-passthrough/run.sh</code></td><td class="pass">PASS</td><td>Docker real-environment harness passed with Entra JWT validation, Apigee trusted headers, Gateway, Redis, PostgreSQL, real LiteLLM, and a mock provider.</td></tr>
     </tbody>
@@ -71,5 +72,11 @@
     Additional real-environment evidence is available at
     <code>internal/test-reports/litellm-real-passthrough/report.html</code>.
   </p>
+  <h2>Screenshot Artifacts</h2>
+  <ul>
+    <li><code>screenshots/01-settings-auth-panel-context.png</code></li>
+    <li><code>screenshots/02-auth-panel-full.png</code></li>
+    <li><code>screenshots/03-apigee-secret-actions.png</code></li>
+  </ul>
 </body>
 </html>
