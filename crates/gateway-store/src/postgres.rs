@@ -4160,6 +4160,7 @@ fn parse_routes(values: &[String]) -> GatewayResult<Vec<Route>> {
         .map(|value| match value.as_str() {
             "/v1/chat/completions" => Ok(Route::ChatCompletions),
             "/v1/responses" => Ok(Route::Responses),
+            "/v1/embeddings" => Ok(Route::LiteLlmEmbeddings),
             "/providers/openai/*" => Ok(Route::DirectOpenAi),
             "/summary" => Ok(Route::Summary),
             "/translation" => Ok(Route::Translation),

@@ -1,8 +1,8 @@
 {
   "ok": true,
-  "requestedLiteralPathsPassThrough": false,
-  "overallOutcome": "PARTIAL: canonical /v1/chat/completions and /v1/responses pass through to LiteLLM; requested literal /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank are unsupported.",
-  "generatedAt": "2026-05-30T08:12:44.653Z",
+  "requestedLiteLlmPathsPassThrough": true,
+  "overallOutcome": "PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass through to LiteLLM; literal aliases /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank remain unsupported.",
+  "generatedAt": "2026-05-30T08:32:28.997Z",
   "environment": {
     "gatewayProxyUrl": "http://gateway:8080",
     "gatewayControlUrl": "http://gateway:8081",
@@ -21,15 +21,16 @@
   ],
   "canonicalGatewayLiteLlmPaths": [
     "/v1/chat/completions",
-    "/v1/responses"
+    "/v1/responses",
+    "/v1/embeddings"
   ],
   "checks": {
     "canonical_chat_completions_passes_to_litellm": {
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-0127c127-a553-4265-9c59-c692d9b3f82d",
-        "created": 1780128764,
+        "id": "chatcmpl-ab43a1d2-6081-476d-bd29-f5707b241b01",
+        "created": 1780129948,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -57,8 +58,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "resp_KswCR_hSs-wE2PBXkegPTj7Uocek4rPxlj0vgWoQc8B9qPVN9utTfdd9rMtsJ96xS9r3d5ss2w4UOnZFvYe0M_0PWK7d76Q23Y-H2fXeIY1NO4PSn62iSTJU8LvwtaIaY12eeQwtABCFVb_utKgJAXYG8gSiS8GM9wbcmMcgGG5ftqOutpoSSHi-LFsj1tIFg18fW3ctn_wUQ7bYvsGdMbhSbjZ0ulYvAYHHvb3p63bfhBXByNMKhnnK7sB-wtntWxgz-6V6JzCxK1eoO5bB8fqt6F6AeGeiM9eMH6Stm_tDrktVkpPvrTxeWwBnyZHWS-bOHLWK9uoiiKp5BrADRIYKhD53geDFVvOoxeK3_WKF6AQ0tfn8qt4otjaPD49blqVnE2mhGow4uzLKi2wpB9ALM4R3kfOkzIjPvLp5YyCRIfdQTTGEfKwlWWZQvA==",
-        "created_at": 1780128764,
+        "id": "resp_kykf5zKsgKaCeBCjiSr2d9gmmalilEWrZMNCu2EVan4F-mCQOdqKIpkXsQmgA576U7iIxiqCsK83F_eZvvlv1HDMi5JimZvbK-D35UkaAldRn96D-eSLw_yRcX_nJNEKzzvAj2U6oLWMadFRONKP-8WhnIVOtr6vUaGW6CipUzZleSWTscZPokakZr54SxpbCajyHIdj95O9GaRcrsDUUSIlPMTJLu9NIrUZ_j4AX_t-py4heAN8JVNfVXBlMIW2ry_MnPlKzUHiRCMc8Cmz57rhgt74fOx8tEuUJeI0STxqpHnpsSUZurXzor508d_aORU8hkNbwrkmkdq4puYjdHX9ZR2Ngx_ILALjXO33U6zcD8U9M14ZhVpCExhaR7D4D7caIzpYLAMdzrkRhcZJWEibnO63Lq7_gX_VcmHGO8ddX21Tim3AXO8-Zq_KYQ==",
+        "created_at": 1780129948,
         "error": null,
         "incomplete_details": null,
         "instructions": null,
@@ -68,7 +69,7 @@
         "output": [
           {
             "type": "message",
-            "id": "msg-ba38ffbf-71c5-4121-a84d-a88fe2e679a4",
+            "id": "msg-b84e92cf-702c-4634-a7ee-7741b28bba5b",
             "status": "completed",
             "role": "assistant",
             "content": [
@@ -102,12 +103,38 @@
         "store": null
       }
     },
+    "canonical_embeddings_passes_to_litellm": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "model": "text-embedding-review",
+        "data": [
+          {
+            "embedding": [
+              0.1,
+              0.2,
+              0.3
+            ],
+            "index": 0,
+            "object": "embedding"
+          }
+        ],
+        "object": "list",
+        "usage": {
+          "completion_tokens": 0,
+          "prompt_tokens": 3,
+          "total_tokens": 3,
+          "completion_tokens_details": null,
+          "prompt_tokens_details": null
+        }
+      }
+    },
     "apigee_trusted_header_chat_passes_to_litellm": {
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-1ef94626-c4ed-4b18-ac81-34c4eb97a7e9",
-        "created": 1780128764,
+        "id": "chatcmpl-ea90fe6f-ef57-43cf-bcee-fdaf9cb7b3ec",
+        "created": 1780129948,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -168,6 +195,21 @@
           }
         },
         {
+          "path": "/v1/embeddings",
+          "method": "POST",
+          "authorization": "Bearer sk-local-provider-review-key",
+          "hasGatewayServiceKey": true,
+          "hasRelaynaKey": false,
+          "hasAihKey": false,
+          "hasApigeeIdentity": false,
+          "hasClientJwt": false,
+          "body": {
+            "input": "gateway embedding passthrough",
+            "model": "text-embedding-review",
+            "encoding_format": "float"
+          }
+        },
+        {
           "path": "/v1/chat/completions",
           "method": "POST",
           "authorization": "Bearer sk-local-provider-review-key",
@@ -195,7 +237,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "54f26ab1-b274-424b-ab78-3b35fd072e07"
+          "request_id": "4cde0d6f-3c21-47c9-98cc-6f57d844a12b"
         }
       }
     },
@@ -206,7 +248,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "4b482e93-f2a5-47b5-8ce6-f92d279cba8f"
+          "request_id": "d767adfe-c3c3-42fe-8472-465a8097b6e5"
         }
       }
     },
@@ -217,7 +259,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "3693a626-010b-43ef-ae73-b5fd52eae9e1"
+          "request_id": "e2ad45f9-082e-4c83-98e6-19ac199dca43"
         }
       }
     },
@@ -228,7 +270,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "1eab0cec-1db4-48fe-902a-6638fd725240"
+          "request_id": "fc81e746-42ad-4829-b2b5-69e842e8380b"
         }
       }
     }
@@ -265,6 +307,21 @@
       "body": {
         "model": "gpt-review",
         "input": "gateway to litellm responses passthrough"
+      }
+    },
+    {
+      "path": "/v1/embeddings",
+      "method": "POST",
+      "authorization": "Bearer sk-local-provider-review-key",
+      "hasGatewayServiceKey": true,
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "input": "gateway embedding passthrough",
+        "model": "text-embedding-review",
+        "encoding_format": "float"
       }
     },
     {

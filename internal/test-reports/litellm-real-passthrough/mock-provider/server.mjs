@@ -218,7 +218,7 @@ async function setupGatewayData() {
       project_id: project.id,
       preset: "developer",
       policy: {
-        allowed_routes: ["/v1/chat/completions", "/v1/responses"],
+        allowed_routes: ["/v1/chat/completions", "/v1/responses", "/v1/embeddings"],
         allowed_providers: ["litellm"],
         allow_streaming: false,
       },
@@ -310,6 +310,7 @@ async function runTests() {
 
   const chat = await gatewayCall("/v1/chat/completions", validToken, relaynaKey, chatPayload);
   const responses = await gatewayCall("/v1/responses", validToken, relaynaKey, responsePayload);
+  const embeddings = await gatewayCall("/v1/embeddings", validToken, relaynaKey, embeddingPayload);
   const chatLiteral = await gatewayCall("/v1/chatcompletion", validToken, relaynaKey, chatPayload);
   const responseLiteral = await gatewayCall("/v1/response", validToken, relaynaKey, responsePayload);
   const embeddingLiteral = await gatewayCall("/v1/embedding", validToken, relaynaKey, embeddingPayload);
@@ -321,10 +322,15 @@ async function runTests() {
   );
   const gatewayForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/chat/completions"));
   const responseForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/responses"));
+  const embeddingsForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/embeddings"));
 
   const checks = {
     canonical_chat_completions_passes_to_litellm: pass(chat.status === 200 && gatewayForwardedToLiteLlm, chat),
     canonical_responses_passes_to_litellm: pass(responses.status === 200 && responseForwardedToLiteLlm, responses),
+    canonical_embeddings_passes_to_litellm: pass(
+      embeddings.status === 200 && embeddingsForwardedToLiteLlm,
+      embeddings,
+    ),
     apigee_trusted_header_chat_passes_to_litellm: pass(apigeeChat.status === 200, apigeeChat),
     upstream_receives_no_client_credentials: pass(!upstreamCredentialLeak, { providerRequests: state.providerRequests }),
     requested_literal_chatcompletion_path: pass(
@@ -342,12 +348,13 @@ async function runTests() {
     requested_rerank_path: pass(rerank.status === 404 && codeOf(rerank) === "unsupported_route", rerank),
   };
 
-  const requestedLiteralPathsPassThrough = false;
+  const requestedLiteLlmPathsPassThrough =
+    chat.status === 200 && responses.status === 200 && embeddings.status === 200;
   state.results = {
     ok: Object.values(checks).every((check) => check.ok),
-    requestedLiteralPathsPassThrough,
+    requestedLiteLlmPathsPassThrough,
     overallOutcome:
-      "PARTIAL: canonical /v1/chat/completions and /v1/responses pass through to LiteLLM; requested literal /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank are unsupported.",
+      "PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass through to LiteLLM; literal aliases /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank remain unsupported.",
     generatedAt: new Date().toISOString(),
     environment: {
       gatewayProxyUrl,
@@ -360,7 +367,7 @@ async function runTests() {
       apigeeTrustedHeader: true,
     },
     requestedPaths: ["/v1/chatcompletion", "/v1/response", "/v1/embedding", "/v1/rerank"],
-    canonicalGatewayLiteLlmPaths: ["/v1/chat/completions", "/v1/responses"],
+    canonicalGatewayLiteLlmPaths: ["/v1/chat/completions", "/v1/responses", "/v1/embeddings"],
     checks,
     providerRequests: state.providerRequests,
   };
@@ -443,7 +450,7 @@ function dashboardHtml() {
     <h1>LiteLLM Real Passthrough Report</h1>
     <p>Generated ${results?.generatedAt || "after /run-tests"}. Gateway used Entra JWT validation plus trusted Apigee headers in front of a real <code>litellm/litellm:latest</code> container.</p>
     <section class="summary">
-      <div class="metric"><span>Outcome</span><strong>${results?.requestedLiteralPathsPassThrough ? "PASS" : "PARTIAL"}</strong></div>
+      <div class="metric"><span>Outcome</span><strong>${results?.requestedLiteLlmPathsPassThrough ? "PASS" : "RUN TESTS"}</strong></div>
       <div class="metric"><span>Gateway LiteLLM paths</span><strong>${results?.canonicalGatewayLiteLlmPaths.length || 0}</strong></div>
       <div class="metric"><span>Provider captures</span><strong>${results?.providerRequests.length || 0}</strong></div>
     </section>
@@ -460,7 +467,7 @@ function dashboardHtml() {
       </tbody>
     </table>
     <h2>Interesting Finding</h2>
-    <p>The branch currently only routes <code>/v1/chat/completions</code> and <code>/v1/responses</code> to LiteLLM. The literal requested paths <code>/v1/chatcompletion</code>, <code>/v1/response</code>, <code>/v1/embedding</code>, and <code>/v1/rerank</code> return <code>unsupported_route</code> before reaching LiteLLM. This is a passthrough coverage gap, not a LiteLLM container failure.</p>
+    <p>The branch now routes <code>/v1/chat/completions</code>, <code>/v1/responses</code>, and <code>/v1/embeddings</code> to LiteLLM. The literal alias paths <code>/v1/chatcompletion</code>, <code>/v1/response</code>, <code>/v1/embedding</code>, and <code>/v1/rerank</code> return <code>unsupported_route</code> before reaching LiteLLM.</p>
   </main>
 </body>
 </html>`;

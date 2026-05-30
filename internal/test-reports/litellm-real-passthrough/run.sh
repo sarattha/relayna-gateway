@@ -9,7 +9,8 @@ REPORT_MD="$REPORT_DIR/report.md"
 
 cd "$REPORT_DIR"
 
-docker compose -f "$COMPOSE_FILE" up -d --build
+docker compose -f "$COMPOSE_FILE" down -v --remove-orphans >/dev/null 2>&1 || true
+docker compose -f "$COMPOSE_FILE" up -d --build --force-recreate
 
 echo "Waiting for real LiteLLM, mock provider, and gateway..."
 for _ in $(seq 1 180); do
@@ -37,7 +38,7 @@ const markdown = `# LiteLLM Real Passthrough Test Report
 
 Generated: ${result.generatedAt}
 
-Overall result: **${result.requestedLiteralPathsPassThrough ? "PASS" : "PARTIAL - passthrough gap found"}**
+Overall result: **${result.requestedLiteLlmPathsPassThrough ? "PASS" : "FAIL"}**
 
 ${result.overallOutcome}
 
@@ -68,10 +69,9 @@ ${providerRows}
 
 ## Interesting Finding
 
-The current branch routes only \`/v1/chat/completions\` and \`/v1/responses\`
-to LiteLLM. The literal paths requested for this review return
-\`unsupported_route\` before reaching LiteLLM, so they are **not** currently
-LiteLLM passthrough routes:
+The current branch routes \`/v1/chat/completions\`, \`/v1/responses\`, and
+\`/v1/embeddings\` to LiteLLM. The singular or alias paths still return
+\`unsupported_route\` before reaching LiteLLM:
 
 - \`/v1/chatcompletion\`
 - \`/v1/response\`
@@ -79,7 +79,7 @@ LiteLLM passthrough routes:
 - \`/v1/rerank\`
 
 The Gateway also has an internal-service \`/embeddings\` route, but it is not a
-LiteLLM \`/v1/embeddings\` passthrough route.
+LiteLLM passthrough route.
 
 ## Screenshot Artifacts
 

@@ -129,6 +129,7 @@ test("proxy route resolver keeps v0.1.0 public route semantics", () => {
   for (const route of [
     "/v1/chat/completions",
     "/v1/responses",
+    "/v1/embeddings",
     "/providers/openai/",
     "/services/",
     "/summary",
@@ -141,6 +142,7 @@ test("proxy route resolver keeps v0.1.0 public route semantics", () => {
   for (const routeName of [
     "ChatCompletions",
     "Responses",
+    "LiteLlmEmbeddings",
     "DirectOpenAi",
     "Summary",
     "Translation",
@@ -297,6 +299,7 @@ test("PostgreSQL migration inventory is pinned", () => {
     "20260523000200_provider_intelligence.sql",
     "20260523000300_phase_4_observability_analytics.sql",
     "20260525000100_service_health_check_paths.sql",
+    "20260530000100_litellm_embeddings_route.sql",
   ]);
 });
 

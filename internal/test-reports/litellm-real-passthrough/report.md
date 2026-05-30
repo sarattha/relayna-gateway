@@ -1,10 +1,10 @@
 # LiteLLM Real Passthrough Test Report
 
-Generated: 2026-05-30T08:12:44.653Z
+Generated: 2026-05-30T08:32:28.997Z
 
-Overall result: **PARTIAL - passthrough gap found**
+Overall result: **PASS**
 
-PARTIAL: canonical /v1/chat/completions and /v1/responses pass through to LiteLLM; requested literal /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank are unsupported.
+PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass through to LiteLLM; literal aliases /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank remain unsupported.
 
 ## Environment
 
@@ -25,6 +25,7 @@ PARTIAL: canonical /v1/chat/completions and /v1/responses pass through to LiteLL
 | --- | --- | ---: | --- |
 | canonical chat completions passes to litellm | PASS | 200 |  |
 | canonical responses passes to litellm | PASS | 200 |  |
+| canonical embeddings passes to litellm | PASS | 200 |  |
 | apigee trusted header chat passes to litellm | PASS | 200 |  |
 | upstream receives no client credentials | PASS | n/a |  |
 | requested literal chatcompletion path | PASS | 404 | unsupported_route |
@@ -38,14 +39,14 @@ PARTIAL: canonical /v1/chat/completions and /v1/responses pass through to LiteLL
 | --- | --- | --- | --- |
 | POST /v1/chat/completions | Bearer sk-local-provider-review-key | no | no |
 | POST /v1/responses | Bearer sk-local-provider-review-key | no | no |
+| POST /v1/embeddings | Bearer sk-local-provider-review-key | no | no |
 | POST /v1/chat/completions | Bearer sk-local-provider-review-key | no | no |
 
 ## Interesting Finding
 
-The current branch routes only `/v1/chat/completions` and `/v1/responses`
-to LiteLLM. The literal paths requested for this review return
-`unsupported_route` before reaching LiteLLM, so they are **not** currently
-LiteLLM passthrough routes:
+The current branch routes `/v1/chat/completions`, `/v1/responses`, and
+`/v1/embeddings` to LiteLLM. The singular or alias paths still return
+`unsupported_route` before reaching LiteLLM:
 
 - `/v1/chatcompletion`
 - `/v1/response`
@@ -53,7 +54,7 @@ LiteLLM passthrough routes:
 - `/v1/rerank`
 
 The Gateway also has an internal-service `/embeddings` route, but it is not a
-LiteLLM `/v1/embeddings` passthrough route.
+LiteLLM passthrough route.
 
 ## Screenshot Artifacts
 

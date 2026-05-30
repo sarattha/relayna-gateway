@@ -28,7 +28,7 @@ services:
       DOCKER_BASE_URL: http://mock-provider:4000
       GATEWAY_PROXY_URL: http://gateway:8080
       GATEWAY_CONTROL_URL: http://gateway:8081
-      GATEWAY_ADMIN_TOKEN: op_live_litellm_passthrough_review_token_1234567890
+      GATEWAY_ADMIN_TOKEN: op_live_testoperator000000000000000000000000000000000000000000000000
       APIGEE_TRUSTED_HEADER_SECRET: apigee-litellm-review-secret
     ports:
       - "18182:4000"
@@ -86,7 +86,7 @@ services:
       REDIS_URL: redis://redis:6379
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_SERVICE_KEY: sk-litellm-review-service-key
-      GATEWAY_ADMIN_TOKEN: op_live_litellm_passthrough_review_token_1234567890
+      GATEWAY_ADMIN_TOKEN: op_live_testoperator000000000000000000000000000000000000000000000000
       GATEWAY_BIND_ADDR: 0.0.0.0:8080
       GATEWAY_CONTROL_BIND_ADDR: 0.0.0.0:8081
       LOG_LEVEL: gateway_api=info,gateway_proxy=info

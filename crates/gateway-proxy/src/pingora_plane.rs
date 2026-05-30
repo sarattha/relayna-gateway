@@ -2204,6 +2204,13 @@ mod tests {
                 .unwrap_err(),
             GatewayError::DisabledRoute
         );
+        assert_eq!(
+            proxy
+                .ensure_openai_route_enabled(Route::LiteLlmEmbeddings)
+                .await
+                .unwrap_err(),
+            GatewayError::DisabledRoute
+        );
         proxy
             .ensure_openai_route_enabled(Route::ServiceWildcard)
             .await

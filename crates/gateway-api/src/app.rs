@@ -1018,6 +1018,7 @@ fn apply_simulation_policy_patch(
             .map(|route| match route.as_str() {
                 "/v1/chat/completions" => Ok(Route::ChatCompletions),
                 "/v1/responses" => Ok(Route::Responses),
+                "/v1/embeddings" => Ok(Route::LiteLlmEmbeddings),
                 "/providers/openai/*" => Ok(Route::DirectOpenAi),
                 "/summary" => Ok(Route::Summary),
                 "/translation" => Ok(Route::Translation),
@@ -3001,6 +3002,7 @@ mod tests {
                     .filter_map(|route| match route.as_str() {
                         "/v1/chat/completions" => Some(Route::ChatCompletions),
                         "/v1/responses" => Some(Route::Responses),
+                        "/v1/embeddings" => Some(Route::LiteLlmEmbeddings),
                         "/providers/openai/*" => Some(Route::DirectOpenAi),
                         "/summary" => Some(Route::Summary),
                         "/translation" => Some(Route::Translation),
@@ -4229,6 +4231,12 @@ mod tests {
                 enabled: true,
                 updated_at: now,
             },
+            OpenAiRouteSetting {
+                route_id: "embeddings".to_owned(),
+                route: "/v1/embeddings".to_owned(),
+                enabled: true,
+                updated_at: now,
+            },
         ]
     }
 
@@ -5447,7 +5455,7 @@ mod tests {
             .await
             .expect("body");
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
-        assert_eq!(value.as_array().expect("routes").len(), 2);
+        assert_eq!(value.as_array().expect("routes").len(), 3);
 
         let response = admin_post(
             app.clone(),
