@@ -1,0 +1,105 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: relayna_gateway
+      POSTGRES_PASSWORD: relayna_gateway
+      POSTGRES_DB: relayna_gateway
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relayna_gateway -d relayna_gateway"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mock-provider:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["node", "server.mjs"]
+    environment:
+      PUBLIC_BASE_URL: http://localhost:18182
+      DOCKER_BASE_URL: http://mock-provider:4000
+      GATEWAY_PROXY_URL: http://gateway:8080
+      GATEWAY_CONTROL_URL: http://gateway:8081
+      GATEWAY_ADMIN_TOKEN: op_live_litellm_passthrough_review_token_1234567890
+      APIGEE_TRUSTED_HEADER_SECRET: apigee-litellm-review-secret
+    ports:
+      - "18182:4000"
+    volumes:
+      - ./mock-provider:/app:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  litellm:
+    image: litellm/litellm:latest
+    command:
+      [
+        "--config",
+        "/app/litellm_config.yaml",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "4000",
+        "--telemetry",
+        "False",
+      ]
+    environment:
+      LITELLM_MASTER_KEY: sk-litellm-review-service-key
+    ports:
+      - "18183:4000"
+    volumes:
+      - ./litellm_config.yaml:/app/litellm_config.yaml:ro
+    depends_on:
+      mock-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=2)"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  gateway:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock-provider:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://relayna_gateway:relayna_gateway@postgres:5432/relayna_gateway
+      REDIS_URL: redis://redis:6379
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_SERVICE_KEY: sk-litellm-review-service-key
+      GATEWAY_ADMIN_TOKEN: op_live_litellm_passthrough_review_token_1234567890
+      GATEWAY_BIND_ADDR: 0.0.0.0:8080
+      GATEWAY_CONTROL_BIND_ADDR: 0.0.0.0:8081
+      LOG_LEVEL: gateway_api=info,gateway_proxy=info
+      ENTRA_AUTH_ENABLED: "true"
+      ENTRA_TENANT_ID: relayna-litellm-review-tenant
+      ENTRA_AUDIENCE: api://relayna-gateway-litellm-review
+      ENTRA_ISSUER: http://mock-provider:4000/oauth
+      ENTRA_OIDC_DISCOVERY_URL: http://mock-provider:4000/oauth/.well-known/openid-configuration
+      ENTRA_REQUIRED_SCOPE: gateway.invoke
+      ENTRA_ALLOWED_GROUPS: relayna-litellm-review-group
+      ENTRA_RELAYNA_KEY_HEADER: X-Relayna-Key
+      APIGEE_TRUSTED_HEADER_ENABLED: "true"
+      APIGEE_TRUSTED_HEADER_SECRET: apigee-litellm-review-secret
+    ports:
+      - "18180:8080"
+      - "18181:8081"
