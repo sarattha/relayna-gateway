@@ -85,7 +85,8 @@ logging raw JWTs or Relayna keys.
 Trusted signed-header mode is for deployments where Apigee validates Entra and
 then forwards only sanitized identity data to Relayna Gateway.
 
-Enable it explicitly:
+Enable it explicitly from the Admin portal Settings page, or set the equivalent
+deployment environment variables:
 
 ```bash
 export APIGEE_TRUSTED_HEADER_ENABLED="true"

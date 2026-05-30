@@ -63,6 +63,7 @@ test("control-plane public route inventory is pinned", () => {
     "/admin-ui",
     "/admin-ui/{*path}",
     "/admin-ui/admin/audit-events",
+    "/admin-ui/admin/auth/front-door",
     "/admin-ui/admin/guardrails",
     "/admin-ui/admin/guardrails/{name}",
     "/admin-ui/admin/guardrails/executions",
@@ -300,6 +301,7 @@ test("PostgreSQL migration inventory is pinned", () => {
     "20260523000300_phase_4_observability_analytics.sql",
     "20260525000100_service_health_check_paths.sql",
     "20260530000100_litellm_embeddings_route.sql",
+    "20260530000200_gateway_auth_settings.sql",
   ]);
 });
 

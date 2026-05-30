@@ -59,6 +59,7 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin-ui/admin/studio/connection",
     "/admin-ui/admin/studio/connection/test",
     "/admin-ui/admin/studio/services",
+    "/admin-ui/admin/auth/front-door",
     "/admin-ui/admin/services/sync",
     "/admin-ui/admin/services/import/preview",
     "/admin-ui/admin/services/import/activate",
@@ -137,6 +138,18 @@ test("settings view configures studio connection without exposing token values",
   assert.match(js, /token_configured/);
   assert.match(js, /Check Settings for the Studio connection/);
   assert.doesNotMatch(js, /state\.studioConnection\.token\b/);
+});
+
+test("settings view configures Entra ID and Apigee front-door auth", () => {
+  assert.match(js, /\/admin\/auth\/front-door/);
+  assert.match(js, /name="entra_enabled" type="checkbox"/);
+  assert.match(js, /name="apigee_trusted_header_enabled" type="checkbox"/);
+  assert.match(js, /name="issuer" type="url"/);
+  assert.match(js, /name="required_scope"/);
+  assert.match(js, /name="allowed_groups"/);
+  assert.match(js, /name="apigee_trusted_header_secret" type="password"/);
+  assert.match(js, /secret_configured/);
+  assert.doesNotMatch(js, /state\.authSettings\.apigee\.secret\b/);
 });
 
 test("admin portal uses structured project and provider controls", () => {

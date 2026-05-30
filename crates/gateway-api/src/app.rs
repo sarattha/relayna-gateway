@@ -12,26 +12,28 @@ use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
     evaluate_policy, evaluate_policy_limits, extract_generation_features,
     guardrail_executor_for_definitions, resolve_guardrail_plan, AdminAuditStore,
-    AdminGuardrailDefinitionResponse, AdminKeyCreate, AdminKeyPatch, AdminKeyResponse,
-    AdminKeyStore, AdminOpenAiRouteStore, AdminPolicyLayerStore, AdminPolicyLayerUpsert,
-    AdminProjectStore, AdminProviderConfigStore, AdminServiceStore, AdminStudioConnectionStore,
-    AuditEvent, AuditEventCreate, AuditEventQuery, CreatedAdminKeyResponse,
-    CreatedOperatorTokenResponse, EffectiveStudioConnection, GatewayError, GatewayResult,
-    GuardrailAdminCreateRequest, GuardrailAdminPatchRequest, GuardrailDefinitionResponse,
-    GuardrailEventQuery, GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode,
-    GuardrailObservabilityStore, GuardrailPlanRequest, GuardrailPolicySet, GuardrailStore,
-    GuardrailTestRequest, GuardrailTestResponse, KeyPolicy, OperatorAuthorization,
-    OperatorTokenMaterial, OperatorTokenStore, PolicyLookup, ProjectCreateRequest,
-    ProjectPatchRequest, ProjectResponse, Provider, ProviderConfigCreateRequest,
-    ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus,
-    ProviderIntelligenceStore, Route, ServiceCreateRequest, ServiceImportDiff,
-    ServiceImportValidationIssue, ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse,
-    StudioConnectionEnv, StudioConnectionPatchRequest, StudioConnectionTestResponse,
-    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
-    UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery, UsageQueryStore,
-    VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE,
-    SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE,
-    SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
+    AdminGatewayAuthSettingsStore, AdminGuardrailDefinitionResponse, AdminKeyCreate, AdminKeyPatch,
+    AdminKeyResponse, AdminKeyStore, AdminOpenAiRouteStore, AdminPolicyLayerStore,
+    AdminPolicyLayerUpsert, AdminProjectStore, AdminProviderConfigStore, AdminServiceStore,
+    AdminStudioConnectionStore, AuditEvent, AuditEventCreate, AuditEventQuery,
+    CreatedAdminKeyResponse, CreatedOperatorTokenResponse, EffectiveGatewayAuthSettings,
+    EffectiveStudioConnection, GatewayAuthEnv, GatewayAuthSettingsPatchRequest, GatewayError,
+    GatewayResult, GuardrailAdminCreateRequest, GuardrailAdminPatchRequest,
+    GuardrailDefinitionResponse, GuardrailEventQuery, GuardrailExecutionEvent,
+    GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPlanRequest,
+    GuardrailPolicySet, GuardrailStore, GuardrailTestRequest, GuardrailTestResponse, KeyPolicy,
+    OperatorAuthorization, OperatorTokenMaterial, OperatorTokenStore, PolicyLookup,
+    ProjectCreateRequest, ProjectPatchRequest, ProjectResponse, Provider,
+    ProviderConfigCreateRequest, ProviderConfigPatchRequest, ProviderConfigResponse,
+    ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore, Route,
+    ServiceCreateRequest, ServiceImportDiff, ServiceImportValidationIssue, ServicePatchRequest,
+    ServiceRegistrySnapshot, ServiceResponse, SharedGatewayAuthRuntime, StudioConnectionEnv,
+    StudioConnectionPatchRequest, StudioConnectionTestResponse, StudioServiceCatalogResponse,
+    StudioServiceImportPreview, StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent,
+    UsageExport, UsageQuery, UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ,
+    SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE,
+    SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE,
+    SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::{Deserialize, Serialize};
@@ -53,6 +55,7 @@ pub trait GatewayData:
     + AdminProviderConfigStore
     + AdminServiceStore
     + AdminStudioConnectionStore
+    + AdminGatewayAuthSettingsStore
     + GuardrailStore
     + GuardrailObservabilityStore
     + ProviderIntelligenceStore
@@ -84,6 +87,8 @@ pub struct AppState {
     store: Arc<dyn GatewayData>,
     redis: RedisReadiness,
     studio_env: StudioConnectionEnv,
+    auth_env: GatewayAuthEnv,
+    auth_runtime: SharedGatewayAuthRuntime,
 }
 
 const STUDIO_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
@@ -140,10 +145,19 @@ impl StudioCatalogClient {
 }
 
 pub fn router(store: PostgresStore, redis: RedisReadiness) -> Router {
+    let auth_env = GatewayAuthEnv::default();
+    let auth_runtime = SharedGatewayAuthRuntime::new(
+        EffectiveGatewayAuthSettings::from_sources(None, &auth_env)
+            .expect("default auth settings")
+            .runtime_config(),
+    )
+    .expect("default auth runtime");
     router_with_state(AppState {
         store: Arc::new(store),
         redis,
         studio_env: StudioConnectionEnv::default(),
+        auth_env,
+        auth_runtime,
     })
 }
 
@@ -151,6 +165,35 @@ pub fn router_with_studio(
     store: PostgresStore,
     redis: RedisReadiness,
     studio: Option<StudioCatalogClient>,
+) -> Router {
+    let auth_env = GatewayAuthEnv::default();
+    let auth_runtime = SharedGatewayAuthRuntime::new(
+        EffectiveGatewayAuthSettings::from_sources(None, &auth_env)
+            .expect("default auth settings")
+            .runtime_config(),
+    )
+    .expect("default auth runtime");
+    let studio_env = studio
+        .map(|studio| StudioConnectionEnv {
+            base_url: Some(studio.base_url),
+            token: studio.token,
+        })
+        .unwrap_or_default();
+    router_with_state(AppState {
+        store: Arc::new(store),
+        redis,
+        studio_env,
+        auth_env,
+        auth_runtime,
+    })
+}
+
+pub fn router_with_studio_and_auth(
+    store: PostgresStore,
+    redis: RedisReadiness,
+    studio: Option<StudioCatalogClient>,
+    auth_env: GatewayAuthEnv,
+    auth_runtime: SharedGatewayAuthRuntime,
 ) -> Router {
     let studio_env = studio
         .map(|studio| StudioConnectionEnv {
@@ -162,6 +205,8 @@ pub fn router_with_studio(
         store: Arc::new(store),
         redis,
         studio_env,
+        auth_env,
+        auth_runtime,
     })
 }
 
@@ -252,6 +297,10 @@ pub fn router_with_state(state: AppState) -> Router {
         .route(
             "/admin-ui/admin/studio/connection",
             get(get_studio_connection).patch(patch_studio_connection),
+        )
+        .route(
+            "/admin-ui/admin/auth/front-door",
+            get(get_gateway_auth_settings).patch(patch_gateway_auth_settings),
         )
         .route(
             "/admin-ui/admin/studio/connection/test",
@@ -1759,6 +1808,60 @@ async fn patch_studio_connection(
     }
 }
 
+async fn get_gateway_auth_settings(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(response) = require_admin(&state, &headers).await {
+        return response;
+    }
+
+    match effective_gateway_auth_settings(&state).await {
+        Ok(settings) => Json(settings.response()).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn patch_gateway_auth_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(patch): Json<GatewayAuthSettingsPatchRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_SETTINGS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match effective_gateway_auth_settings(&state).await {
+        Ok(settings) => Some(settings.response()),
+        Err(error) => return error_response(&headers, error),
+    };
+
+    match state.store.patch_gateway_auth_settings(patch).await {
+        Ok(_) => match effective_gateway_auth_settings(&state).await {
+            Ok(settings) => {
+                let response = settings.response();
+                if let Err(error) = state.auth_runtime.update(settings.runtime_config()) {
+                    return error_response(&headers, error);
+                }
+                if let Err(error) = record_admin_audit(
+                    &state,
+                    &headers,
+                    &actor,
+                    "settings:gateway_auth_update",
+                    "gateway_auth_settings",
+                    Some("singleton".to_owned()),
+                    before.as_ref().and_then(audit_json),
+                    audit_json(&response),
+                )
+                .await
+                {
+                    return error_response(&headers, error);
+                }
+                Json(response).into_response()
+            }
+            Err(error) => error_response(&headers, error),
+        },
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn test_studio_connection(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Some(response) = require_admin(&state, &headers).await {
         return response;
@@ -2503,6 +2606,13 @@ async fn effective_studio_connection(state: &AppState) -> GatewayResult<Effectiv
     ))
 }
 
+async fn effective_gateway_auth_settings(
+    state: &AppState,
+) -> GatewayResult<EffectiveGatewayAuthSettings> {
+    let stored = state.store.gateway_auth_settings().await?;
+    EffectiveGatewayAuthSettings::from_sources(stored, &state.auth_env)
+}
+
 async fn effective_studio_client(state: &AppState) -> GatewayResult<StudioCatalogClient> {
     let connection = effective_studio_connection(state).await?;
     let base_url = connection
@@ -2843,8 +2953,9 @@ mod tests {
         PatchValue, ProjectCreateRequest, ProjectPatchRequest, ProjectResponse,
         ProviderConfigCreateRequest, ProviderConfigPatchRequest, ProviderConfigResponse,
         ProviderHealth, Route, ServiceCostMode, ServiceResponse, ServiceSource, ServiceSyncStatus,
-        ServiceSyncStatusResponse, StoredStudioConnection, StudioConnectionPatchRequest,
-        UsageBreakdown, UsageExportRow, UsageStatus, UsageSummary, UsageTimeseriesPoint,
+        ServiceSyncStatusResponse, StoredGatewayAuthSettings, StoredStudioConnection,
+        StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow, UsageStatus, UsageSummary,
+        UsageTimeseriesPoint,
     };
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -2860,6 +2971,7 @@ mod tests {
         events: Arc<Mutex<Vec<UsageEvent>>>,
         audit_events: Arc<Mutex<Vec<AuditEvent>>>,
         studio_connection: Arc<Mutex<Option<StoredStudioConnection>>>,
+        gateway_auth_settings: Arc<Mutex<Option<StoredGatewayAuthSettings>>>,
         postgres_ready: bool,
     }
 
@@ -2984,6 +3096,28 @@ mod tests {
             connection.updated_at = Some(Utc::now());
             *stored = Some(connection.clone());
             Ok(connection)
+        }
+    }
+
+    #[async_trait]
+    impl AdminGatewayAuthSettingsStore for MemoryStore {
+        async fn gateway_auth_settings(&self) -> GatewayResult<Option<StoredGatewayAuthSettings>> {
+            Ok(self
+                .gateway_auth_settings
+                .lock()
+                .expect("lock poisoned")
+                .clone())
+        }
+
+        async fn patch_gateway_auth_settings(
+            &self,
+            patch: GatewayAuthSettingsPatchRequest,
+        ) -> GatewayResult<StoredGatewayAuthSettings> {
+            let mut stored = self.gateway_auth_settings.lock().expect("lock poisoned");
+            let mut settings = stored.clone().unwrap_or_default().apply_patch(patch)?;
+            settings.updated_at = Some(Utc::now());
+            *stored = Some(settings.clone());
+            Ok(settings)
         }
     }
 
@@ -4186,19 +4320,37 @@ mod tests {
 
     fn test_state_with_redis_url(store: MemoryStore, redis_url: &str) -> AppState {
         let redis = RedisReadiness::new(redis_url).expect("redis client");
+        let auth_env = GatewayAuthEnv::default();
+        let auth_runtime = SharedGatewayAuthRuntime::new(
+            EffectiveGatewayAuthSettings::from_sources(None, &auth_env)
+                .expect("effective auth settings")
+                .runtime_config(),
+        )
+        .expect("auth runtime");
         AppState {
             store: Arc::new(store),
             redis,
             studio_env: StudioConnectionEnv::default(),
+            auth_env,
+            auth_runtime,
         }
     }
 
     fn test_state_with_studio_env(store: MemoryStore, studio_env: StudioConnectionEnv) -> AppState {
         let redis = RedisReadiness::new("redis://127.0.0.1:6379").expect("redis client");
+        let auth_env = GatewayAuthEnv::default();
+        let auth_runtime = SharedGatewayAuthRuntime::new(
+            EffectiveGatewayAuthSettings::from_sources(None, &auth_env)
+                .expect("effective auth settings")
+                .runtime_config(),
+        )
+        .expect("auth runtime");
         AppState {
             store: Arc::new(store),
             redis,
             studio_env,
+            auth_env,
+            auth_runtime,
         }
     }
 
@@ -4212,6 +4364,7 @@ mod tests {
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
             postgres_ready: true,
         }
     }
@@ -4338,6 +4491,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
 
         let app = router_with_state(test_state_with_redis_url(store, "redis://127.0.0.1:0"));
@@ -4359,6 +4513,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
 
         let app = router_with_state(test_state(store.clone()));
@@ -4556,6 +4711,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: false,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
 
         let app = router_with_state(test_state(store));
@@ -4576,6 +4732,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -4602,6 +4759,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -4807,6 +4965,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -4841,6 +5000,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -4905,6 +5065,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_patch(
@@ -4932,6 +5093,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -4963,6 +5125,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -4995,6 +5158,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -5033,6 +5197,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -5121,6 +5286,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = request(app, "/admin-ui/metrics").await;
@@ -5156,6 +5322,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_get(
@@ -5262,6 +5429,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = request(app.clone(), "/admin-ui").await;
@@ -5293,6 +5461,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -5412,6 +5581,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn gateway_auth_settings_can_be_patched_without_exposing_secret() {
+        let state = test_state(default_store());
+        let auth_runtime = state.auth_runtime.clone();
+        let app = router_with_state(state);
+        let response = admin_patch(
+            app,
+            "/admin-ui/admin/auth/front-door",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{
+                "entra_enabled": true,
+                "apigee_trusted_header_enabled": true,
+                "relayna_key_header": "X-Relayna-Key",
+                "tenant_id": "tenant-1",
+                "audience": "api://relayna-gateway",
+                "issuer": "https://login.example/tenant-1/v2.0",
+                "oidc_discovery_url": "https://login.example/tenant-1/.well-known/openid-configuration",
+                "required_scope": "gateway.invoke",
+                "required_role": "Gateway.Invoke",
+                "allowed_groups": ["gateway-users"],
+                "accepted_algorithms": ["RS256"],
+                "jwks_cache_ttl_seconds": 120,
+                "clock_skew_seconds": 30,
+                "apigee_trusted_header_secret": "apigee-secret"
+            }"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["source"], "persisted");
+        assert_eq!(value["entra"]["enabled"], true);
+        assert_eq!(value["entra"]["required_scope"], "gateway.invoke");
+        assert_eq!(value["apigee"]["trusted_header_enabled"], true);
+        assert_eq!(value["apigee"]["secret_configured"], true);
+        assert!(value["apigee"].get("secret").is_none());
+
+        let snapshot = auth_runtime.snapshot().expect("auth snapshot");
+        assert!(snapshot.entra_enabled());
+        assert_eq!(snapshot.config.relayna_key_header, "X-Relayna-Key");
+        assert!(snapshot.entra_verifier.is_some());
+    }
+
+    #[tokio::test]
+    async fn gateway_auth_settings_reject_enabled_entra_without_required_fields() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_patch(
+            app,
+            "/admin-ui/admin/auth/front-door",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"entra_enabled":true}"#,
+        )
+        .await;
+        let status = response.status();
+        let value = response_json(response).await;
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(value["error"]["code"], "invalid_configuration");
+    }
+
+    #[tokio::test]
     async fn studio_services_reports_missing_connection_config() {
         let app = router_with_state(test_state(default_store()));
         let response = admin_get(
@@ -5441,6 +5670,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
 
@@ -5499,6 +5729,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -5560,6 +5791,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -5604,6 +5836,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -5682,6 +5915,7 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
+            gateway_auth_settings: Arc::new(Mutex::new(None)),
         };
         let app = router_with_state(test_state(store));
         let _ = admin_post(

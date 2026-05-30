@@ -78,7 +78,13 @@ sequenceDiagram
 
 ## Configuration
 
-All settings are environment variables. Empty strings are treated as unset.
+Front-door auth can be configured from the Admin portal Settings page or from
+deployment environment variables. Admin-saved settings are useful for operator
+changes after deployment; environment variables remain useful for bootstrap,
+GitOps, and immutable deployments. See [Admin Portal](admin-portal.md) for the
+field-by-field UI walkthrough and screenshots.
+
+The environment variables are listed below. Empty strings are treated as unset.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |

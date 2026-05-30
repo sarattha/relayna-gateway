@@ -1,6 +1,6 @@
 use gateway_core::{
-    validate_relayna_key_header_name, ApigeeTrustedHeaderConfig, EntraAuthConfig, GatewayError,
-    GatewayResult, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    validate_relayna_key_header_name, ApigeeTrustedHeaderConfig, EntraAuthConfig, GatewayAuthEnv,
+    GatewayError, GatewayResult, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use std::{env, net::SocketAddr};
 
@@ -108,6 +108,14 @@ impl Config {
             gateway_control_bind_addr,
             log_level,
         })
+    }
+
+    pub fn gateway_auth_env(&self) -> GatewayAuthEnv {
+        GatewayAuthEnv {
+            relayna_key_header: self.relayna_key_header.clone(),
+            entra_auth: self.entra_auth.clone(),
+            apigee_trusted_header: self.apigee_trusted_header.clone(),
+        }
     }
 }
 

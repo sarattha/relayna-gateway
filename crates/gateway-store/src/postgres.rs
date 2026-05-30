@@ -6,6 +6,9 @@ use gateway_core::{
         AdminPolicyLayerResponse, AdminPolicyLayerUpsert, AdminPolicyResponse,
     },
     auth::{StoredVirtualKey, VirtualKeyLookup},
+    auth_settings::{
+        AdminGatewayAuthSettingsStore, GatewayAuthSettingsPatchRequest, StoredGatewayAuthSettings,
+    },
     default_route_pattern, operator_token_prefix, parse_provider_config_kind,
     projects::{ProjectCreateRequest, ProjectPatchRequest, ProjectResponse},
     provider_config_kind_str,
@@ -2892,6 +2895,123 @@ impl AdminStudioConnectionStore for PostgresStore {
 }
 
 #[async_trait]
+impl AdminGatewayAuthSettingsStore for PostgresStore {
+    async fn gateway_auth_settings(&self) -> GatewayResult<Option<StoredGatewayAuthSettings>> {
+        sqlx::query(
+            r#"
+            SELECT
+                entra_enabled,
+                tenant_id,
+                audience,
+                issuer,
+                oidc_discovery_url,
+                required_scope,
+                required_role,
+                allowed_groups,
+                accepted_algorithms,
+                relayna_key_header,
+                jwks_cache_ttl_seconds,
+                clock_skew_seconds,
+                apigee_trusted_header_enabled,
+                apigee_trusted_header_secret,
+                updated_at
+            FROM gateway_auth_settings
+            WHERE singleton = true
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| {
+            row.map(|row| gateway_auth_settings_from_row(&row))
+                .transpose()
+        })
+        .map_err(|_| GatewayError::StoreUnavailable)?
+    }
+
+    async fn patch_gateway_auth_settings(
+        &self,
+        patch: GatewayAuthSettingsPatchRequest,
+    ) -> GatewayResult<StoredGatewayAuthSettings> {
+        let current = self.gateway_auth_settings().await?.unwrap_or_default();
+        let next = current.apply_patch(patch)?;
+
+        let row = sqlx::query(
+            r#"
+            INSERT INTO gateway_auth_settings (
+                singleton,
+                entra_enabled,
+                tenant_id,
+                audience,
+                issuer,
+                oidc_discovery_url,
+                required_scope,
+                required_role,
+                allowed_groups,
+                accepted_algorithms,
+                relayna_key_header,
+                jwks_cache_ttl_seconds,
+                clock_skew_seconds,
+                apigee_trusted_header_enabled,
+                apigee_trusted_header_secret
+            )
+            VALUES (true, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            ON CONFLICT (singleton) DO UPDATE SET
+                entra_enabled = EXCLUDED.entra_enabled,
+                tenant_id = EXCLUDED.tenant_id,
+                audience = EXCLUDED.audience,
+                issuer = EXCLUDED.issuer,
+                oidc_discovery_url = EXCLUDED.oidc_discovery_url,
+                required_scope = EXCLUDED.required_scope,
+                required_role = EXCLUDED.required_role,
+                allowed_groups = EXCLUDED.allowed_groups,
+                accepted_algorithms = EXCLUDED.accepted_algorithms,
+                relayna_key_header = EXCLUDED.relayna_key_header,
+                jwks_cache_ttl_seconds = EXCLUDED.jwks_cache_ttl_seconds,
+                clock_skew_seconds = EXCLUDED.clock_skew_seconds,
+                apigee_trusted_header_enabled = EXCLUDED.apigee_trusted_header_enabled,
+                apigee_trusted_header_secret = EXCLUDED.apigee_trusted_header_secret,
+                updated_at = now()
+            RETURNING
+                entra_enabled,
+                tenant_id,
+                audience,
+                issuer,
+                oidc_discovery_url,
+                required_scope,
+                required_role,
+                allowed_groups,
+                accepted_algorithms,
+                relayna_key_header,
+                jwks_cache_ttl_seconds,
+                clock_skew_seconds,
+                apigee_trusted_header_enabled,
+                apigee_trusted_header_secret,
+                updated_at
+            "#,
+        )
+        .bind(next.entra_enabled)
+        .bind(next.tenant_id)
+        .bind(next.audience)
+        .bind(next.issuer)
+        .bind(next.oidc_discovery_url)
+        .bind(next.required_scope)
+        .bind(next.required_role)
+        .bind(next.allowed_groups)
+        .bind(next.accepted_algorithms)
+        .bind(next.relayna_key_header)
+        .bind(next.jwks_cache_ttl_seconds)
+        .bind(next.clock_skew_seconds)
+        .bind(next.apigee_trusted_header_enabled)
+        .bind(next.apigee_trusted_header_secret)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        gateway_auth_settings_from_row(&row)
+    }
+}
+
+#[async_trait]
 impl AdminServiceStore for PostgresStore {
     async fn create_service(
         &self,
@@ -4531,6 +4651,58 @@ fn studio_connection_from_row(
             .map_err(|_| GatewayError::StoreUnavailable)?,
         bearer_token_secret: row
             .try_get("bearer_token_secret")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
+fn gateway_auth_settings_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<StoredGatewayAuthSettings> {
+    Ok(StoredGatewayAuthSettings {
+        entra_enabled: row
+            .try_get("entra_enabled")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        tenant_id: row
+            .try_get("tenant_id")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        audience: row
+            .try_get("audience")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        issuer: row
+            .try_get("issuer")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        oidc_discovery_url: row
+            .try_get("oidc_discovery_url")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        required_scope: row
+            .try_get("required_scope")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        required_role: row
+            .try_get("required_role")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        allowed_groups: row
+            .try_get("allowed_groups")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        accepted_algorithms: row
+            .try_get("accepted_algorithms")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        relayna_key_header: row
+            .try_get("relayna_key_header")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        jwks_cache_ttl_seconds: row
+            .try_get("jwks_cache_ttl_seconds")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        clock_skew_seconds: row
+            .try_get("clock_skew_seconds")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        apigee_trusted_header_enabled: row
+            .try_get("apigee_trusted_header_enabled")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        apigee_trusted_header_secret: row
+            .try_get("apigee_trusted_header_secret")
             .map_err(|_| GatewayError::StoreUnavailable)?,
         updated_at: row
             .try_get("updated_at")

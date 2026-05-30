@@ -13,12 +13,12 @@ use gateway_core::{
     resolve_guardrail_plan, route_pattern_wildcard_suffix, service_wildcard_suffix,
     strip_client_guardrails, validate_relayna_key_header_name, verify_apigee_trusted_identity,
     ApigeeTrustedHeaderConfig, AuthenticatedKey, BudgetDecision, BudgetStore, EntraAuthConfig,
-    EntraIdentityContext, EntraJwtVerifier, GatewayError, GatewayResult, GuardrailContext,
-    GuardrailDefinition, GuardrailExecutionEvent, GuardrailMode, GuardrailPlan,
-    GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet, GuardrailStore, KeyPolicy,
-    OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
+    EntraIdentityContext, GatewayAuthRuntimeConfig, GatewayAuthRuntimeSnapshot, GatewayError,
+    GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent, GuardrailMode,
+    GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet, GuardrailStore,
+    KeyPolicy, OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
     ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route, RouteMatch,
-    ServiceRegistryLookup, ServiceRouteLookup, UsageEvent, UsageRecorder,
+    ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent, UsageRecorder,
     ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use http::Uri;
@@ -35,7 +35,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct PingoraLiteLlmConfig {
     pub litellm: PingoraUpstreamConfig,
     pub direct_openai: Option<PingoraUpstreamConfig>,
@@ -43,6 +43,7 @@ pub struct PingoraLiteLlmConfig {
     pub entra_auth: Option<EntraAuthConfig>,
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
     pub relayna_key_header: String,
+    auth_runtime: Option<SharedGatewayAuthRuntime>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +67,7 @@ impl PingoraLiteLlmConfig {
             entra_auth: None,
             apigee_trusted_header: None,
             relayna_key_header: ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned(),
+            auth_runtime: None,
         })
     }
 
@@ -102,6 +104,11 @@ impl PingoraLiteLlmConfig {
         apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
     ) -> Self {
         self.apigee_trusted_header = apigee_trusted_header;
+        self
+    }
+
+    pub fn with_auth_runtime(mut self, auth_runtime: SharedGatewayAuthRuntime) -> Self {
+        self.auth_runtime = Some(auth_runtime);
         self
     }
 
@@ -154,7 +161,7 @@ pub struct RelaynaPingoraProxy<S, R> {
     store: Arc<S>,
     control_state: Arc<R>,
     config: PingoraLiteLlmConfig,
-    entra_verifier: Option<Arc<EntraJwtVerifier>>,
+    auth_runtime: SharedGatewayAuthRuntime,
 }
 
 impl<S, R> RelaynaPingoraProxy<S, R>
@@ -169,33 +176,31 @@ where
     R: RateLimitStore + BudgetStore,
 {
     pub fn new(store: Arc<S>, control_state: Arc<R>, config: PingoraLiteLlmConfig) -> Self {
-        let entra_verifier = config
-            .entra_auth
-            .clone()
-            .map(EntraJwtVerifier::new)
-            .transpose()
-            .expect("validated Entra auth config")
-            .map(Arc::new);
+        let auth_runtime = config.auth_runtime.clone().unwrap_or_else(|| {
+            SharedGatewayAuthRuntime::new(GatewayAuthRuntimeConfig {
+                relayna_key_header: config.relayna_key_header.clone(),
+                entra_auth: config.entra_auth.clone(),
+                apigee_trusted_header: config.apigee_trusted_header.clone(),
+            })
+            .expect("validated gateway auth config")
+        });
         Self {
             store,
             control_state,
             config,
-            entra_verifier,
+            auth_runtime,
         }
     }
 }
 
 impl<S, R> RelaynaPingoraProxy<S, R> {
-    fn entra_enabled(&self) -> bool {
-        self.entra_verifier.is_some() || self.config.apigee_trusted_header.is_some()
-    }
-
     async fn verify_entra_request(
         &self,
         req: &RequestHeader,
         now: chrono::DateTime<Utc>,
+        auth: &GatewayAuthRuntimeSnapshot,
     ) -> GatewayResult<EntraIdentityContext> {
-        if let Some(config) = self.config.apigee_trusted_header.as_ref() {
+        if let Some(config) = auth.config.apigee_trusted_header.as_ref() {
             if header_value(req, "x-apigee-entra-identity").is_some()
                 || header_value(req, "x-apigee-entra-signature").is_some()
             {
@@ -206,7 +211,7 @@ impl<S, R> RelaynaPingoraProxy<S, R> {
                 );
             }
         }
-        let verifier = self
+        let verifier = auth
             .entra_verifier
             .as_ref()
             .ok_or(GatewayError::MissingEntraAuthorization)?;
@@ -224,6 +229,7 @@ pub struct PingoraContext {
     route_match: Option<RouteMatch>,
     key: Option<AuthenticatedKey>,
     entra_identity: Option<EntraIdentityContext>,
+    relayna_key_header: String,
     body_prefix: Vec<u8>,
     body_bytes_seen: usize,
     response_body_prefix: Vec<u8>,
@@ -282,6 +288,7 @@ where
             route_match: None,
             key: None,
             entra_identity: None,
+            relayna_key_header: self.config.relayna_key_header().to_owned(),
             body_prefix: Vec::new(),
             body_bytes_seen: 0,
             response_body_prefix: Vec::new(),
@@ -399,10 +406,18 @@ where
             ctx.run_id = header_value(req, "x-relayna-run-id").map(ToOwned::to_owned);
         }
 
+        let auth = match self.auth_runtime.snapshot() {
+            Ok(auth) => auth,
+            Err(error) => {
+                respond_error(session, error, &ctx.request_id).await?;
+                return Ok(true);
+            }
+        };
+        ctx.relayna_key_header = auth.config.relayna_key_header.clone();
         let now = Utc::now();
         let authorization = header_value(req, "authorization");
-        let key_result = if self.entra_enabled() {
-            match self.verify_entra_request(req, now).await {
+        let key_result = if auth.entra_enabled() {
+            match self.verify_entra_request(req, now, &auth).await {
                 Ok(identity) => {
                     ctx.entra_identity = Some(identity);
                     gateway_telemetry::phase_span("gateway.auth.entra", &ctx.request_id)
@@ -415,7 +430,7 @@ where
                 }
             }
             Authenticator::new(self.store.clone())
-                .authenticate_raw_key(header_value(req, self.config.relayna_key_header()), now)
+                .authenticate_raw_key(header_value(req, &auth.config.relayna_key_header), now)
                 .await
         } else {
             Authenticator::new(self.store.clone())
@@ -914,7 +929,7 @@ where
         prepare_upstream_authority_and_credentials(
             upstream_request,
             upstream,
-            Some(self.config.relayna_key_header()),
+            Some(ctx.relayna_key_header.as_str()),
         )?;
         if ctx
             .route_match
@@ -1766,6 +1781,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         route_match: None,
         key: None,
         entra_identity: None,
+        relayna_key_header: ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned(),
         body_prefix: Vec::new(),
         body_bytes_seen: 0,
         response_body_prefix: Vec::new(),
@@ -1796,6 +1812,11 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         rewritten_request_len: None,
         guardrail_stream_holdback: String::new(),
     }
+}
+
+#[cfg(test)]
+fn default_auth_runtime_for_tests() -> SharedGatewayAuthRuntime {
+    SharedGatewayAuthRuntime::new(GatewayAuthRuntimeConfig::default()).expect("auth runtime")
 }
 
 async fn respond_error(
@@ -2161,7 +2182,7 @@ mod tests {
                     PingoraUpstreamConfig::from_base_url("https://api.openai.test", "openai-key")
                         .expect("direct config"),
                 )),
-            entra_verifier: None,
+            auth_runtime: default_auth_runtime_for_tests(),
         };
         let mut ctx = new_pingora_context_for_tests();
         ctx.route_match = Some(
@@ -2200,7 +2221,7 @@ mod tests {
             control_state: Arc::new(MemoryControlState::default()),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
                 .expect("config"),
-            entra_verifier: None,
+            auth_runtime: default_auth_runtime_for_tests(),
         };
 
         assert_eq!(
@@ -2462,7 +2483,7 @@ mod tests {
             control_state: control_state.clone(),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
                 .expect("config"),
-            entra_verifier: None,
+            auth_runtime: default_auth_runtime_for_tests(),
         };
         let key = AuthenticatedKey {
             key_id: Uuid::new_v4(),
@@ -2507,7 +2528,7 @@ mod tests {
             control_state,
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
                 .expect("config"),
-            entra_verifier: None,
+            auth_runtime: default_auth_runtime_for_tests(),
         };
         let key = AuthenticatedKey {
             key_id: Uuid::new_v4(),

@@ -281,9 +281,122 @@ First-time setup is complete when:
   passive success/failure counters, circuit state, cooldown, and last error
   metadata. Operators with provider update scope can write explicit provider
   health state for degraded, open-circuit, cooldown, and last-error situations.
-- Settings includes Studio connection controls and static release/security
-  posture references for v0.1.0 freeze boundaries and supply-chain exception
-  guidance.
+- Settings includes Studio connection controls, Entra ID and Apigee front-door
+  auth controls, and static release/security posture references for v0.1.0
+  freeze boundaries and supply-chain exception guidance.
+
+## Entra ID and Apigee Front-Door Settings
+
+Open **Settings** and use **Entra ID and Apigee front door** to manage the
+enterprise-auth front door from the Admin portal. These controls update the
+same runtime configuration that can also be supplied by deployment environment
+variables in [Entra ID Auth](entra-id-auth.md) and
+[Apigee Gateway Path](apigee-gateway-path.md).
+
+The panel shows the current auth source in the Settings summary:
+
+- `unset`: no Entra or Apigee front-door auth is active.
+- `environment`: Gateway is using deployment environment variables.
+- `persisted`: Gateway is using Admin API settings saved from the portal.
+
+![Settings view with Entra ID and Apigee panel](assets/screenshots/admin-auth-settings/01-settings-auth-panel-context.png)
+
+Saved Admin portal settings are applied immediately to proxy traffic. They do
+not change Admin UI sign-in; `/admin-ui/*` remains protected by operator
+tokens. Existing secret values are write-only and are never rendered back into
+the browser.
+
+### Enablement and Relayna key header
+
+![Enablement and Relayna key header controls](assets/screenshots/admin-auth-settings/03-enable-and-key-header.png)
+
+Use the first row to choose which enterprise-auth path is active and which
+header carries the Relayna virtual key.
+
+| UI option | Environment variable | What it does | How to set it |
+| --- | --- | --- | --- |
+| `Enable Entra ID` | `ENTRA_AUTH_ENABLED` | Requires proxy clients to send `Authorization: Bearer <Entra access token>` before Gateway authenticates the Relayna virtual key. | Check it only after tenant, audience, issuer, and OIDC discovery URL are filled. Clear it to return direct proxy traffic to Relayna virtual-key auth unless Apigee trusted headers remain enabled. |
+| `Enable Apigee trusted headers` | `APIGEE_TRUSTED_HEADER_ENABLED` | Allows Apigee to send a sanitized identity header and HMAC signature instead of forwarding the original Entra JWT. | Check it only after `Apigee secret` is configured. Clear it to disable trusted-header verification. |
+| `Relayna key header` | `ENTRA_RELAYNA_KEY_HEADER` | Names the HTTP header that carries the Relayna `rk_live_...` key when Entra or Apigee front-door auth is used. | Keep `X-Relayna-Key` unless clients and Apigee policies are already updated to a different valid HTTP header name. Gateway strips this header before upstream forwarding. |
+
+When Entra is enabled, clients send:
+
+```http
+Authorization: Bearer <Entra access token>
+X-Relayna-Key: rk_live_...
+```
+
+When Apigee trusted headers are enabled, Gateway expects Apigee to send:
+
+```http
+X-Apigee-Entra-Identity: <base64url-json>
+X-Apigee-Entra-Signature: <base64url-hmac-sha256>
+X-Relayna-Key: rk_live_...
+```
+
+### Entra issuer and discovery settings
+
+![Entra tenant, audience, issuer, and discovery controls](assets/screenshots/admin-auth-settings/04-entra-issuer-and-discovery.png)
+
+These fields identify the Entra tenant and the API registration Gateway should
+trust. They are required when `Enable Entra ID` is checked.
+
+| UI option | Environment variable | What it does | How to set it |
+| --- | --- | --- | --- |
+| `Tenant ID` | `ENTRA_TENANT_ID` | Matches the token `tid` claim. | Use the tenant GUID or tenant identifier that appears in issued access tokens. |
+| `Audience` | `ENTRA_AUDIENCE` | Matches the token `aud` claim for the Gateway API registration. | Use the Application ID URI or audience configured for Relayna Gateway, for example `api://relayna-gateway`. |
+| `Trusted issuer` | `ENTRA_ISSUER` | Matches the token `iss` claim and the OIDC metadata issuer. | For Microsoft identity platform v2 tokens, use `https://login.microsoftonline.com/<tenant-id>/v2.0`. |
+| `OIDC discovery URL` | `ENTRA_OIDC_DISCOVERY_URL` | Lets Gateway fetch OIDC metadata and find the JWKS URI used for JWT signature validation. | Use the tenant's `.well-known/openid-configuration` URL. For v2 tokens, it normally ends with `/v2.0/.well-known/openid-configuration`. |
+
+Saving with Entra enabled and any required field empty is rejected. Saving an
+empty field while Entra is disabled clears that persisted field.
+
+### Authorization requirements
+
+![Scope, role, and group allowlist controls](assets/screenshots/admin-auth-settings/05-authorization-requirements.png)
+
+These options are optional authorization gates layered on top of tenant,
+issuer, audience, and signature validation. If more than one is set, the token
+or trusted Apigee identity must satisfy each configured requirement.
+
+| UI option | Environment variable | What it does | How to set it |
+| --- | --- | --- | --- |
+| `Required scope` | `ENTRA_REQUIRED_SCOPE` | Requires the delegated scope to appear in the Entra `scp` claim. Apigee trusted-header mode checks the same value against the signed identity scopes. | Use a single scope value such as `gateway.invoke`. Leave blank when only app roles or groups are used. |
+| `Required role` | `ENTRA_REQUIRED_ROLE` | Requires an app role to appear in the Entra `roles` claim. Apigee trusted-header mode checks the same value against the signed identity roles. | Use a single app role such as `Gateway.Invoke`. Leave blank when only delegated scopes or groups are used. |
+| `Allowed groups` | `ENTRA_ALLOWED_GROUPS` | Requires at least one configured group to appear in the Entra `groups` claim or signed Apigee identity groups. | Enter a comma-separated list of group IDs. Leave blank to skip group authorization. Entra group-overage tokens fail closed. |
+
+### JWT validation, cache, and clock settings
+
+![JWT algorithm, JWKS cache, and clock skew controls](assets/screenshots/admin-auth-settings/06-validation-cache-and-skew.png)
+
+These options control how Gateway validates Entra JWTs after it resolves OIDC
+metadata and JWKS keys.
+
+| UI option | Environment variable | What it does | How to set it |
+| --- | --- | --- | --- |
+| `Accepted algorithms` | `ENTRA_ACCEPTED_ALGORITHMS` | Limits accepted JWT signing algorithms. Gateway currently validates RSA JWKS keys. | Enter a comma-separated list. Use `RS256` unless your Entra setup intentionally issues another supported RSA algorithm. Empty values fall back to `RS256`. |
+| `JWKS cache TTL` | `ENTRA_JWKS_CACHE_TTL_SECONDS` | Sets how long Gateway caches fetched JWKS keys. Unknown `kid` values trigger a refresh before the request fails. | Enter seconds. The default is `300`. Use shorter values during key-rotation testing and longer values only when rotation policy allows it. |
+| `Clock skew seconds` | `ENTRA_CLOCK_SKEW_SECONDS` | Allows bounded skew when validating `exp`, `nbf`, and `iat` claims. | Enter seconds. The default is `60`. Set to `0` only when all callers and Gateway hosts have tightly synchronized clocks. |
+
+### Apigee secret and actions
+
+![Apigee secret and save controls](assets/screenshots/admin-auth-settings/07-apigee-secret-actions.png)
+
+Use the Apigee secret when `Enable Apigee trusted headers` is checked. Gateway
+uses it to verify `X-Apigee-Entra-Signature`, which must be the unpadded
+base64url HMAC-SHA256 of the exact `X-Apigee-Entra-Identity` header value.
+
+| UI option | Environment variable | What it does | How to set it |
+| --- | --- | --- | --- |
+| `Apigee secret` | `APIGEE_TRUSTED_HEADER_SECRET` | Shared HMAC secret used to verify signed Apigee identity headers. | Paste a high-entropy secret when enabling or rotating trusted-header mode. Leave the field blank to keep the current persisted secret. The current secret is never displayed. |
+| `Save auth settings` | Admin API `PATCH /admin-ui/admin/auth/front-door` | Persists the current form and applies it to the runtime auth snapshot. | Save after changing toggles, Entra fields, Relayna key header, authorization requirements, validation settings, or the Apigee secret. |
+| `Clear Apigee secret` | Admin API `PATCH /admin-ui/admin/auth/front-door` | Clears the persisted Apigee secret and disables trusted-header mode. | Use before decommissioning Apigee trusted-header mode or after a suspected secret exposure. Re-enter a new secret before enabling trusted headers again. |
+
+For Apigee signed-header mode, Apigee must remove any inbound user-supplied
+`X-Apigee-Entra-Identity`, `X-Apigee-Entra-Signature`, and Relayna key headers
+before setting its own values. Gateway strips the Apigee proof headers and the
+configured Relayna key header before forwarding traffic to LiteLLM, direct
+providers, or registered services.
 
 ## Security Notes
 
