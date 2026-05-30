@@ -1157,7 +1157,7 @@ async function settings() {
         <label>Accepted algorithms<input name="accepted_algorithms" value="${attr(listValue(state.authSettings.entra.accepted_algorithms, "RS256"))}"></label>
         <label>JWKS cache TTL<input name="jwks_cache_ttl_seconds" type="number" min="1" value="${attr(state.authSettings.entra.jwks_cache_ttl_seconds ?? 300)}"></label>
         <label>Clock skew seconds<input name="clock_skew_seconds" type="number" min="0" value="${attr(state.authSettings.entra.clock_skew_seconds ?? 60)}"></label>
-        <label>Apigee secret<input name="apigee_trusted_header_secret" type="password" autocomplete="new-password" placeholder="${state.authSettings.apigee.secret_configured ? "Leave blank to keep current secret" : "Required when Apigee is enabled"}"></label>
+        <label>Apigee secret<input name="apigee_trusted_header_secret" type="password" autocomplete="new-password" placeholder="${apigeeSecretPlaceholder()}"></label>
         <div class="form-actions wide-field">
           <button class="primary">Save auth settings</button>
           <button type="button" data-auth-action="clear-apigee-secret">Clear Apigee secret</button>
@@ -1229,9 +1229,18 @@ async function saveAuthSettings(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const secret = form.get("apigee_trusted_header_secret")?.trim();
+  const apigeeEnabled = form.has("apigee_trusted_header_enabled");
+  const envBackedApigeeSecret =
+    state.authSettings.source === "environment" &&
+    state.authSettings.apigee.trusted_header_enabled &&
+    state.authSettings.apigee.secret_configured;
+  if (apigeeEnabled && envBackedApigeeSecret && !secret) {
+    setNotice("Re-enter the Apigee secret before saving environment-backed trusted-header settings.", "error");
+    return;
+  }
   const body = {
     entra_enabled: form.has("entra_enabled"),
-    apigee_trusted_header_enabled: form.has("apigee_trusted_header_enabled"),
+    apigee_trusted_header_enabled: apigeeEnabled,
     relayna_key_header: form.get("relayna_key_header")?.trim() || "X-Relayna-Key",
     tenant_id: nullableText(form.get("tenant_id")),
     audience: nullableText(form.get("audience")),
@@ -1251,6 +1260,17 @@ async function saveAuthSettings(event) {
   });
   setNotice("Gateway auth settings saved.", "success");
   await settings();
+}
+
+function apigeeSecretPlaceholder() {
+  if (
+    state.authSettings.source === "environment" &&
+    state.authSettings.apigee.trusted_header_enabled &&
+    state.authSettings.apigee.secret_configured
+  ) {
+    return "Re-enter secret to persist environment settings";
+  }
+  return state.authSettings.apigee.secret_configured ? "Leave blank to keep current secret" : "Required when Apigee is enabled";
 }
 
 async function authSettingsAction(event) {

@@ -4,12 +4,13 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
-Version `0.1.6` is the current release target. Version `0.1.0` remains the
+Version `0.1.7` is the current release target. Version `0.1.0` remains the
 production freeze baseline for Admin UI 2.0, scoped operator governance, policy
 simulation and inherited layers, provider intelligence, richer usage analytics,
-and supply-chain hardening. Release `0.1.6` adds LiteLLM `/v1/embeddings`
-passthrough on top of the opt-in Microsoft Entra ID front-door authorization
-and Apigee gateway patterns for provider traffic.
+and supply-chain hardening. Release `0.1.7` includes LiteLLM `/v1/embeddings`
+passthrough, opt-in Microsoft Entra ID front-door authorization and Apigee
+gateway patterns for provider traffic, plus Admin portal controls for those
+front-door auth settings.
 See `docs/current-features.md`, `docs/entra-id-auth.md`, and
 `docs/apigee-gateway-path.md` for the public feature highlights.
 
@@ -92,7 +93,7 @@ simulation, policy layers, provider health state, debug bundles, service import
 preview/activation/version/rollback, and expanded usage analytics. These are
 documented in `docs/current-features.md`.
 
-Release `0.1.6` supports LiteLLM passthrough for `/v1/chat/completions`,
+Release `0.1.7` supports LiteLLM passthrough for `/v1/chat/completions`,
 `/v1/responses`, and `/v1/embeddings`. It also includes opt-in Microsoft Entra
 ID front-door authorization for provider traffic. When enabled, clients send
 the Entra access token in `Authorization: Bearer <jwt>` and the Relayna virtual
@@ -100,6 +101,11 @@ key in the configured Relayna key header, which defaults to `X-Relayna-Key`.
 The previous `Authorization: Bearer rk_live_...` contract remains the default
 when Entra is disabled. See `docs/entra-id-auth.md` and
 `docs/apigee-gateway-path.md`.
+
+Operators can configure Entra ID and Apigee front-door auth from Admin portal
+Settings, including enablement, tenant, audience, issuer, OIDC discovery,
+scope, role, groups, accepted algorithms, JWKS cache TTL, clock skew, Relayna
+key header, and the write-only Apigee secret.
 
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are startup fallback
 settings. Operators can also open Admin portal Settings after Gateway starts to
@@ -117,7 +123,7 @@ curl http://127.0.0.1:8000/studio/gateway/services
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.1.6 .
+docker build -t relayna-gateway:0.1.7 .
 ```
 
 Run it:
@@ -131,7 +137,7 @@ docker run --rm \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
   -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.1.6
+  relayna-gateway:0.1.7
 ```
 
 `GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
@@ -141,7 +147,7 @@ Admin portal instead.
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.6`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.7`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Budgets, TPM, and Usage Exports
 

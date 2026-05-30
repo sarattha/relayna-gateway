@@ -2,6 +2,34 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.7 - 2026-05-30
+
+### Added
+
+- The Admin portal Settings page now exposes Entra ID and Apigee front-door
+  auth controls that were previously deployment-env only, including enablement
+  toggles, tenant and issuer configuration, audience, OIDC discovery URL,
+  scope, role, group allowlist, accepted JWT algorithms, JWKS cache TTL, clock
+  skew, Relayna key header, and write-only Apigee HMAC secret management.
+- Gateway now persists Admin-saved front-door auth settings in PostgreSQL and
+  applies them immediately to proxy runtime authentication while preserving
+  environment-variable bootstrap behavior.
+- Operator documentation now includes a field-by-field Admin UI walkthrough
+  with screenshots for the Entra ID and Apigee front-door settings panel.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.7` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.7` gateway image.
+- Release documentation now treats `v0.1.7` as the current release target while
+  preserving `v0.1.0` as the production freeze baseline.
+
+### Fixed
+
+- The Admin portal sidebar now scrolls independently so the `Sign out` action
+  remains reachable on small monitors.
+
 ## 0.1.6 - 2026-05-30
 
 ### Added

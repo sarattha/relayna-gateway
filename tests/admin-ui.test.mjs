@@ -149,6 +149,9 @@ test("settings view configures Entra ID and Apigee front-door auth", () => {
   assert.match(js, /name="allowed_groups"/);
   assert.match(js, /name="apigee_trusted_header_secret" type="password"/);
   assert.match(js, /secret_configured/);
+  assert.match(js, /function apigeeSecretPlaceholder\(\)/);
+  assert.match(js, /Re-enter secret to persist environment settings/);
+  assert.match(js, /Re-enter the Apigee secret before saving environment-backed trusted-header settings/);
   assert.doesNotMatch(js, /state\.authSettings\.apigee\.secret\b/);
 });
 

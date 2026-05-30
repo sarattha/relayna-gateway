@@ -13,6 +13,7 @@ use std::{
 
 type HmacSha256 = Hmac<Sha256>;
 pub const ENTRA_DEFAULT_RELAYNA_KEY_HEADER: &str = "X-Relayna-Key";
+const ENTRA_OIDC_HTTP_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntraAuthConfig {
@@ -97,7 +98,7 @@ impl EntraJwtVerifier {
         config.validate()?;
         Ok(Self {
             config,
-            client: reqwest::Client::new(),
+            client: entra_http_client()?,
             cache: Mutex::new(None),
         })
     }
@@ -290,13 +291,20 @@ impl EntraJwtVerifier {
     fn new_with_jwks_for_tests(config: EntraAuthConfig, keys: Vec<JsonWebKey>) -> Self {
         Self {
             config,
-            client: reqwest::Client::new(),
+            client: entra_http_client().expect("valid Entra test HTTP client"),
             cache: Mutex::new(Some(CachedJwks {
                 keys,
                 expires_at: Instant::now() + Duration::from_secs(3600),
             })),
         }
     }
+}
+
+fn entra_http_client() -> GatewayResult<reqwest::Client> {
+    reqwest::Client::builder()
+        .timeout(ENTRA_OIDC_HTTP_TIMEOUT)
+        .build()
+        .map_err(|_| GatewayError::InvalidConfiguration)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

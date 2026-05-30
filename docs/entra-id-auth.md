@@ -1,6 +1,6 @@
 # Microsoft Entra ID Front-Door Auth
 
-Relayna Gateway `0.1.6` can put Microsoft Entra ID in front of provider
+Relayna Gateway `0.1.7` can put Microsoft Entra ID in front of provider
 traffic while keeping Relayna virtual keys as the policy, budget, rate-limit,
 guardrail, and usage anchor.
 
@@ -243,7 +243,7 @@ decides policy, upstream type, body limits, and timeouts after Entra succeeds.
 
 ## Kubernetes Rollout
 
-1. Deploy `0.1.6` with Entra disabled first.
+1. Deploy `0.1.7` with Entra disabled first.
 2. Confirm the existing `Authorization: Bearer rk_live_...` path still works.
 3. Add Entra config to your secret manager or deployment environment.
 4. Enable `ENTRA_AUTH_ENABLED=true` on one staging replica.
@@ -262,7 +262,7 @@ empty placeholders for required Entra values.
 Useful local checks after changing Entra configuration or code:
 
 ```bash
-python3 scripts/validate-release-metadata.py v0.1.6
+python3 scripts/validate-release-metadata.py v0.1.7
 node tests/freeze-v0.1.0-perimeter.test.mjs
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
