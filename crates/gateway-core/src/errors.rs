@@ -18,6 +18,22 @@ pub enum GatewayError {
     RevokedVirtualKey,
     #[error("virtual key has expired")]
     ExpiredVirtualKey,
+    #[error("missing Entra authorization")]
+    MissingEntraAuthorization,
+    #[error("malformed Entra authorization")]
+    MalformedEntraAuthorization,
+    #[error("invalid Entra token")]
+    InvalidEntraToken,
+    #[error("Entra token has expired")]
+    ExpiredEntraToken,
+    #[error("Entra token audience is invalid")]
+    InvalidEntraAudience,
+    #[error("Entra token issuer is invalid")]
+    InvalidEntraIssuer,
+    #[error("Entra token lacks required authorization")]
+    InsufficientEntraAuthorization,
+    #[error("Apigee identity proof is untrusted")]
+    UntrustedApigeeIdentity,
     #[error("invalid operator token")]
     InvalidOperatorToken,
     #[error("operator token is disabled")]
@@ -112,6 +128,14 @@ impl GatewayError {
             | Self::DisabledVirtualKey
             | Self::RevokedVirtualKey
             | Self::ExpiredVirtualKey => StatusCode::UNAUTHORIZED,
+            Self::MissingEntraAuthorization
+            | Self::MalformedEntraAuthorization
+            | Self::InvalidEntraToken
+            | Self::ExpiredEntraToken
+            | Self::InvalidEntraAudience
+            | Self::InvalidEntraIssuer
+            | Self::UntrustedApigeeIdentity => StatusCode::UNAUTHORIZED,
+            Self::InsufficientEntraAuthorization => StatusCode::FORBIDDEN,
             Self::InvalidOperatorToken | Self::DisabledOperatorToken => StatusCode::UNAUTHORIZED,
             Self::InsufficientOperatorScope => StatusCode::FORBIDDEN,
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
@@ -155,6 +179,14 @@ impl GatewayError {
             Self::DisabledVirtualKey => "disabled_virtual_key",
             Self::RevokedVirtualKey => "revoked_virtual_key",
             Self::ExpiredVirtualKey => "expired_virtual_key",
+            Self::MissingEntraAuthorization => "missing_entra_authorization",
+            Self::MalformedEntraAuthorization => "malformed_entra_authorization",
+            Self::InvalidEntraToken => "invalid_entra_token",
+            Self::ExpiredEntraToken => "expired_entra_token",
+            Self::InvalidEntraAudience => "invalid_entra_audience",
+            Self::InvalidEntraIssuer => "invalid_entra_issuer",
+            Self::InsufficientEntraAuthorization => "insufficient_entra_authorization",
+            Self::UntrustedApigeeIdentity => "untrusted_apigee_identity",
             Self::InvalidOperatorToken => "invalid_operator_token",
             Self::DisabledOperatorToken => "disabled_operator_token",
             Self::InsufficientOperatorScope => "insufficient_operator_scope",
@@ -201,6 +233,16 @@ impl GatewayError {
             Self::DisabledVirtualKey => "Virtual key is disabled.",
             Self::RevokedVirtualKey => "Virtual key is revoked.",
             Self::ExpiredVirtualKey => "Virtual key has expired.",
+            Self::MissingEntraAuthorization => "Entra authorization is required.",
+            Self::MalformedEntraAuthorization => "Entra authorization must be a Bearer token.",
+            Self::InvalidEntraToken => "Entra token is invalid.",
+            Self::ExpiredEntraToken => "Entra token has expired.",
+            Self::InvalidEntraAudience => "Entra token audience is invalid.",
+            Self::InvalidEntraIssuer => "Entra token issuer is invalid.",
+            Self::InsufficientEntraAuthorization => {
+                "Entra token lacks the required gateway authorization."
+            }
+            Self::UntrustedApigeeIdentity => "Apigee identity proof is untrusted.",
             Self::InvalidOperatorToken => "Operator token is invalid.",
             Self::DisabledOperatorToken => "Operator token is disabled.",
             Self::InsufficientOperatorScope => "Operator token lacks the required scope.",

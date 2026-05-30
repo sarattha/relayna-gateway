@@ -25,6 +25,7 @@ const state = {
   guardrailSummary: [],
   studioServices: [],
   studioConnection: null,
+  authSettings: null,
   policySimulation: null,
   policyLayers: [],
   providerHealthState: [],
@@ -1114,12 +1115,18 @@ async function openStudioImportPicker() {
 }
 
 async function settings() {
-  state.studioConnection = await api("/admin-ui/admin/studio/connection");
+  [state.studioConnection, state.authSettings] = await Promise.all([
+    api("/admin-ui/admin/studio/connection"),
+    api("/admin-ui/admin/auth/front-door"),
+  ]);
   content.innerHTML = `
     <div class="grid stats">
       ${stat("Studio source", state.studioConnection.source)}
       ${stat("Token", state.studioConnection.token_configured ? "Configured" : "Not configured")}
       ${stat("Base URL", state.studioConnection.base_url || "Unset")}
+      ${stat("Auth source", state.authSettings.source)}
+      ${stat("Entra ID", state.authSettings.entra.enabled ? "Enabled" : "Disabled")}
+      ${stat("Apigee", state.authSettings.apigee.trusted_header_enabled ? "Enabled" : "Disabled")}
     </div>
     <section class="panel">
       <div class="panel-heading"><h3>Studio connection</h3><span class="subtle">${esc(state.studioConnection.updated_at ? time(state.studioConnection.updated_at) : "fallback or unset")}</span></div>
@@ -1135,6 +1142,29 @@ async function settings() {
       </form>
     </section>
     <section class="panel">
+      <div class="panel-heading"><h3>Entra ID and Apigee front door</h3><span class="subtle">${esc(state.authSettings.updated_at ? time(state.authSettings.updated_at) : "environment or unset")}</span></div>
+      <form id="auth-settings-form" class="form-grid">
+        <label class="check"><input name="entra_enabled" type="checkbox" ${state.authSettings.entra.enabled ? "checked" : ""}> Enable Entra ID</label>
+        <label class="check"><input name="apigee_trusted_header_enabled" type="checkbox" ${state.authSettings.apigee.trusted_header_enabled ? "checked" : ""}> Enable Apigee trusted headers</label>
+        <label>Relayna key header<input name="relayna_key_header" value="${attr(state.authSettings.relayna_key_header || "X-Relayna-Key")}"></label>
+        <label>Tenant ID<input name="tenant_id" value="${attr(state.authSettings.entra.tenant_id || "")}"></label>
+        <label>Audience<input name="audience" value="${attr(state.authSettings.entra.audience || "")}" placeholder="api://relayna-gateway"></label>
+        <label>Trusted issuer<input name="issuer" type="url" value="${attr(state.authSettings.entra.issuer || "")}"></label>
+        <label class="wide-field">OIDC discovery URL<input name="oidc_discovery_url" type="url" value="${attr(state.authSettings.entra.oidc_discovery_url || "")}"></label>
+        <label>Required scope<input name="required_scope" value="${attr(state.authSettings.entra.required_scope || "")}" placeholder="gateway.invoke"></label>
+        <label>Required role<input name="required_role" value="${attr(state.authSettings.entra.required_role || "")}" placeholder="Gateway.Invoke"></label>
+        <label>Allowed groups<input name="allowed_groups" value="${attr(listValue(state.authSettings.entra.allowed_groups, ""))}" placeholder="group-a,group-b"></label>
+        <label>Accepted algorithms<input name="accepted_algorithms" value="${attr(listValue(state.authSettings.entra.accepted_algorithms, "RS256"))}"></label>
+        <label>JWKS cache TTL<input name="jwks_cache_ttl_seconds" type="number" min="1" value="${attr(state.authSettings.entra.jwks_cache_ttl_seconds ?? 300)}"></label>
+        <label>Clock skew seconds<input name="clock_skew_seconds" type="number" min="0" value="${attr(state.authSettings.entra.clock_skew_seconds ?? 60)}"></label>
+        <label>Apigee secret<input name="apigee_trusted_header_secret" type="password" autocomplete="new-password" placeholder="${apigeeSecretPlaceholder()}"></label>
+        <div class="form-actions wide-field">
+          <button class="primary">Save auth settings</button>
+          <button type="button" data-auth-action="clear-apigee-secret">Clear Apigee secret</button>
+        </div>
+      </form>
+    </section>
+    <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
         <div><strong>Freeze baseline</strong><span>${badge("v0.1.0")}</span></div>
@@ -1145,8 +1175,12 @@ async function settings() {
     </section>
   `;
   document.querySelector("#studio-connection-form").addEventListener("submit", handleAsync(saveStudioConnection));
+  document.querySelector("#auth-settings-form").addEventListener("submit", handleAsync(saveAuthSettings));
   document.querySelectorAll("[data-studio-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(studioConnectionAction));
+  });
+  document.querySelectorAll("[data-auth-action]").forEach((button) => {
+    button.addEventListener("click", handleAsync(authSettingsAction));
   });
 }
 
@@ -1187,6 +1221,67 @@ async function studioConnectionAction(event) {
       body: JSON.stringify({ base_url: null }),
     });
     setNotice("Persisted Studio settings cleared.", "success");
+    await settings();
+  }
+}
+
+async function saveAuthSettings(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const secret = form.get("apigee_trusted_header_secret")?.trim();
+  const apigeeEnabled = form.has("apigee_trusted_header_enabled");
+  const envBackedApigeeSecret =
+    state.authSettings.source === "environment" &&
+    state.authSettings.apigee.trusted_header_enabled &&
+    state.authSettings.apigee.secret_configured;
+  if (apigeeEnabled && envBackedApigeeSecret && !secret) {
+    setNotice("Re-enter the Apigee secret before saving environment-backed trusted-header settings.", "error");
+    return;
+  }
+  const body = {
+    entra_enabled: form.has("entra_enabled"),
+    apigee_trusted_header_enabled: apigeeEnabled,
+    relayna_key_header: form.get("relayna_key_header")?.trim() || "X-Relayna-Key",
+    tenant_id: nullableText(form.get("tenant_id")),
+    audience: nullableText(form.get("audience")),
+    issuer: nullableText(form.get("issuer")),
+    oidc_discovery_url: nullableText(form.get("oidc_discovery_url")),
+    required_scope: nullableText(form.get("required_scope")),
+    required_role: nullableText(form.get("required_role")),
+    allowed_groups: csv(form.get("allowed_groups")),
+    accepted_algorithms: csv(form.get("accepted_algorithms")),
+    jwks_cache_ttl_seconds: numberOrDefault(form.get("jwks_cache_ttl_seconds"), 300),
+    clock_skew_seconds: numberOrDefault(form.get("clock_skew_seconds"), 60),
+  };
+  if (secret) body.apigee_trusted_header_secret = secret;
+  state.authSettings = await api("/admin-ui/admin/auth/front-door", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  setNotice("Gateway auth settings saved.", "success");
+  await settings();
+}
+
+function apigeeSecretPlaceholder() {
+  if (
+    state.authSettings.source === "environment" &&
+    state.authSettings.apigee.trusted_header_enabled &&
+    state.authSettings.apigee.secret_configured
+  ) {
+    return "Re-enter secret to persist environment settings";
+  }
+  return state.authSettings.apigee.secret_configured ? "Leave blank to keep current secret" : "Required when Apigee is enabled";
+}
+
+async function authSettingsAction(event) {
+  const action = event.currentTarget.dataset.authAction;
+  if (action === "clear-apigee-secret") {
+    if (!(await confirmAction("Clear Apigee secret", "Apigee trusted-header mode cannot be enabled until a new secret is saved."))) return;
+    await api("/admin-ui/admin/auth/front-door", {
+      method: "PATCH",
+      body: JSON.stringify({ apigee_trusted_header_enabled: false, apigee_trusted_header_secret: null }),
+    });
+    setNotice("Apigee secret cleared.", "success");
     await settings();
   }
 }
@@ -2341,6 +2436,15 @@ function serviceRouteOptions() {
 
 function blankToUndefined(value) {
   return value === null || String(value).trim() === "" ? undefined : String(value).trim();
+}
+
+function nullableText(value) {
+  return value === null || String(value).trim() === "" ? null : String(value).trim();
+}
+
+function numberOrDefault(value, fallback) {
+  const text = String(value || "").trim();
+  return text === "" ? fallback : Number(text);
 }
 
 function isoDate(value) {

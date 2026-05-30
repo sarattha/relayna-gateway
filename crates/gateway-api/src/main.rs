@@ -1,6 +1,9 @@
 use anyhow::Context;
 use gateway_api::{app, config::Config};
-use gateway_core::{OperatorTokenMaterial, OperatorTokenStore};
+use gateway_core::{
+    AdminGatewayAuthSettingsStore, EffectiveGatewayAuthSettings, OperatorTokenMaterial,
+    OperatorTokenStore, SharedGatewayAuthRuntime,
+};
 use gateway_proxy::{PingoraLiteLlmConfig, PingoraUpstreamConfig, RelaynaPingoraProxy};
 use gateway_store::{PostgresStore, RedisControlState, RedisReadiness};
 use pingora_core::server::Server;
@@ -55,9 +58,21 @@ fn main() -> anyhow::Result<()> {
     setup_runtime
         .block_on(rehydrate_budget_counters(&store, &redis_control))
         .context("rehydrate budget counters")?;
+    let auth_env = config.gateway_auth_env();
+    let effective_auth = setup_runtime
+        .block_on(store.gateway_auth_settings())
+        .context("load persisted gateway auth settings")
+        .and_then(|stored| {
+            EffectiveGatewayAuthSettings::from_sources(stored, &auth_env)
+                .context("resolve gateway auth settings")
+        })?;
+    let shared_auth = SharedGatewayAuthRuntime::new(effective_auth.runtime_config())
+        .context("create shared gateway auth runtime")?;
     let mut proxy_config =
         PingoraLiteLlmConfig::from_base_url(&config.litellm_base_url, &config.litellm_service_key)
-            .context("create pingora LiteLLM proxy config")?;
+            .context("create pingora LiteLLM proxy config")?
+            .with_relayna_key_header(effective_auth.relayna_key_header.clone())
+            .context("configure Relayna key header")?;
     if let (Some(base_url), Some(service_key)) = (
         config.direct_openai_base_url.as_deref(),
         config.direct_openai_service_key.as_deref(),
@@ -67,12 +82,16 @@ fn main() -> anyhow::Result<()> {
                 .context("create direct OpenAI-compatible upstream config")?,
         ));
     }
-    proxy_config = proxy_config.with_worker_token(config.relayna_worker_token.clone());
+    proxy_config = proxy_config
+        .with_worker_token(config.relayna_worker_token.clone())
+        .with_entra_auth(effective_auth.entra_auth.clone())
+        .with_apigee_trusted_header(effective_auth.apigee_trusted_header.clone())
+        .with_auth_runtime(shared_auth.clone());
 
     let studio = config.relayna_studio_base_url.clone().map(|base_url| {
         app::StudioCatalogClient::new(base_url, config.relayna_studio_token.clone())
     });
-    let app = app::router_with_studio(store.clone(), redis, studio);
+    let app = app::router_with_studio_and_auth(store.clone(), redis, studio, auth_env, shared_auth);
     let control_bind_addr = config.gateway_control_bind_addr;
     let reconciler_store = store.clone();
     let reconciler_redis = redis_control.clone();

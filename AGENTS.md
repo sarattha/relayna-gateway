@@ -58,7 +58,7 @@ external state boundary, or the user explicitly asks for a migration path.
 
 #### `$production-freeze-guard`
 
-Relayna Gateway v0.1.0 is the production freeze baseline. Use
+Relayna Gateway v0.1.7 is the production freeze baseline. Use
 `$production-freeze-guard` before adding features or changing public routes,
 exported APIs, external configuration, persisted schemas, Redis key/value
 formats, authentication behavior, policy decisions, usage event shapes,
@@ -66,11 +66,11 @@ provider routing, streaming behavior, telemetry fields, admin UI contracts,
 release metadata, or CI/build behavior.
 
 The freeze gate is test-based: future features are allowed only when they keep
-the v0.1.0 perimeter tests passing, or when the same change intentionally
+the v0.1.7 perimeter tests passing, or when the same change intentionally
 updates those tests with compatibility notes. Run:
 
 ```bash
-node tests/freeze-v0.1.0-perimeter.test.mjs
+node tests/freeze-v0.1.7-perimeter.test.mjs
 ```
 
 Use `$implementation-strategy` as part of the freeze guard workflow when the
@@ -175,7 +175,7 @@ For policy, authentication, usage, and proxy behavior, favor tests that prove:
 - Policy denials use stable status codes and error shapes.
 - Usage events are inserted for both success and failure.
 - Streaming paths do not buffer complete responses.
-- Production freeze perimeter tests continue to pin v0.1.0 routes, error codes,
+- Production freeze perimeter tests continue to pin v0.1.7 routes, error codes,
   config names, migrations, Redis key formats, release metadata, and admin UI
   endpoint assumptions.
 
@@ -200,7 +200,7 @@ compatibility or add migration coverage when a change crosses a released API,
 persisted data, or wire-protocol boundary.
 
 For post-freeze changes, also use `$production-freeze-guard` and compare impact
-against v0.1.0. Do not remove, rename, or change the meaning of a frozen surface
+against v0.1.7. Do not remove, rename, or change the meaning of a frozen surface
 without an explicit compatibility decision and matching perimeter test update.
 
 ## Project Structure Guide

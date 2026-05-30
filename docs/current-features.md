@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.0` feature set that now forms the production
+This page summarizes the `v0.1.7` feature set that now forms the production
 freeze baseline.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
@@ -51,7 +51,7 @@ metadata, policy versioning, policy simulation, and inherited policy layers.
 Operators can dry-run route, model, provider, streaming, tools, request-size,
 and response-size inputs before issuing or changing a key.
 
-Post-freeze policy simulation also accepts explicit registered-service context
+Policy simulation also accepts explicit registered-service context
 so operators can dry-run `/services/<service-name>/*` access against stored keys
 and service allowlists before issuing or editing credentials.
 
@@ -85,7 +85,7 @@ rollback. Gateway preserves local runtime-owned settings such as credentials,
 enabled state, route overrides, limits, fallback services, project links, and
 cost settings when Studio metadata is re-imported.
 
-Post-freeze service health checks can target a service-specific path and method
+Service health checks can target a service-specific path and method
 when the upstream root is not a valid health endpoint. The previous root probe
 remains the default for services without explicit health-check settings.
 
@@ -93,6 +93,44 @@ remains the default for services without explicit health-check settings.
 
 See [Provider Intelligence](provider-intelligence.md) for the deeper routing,
 fallback, health, debug bundle, and import rollback reference.
+
+## Entra ID Front-Door Auth
+
+Release `0.1.7` includes opt-in Microsoft Entra ID authorization before Relayna
+virtual-key authentication on provider traffic. Existing virtual-key-only
+clients continue using `Authorization: Bearer rk_live_...` when
+`ENTRA_AUTH_ENABLED=false`. When Entra mode is enabled, `Authorization` carries
+the Entra access token and the Relayna virtual key moves to the configured
+Relayna key header, defaulting to `X-Relayna-Key`.
+
+Gateway validates OIDC metadata, JWKS, token signature, `kid`, accepted
+algorithm, issuer, audience, tenant, token version, timestamps, required
+scope, required role, and allowed groups before virtual-key lookup. Group
+overage and ambiguous authorization fail closed. Client tokens and Relayna keys
+are stripped before upstream forwarding.
+
+Apigee deployments can either forward the original JWT for Gateway
+revalidation or use the trusted signed-header path with
+`APIGEE_TRUSTED_HEADER_ENABLED=true` and an HMAC proof. Unsigned or tampered
+Apigee identity headers are rejected.
+
+The Admin portal Settings page can now manage the same Entra ID and Apigee
+front-door controls that can be supplied by deployment environment variables:
+enablement, tenant, audience, issuer, OIDC discovery, scope, role, group
+allowlist, accepted algorithms, JWKS cache TTL, clock skew, Relayna key header,
+and write-only Apigee secret management.
+
+See [Entra ID Auth](entra-id-auth.md) and
+[Apigee Gateway Path](apigee-gateway-path.md) for the detailed operator
+contracts.
+
+## LiteLLM OpenAI-Compatible Passthrough
+
+Release `0.1.7` routes canonical OpenAI-compatible
+`/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings` requests through
+LiteLLM when they pass Relayna authentication and policy. The singular or alias
+paths `/v1/chatcompletion`, `/v1/response`, `/v1/embedding`, and `/v1/rerank`
+are not passthrough routes and return `unsupported_route`.
 
 ## Observability Analytics
 
@@ -116,7 +154,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.0` release hardens CI and release workflows with strict dependency,
+The `v0.1.7` freeze baseline hardens CI and release workflows with strict dependency,
 secret, static-analysis, filesystem, and image checks. Release images publish
 with SBOM, signature, and provenance artifacts, and release metadata validation
 guards tag, workspace version, and changelog alignment.
@@ -127,7 +165,7 @@ no privilege escalation, and all Linux capabilities dropped. Proxy and control
 plane Services remain separate, and the control plane should stay private or
 protected by identity-aware access.
 
-The v0.1.0 freeze perimeter test pins the production baseline for public
+The v0.1.7 freeze perimeter test pins the production baseline for public
 routes, admin route inventory, error codes, config names, migrations, Redis key
 formats, release metadata, and Admin UI endpoint assumptions. Future changes
 should keep that perimeter passing unless a compatibility decision explicitly

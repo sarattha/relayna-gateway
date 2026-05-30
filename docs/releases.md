@@ -1,12 +1,16 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.4` is the current release target.
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.7` is the current release target.
 
-Version `0.1.0` is the current production freeze baseline. It covers Admin UI
-2.0, operator governance, policy
-governance, provider intelligence, observability analytics, and supply-chain
-hardening. See [Current Feature Highlights](current-features.md) for the
-feature overview.
+Version `0.1.7` is the current production freeze baseline. It covers Admin UI
+2.0, operator governance, policy governance, provider intelligence,
+observability analytics, and supply-chain hardening. It also includes
+LiteLLM `/v1/embeddings` passthrough, opt-in Entra ID and Apigee front-door
+authorization for provider traffic, and Admin portal controls for those
+front-door auth settings. See
+[Current Feature Highlights](current-features.md),
+[Entra ID Auth](entra-id-auth.md), and
+[Apigee Gateway Path](apigee-gateway-path.md) for the feature overview.
 
 ## Release Checklist
 
@@ -15,7 +19,7 @@ feature overview.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.4
+   python3 scripts/validate-release-metadata.py v0.1.7
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -27,22 +31,22 @@ feature overview.
    gitleaks detect --source . --redact
    semgrep scan --config .semgrep.yml
    node tests/admin-ui.test.mjs
-   node tests/freeze-v0.1.0-perimeter.test.mjs
+   node tests/freeze-v0.1.7-perimeter.test.mjs
    mkdocs build --strict
    ```
 
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.4 .
+   docker build -t relayna-gateway:0.1.7 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.4 -m "Release v0.1.4"
-   git push origin v0.1.4
+   git tag -a v0.1.7 -m "Release v0.1.7"
+   git push origin v0.1.7
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -52,10 +56,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.4`, the workflow publishes:
+For `v0.1.7`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.4
+ghcr.io/sarattha/relayna-gateway:0.1.7
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```
@@ -64,7 +68,7 @@ Release artifacts include `CHANGELOG.md` and an SPDX JSON SBOM named
 `relayna-gateway-<tag>.spdx.json`. Verify image signatures with Cosign against
 the GHCR image digest published by the release workflow.
 
-The v0.1.0 production freeze perimeter is pinned by
-`tests/freeze-v0.1.0-perimeter.test.mjs`. Post-freeze features should preserve
+The v0.1.7 production freeze perimeter is pinned by
+`tests/freeze-v0.1.7-perimeter.test.mjs`. Post-freeze features should preserve
 that perimeter unless a release intentionally updates the compatibility notes
 and the matching test expectations.

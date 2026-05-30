@@ -105,6 +105,24 @@ where
     ) -> GatewayResult<AuthenticatedKey> {
         let authorization = authorization.ok_or(GatewayError::MissingAuthorization)?;
         let key = VirtualKey::from_authorization(authorization)?;
+        self.authenticate_virtual_key(key, now).await
+    }
+
+    pub async fn authenticate_raw_key(
+        &self,
+        raw_key: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<AuthenticatedKey> {
+        let raw_key = raw_key.ok_or(GatewayError::MissingAuthorization)?;
+        let key = VirtualKey::parse(raw_key.trim())?;
+        self.authenticate_virtual_key(key, now).await
+    }
+
+    async fn authenticate_virtual_key(
+        &self,
+        key: VirtualKey,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<AuthenticatedKey> {
         let stored = self
             .store
             .find_by_prefix(key.prefix())
@@ -210,6 +228,21 @@ mod tests {
 
         let authenticated = Authenticator::new(lookup)
             .authenticate_authorization(Some(&format!("Bearer {raw}")), Utc::now())
+            .await
+            .expect("authenticated");
+
+        assert_eq!(authenticated.key_prefix, "rk_live_12345678");
+    }
+
+    #[tokio::test]
+    async fn authenticates_raw_header_key() {
+        let raw = "rk_live_1234567890abcdef";
+        let lookup = MemoryLookup {
+            value: Arc::new(Mutex::new(Some(stored(raw)))),
+        };
+
+        let authenticated = Authenticator::new(lookup)
+            .authenticate_raw_key(Some(raw), Utc::now())
             .await
             .expect("authenticated");
 

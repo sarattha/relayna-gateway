@@ -13,6 +13,7 @@ pub enum Provider {
 pub enum Route {
     ChatCompletions,
     Responses,
+    LiteLlmEmbeddings,
     DirectOpenAi,
     Summary,
     Translation,
@@ -50,6 +51,9 @@ impl Route {
                 Ok(RouteMatch::litellm(Self::ChatCompletions))
             }
             "/v1/responses" if method == Method::POST => Ok(RouteMatch::litellm(Self::Responses)),
+            "/v1/embeddings" if method == Method::POST => {
+                Ok(RouteMatch::litellm(Self::LiteLlmEmbeddings))
+            }
             "/summary" if method == Method::POST => {
                 Ok(RouteMatch::service(Self::Summary, "summary"))
             }
@@ -88,6 +92,7 @@ impl Route {
         match self {
             Self::ChatCompletions => "/v1/chat/completions",
             Self::Responses => "/v1/responses",
+            Self::LiteLlmEmbeddings => "/v1/embeddings",
             Self::DirectOpenAi => "/providers/openai/*",
             Self::Summary => "/summary",
             Self::Translation => "/translation",
@@ -152,6 +157,10 @@ mod tests {
             Route::resolve(&Method::POST, "/v1/responses").expect("route"),
             Route::Responses
         );
+        let embeddings = Route::resolve_match(&Method::POST, "/v1/embeddings").expect("embeddings");
+        assert_eq!(embeddings.route, Route::LiteLlmEmbeddings);
+        assert_eq!(embeddings.backend, BackendType::LiteLlm);
+        assert_eq!(embeddings.provider, Provider::LiteLlm);
     }
 
     #[test]
@@ -166,6 +175,10 @@ mod tests {
         );
         assert_eq!(
             Route::resolve(&Method::POST, "/v1/completions").unwrap_err(),
+            GatewayError::UnsupportedRoute
+        );
+        assert_eq!(
+            Route::resolve(&Method::GET, "/v1/embeddings").unwrap_err(),
             GatewayError::UnsupportedRoute
         );
     }

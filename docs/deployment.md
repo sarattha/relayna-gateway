@@ -2,18 +2,23 @@
 
 Relayna Gateway ships as one binary and one Docker image. The image serves both the core proxy and the admin portal because the admin UI is embedded in the `gateway-api` binary.
 
-Version `0.1.4` keeps that deployment shape: Admin UI 2.0 is
-compiled into the same static asset contract, and provider intelligence,
-operator governance, usage analytics, and audit features remain on the private
-control listener. See [Current Feature Highlights](current-features.md) for the
-public feature delta.
+Version `0.1.7` keeps that deployment shape and includes LiteLLM
+`/v1/embeddings` passthrough, opt-in Microsoft Entra ID front-door
+authorization for provider traffic, Apigee gateway patterns, and Admin portal
+controls for those front-door auth settings. Admin UI 2.0 is compiled into the
+same static asset contract, and provider intelligence, operator governance,
+usage analytics, audit, Entra, and Apigee controls remain on the same gateway
+binary. See
+[Current Feature Highlights](current-features.md),
+[Entra ID Auth](entra-id-auth.md), and
+[Apigee Gateway Path](apigee-gateway-path.md) for the public feature delta.
 
 ## Docker Image
 
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.4 .
+docker build -t relayna-gateway:0.1.7 .
 ```
 
 Run it with required dependencies:
@@ -31,7 +36,7 @@ docker run --rm \
   -e GATEWAY_BIND_ADDR="0.0.0.0:8080" \
   -e GATEWAY_CONTROL_BIND_ADDR="0.0.0.0:8081" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.4
+  relayna-gateway:0.1.7
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -82,13 +87,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.4
+   ghcr.io/sarattha/relayna-gateway:0.1.7
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.4"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.7"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -96,7 +101,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.4
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.7
    ```
 
 3. Store secrets through your cluster secret manager:
@@ -109,7 +114,11 @@ private control plane on separate Services.
      --from-literal=LITELLM_SERVICE_KEY='sk-litellm-service-key' \
      --from-literal=GATEWAY_ADMIN_TOKEN='op_live_replace_with_secret_value' \
      --from-literal=RELAYNA_STUDIO_BASE_URL='http://relayna-studio-backend:8000' \
-     --from-literal=RELAYNA_STUDIO_TOKEN='studio-gateway-token'
+     --from-literal=RELAYNA_STUDIO_TOKEN='studio-gateway-token' \
+     --from-literal=ENTRA_AUTH_ENABLED='false' \
+     --from-literal=ENTRA_RELAYNA_KEY_HEADER='X-Relayna-Key' \
+     --from-literal=APIGEE_TRUSTED_HEADER_ENABLED='false' \
+     --from-literal=APIGEE_TRUSTED_HEADER_SECRET=''
    ```
 
 4. Apply the manifest:

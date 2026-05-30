@@ -11,12 +11,15 @@ use gateway_core::{
     extract_generation_features, extract_model, extract_usage_tokens,
     guardrail_executor_for_definitions, is_retry_safe_status, redact_pii_text,
     resolve_guardrail_plan, route_pattern_wildcard_suffix, service_wildcard_suffix,
-    strip_client_guardrails, AuthenticatedKey, BudgetDecision, BudgetStore, GatewayError,
+    strip_client_guardrails, validate_relayna_key_header_name, verify_apigee_trusted_identity,
+    ApigeeTrustedHeaderConfig, AuthenticatedKey, BudgetDecision, BudgetStore, EntraAuthConfig,
+    EntraIdentityContext, GatewayAuthRuntimeConfig, GatewayAuthRuntimeSnapshot, GatewayError,
     GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent, GuardrailMode,
     GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet, GuardrailStore,
     KeyPolicy, OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
     ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route, RouteMatch,
-    ServiceRegistryLookup, ServiceRouteLookup, UsageEvent, UsageRecorder,
+    ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent, UsageRecorder,
+    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use http::Uri;
 use pingora_core::{
@@ -32,11 +35,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct PingoraLiteLlmConfig {
     pub litellm: PingoraUpstreamConfig,
     pub direct_openai: Option<PingoraUpstreamConfig>,
     pub worker_token: Option<String>,
+    pub entra_auth: Option<EntraAuthConfig>,
+    pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
+    pub relayna_key_header: String,
+    auth_runtime: Option<SharedGatewayAuthRuntime>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +64,10 @@ impl PingoraLiteLlmConfig {
             litellm: PingoraUpstreamConfig::from_base_url(base_url, service_key)?,
             direct_openai: None,
             worker_token: None,
+            entra_auth: None,
+            apigee_trusted_header: None,
+            relayna_key_header: ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned(),
+            auth_runtime: None,
         })
     }
 
@@ -68,6 +79,41 @@ impl PingoraLiteLlmConfig {
     pub fn with_worker_token(mut self, worker_token: Option<String>) -> Self {
         self.worker_token = worker_token;
         self
+    }
+
+    pub fn with_relayna_key_header(
+        mut self,
+        relayna_key_header: impl Into<String>,
+    ) -> gateway_core::GatewayResult<Self> {
+        let relayna_key_header = relayna_key_header.into();
+        validate_relayna_key_header_name(&relayna_key_header)?;
+        self.relayna_key_header = relayna_key_header;
+        Ok(self)
+    }
+
+    pub fn with_entra_auth(mut self, entra_auth: Option<EntraAuthConfig>) -> Self {
+        if let Some(config) = entra_auth.as_ref() {
+            self.relayna_key_header = config.relayna_key_header.clone();
+        }
+        self.entra_auth = entra_auth;
+        self
+    }
+
+    pub fn with_apigee_trusted_header(
+        mut self,
+        apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
+    ) -> Self {
+        self.apigee_trusted_header = apigee_trusted_header;
+        self
+    }
+
+    pub fn with_auth_runtime(mut self, auth_runtime: SharedGatewayAuthRuntime) -> Self {
+        self.auth_runtime = Some(auth_runtime);
+        self
+    }
+
+    fn relayna_key_header(&self) -> &str {
+        self.relayna_key_header.as_str()
     }
 }
 
@@ -115,6 +161,7 @@ pub struct RelaynaPingoraProxy<S, R> {
     store: Arc<S>,
     control_state: Arc<R>,
     config: PingoraLiteLlmConfig,
+    auth_runtime: SharedGatewayAuthRuntime,
 }
 
 impl<S, R> RelaynaPingoraProxy<S, R>
@@ -129,11 +176,48 @@ where
     R: RateLimitStore + BudgetStore,
 {
     pub fn new(store: Arc<S>, control_state: Arc<R>, config: PingoraLiteLlmConfig) -> Self {
+        let auth_runtime = config.auth_runtime.clone().unwrap_or_else(|| {
+            SharedGatewayAuthRuntime::new(GatewayAuthRuntimeConfig {
+                relayna_key_header: config.relayna_key_header.clone(),
+                entra_auth: config.entra_auth.clone(),
+                apigee_trusted_header: config.apigee_trusted_header.clone(),
+            })
+            .expect("validated gateway auth config")
+        });
         Self {
             store,
             control_state,
             config,
+            auth_runtime,
         }
+    }
+}
+
+impl<S, R> RelaynaPingoraProxy<S, R> {
+    async fn verify_entra_request(
+        &self,
+        req: &RequestHeader,
+        now: chrono::DateTime<Utc>,
+        auth: &GatewayAuthRuntimeSnapshot,
+    ) -> GatewayResult<EntraIdentityContext> {
+        if let Some(config) = auth.config.apigee_trusted_header.as_ref() {
+            if header_value(req, "x-apigee-entra-identity").is_some()
+                || header_value(req, "x-apigee-entra-signature").is_some()
+            {
+                return verify_apigee_trusted_identity(
+                    header_value(req, "x-apigee-entra-identity"),
+                    header_value(req, "x-apigee-entra-signature"),
+                    config,
+                );
+            }
+        }
+        let verifier = auth
+            .entra_verifier
+            .as_ref()
+            .ok_or(GatewayError::MissingEntraAuthorization)?;
+        verifier
+            .verify_authorization(header_value(req, "authorization"), now)
+            .await
     }
 }
 
@@ -144,6 +228,8 @@ pub struct PingoraContext {
     route: Option<Route>,
     route_match: Option<RouteMatch>,
     key: Option<AuthenticatedKey>,
+    entra_identity: Option<EntraIdentityContext>,
+    relayna_key_header: String,
     body_prefix: Vec<u8>,
     body_bytes_seen: usize,
     response_body_prefix: Vec<u8>,
@@ -201,6 +287,8 @@ where
             route: None,
             route_match: None,
             key: None,
+            entra_identity: None,
+            relayna_key_header: self.config.relayna_key_header().to_owned(),
             body_prefix: Vec::new(),
             body_bytes_seen: 0,
             response_body_prefix: Vec::new(),
@@ -318,14 +406,38 @@ where
             ctx.run_id = header_value(req, "x-relayna-run-id").map(ToOwned::to_owned);
         }
 
-        let authorization = req
-            .headers
-            .get("authorization")
-            .and_then(|value| value.to_str().ok());
-        match Authenticator::new(self.store.clone())
-            .authenticate_authorization(authorization, Utc::now())
-            .await
-        {
+        let auth = match self.auth_runtime.snapshot() {
+            Ok(auth) => auth,
+            Err(error) => {
+                respond_error(session, error, &ctx.request_id).await?;
+                return Ok(true);
+            }
+        };
+        ctx.relayna_key_header = auth.config.relayna_key_header.clone();
+        let now = Utc::now();
+        let authorization = header_value(req, "authorization");
+        let key_result = if auth.entra_enabled() {
+            match self.verify_entra_request(req, now, &auth).await {
+                Ok(identity) => {
+                    ctx.entra_identity = Some(identity);
+                    gateway_telemetry::phase_span("gateway.auth.entra", &ctx.request_id)
+                        .in_scope(|| tracing::info!("Entra identity authenticated"));
+                }
+                Err(error) => {
+                    gateway_telemetry::record_auth_failure(error.code());
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(true);
+                }
+            }
+            Authenticator::new(self.store.clone())
+                .authenticate_raw_key(header_value(req, &auth.config.relayna_key_header), now)
+                .await
+        } else {
+            Authenticator::new(self.store.clone())
+                .authenticate_authorization(authorization, now)
+                .await
+        };
+        match key_result {
             Ok(key) => {
                 gateway_telemetry::phase_span("gateway.auth.verify", &ctx.request_id)
                     .in_scope(|| tracing::info!("virtual key authenticated"));
@@ -814,7 +926,11 @@ where
         Self::CTX: Send + Sync,
     {
         let upstream = self.upstream_for(ctx).unwrap_or(&self.config.litellm);
-        prepare_upstream_authority_and_credentials(upstream_request, upstream)?;
+        prepare_upstream_authority_and_credentials(
+            upstream_request,
+            upstream,
+            Some(ctx.relayna_key_header.as_str()),
+        )?;
         if ctx
             .route_match
             .as_ref()
@@ -1275,10 +1391,18 @@ fn is_valid_traceparent(value: &str) -> bool {
 fn prepare_upstream_authority_and_credentials(
     upstream_request: &mut RequestHeader,
     upstream: &PingoraUpstreamConfig,
+    relayna_key_header: Option<&str>,
 ) -> PingoraResult<()> {
     upstream_request.remove_header("authorization");
     upstream_request.remove_header("host");
+    upstream_request.remove_header("x-apigee-entra-identity");
+    upstream_request.remove_header("x-apigee-entra-signature");
     upstream_request.remove_header("proxy-authorization");
+    if let Some(relayna_key_header) = relayna_key_header {
+        upstream_request.remove_header(relayna_key_header);
+    }
+    upstream_request.remove_header("x-relayna-key");
+    upstream_request.remove_header("x-aih-api-key");
     upstream_request.remove_header("x-api-key");
     upstream_request.remove_header("x-relayna-worker-token");
     upstream_request.insert_header("host", upstream.host_header_value())?;
@@ -1656,6 +1780,8 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         route: None,
         route_match: None,
         key: None,
+        entra_identity: None,
+        relayna_key_header: ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned(),
         body_prefix: Vec::new(),
         body_bytes_seen: 0,
         response_body_prefix: Vec::new(),
@@ -1686,6 +1812,11 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         rewritten_request_len: None,
         guardrail_stream_holdback: String::new(),
     }
+}
+
+#[cfg(test)]
+fn default_auth_runtime_for_tests() -> SharedGatewayAuthRuntime {
+    SharedGatewayAuthRuntime::new(GatewayAuthRuntimeConfig::default()).expect("auth runtime")
 }
 
 async fn respond_error(
@@ -1775,6 +1906,18 @@ mod tests {
             .insert_header("authorization", "Bearer rk_live_client_key")
             .expect("client authorization");
         request
+            .insert_header("x-relayna-key", "rk_live_client_key")
+            .expect("client Relayna key");
+        request
+            .insert_header("x-aih-api-key", "rk_live_legacy_client_key")
+            .expect("client Relayna key");
+        request
+            .insert_header("x-apigee-entra-identity", "identity")
+            .expect("Apigee identity");
+        request
+            .insert_header("x-apigee-entra-signature", "signature")
+            .expect("Apigee signature");
+        request
             .insert_header("proxy-authorization", "Bearer proxy-client")
             .expect("client proxy authorization");
         request
@@ -1784,7 +1927,7 @@ mod tests {
             .insert_header("x-relayna-worker-token", "client-worker-token")
             .expect("client worker token");
 
-        prepare_upstream_authority_and_credentials(&mut request, &upstream)
+        prepare_upstream_authority_and_credentials(&mut request, &upstream, Some("x-relayna-key"))
             .expect("prepared upstream headers");
 
         assert_eq!(
@@ -1801,7 +1944,11 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("Bearer internal-service-key")
         );
+        assert!(!request.headers.contains_key("x-relayna-key"));
         assert!(!request.headers.contains_key("proxy-authorization"));
+        assert!(!request.headers.contains_key("x-aih-api-key"));
+        assert!(!request.headers.contains_key("x-apigee-entra-identity"));
+        assert!(!request.headers.contains_key("x-apigee-entra-signature"));
         assert!(!request.headers.contains_key("x-api-key"));
         assert!(!request.headers.contains_key("x-relayna-worker-token"));
     }
@@ -1821,6 +1968,33 @@ mod tests {
             .with_worker_token(Some("worker-token".to_owned()));
 
         assert_eq!(config.worker_token.as_deref(), Some("worker-token"));
+    }
+
+    #[test]
+    fn relayna_key_header_is_available_for_apigee_only_mode() {
+        let default_config =
+            PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+                .expect("config")
+                .with_apigee_trusted_header(Some(ApigeeTrustedHeaderConfig {
+                    secret: "trusted-secret".to_owned(),
+                    required_scope: None,
+                    required_role: None,
+                    allowed_groups: Vec::new(),
+                }));
+        assert_eq!(default_config.relayna_key_header(), "X-Relayna-Key");
+
+        let custom_config =
+            PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+                .expect("config")
+                .with_relayna_key_header("X-Custom-Relayna-Key")
+                .expect("key header")
+                .with_apigee_trusted_header(Some(ApigeeTrustedHeaderConfig {
+                    secret: "trusted-secret".to_owned(),
+                    required_scope: None,
+                    required_role: None,
+                    allowed_groups: Vec::new(),
+                }));
+        assert_eq!(custom_config.relayna_key_header(), "X-Custom-Relayna-Key");
     }
 
     #[test]
@@ -2008,6 +2182,7 @@ mod tests {
                     PingoraUpstreamConfig::from_base_url("https://api.openai.test", "openai-key")
                         .expect("direct config"),
                 )),
+            auth_runtime: default_auth_runtime_for_tests(),
         };
         let mut ctx = new_pingora_context_for_tests();
         ctx.route_match = Some(
@@ -2046,11 +2221,19 @@ mod tests {
             control_state: Arc::new(MemoryControlState::default()),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
                 .expect("config"),
+            auth_runtime: default_auth_runtime_for_tests(),
         };
 
         assert_eq!(
             proxy
                 .ensure_openai_route_enabled(Route::ChatCompletions)
+                .await
+                .unwrap_err(),
+            GatewayError::DisabledRoute
+        );
+        assert_eq!(
+            proxy
+                .ensure_openai_route_enabled(Route::LiteLlmEmbeddings)
                 .await
                 .unwrap_err(),
             GatewayError::DisabledRoute
@@ -2300,6 +2483,7 @@ mod tests {
             control_state: control_state.clone(),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
                 .expect("config"),
+            auth_runtime: default_auth_runtime_for_tests(),
         };
         let key = AuthenticatedKey {
             key_id: Uuid::new_v4(),
@@ -2344,6 +2528,7 @@ mod tests {
             control_state,
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
                 .expect("config"),
+            auth_runtime: default_auth_runtime_for_tests(),
         };
         let key = AuthenticatedKey {
             key_id: Uuid::new_v4(),

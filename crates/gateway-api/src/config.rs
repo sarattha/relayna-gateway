@@ -1,4 +1,7 @@
-use gateway_core::{GatewayError, GatewayResult};
+use gateway_core::{
+    validate_relayna_key_header_name, ApigeeTrustedHeaderConfig, EntraAuthConfig, GatewayAuthEnv,
+    GatewayError, GatewayResult, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+};
 use std::{env, net::SocketAddr};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +18,9 @@ pub struct Config {
     pub relayna_studio_token: Option<String>,
     pub guardrail_pii_mapping_ttl_seconds: u64,
     pub guardrail_mapping_encryption_key: Option<String>,
+    pub relayna_key_header: String,
+    pub entra_auth: Option<EntraAuthConfig>,
+    pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
     pub gateway_bind_addr: SocketAddr,
     pub gateway_control_bind_addr: SocketAddr,
     pub log_level: String,
@@ -36,6 +42,44 @@ impl Config {
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(3600);
         let guardrail_mapping_encryption_key = optional("GUARDRAIL_MAPPING_ENCRYPTION_KEY");
+        let relayna_key_header = optional("ENTRA_RELAYNA_KEY_HEADER")
+            .unwrap_or_else(|| ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned());
+        validate_relayna_key_header_name(&relayna_key_header)?;
+        let entra_auth = if optional_bool("ENTRA_AUTH_ENABLED")?.unwrap_or(false) {
+            let config = EntraAuthConfig {
+                tenant_id: required("ENTRA_TENANT_ID")?,
+                audience: required("ENTRA_AUDIENCE")?,
+                issuer: required("ENTRA_ISSUER")?,
+                oidc_discovery_url: required("ENTRA_OIDC_DISCOVERY_URL")?,
+                required_scope: optional("ENTRA_REQUIRED_SCOPE"),
+                required_role: optional("ENTRA_REQUIRED_ROLE"),
+                allowed_groups: optional_csv("ENTRA_ALLOWED_GROUPS"),
+                accepted_algorithms: with_default(
+                    optional_csv("ENTRA_ACCEPTED_ALGORITHMS"),
+                    vec!["RS256".to_owned()],
+                ),
+                relayna_key_header: relayna_key_header.clone(),
+                jwks_cache_ttl_seconds: optional_u64("ENTRA_JWKS_CACHE_TTL_SECONDS").unwrap_or(300),
+                clock_skew_seconds: optional_i64("ENTRA_CLOCK_SKEW_SECONDS").unwrap_or(60),
+            };
+            config.validate()?;
+            Some(config)
+        } else {
+            None
+        };
+        let apigee_trusted_header =
+            if optional_bool("APIGEE_TRUSTED_HEADER_ENABLED")?.unwrap_or(false) {
+                let config = ApigeeTrustedHeaderConfig {
+                    secret: required("APIGEE_TRUSTED_HEADER_SECRET")?,
+                    required_scope: optional("ENTRA_REQUIRED_SCOPE"),
+                    required_role: optional("ENTRA_REQUIRED_ROLE"),
+                    allowed_groups: optional_csv("ENTRA_ALLOWED_GROUPS"),
+                };
+                config.validate()?;
+                Some(config)
+            } else {
+                None
+            };
         let gateway_bind_addr = required("GATEWAY_BIND_ADDR")?
             .parse()
             .map_err(|_| GatewayError::InvalidConfiguration)?;
@@ -57,10 +101,21 @@ impl Config {
             relayna_studio_token,
             guardrail_pii_mapping_ttl_seconds,
             guardrail_mapping_encryption_key,
+            relayna_key_header,
+            entra_auth,
+            apigee_trusted_header,
             gateway_bind_addr,
             gateway_control_bind_addr,
             log_level,
         })
+    }
+
+    pub fn gateway_auth_env(&self) -> GatewayAuthEnv {
+        GatewayAuthEnv {
+            relayna_key_header: self.relayna_key_header.clone(),
+            entra_auth: self.entra_auth.clone(),
+            apigee_trusted_header: self.apigee_trusted_header.clone(),
+        }
     }
 }
 
@@ -77,6 +132,45 @@ fn optional(name: &str) -> Option<String> {
         .map(|value| value.trim().to_owned())
         .ok()
         .filter(|value| !value.is_empty())
+}
+
+fn optional_csv(name: &str) -> Vec<String> {
+    optional(name)
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn with_default(values: Vec<String>, default: Vec<String>) -> Vec<String> {
+    if values.is_empty() {
+        default
+    } else {
+        values
+    }
+}
+
+fn optional_bool(name: &str) -> GatewayResult<Option<bool>> {
+    optional(name)
+        .map(|value| match value.to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" => Ok(true),
+            "false" | "0" | "no" => Ok(false),
+            _ => Err(GatewayError::InvalidConfiguration),
+        })
+        .transpose()
+}
+
+fn optional_u64(name: &str) -> Option<u64> {
+    optional(name).and_then(|value| value.parse::<u64>().ok())
+}
+
+fn optional_i64(name: &str) -> Option<i64> {
+    optional(name).and_then(|value| value.parse::<i64>().ok())
 }
 
 #[cfg(test)]

@@ -6,6 +6,14 @@ data:
   GATEWAY_BIND_ADDR: "0.0.0.0:8080"
   GATEWAY_CONTROL_BIND_ADDR: "0.0.0.0:8081"
   LOG_LEVEL: "gateway_api=info,gateway_proxy=info"
+  # Entra and Apigee modes are opt-in. Keep disabled unless this gateway is
+  # behind Microsoft Entra ID or an Apigee front door.
+  ENTRA_AUTH_ENABLED: "false"
+  ENTRA_RELAYNA_KEY_HEADER: "X-Relayna-Key"
+  ENTRA_ACCEPTED_ALGORITHMS: "RS256"
+  ENTRA_JWKS_CACHE_TTL_SECONDS: "300"
+  ENTRA_CLOCK_SKEW_SECONDS: "60"
+  APIGEE_TRUSTED_HEADER_ENABLED: "false"
 ---
 apiVersion: v1
 kind: Secret
@@ -25,6 +33,16 @@ stringData:
   # Optional Studio fallback. Operators can override this connection in Admin Settings.
   RELAYNA_STUDIO_BASE_URL: ""
   RELAYNA_STUDIO_TOKEN: ""
+  # Required only when ENTRA_AUTH_ENABLED=true.
+  ENTRA_TENANT_ID: ""
+  ENTRA_AUDIENCE: ""
+  ENTRA_ISSUER: ""
+  ENTRA_OIDC_DISCOVERY_URL: ""
+  ENTRA_REQUIRED_SCOPE: ""
+  ENTRA_REQUIRED_ROLE: ""
+  ENTRA_ALLOWED_GROUPS: ""
+  # Required only when APIGEE_TRUSTED_HEADER_ENABLED=true.
+  APIGEE_TRUSTED_HEADER_SECRET: ""
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -52,7 +70,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/sarattha/relayna-gateway:0.1.4
+          image: ghcr.io/sarattha/relayna-gateway:0.1.7
           imagePullPolicy: IfNotPresent
           ports:
             - name: proxy

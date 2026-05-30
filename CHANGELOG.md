@@ -2,6 +2,98 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.7 - 2026-05-30
+
+### Added
+
+- The Admin portal Settings page now exposes Entra ID and Apigee front-door
+  auth controls that were previously deployment-env only, including enablement
+  toggles, tenant and issuer configuration, audience, OIDC discovery URL,
+  scope, role, group allowlist, accepted JWT algorithms, JWKS cache TTL, clock
+  skew, Relayna key header, and write-only Apigee HMAC secret management.
+- Gateway now persists Admin-saved front-door auth settings in PostgreSQL and
+  applies them immediately to proxy runtime authentication while preserving
+  environment-variable bootstrap behavior.
+- Operator documentation now includes a field-by-field Admin UI walkthrough
+  with screenshots for the Entra ID and Apigee front-door settings panel.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.7` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.7` gateway image.
+- Release documentation now treats `v0.1.7` as the current release target while
+  preserving `v0.1.0` as the production freeze baseline.
+
+### Fixed
+
+- The Admin portal sidebar now scrolls independently so the `Sign out` action
+  remains reachable on small monitors.
+
+## 0.1.6 - 2026-05-30
+
+### Added
+
+- LiteLLM passthrough now includes canonical OpenAI-compatible
+  `POST /v1/embeddings` requests alongside `POST /v1/chat/completions` and
+  `POST /v1/responses`.
+- OpenAI route settings and PostgreSQL seed data now include the `embeddings`
+  route so operators can enable or disable embeddings passthrough with the
+  existing route controls.
+- The real LiteLLM passthrough report now validates chat completions,
+  responses, and embeddings through the Entra/Apigee front-door test path.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.6` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.6` gateway image.
+- Release documentation now treats `v0.1.6` as the current release target while
+  preserving `v0.1.0` as the production freeze baseline.
+
+### Fixed
+
+- The LiteLLM real-environment report harness now uses a short non-secret
+  operator-token fixture so committed test configuration does not trip the
+  `relayna-live-token` secret scanning rule.
+
+## 0.1.5 - 2026-05-30
+
+### Added
+
+- Opt-in Microsoft Entra ID front-door authorization for provider traffic.
+  Gateway can now validate Entra JWTs before Relayna virtual-key
+  authentication while preserving the existing virtual-key-only path when
+  Entra mode is disabled.
+- Trusted Apigee gateway mode for deployments that terminate Entra at Apigee
+  and forward a signed, sanitized identity header to Relayna Gateway.
+- Configurable Relayna virtual-key header for Entra and Apigee gateway modes
+  through `ENTRA_RELAYNA_KEY_HEADER`, defaulting to `X-Relayna-Key`.
+- Dedicated Entra ID and Apigee gateway path documentation, including request
+  contracts, config tables, validation behavior, failure modes, Kubernetes
+  rollout guidance, and verification steps.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.5` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.5` gateway image.
+- Release documentation now treats `v0.1.5` as the current release target while
+  preserving `v0.1.0` as the production freeze baseline.
+
+### Security
+
+- Entra mode strips `Authorization`, the configured Relayna key header, legacy
+  `X-AIH-API-Key`, `X-Relayna-Key`, Apigee identity proof headers, and other
+  sensitive client credentials before forwarding upstream.
+- Entra token validation fails closed for malformed bearer headers, unknown
+  `kid`, invalid metadata or JWKS, unsupported algorithms, invalid signature,
+  wrong issuer, wrong audience, expired or not-yet-valid timestamps, group
+  overage, and missing required scope, role, or group.
+- Trusted Apigee header mode is disabled by default and requires
+  `APIGEE_TRUSTED_HEADER_SECRET`; unsigned or incorrectly signed identity
+  headers are rejected with stable Entra/Apigee error codes.
+
 ## 0.1.4 - 2026-05-25
 
 ### Added

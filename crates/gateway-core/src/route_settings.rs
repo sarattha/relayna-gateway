@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 pub const CHAT_COMPLETIONS_ROUTE_ID: &str = "chat-completions";
+pub const EMBEDDINGS_ROUTE_ID: &str = "embeddings";
 pub const RESPONSES_ROUTE_ID: &str = "responses";
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -61,6 +62,7 @@ pub fn openai_route_id(route: Route) -> Option<&'static str> {
     match route {
         Route::ChatCompletions => Some(CHAT_COMPLETIONS_ROUTE_ID),
         Route::Responses => Some(RESPONSES_ROUTE_ID),
+        Route::LiteLlmEmbeddings => Some(EMBEDDINGS_ROUTE_ID),
         _ => None,
     }
 }
@@ -69,6 +71,7 @@ pub fn openai_route_from_id(route_id: &str) -> Option<Route> {
     match route_id {
         CHAT_COMPLETIONS_ROUTE_ID => Some(Route::ChatCompletions),
         RESPONSES_ROUTE_ID => Some(Route::Responses),
+        EMBEDDINGS_ROUTE_ID => Some(Route::LiteLlmEmbeddings),
         _ => None,
     }
 }

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Admin UI Entra ID and Apigee Auth Settings Report</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #17202a; line-height: 1.45; }
+    h1, h2 { margin-bottom: 8px; }
+    table { border-collapse: collapse; width: 100%; margin: 16px 0 28px; }
+    th, td { border: 1px solid #d8dee4; padding: 8px 10px; text-align: left; vertical-align: top; }
+    th { background: #f4f6f8; }
+    code { background: #f4f6f8; padding: 1px 4px; border-radius: 4px; }
+    .pass { color: #146c43; font-weight: 700; }
+    .note { color: #536471; }
+  </style>
+</head>
+<body>
+  <h1>Admin UI Entra ID and Apigee Auth Settings Report</h1>
+  <p class="note">Generated on 2026-05-30 and refreshed against current head <code>00eff4a</code> for the Relayna Gateway Admin UI auth entrance settings change.</p>
+
+  <h2>Scope</h2>
+  <p>
+    Verified the Settings page controls for Entra ID and Apigee trusted-header auth, the live runtime update path,
+    secret redaction, post-freeze route/migration coverage, and the short-viewport sidebar Sign out accessibility fix.
+  </p>
+
+  <h2>Automated Verification</h2>
+  <table>
+    <thead><tr><th>Check</th><th>Result</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>cargo test -p gateway-core auth_settings --lib</code></td><td class="pass">PASS</td><td>3 focused auth-settings tests passed.</td></tr>
+      <tr><td><code>cargo test -p gateway-proxy --lib</code></td><td class="pass">PASS</td><td>30 proxy tests passed, including auth header and provider fallback coverage.</td></tr>
+      <tr><td><code>cargo test -p gateway-api --lib</code></td><td class="pass">PASS</td><td>44 API tests passed, including auth settings patch and redaction tests.</td></tr>
+      <tr><td><code>npm run build:admin-ui</code></td><td class="pass">PASS</td><td>Vite regenerated checked-in <code>/admin-ui</code> static assets.</td></tr>
+      <tr><td><code>npm test</code></td><td class="pass">PASS</td><td>Admin UI static and design-system tests passed with auth controls included.</td></tr>
+      <tr><td><code>internal/test-reports/front-door-penetration/run.sh</code></td><td class="pass">PASS</td><td>27/27 direct, Entra, and Apigee front-door checks passed against real LiteLLM.</td></tr>
+      <tr><td><code>node tests/freeze-v0.1.7-perimeter.test.mjs</code></td><td class="pass">PASS</td><td>Freeze route and migration perimeter includes the additive admin auth settings surface.</td></tr>
+      <tr><td><code>bash internal/test-reports/litellm-real-passthrough/run.sh</code></td><td class="pass">PASS</td><td>Docker real-environment harness passed with Entra JWT validation, Apigee trusted headers, Gateway, Redis, PostgreSQL, real LiteLLM, and a mock provider.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Browser Verification</h2>
+  <table>
+    <thead><tr><th>Scenario</th><th>Result</th><th>Observed Details</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Settings page auth controls</td>
+        <td class="pass">PASS</td>
+        <td>Browser fixture showed the Entra ID and Apigee front-door panel, issuer URL input, required scope input, and write-only Apigee password input.</td>
+      </tr>
+      <tr>
+        <td>Secret handling</td>
+        <td class="pass">PASS</td>
+        <td>Response model exposed <code>secret_configured</code> only; no Apigee secret value was rendered.</td>
+      </tr>
+      <tr>
+        <td>Small viewport Sign out accessibility</td>
+        <td class="pass">PASS</td>
+        <td>At 1024x520 viewport, navigation had <code>overflow-y: auto</code>, Sign out remained visible, and the left navigation could scroll independently.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Compatibility Notes</h2>
+  <p>
+    Compatibility boundary is latest release tag <code>v0.1.4</code>; production freeze baseline for this release branch is <code>v0.1.7</code>.
+    The new admin route <code>/admin-ui/admin/auth/front-door</code> and migration
+    <code>20260530000200_gateway_auth_settings.sql</code> are additive. Existing environment-variable configuration remains supported,
+    and persisted portal settings intentionally override env values, including disabling an env-enabled entrance.
+  </p>
+  <p>
+    Additional real-environment evidence is available at
+    <code>internal/test-reports/litellm-real-passthrough/report.html</code>.
+  </p>
+  <h2>Screenshot Artifacts</h2>
+  <ul>
+    <li><code>screenshots/01-settings-auth-panel-context.png</code></li>
+    <li><code>screenshots/02-auth-panel-full.png</code></li>
+    <li><code>screenshots/03-apigee-secret-actions.png</code></li>
+  </ul>
+</body>
+</html>

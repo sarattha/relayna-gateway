@@ -176,6 +176,8 @@ td code {
   position: sticky;
   top: 0;
   height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--rg-space-4);
@@ -203,8 +205,12 @@ td code {
 }
 
 .nav-groups {
+  flex: 1 1 auto;
+  overflow-y: auto;
   display: grid;
   gap: var(--rg-space-4);
+  min-height: 0;
+  padding-right: 2px;
 }
 
 .nav-group {
@@ -242,9 +248,10 @@ td code {
 }
 
 .sidebar-actions {
+  flex: 0 0 auto;
   display: grid;
   gap: 8px;
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .sidebar .danger {

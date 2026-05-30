@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: relayna_gateway
+      POSTGRES_PASSWORD: relayna_gateway
+      POSTGRES_DB: relayna_gateway
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relayna_gateway -d relayna_gateway"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mock-app:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["node", "server.mjs"]
+    environment:
+      MOCK_PUBLIC_BASE_URL: http://localhost:18082
+      MOCK_DOCKER_BASE_URL: http://mock-app:4000
+      GATEWAY_PROXY_URL: http://gateway:8080
+      GATEWAY_CONTROL_URL: http://gateway:8081
+      GATEWAY_ADMIN_TOKEN: op_live_entra_real_env_review_token_1234567890
+      APIGEE_TRUSTED_HEADER_SECRET: apigee-review-secret
+    ports:
+      - "18082:4000"
+    volumes:
+      - ./mock-app:/app:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  gateway:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock-app:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://relayna_gateway:relayna_gateway@postgres:5432/relayna_gateway
+      REDIS_URL: redis://redis:6379
+      LITELLM_BASE_URL: http://mock-app:4000
+      LITELLM_SERVICE_KEY: sk-litellm-review-service-key
+      DIRECT_OPENAI_BASE_URL: http://mock-app:4000
+      DIRECT_OPENAI_SERVICE_KEY: sk-direct-openai-review-service-key
+      GATEWAY_ADMIN_TOKEN: op_live_entra_real_env_review_token_1234567890
+      GATEWAY_BIND_ADDR: 0.0.0.0:8080
+      GATEWAY_CONTROL_BIND_ADDR: 0.0.0.0:8081
+      LOG_LEVEL: gateway_api=info,gateway_proxy=info
+      ENTRA_AUTH_ENABLED: "true"
+      ENTRA_TENANT_ID: relayna-review-tenant
+      ENTRA_AUDIENCE: api://relayna-gateway-review
+      ENTRA_ISSUER: http://mock-app:4000/oauth
+      ENTRA_OIDC_DISCOVERY_URL: http://mock-app:4000/oauth/.well-known/openid-configuration
+      ENTRA_REQUIRED_SCOPE: gateway.invoke
+      ENTRA_ALLOWED_GROUPS: relayna-review-group
+      ENTRA_RELAYNA_KEY_HEADER: X-Relayna-Key
+      APIGEE_TRUSTED_HEADER_ENABLED: "true"
+      APIGEE_TRUSTED_HEADER_SECRET: apigee-review-secret
+    ports:
+      - "18080:8080"
+      - "18081:8081"

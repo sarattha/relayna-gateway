@@ -44,15 +44,15 @@ const kubernetes = read("deploy/kubernetes/relayna-gateway.yaml");
 const cargoToml = read("Cargo.toml");
 const changelog = read("CHANGELOG.md");
 const releaseWorkflow = read(".github/workflows/release.yml");
-const freezeVersion = "0.1.0";
+const freezeVersion = "0.1.7";
 
-test("v0.1.0 freeze baseline release remains documented while current version may advance", () => {
+test("v0.1.7 freeze baseline matches the current release version", () => {
   const currentVersion = cargoToml.match(
     /\[workspace\.package\][\s\S]*?version = "([^"]+)"/,
   )?.[1];
   assert.match(currentVersion, /^\d+\.\d+\.\d+$/);
+  assert.equal(currentVersion, freezeVersion);
   assert.match(changelog, new RegExp(`^## ${currentVersion} -`, "m"));
-  assert.match(changelog, new RegExp(`^## ${freezeVersion} -`, "m"));
 });
 
 test("control-plane public route inventory is pinned", () => {
@@ -63,6 +63,7 @@ test("control-plane public route inventory is pinned", () => {
     "/admin-ui",
     "/admin-ui/{*path}",
     "/admin-ui/admin/audit-events",
+    "/admin-ui/admin/auth/front-door",
     "/admin-ui/admin/guardrails",
     "/admin-ui/admin/guardrails/{name}",
     "/admin-ui/admin/guardrails/executions",
@@ -125,10 +126,11 @@ test("control-plane public route inventory is pinned", () => {
   ]));
 });
 
-test("proxy route resolver keeps v0.1.0 public route semantics", () => {
+test("proxy route resolver keeps v0.1.7 public route semantics", () => {
   for (const route of [
     "/v1/chat/completions",
     "/v1/responses",
+    "/v1/embeddings",
     "/providers/openai/",
     "/services/",
     "/summary",
@@ -141,6 +143,7 @@ test("proxy route resolver keeps v0.1.0 public route semantics", () => {
   for (const routeName of [
     "ChatCompletions",
     "Responses",
+    "LiteLlmEmbeddings",
     "DirectOpenAi",
     "Summary",
     "Translation",
@@ -173,6 +176,7 @@ test("public gateway error codes are pinned", () => {
     "duplicate_project",
     "duplicate_provider_config",
     "duplicate_service",
+    "expired_entra_token",
     "expired_virtual_key",
     "guardrail_blocked",
     "guardrail_forbidden",
@@ -180,6 +184,9 @@ test("public gateway error codes are pinned", () => {
     "incomplete_service",
     "insufficient_operator_scope",
     "invalid_configuration",
+    "invalid_entra_audience",
+    "invalid_entra_issuer",
+    "invalid_entra_token",
     "invalid_guardrail_request",
     "invalid_operator_token",
     "invalid_project_payload",
@@ -188,8 +195,11 @@ test("public gateway error codes are pinned", () => {
     "invalid_service_upstream",
     "invalid_studio_connection_payload",
     "invalid_virtual_key",
+    "insufficient_entra_authorization",
     "malformed_authorization",
+    "malformed_entra_authorization",
     "missing_authorization",
+    "missing_entra_authorization",
     "missing_project",
     "missing_provider_config",
     "missing_service",
@@ -202,6 +212,7 @@ test("public gateway error codes are pinned", () => {
     "store_unavailable",
     "studio_unavailable",
     "token_rate_limit_exceeded",
+    "untrusted_apigee_identity",
     "unsupported_route",
     "upstream_connection",
     "upstream_timeout",
@@ -230,14 +241,28 @@ test("release configuration environment variables are pinned", () => {
     config.indexOf("fn required("),
   );
   const envNames = unique(
-    [...fromEnv.matchAll(/(?:required|optional)\("([A-Z0-9_]+)"\)/g)].map(
+    [...fromEnv.matchAll(/(?:required|optional|optional_bool|optional_csv|optional_u64|optional_i64)\("([A-Z0-9_]+)"\)/g)].map(
       (match) => match[1],
     ),
   );
   assert.deepEqual(sorted(envNames), sorted([
     "DATABASE_URL",
+    "APIGEE_TRUSTED_HEADER_ENABLED",
+    "APIGEE_TRUSTED_HEADER_SECRET",
     "DIRECT_OPENAI_BASE_URL",
     "DIRECT_OPENAI_SERVICE_KEY",
+    "ENTRA_ACCEPTED_ALGORITHMS",
+    "ENTRA_ALLOWED_GROUPS",
+    "ENTRA_AUDIENCE",
+    "ENTRA_AUTH_ENABLED",
+    "ENTRA_CLOCK_SKEW_SECONDS",
+    "ENTRA_ISSUER",
+    "ENTRA_JWKS_CACHE_TTL_SECONDS",
+    "ENTRA_OIDC_DISCOVERY_URL",
+    "ENTRA_REQUIRED_ROLE",
+    "ENTRA_REQUIRED_SCOPE",
+    "ENTRA_RELAYNA_KEY_HEADER",
+    "ENTRA_TENANT_ID",
     "GATEWAY_BIND_ADDR",
     "GATEWAY_ADMIN_TOKEN",
     "GATEWAY_CONTROL_BIND_ADDR",
@@ -275,6 +300,8 @@ test("PostgreSQL migration inventory is pinned", () => {
     "20260523000200_provider_intelligence.sql",
     "20260523000300_phase_4_observability_analytics.sql",
     "20260525000100_service_health_check_paths.sql",
+    "20260530000100_litellm_embeddings_route.sql",
+    "20260530000200_gateway_auth_settings.sql",
   ]);
 });
 

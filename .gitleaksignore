@@ -25,3 +25,19 @@ ebaba772371b96181f66ccc01efdf019ad0c3c10:crates/gateway-api/src/app.rs:stripe-ac
 538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-api/src/app.rs:relayna-live-token:338
 538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-api/src/app.rs:relayna-live-token:379
 538d9e3262cdaf54c07ddceb57da7bafa9c3145f:crates/gateway-api/src/app.rs:relayna-live-token:409
+
+# PR #62 Entra front-door auth review fixtures. These were synthetic test
+# values and a generated test RSA key that have since been removed or retained
+# only as documented fake gateway tokens.
+edc08994865cd83f7c09278d9c2a43151c08be95:crates/gateway-core/src/entra.rs:private-key:487
+edc08994865cd83f7c09278d9c2a43151c08be95:crates/gateway-core/src/auth.rs:relayna-live-token:239
+edc08994865cd83f7c09278d9c2a43151c08be95:crates/gateway-core/src/auth.rs:generic-api-key:249
+edc08994865cd83f7c09278d9c2a43151c08be95:crates/gateway-core/src/auth.rs:stripe-access-token:239
+edc08994865cd83f7c09278d9c2a43151c08be95:crates/gateway-proxy/src/pingora_plane.rs:relayna-live-token:1881
+2251b20cf3a7150a07c241c6512d803fdc01b097:internal/test-reports/entra-front-door-real-env/docker-compose.yml:relayna-live-token:31
+2251b20cf3a7150a07c241c6512d803fdc01b097:internal/test-reports/entra-front-door-real-env/docker-compose.yml:relayna-live-token:59
+2251b20cf3a7150a07c241c6512d803fdc01b097:internal/test-reports/entra-front-door-real-env/mock-app/server.mjs:relayna-live-token:314
+d9d1920e2ebab47b23c27e71b6f7aa5da86275f3:internal/test-reports/litellm-real-passthrough/docker-compose.yml:relayna-live-token:31
+d9d1920e2ebab47b23c27e71b6f7aa5da86275f3:internal/test-reports/litellm-real-passthrough/docker-compose.yml:relayna-live-token:89
+6512b61b19a31ba112bb94886b4e7d4286a3dd9f:internal/test-reports/litellm-real-passthrough/docker-compose.yml:relayna-live-token:31
+6512b61b19a31ba112bb94886b4e7d4286a3dd9f:internal/test-reports/litellm-real-passthrough/docker-compose.yml:relayna-live-token:89

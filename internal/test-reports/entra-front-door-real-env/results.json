@@ -1,0 +1,406 @@
+{
+  "ok": true,
+  "generatedAt": "2026-05-29T17:00:16.757Z",
+  "environment": {
+    "gatewayProxyUrl": "http://gateway:8080",
+    "gatewayControlUrl": "http://gateway:8081",
+    "mockPublicBaseUrl": "http://localhost:18082",
+    "issuer": "http://mock-app:4000/oauth",
+    "audience": "api://relayna-gateway-review",
+    "tenantId": "relayna-review-tenant",
+    "relaynaKeyHeader": "X-Relayna-Key",
+    "apigeeTrustedHeader": true,
+    "coveredRoutes": [
+      "/v1/chat/completions",
+      "/v1/responses",
+      "/providers/openai/*",
+      "/summary",
+      "/services/*"
+    ]
+  },
+  "checks": {
+    "direct_valid_jwt_and_relayna_key": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "chatcmpl-7dd80886-5850-42c8-a257-b229d190cfda",
+        "object": "chat.completion",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      }
+    },
+    "responses_valid_jwt_and_relayna_key": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "mock-925a9c6d-be44-4263-993a-39a8d392bfb2",
+        "object": "mock.response",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "mock upstream ok"
+              }
+            ]
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      }
+    },
+    "direct_provider_route_valid_jwt_and_relayna_key": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "chatcmpl-29fe5381-74f9-4a8e-8f9e-f18337588dd5",
+        "object": "chat.completion",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      }
+    },
+    "builtin_internal_summary_valid_jwt_and_relayna_key": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "mock-64560c46-5137-413a-af4c-66dcd4458ef8",
+        "object": "mock.response",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "mock upstream ok"
+              }
+            ]
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      }
+    },
+    "service_wildcard_valid_jwt_and_relayna_key": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "mock-42ff307b-55b2-4f0f-b907-e35418c2e743",
+        "object": "mock.response",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "mock upstream ok"
+              }
+            ]
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      }
+    },
+    "service_wildcard_missing_jwt_fails_before_upstream": {
+      "ok": true,
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "missing_entra_authorization",
+          "message": "Entra authorization is required.",
+          "request_id": "d62deddd-0402-4bb2-94bc-7b92db76463a"
+        }
+      }
+    },
+    "missing_jwt_fails_before_upstream": {
+      "ok": true,
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "missing_entra_authorization",
+          "message": "Entra authorization is required.",
+          "request_id": "3fe79f34-01e6-46f5-b81d-2929efbfe48c"
+        }
+      }
+    },
+    "wrong_audience_rejected_by_gateway": {
+      "ok": true,
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "invalid_entra_audience",
+          "message": "Entra token audience is invalid.",
+          "request_id": "12b6fa5d-3603-466b-bc6a-9b55a1496aab"
+        }
+      }
+    },
+    "expired_token_rejected_by_gateway": {
+      "ok": true,
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "expired_entra_token",
+          "message": "Entra token has expired.",
+          "request_id": "129ec285-c7dd-456f-be3f-49188e1481b5"
+        }
+      }
+    },
+    "missing_scope_rejected_by_gateway": {
+      "ok": true,
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "insufficient_entra_authorization",
+          "message": "Entra token lacks the required gateway authorization.",
+          "request_id": "cb818330-358b-4d56-88b9-7dc61b3a32d3"
+        }
+      }
+    },
+    "invalid_signature_rejected_by_gateway": {
+      "ok": true,
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "invalid_entra_token",
+          "message": "Entra token is invalid.",
+          "request_id": "3ddf8558-28bc-4518-b551-a1e6c27cd972"
+        }
+      }
+    },
+    "invalid_relayna_key_rejected_after_jwt": {
+      "ok": true,
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "invalid_virtual_key",
+          "message": "Virtual key is invalid.",
+          "request_id": "892682b0-5298-47eb-9caa-2fd824ed7b15"
+        }
+      }
+    },
+    "default_header_is_x_relayna_key_not_x_aih_api_key": {
+      "ok": true,
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "missing_authorization",
+          "message": "Authorization header is required.",
+          "request_id": "42348038-45ad-40b0-a6ee-21cb17b248ec"
+        }
+      }
+    },
+    "apigee_revalidation_path_forwards_after_edge_validation": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "chatcmpl-c8597902-b251-4aab-b5e7-c4a1ec1690a1",
+        "object": "chat.completion",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      },
+      "edgeValidated": true
+    },
+    "apigee_edge_rejects_wrong_audience": {
+      "ok": true,
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "apigee_verify_jwt_failed",
+          "message": "invalid_claims"
+        }
+      },
+      "edgeValidated": false
+    },
+    "apigee_trusted_header_path_forwards_with_signed_identity": {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "id": "chatcmpl-7ddb100d-fc59-4c46-8d09-4e0a7a6cef3d",
+        "object": "chat.completion",
+        "model": "gpt-review",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mock upstream ok"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4,
+          "completion_tokens": 3,
+          "total_tokens": 7
+        }
+      },
+      "edgeValidated": true
+    },
+    "apigee_trusted_header_tamper_rejected_by_gateway": {
+      "ok": true,
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "untrusted_apigee_identity",
+          "message": "Apigee identity proof is untrusted.",
+          "request_id": "7c23da64-b71a-4db8-88ca-a8d163513344"
+        }
+      },
+      "edgeValidated": true
+    },
+    "upstream_receives_only_internal_provider_credentials": {
+      "ok": true,
+      "upstreamRequestCount": 7,
+      "lastUpstreamAuthorization": "Bearer sk-litellm-review-service-key",
+      "upstreamAuthorizations": [
+        "Bearer sk-litellm-review-service-key",
+        "Bearer sk-direct-openai-review-service-key",
+        "Bearer sk-internal-summary-review-service-key",
+        "Bearer sk-internal-review-service-key"
+      ]
+    }
+  },
+  "upstreamRequests": [
+    {
+      "path": "/v1/chat/completions",
+      "authorization": "Bearer sk-litellm-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    },
+    {
+      "path": "/v1/responses",
+      "authorization": "Bearer sk-litellm-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    },
+    {
+      "path": "/v1/chat/completions",
+      "authorization": "Bearer sk-direct-openai-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    },
+    {
+      "path": "/summary",
+      "authorization": "Bearer sk-internal-summary-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    },
+    {
+      "path": "/execute",
+      "authorization": "Bearer sk-internal-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    },
+    {
+      "path": "/v1/chat/completions",
+      "authorization": "Bearer sk-litellm-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    },
+    {
+      "path": "/v1/chat/completions",
+      "authorization": "Bearer sk-litellm-review-service-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasClientJwt": false,
+      "hasApigeeIdentity": false
+    }
+  ]
+}
