@@ -1,26 +1,26 @@
 ---
 name: production-freeze-guard
-description: Use after the Relayna Gateway v0.1.7 production freeze when adding features or changing public routes, APIs, schemas, config, auth, policy, usage, proxy, streaming, Redis, telemetry, admin UI, or release behavior; requires compatibility review and freeze perimeter tests.
+description: Use after the Relayna Gateway v0.1.8 production freeze when adding features or changing public routes, APIs, schemas, config, auth, policy, usage, proxy, streaming, Redis, telemetry, admin UI, or release behavior; requires compatibility review and freeze perimeter tests.
 ---
 
 # Production Freeze Guard
 
 ## Purpose
 
-Relayna Gateway v0.1.7 is the production freeze baseline. Use this skill before
+Relayna Gateway v0.1.8 is the production freeze baseline. Use this skill before
 adding features or changing behavior that could affect deployed clients,
 operators, Relayna Studio, Relayna workers, stored data, Redis state, proxy
 semantics, or deployment configuration.
 
 This skill does not block feature work. It makes compatibility explicit and
-keeps the v0.1.7 perimeter tests honest.
+keeps the v0.1.8 perimeter tests honest.
 
 ## Workflow
 
 1. Establish the baseline.
    - Run `git tag -l 'v*' --sort=-v:refname | head -n1`.
-   - The expected production freeze baseline is `v0.1.7`.
-   - Compare risky changes with `git diff v0.1.7...HEAD -- <path>` when needed.
+   - The expected production freeze baseline is `v0.1.8`.
+   - Compare risky changes with `git diff v0.1.8...HEAD -- <path>` when needed.
 
 2. Identify touched freeze surfaces.
    - Public HTTP routes, status codes, response bodies, and headers.
@@ -44,7 +44,7 @@ keeps the v0.1.7 perimeter tests honest.
    - Secret handling may break unsafe behavior only when the PR states why.
 
 4. Update the freeze perimeter tests.
-   - Run `node tests/freeze-v0.1.7-perimeter.test.mjs` before editing to see
+   - Run `node tests/freeze-v0.1.8-perimeter.test.mjs` before editing to see
      the current boundary.
    - If behavior is intentionally additive, update the test in the same PR and
      record the compatibility reason.
@@ -52,7 +52,7 @@ keeps the v0.1.7 perimeter tests honest.
      proven otherwise.
 
 5. Verify before handoff.
-   - Run `node tests/freeze-v0.1.7-perimeter.test.mjs`.
+   - Run `node tests/freeze-v0.1.8-perimeter.test.mjs`.
    - Run `$code-change-verification` for Rust runtime, tests, migrations,
      packaging, or build/test changes.
    - Include compatibility notes and changed perimeter tests in the final
@@ -62,7 +62,7 @@ keeps the v0.1.7 perimeter tests honest.
 
 In plans, PR summaries, and handoffs, include:
 
-- Freeze baseline: `v0.1.7`.
+- Freeze baseline: `v0.1.8`.
 - Touched freeze surfaces.
 - Compatibility impact: none, additive, migration required, or breaking.
 - Perimeter tests added or updated.

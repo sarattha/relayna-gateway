@@ -180,6 +180,7 @@ const state = {
   keys: [],
   projects: [],
   providers: [],
+  litellmCredentialMappings: [],
   openaiRoutes: [],
   services: [],
   guardrails: [],
@@ -971,7 +972,12 @@ async function keyAction(event) {
   await keys();
 }
 async function providers() {
-  state.providers = await api("/admin-ui/admin/providers");
+  [state.providers, state.litellmCredentialMappings, state.keys, state.projects] = await Promise.all([
+    api("/admin-ui/admin/providers"),
+    api("/admin-ui/admin/providers/litellm-credentials"),
+    api("/admin-ui/admin/keys"),
+    api("/admin-ui/admin/projects")
+  ]);
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Create provider</h3></div>
@@ -979,7 +985,12 @@ async function providers() {
         <label>Provider<select name="provider">${option("litellm", "litellm")}${option("internal-service", "")}</select></label>
         <label>Name<input name="name" required value="LiteLLM"></label>
         <label>Endpoint<input name="base_url" required placeholder="http://litellm:4000"></label>
-        <label>Master key<input name="credential" type="password" autocomplete="new-password"></label>
+        <label>Default credential<input name="credential" type="password" autocomplete="new-password"></label>
+        <label>Credential mode<select name="credential_header_mode">
+          ${option("authorization_bearer", "authorization_bearer")}
+          ${option("custom_header", "")}
+        </select></label>
+        <label>Custom header<input name="credential_header_name" placeholder="x-litellm-api-key"></label>
         <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
         <div class="form-actions"><button class="primary">Create provider</button></div>
       </form>
@@ -988,20 +999,42 @@ async function providers() {
       <div class="panel-heading"><h3>Provider configuration</h3><span class="subtle">${state.providers.length} total</span></div>
       ${providerTable(state.providers)}
     </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>LiteLLM credential mappings</h3><span class="subtle">${state.litellmCredentialMappings.length} total</span></div>
+      <form id="litellm-credential-form" class="form-grid">
+        <label>Scope<select name="scope" data-litellm-mapping-scope>${option("key", "key")}${option("project", "")}</select></label>
+        <label>Key<select name="key_target_id" data-litellm-key-target>${keyOptions()}</select></label>
+        <label>Project<select name="project_target_id" data-litellm-project-target>${projectOptions()}</select></label>
+        <label>LiteLLM virtual key<input name="credential" type="password" autocomplete="new-password" required></label>
+        <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
+        <div class="form-actions"><button class="primary">Save mapping</button></div>
+      </form>
+      ${litellmCredentialMappingTable(state.litellmCredentialMappings)}
+    </section>
   `;
   document.querySelector("#provider-form").addEventListener("submit", handleAsync(createProvider));
+  document.querySelector("#litellm-credential-form").addEventListener("submit", handleAsync(saveLiteLlmCredentialMapping));
+  document.querySelector("[data-litellm-mapping-scope]").addEventListener("change", updateLiteLlmMappingTargetVisibility);
+  updateLiteLlmMappingTargetVisibility();
   document.querySelectorAll("[data-provider-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(providerAction));
+  });
+  document.querySelectorAll("[data-provider-config-form]").forEach((form) => {
+    form.addEventListener("submit", handleAsync(updateProviderAuthSettings));
+  });
+  document.querySelectorAll("[data-litellm-mapping-action]").forEach((button) => {
+    button.addEventListener("click", handleAsync(liteLlmCredentialMappingAction));
   });
 }
 function providerTable(rows) {
   return table(
-    ["Provider", "Endpoint", "State", "Credential", "Updated", "Actions"],
+    ["Provider", "Endpoint", "State", "Credential", "LiteLLM auth", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.provider)}</div>`,
       `<code>${esc(row.base_url)}</code>`,
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
       row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+      providerAuthSettingsForm(row),
       time(row.updated_at),
       `<div class="actions">
         <button data-provider-action="${row.enabled ? "disable" : "enable"}" data-provider-id="${attr(row.id)}">${row.enabled ? "Disable" : "Enable"}</button>
@@ -1010,9 +1043,41 @@ function providerTable(rows) {
     ])
   );
 }
+function providerAuthSettingsForm(row) {
+  if (row.provider !== "litellm") {
+    return '<span class="subtle">not applicable</span>';
+  }
+  return `<form class="inline-form" data-provider-config-form data-provider-id="${attr(row.id)}">
+    <select name="credential_header_mode">
+      ${option("authorization_bearer", row.credential_header_mode || "authorization_bearer")}
+      ${option("custom_header", row.credential_header_mode || "")}
+    </select>
+    <input name="credential_header_name" placeholder="x-litellm-api-key" value="${attr(row.credential_header_name || "")}">
+    <input name="credential" type="password" autocomplete="new-password" placeholder="rotate default credential">
+    <button type="submit">Update</button>
+  </form>`;
+}
+function litellmCredentialMappingTable(rows) {
+  return table(
+    ["Scope", "Target", "State", "Credential", "Updated", "Actions"],
+    rows.map((row) => [
+      esc(row.scope),
+      `<strong>${esc(row.target_label || mappingTargetName(row))}</strong><div class="subtle"><code>${esc(row.target_id)}</code></div>`,
+      row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
+      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+      time(row.updated_at),
+      `<div class="actions">
+        <button data-litellm-mapping-action="${row.enabled ? "disable" : "enable"}" data-mapping-id="${attr(row.id)}">${row.enabled ? "Disable" : "Enable"}</button>
+        <button class="danger" data-litellm-mapping-action="delete" data-mapping-id="${attr(row.id)}">Delete</button>
+      </div>`
+    ])
+  );
+}
 async function createProvider(event) {
   event.preventDefault();
   const form = new FormData(event.target);
+  const credentialHeaderMode = form.get("credential_header_mode");
+  const credentialHeaderName = nullableString(form.get("credential_header_name"));
   await api("/admin-ui/admin/providers", {
     method: "POST",
     body: JSON.stringify({
@@ -1020,10 +1085,31 @@ async function createProvider(event) {
       name: form.get("name"),
       base_url: form.get("base_url"),
       credential: blankToUndefined(form.get("credential")),
+      credential_header_mode: credentialHeaderMode,
+      credential_header_name: credentialHeaderMode === "custom_header" ? credentialHeaderName : null,
       enabled: form.has("enabled")
     })
   });
   setNotice("Provider saved.", "success");
+  await providers();
+}
+async function updateProviderAuthSettings(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const providerId = formElement.dataset.providerId;
+  const form = new FormData(formElement);
+  const credentialHeaderMode = form.get("credential_header_mode");
+  const body = {
+    credential_header_mode: credentialHeaderMode,
+    credential_header_name: credentialHeaderMode === "custom_header" ? nullableString(form.get("credential_header_name")) : null
+  };
+  const credential = blankToUndefined(form.get("credential"));
+  if (credential) body.credential = credential;
+  await api(`/admin-ui/admin/providers/${providerId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+  setNotice("Provider auth settings updated.", "success");
   await providers();
 }
 async function providerAction(event) {
@@ -1036,6 +1122,40 @@ async function providerAction(event) {
   }
   setNotice(`Provider ${action}d.`, "success");
   await providers();
+}
+async function saveLiteLlmCredentialMapping(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const scope = form.get("scope");
+  const targetId = scope === "project" ? form.get("project_target_id") : form.get("key_target_id");
+  await api("/admin-ui/admin/providers/litellm-credentials", {
+    method: "POST",
+    body: JSON.stringify({
+      scope,
+      target_id: targetId,
+      credential: blankToUndefined(form.get("credential")),
+      enabled: form.has("enabled")
+    })
+  });
+  setNotice("LiteLLM credential mapping saved.", "success");
+  await providers();
+}
+async function liteLlmCredentialMappingAction(event) {
+  const { litellmMappingAction: action, mappingId } = event.currentTarget.dataset;
+  if (!await confirmAction(`${action} LiteLLM credential mapping`, "This changes upstream credential selection.")) return;
+  if (action === "delete") {
+    await api(`/admin-ui/admin/providers/litellm-credentials/${mappingId}`, { method: "DELETE" });
+  } else {
+    await api(`/admin-ui/admin/providers/litellm-credentials/${mappingId}/${action}`, { method: "POST", body: "{}" });
+  }
+  setNotice(`LiteLLM credential mapping ${action}d.`, "success");
+  await providers();
+}
+function updateLiteLlmMappingTargetVisibility() {
+  var _a, _b, _c, _d, _e;
+  const scope = ((_a = document.querySelector("[data-litellm-mapping-scope]")) == null ? void 0 : _a.value) || "key";
+  (_c = (_b = document.querySelector("[data-litellm-key-target]")) == null ? void 0 : _b.closest("label")) == null ? void 0 : _c.toggleAttribute("hidden", scope !== "key");
+  (_e = (_d = document.querySelector("[data-litellm-project-target]")) == null ? void 0 : _d.closest("label")) == null ? void 0 : _e.toggleAttribute("hidden", scope !== "project");
 }
 async function routes() {
   [state.openaiRoutes, state.services] = await Promise.all([
@@ -2423,6 +2543,9 @@ function projectName(projectId) {
 function keyName(keyId) {
   var _a;
   return ((_a = state.keys.find((key) => key.id === keyId)) == null ? void 0 : _a.key_prefix) || keyId;
+}
+function mappingTargetName(mapping) {
+  return mapping.scope === "project" ? projectName(mapping.target_id) : keyName(mapping.target_id);
 }
 function providerPolicySelect(selected = [], neutral = false) {
   const values = new Set(Array.isArray(selected) && selected.length ? selected : neutral ? [] : ["litellm"]);

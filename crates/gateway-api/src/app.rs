@@ -22,18 +22,19 @@ use gateway_core::{
     GuardrailDefinitionResponse, GuardrailEventQuery, GuardrailExecutionEvent,
     GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPlanRequest,
     GuardrailPolicySet, GuardrailStore, GuardrailTestRequest, GuardrailTestResponse, KeyPolicy,
-    OperatorAuthorization, OperatorTokenMaterial, OperatorTokenStore, PolicyLookup,
-    ProjectCreateRequest, ProjectPatchRequest, ProjectResponse, Provider,
-    ProviderConfigCreateRequest, ProviderConfigPatchRequest, ProviderConfigResponse,
-    ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore, Route,
-    ServiceCreateRequest, ServiceImportDiff, ServiceImportValidationIssue, ServicePatchRequest,
-    ServiceRegistrySnapshot, ServiceResponse, SharedGatewayAuthRuntime, StudioConnectionEnv,
-    StudioConnectionPatchRequest, StudioConnectionTestResponse, StudioServiceCatalogResponse,
-    StudioServiceImportPreview, StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent,
-    UsageExport, UsageQuery, UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ,
-    SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE,
-    SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE,
-    SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
+    LiteLlmCredentialMappingResponse, LiteLlmCredentialMappingUpsertRequest, OperatorAuthorization,
+    OperatorTokenMaterial, OperatorTokenStore, PolicyLookup, ProjectCreateRequest,
+    ProjectPatchRequest, ProjectResponse, Provider, ProviderConfigCreateRequest,
+    ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus,
+    ProviderIntelligenceStore, Route, ServiceCreateRequest, ServiceImportDiff,
+    ServiceImportValidationIssue, ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse,
+    SharedGatewayAuthRuntime, StudioConnectionEnv, StudioConnectionPatchRequest,
+    StudioConnectionTestResponse, StudioServiceCatalogResponse, StudioServiceImportPreview,
+    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery,
+    UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE,
+    SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE,
+    SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT,
+    SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::{Deserialize, Serialize};
@@ -266,6 +267,22 @@ pub fn router_with_state(state: AppState) -> Router {
         .route(
             "/admin-ui/admin/providers",
             post(create_provider).get(list_providers),
+        )
+        .route(
+            "/admin-ui/admin/providers/litellm-credentials",
+            post(upsert_litellm_credential_mapping).get(list_litellm_credential_mappings),
+        )
+        .route(
+            "/admin-ui/admin/providers/litellm-credentials/{mapping_id}",
+            delete(delete_litellm_credential_mapping),
+        )
+        .route(
+            "/admin-ui/admin/providers/litellm-credentials/{mapping_id}/disable",
+            post(disable_litellm_credential_mapping),
+        )
+        .route(
+            "/admin-ui/admin/providers/litellm-credentials/{mapping_id}/enable",
+            post(enable_litellm_credential_mapping),
         )
         .route(
             "/admin-ui/admin/providers/{provider_id}",
@@ -1478,6 +1495,85 @@ async fn list_providers(State(state): State<AppState>, headers: HeaderMap) -> Re
     .await
 }
 
+async fn upsert_litellm_credential_mapping(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<LiteLlmCredentialMappingUpsertRequest>,
+) -> Response {
+    admin_mutation(
+        headers,
+        &state,
+        SCOPE_PROVIDERS_UPDATE,
+        "litellm_credentials:upsert",
+        "litellm_credential_mapping",
+        |mapping: &LiteLlmCredentialMappingResponse| Some(mapping.id.to_string()),
+        |store| async move { store.upsert_litellm_credential_mapping(request).await },
+    )
+    .await
+}
+
+async fn list_litellm_credential_mappings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+        store.list_litellm_credential_mappings().await
+    })
+    .await
+}
+
+async fn delete_litellm_credential_mapping(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(mapping_id): Path<uuid::Uuid>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_PROVIDERS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state
+        .store
+        .delete_litellm_credential_mapping(mapping_id)
+        .await
+    {
+        Ok(true) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "litellm_credentials:delete",
+                "litellm_credential_mapping",
+                Some(mapping_id.to_string()),
+                None,
+                None,
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn disable_litellm_credential_mapping(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(mapping_id): Path<uuid::Uuid>,
+) -> Response {
+    mutate_litellm_credential_mapping_enabled(state, headers, mapping_id, false).await
+}
+
+async fn enable_litellm_credential_mapping(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(mapping_id): Path<uuid::Uuid>,
+) -> Response {
+    mutate_litellm_credential_mapping_enabled(state, headers, mapping_id, true).await
+}
+
 async fn get_provider(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2598,6 +2694,33 @@ async fn mutate_provider_enabled(
     }
 }
 
+async fn mutate_litellm_credential_mapping_enabled(
+    state: AppState,
+    headers: HeaderMap,
+    mapping_id: uuid::Uuid,
+    enabled: bool,
+) -> Response {
+    admin_mutation(
+        headers,
+        &state,
+        SCOPE_PROVIDERS_UPDATE,
+        if enabled {
+            "litellm_credentials:enable"
+        } else {
+            "litellm_credentials:disable"
+        },
+        "litellm_credential_mapping",
+        |mapping: &LiteLlmCredentialMappingResponse| Some(mapping.id.to_string()),
+        |store| async move {
+            store
+                .set_litellm_credential_mapping_enabled(mapping_id, enabled)
+                .await?
+                .ok_or(GatewayError::MissingProviderConfig)
+        },
+    )
+    .await
+}
+
 async fn effective_studio_connection(state: &AppState) -> GatewayResult<EffectiveStudioConnection> {
     let stored = state.store.studio_connection_settings().await?;
     Ok(EffectiveStudioConnection::from_sources(
@@ -3652,6 +3775,8 @@ mod tests {
                 base_url: request.base_url,
                 enabled: request.enabled,
                 credential_configured: request.credential.is_some(),
+                credential_header_mode: request.credential_header_mode,
+                credential_header_name: request.credential_header_name,
                 created_at: now,
                 updated_at: now,
             })
@@ -3685,6 +3810,51 @@ mod tests {
             _provider_id: Uuid,
             _enabled: bool,
         ) -> GatewayResult<Option<ProviderConfigResponse>> {
+            Ok(None)
+        }
+
+        async fn upsert_litellm_credential_mapping(
+            &self,
+            request: LiteLlmCredentialMappingUpsertRequest,
+        ) -> GatewayResult<LiteLlmCredentialMappingResponse> {
+            if request
+                .credential
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+            {
+                return Err(GatewayError::InvalidProviderConfigPayload);
+            }
+            let now = Utc::now();
+            Ok(LiteLlmCredentialMappingResponse {
+                id: Uuid::new_v4(),
+                scope: request.scope,
+                target_id: request.target_id,
+                target_label: None,
+                enabled: request.enabled,
+                credential_configured: request.credential.is_some(),
+                created_at: now,
+                updated_at: now,
+            })
+        }
+
+        async fn list_litellm_credential_mappings(
+            &self,
+        ) -> GatewayResult<Vec<LiteLlmCredentialMappingResponse>> {
+            Ok(Vec::new())
+        }
+
+        async fn delete_litellm_credential_mapping(
+            &self,
+            _mapping_id: Uuid,
+        ) -> GatewayResult<bool> {
+            Ok(false)
+        }
+
+        async fn set_litellm_credential_mapping_enabled(
+            &self,
+            _mapping_id: Uuid,
+            _enabled: bool,
+        ) -> GatewayResult<Option<LiteLlmCredentialMappingResponse>> {
             Ok(None)
         }
     }

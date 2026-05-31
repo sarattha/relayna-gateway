@@ -9,7 +9,7 @@ Required environment variables:
 | `DATABASE_URL` | PostgreSQL connection string for durable gateway state. |
 | `REDIS_URL` | Redis connection string for readiness, rate limits, and budgets. |
 | `LITELLM_BASE_URL` | LiteLLM or OpenAI-compatible upstream base URL. |
-| `LITELLM_SERVICE_KEY` | Internal upstream credential used by the gateway. |
+| `LITELLM_SERVICE_KEY` | Startup fallback LiteLLM credential used when no active LiteLLM provider config supplies a default credential. |
 | `GATEWAY_BIND_ADDR` | Proxy listener, for example `0.0.0.0:8080`. |
 | `GATEWAY_CONTROL_BIND_ADDR` | Control listener, for example `0.0.0.0:8081`. |
 | `LOG_LEVEL` | Rust tracing filter. |
@@ -49,6 +49,36 @@ curl -sS \
 The first command proves Studio exports services. The test route proves Gateway
 can reach the effective configured connection. The services route proves Gateway
 can fetch and map the export.
+
+### LiteLLM Credential Header And Mapping
+
+`LITELLM_BASE_URL` and `LITELLM_SERVICE_KEY` remain the startup fallback for
+LiteLLM passthrough. In production, prefer managing the active LiteLLM provider
+from Admin portal Providers so operators can rotate the provider default
+credential and configure the upstream credential header without changing
+deployment environment variables.
+
+For LiteLLM installations that expect a custom header, set the LiteLLM provider
+credential mode to `custom_header` and set the header name, for example
+`x-litellm-api-key`. Gateway then sends only that custom header upstream. It
+does not also send `Authorization` for LiteLLM in custom-header mode.
+
+LiteLLM credential mappings are write-only. Add them from the same Providers
+view:
+
+1. Choose `key` scope to bind one LiteLLM virtual key to one Relayna virtual
+   key, or choose `project` scope to bind one LiteLLM virtual key to every
+   Relayna key in that project.
+2. Select the target key or project.
+3. Paste the LiteLLM virtual key into the write-only credential field.
+4. Keep the mapping enabled and save it.
+
+Gateway resolves LiteLLM credentials in this order for LiteLLM routes only:
+Relayna key mapping, project mapping, active LiteLLM provider default
+credential, then the `LITELLM_SERVICE_KEY` startup fallback when no active
+provider config overrides it. Disabled mappings are skipped and fall back to
+the next level. If no credential exists at any level, Gateway fails closed with
+the upstream configuration error behavior.
 
 ## Health and Metrics
 
@@ -180,7 +210,7 @@ Before deploying a new release:
 3. Run CI, including Rust checks, security scans, admin UI tests, freeze
    perimeter tests, and docs build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.7`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.8`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
 
 ## Supply Chain and Runtime Hardening

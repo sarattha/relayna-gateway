@@ -44,9 +44,9 @@ const kubernetes = read("deploy/kubernetes/relayna-gateway.yaml");
 const cargoToml = read("Cargo.toml");
 const changelog = read("CHANGELOG.md");
 const releaseWorkflow = read(".github/workflows/release.yml");
-const freezeVersion = "0.1.7";
+const freezeVersion = "0.1.8";
 
-test("v0.1.7 freeze baseline matches the current release version", () => {
+test("v0.1.8 freeze baseline matches the current release version", () => {
   const currentVersion = cargoToml.match(
     /\[workspace\.package\][\s\S]*?version = "([^"]+)"/,
   )?.[1];
@@ -88,6 +88,10 @@ test("control-plane public route inventory is pinned", () => {
     "/admin-ui/admin/provider-health/check",
     "/admin-ui/admin/provider-health/state",
     "/admin-ui/admin/providers",
+    "/admin-ui/admin/providers/litellm-credentials",
+    "/admin-ui/admin/providers/litellm-credentials/{mapping_id}",
+    "/admin-ui/admin/providers/litellm-credentials/{mapping_id}/disable",
+    "/admin-ui/admin/providers/litellm-credentials/{mapping_id}/enable",
     "/admin-ui/admin/providers/{provider_id}",
     "/admin-ui/admin/providers/{provider_id}/disable",
     "/admin-ui/admin/providers/{provider_id}/enable",
@@ -126,7 +130,7 @@ test("control-plane public route inventory is pinned", () => {
   ]));
 });
 
-test("proxy route resolver keeps v0.1.7 public route semantics", () => {
+test("proxy route resolver keeps v0.1.8 public route semantics", () => {
   for (const route of [
     "/v1/chat/completions",
     "/v1/responses",
@@ -302,6 +306,7 @@ test("PostgreSQL migration inventory is pinned", () => {
     "20260525000100_service_health_check_paths.sql",
     "20260530000100_litellm_embeddings_route.sql",
     "20260530000200_gateway_auth_settings.sql",
+    "20260531000100_litellm_credential_mapping.sql",
   ]);
 });
 
@@ -332,6 +337,7 @@ test("admin portal static test covers all control endpoints it depends on", () =
     "/admin-ui/admin/provider-health/check",
     "/admin-ui/admin/provider-health/state",
     "/admin-ui/admin/providers",
+    "/admin-ui/admin/providers/litellm-credentials",
     "/admin-ui/admin/services",
     "/admin-ui/admin/services/import",
     "/admin-ui/admin/services/import/activate",

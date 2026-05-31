@@ -2,6 +2,36 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.8 - 2026-05-31
+
+### Added
+
+- LiteLLM provider configuration now supports operator-managed credential
+  header mode. Operators can keep the default `Authorization: Bearer <key>`
+  behavior or send the selected LiteLLM credential through a custom header such
+  as `x-litellm-api-key`.
+- Admin APIs, PostgreSQL storage, and the Admin portal now support write-only
+  LiteLLM virtual-key mappings by Relayna key or project. Runtime credential
+  resolution prefers key mapping, then project mapping, then the active
+  LiteLLM provider default credential.
+- Operator documentation now explains how to configure LiteLLM custom headers
+  and key/project credential mappings with captured Admin UI screenshots.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.8` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.8` gateway image.
+- Release documentation now treats `v0.1.8` as the current release target while
+  preserving `v0.1.8` as the production freeze baseline.
+
+### Security
+
+- LiteLLM mapping secrets are write-only in Admin API responses, audit
+  snapshots, and the Admin portal. Gateway strips client credentials before
+  forwarding LiteLLM traffic and only sends the resolved internal LiteLLM
+  credential upstream.
+
 ## 0.1.7 - 2026-05-30
 
 ### Added

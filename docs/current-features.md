@@ -1,7 +1,7 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.7` feature set that now forms the production
-freeze baseline.
+This page summarizes the `v0.1.8` feature set. The `v0.1.8` production freeze
+baseline remains pinned for compatibility checks.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -126,11 +126,25 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible Passthrough
 
-Release `0.1.7` routes canonical OpenAI-compatible
+Release `0.1.8` routes canonical OpenAI-compatible
 `/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings` requests through
 LiteLLM when they pass Relayna authentication and policy. The singular or alias
 paths `/v1/chatcompletion`, `/v1/response`, `/v1/embedding`, and `/v1/rerank`
 are not passthrough routes and return `unsupported_route`.
+
+Operators can manage LiteLLM upstream authentication from Admin portal
+Providers. The provider default credential remains write-only, and the
+credential header mode can stay on `authorization_bearer` or switch to a
+custom header such as `x-litellm-api-key`.
+
+![LiteLLM provider header and mapping controls](assets/screenshots/litellm-credential-mapping/01-provider-header-and-key-mapping.png)
+
+LiteLLM virtual-key mappings can be scoped to a Relayna key or a project.
+Gateway resolves LiteLLM credentials by Relayna key mapping, then project
+mapping, then active provider default credential, and finally the
+`LITELLM_SERVICE_KEY` startup fallback when no active provider config overrides
+it. Secrets are write-only in Admin API responses, audit snapshots, and the
+portal.
 
 ## Observability Analytics
 
@@ -154,7 +168,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.7` freeze baseline hardens CI and release workflows with strict dependency,
+The `v0.1.8` freeze baseline hardens CI and release workflows with strict dependency,
 secret, static-analysis, filesystem, and image checks. Release images publish
 with SBOM, signature, and provenance artifacts, and release metadata validation
 guards tag, workspace version, and changelog alignment.
@@ -165,7 +179,7 @@ no privilege escalation, and all Linux capabilities dropped. Proxy and control
 plane Services remain separate, and the control plane should stay private or
 protected by identity-aware access.
 
-The v0.1.7 freeze perimeter test pins the production baseline for public
+The v0.1.8 freeze perimeter test pins the production baseline for public
 routes, admin route inventory, error codes, config names, migrations, Redis key
 formats, release metadata, and Admin UI endpoint assumptions. Future changes
 should keep that perimeter passing unless a compatibility decision explicitly

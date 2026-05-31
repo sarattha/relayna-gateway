@@ -114,6 +114,44 @@ service credential, and keep the provider enabled.
 What to check: after saving, the provider row should show `enabled` and
 `configured`. The portal should never show the credential value again.
 
+#### LiteLLM custom header and virtual-key mapping
+
+LiteLLM provider rows also control how Gateway authenticates to LiteLLM. Leave
+`Credential mode` as `authorization_bearer` when LiteLLM expects
+`Authorization: Bearer <key>`. Choose `custom_header` when production LiteLLM
+or an API gateway in front of LiteLLM expects a different header, such as
+`x-litellm-api-key`.
+
+![LiteLLM provider header and key mapping controls](assets/screenshots/litellm-credential-mapping/01-provider-header-and-key-mapping.png)
+
+When `custom_header` is selected, enter the header name in `Custom header` and
+save the provider row. Gateway sends only that configured header to LiteLLM for
+the selected internal credential; it does not send `Authorization` in
+custom-header mode. Header names are validated as HTTP header names and reject
+sensitive or conflicting names such as `host`, `content-length`,
+`authorization`, Relayna key headers, Apigee proof headers, and proxy auth
+headers.
+
+Use `LiteLLM credential mappings` when different Relayna keys or projects
+should use different LiteLLM virtual keys:
+
+1. Choose `key` scope to map one Relayna virtual key to one LiteLLM virtual
+   key, or choose `project` scope to map all Relayna keys in a project to one
+   LiteLLM virtual key.
+2. Select the target key or project.
+3. Paste the LiteLLM virtual key into the write-only `LiteLLM virtual key`
+   field.
+4. Keep `Enabled` checked and save the mapping.
+
+![LiteLLM project mapping control](assets/screenshots/litellm-credential-mapping/02-project-mapping-control.png)
+
+Runtime precedence is key mapping, then project mapping, then the active
+LiteLLM provider default credential. If no active provider config exists,
+Gateway uses the `LITELLM_SERVICE_KEY` startup fallback. Disabled mappings are
+skipped and fall back to the next level. The portal shows mapping state and
+whether a credential is configured, but never renders LiteLLM virtual-key
+secret values after save.
+
 ### 5. Create or import services
 
 Open Services. Use `Import from Studio` when Studio is connected, or create a

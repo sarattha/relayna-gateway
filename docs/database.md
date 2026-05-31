@@ -181,9 +181,24 @@ services.
 | --- | --- |
 | Primary key | `id uuid` generated with `gen_random_uuid()`. |
 | Unique keys | `(provider, name)` is unique. Only one enabled `litellm` config is allowed. |
-| Checks | `provider` must be `litellm` or `internal-service`; `name` must be non-empty and at most 120 characters; `base_url` must start with `http://` or `https://`. |
+| Checks | `provider` must be `litellm` or `internal-service`; `name` must be non-empty and at most 120 characters; `base_url` must start with `http://` or `https://`; LiteLLM credential header mode is `authorization_bearer` or `custom_header`. |
+| Header fields | `credential_header_mode` and `credential_header_name` control whether LiteLLM receives `Authorization: Bearer <key>` or a custom credential header such as `x-litellm-api-key`. |
 | Secret fields | `credential_secret` stores the internal upstream credential and is treated as write-only by API responses. |
 | Required data | Needed when operators configure runtime provider settings through the admin API or portal instead of environment fallback. |
+
+### `litellm_credential_mappings`
+
+`litellm_credential_mappings` stores write-only LiteLLM virtual keys scoped to
+a Relayna key or project.
+
+| Key | Details |
+| --- | --- |
+| Primary key | `id uuid` generated with `gen_random_uuid()`. |
+| Scope fields | `scope` is `key` or `project`; `key_id` or `project_id` stores the selected target. Exactly one target must be present. |
+| Unique keys | Partial unique indexes allow one mapping per key and one mapping per project. |
+| Secret fields | `credential_secret` stores the LiteLLM virtual key and is treated as write-only by API responses and audit snapshots. |
+| Lifecycle fields | `enabled`, `created_at`, and `updated_at`. Disabled mappings are skipped during credential resolution. |
+| Runtime precedence | Gateway resolves LiteLLM credentials by key mapping, then project mapping, then active provider default credential, then the `LITELLM_SERVICE_KEY` startup fallback when no active provider config overrides it. |
 
 ### `openai_route_settings`
 
@@ -194,8 +209,8 @@ routes.
 | --- | --- |
 | Primary key | `route_id text`. |
 | Unique keys | `route` is unique. |
-| Checks | `route_id` is limited to `chat-completions` and `responses`; `route` is limited to `/v1/chat/completions` and `/v1/responses`. |
-| Seed data | Migrations insert both supported routes as enabled. |
+| Checks | `route_id` is limited to `chat-completions`, `responses`, and `embeddings`; `route` is limited to `/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings`. |
+| Seed data | Migrations insert supported routes as enabled. |
 | Required data | These rows must exist for operators to toggle global OpenAI-compatible route availability. |
 
 ### `studio_connection_settings`
