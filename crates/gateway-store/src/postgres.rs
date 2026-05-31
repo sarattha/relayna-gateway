@@ -13,7 +13,10 @@ use gateway_core::{
     projects::{ProjectCreateRequest, ProjectPatchRequest, ProjectResponse},
     provider_config_kind_str,
     provider_configs::{
-        AdminProviderConfigStore, ProviderConfigCreateRequest, ProviderConfigLookup,
+        credential_header_mode_str, credential_mapping_scope_str, parse_credential_header_mode,
+        parse_credential_mapping_scope, AdminProviderConfigStore, LiteLlmCredentialMappingResponse,
+        LiteLlmCredentialMappingRuntime, LiteLlmCredentialMappingScope,
+        LiteLlmCredentialMappingUpsertRequest, ProviderConfigCreateRequest, ProviderConfigLookup,
         ProviderConfigPatchRequest, ProviderConfigResponse, ProviderRuntimeConfig,
     },
     resolve_effective_policy,
@@ -2635,9 +2638,27 @@ impl AdminProviderConfigStore for PostgresStore {
         request.validate()?;
         let row = sqlx::query(
             r#"
-            INSERT INTO provider_configs (provider, name, base_url, enabled, credential_secret)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            INSERT INTO provider_configs (
+                provider,
+                name,
+                base_url,
+                enabled,
+                credential_secret,
+                credential_header_mode,
+                credential_header_name
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING
+                id,
+                provider,
+                name,
+                base_url,
+                enabled,
+                credential_secret,
+                credential_header_mode,
+                credential_header_name,
+                created_at,
+                updated_at
             "#,
         )
         .bind(provider_config_kind_str(request.provider))
@@ -2645,6 +2666,12 @@ impl AdminProviderConfigStore for PostgresStore {
         .bind(request.base_url.trim())
         .bind(request.enabled)
         .bind(request.credential)
+        .bind(credential_header_mode_str(request.credential_header_mode))
+        .bind(
+            request
+                .credential_header_name
+                .map(|value| value.trim().to_owned()),
+        )
         .fetch_one(&self.pool)
         .await
         .map_err(|error| {
@@ -2660,7 +2687,17 @@ impl AdminProviderConfigStore for PostgresStore {
     async fn list_provider_configs(&self) -> GatewayResult<Vec<ProviderConfigResponse>> {
         sqlx::query(
             r#"
-            SELECT id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            SELECT
+                id,
+                provider,
+                name,
+                base_url,
+                enabled,
+                credential_secret,
+                credential_header_mode,
+                credential_header_name,
+                created_at,
+                updated_at
             FROM provider_configs
             ORDER BY provider ASC, name ASC
             "#,
@@ -2681,7 +2718,17 @@ impl AdminProviderConfigStore for PostgresStore {
     ) -> GatewayResult<Option<ProviderConfigResponse>> {
         sqlx::query(
             r#"
-            SELECT id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            SELECT
+                id,
+                provider,
+                name,
+                base_url,
+                enabled,
+                credential_secret,
+                credential_header_mode,
+                credential_header_name,
+                created_at,
+                updated_at
             FROM provider_configs
             WHERE id = $1
             "#,
@@ -2704,7 +2751,17 @@ impl AdminProviderConfigStore for PostgresStore {
         patch.validate()?;
         let Some(row) = sqlx::query(
             r#"
-            SELECT id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            SELECT
+                id,
+                provider,
+                name,
+                base_url,
+                enabled,
+                credential_secret,
+                credential_header_mode,
+                credential_header_name,
+                created_at,
+                updated_at
             FROM provider_configs
             WHERE id = $1
             "#,
@@ -2726,6 +2783,13 @@ impl AdminProviderConfigStore for PostgresStore {
         if let Some(enabled) = patch.enabled {
             response.enabled = enabled;
         }
+        if let Some(mode) = patch.credential_header_mode {
+            response.credential_header_mode = mode;
+        }
+        if let Some(header) = patch.credential_header_name {
+            response.credential_header_name = header.map(|value| value.trim().to_owned());
+        }
+        response.validate_header_settings()?;
         let credential_secret: Option<Option<String>> = patch.credential;
 
         sqlx::query(
@@ -2735,9 +2799,21 @@ impl AdminProviderConfigStore for PostgresStore {
                 base_url = $3,
                 enabled = $4,
                 credential_secret = CASE WHEN $5::boolean THEN $6 ELSE credential_secret END,
+                credential_header_mode = $7,
+                credential_header_name = $8,
                 updated_at = now()
             WHERE id = $1
-            RETURNING id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            RETURNING
+                id,
+                provider,
+                name,
+                base_url,
+                enabled,
+                credential_secret,
+                credential_header_mode,
+                credential_header_name,
+                created_at,
+                updated_at
             "#,
         )
         .bind(provider_id)
@@ -2746,9 +2822,14 @@ impl AdminProviderConfigStore for PostgresStore {
         .bind(response.enabled)
         .bind(credential_secret.is_some())
         .bind(credential_secret.flatten())
+        .bind(credential_header_mode_str(response.credential_header_mode))
+        .bind(&response.credential_header_name)
         .fetch_optional(&self.pool)
         .await
-        .map(|row| row.map(|row| provider_config_response_from_row(&row)).transpose())
+        .map(|row| {
+            row.map(|row| provider_config_response_from_row(&row))
+                .transpose()
+        })
         .map_err(|error| {
             if is_unique_violation(&error) {
                 GatewayError::DuplicateProviderConfig
@@ -2777,14 +2858,27 @@ impl AdminProviderConfigStore for PostgresStore {
             UPDATE provider_configs
             SET enabled = $2, updated_at = now()
             WHERE id = $1
-            RETURNING id, provider, name, base_url, enabled, credential_secret, created_at, updated_at
+            RETURNING
+                id,
+                provider,
+                name,
+                base_url,
+                enabled,
+                credential_secret,
+                credential_header_mode,
+                credential_header_name,
+                created_at,
+                updated_at
             "#,
         )
         .bind(provider_id)
         .bind(enabled)
         .fetch_optional(&self.pool)
         .await
-        .map(|row| row.map(|row| provider_config_response_from_row(&row)).transpose())
+        .map(|row| {
+            row.map(|row| provider_config_response_from_row(&row))
+                .transpose()
+        })
         .map_err(|error| {
             if is_unique_violation(&error) {
                 GatewayError::DuplicateProviderConfig
@@ -2793,32 +2887,208 @@ impl AdminProviderConfigStore for PostgresStore {
             }
         })?
     }
+
+    async fn upsert_litellm_credential_mapping(
+        &self,
+        request: LiteLlmCredentialMappingUpsertRequest,
+    ) -> GatewayResult<LiteLlmCredentialMappingResponse> {
+        let scope = credential_mapping_scope_str(request.scope);
+        let credential = request.credential.map(|value| value.trim().to_owned());
+        if credential.as_deref().is_some_and(str::is_empty) {
+            return Err(GatewayError::InvalidProviderConfigPayload);
+        }
+
+        let (key_id, project_id) = match request.scope {
+            LiteLlmCredentialMappingScope::Key => (Some(request.target_id), None),
+            LiteLlmCredentialMappingScope::Project => (None, Some(request.target_id)),
+        };
+
+        let conflict_clause = match request.scope {
+            LiteLlmCredentialMappingScope::Key => "ON CONFLICT (key_id) WHERE scope = 'key'",
+            LiteLlmCredentialMappingScope::Project => {
+                "ON CONFLICT (project_id) WHERE scope = 'project'"
+            }
+        };
+        let query = format!(
+            r#"
+            INSERT INTO litellm_credential_mappings (
+                scope,
+                key_id,
+                project_id,
+                enabled,
+                credential_secret
+            )
+            VALUES ($1, $2, $3, $4, $5)
+            {conflict_clause}
+            DO UPDATE SET
+                enabled = EXCLUDED.enabled,
+                credential_secret = COALESCE(EXCLUDED.credential_secret, litellm_credential_mappings.credential_secret),
+                updated_at = now()
+            RETURNING
+                id,
+                scope,
+                key_id,
+                project_id,
+                enabled,
+                credential_secret,
+                created_at,
+                updated_at
+            "#
+        );
+        let row = sqlx::query(&query)
+            .bind(scope)
+            .bind(key_id)
+            .bind(project_id)
+            .bind(request.enabled)
+            .bind(credential)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|error| {
+                if is_foreign_key_violation(&error) {
+                    GatewayError::InvalidProviderConfigPayload
+                } else {
+                    GatewayError::StoreUnavailable
+                }
+            })?;
+        litellm_mapping_response_from_row(&self.pool, &row).await
+    }
+
+    async fn list_litellm_credential_mappings(
+        &self,
+    ) -> GatewayResult<Vec<LiteLlmCredentialMappingResponse>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                id,
+                scope,
+                key_id,
+                project_id,
+                enabled,
+                credential_secret,
+                created_at,
+                updated_at
+            FROM litellm_credential_mappings
+            ORDER BY scope ASC, updated_at DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        let mut responses = Vec::with_capacity(rows.len());
+        for row in rows {
+            responses.push(litellm_mapping_response_from_row(&self.pool, &row).await?);
+        }
+        Ok(responses)
+    }
+
+    async fn delete_litellm_credential_mapping(&self, mapping_id: Uuid) -> GatewayResult<bool> {
+        sqlx::query("DELETE FROM litellm_credential_mappings WHERE id = $1")
+            .bind(mapping_id)
+            .execute(&self.pool)
+            .await
+            .map(|result| result.rows_affected() > 0)
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn set_litellm_credential_mapping_enabled(
+        &self,
+        mapping_id: Uuid,
+        enabled: bool,
+    ) -> GatewayResult<Option<LiteLlmCredentialMappingResponse>> {
+        let row = sqlx::query(
+            r#"
+            UPDATE litellm_credential_mappings
+            SET enabled = $2, updated_at = now()
+            WHERE id = $1
+            RETURNING
+                id,
+                scope,
+                key_id,
+                project_id,
+                enabled,
+                credential_secret,
+                created_at,
+                updated_at
+            "#,
+        )
+        .bind(mapping_id)
+        .bind(enabled)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        match row {
+            Some(row) => Ok(Some(
+                litellm_mapping_response_from_row(&self.pool, &row).await?,
+            )),
+            None => Ok(None),
+        }
+    }
 }
 
 #[async_trait]
 impl ProviderConfigLookup for PostgresStore {
     async fn active_litellm_config(&self) -> GatewayResult<Option<ProviderRuntimeConfig>> {
-        sqlx::query_as::<_, (String, String)>(
+        let row = sqlx::query(
             r#"
-            SELECT base_url, credential_secret
+            SELECT base_url, credential_secret, credential_header_mode, credential_header_name
             FROM provider_configs
             WHERE provider = 'litellm'
               AND enabled
-              AND credential_secret IS NOT NULL
             ORDER BY updated_at DESC
             LIMIT 1
             "#,
         )
         .fetch_optional(&self.pool)
         .await
-        .map(|row| {
-            row.map(|(base_url, credential)| ProviderRuntimeConfig {
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        match row {
+            Some(row) => Ok(Some(ProviderRuntimeConfig {
                 provider: Provider::LiteLlm,
-                base_url,
-                credential,
-            })
-        })
-        .map_err(|_| GatewayError::StoreUnavailable)
+                base_url: row
+                    .try_get("base_url")
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
+                credential: row.try_get("credential_secret").ok().flatten(),
+                credential_header_mode: parse_credential_header_mode(
+                    row.try_get::<String, _>("credential_header_mode")
+                        .map_err(|_| GatewayError::StoreUnavailable)?
+                        .as_str(),
+                )?,
+                credential_header_name: row.try_get("credential_header_name").ok().flatten(),
+            })),
+            None => Ok(None),
+        }
+    }
+
+    async fn litellm_credential_mapping_for_context(
+        &self,
+        key_id: Uuid,
+        project_id: Option<Uuid>,
+    ) -> GatewayResult<Option<LiteLlmCredentialMappingRuntime>> {
+        let row = sqlx::query(
+            r#"
+            SELECT credential_secret
+            FROM litellm_credential_mappings
+            WHERE enabled
+              AND credential_secret IS NOT NULL
+              AND (
+                  (scope = 'key' AND key_id = $1)
+                  OR (scope = 'project' AND project_id = $2)
+              )
+            ORDER BY CASE scope WHEN 'key' THEN 1 WHEN 'project' THEN 2 ELSE 99 END
+            LIMIT 1
+            "#,
+        )
+        .bind(key_id)
+        .bind(project_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(row.and_then(|row| {
+            row.try_get::<Option<String>, _>("credential_secret")
+                .ok()
+                .flatten()
+                .map(|credential| LiteLlmCredentialMappingRuntime { credential })
+        }))
     }
 }
 
@@ -4613,6 +4883,9 @@ fn provider_config_response_from_row(
     let provider: String = row
         .try_get("provider")
         .map_err(|_| GatewayError::StoreUnavailable)?;
+    let credential_header_mode: String = row
+        .try_get("credential_header_mode")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
     let credential_secret: Option<String> = row
         .try_get("credential_secret")
         .map_err(|_| GatewayError::StoreUnavailable)?;
@@ -4627,6 +4900,73 @@ fn provider_config_response_from_row(
         base_url: row
             .try_get("base_url")
             .map_err(|_| GatewayError::StoreUnavailable)?,
+        enabled: row
+            .try_get("enabled")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        credential_configured: credential_secret
+            .as_deref()
+            .is_some_and(|value| !value.is_empty()),
+        credential_header_mode: parse_credential_header_mode(&credential_header_mode)?,
+        credential_header_name: row
+            .try_get("credential_header_name")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        created_at: row
+            .try_get("created_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
+async fn litellm_mapping_response_from_row(
+    pool: &PgPool,
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<LiteLlmCredentialMappingResponse> {
+    let scope_value: String = row
+        .try_get("scope")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let scope = parse_credential_mapping_scope(&scope_value)?;
+    let key_id: Option<Uuid> = row
+        .try_get("key_id")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let project_id: Option<Uuid> = row
+        .try_get("project_id")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let target_id = match scope {
+        LiteLlmCredentialMappingScope::Key => {
+            key_id.ok_or(GatewayError::InvalidProviderConfigPayload)?
+        }
+        LiteLlmCredentialMappingScope::Project => {
+            project_id.ok_or(GatewayError::InvalidProviderConfigPayload)?
+        }
+    };
+    let target_label = match scope {
+        LiteLlmCredentialMappingScope::Key => {
+            sqlx::query_scalar::<_, String>("SELECT key_prefix FROM api_keys WHERE id = $1")
+                .bind(target_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|_| GatewayError::StoreUnavailable)?
+        }
+        LiteLlmCredentialMappingScope::Project => {
+            sqlx::query_scalar::<_, String>("SELECT name FROM projects WHERE id = $1")
+                .bind(target_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|_| GatewayError::StoreUnavailable)?
+        }
+    };
+    let credential_secret: Option<String> = row
+        .try_get("credential_secret")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    Ok(LiteLlmCredentialMappingResponse {
+        id: row
+            .try_get("id")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        scope,
+        target_id,
+        target_label,
         enabled: row
             .try_get("enabled")
             .map_err(|_| GatewayError::StoreUnavailable)?,

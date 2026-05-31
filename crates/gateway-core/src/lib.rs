@@ -72,7 +72,11 @@ pub use projects::{
     ProjectResponse,
 };
 pub use provider_configs::{
-    parse_provider_config_kind, provider_config_kind_str, AdminProviderConfigStore,
+    credential_header_mode_str, credential_mapping_scope_str, parse_credential_header_mode,
+    parse_credential_mapping_scope, parse_provider_config_kind, provider_config_kind_str,
+    validate_litellm_credential_header_name, AdminProviderConfigStore, CredentialHeaderMode,
+    LiteLlmCredentialMappingResponse, LiteLlmCredentialMappingRuntime,
+    LiteLlmCredentialMappingScope, LiteLlmCredentialMappingUpsertRequest,
     ProviderConfigCreateRequest, ProviderConfigKind, ProviderConfigLookup,
     ProviderConfigPatchRequest, ProviderConfigResponse, ProviderRuntimeConfig,
 };

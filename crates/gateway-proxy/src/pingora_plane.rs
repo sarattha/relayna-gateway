@@ -12,16 +12,16 @@ use gateway_core::{
     guardrail_executor_for_definitions, is_retry_safe_status, redact_pii_text,
     resolve_guardrail_plan, route_pattern_wildcard_suffix, service_wildcard_suffix,
     strip_client_guardrails, validate_relayna_key_header_name, verify_apigee_trusted_identity,
-    ApigeeTrustedHeaderConfig, AuthenticatedKey, BudgetDecision, BudgetStore, EntraAuthConfig,
-    EntraIdentityContext, GatewayAuthRuntimeConfig, GatewayAuthRuntimeSnapshot, GatewayError,
-    GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent, GuardrailMode,
-    GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet, GuardrailStore,
-    KeyPolicy, OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
-    ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route, RouteMatch,
-    ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent, UsageRecorder,
-    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    ApigeeTrustedHeaderConfig, AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
+    EntraAuthConfig, EntraIdentityContext, GatewayAuthRuntimeConfig, GatewayAuthRuntimeSnapshot,
+    GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent,
+    GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet,
+    GuardrailStore, KeyPolicy, OpenAiRouteSettingsLookup, PolicyLookup, Provider,
+    ProviderConfigLookup, ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route,
+    RouteMatch, ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent,
+    UsageRecorder, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
-use http::Uri;
+use http::{header::HeaderName, Uri};
 use pingora_core::{
     upstreams::peer::HttpPeer, Error as PingoraError, ErrorSource, ErrorType,
     Result as PingoraResult,
@@ -53,6 +53,8 @@ pub struct PingoraUpstreamConfig {
     pub tls: bool,
     pub sni: String,
     pub service_key: String,
+    pub credential_header_mode: CredentialHeaderMode,
+    pub credential_header_name: Option<String>,
 }
 
 impl PingoraLiteLlmConfig {
@@ -139,7 +141,22 @@ impl PingoraUpstreamConfig {
             port,
             tls,
             service_key: service_key.into(),
+            credential_header_mode: CredentialHeaderMode::AuthorizationBearer,
+            credential_header_name: None,
         })
+    }
+
+    fn with_litellm_credential_header(
+        mut self,
+        mode: CredentialHeaderMode,
+        header_name: Option<String>,
+    ) -> gateway_core::GatewayResult<Self> {
+        if mode == CredentialHeaderMode::CustomHeader && header_name.as_deref().is_none() {
+            return Err(GatewayError::InvalidConfiguration);
+        }
+        self.credential_header_mode = mode;
+        self.credential_header_name = header_name.map(|value| value.trim().to_owned());
+        Ok(self)
     }
 
     fn host_header_value(&self) -> String {
@@ -491,25 +508,59 @@ where
                     ctx.service_upstream = Some(upstream);
                 }
                 if matched.provider == Provider::LiteLlm {
-                    match self.store.active_litellm_config().await {
-                        Ok(Some(config)) => {
-                            let upstream = match PingoraUpstreamConfig::from_base_url(
-                                &config.base_url,
-                                config.credential,
-                            ) {
-                                Ok(upstream) => upstream,
-                                Err(error) => {
-                                    respond_error(session, error, &ctx.request_id).await?;
-                                    return Ok(true);
-                                }
-                            };
-                            ctx.litellm_upstream = Some(upstream);
-                        }
-                        Ok(None) => {}
+                    let litellm_config = match self.store.active_litellm_config().await {
+                        Ok(config) => config,
                         Err(error) => {
                             respond_error(session, error, &ctx.request_id).await?;
                             return Ok(true);
                         }
+                    };
+                    let mapped_credential = match self
+                        .store
+                        .litellm_credential_mapping_for_context(key.key_id, key.project_id)
+                        .await
+                    {
+                        Ok(mapping) => mapping.map(|mapping| mapping.credential),
+                        Err(error) => {
+                            respond_error(session, error, &ctx.request_id).await?;
+                            return Ok(true);
+                        }
+                    };
+                    let has_mapped_credential = mapped_credential.is_some();
+                    let selected_credential = mapped_credential
+                        .or_else(|| {
+                            litellm_config
+                                .as_ref()
+                                .and_then(|config| config.credential.clone())
+                        })
+                        .unwrap_or_else(|| self.config.litellm.service_key.clone());
+                    if selected_credential.trim().is_empty() {
+                        respond_error(session, GatewayError::InvalidConfiguration, &ctx.request_id)
+                            .await?;
+                        return Ok(true);
+                    }
+                    if let Some(config) = litellm_config {
+                        let upstream = match PingoraUpstreamConfig::from_base_url(
+                            &config.base_url,
+                            selected_credential,
+                        )
+                        .and_then(|upstream| {
+                            upstream.with_litellm_credential_header(
+                                config.credential_header_mode,
+                                config.credential_header_name,
+                            )
+                        }) {
+                            Ok(upstream) => upstream,
+                            Err(error) => {
+                                respond_error(session, error, &ctx.request_id).await?;
+                                return Ok(true);
+                            }
+                        };
+                        ctx.litellm_upstream = Some(upstream);
+                    } else if has_mapped_credential {
+                        let mut upstream = self.config.litellm.clone();
+                        upstream.service_key = selected_credential;
+                        ctx.litellm_upstream = Some(upstream);
                     }
                 }
                 ctx.route_match = Some(matched);
@@ -1405,8 +1456,25 @@ fn prepare_upstream_authority_and_credentials(
     upstream_request.remove_header("x-aih-api-key");
     upstream_request.remove_header("x-api-key");
     upstream_request.remove_header("x-relayna-worker-token");
+    if let Some(header_name) = upstream.credential_header_name.as_deref() {
+        upstream_request.remove_header(header_name);
+    }
     upstream_request.insert_header("host", upstream.host_header_value())?;
-    upstream_request.insert_header("authorization", format!("Bearer {}", upstream.service_key))?;
+    match upstream.credential_header_mode {
+        CredentialHeaderMode::AuthorizationBearer => {
+            upstream_request
+                .insert_header("authorization", format!("Bearer {}", upstream.service_key))?;
+        }
+        CredentialHeaderMode::CustomHeader => {
+            let header_name = upstream
+                .credential_header_name
+                .as_deref()
+                .ok_or_else(|| pingora_core::Error::new(ErrorType::InternalError))?;
+            let header_name = HeaderName::from_bytes(header_name.as_bytes())
+                .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+            upstream_request.insert_header(header_name, upstream.service_key.clone())?;
+        }
+    }
     Ok(())
 }
 
@@ -1951,6 +2019,41 @@ mod tests {
         assert!(!request.headers.contains_key("x-apigee-entra-signature"));
         assert!(!request.headers.contains_key("x-api-key"));
         assert!(!request.headers.contains_key("x-relayna-worker-token"));
+    }
+
+    #[test]
+    fn upstream_header_preparation_can_use_custom_litellm_header() {
+        let upstream =
+            PingoraUpstreamConfig::from_base_url("https://litellm.internal", "vk-litellm")
+                .expect("service config")
+                .with_litellm_credential_header(
+                    CredentialHeaderMode::CustomHeader,
+                    Some("x-litellm-api-key".to_owned()),
+                )
+                .expect("custom header");
+        let mut request = RequestHeader::build("POST", b"/v1/responses", None).expect("request");
+        request
+            .insert_header("authorization", "Bearer rk_live_client_key")
+            .expect("client authorization");
+        request
+            .insert_header("x-api-key", "client-api-key")
+            .expect("client api key");
+        request
+            .insert_header("x-litellm-api-key", "client-supplied-litellm-key")
+            .expect("client litellm key");
+
+        prepare_upstream_authority_and_credentials(&mut request, &upstream, Some("x-relayna-key"))
+            .expect("prepared upstream headers");
+
+        assert!(!request.headers.contains_key("authorization"));
+        assert!(!request.headers.contains_key("x-api-key"));
+        assert_eq!(
+            request
+                .headers
+                .get("x-litellm-api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("vk-litellm")
+        );
     }
 
     #[test]

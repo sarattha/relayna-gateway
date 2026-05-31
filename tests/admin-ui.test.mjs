@@ -48,6 +48,7 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin-ui/admin/tasks",
     "/admin-ui/admin/projects",
     "/admin-ui/admin/providers",
+    "/admin-ui/admin/providers/litellm-credentials",
     "/admin-ui/admin/openai-routes",
     "/admin-ui/admin/keys",
     "/admin-ui/admin/policy/simulate",
@@ -165,6 +166,20 @@ test("admin portal uses structured project and provider controls", () => {
   assert.match(js, /service_names: form\.getAll\("service_names"\)/);
   assert.match(js, /function providerPolicySelect\(selected = \[\], neutral = false\)/);
   assert.match(js, /name="allowed_providers" type="checkbox"/);
+});
+
+test("providers view configures LiteLLM credential headers and mappings without rendering secrets", () => {
+  assert.match(js, /credential_header_mode/);
+  assert.match(js, /authorization_bearer/);
+  assert.match(js, /custom_header/);
+  assert.match(js, /x-litellm-api-key/);
+  assert.match(js, /async function updateProviderAuthSettings\(event\)/);
+  assert.match(js, /async function saveLiteLlmCredentialMapping\(event\)/);
+  assert.match(js, /async function liteLlmCredentialMappingAction\(event\)/);
+  assert.match(js, /\/admin\/providers\/litellm-credentials/);
+  assert.match(js, /credential_configured/);
+  assert.match(js, /name="credential" type="password"/);
+  assert.doesNotMatch(js, /row\.credential_secret/);
 });
 
 test("virtual keys use explicit owner and service selection controls", () => {

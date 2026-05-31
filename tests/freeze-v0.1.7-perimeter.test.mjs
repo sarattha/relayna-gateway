@@ -88,6 +88,10 @@ test("control-plane public route inventory is pinned", () => {
     "/admin-ui/admin/provider-health/check",
     "/admin-ui/admin/provider-health/state",
     "/admin-ui/admin/providers",
+    "/admin-ui/admin/providers/litellm-credentials",
+    "/admin-ui/admin/providers/litellm-credentials/{mapping_id}",
+    "/admin-ui/admin/providers/litellm-credentials/{mapping_id}/disable",
+    "/admin-ui/admin/providers/litellm-credentials/{mapping_id}/enable",
     "/admin-ui/admin/providers/{provider_id}",
     "/admin-ui/admin/providers/{provider_id}/disable",
     "/admin-ui/admin/providers/{provider_id}/enable",
@@ -302,6 +306,7 @@ test("PostgreSQL migration inventory is pinned", () => {
     "20260525000100_service_health_check_paths.sql",
     "20260530000100_litellm_embeddings_route.sql",
     "20260530000200_gateway_auth_settings.sql",
+    "20260531000100_litellm_credential_mapping.sql",
   ]);
 });
 
@@ -332,6 +337,7 @@ test("admin portal static test covers all control endpoints it depends on", () =
     "/admin-ui/admin/provider-health/check",
     "/admin-ui/admin/provider-health/state",
     "/admin-ui/admin/providers",
+    "/admin-ui/admin/providers/litellm-credentials",
     "/admin-ui/admin/services",
     "/admin-ui/admin/services/import",
     "/admin-ui/admin/services/import/activate",
