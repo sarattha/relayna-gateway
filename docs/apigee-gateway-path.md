@@ -289,7 +289,7 @@ cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode
 Full Gateway verification:
 
 ```bash
-node tests/freeze-v0.1.7-perimeter.test.mjs
+node tests/freeze-v0.1.8-perimeter.test.mjs
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
