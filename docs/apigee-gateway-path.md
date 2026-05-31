@@ -1,6 +1,6 @@
 # Apigee Gateway Path
 
-Relayna Gateway `0.1.7` supports two Apigee front-door patterns for provider
+Relayna Gateway releases `0.1.7` and later support two Apigee front-door patterns for provider
 traffic:
 
 1. Apigee verifies or forwards the original Entra JWT, and Relayna Gateway

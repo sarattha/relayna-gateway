@@ -46,12 +46,15 @@ const changelog = read("CHANGELOG.md");
 const releaseWorkflow = read(".github/workflows/release.yml");
 const freezeVersion = "0.1.7";
 
-test("v0.1.7 freeze baseline matches the current release version", () => {
+test("v0.1.7 freeze baseline remains pinned while current release metadata is valid", () => {
   const currentVersion = cargoToml.match(
     /\[workspace\.package\][\s\S]*?version = "([^"]+)"/,
   )?.[1];
   assert.match(currentVersion, /^\d+\.\d+\.\d+$/);
-  assert.equal(currentVersion, freezeVersion);
+  assert.ok(
+    currentVersion.localeCompare(freezeVersion, undefined, { numeric: true }) >= 0,
+    `expected current version ${currentVersion} to be at or after freeze baseline ${freezeVersion}`,
+  );
   assert.match(changelog, new RegExp(`^## ${currentVersion} -`, "m"));
 });
 

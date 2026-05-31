@@ -4,13 +4,13 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
-Version `0.1.7` is the current release target and production freeze baseline
-for Admin UI 2.0, scoped operator governance, policy
+Version `0.1.8` is the current release target. The `v0.1.7` production freeze
+baseline remains pinned for Admin UI 2.0, scoped operator governance, policy
 simulation and inherited layers, provider intelligence, richer usage analytics,
-and supply-chain hardening. Release `0.1.7` includes LiteLLM `/v1/embeddings`
-passthrough, opt-in Microsoft Entra ID front-door authorization and Apigee
-gateway patterns for provider traffic, plus Admin portal controls for those
-front-door auth settings.
+and supply-chain hardening. Release `0.1.8` adds LiteLLM custom credential
+header controls and key/project LiteLLM virtual-key mapping on top of the
+existing LiteLLM `/v1/embeddings`, Microsoft Entra ID, and Apigee front-door
+provider traffic support.
 See `docs/current-features.md`, `docs/entra-id-auth.md`, and
 `docs/apigee-gateway-path.md` for the public feature highlights.
 
@@ -93,7 +93,7 @@ simulation, policy layers, provider health state, debug bundles, service import
 preview/activation/version/rollback, and expanded usage analytics. These are
 documented in `docs/current-features.md`.
 
-Release `0.1.7` supports LiteLLM passthrough for `/v1/chat/completions`,
+Release `0.1.8` supports LiteLLM passthrough for `/v1/chat/completions`,
 `/v1/responses`, and `/v1/embeddings`. It also includes opt-in Microsoft Entra
 ID front-door authorization for provider traffic. When enabled, clients send
 the Entra access token in `Authorization: Bearer <jwt>` and the Relayna virtual
@@ -123,7 +123,7 @@ curl http://127.0.0.1:8000/studio/gateway/services
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.1.7 .
+docker build -t relayna-gateway:0.1.8 .
 ```
 
 Run it:
@@ -137,7 +137,7 @@ docker run --rm \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
   -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.1.7
+  relayna-gateway:0.1.8
 ```
 
 `GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
@@ -147,7 +147,7 @@ Admin portal instead.
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.7`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.8`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Budgets, TPM, and Usage Exports
 

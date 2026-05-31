@@ -32,8 +32,9 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - [Redis Keys](redis.md) documents rate-limit, budget, and reservation keys used in Redis.
 - [Getting Started](getting-started.md) covers local PostgreSQL, Redis, LiteLLM, and gateway startup.
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
-- [Current Feature Highlights](current-features.md) summarizes the `v0.1.7`
-  production freeze feature set, including Admin UI 2.0 screenshots.
+- [Current Feature Highlights](current-features.md) summarizes the `v0.1.8`
+  feature set and the `v0.1.7` production freeze baseline, including Admin UI
+  screenshots.
 - [Entra ID Auth](entra-id-auth.md) explains the opt-in Microsoft Entra ID
   front-door authorization mode for provider traffic.
 - [Apigee Gateway Path](apigee-gateway-path.md) explains the Apigee JWT
