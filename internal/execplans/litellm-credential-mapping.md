@@ -179,6 +179,23 @@ Final verification:
     cargo check --workspace --all-features
     bash .codex/skills/code-change-verification/scripts/run.sh
 
+Real environment validation added a Docker Compose harness under
+`internal/test-reports/litellm-real-passthrough/` with Gateway, PostgreSQL,
+Redis, real `litellm/litellm:latest`, a LiteLLM front-door capture service,
+and a mock OpenAI-compatible provider. The harness configured a LiteLLM
+provider with `credential_header_mode = custom_header` and
+`credential_header_name = x-litellm-api-key`, then exercised
+`/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings`.
+
+Observed precedence:
+
+    sk-litellm-key-vk -> sk-litellm-project-vk -> sk-litellm-provider-default
+
+The front-door capture confirmed Gateway sent `x-litellm-api-key`, did not send
+`Authorization`, and stripped client Relayna/APIH/Apigee/JWT credentials before
+LiteLLM. Browser screenshots captured the Provider UI header controls and
+key/project mapping controls after fixing hidden-form control rendering.
+
 ## Interfaces and Dependencies
 
 New admin-visible concepts:

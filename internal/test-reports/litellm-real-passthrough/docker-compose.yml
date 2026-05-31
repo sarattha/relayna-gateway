@@ -24,14 +24,16 @@ services:
     working_dir: /app
     command: ["node", "server.mjs"]
     environment:
-      PUBLIC_BASE_URL: http://localhost:18182
+      ROLE: mock-provider
+      PUBLIC_BASE_URL: http://localhost:19182
       DOCKER_BASE_URL: http://mock-provider:4000
       GATEWAY_PROXY_URL: http://gateway:8080
       GATEWAY_CONTROL_URL: http://gateway:8081
       GATEWAY_ADMIN_TOKEN: op_live_ci_token1
       APIGEE_TRUSTED_HEADER_SECRET: apigee-litellm-review-secret
+      LITELLM_FRONT_DOOR_URL: http://litellm-front-door:4000
     ports:
-      - "18182:4000"
+      - "19182:4000"
     volumes:
       - ./mock-provider:/app:ro
     healthcheck:
@@ -56,7 +58,7 @@ services:
     environment:
       LITELLM_MASTER_KEY: sk-litellm-review-service-key
     ports:
-      - "18183:4000"
+      - "19183:4000"
     volumes:
       - ./litellm_config.yaml:/app/litellm_config.yaml:ro
     depends_on:
@@ -67,6 +69,26 @@ services:
       interval: 2s
       timeout: 5s
       retries: 60
+
+  litellm-front-door:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["node", "server.mjs"]
+    environment:
+      ROLE: litellm-front-door
+      LITELLM_UPSTREAM_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: sk-litellm-review-service-key
+      ALLOWED_LITELLM_KEYS: sk-litellm-key-vk,sk-litellm-project-vk,sk-litellm-provider-default
+    volumes:
+      - ./mock-provider:/app:ro
+    depends_on:
+      litellm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   gateway:
     build:
@@ -79,7 +101,7 @@ services:
         condition: service_healthy
       mock-provider:
         condition: service_healthy
-      litellm:
+      litellm-front-door:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://relayna_gateway:relayna_gateway@postgres:5432/relayna_gateway
@@ -101,5 +123,5 @@ services:
       APIGEE_TRUSTED_HEADER_ENABLED: "true"
       APIGEE_TRUSTED_HEADER_SECRET: apigee-litellm-review-secret
     ports:
-      - "18180:8080"
-      - "18181:8081"
+      - "19180:8080"
+      - "19181:8081"

@@ -2,11 +2,21 @@ import http from "node:http";
 import crypto from "node:crypto";
 
 const port = 4000;
+const role = process.env.ROLE || "mock-provider";
 const dockerBaseUrl = process.env.DOCKER_BASE_URL || "http://mock-provider:4000";
 const gatewayProxyUrl = process.env.GATEWAY_PROXY_URL || "http://gateway:8080";
 const gatewayControlUrl = process.env.GATEWAY_CONTROL_URL || "http://gateway:8081";
 const adminToken = process.env.GATEWAY_ADMIN_TOKEN;
 const apigeeSecret = process.env.APIGEE_TRUSTED_HEADER_SECRET || "apigee-secret";
+const litellmFrontDoorUrl = process.env.LITELLM_FRONT_DOOR_URL || "http://litellm-front-door:4000";
+const litellmUpstreamUrl = process.env.LITELLM_UPSTREAM_URL || "http://litellm:4000";
+const litellmMasterKey = process.env.LITELLM_MASTER_KEY || "sk-litellm-review-service-key";
+const allowedLiteLlmKeys = new Set(
+  String(process.env.ALLOWED_LITELLM_KEYS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 
 const issuer = `${dockerBaseUrl}/oauth`;
 const tenantId = "relayna-litellm-review-tenant";
@@ -26,7 +36,9 @@ const kid = "relayna-litellm-review-kid";
 
 const state = {
   rawRelaynaKey: null,
+  gatewayData: null,
   providerRequests: [],
+  frontDoorRequests: [],
   results: null,
 };
 
@@ -83,6 +95,25 @@ function captureProviderRequest(req, body) {
     hasClientJwt: headers.authorization?.split(".").length === 3,
     body,
   });
+}
+
+function captureFrontDoorRequest(req, body) {
+  const headers = Object.fromEntries(
+    Object.entries(req.headers).map(([key, value]) => [key.toLowerCase(), String(value)]),
+  );
+  const capture = {
+    path: req.url,
+    method: req.method,
+    authorization: headers.authorization || null,
+    litellmApiKey: headers["x-litellm-api-key"] || null,
+    hasRelaynaKey: "x-relayna-key" in headers,
+    hasAihKey: "x-aih-api-key" in headers,
+    hasApigeeIdentity: "x-apigee-entra-identity" in headers || "x-apigee-entra-signature" in headers,
+    hasClientJwt: headers.authorization?.split(".").length === 3,
+    body,
+  };
+  state.frontDoorRequests.push(capture);
+  return capture;
 }
 
 function jwks() {
@@ -227,8 +258,88 @@ async function setupGatewayData() {
   if (!keyResponse.ok) {
     throw new Error(`create_key_failed:${keyResponse.status}:${await keyResponse.text()}`);
   }
-  const key = await keyResponse.json();
-  state.rawRelaynaKey = key.raw_key;
+  const createdKey = await keyResponse.json();
+  const key = createdKey.key;
+  const providersResponse = await fetch(`${gatewayControlUrl}/admin-ui/admin/providers`, {
+    headers: {
+      authorization: `Bearer ${adminToken}`,
+    },
+  });
+  if (!providersResponse.ok) {
+    throw new Error(`list_providers_failed:${providersResponse.status}:${await providersResponse.text()}`);
+  }
+  const existingProvider = (await providersResponse.json()).find((provider) => provider.provider === "litellm");
+  const providerPayload = {
+    provider: "litellm",
+    name: `LiteLLM Front Door ${Date.now()}`,
+    base_url: litellmFrontDoorUrl,
+    credential: "sk-litellm-provider-default",
+    credential_header_mode: "custom_header",
+    credential_header_name: "x-litellm-api-key",
+    enabled: true,
+  };
+  const providerResponse = await fetch(
+    existingProvider
+      ? `${gatewayControlUrl}/admin-ui/admin/providers/${existingProvider.id}`
+      : `${gatewayControlUrl}/admin-ui/admin/providers`,
+    {
+      method: existingProvider ? "PATCH" : "POST",
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(existingProvider ? {
+        base_url: providerPayload.base_url,
+        credential: providerPayload.credential,
+        credential_header_mode: providerPayload.credential_header_mode,
+        credential_header_name: providerPayload.credential_header_name,
+        enabled: providerPayload.enabled,
+      } : providerPayload),
+    },
+  );
+  if (!providerResponse.ok) {
+    throw new Error(`upsert_litellm_provider_failed:${providerResponse.status}:${await providerResponse.text()}`);
+  }
+  const projectMappingResponse = await fetch(`${gatewayControlUrl}/admin-ui/admin/providers/litellm-credentials`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${adminToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      scope: "project",
+      target_id: project.id,
+      credential: "sk-litellm-project-vk",
+      enabled: true,
+    }),
+  });
+  if (!projectMappingResponse.ok) {
+    throw new Error(`create_project_mapping_failed:${projectMappingResponse.status}:${await projectMappingResponse.text()}`);
+  }
+  const keyMappingResponse = await fetch(`${gatewayControlUrl}/admin-ui/admin/providers/litellm-credentials`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${adminToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      scope: "key",
+      target_id: key.id,
+      credential: "sk-litellm-key-vk",
+      enabled: true,
+    }),
+  });
+  if (!keyMappingResponse.ok) {
+    throw new Error(`create_key_mapping_failed:${keyMappingResponse.status}:${await keyMappingResponse.text()}`);
+  }
+  state.gatewayData = {
+    project,
+    key,
+    provider: await providerResponse.json(),
+    projectMapping: await projectMappingResponse.json(),
+    keyMapping: await keyMappingResponse.json(),
+  };
+  state.rawRelaynaKey = createdKey.raw_key;
   return state.rawRelaynaKey;
 }
 
@@ -288,6 +399,7 @@ function pass(condition, details = {}) {
 
 async function runTests() {
   state.providerRequests = [];
+  state.frontDoorRequests = [];
   const relaynaKey = await setupGatewayData();
   const validToken = signJwt(tokenClaims());
   const chatPayload = {
@@ -309,20 +421,36 @@ async function runTests() {
   };
 
   const chat = await gatewayCall("/v1/chat/completions", validToken, relaynaKey, chatPayload);
+  await fetch(`${gatewayControlUrl}/admin-ui/admin/providers/litellm-credentials/${state.gatewayData.keyMapping.id}/disable`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${adminToken}`, "content-type": "application/json" },
+    body: "{}",
+  });
   const responses = await gatewayCall("/v1/responses", validToken, relaynaKey, responsePayload);
+  await fetch(`${gatewayControlUrl}/admin-ui/admin/providers/litellm-credentials/${state.gatewayData.projectMapping.id}/disable`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${adminToken}`, "content-type": "application/json" },
+    body: "{}",
+  });
   const embeddings = await gatewayCall("/v1/embeddings", validToken, relaynaKey, embeddingPayload);
   const chatLiteral = await gatewayCall("/v1/chatcompletion", validToken, relaynaKey, chatPayload);
   const responseLiteral = await gatewayCall("/v1/response", validToken, relaynaKey, responsePayload);
   const embeddingLiteral = await gatewayCall("/v1/embedding", validToken, relaynaKey, embeddingPayload);
   const rerank = await gatewayCall("/v1/rerank", validToken, relaynaKey, rerankPayload);
   const apigeeChat = await apigeeTrustedCall("/v1/chat/completions", validToken, relaynaKey, chatPayload);
+  const frontDoorCapturesResponse = await fetch(`${litellmFrontDoorUrl}/front-door-captures`);
+  const frontDoorRequests = await frontDoorCapturesResponse.json();
 
   const upstreamCredentialLeak = state.providerRequests.some(
     (request) => request.hasRelaynaKey || request.hasAihKey || request.hasApigeeIdentity || request.hasClientJwt,
   );
+  const litellmCredentialLeak = frontDoorRequests.some(
+    (request) => request.authorization || request.hasRelaynaKey || request.hasAihKey || request.hasApigeeIdentity || request.hasClientJwt,
+  );
   const gatewayForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/chat/completions"));
   const responseForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/responses"));
   const embeddingsForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/embeddings"));
+  const customHeaderCredentials = frontDoorRequests.map((request) => request.litellmApiKey);
 
   const checks = {
     canonical_chat_completions_passes_to_litellm: pass(chat.status === 200 && gatewayForwardedToLiteLlm, chat),
@@ -333,6 +461,16 @@ async function runTests() {
     ),
     apigee_trusted_header_chat_passes_to_litellm: pass(apigeeChat.status === 200, apigeeChat),
     upstream_receives_no_client_credentials: pass(!upstreamCredentialLeak, { providerRequests: state.providerRequests }),
+    litellm_front_door_receives_custom_header_only: pass(!litellmCredentialLeak, { frontDoorRequests }),
+    litellm_key_mapping_precedes_project_mapping: pass(customHeaderCredentials[0] === "sk-litellm-key-vk", {
+      firstCredential: customHeaderCredentials[0],
+    }),
+    disabled_key_mapping_falls_back_to_project_mapping: pass(customHeaderCredentials[1] === "sk-litellm-project-vk", {
+      secondCredential: customHeaderCredentials[1],
+    }),
+    disabled_project_mapping_falls_back_to_provider_default: pass(customHeaderCredentials[2] === "sk-litellm-provider-default", {
+      thirdCredential: customHeaderCredentials[2],
+    }),
     requested_literal_chatcompletion_path: pass(
       chatLiteral.status === 404 && codeOf(chatLiteral) === "unsupported_route",
       chatLiteral,
@@ -370,6 +508,8 @@ async function runTests() {
     canonicalGatewayLiteLlmPaths: ["/v1/chat/completions", "/v1/responses", "/v1/embeddings"],
     checks,
     providerRequests: state.providerRequests,
+    frontDoorRequests,
+    mappingCredentialsObserved: customHeaderCredentials,
   };
   return state.results;
 }
@@ -452,7 +592,7 @@ function dashboardHtml() {
     <section class="summary">
       <div class="metric"><span>Outcome</span><strong>${results?.requestedLiteLlmPathsPassThrough ? "PASS" : "RUN TESTS"}</strong></div>
       <div class="metric"><span>Gateway LiteLLM paths</span><strong>${results?.canonicalGatewayLiteLlmPaths.length || 0}</strong></div>
-      <div class="metric"><span>Provider captures</span><strong>${results?.providerRequests.length || 0}</strong></div>
+      <div class="metric"><span>Front-door captures</span><strong>${results?.frontDoorRequests.length || 0}</strong></div>
     </section>
     <h2>Checks</h2>
     <table>
@@ -468,15 +608,55 @@ function dashboardHtml() {
     </table>
     <h2>Interesting Finding</h2>
     <p>The branch now routes <code>/v1/chat/completions</code>, <code>/v1/responses</code>, and <code>/v1/embeddings</code> to LiteLLM. The literal alias paths <code>/v1/chatcompletion</code>, <code>/v1/response</code>, <code>/v1/embedding</code>, and <code>/v1/rerank</code> return <code>unsupported_route</code> before reaching LiteLLM.</p>
+    <h2>LiteLLM Credential Mapping</h2>
+    <p>Gateway sent <code>x-litellm-api-key</code> to the LiteLLM front door and did not send <code>Authorization</code>. Observed precedence: <code>${(results?.mappingCredentialsObserved || []).join(" -> ")}</code>.</p>
   </main>
 </body>
 </html>`;
 }
 
+async function handleFrontDoor(req, res) {
+  if (req.method === "GET" && req.url === "/healthz") {
+    jsonResponse(res, 200, { ok: true, role });
+    return true;
+  }
+  if (req.method === "GET" && req.url === "/front-door-captures") {
+    jsonResponse(res, 200, state.frontDoorRequests);
+    return true;
+  }
+  if (req.method === "POST" && req.url.startsWith("/v1/")) {
+    const body = await readBody(req);
+    const capture = captureFrontDoorRequest(req, body);
+    if (!capture.litellmApiKey || !allowedLiteLlmKeys.has(capture.litellmApiKey)) {
+      jsonResponse(res, 401, { error: { code: "invalid_litellm_virtual_key" } });
+      return true;
+    }
+    const upstream = await fetch(`${litellmUpstreamUrl}${req.url}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${litellmMasterKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await upstream.text();
+    res.writeHead(upstream.status, {
+      "content-type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
+      "content-length": Buffer.byteLength(text),
+    });
+    res.end(text);
+    return true;
+  }
+  return false;
+}
+
 const server = http.createServer(async (req, res) => {
   try {
+    if (role === "litellm-front-door" && (await handleFrontDoor(req, res))) {
+      return;
+    }
     if (req.method === "GET" && req.url === "/healthz") {
-      jsonResponse(res, 200, { ok: true });
+      jsonResponse(res, 200, { ok: true, role });
       return;
     }
     if (req.method === "GET" && req.url === "/oauth/.well-known/openid-configuration") {

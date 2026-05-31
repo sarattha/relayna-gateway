@@ -1,6 +1,6 @@
 # LiteLLM Real Passthrough Test Report
 
-Generated: 2026-05-30T16:34:49.149Z
+Generated: 2026-05-31T16:24:45.960Z
 
 Overall result: **PASS**
 
@@ -11,6 +11,7 @@ PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass thr
 - Gateway proxy: `http://gateway:8080`
 - Gateway control: `http://gateway:8081`
 - LiteLLM upstream: `http://litellm:4000`
+- LiteLLM front door: `http://litellm-front-door:4000`
 - LiteLLM image: `docker.io/litellm/litellm:latest`
 - LiteLLM image digest pulled locally: `sha256:cae1ac3492d6d0bea69c26f4485381624e073eb753f3534ae7703a4204a4ce6b`
 - Mock OIDC issuer: `http://mock-provider:4000/oauth`
@@ -28,6 +29,10 @@ PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass thr
 | canonical embeddings passes to litellm | PASS | 200 |  |
 | apigee trusted header chat passes to litellm | PASS | 200 |  |
 | upstream receives no client credentials | PASS | n/a |  |
+| litellm front door receives custom header only | PASS | n/a |  |
+| litellm key mapping precedes project mapping | PASS | n/a |  |
+| disabled key mapping falls back to project mapping | PASS | n/a |  |
+| disabled project mapping falls back to provider default | PASS | n/a |  |
 | requested literal chatcompletion path | PASS | 404 | unsupported_route |
 | requested literal response path | PASS | 404 | unsupported_route |
 | requested literal embedding path | PASS | 404 | unsupported_route |
@@ -41,6 +46,18 @@ PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass thr
 | POST /v1/responses | Bearer sk-local-provider-review-key | no | no |
 | POST /v1/embeddings | Bearer sk-local-provider-review-key | no | no |
 | POST /v1/chat/completions | Bearer sk-local-provider-review-key | no | no |
+
+## LiteLLM Front-Door Capture
+
+| Request | Authorization from Gateway | x-litellm-api-key from Gateway | Client credential leaked? |
+| --- | --- | --- | --- |
+| POST /v1/chat/completions |  | sk-litellm-key-vk | no |
+| POST /v1/responses |  | sk-litellm-project-vk | no |
+| POST /v1/embeddings |  | sk-litellm-provider-default | no |
+| POST /v1/chat/completions |  | sk-litellm-provider-default | no |
+
+Observed LiteLLM credential precedence:
+`sk-litellm-key-vk -> sk-litellm-project-vk -> sk-litellm-provider-default -> sk-litellm-provider-default`
 
 ## Interesting Finding
 
@@ -58,9 +75,10 @@ LiteLLM passthrough route.
 
 ## Screenshot Artifacts
 
-- `screenshots/01-process-dashboard.png`
-- `screenshots/02-results-table.png`
-- `screenshots/03-interesting-finding.png`
+- `screenshots/01-admin-ui-providers-litellm-mapping.png`
+- `screenshots/02-admin-ui-project-mapping-control.png`
+- `screenshots/03-real-env-report-overview.png`
+- `screenshots/04-real-env-credential-capture.png`
 
 ## Raw Results
 

@@ -14,15 +14,15 @@ docker compose -f "$COMPOSE_FILE" up -d --build --force-recreate
 
 echo "Waiting for real LiteLLM, mock provider, and gateway..."
 for _ in $(seq 1 180); do
-  if curl -fsS http://127.0.0.1:18182/healthz >/dev/null \
-    && curl -fsS http://127.0.0.1:18183/health/readiness >/dev/null \
-    && curl -fsS http://127.0.0.1:18181/admin-ui/readyz >/dev/null; then
+  if curl -fsS http://127.0.0.1:19182/healthz >/dev/null \
+    && curl -fsS http://127.0.0.1:19183/health/readiness >/dev/null \
+    && curl -fsS http://127.0.0.1:19181/admin-ui/readyz >/dev/null; then
     break
   fi
   sleep 1
 done
 
-curl -fsS -X POST http://127.0.0.1:18182/run-tests -o "$RESULT_JSON"
+curl -fsS -X POST http://127.0.0.1:19182/run-tests -o "$RESULT_JSON"
 
 node - "$RESULT_JSON" "$REPORT_MD" <<'NODE'
 const fs = require("node:fs");
@@ -33,6 +33,9 @@ const rows = Object.entries(result.checks)
   .join("\n");
 const providerRows = result.providerRequests
   .map((capture) => `| ${capture.method} ${capture.path} | ${capture.authorization} | ${capture.hasRelaynaKey || capture.hasAihKey || capture.hasClientJwt ? "yes" : "no"} | ${capture.hasApigeeIdentity ? "yes" : "no"} |`)
+  .join("\n");
+const frontDoorRows = result.frontDoorRequests
+  .map((capture) => `| ${capture.method} ${capture.path} | ${capture.authorization || ""} | ${capture.litellmApiKey || ""} | ${capture.hasRelaynaKey || capture.hasAihKey || capture.hasClientJwt ? "yes" : "no"} |`)
   .join("\n");
 const markdown = `# LiteLLM Real Passthrough Test Report
 
@@ -47,6 +50,7 @@ ${result.overallOutcome}
 - Gateway proxy: \`${result.environment.gatewayProxyUrl}\`
 - Gateway control: \`${result.environment.gatewayControlUrl}\`
 - LiteLLM upstream: \`${result.environment.litellmUrl}\`
+- LiteLLM front door: \`http://litellm-front-door:4000\`
 - LiteLLM image: \`docker.io/litellm/litellm:latest\`
 - LiteLLM image digest pulled locally: \`sha256:cae1ac3492d6d0bea69c26f4485381624e073eb753f3534ae7703a4204a4ce6b\`
 - Mock OIDC issuer: \`${result.environment.issuer}\`
@@ -67,6 +71,15 @@ ${rows}
 | --- | --- | --- | --- |
 ${providerRows}
 
+## LiteLLM Front-Door Capture
+
+| Request | Authorization from Gateway | x-litellm-api-key from Gateway | Client credential leaked? |
+| --- | --- | --- | --- |
+${frontDoorRows}
+
+Observed LiteLLM credential precedence:
+\`${result.mappingCredentialsObserved.join(" -> ")}\`
+
 ## Interesting Finding
 
 The current branch routes \`/v1/chat/completions\`, \`/v1/responses\`, and
@@ -83,9 +96,10 @@ LiteLLM passthrough route.
 
 ## Screenshot Artifacts
 
-- \`screenshots/01-process-dashboard.png\`
-- \`screenshots/02-results-table.png\`
-- \`screenshots/03-interesting-finding.png\`
+- \`screenshots/01-admin-ui-providers-litellm-mapping.png\`
+- \`screenshots/02-admin-ui-project-mapping-control.png\`
+- \`screenshots/03-real-env-report-overview.png\`
+- \`screenshots/04-real-env-credential-capture.png\`
 
 ## Raw Results
 
