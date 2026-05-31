@@ -2,7 +2,7 @@
   "ok": true,
   "requestedLiteLlmPathsPassThrough": true,
   "overallOutcome": "PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass through to LiteLLM; literal aliases /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank remain unsupported.",
-  "generatedAt": "2026-05-31T16:24:45.960Z",
+  "generatedAt": "2026-05-31T16:32:08.793Z",
   "environment": {
     "gatewayProxyUrl": "http://gateway:8080",
     "gatewayControlUrl": "http://gateway:8081",
@@ -29,8 +29,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-e4a85e8a-7bf2-4cb7-86a5-e6ccd90e848d",
-        "created": 1780244685,
+        "id": "chatcmpl-64736208-938c-43bd-bd75-dd9cc625f157",
+        "created": 1780245128,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -58,8 +58,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "resp_sufh9bXFX96VBUEwGuzegsoPpRkswjjOs9C9ctjQcKn85GmZpn9m9UHpzNPSxRlla5xIlM9IjuzBpclBzwK5NPouCg9h_jO91S4XoSO9-csxW5DJunbRcRVM9ci3Xidqne5uJuNhE0U8L54ovKFEetubF9Pck2PBV_ZKIwpExn16ngp7uNMFSZi5Dk2mN8-z3NS3Xj4IXxgzVhgrYdJcN1w1LdjyuGc51pPXnwNEsPiRPrpwn9FJcJxjb7Hbm0quE-VD8wiSdtzrqdd0SrGOXjR_m9bpT7_28bx9DQkS4DLBAlglIt9bjwdWAaWQUM95UMVlnsJ-oB68-_GJ92Ioe9YtAXjD7ji3F-c7hEE64qm0XPjWcm83w5pzgDU_RMMUUAC31z8mRvOnWaLfeOM6mWYjbWgjmooaaeX_FPw_1c-KBNoqI8HfrdOtA1FuBg==",
-        "created_at": 1780244685,
+        "id": "resp_pbaz8Q41vfY6bZBIpwvM7C5DLWKMyfMO-_51cmPpS82jiwjAg9zYvVAFDnQ6Om9BQu6kwdPlcxKxMRS2761vB3W4KTDTcpzUYCntyiAD9r5s2FJJwuVC4HNI0jHzEWZy2u51X-wmCSWaD_FTrrUldzpLwrG6z1B1f5I_SkLhqvdJVagty7WoxPUPI2iDZCOj49LZ2JmD1D0mN1Qr1Wfd2ENxo07CJgzAQ11TqDIWB3IXKIBh9j9bQI2NER2aaNSSRpfNaJI1Qspfhmslsu4-8BxPMvLh5FWSlzIPyZHrEhzhrErYiSuetmRoYSuu8k_q_5bEPQUE3s-Rwmvs3uUez7va6JsxyQ8ca8Rgqm2JTOhqIRDFkcImxrMcroJQ4Rel5ZseGdUqohCnKdsQs6m6N0Ev8O8tki_lUXJLhyRns-iN4AJMtck9KO-SeIEsQg==",
+        "created_at": 1780245128,
         "error": null,
         "incomplete_details": null,
         "instructions": null,
@@ -69,7 +69,7 @@
         "output": [
           {
             "type": "message",
-            "id": "msg-16a81e22-31c6-4491-abdd-ac0dadd69a72",
+            "id": "msg-83b1641b-6a32-41d5-a4b2-6062867657b0",
             "status": "completed",
             "role": "assistant",
             "content": [
@@ -133,8 +133,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-f27585a6-59ab-44df-95a7-960aba874308",
-        "created": 1780244685,
+        "id": "chatcmpl-8383fea3-5dff-44cc-aa87-915617bfb5e4",
+        "created": 1780245128,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -164,7 +164,7 @@
         {
           "path": "/v1/chat/completions",
           "method": "POST",
-          "authorization": "Bearer sk-local-provider-review-key",
+          "authorization": "Bearer sk-upstream",
           "hasGatewayServiceKey": true,
           "hasRelaynaKey": false,
           "hasAihKey": false,
@@ -183,7 +183,7 @@
         {
           "path": "/v1/responses",
           "method": "POST",
-          "authorization": "Bearer sk-local-provider-review-key",
+          "authorization": "Bearer sk-upstream",
           "hasGatewayServiceKey": true,
           "hasRelaynaKey": false,
           "hasAihKey": false,
@@ -197,7 +197,7 @@
         {
           "path": "/v1/embeddings",
           "method": "POST",
-          "authorization": "Bearer sk-local-provider-review-key",
+          "authorization": "Bearer sk-upstream",
           "hasGatewayServiceKey": true,
           "hasRelaynaKey": false,
           "hasAihKey": false,
@@ -212,7 +212,7 @@
         {
           "path": "/v1/chat/completions",
           "method": "POST",
-          "authorization": "Bearer sk-local-provider-review-key",
+          "authorization": "Bearer sk-upstream",
           "hasGatewayServiceKey": true,
           "hasRelaynaKey": false,
           "hasAihKey": false,
@@ -237,7 +237,7 @@
           "path": "/v1/chat/completions",
           "method": "POST",
           "authorization": null,
-          "litellmApiKey": "sk-litellm-key-vk",
+          "litellmApiKey": "sk-key",
           "hasRelaynaKey": false,
           "hasAihKey": false,
           "hasApigeeIdentity": false,
@@ -256,7 +256,7 @@
           "path": "/v1/responses",
           "method": "POST",
           "authorization": null,
-          "litellmApiKey": "sk-litellm-project-vk",
+          "litellmApiKey": "sk-project",
           "hasRelaynaKey": false,
           "hasAihKey": false,
           "hasApigeeIdentity": false,
@@ -270,7 +270,7 @@
           "path": "/v1/embeddings",
           "method": "POST",
           "authorization": null,
-          "litellmApiKey": "sk-litellm-provider-default",
+          "litellmApiKey": "sk-provider",
           "hasRelaynaKey": false,
           "hasAihKey": false,
           "hasApigeeIdentity": false,
@@ -284,7 +284,7 @@
           "path": "/v1/chat/completions",
           "method": "POST",
           "authorization": null,
-          "litellmApiKey": "sk-litellm-provider-default",
+          "litellmApiKey": "sk-provider",
           "hasRelaynaKey": false,
           "hasAihKey": false,
           "hasApigeeIdentity": false,
@@ -303,15 +303,15 @@
     },
     "litellm_key_mapping_precedes_project_mapping": {
       "ok": true,
-      "firstCredential": "sk-litellm-key-vk"
+      "firstCredential": "sk-key"
     },
     "disabled_key_mapping_falls_back_to_project_mapping": {
       "ok": true,
-      "secondCredential": "sk-litellm-project-vk"
+      "secondCredential": "sk-project"
     },
     "disabled_project_mapping_falls_back_to_provider_default": {
       "ok": true,
-      "thirdCredential": "sk-litellm-provider-default"
+      "thirdCredential": "sk-provider"
     },
     "requested_literal_chatcompletion_path": {
       "ok": true,
@@ -320,7 +320,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "8f6f47db-fc6b-426e-9fcb-9a659646b134"
+          "request_id": "a12aa31d-5c5a-4b23-915f-49008d6c5da6"
         }
       }
     },
@@ -331,7 +331,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "4002af80-4a8d-4aab-b0c4-73da1b0573d6"
+          "request_id": "ddbe812e-970b-4844-b670-f174fad0bcbc"
         }
       }
     },
@@ -342,7 +342,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "5c2d59e3-178c-4fb3-be0c-60f005ae1b19"
+          "request_id": "6f031e4c-d0ac-46aa-b73c-567a1a6af0aa"
         }
       }
     },
@@ -353,7 +353,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "32dca36f-7cf4-4d14-997b-f1aa9527e7ff"
+          "request_id": "321a8620-2783-43bf-8095-bbdc4b96e15f"
         }
       }
     }
@@ -362,7 +362,7 @@
     {
       "path": "/v1/chat/completions",
       "method": "POST",
-      "authorization": "Bearer sk-local-provider-review-key",
+      "authorization": "Bearer sk-upstream",
       "hasGatewayServiceKey": true,
       "hasRelaynaKey": false,
       "hasAihKey": false,
@@ -381,7 +381,7 @@
     {
       "path": "/v1/responses",
       "method": "POST",
-      "authorization": "Bearer sk-local-provider-review-key",
+      "authorization": "Bearer sk-upstream",
       "hasGatewayServiceKey": true,
       "hasRelaynaKey": false,
       "hasAihKey": false,
@@ -395,7 +395,7 @@
     {
       "path": "/v1/embeddings",
       "method": "POST",
-      "authorization": "Bearer sk-local-provider-review-key",
+      "authorization": "Bearer sk-upstream",
       "hasGatewayServiceKey": true,
       "hasRelaynaKey": false,
       "hasAihKey": false,
@@ -410,7 +410,7 @@
     {
       "path": "/v1/chat/completions",
       "method": "POST",
-      "authorization": "Bearer sk-local-provider-review-key",
+      "authorization": "Bearer sk-upstream",
       "hasGatewayServiceKey": true,
       "hasRelaynaKey": false,
       "hasAihKey": false,
@@ -432,7 +432,7 @@
       "path": "/v1/chat/completions",
       "method": "POST",
       "authorization": null,
-      "litellmApiKey": "sk-litellm-key-vk",
+      "litellmApiKey": "sk-key",
       "hasRelaynaKey": false,
       "hasAihKey": false,
       "hasApigeeIdentity": false,
@@ -451,7 +451,7 @@
       "path": "/v1/responses",
       "method": "POST",
       "authorization": null,
-      "litellmApiKey": "sk-litellm-project-vk",
+      "litellmApiKey": "sk-project",
       "hasRelaynaKey": false,
       "hasAihKey": false,
       "hasApigeeIdentity": false,
@@ -465,7 +465,7 @@
       "path": "/v1/embeddings",
       "method": "POST",
       "authorization": null,
-      "litellmApiKey": "sk-litellm-provider-default",
+      "litellmApiKey": "sk-provider",
       "hasRelaynaKey": false,
       "hasAihKey": false,
       "hasApigeeIdentity": false,
@@ -479,7 +479,7 @@
       "path": "/v1/chat/completions",
       "method": "POST",
       "authorization": null,
-      "litellmApiKey": "sk-litellm-provider-default",
+      "litellmApiKey": "sk-provider",
       "hasRelaynaKey": false,
       "hasAihKey": false,
       "hasApigeeIdentity": false,
@@ -496,9 +496,9 @@
     }
   ],
   "mappingCredentialsObserved": [
-    "sk-litellm-key-vk",
-    "sk-litellm-project-vk",
-    "sk-litellm-provider-default",
-    "sk-litellm-provider-default"
+    "sk-key",
+    "sk-project",
+    "sk-provider",
+    "sk-provider"
   ]
 }

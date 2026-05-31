@@ -2,16 +2,16 @@ model_list:
   - model_name: gpt-review
     litellm_params:
       model: openai/gpt-review
-      api_key: sk-local-provider-review-key
+      api_key: sk-upstream
       api_base: http://mock-provider:4000/v1
   - model_name: text-embedding-review
     litellm_params:
       model: openai/text-embedding-review
-      api_key: sk-local-provider-review-key
+      api_key: sk-upstream
       api_base: http://mock-provider:4000/v1
 
 litellm_settings:
   drop_params: true
 
 general_settings:
-  master_key: sk-litellm-review-service-key
+  master_key: sk-ci

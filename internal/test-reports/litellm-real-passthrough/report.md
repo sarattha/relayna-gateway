@@ -1,6 +1,6 @@
 # LiteLLM Real Passthrough Test Report
 
-Generated: 2026-05-31T16:24:45.960Z
+Generated: 2026-05-31T16:32:08.793Z
 
 Overall result: **PASS**
 
@@ -42,22 +42,22 @@ PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass thr
 
 | Request | Authorization seen by mock provider | Client credential leaked? | Apigee identity leaked? |
 | --- | --- | --- | --- |
-| POST /v1/chat/completions | Bearer sk-local-provider-review-key | no | no |
-| POST /v1/responses | Bearer sk-local-provider-review-key | no | no |
-| POST /v1/embeddings | Bearer sk-local-provider-review-key | no | no |
-| POST /v1/chat/completions | Bearer sk-local-provider-review-key | no | no |
+| POST /v1/chat/completions | Bearer sk-upstream | no | no |
+| POST /v1/responses | Bearer sk-upstream | no | no |
+| POST /v1/embeddings | Bearer sk-upstream | no | no |
+| POST /v1/chat/completions | Bearer sk-upstream | no | no |
 
 ## LiteLLM Front-Door Capture
 
 | Request | Authorization from Gateway | x-litellm-api-key from Gateway | Client credential leaked? |
 | --- | --- | --- | --- |
-| POST /v1/chat/completions |  | sk-litellm-key-vk | no |
-| POST /v1/responses |  | sk-litellm-project-vk | no |
-| POST /v1/embeddings |  | sk-litellm-provider-default | no |
-| POST /v1/chat/completions |  | sk-litellm-provider-default | no |
+| POST /v1/chat/completions |  | sk-key | no |
+| POST /v1/responses |  | sk-project | no |
+| POST /v1/embeddings |  | sk-provider | no |
+| POST /v1/chat/completions |  | sk-provider | no |
 
 Observed LiteLLM credential precedence:
-`sk-litellm-key-vk -> sk-litellm-project-vk -> sk-litellm-provider-default -> sk-litellm-provider-default`
+`sk-key -> sk-project -> sk-provider -> sk-provider`
 
 ## Interesting Finding
 

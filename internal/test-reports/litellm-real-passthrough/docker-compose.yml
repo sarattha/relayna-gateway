@@ -56,7 +56,7 @@ services:
         "False",
       ]
     environment:
-      LITELLM_MASTER_KEY: sk-litellm-review-service-key
+      LITELLM_MASTER_KEY: sk-ci
     ports:
       - "19183:4000"
     volumes:
@@ -77,8 +77,8 @@ services:
     environment:
       ROLE: litellm-front-door
       LITELLM_UPSTREAM_URL: http://litellm:4000
-      LITELLM_MASTER_KEY: sk-litellm-review-service-key
-      ALLOWED_LITELLM_KEYS: sk-litellm-key-vk,sk-litellm-project-vk,sk-litellm-provider-default
+      LITELLM_MASTER_KEY: sk-ci
+      ALLOWED_LITELLM_KEYS: sk-key,sk-project,sk-provider
     volumes:
       - ./mock-provider:/app:ro
     depends_on:
@@ -107,7 +107,7 @@ services:
       DATABASE_URL: postgres://relayna_gateway:relayna_gateway@postgres:5432/relayna_gateway
       REDIS_URL: redis://redis:6379
       LITELLM_BASE_URL: http://litellm:4000
-      LITELLM_SERVICE_KEY: sk-litellm-review-service-key
+      LITELLM_SERVICE_KEY: sk-ci
       GATEWAY_ADMIN_TOKEN: op_live_ci_token1
       GATEWAY_BIND_ADDR: 0.0.0.0:8080
       GATEWAY_CONTROL_BIND_ADDR: 0.0.0.0:8081

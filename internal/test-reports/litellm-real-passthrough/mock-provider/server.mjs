@@ -10,7 +10,7 @@ const adminToken = process.env.GATEWAY_ADMIN_TOKEN;
 const apigeeSecret = process.env.APIGEE_TRUSTED_HEADER_SECRET || "apigee-secret";
 const litellmFrontDoorUrl = process.env.LITELLM_FRONT_DOOR_URL || "http://litellm-front-door:4000";
 const litellmUpstreamUrl = process.env.LITELLM_UPSTREAM_URL || "http://litellm:4000";
-const litellmMasterKey = process.env.LITELLM_MASTER_KEY || "sk-litellm-review-service-key";
+const litellmMasterKey = process.env.LITELLM_MASTER_KEY || "sk-ci";
 const allowedLiteLlmKeys = new Set(
   String(process.env.ALLOWED_LITELLM_KEYS || "")
     .split(",")
@@ -23,7 +23,7 @@ const tenantId = "relayna-litellm-review-tenant";
 const audience = "api://relayna-gateway-litellm-review";
 const requiredScope = "gateway.invoke";
 const allowedGroup = "relayna-litellm-review-group";
-const upstreamServiceAuthorization = "Bearer sk-litellm-review-service-key";
+const upstreamServiceAuthorization = "Bearer sk-ci";
 
 const keyPair = crypto.generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -88,7 +88,7 @@ function captureProviderRequest(req, body) {
     path: req.url,
     method: req.method,
     authorization: headers.authorization || null,
-    hasGatewayServiceKey: headers.authorization === "Bearer sk-local-provider-review-key",
+    hasGatewayServiceKey: headers.authorization === "Bearer sk-upstream",
     hasRelaynaKey: "x-relayna-key" in headers,
     hasAihKey: "x-aih-api-key" in headers,
     hasApigeeIdentity: "x-apigee-entra-identity" in headers || "x-apigee-entra-signature" in headers,
@@ -273,7 +273,7 @@ async function setupGatewayData() {
     provider: "litellm",
     name: `LiteLLM Front Door ${Date.now()}`,
     base_url: litellmFrontDoorUrl,
-    credential: "sk-litellm-provider-default",
+    credential: "sk-provider",
     credential_header_mode: "custom_header",
     credential_header_name: "x-litellm-api-key",
     enabled: true,
@@ -309,7 +309,7 @@ async function setupGatewayData() {
     body: JSON.stringify({
       scope: "project",
       target_id: project.id,
-      credential: "sk-litellm-project-vk",
+      credential: "sk-project",
       enabled: true,
     }),
   });
@@ -325,7 +325,7 @@ async function setupGatewayData() {
     body: JSON.stringify({
       scope: "key",
       target_id: key.id,
-      credential: "sk-litellm-key-vk",
+      credential: "sk-key",
       enabled: true,
     }),
   });
@@ -462,13 +462,13 @@ async function runTests() {
     apigee_trusted_header_chat_passes_to_litellm: pass(apigeeChat.status === 200, apigeeChat),
     upstream_receives_no_client_credentials: pass(!upstreamCredentialLeak, { providerRequests: state.providerRequests }),
     litellm_front_door_receives_custom_header_only: pass(!litellmCredentialLeak, { frontDoorRequests }),
-    litellm_key_mapping_precedes_project_mapping: pass(customHeaderCredentials[0] === "sk-litellm-key-vk", {
+    litellm_key_mapping_precedes_project_mapping: pass(customHeaderCredentials[0] === "sk-key", {
       firstCredential: customHeaderCredentials[0],
     }),
-    disabled_key_mapping_falls_back_to_project_mapping: pass(customHeaderCredentials[1] === "sk-litellm-project-vk", {
+    disabled_key_mapping_falls_back_to_project_mapping: pass(customHeaderCredentials[1] === "sk-project", {
       secondCredential: customHeaderCredentials[1],
     }),
-    disabled_project_mapping_falls_back_to_provider_default: pass(customHeaderCredentials[2] === "sk-litellm-provider-default", {
+    disabled_project_mapping_falls_back_to_provider_default: pass(customHeaderCredentials[2] === "sk-provider", {
       thirdCredential: customHeaderCredentials[2],
     }),
     requested_literal_chatcompletion_path: pass(

@@ -25,10 +25,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:3
 <tr><td>requested literal response path</td><td class="pass">PASS</td><td>404</td><td>unsupported_route</td></tr>
 <tr><td>requested literal embedding path</td><td class="pass">PASS</td><td>404</td><td>unsupported_route</td></tr>
 <tr><td>requested rerank path</td><td class="pass">PASS</td><td>404</td><td>unsupported_route</td></tr></tbody></table>
-<h2>Provider Capture Behind LiteLLM</h2><table><thead><tr><th>Request</th><th>Authorization seen by mock provider</th><th>Client credential leaked?</th><th>Apigee identity leaked?</th></tr></thead><tbody><tr><td>POST /v1/chat/completions</td><td><code>Bearer sk-local-provider-review-key</code></td><td>no</td><td>no</td></tr>
-<tr><td>POST /v1/responses</td><td><code>Bearer sk-local-provider-review-key</code></td><td>no</td><td>no</td></tr>
-<tr><td>POST /v1/embeddings</td><td><code>Bearer sk-local-provider-review-key</code></td><td>no</td><td>no</td></tr>
-<tr><td>POST /v1/chat/completions</td><td><code>Bearer sk-local-provider-review-key</code></td><td>no</td><td>no</td></tr></tbody></table>
+<h2>Provider Capture Behind LiteLLM</h2><table><thead><tr><th>Request</th><th>Authorization seen by mock provider</th><th>Client credential leaked?</th><th>Apigee identity leaked?</th></tr></thead><tbody><tr><td>POST /v1/chat/completions</td><td><code>Bearer sk-upstream</code></td><td>no</td><td>no</td></tr>
+<tr><td>POST /v1/responses</td><td><code>Bearer sk-upstream</code></td><td>no</td><td>no</td></tr>
+<tr><td>POST /v1/embeddings</td><td><code>Bearer sk-upstream</code></td><td>no</td><td>no</td></tr>
+<tr><td>POST /v1/chat/completions</td><td><code>Bearer sk-upstream</code></td><td>no</td><td>no</td></tr></tbody></table>
 <h2>Finding</h2><p>Canonical <code>/v1/chat/completions</code>, <code>/v1/responses</code>, and <code>/v1/embeddings</code> pass through. Literal aliases remain unsupported before reaching LiteLLM.</p>
 <h2>Screenshot Artifacts</h2><ul>
 <li><code>screenshots/01-process-dashboard.png</code></li>

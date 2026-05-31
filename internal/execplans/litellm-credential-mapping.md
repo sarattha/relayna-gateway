@@ -189,7 +189,7 @@ provider with `credential_header_mode = custom_header` and
 
 Observed precedence:
 
-    sk-litellm-key-vk -> sk-litellm-project-vk -> sk-litellm-provider-default
+    sk-key -> sk-project -> sk-provider
 
 The front-door capture confirmed Gateway sent `x-litellm-api-key`, did not send
 `Authorization`, and stripped client Relayna/APIH/Apigee/JWT credentials before
