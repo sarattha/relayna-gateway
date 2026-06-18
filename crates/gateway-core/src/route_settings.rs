@@ -195,19 +195,22 @@ impl LiteLlmPassthroughSettings {
         {
             return false;
         }
-        if is_litellm_ui_path(path)
-            && self.ui_exposure != LiteLlmSensitiveRouteExposure::ExplicitlyExposed
-        {
-            return false;
-        }
-        if is_litellm_admin_path(path)
-            && self.admin_api_exposure != LiteLlmSensitiveRouteExposure::ExplicitlyExposed
-        {
+        if self.sensitive_exposure_for_path(path) == Some(LiteLlmSensitiveRouteExposure::Disabled) {
             return false;
         }
         self.allowed_paths
             .iter()
             .any(|allowed| path_matches_allowed_pattern(path, allowed))
+    }
+
+    pub fn sensitive_exposure_for_path(&self, path: &str) -> Option<LiteLlmSensitiveRouteExposure> {
+        if is_litellm_ui_path(path) {
+            Some(self.ui_exposure)
+        } else if is_litellm_admin_path(path) {
+            Some(self.admin_api_exposure)
+        } else {
+            None
+        }
     }
 }
 
@@ -297,4 +300,40 @@ fn is_litellm_admin_path(path: &str) -> bool {
     ADMIN_PREFIXES
         .iter()
         .any(|prefix| path == prefix.trim_end_matches('/') || path.starts_with(prefix))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    #[test]
+    fn operator_only_sensitive_paths_are_routeable_but_classified() {
+        let mut settings = LiteLlmPassthroughSettings::default_with_updated_at(Utc::now());
+        settings.enabled = true;
+        settings.allowed_paths = vec!["/v1/*".to_owned(), "/ui".to_owned(), "/key/*".to_owned()];
+        settings.ui_exposure = LiteLlmSensitiveRouteExposure::OperatorOnly;
+        settings.admin_api_exposure = LiteLlmSensitiveRouteExposure::OperatorOnly;
+
+        assert!(settings.allows(&Method::GET, "/ui"));
+        assert_eq!(
+            settings.sensitive_exposure_for_path("/ui"),
+            Some(LiteLlmSensitiveRouteExposure::OperatorOnly)
+        );
+        assert!(settings.allows(&Method::GET, "/key/list"));
+        assert_eq!(
+            settings.sensitive_exposure_for_path("/key/list"),
+            Some(LiteLlmSensitiveRouteExposure::OperatorOnly)
+        );
+    }
+
+    #[test]
+    fn disabled_sensitive_paths_stay_blocked_even_when_allowlisted() {
+        let mut settings = LiteLlmPassthroughSettings::default_with_updated_at(Utc::now());
+        settings.enabled = true;
+        settings.allowed_paths = vec!["/v1/*".to_owned(), "/ui".to_owned(), "/key/*".to_owned()];
+
+        assert!(!settings.allows(&Method::GET, "/ui"));
+        assert!(!settings.allows(&Method::GET, "/key/list"));
+    }
 }

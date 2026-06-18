@@ -16,10 +16,11 @@ use gateway_core::{
     EntraAuthConfig, EntraIdentityContext, GatewayAuthRuntimeConfig, GatewayAuthRuntimeSnapshot,
     GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent,
     GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet,
-    GuardrailStore, KeyPolicy, OpenAiRouteMode, OpenAiRouteSettingsLookup, PolicyLookup, Provider,
-    ProviderConfigLookup, ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route,
-    RouteMatch, ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent,
-    UsageRecorder, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    GuardrailStore, KeyPolicy, LiteLlmSensitiveRouteExposure, OpenAiRouteMode,
+    OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
+    ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route, RouteMatch,
+    ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent, UsageRecorder,
+    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use http::{header::HeaderName, Uri};
 use pingora_core::{
@@ -542,6 +543,28 @@ where
                         }
                     }
                 }
+                if ctx.litellm_passthrough && matched.route == Route::LiteLlmPassthrough {
+                    match self.store.litellm_passthrough_settings().await {
+                        Ok(settings) => {
+                            if !sensitive_litellm_passthrough_authorized(
+                                settings.sensitive_exposure_for_path(req.uri.path()),
+                                ctx.entra_identity.as_ref(),
+                            ) {
+                                respond_error(
+                                    session,
+                                    GatewayError::InsufficientEntraAuthorization,
+                                    &ctx.request_id,
+                                )
+                                .await?;
+                                return Ok(true);
+                            }
+                        }
+                        Err(error) => {
+                            respond_error(session, error, &ctx.request_id).await?;
+                            return Ok(true);
+                        }
+                    }
+                }
                 if matched.provider == Provider::LiteLlm {
                     let litellm_config = match self.store.active_litellm_config().await {
                         Ok(config) => config,
@@ -622,6 +645,11 @@ where
     {
         if let Some(chunk) = body.as_ref() {
             ctx.body_bytes_seen = ctx.body_bytes_seen.saturating_add(chunk.len());
+            if ctx.body_prefix.len() < 65_536 {
+                let remaining = 65_536 - ctx.body_prefix.len();
+                ctx.body_prefix
+                    .extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+            }
             if let Some(matched) = &ctx.route_match {
                 if ctx.body_bytes_seen > matched.max_body_bytes {
                     respond_error(session, GatewayError::RequestBodyTooLarge, &ctx.request_id)
@@ -829,7 +857,7 @@ where
             respond_error(session, error, &ctx.request_id).await?;
             return Ok(false);
         }
-        if ctx.litellm_passthrough {
+        if bypass_gateway_governance_for_passthrough(route, ctx.litellm_passthrough) {
             gateway_telemetry::record_provider_selection();
             return Ok(true);
         }
@@ -1565,6 +1593,21 @@ fn direct_openai_path_and_query(path_and_query: &str) -> String {
     }
 }
 
+fn bypass_gateway_governance_for_passthrough(route: Route, litellm_passthrough: bool) -> bool {
+    litellm_passthrough && route == Route::LiteLlmPassthrough
+}
+
+fn sensitive_litellm_passthrough_authorized(
+    exposure: Option<LiteLlmSensitiveRouteExposure>,
+    entra_identity: Option<&EntraIdentityContext>,
+) -> bool {
+    match exposure {
+        Some(LiteLlmSensitiveRouteExposure::Disabled) => false,
+        Some(LiteLlmSensitiveRouteExposure::OperatorOnly) => entra_identity.is_some(),
+        Some(LiteLlmSensitiveRouteExposure::ExplicitlyExposed) | None => true,
+    }
+}
+
 fn rewrite_service_wildcard_uri(
     upstream_request: &mut RequestHeader,
     service_name: &str,
@@ -1955,8 +1998,8 @@ mod tests {
     use super::*;
     use chrono::{DateTime, Utc};
     use gateway_core::{
-        AuthenticatedKey, BudgetDecision, BudgetState, GatewayResult, LiteLlmPassthroughSettings,
-        OpenAiRouteMode, RateLimitDecision, UsageEvent,
+        AuthenticatedKey, BudgetDecision, BudgetState, EntraIdentitySource, GatewayResult,
+        LiteLlmPassthroughSettings, OpenAiRouteMode, RateLimitDecision, UsageEvent,
     };
     use std::sync::Mutex;
     use uuid::Uuid;
@@ -2410,6 +2453,55 @@ mod tests {
         assert!(!settings.allows(&http::Method::DELETE, "/v1/models/model-a"));
         assert!(!settings.allows(&http::Method::GET, "/ui"));
         assert!(!settings.allows(&http::Method::GET, "/key/list"));
+    }
+
+    #[test]
+    fn direct_litellm_route_mode_still_uses_gateway_governance() {
+        assert!(bypass_gateway_governance_for_passthrough(
+            Route::LiteLlmPassthrough,
+            true
+        ));
+        assert!(!bypass_gateway_governance_for_passthrough(
+            Route::ChatCompletions,
+            true
+        ));
+        assert!(!bypass_gateway_governance_for_passthrough(
+            Route::Responses,
+            true
+        ));
+        assert!(!bypass_gateway_governance_for_passthrough(
+            Route::LiteLlmEmbeddings,
+            true
+        ));
+    }
+
+    #[test]
+    fn operator_only_litellm_paths_require_entra_identity() {
+        assert!(!sensitive_litellm_passthrough_authorized(
+            Some(LiteLlmSensitiveRouteExposure::OperatorOnly),
+            None
+        ));
+        assert!(sensitive_litellm_passthrough_authorized(
+            Some(LiteLlmSensitiveRouteExposure::ExplicitlyExposed),
+            None
+        ));
+
+        let identity = EntraIdentityContext {
+            tenant_id: "tenant".to_owned(),
+            subject: Some("operator".to_owned()),
+            object_id: Some("object".to_owned()),
+            app_id: None,
+            authorized_party: None,
+            scopes: vec!["gateway.invoke".to_owned()],
+            roles: Vec::new(),
+            groups: Vec::new(),
+            token_version: "2.0".to_owned(),
+            source: EntraIdentitySource::Jwt,
+        };
+        assert!(sensitive_litellm_passthrough_authorized(
+            Some(LiteLlmSensitiveRouteExposure::OperatorOnly),
+            Some(&identity)
+        ));
     }
 
     #[tokio::test]
