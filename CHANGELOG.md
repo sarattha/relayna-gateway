@@ -25,7 +25,7 @@ All notable changes to Relayna Gateway are documented in this file.
 - Deployment examples and the baseline Kubernetes image now target the
   `0.1.9` gateway image.
 - Release documentation now treats `v0.1.9` as the current release target while
-  preserving `v0.1.8` as the production freeze baseline.
+  establishing `v0.1.9` as the production freeze baseline.
 
 ### Security
 

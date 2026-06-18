@@ -4,7 +4,7 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
-Version `0.1.9` is the current release target. The `v0.1.8` production freeze
+Version `0.1.9` is the current release target. The `v0.1.9` production freeze
 baseline remains pinned for Admin UI 2.0, scoped operator governance, policy
 simulation and inherited layers, provider intelligence, richer usage analytics,
 and supply-chain hardening. Release `0.1.9` adds LiteLLM wildcard passthrough,

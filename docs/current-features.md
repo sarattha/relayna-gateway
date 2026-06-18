@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.9` feature set. The `v0.1.8` production freeze
+This page summarizes the `v0.1.9` feature set. The `v0.1.9` production freeze
 baseline remains pinned for compatibility checks.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
@@ -209,10 +209,10 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.8` freeze baseline hardens CI and release workflows with strict dependency,
-secret, static-analysis, filesystem, and image checks. Release images publish
-with SBOM, signature, and provenance artifacts, and release metadata validation
-guards tag, workspace version, and changelog alignment.
+The `v0.1.9` freeze baseline hardens CI and release workflows with strict
+dependency, secret, static-analysis, filesystem, and image checks. Release
+images publish with SBOM, signature, and provenance artifacts, and release
+metadata validation guards tag, workspace version, and changelog alignment.
 
 The Kubernetes example now defaults to restricted pod security settings:
 non-root UID/GID `10001`, read-only root filesystem, default seccomp profile,
@@ -220,7 +220,7 @@ no privilege escalation, and all Linux capabilities dropped. Proxy and control
 plane Services remain separate, and the control plane should stay private or
 protected by identity-aware access.
 
-The v0.1.8 freeze perimeter test pins the production baseline for public
+The v0.1.9 freeze perimeter test pins the production baseline for public
 routes, admin route inventory, error codes, config names, migrations, Redis key
 formats, release metadata, and Admin UI endpoint assumptions. Future changes
 should keep that perimeter passing unless a compatibility decision explicitly
