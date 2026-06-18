@@ -152,6 +152,36 @@ skipped and fall back to the next level. The portal shows mapping state and
 whether a credential is configured, but never renders LiteLLM virtual-key
 secret values after save.
 
+#### LiteLLM wildcard passthrough settings
+
+The same Providers view includes the `LiteLLM passthrough` panel. Use this
+panel when Relayna Gateway should be the public ingress in front of LiteLLM for
+LiteLLM-compatible endpoints beyond the canonical generation routes.
+
+Fields:
+
+| Field | Meaning |
+| --- | --- |
+| Enable wildcard passthrough | Turns on fallback routing for unmatched LiteLLM-bound paths. Relayna-owned service/control routes and canonical OpenAI route matching still take precedence. |
+| Allowed paths | Comma-separated allowlist such as `/v1/*`. Add sensitive paths like `/ui` and `/ui/*` only when you have chosen an exposure mode and ingress auth pattern intentionally. |
+| Allowed methods | Comma-separated methods, usually `GET,POST`. |
+| LiteLLM UI exposure | Controls `/ui` and `/ui/*`. Default `disabled` blocks those paths even if allowlisted. |
+| LiteLLM admin API exposure | Controls admin-like LiteLLM paths such as key, user/team, config, spend, budget, customer, organization, and global endpoints. Default `disabled` blocks them even if allowlisted. |
+
+Exposure values:
+
+- `disabled`: sensitive paths are rejected before forwarding.
+- `operator_only`: sensitive paths require the Gateway Entra or trusted Apigee
+  identity layer plus Relayna virtual-key auth on the proxy request.
+- `explicitly_exposed`: sensitive paths can be reached by authenticated
+  Relayna virtual-key clients when path and method allowlists also match.
+
+The portal shows an exposure-risk warning because LiteLLM `/ui` and admin
+endpoints can expose key management, spend, config, user, team, and other
+operator data. Prefer `operator_only` behind identity-aware ingress for browser
+access. A normal browser cannot attach Gateway proxy auth headers by typing the
+URL alone.
+
 ### 5. Create or import services
 
 Open Services. Use `Import from Studio` when Studio is connected, or create a
@@ -182,6 +212,19 @@ What to check: `/v1/chat/completions` and `/v1/responses` should be enabled
 when clients need OpenAI-compatible traffic. Registered service routes should
 show the expected route pattern, allowed methods, upstream, and credential
 state.
+
+Each canonical OpenAI-compatible route also has a mode selector:
+
+- `managed_by_gateway` keeps the full Gateway path: Relayna auth, route/model
+  and provider policy, RPM/TPM, budgets, guardrails, provider forwarding, and
+  full usage when provider accounting is available.
+- `direct_litellm_passthrough` keeps Relayna auth, route enablement, policy,
+  RPM/TPM, budgets, and LiteLLM credential translation, but forwards directly
+  to LiteLLM without Gateway guardrail rewriting or token accounting. Usage is
+  reduced to status/latency/request metadata.
+
+Use direct mode only for canonical OpenAI routes that should behave closest to
+LiteLLM while still preserving Gateway governance and credential isolation.
 
 ### 7. Create the project
 

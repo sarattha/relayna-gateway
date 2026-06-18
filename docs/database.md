@@ -26,7 +26,7 @@ of that schema.
 | Projects | `projects` | Groups project-owned virtual keys and service access. |
 | Virtual keys | `api_keys`, `key_policies`, `key_guardrail_policies`, `policy_layers` | Stores key identity, inherited request policy, limits, budgets, lifecycle metadata, and guardrail policy. |
 | Services | `service_registrations`, `project_service_links`, `key_service_links` | Registers `/services/<service-name>/*` routes and grants project or individual-key access. |
-| Providers and routes | `provider_configs`, `openai_route_settings`, `route_policies` | Stores upstream provider settings and global OpenAI-compatible route toggles. |
+| Providers and routes | `provider_configs`, `litellm_credential_mappings`, `litellm_passthrough_settings`, `openai_route_settings`, `route_policies` | Stores upstream provider settings, LiteLLM credential mapping, wildcard passthrough settings, and global OpenAI-compatible route toggles/modes. |
 | Guardrails | `guardrail_definitions`, `guardrail_execution_events` | Stores guardrail catalog entries and execution audit records. |
 | Studio settings | `studio_connection_settings` | Stores the optional Relayna Studio import connection. |
 | Operators | `operator_tokens` | Stores hashed tokens for `/admin-ui/admin/*` and `/admin-ui` access. |
@@ -200,18 +200,34 @@ a Relayna key or project.
 | Lifecycle fields | `enabled`, `created_at`, and `updated_at`. Disabled mappings are skipped during credential resolution. |
 | Runtime precedence | Gateway resolves LiteLLM credentials by key mapping, then project mapping, then active provider default credential, then the `LITELLM_SERVICE_KEY` startup fallback when no active provider config overrides it. |
 
+### `litellm_passthrough_settings`
+
+`litellm_passthrough_settings` stores the singleton configuration for LiteLLM
+wildcard passthrough.
+
+| Key | Details |
+| --- | --- |
+| Primary key | `id boolean`, constrained to `true`, so only one settings row can exist. |
+| Enablement | `enabled` controls whether unmatched LiteLLM-bound traffic can fall through to wildcard passthrough after Relayna routes and canonical OpenAI routes have had precedence. |
+| Allowlists | `allowed_paths` and `allowed_methods` are non-empty arrays. A path ending in `*` matches by prefix. The safe default when enabled is `/v1/*` with `GET` and `POST`. |
+| Sensitive exposure | `ui_exposure` and `admin_api_exposure` are `disabled`, `operator_only`, or `explicitly_exposed`. `disabled` blocks matching sensitive paths even when they are listed in `allowed_paths`; `operator_only` requires Gateway Entra or trusted Apigee identity plus Relayna virtual-key auth; `explicitly_exposed` allows authenticated Relayna virtual-key clients when path and method allowlists match. |
+| Auditability | Admin API updates write audit events with before/after settings. No LiteLLM credential secret is stored in this table. |
+| Runtime role | Wildcard passthrough preserves the original path and query, strips client credentials, injects the resolved LiteLLM credential, and records reduced status-only usage for non-canonical paths. |
+
 ### `openai_route_settings`
 
-`openai_route_settings` stores global enablement for OpenAI-compatible proxy
-routes.
+`openai_route_settings` stores global enablement and mode selection for
+OpenAI-compatible proxy routes.
 
 | Key | Details |
 | --- | --- |
 | Primary key | `route_id text`. |
 | Unique keys | `route` is unique. |
 | Checks | `route_id` is limited to `chat-completions`, `responses`, and `embeddings`; `route` is limited to `/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings`. |
-| Seed data | Migrations insert supported routes as enabled. |
-| Required data | These rows must exist for operators to toggle global OpenAI-compatible route availability. |
+| Mode | `mode` is `managed_by_gateway` or `direct_litellm_passthrough`. `managed_by_gateway` is the default. |
+| Seed data | Migrations insert supported routes as enabled and managed by Gateway. |
+| Required data | These rows must exist for operators to toggle global OpenAI-compatible route availability and direct LiteLLM passthrough mode. |
+| Runtime role | Both modes preserve Relayna auth, global route enablement, policy, provider/model allowlists, rate limits, and budgets. Direct LiteLLM passthrough skips Gateway guardrail rewriting and token accounting, then forwards directly to LiteLLM with credential translation. |
 
 ### `studio_connection_settings`
 

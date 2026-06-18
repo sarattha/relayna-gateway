@@ -2,6 +2,46 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.9 - 2026-06-18
+
+### Added
+
+- LiteLLM wildcard passthrough can now be enabled as a single-ingress mode for
+  Gateway deployments that sit in front of LiteLLM. Operators configure path
+  and method allowlists, with `/v1/*` `GET` and `POST` as the safe default
+  when passthrough is enabled.
+- Admin APIs, PostgreSQL storage, and the Admin portal now expose LiteLLM
+  passthrough settings for enablement, path/method allowlists, `/ui` exposure,
+  and LiteLLM admin API exposure.
+- Canonical OpenAI-compatible routes now support per-route mode selection:
+  `managed_by_gateway` or `direct_litellm_passthrough`.
+- The real LiteLLM harness now verifies wildcard `/v1/models` passthrough,
+  path/query preservation, route-mode switching, credential stripping, and
+  LiteLLM custom header injection against a real `litellm/litellm` container.
+
+### Changed
+
+- Workspace crate versions now share the `0.1.9` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.9` gateway image.
+- Release documentation now treats `v0.1.9` as the current release target while
+  preserving `v0.1.8` as the production freeze baseline.
+
+### Security
+
+- Gateway continues to accept Relayna credentials from clients and translate
+  them to internal LiteLLM credentials. Client `Authorization`, Relayna key
+  headers, Entra/Apigee identity headers, proxy auth, `x-api-key`, and
+  client-supplied LiteLLM credential headers are stripped before forwarding.
+- Canonical `direct_litellm_passthrough` still enforces route enablement,
+  Relayna policy, provider/model permissions, rate limits, and budgets before
+  forwarding to LiteLLM. Wildcard non-canonical passthrough records reduced
+  status-only usage.
+- Sensitive LiteLLM `/ui` and admin-like paths remain blocked by default.
+  `operator_only` exposure requires the Gateway Entra/Apigee identity layer;
+  `explicitly_exposed` makes the allowlisted sensitive path reachable to
+  authenticated Relayna virtual-key clients.
+
 ## 0.1.8 - 2026-05-31
 
 ### Added

@@ -25,16 +25,34 @@ flowchart LR
 
 ## Request Flow
 
-1. A client sends an OpenAI-compatible or registered service request with `Authorization: Bearer rk_live_...`.
-2. The proxy extracts the key prefix and loads the hashed key record from PostgreSQL.
-3. Globally disabled OpenAI-compatible LiteLLM routes are rejected before policy, rate-limit, and budget checks.
-4. `gateway-core` verifies the key secret, disabled state, revocation state, expiry, allowed route, allowed model, allowed provider, streaming permission, service method permission, rate limit, and budget.
-5. Redis request-per-minute, token-per-minute, and budget counters are checked
+1. A client sends an OpenAI-compatible or registered service request with Gateway credentials. With Entra disabled this is `Authorization: Bearer rk_live_...`; with Entra enabled the Entra JWT stays in `Authorization` and the Relayna key moves to the configured Relayna key header.
+2. The proxy validates any configured Entra or trusted Apigee identity layer, extracts the Relayna key prefix, and loads the hashed key record from PostgreSQL.
+3. Route precedence is explicit: Relayna control/admin/operational routes, registered service routes, canonical OpenAI-compatible routes, and then configurable LiteLLM wildcard passthrough for remaining allowed paths.
+4. Globally disabled OpenAI-compatible LiteLLM routes are rejected before policy, rate-limit, and budget checks.
+5. `gateway-core` verifies the key secret, disabled state, revocation state, expiry, allowed route, allowed model, allowed provider, streaming permission, service method permission, rate limit, and budget.
+6. Redis request-per-minute, token-per-minute, and budget counters are checked
    and updated for rate limit and budget decisions.
-6. The proxy strips client credentials and the downstream `Host`, then forwards
+7. The proxy strips client credentials and the downstream `Host`, then forwards
    the request with the configured internal upstream credential and a `Host`
    header derived from the selected upstream.
-7. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields.
+8. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields when available.
+
+Canonical OpenAI-compatible routes can run in `managed_by_gateway` mode or
+`direct_litellm_passthrough` mode. Direct mode still enforces Relayna auth,
+route enablement, route/model/provider policy, request and token rate limits,
+and budgets before forwarding to LiteLLM. It bypasses Gateway guardrail
+rewriting and provider token accounting, so usage for that path is reduced.
+
+Wildcard LiteLLM passthrough is for non-canonical LiteLLM paths such as
+`/v1/models`. It is disabled by default, controlled by path/method allowlists,
+and records status-only usage. Sensitive LiteLLM `/ui` and admin-like paths
+have additional exposure modes:
+
+- `disabled`: always blocked.
+- `operator_only`: requires the Gateway Entra or trusted Apigee identity layer
+  plus Relayna virtual-key auth.
+- `explicitly_exposed`: allowed for authenticated Relayna virtual-key clients
+  when also matched by the path/method allowlist.
 
 ## Control Plane
 
@@ -80,7 +98,10 @@ PostgreSQL is the source of truth for durable state:
   links, streaming, tools, rate limits, and budgets.
 - Usage events consumed by Relayna Studio and operators.
 - Service registrations and Studio sync state.
-- Global OpenAI route enablement for `/v1/chat/completions` and `/v1/responses`.
+- Global OpenAI route enablement and mode selection for `/v1/chat/completions`,
+  `/v1/responses`, and `/v1/embeddings`.
+- LiteLLM wildcard passthrough settings for enablement, path/method
+  allowlists, `/ui` exposure, and LiteLLM admin API exposure.
 - Operator token hashes, roles, scopes, and append-only admin audit events.
 - Provider health state, request debug bundles, and service import snapshots.
 
@@ -99,4 +120,10 @@ counters from PostgreSQL usage events for keys that have configured budgets.
 
 ## Trust Boundaries
 
-Provider credentials, LiteLLM service keys, internal service tokens, and operator token hashes stay inside the gateway deployment boundary. Clients should only receive Relayna virtual keys. Logs and error responses must not expose raw credentials, raw virtual keys, request prompts, or upstream secrets.
+Provider credentials, LiteLLM service keys, LiteLLM virtual keys, internal
+service tokens, and operator token hashes stay inside the gateway deployment
+boundary. Clients should only receive Relayna virtual keys and, when enabled,
+front-door identity tokens such as Entra JWTs. Logs and error responses must
+not expose raw credentials, raw virtual keys, request prompts, or upstream
+secrets. Gateway strips client credentials before provider calls and injects
+only the internal credential selected for the upstream.
