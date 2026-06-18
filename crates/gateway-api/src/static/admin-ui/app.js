@@ -181,6 +181,7 @@ const state = {
   projects: [],
   providers: [],
   litellmCredentialMappings: [],
+  litellmPassthroughSettings: null,
   openaiRoutes: [],
   services: [],
   guardrails: [],
@@ -972,9 +973,10 @@ async function keyAction(event) {
   await keys();
 }
 async function providers() {
-  [state.providers, state.litellmCredentialMappings, state.keys, state.projects] = await Promise.all([
+  [state.providers, state.litellmCredentialMappings, state.litellmPassthroughSettings, state.keys, state.projects] = await Promise.all([
     api("/admin-ui/admin/providers"),
     api("/admin-ui/admin/providers/litellm-credentials"),
+    api("/admin-ui/admin/providers/litellm-passthrough"),
     api("/admin-ui/admin/keys"),
     api("/admin-ui/admin/projects")
   ]);
@@ -1011,9 +1013,14 @@ async function providers() {
       </form>
       ${litellmCredentialMappingTable(state.litellmCredentialMappings)}
     </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>LiteLLM passthrough</h3><span class="subtle">single ingress mode</span></div>
+      ${litellmPassthroughForm(state.litellmPassthroughSettings)}
+    </section>
   `;
   document.querySelector("#provider-form").addEventListener("submit", handleAsync(createProvider));
   document.querySelector("#litellm-credential-form").addEventListener("submit", handleAsync(saveLiteLlmCredentialMapping));
+  document.querySelector("#litellm-passthrough-form").addEventListener("submit", handleAsync(saveLiteLlmPassthroughSettings));
   document.querySelector("[data-litellm-mapping-scope]").addEventListener("change", updateLiteLlmMappingTargetVisibility);
   updateLiteLlmMappingTargetVisibility();
   document.querySelectorAll("[data-provider-action]").forEach((button) => {
@@ -1025,6 +1032,26 @@ async function providers() {
   document.querySelectorAll("[data-litellm-mapping-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(liteLlmCredentialMappingAction));
   });
+}
+function litellmPassthroughForm(settings2) {
+  const current = settings2 || {};
+  return `<form id="litellm-passthrough-form" class="form-grid">
+    <label class="check"><input name="enabled" type="checkbox" ${current.enabled ? "checked" : ""}> Enable wildcard passthrough</label>
+    <label>Allowed paths<input name="allowed_paths" value="${attr(listValue(current.allowed_paths, "/v1/*"))}"></label>
+    <label>Allowed methods<input name="allowed_methods" value="${attr(listValue(current.allowed_methods, "GET,POST"))}"></label>
+    <label>LiteLLM UI exposure<select name="ui_exposure">
+      ${option("disabled", current.ui_exposure || "disabled")}
+      ${option("operator_only", current.ui_exposure || "")}
+      ${option("explicitly_exposed", current.ui_exposure || "")}
+    </select></label>
+    <label>LiteLLM admin API exposure<select name="admin_api_exposure">
+      ${option("disabled", current.admin_api_exposure || "disabled")}
+      ${option("operator_only", current.admin_api_exposure || "")}
+      ${option("explicitly_exposed", current.admin_api_exposure || "")}
+    </select></label>
+    <div class="notice warn"><strong>Exposure risk</strong><span>/ui, key, config, user/team, spend, and other LiteLLM admin endpoints stay blocked unless explicitly exposed.</span></div>
+    <div class="form-actions"><button class="primary">Save passthrough settings</button></div>
+  </form>`;
 }
 function providerTable(rows) {
   return table(
@@ -1151,6 +1178,22 @@ async function liteLlmCredentialMappingAction(event) {
   setNotice(`LiteLLM credential mapping ${action}d.`, "success");
   await providers();
 }
+async function saveLiteLlmPassthroughSettings(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  await api("/admin-ui/admin/providers/litellm-passthrough", {
+    method: "PATCH",
+    body: JSON.stringify({
+      enabled: form.has("enabled"),
+      allowed_paths: csv(form.get("allowed_paths")),
+      allowed_methods: csv(form.get("allowed_methods")).map((method) => method.toUpperCase()),
+      ui_exposure: form.get("ui_exposure"),
+      admin_api_exposure: form.get("admin_api_exposure")
+    })
+  });
+  setNotice("LiteLLM passthrough settings updated.", "success");
+  await providers();
+}
 function updateLiteLlmMappingTargetVisibility() {
   var _a, _b, _c, _d, _e;
   const scope = ((_a = document.querySelector("[data-litellm-mapping-scope]")) == null ? void 0 : _a.value) || "key";
@@ -1175,19 +1218,32 @@ async function routes() {
   document.querySelectorAll("[data-openai-route-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(openaiRouteAction));
   });
+  document.querySelectorAll("[data-openai-route-mode-form]").forEach((form) => {
+    form.addEventListener("submit", handleAsync(saveOpenAiRouteMode));
+  });
 }
 function openaiRouteTable(rows) {
   return table(
-    ["Route", "State", "Updated", "Actions"],
+    ["Route", "State", "Mode", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
+      openaiRouteModeForm(row),
       time(row.updated_at),
       `<div class="actions">
         <button data-openai-route-action="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}">${row.enabled ? "Disable" : "Enable"}</button>
       </div>`
     ])
   );
+}
+function openaiRouteModeForm(row) {
+  return `<form class="inline-form" data-openai-route-mode-form data-route-id="${attr(row.route_id)}">
+    <select name="mode">
+      ${option("managed_by_gateway", row.mode || "managed_by_gateway")}
+      ${option("direct_litellm_passthrough", row.mode || "")}
+    </select>
+    <button type="submit">Save</button>
+  </form>`;
 }
 function serviceRouteTable(rows) {
   return table(
@@ -1208,6 +1264,18 @@ async function openaiRouteAction(event) {
   if (!await confirmAction(`${action} ${routeId}`, "This gateway route change is written to the database.")) return;
   await api(`/admin-ui/admin/openai-routes/${routeId}/${action}`, { method: "POST", body: "{}" });
   setNotice(`OpenAI route ${action}d.`, "success");
+  await routes();
+}
+async function saveOpenAiRouteMode(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const routeId = formElement.dataset.routeId;
+  const form = new FormData(formElement);
+  await api(`/admin-ui/admin/openai-routes/${routeId}/mode`, {
+    method: "PATCH",
+    body: JSON.stringify({ mode: form.get("mode") })
+  });
+  setNotice("OpenAI route mode updated.", "success");
   await routes();
 }
 async function services() {

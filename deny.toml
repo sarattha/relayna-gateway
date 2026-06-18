@@ -8,6 +8,8 @@ ignore = [
     "RUSTSEC-2024-0388",
     # Transitive through pingora-core. Revisit by 2026-08-31.
     "RUSTSEC-2025-0069",
+    # Transitive through pingora-cache. Revisit by 2026-08-31.
+    "RUSTSEC-2026-0173",
 ]
 
 [licenses]

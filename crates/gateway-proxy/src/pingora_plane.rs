@@ -16,10 +16,11 @@ use gateway_core::{
     EntraAuthConfig, EntraIdentityContext, GatewayAuthRuntimeConfig, GatewayAuthRuntimeSnapshot,
     GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent,
     GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet,
-    GuardrailStore, KeyPolicy, OpenAiRouteSettingsLookup, PolicyLookup, Provider,
-    ProviderConfigLookup, ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route,
-    RouteMatch, ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent,
-    UsageRecorder, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    GuardrailStore, KeyPolicy, LiteLlmSensitiveRouteExposure, OpenAiRouteMode,
+    OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
+    ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route, RouteMatch,
+    ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent, UsageRecorder,
+    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use http::{header::HeaderName, Uri};
 use pingora_core::{
@@ -266,6 +267,7 @@ pub struct PingoraContext {
     service_upstream: Option<PingoraUpstreamConfig>,
     service_route_pattern: Option<String>,
     litellm_upstream: Option<PingoraUpstreamConfig>,
+    litellm_passthrough: bool,
     guardrail_definitions: Vec<GuardrailDefinition>,
     guardrail_policy: GuardrailPolicy,
     pre_guardrail_plan: Option<GuardrailPlan>,
@@ -325,6 +327,7 @@ where
             service_upstream: None,
             service_route_pattern: None,
             litellm_upstream: None,
+            litellm_passthrough: false,
             guardrail_definitions: Vec::new(),
             guardrail_policy: GuardrailPolicy::default(),
             pre_guardrail_plan: None,
@@ -395,10 +398,28 @@ where
         } else {
             match Route::resolve_match(&req.method, req.uri.path()) {
                 Ok(matched) => matched,
-                Err(error) => {
-                    respond_error(session, error, &ctx.request_id).await?;
-                    return Ok(true);
-                }
+                Err(error) => match self.store.litellm_passthrough_settings().await {
+                    Ok(settings) if settings.allows(&req.method, req.uri.path()) => {
+                        ctx.litellm_passthrough = true;
+                        RouteMatch {
+                            route: Route::LiteLlmPassthrough,
+                            backend: gateway_core::BackendType::LiteLlm,
+                            provider: Provider::LiteLlm,
+                            service_name: None,
+                            timeout_ms: 120_000,
+                            max_body_bytes: 1_048_576,
+                            estimated_cost_usd: None,
+                        }
+                    }
+                    Ok(_) => {
+                        respond_error(session, error, &ctx.request_id).await?;
+                        return Ok(true);
+                    }
+                    Err(error) => {
+                        respond_error(session, error, &ctx.request_id).await?;
+                        return Ok(true);
+                    }
+                },
             }
         };
         ctx.route = Some(matched.route);
@@ -507,6 +528,43 @@ where
                     ctx.service_route_pattern = Some(registration.route_pattern);
                     ctx.service_upstream = Some(upstream);
                 }
+                if matches!(
+                    matched.route,
+                    Route::ChatCompletions | Route::Responses | Route::LiteLlmEmbeddings
+                ) {
+                    match self.store.openai_route_mode(matched.route).await {
+                        Ok(OpenAiRouteMode::DirectLiteLlmPassthrough) => {
+                            ctx.litellm_passthrough = true;
+                        }
+                        Ok(OpenAiRouteMode::ManagedByGateway) => {}
+                        Err(error) => {
+                            respond_error(session, error, &ctx.request_id).await?;
+                            return Ok(true);
+                        }
+                    }
+                }
+                if ctx.litellm_passthrough && matched.route == Route::LiteLlmPassthrough {
+                    match self.store.litellm_passthrough_settings().await {
+                        Ok(settings) => {
+                            if !sensitive_litellm_passthrough_authorized(
+                                settings.sensitive_exposure_for_path(req.uri.path()),
+                                ctx.entra_identity.as_ref(),
+                            ) {
+                                respond_error(
+                                    session,
+                                    GatewayError::InsufficientEntraAuthorization,
+                                    &ctx.request_id,
+                                )
+                                .await?;
+                                return Ok(true);
+                            }
+                        }
+                        Err(error) => {
+                            respond_error(session, error, &ctx.request_id).await?;
+                            return Ok(true);
+                        }
+                    }
+                }
                 if matched.provider == Provider::LiteLlm {
                     let litellm_config = match self.store.active_litellm_config().await {
                         Ok(config) => config,
@@ -587,12 +645,20 @@ where
     {
         if let Some(chunk) = body.as_ref() {
             ctx.body_bytes_seen = ctx.body_bytes_seen.saturating_add(chunk.len());
+            if ctx.body_prefix.len() < 65_536 {
+                let remaining = 65_536 - ctx.body_prefix.len();
+                ctx.body_prefix
+                    .extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+            }
             if let Some(matched) = &ctx.route_match {
                 if ctx.body_bytes_seen > matched.max_body_bytes {
                     respond_error(session, GatewayError::RequestBodyTooLarge, &ctx.request_id)
                         .await?;
                 }
             }
+        }
+        if ctx.litellm_passthrough {
+            return Ok(());
         }
         let Some(rewriter) = ctx.request_rewriter.as_mut() else {
             return Ok(());
@@ -790,6 +856,10 @@ where
                 .await;
             respond_error(session, error, &ctx.request_id).await?;
             return Ok(false);
+        }
+        if bypass_gateway_governance_for_passthrough(route, ctx.litellm_passthrough) {
+            gateway_telemetry::record_provider_selection();
+            return Ok(true);
         }
 
         let mut features = extract_generation_features(&ctx.body_prefix);
@@ -1167,14 +1237,20 @@ where
             .response_written()
             .map(|response| response.status.as_u16())
             .unwrap_or_else(|| if error.is_some() { 502 } else { 500 });
-        let estimated_cost_usd =
+        let estimated_cost_usd = if ctx.litellm_passthrough {
+            None
+        } else {
             extract_estimated_cost_usd(&ctx.response_body_prefix).or_else(|| {
                 ctx.route_match
                     .as_ref()
                     .and_then(|matched| matched.estimated_cost_usd)
-            });
-        let (input_tokens, output_tokens, total_tokens) =
-            extract_usage_tokens(&ctx.response_body_prefix);
+            })
+        };
+        let (input_tokens, output_tokens, total_tokens) = if ctx.litellm_passthrough {
+            (None, None, None)
+        } else {
+            extract_usage_tokens(&ctx.response_body_prefix)
+        };
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
         let provider = provider_for_usage(ctx);
         let event = UsageEvent::new(
@@ -1375,10 +1451,13 @@ where
 
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
         let provider = provider_for_usage(ctx);
-        let estimated_cost_usd = ctx
-            .route_match
-            .as_ref()
-            .and_then(|matched| matched.estimated_cost_usd);
+        let estimated_cost_usd = if ctx.litellm_passthrough {
+            None
+        } else {
+            ctx.route_match
+                .as_ref()
+                .and_then(|matched| matched.estimated_cost_usd)
+        };
         let event = UsageEvent::new(
             &ctx.request_id,
             key,
@@ -1511,6 +1590,21 @@ fn direct_openai_path_and_query(path_and_query: &str) -> String {
         rest.to_owned()
     } else {
         format!("/{rest}")
+    }
+}
+
+fn bypass_gateway_governance_for_passthrough(route: Route, litellm_passthrough: bool) -> bool {
+    litellm_passthrough && route == Route::LiteLlmPassthrough
+}
+
+fn sensitive_litellm_passthrough_authorized(
+    exposure: Option<LiteLlmSensitiveRouteExposure>,
+    entra_identity: Option<&EntraIdentityContext>,
+) -> bool {
+    match exposure {
+        Some(LiteLlmSensitiveRouteExposure::Disabled) => false,
+        Some(LiteLlmSensitiveRouteExposure::OperatorOnly) => entra_identity.is_some(),
+        Some(LiteLlmSensitiveRouteExposure::ExplicitlyExposed) | None => true,
     }
 }
 
@@ -1869,6 +1963,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         service_upstream: None,
         service_route_pattern: None,
         litellm_upstream: None,
+        litellm_passthrough: false,
         guardrail_definitions: Vec::new(),
         guardrail_policy: GuardrailPolicy::default(),
         pre_guardrail_plan: None,
@@ -1903,7 +1998,8 @@ mod tests {
     use super::*;
     use chrono::{DateTime, Utc};
     use gateway_core::{
-        AuthenticatedKey, BudgetDecision, BudgetState, GatewayResult, RateLimitDecision, UsageEvent,
+        AuthenticatedKey, BudgetDecision, BudgetState, EntraIdentitySource, GatewayResult,
+        LiteLlmPassthroughSettings, OpenAiRouteMode, RateLimitDecision, UsageEvent,
     };
     use std::sync::Mutex;
     use uuid::Uuid;
@@ -2347,11 +2443,110 @@ mod tests {
             .expect("service wildcard is not controlled by OpenAI route settings");
     }
 
+    #[test]
+    fn litellm_passthrough_settings_allow_v1_and_block_sensitive_paths() {
+        let mut settings = LiteLlmPassthroughSettings::default_with_updated_at(Utc::now());
+        settings.enabled = true;
+
+        assert!(settings.allows(&http::Method::GET, "/v1/models"));
+        assert!(settings.allows(&http::Method::POST, "/v1/chat/completions"));
+        assert!(!settings.allows(&http::Method::DELETE, "/v1/models/model-a"));
+        assert!(!settings.allows(&http::Method::GET, "/ui"));
+        assert!(!settings.allows(&http::Method::GET, "/key/list"));
+    }
+
+    #[test]
+    fn direct_litellm_route_mode_still_uses_gateway_governance() {
+        assert!(bypass_gateway_governance_for_passthrough(
+            Route::LiteLlmPassthrough,
+            true
+        ));
+        assert!(!bypass_gateway_governance_for_passthrough(
+            Route::ChatCompletions,
+            true
+        ));
+        assert!(!bypass_gateway_governance_for_passthrough(
+            Route::Responses,
+            true
+        ));
+        assert!(!bypass_gateway_governance_for_passthrough(
+            Route::LiteLlmEmbeddings,
+            true
+        ));
+    }
+
+    #[test]
+    fn operator_only_litellm_paths_require_entra_identity() {
+        assert!(!sensitive_litellm_passthrough_authorized(
+            Some(LiteLlmSensitiveRouteExposure::OperatorOnly),
+            None
+        ));
+        assert!(sensitive_litellm_passthrough_authorized(
+            Some(LiteLlmSensitiveRouteExposure::ExplicitlyExposed),
+            None
+        ));
+
+        let identity = EntraIdentityContext {
+            tenant_id: "tenant".to_owned(),
+            subject: Some("operator".to_owned()),
+            object_id: Some("object".to_owned()),
+            app_id: None,
+            authorized_party: None,
+            scopes: vec!["gateway.invoke".to_owned()],
+            roles: Vec::new(),
+            groups: Vec::new(),
+            token_version: "2.0".to_owned(),
+            source: EntraIdentitySource::Jwt,
+        };
+        assert!(sensitive_litellm_passthrough_authorized(
+            Some(LiteLlmSensitiveRouteExposure::OperatorOnly),
+            Some(&identity)
+        ));
+    }
+
+    #[tokio::test]
+    async fn direct_litellm_passthrough_terminal_usage_is_status_only() {
+        let store = Arc::new(MemoryUsageStore::default());
+        let control_state = Arc::new(MemoryControlState::default());
+        let proxy = RelaynaPingoraProxy {
+            store: store.clone(),
+            control_state,
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+                .expect("config"),
+            auth_runtime: default_auth_runtime_for_tests(),
+        };
+        let key = AuthenticatedKey {
+            key_id: Uuid::new_v4(),
+            project_id: Some(Uuid::new_v4()),
+            key_prefix: "rk_live_test_key".to_owned(),
+        };
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.request_id = "req_direct_passthrough".to_owned();
+        ctx.route = Some(Route::ChatCompletions);
+        ctx.route_match =
+            Some(Route::resolve_match(&http::Method::POST, "/v1/chat/completions").expect("route"));
+        ctx.litellm_passthrough = true;
+        ctx.key = Some(key.clone());
+
+        proxy
+            .record_terminal_usage(&mut ctx, &key, Route::ChatCompletions, 502, Utc::now())
+            .await;
+
+        let events = store.events.lock().expect("events lock");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].request_id, "req_direct_passthrough");
+        assert_eq!(events[0].estimated_cost_usd, None);
+        assert_eq!(events[0].input_tokens, None);
+        assert_eq!(events[0].output_tokens, None);
+    }
+
     struct MemoryUsageStore {
         events: Mutex<Vec<UsageEvent>>,
         debug_bundles: Mutex<Vec<gateway_core::DebugBundle>>,
         guardrail_events: Mutex<Vec<GuardrailExecutionEvent>>,
         openai_routes_enabled: Mutex<bool>,
+        openai_route_mode: Mutex<OpenAiRouteMode>,
+        litellm_passthrough_settings: Mutex<LiteLlmPassthroughSettings>,
     }
 
     impl Default for MemoryUsageStore {
@@ -2361,6 +2556,10 @@ mod tests {
                 debug_bundles: Mutex::new(Vec::new()),
                 guardrail_events: Mutex::new(Vec::new()),
                 openai_routes_enabled: Mutex::new(true),
+                openai_route_mode: Mutex::new(OpenAiRouteMode::ManagedByGateway),
+                litellm_passthrough_settings: Mutex::new(
+                    LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+                ),
             }
         }
     }
@@ -2460,6 +2659,22 @@ mod tests {
             } else {
                 Ok(true)
             }
+        }
+
+        async fn openai_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode> {
+            if gateway_core::openai_route_id(route).is_some() {
+                Ok(*self.openai_route_mode.lock().expect("route mode lock"))
+            } else {
+                Ok(OpenAiRouteMode::ManagedByGateway)
+            }
+        }
+
+        async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
+            Ok(self
+                .litellm_passthrough_settings
+                .lock()
+                .expect("passthrough settings lock")
+                .clone())
         }
     }
 

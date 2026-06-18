@@ -1,10 +1,10 @@
 # LiteLLM Real Passthrough Test Report
 
-Generated: 2026-05-31T16:32:08.793Z
+Generated: 2026-06-18T15:08:29.578Z
 
 Overall result: **PASS**
 
-PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass through to LiteLLM; literal aliases /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank remain unsupported.
+PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, /ui remains blocked by default, and credential translation strips client secrets.
 
 ## Environment
 
@@ -25,6 +25,10 @@ PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass thr
 | Check | Result | Status | Error code |
 | --- | --- | ---: | --- |
 | canonical chat completions passes to litellm | PASS | 200 |  |
+| canonical route mode can switch to direct passthrough | PASS | n/a |  |
+| wildcard passthrough defaults disabled then can enable v1 | PASS | n/a |  |
+| wildcard v1 models preserves query and reaches real litellm | PASS | n/a |  |
+| wildcard ui path is blocked by default | PASS | 404 | unsupported_route |
 | canonical responses passes to litellm | PASS | 200 |  |
 | canonical embeddings passes to litellm | PASS | 200 |  |
 | apigee trusted header chat passes to litellm | PASS | 200 |  |
@@ -33,15 +37,16 @@ PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass thr
 | litellm key mapping precedes project mapping | PASS | n/a |  |
 | disabled key mapping falls back to project mapping | PASS | n/a |  |
 | disabled project mapping falls back to provider default | PASS | n/a |  |
-| requested literal chatcompletion path | PASS | 404 | unsupported_route |
-| requested literal response path | PASS | 404 | unsupported_route |
-| requested literal embedding path | PASS | 404 | unsupported_route |
-| requested rerank path | PASS | 404 | unsupported_route |
+| wildcard literal chatcompletion reaches litellm | PASS | 404 |  |
+| wildcard literal response reaches litellm | PASS | 404 |  |
+| wildcard literal embedding reaches litellm | PASS | 404 |  |
+| wildcard rerank reaches litellm | PASS | 400 | 400 |
 
 ## Provider Capture Behind LiteLLM
 
 | Request | Authorization seen by mock provider | Client credential leaked? | Apigee identity leaked? |
 | --- | --- | --- | --- |
+| POST /v1/chat/completions | Bearer sk-upstream | no | no |
 | POST /v1/chat/completions | Bearer sk-upstream | no | no |
 | POST /v1/responses | Bearer sk-upstream | no | no |
 | POST /v1/embeddings | Bearer sk-upstream | no | no |
@@ -52,26 +57,32 @@ PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass thr
 | Request | Authorization from Gateway | x-litellm-api-key from Gateway | Client credential leaked? |
 | --- | --- | --- | --- |
 | POST /v1/chat/completions |  | sk-key | no |
+| POST /v1/chat/completions |  | sk-key | no |
+| GET /v1/models?source=wildcard |  | sk-key | no |
 | POST /v1/responses |  | sk-project | no |
 | POST /v1/embeddings |  | sk-provider | no |
+| POST /v1/chatcompletion |  | sk-provider | no |
+| POST /v1/response |  | sk-provider | no |
+| POST /v1/embedding |  | sk-provider | no |
+| POST /v1/rerank |  | sk-provider | no |
 | POST /v1/chat/completions |  | sk-provider | no |
 
 Observed LiteLLM credential precedence:
-`sk-key -> sk-project -> sk-provider -> sk-provider`
+`sk-key -> sk-key -> sk-key -> sk-project -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider`
 
-## Interesting Finding
+## Wildcard Coverage
 
-The current branch routes `/v1/chat/completions`, `/v1/responses`, and
-`/v1/embeddings` to LiteLLM. The singular or alias paths still return
-`unsupported_route` before reaching LiteLLM:
+The current branch routes managed canonical calls through LiteLLM, can switch a
+canonical route to direct LiteLLM passthrough, and forwards enabled wildcard
+`/v1/*` calls while preserving path and query.
+
+The literal alias probes below reached real LiteLLM and were rejected there with
+404 or 400 responses, proving they were not stopped by the Gateway router:
 
 - `/v1/chatcompletion`
 - `/v1/response`
 - `/v1/embedding`
 - `/v1/rerank`
-
-The Gateway also has an internal-service `/embeddings` route, but it is not a
-LiteLLM passthrough route.
 
 ## Screenshot Artifacts
 
@@ -79,6 +90,9 @@ LiteLLM passthrough route.
 - `screenshots/02-admin-ui-project-mapping-control.png`
 - `screenshots/03-real-env-report-overview.png`
 - `screenshots/04-real-env-credential-capture.png`
+- `screenshots/05-real-litellm-issue-64-report.png`
+- `screenshots/06-admin-ui-litellm-passthrough-controls.png`
+- `screenshots/07-admin-ui-route-mode-controls.png`
 
 ## Raw Results
 

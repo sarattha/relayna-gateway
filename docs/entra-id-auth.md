@@ -262,8 +262,8 @@ empty placeholders for required Entra values.
 Useful local checks after changing Entra configuration or code:
 
 ```bash
-python3 scripts/validate-release-metadata.py v0.1.8
-node tests/freeze-v0.1.8-perimeter.test.mjs
+python3 scripts/validate-release-metadata.py v0.1.9
+node tests/freeze-v0.1.9-perimeter.test.mjs
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
 cargo test --workspace --all-features

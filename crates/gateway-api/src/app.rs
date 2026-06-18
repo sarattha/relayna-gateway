@@ -22,7 +22,8 @@ use gateway_core::{
     GuardrailDefinitionResponse, GuardrailEventQuery, GuardrailExecutionEvent,
     GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPlanRequest,
     GuardrailPolicySet, GuardrailStore, GuardrailTestRequest, GuardrailTestResponse, KeyPolicy,
-    LiteLlmCredentialMappingResponse, LiteLlmCredentialMappingUpsertRequest, OperatorAuthorization,
+    LiteLlmCredentialMappingResponse, LiteLlmCredentialMappingUpsertRequest,
+    LiteLlmPassthroughSettingsPatchRequest, OpenAiRouteMode, OperatorAuthorization,
     OperatorTokenMaterial, OperatorTokenStore, PolicyLookup, ProjectCreateRequest,
     ProjectPatchRequest, ProjectResponse, Provider, ProviderConfigCreateRequest,
     ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus,
@@ -285,6 +286,10 @@ pub fn router_with_state(state: AppState) -> Router {
             post(enable_litellm_credential_mapping),
         )
         .route(
+            "/admin-ui/admin/providers/litellm-passthrough",
+            get(get_litellm_passthrough_settings).patch(patch_litellm_passthrough_settings),
+        )
+        .route(
             "/admin-ui/admin/providers/{provider_id}",
             get(get_provider)
                 .patch(patch_provider)
@@ -306,6 +311,10 @@ pub fn router_with_state(state: AppState) -> Router {
         .route(
             "/admin-ui/admin/openai-routes/{route_id}/enable",
             post(enable_openai_route),
+        )
+        .route(
+            "/admin-ui/admin/openai-routes/{route_id}/mode",
+            patch(patch_openai_route_mode),
         )
         .route(
             "/admin-ui/admin/services",
@@ -1522,6 +1531,51 @@ async fn list_litellm_credential_mappings(
     .await
 }
 
+async fn get_litellm_passthrough_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+        store.get_litellm_passthrough_settings().await
+    })
+    .await
+}
+
+async fn patch_litellm_passthrough_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(patch): Json<LiteLlmPassthroughSettingsPatchRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_PROVIDERS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_litellm_passthrough_settings().await {
+        Ok(settings) => Some(settings),
+        Err(error) => return error_response(&headers, error),
+    };
+    match state.store.patch_litellm_passthrough_settings(patch).await {
+        Ok(settings) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "providers:litellm_passthrough_update",
+                "litellm_passthrough_settings",
+                Some("singleton".to_owned()),
+                before.as_ref().and_then(audit_json),
+                audit_json(&settings),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(settings).into_response()
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn delete_litellm_credential_mapping(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1702,6 +1756,49 @@ async fn enable_openai_route(
     Path(route_id): Path<String>,
 ) -> Response {
     mutate_openai_route_enabled(state, headers, route_id, true).await
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiRouteModePatchRequest {
+    mode: OpenAiRouteMode,
+}
+
+async fn patch_openai_route_mode(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(route_id): Path<String>,
+    Json(request): Json<OpenAiRouteModePatchRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+
+    match state
+        .store
+        .set_openai_route_mode(&route_id, request.mode)
+        .await
+    {
+        Ok(Some(setting)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "policies:route_mode_update",
+                "openai_route",
+                Some(route_id),
+                None,
+                audit_json(&setting),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(setting).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
 }
 
 async fn create_service(
@@ -3072,13 +3169,13 @@ mod tests {
     use gateway_core::{
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
-        default_operator_roles, default_operator_scopes, OpenAiRouteSetting, OperatorTokenResponse,
-        PatchValue, ProjectCreateRequest, ProjectPatchRequest, ProjectResponse,
-        ProviderConfigCreateRequest, ProviderConfigPatchRequest, ProviderConfigResponse,
-        ProviderHealth, Route, ServiceCostMode, ServiceResponse, ServiceSource, ServiceSyncStatus,
-        ServiceSyncStatusResponse, StoredGatewayAuthSettings, StoredStudioConnection,
-        StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow, UsageStatus, UsageSummary,
-        UsageTimeseriesPoint,
+        default_operator_roles, default_operator_scopes, LiteLlmPassthroughSettings,
+        OpenAiRouteMode, OpenAiRouteSetting, OperatorTokenResponse, PatchValue,
+        ProjectCreateRequest, ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest,
+        ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealth, Route, ServiceCostMode,
+        ServiceResponse, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
+        StoredGatewayAuthSettings, StoredStudioConnection, StudioConnectionPatchRequest,
+        UsageBreakdown, UsageExportRow, UsageStatus, UsageSummary, UsageTimeseriesPoint,
     };
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -3095,6 +3192,7 @@ mod tests {
         audit_events: Arc<Mutex<Vec<AuditEvent>>>,
         studio_connection: Arc<Mutex<Option<StoredStudioConnection>>>,
         gateway_auth_settings: Arc<Mutex<Option<StoredGatewayAuthSettings>>>,
+        litellm_passthrough_settings: Arc<Mutex<LiteLlmPassthroughSettings>>,
         postgres_ready: bool,
     }
 
@@ -3757,6 +3855,61 @@ mod tests {
             route.enabled = enabled;
             route.updated_at = Utc::now();
             Ok(Some(route.clone()))
+        }
+
+        async fn set_openai_route_mode(
+            &self,
+            route_id: &str,
+            mode: OpenAiRouteMode,
+        ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+            let mut routes = self.openai_routes.lock().expect("lock poisoned");
+            let Some(route) = routes.iter_mut().find(|route| route.route_id == route_id) else {
+                return Ok(None);
+            };
+            route.mode = mode;
+            route.updated_at = Utc::now();
+            Ok(Some(route.clone()))
+        }
+
+        async fn get_litellm_passthrough_settings(
+            &self,
+        ) -> GatewayResult<LiteLlmPassthroughSettings> {
+            Ok(self
+                .litellm_passthrough_settings
+                .lock()
+                .expect("lock poisoned")
+                .clone())
+        }
+
+        async fn patch_litellm_passthrough_settings(
+            &self,
+            patch: LiteLlmPassthroughSettingsPatchRequest,
+        ) -> GatewayResult<LiteLlmPassthroughSettings> {
+            patch.validate()?;
+            let mut settings = self
+                .litellm_passthrough_settings
+                .lock()
+                .expect("lock poisoned");
+            if let Some(enabled) = patch.enabled {
+                settings.enabled = enabled;
+            }
+            if let Some(paths) = patch.allowed_paths {
+                settings.allowed_paths = paths;
+            }
+            if let Some(methods) = patch.allowed_methods {
+                settings.allowed_methods = methods
+                    .into_iter()
+                    .map(|method| method.trim().to_ascii_uppercase())
+                    .collect();
+            }
+            if let Some(exposure) = patch.ui_exposure {
+                settings.ui_exposure = exposure;
+            }
+            if let Some(exposure) = patch.admin_api_exposure {
+                settings.admin_api_exposure = exposure;
+            }
+            settings.updated_at = Utc::now();
+            Ok(settings.clone())
         }
     }
 
@@ -4535,6 +4688,9 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
             postgres_ready: true,
         }
     }
@@ -4546,18 +4702,21 @@ mod tests {
                 route_id: "chat-completions".to_owned(),
                 route: "/v1/chat/completions".to_owned(),
                 enabled: true,
+                mode: OpenAiRouteMode::ManagedByGateway,
                 updated_at: now,
             },
             OpenAiRouteSetting {
                 route_id: "responses".to_owned(),
                 route: "/v1/responses".to_owned(),
                 enabled: true,
+                mode: OpenAiRouteMode::ManagedByGateway,
                 updated_at: now,
             },
             OpenAiRouteSetting {
                 route_id: "embeddings".to_owned(),
                 route: "/v1/embeddings".to_owned(),
                 enabled: true,
+                mode: OpenAiRouteMode::ManagedByGateway,
                 updated_at: now,
             },
         ]
@@ -4662,6 +4821,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
 
         let app = router_with_state(test_state_with_redis_url(store, "redis://127.0.0.1:0"));
@@ -4684,6 +4846,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
 
         let app = router_with_state(test_state(store.clone()));
@@ -4882,6 +5047,9 @@ mod tests {
             postgres_ready: false,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
 
         let app = router_with_state(test_state(store));
@@ -4903,6 +5071,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -4930,6 +5101,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -5136,6 +5310,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -5171,6 +5348,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -5236,6 +5416,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let response = admin_patch(
@@ -5264,6 +5447,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -5296,6 +5482,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -5329,6 +5518,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -5368,6 +5560,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let project_id = Uuid::new_v4();
@@ -5457,6 +5652,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let response = request(app, "/admin-ui/metrics").await;
@@ -5493,6 +5691,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let response = admin_get(
@@ -5600,6 +5801,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let response = request(app.clone(), "/admin-ui").await;
@@ -5632,6 +5836,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -5841,6 +6048,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
 
@@ -5856,6 +6066,7 @@ mod tests {
             .expect("body");
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(value.as_array().expect("routes").len(), 3);
+        assert_eq!(value[0]["mode"], "managed_by_gateway");
 
         let response = admin_post(
             app.clone(),
@@ -5871,6 +6082,20 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(value["route_id"], "chat-completions");
         assert_eq!(value["enabled"], false);
+
+        let response = admin_patch(
+            app.clone(),
+            "/admin-ui/admin/openai-routes/chat-completions/mode",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"mode":"direct_litellm_passthrough"}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["mode"], "direct_litellm_passthrough");
 
         let response = admin_post(
             app,
@@ -5888,6 +6113,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn litellm_passthrough_settings_can_be_read_and_patched() {
+        let store = default_store();
+        let audit_events = store.audit_events.clone();
+        let app = router_with_state(test_state(store));
+
+        let response = admin_get(
+            app.clone(),
+            "/admin-ui/admin/providers/litellm-passthrough",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["enabled"], false);
+        assert_eq!(value["allowed_paths"][0], "/v1/*");
+
+        let response = admin_patch(
+            app,
+            "/admin-ui/admin/providers/litellm-passthrough",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{
+                "enabled": true,
+                "allowed_paths": ["/v1/*", "/ui"],
+                "allowed_methods": ["GET", "POST"],
+                "ui_exposure": "operator_only",
+                "admin_api_exposure": "disabled"
+            }"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["enabled"], true);
+        assert_eq!(value["ui_exposure"], "operator_only");
+        assert!(value.get("credential").is_none());
+
+        let events = audit_events.lock().expect("audit events lock");
+        assert!(events
+            .iter()
+            .any(|event| event.action == "providers:litellm_passthrough_update"));
+    }
+
+    #[tokio::test]
     async fn admin_service_create_redacts_raw_credential() {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
@@ -5900,6 +6173,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -5962,6 +6238,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -6007,6 +6286,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let response = admin_post(
@@ -6086,6 +6368,9 @@ mod tests {
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
+            litellm_passthrough_settings: Arc::new(Mutex::new(
+                LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
+            )),
         };
         let app = router_with_state(test_state(store));
         let _ = admin_post(

@@ -1,8 +1,8 @@
 {
   "ok": true,
   "requestedLiteLlmPathsPassThrough": true,
-  "overallOutcome": "PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass through to LiteLLM; literal aliases /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank remain unsupported.",
-  "generatedAt": "2026-05-31T16:32:08.793Z",
+  "overallOutcome": "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, /ui remains blocked by default, and credential translation strips client secrets.",
+  "generatedAt": "2026-06-18T15:08:29.578Z",
   "environment": {
     "gatewayProxyUrl": "http://gateway:8080",
     "gatewayControlUrl": "http://gateway:8081",
@@ -22,15 +22,16 @@
   "canonicalGatewayLiteLlmPaths": [
     "/v1/chat/completions",
     "/v1/responses",
-    "/v1/embeddings"
+    "/v1/embeddings",
+    "/v1/models"
   ],
   "checks": {
     "canonical_chat_completions_passes_to_litellm": {
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-64736208-938c-43bd-bd75-dd9cc625f157",
-        "created": 1780245128,
+        "id": "chatcmpl-54e60441-f1ea-412a-8a31-e0a3a2e7bcbe",
+        "created": 1781795308,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -54,12 +55,134 @@
         }
       }
     },
+    "canonical_route_mode_can_switch_to_direct_passthrough": {
+      "ok": true,
+      "routeModeUpdate": {
+        "status": 200,
+        "body": {
+          "route_id": "chat-completions",
+          "route": "/v1/chat/completions",
+          "enabled": true,
+          "mode": "direct_litellm_passthrough",
+          "updated_at": "2026-06-18T15:08:28.719053Z"
+        }
+      },
+      "routeMode": "direct_litellm_passthrough",
+      "directModeChat": {
+        "status": 200,
+        "body": {
+          "id": "chatcmpl-2dc48aae-3589-4735-a13a-a031b92cde43",
+          "created": 1781795308,
+          "model": "gpt-review",
+          "object": "chat.completion",
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "chat passthrough ok",
+                "role": "assistant",
+                "provider_specific_fields": {
+                  "refusal": null
+                }
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 4,
+            "prompt_tokens": 8,
+            "total_tokens": 12
+          }
+        }
+      }
+    },
+    "wildcard_passthrough_defaults_disabled_then_can_enable_v1": {
+      "ok": true,
+      "passthroughDefaults": {
+        "status": 200,
+        "body": {
+          "enabled": false,
+          "allowed_paths": [
+            "/v1/*"
+          ],
+          "allowed_methods": [
+            "GET",
+            "POST"
+          ],
+          "ui_exposure": "disabled",
+          "admin_api_exposure": "disabled",
+          "updated_at": "2026-06-18T15:08:27.425646Z"
+        }
+      },
+      "passthroughEnable": {
+        "status": 200,
+        "body": {
+          "enabled": true,
+          "allowed_paths": [
+            "/v1/*"
+          ],
+          "allowed_methods": [
+            "GET",
+            "POST"
+          ],
+          "ui_exposure": "disabled",
+          "admin_api_exposure": "disabled",
+          "updated_at": "2026-06-18T15:08:28.978749Z"
+        }
+      }
+    },
+    "wildcard_v1_models_preserves_query_and_reaches_real_litellm": {
+      "ok": true,
+      "wildcardModels": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "gpt-review",
+              "object": "model",
+              "created": 1677610602,
+              "owned_by": "openai"
+            },
+            {
+              "id": "text-embedding-review",
+              "object": "model",
+              "created": 1677610602,
+              "owned_by": "openai"
+            }
+          ],
+          "object": "list"
+        }
+      },
+      "wildcardCapture": {
+        "path": "/v1/models?source=wildcard",
+        "method": "GET",
+        "authorization": null,
+        "litellmApiKey": "sk-key",
+        "hasRelaynaKey": false,
+        "hasAihKey": false,
+        "hasApigeeIdentity": false,
+        "hasClientJwt": false,
+        "body": {}
+      }
+    },
+    "wildcard_ui_path_is_blocked_by_default": {
+      "ok": true,
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "unsupported_route",
+          "message": "Route is not supported by this gateway.",
+          "request_id": "5c60e9b0-47d7-4bdb-80cf-7cc952de2992"
+        }
+      }
+    },
     "canonical_responses_passes_to_litellm": {
       "ok": true,
       "status": 200,
       "body": {
-        "id": "resp_pbaz8Q41vfY6bZBIpwvM7C5DLWKMyfMO-_51cmPpS82jiwjAg9zYvVAFDnQ6Om9BQu6kwdPlcxKxMRS2761vB3W4KTDTcpzUYCntyiAD9r5s2FJJwuVC4HNI0jHzEWZy2u51X-wmCSWaD_FTrrUldzpLwrG6z1B1f5I_SkLhqvdJVagty7WoxPUPI2iDZCOj49LZ2JmD1D0mN1Qr1Wfd2ENxo07CJgzAQ11TqDIWB3IXKIBh9j9bQI2NER2aaNSSRpfNaJI1Qspfhmslsu4-8BxPMvLh5FWSlzIPyZHrEhzhrErYiSuetmRoYSuu8k_q_5bEPQUE3s-Rwmvs3uUez7va6JsxyQ8ca8Rgqm2JTOhqIRDFkcImxrMcroJQ4Rel5ZseGdUqohCnKdsQs6m6N0Ev8O8tki_lUXJLhyRns-iN4AJMtck9KO-SeIEsQg==",
-        "created_at": 1780245128,
+        "id": "resp_tfXU3tHYYV8PuBgT8pStpgBbZ6bMcP3gczic3stH_CzABwq8YbndOpG3JVswWEy_LREY0aninhXqyRGzk7XyywfpGyCTzQallPXPMvZ7Lltzy0Mmlk9vG67djiMJQha8yW2rA9LaFPFk0D98YVieF3_G_TM7v-2irmQQFpgW7isMCTQYLgNP57cD-D_3HVydcJsC6Of0Ha8VRTGEsHjCsecspJUb3SxVpSKPZD-gjXX5EOCqx3HXFqR9vDV-_mVCriMiVwfYpjM37FB7lcCvU-DDtYkivQI0voZOVSExc5DxUm5PSQmrSPuSiNz7inNxdjOYk4Ngtsm09sHynkN7r7eqPYw4TRETFgy2ffZE-GrbyPUdCr0zBy_dyQmfb3u3BdxEyw42z9kBItBOSRt9yOR16KEoVZ9hM3VHNq6q1YwXayl30UhCwRk06HJPSQ==",
+        "created_at": 1781795309,
         "error": null,
         "incomplete_details": null,
         "instructions": null,
@@ -69,7 +192,7 @@
         "output": [
           {
             "type": "message",
-            "id": "msg-83b1641b-6a32-41d5-a4b2-6062867657b0",
+            "id": "msg-05728121-f9b9-4096-a442-8e5ec3694eb9",
             "status": "completed",
             "role": "assistant",
             "content": [
@@ -133,8 +256,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-8383fea3-5dff-44cc-aa87-915617bfb5e4",
-        "created": 1780245128,
+        "id": "chatcmpl-559ffd25-1dbf-422c-a054-5d7295f7fc4b",
+        "created": 1781795309,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -161,6 +284,25 @@
     "upstream_receives_no_client_credentials": {
       "ok": true,
       "providerRequests": [
+        {
+          "path": "/v1/chat/completions",
+          "method": "POST",
+          "authorization": "Bearer sk-upstream",
+          "hasGatewayServiceKey": true,
+          "hasRelaynaKey": false,
+          "hasAihKey": false,
+          "hasApigeeIdentity": false,
+          "hasClientJwt": false,
+          "body": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "gateway to litellm chat passthrough"
+              }
+            ],
+            "model": "gpt-review"
+          }
+        },
         {
           "path": "/v1/chat/completions",
           "method": "POST",
@@ -253,6 +395,36 @@
           }
         },
         {
+          "path": "/v1/chat/completions",
+          "method": "POST",
+          "authorization": null,
+          "litellmApiKey": "sk-key",
+          "hasRelaynaKey": false,
+          "hasAihKey": false,
+          "hasApigeeIdentity": false,
+          "hasClientJwt": false,
+          "body": {
+            "model": "gpt-review",
+            "messages": [
+              {
+                "role": "user",
+                "content": "gateway to litellm chat passthrough"
+              }
+            ]
+          }
+        },
+        {
+          "path": "/v1/models?source=wildcard",
+          "method": "GET",
+          "authorization": null,
+          "litellmApiKey": "sk-key",
+          "hasRelaynaKey": false,
+          "hasAihKey": false,
+          "hasApigeeIdentity": false,
+          "hasClientJwt": false,
+          "body": {}
+        },
+        {
           "path": "/v1/responses",
           "method": "POST",
           "authorization": null,
@@ -281,6 +453,71 @@
           }
         },
         {
+          "path": "/v1/chatcompletion",
+          "method": "POST",
+          "authorization": null,
+          "litellmApiKey": "sk-provider",
+          "hasRelaynaKey": false,
+          "hasAihKey": false,
+          "hasApigeeIdentity": false,
+          "hasClientJwt": false,
+          "body": {
+            "model": "gpt-review",
+            "messages": [
+              {
+                "role": "user",
+                "content": "gateway to litellm chat passthrough"
+              }
+            ]
+          }
+        },
+        {
+          "path": "/v1/response",
+          "method": "POST",
+          "authorization": null,
+          "litellmApiKey": "sk-provider",
+          "hasRelaynaKey": false,
+          "hasAihKey": false,
+          "hasApigeeIdentity": false,
+          "hasClientJwt": false,
+          "body": {
+            "model": "gpt-review",
+            "input": "gateway to litellm responses passthrough"
+          }
+        },
+        {
+          "path": "/v1/embedding",
+          "method": "POST",
+          "authorization": null,
+          "litellmApiKey": "sk-provider",
+          "hasRelaynaKey": false,
+          "hasAihKey": false,
+          "hasApigeeIdentity": false,
+          "hasClientJwt": false,
+          "body": {
+            "model": "text-embedding-review",
+            "input": "gateway embedding passthrough"
+          }
+        },
+        {
+          "path": "/v1/rerank",
+          "method": "POST",
+          "authorization": null,
+          "litellmApiKey": "sk-provider",
+          "hasRelaynaKey": false,
+          "hasAihKey": false,
+          "hasApigeeIdentity": false,
+          "hasClientJwt": false,
+          "body": {
+            "model": "rerank-review",
+            "query": "gateway rerank passthrough",
+            "documents": [
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
           "path": "/v1/chat/completions",
           "method": "POST",
           "authorization": null,
@@ -303,62 +540,103 @@
     },
     "litellm_key_mapping_precedes_project_mapping": {
       "ok": true,
-      "firstCredential": "sk-key"
+      "credentials": [
+        "sk-key",
+        "sk-key",
+        "sk-key",
+        "sk-project",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider"
+      ]
     },
     "disabled_key_mapping_falls_back_to_project_mapping": {
       "ok": true,
-      "secondCredential": "sk-project"
+      "credentials": [
+        "sk-key",
+        "sk-key",
+        "sk-key",
+        "sk-project",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider"
+      ]
     },
     "disabled_project_mapping_falls_back_to_provider_default": {
       "ok": true,
-      "thirdCredential": "sk-provider"
+      "credentials": [
+        "sk-key",
+        "sk-key",
+        "sk-key",
+        "sk-project",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider",
+        "sk-provider"
+      ]
     },
-    "requested_literal_chatcompletion_path": {
+    "wildcard_literal_chatcompletion_reaches_litellm": {
       "ok": true,
       "status": 404,
       "body": {
-        "error": {
-          "code": "unsupported_route",
-          "message": "Route is not supported by this gateway.",
-          "request_id": "a12aa31d-5c5a-4b23-915f-49008d6c5da6"
-        }
+        "detail": "Not Found"
       }
     },
-    "requested_literal_response_path": {
+    "wildcard_literal_response_reaches_litellm": {
       "ok": true,
       "status": 404,
       "body": {
-        "error": {
-          "code": "unsupported_route",
-          "message": "Route is not supported by this gateway.",
-          "request_id": "ddbe812e-970b-4844-b670-f174fad0bcbc"
-        }
+        "detail": "Not Found"
       }
     },
-    "requested_literal_embedding_path": {
+    "wildcard_literal_embedding_reaches_litellm": {
       "ok": true,
       "status": 404,
       "body": {
-        "error": {
-          "code": "unsupported_route",
-          "message": "Route is not supported by this gateway.",
-          "request_id": "6f031e4c-d0ac-46aa-b73c-567a1a6af0aa"
-        }
+        "detail": "Not Found"
       }
     },
-    "requested_rerank_path": {
+    "wildcard_rerank_reaches_litellm": {
       "ok": true,
-      "status": 404,
+      "status": 400,
       "body": {
         "error": {
-          "code": "unsupported_route",
-          "message": "Route is not supported by this gateway.",
-          "request_id": "321a8620-2783-43bf-8095-bbdc4b96e15f"
+          "message": "400: {'error': '/rerank: Invalid model name passed in model=rerank-review. Call `/v1/models` to view available models for your key.'}",
+          "type": "None",
+          "param": "None",
+          "code": "400"
         }
       }
     }
   },
   "providerRequests": [
+    {
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "authorization": "Bearer sk-upstream",
+      "hasGatewayServiceKey": true,
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "gateway to litellm chat passthrough"
+          }
+        ],
+        "model": "gpt-review"
+      }
+    },
     {
       "path": "/v1/chat/completions",
       "method": "POST",
@@ -448,6 +726,36 @@
       }
     },
     {
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "authorization": null,
+      "litellmApiKey": "sk-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "model": "gpt-review",
+        "messages": [
+          {
+            "role": "user",
+            "content": "gateway to litellm chat passthrough"
+          }
+        ]
+      }
+    },
+    {
+      "path": "/v1/models?source=wildcard",
+      "method": "GET",
+      "authorization": null,
+      "litellmApiKey": "sk-key",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {}
+    },
+    {
       "path": "/v1/responses",
       "method": "POST",
       "authorization": null,
@@ -476,6 +784,71 @@
       }
     },
     {
+      "path": "/v1/chatcompletion",
+      "method": "POST",
+      "authorization": null,
+      "litellmApiKey": "sk-provider",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "model": "gpt-review",
+        "messages": [
+          {
+            "role": "user",
+            "content": "gateway to litellm chat passthrough"
+          }
+        ]
+      }
+    },
+    {
+      "path": "/v1/response",
+      "method": "POST",
+      "authorization": null,
+      "litellmApiKey": "sk-provider",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "model": "gpt-review",
+        "input": "gateway to litellm responses passthrough"
+      }
+    },
+    {
+      "path": "/v1/embedding",
+      "method": "POST",
+      "authorization": null,
+      "litellmApiKey": "sk-provider",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "model": "text-embedding-review",
+        "input": "gateway embedding passthrough"
+      }
+    },
+    {
+      "path": "/v1/rerank",
+      "method": "POST",
+      "authorization": null,
+      "litellmApiKey": "sk-provider",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "model": "rerank-review",
+        "query": "gateway rerank passthrough",
+        "documents": [
+          "alpha",
+          "beta"
+        ]
+      }
+    },
+    {
       "path": "/v1/chat/completions",
       "method": "POST",
       "authorization": null,
@@ -497,7 +870,13 @@
   ],
   "mappingCredentialsObserved": [
     "sk-key",
+    "sk-key",
+    "sk-key",
     "sk-project",
+    "sk-provider",
+    "sk-provider",
+    "sk-provider",
+    "sk-provider",
     "sk-provider",
     "sk-provider"
   ]

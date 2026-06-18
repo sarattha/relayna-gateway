@@ -343,7 +343,7 @@ async function setupGatewayData() {
   return state.rawRelaynaKey;
 }
 
-async function gatewayCall(path, token, relaynaKey, payload) {
+async function gatewayCall(path, token, relaynaKey, payload, method = "POST") {
   const headers = { "content-type": "application/json" };
   if (token) {
     headers.authorization = `Bearer ${token}`;
@@ -352,9 +352,28 @@ async function gatewayCall(path, token, relaynaKey, payload) {
     headers["x-relayna-key"] = relaynaKey;
   }
   const response = await fetch(`${gatewayProxyUrl}${path}`, {
-    method: "POST",
+    method,
     headers,
-    body: JSON.stringify(payload),
+    body: method === "GET" ? undefined : JSON.stringify(payload),
+  });
+  const text = await response.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = text;
+  }
+  return { status: response.status, body };
+}
+
+async function adminJson(path, options = {}) {
+  const response = await fetch(`${gatewayControlUrl}${path}`, {
+    ...options,
+    headers: {
+      authorization: `Bearer ${adminToken}`,
+      "content-type": "application/json",
+      ...(options.headers || {}),
+    },
   });
   const text = await response.text();
   let body;
@@ -421,6 +440,29 @@ async function runTests() {
   };
 
   const chat = await gatewayCall("/v1/chat/completions", validToken, relaynaKey, chatPayload);
+  const routeModeUpdate = await adminJson("/admin-ui/admin/openai-routes/chat-completions/mode", {
+    method: "PATCH",
+    body: JSON.stringify({ mode: "direct_litellm_passthrough" }),
+  });
+  const routesAfterMode = await adminJson("/admin-ui/admin/openai-routes");
+  const directModeChat = await gatewayCall("/v1/chat/completions", validToken, relaynaKey, chatPayload);
+  await adminJson("/admin-ui/admin/openai-routes/chat-completions/mode", {
+    method: "PATCH",
+    body: JSON.stringify({ mode: "managed_by_gateway" }),
+  });
+  const passthroughDefaults = await adminJson("/admin-ui/admin/providers/litellm-passthrough");
+  const passthroughEnable = await adminJson("/admin-ui/admin/providers/litellm-passthrough", {
+    method: "PATCH",
+    body: JSON.stringify({
+      enabled: true,
+      allowed_paths: ["/v1/*"],
+      allowed_methods: ["GET", "POST"],
+      ui_exposure: "disabled",
+      admin_api_exposure: "disabled",
+    }),
+  });
+  const wildcardModels = await gatewayCall("/v1/models?source=wildcard", validToken, relaynaKey, {}, "GET");
+  const uiBlocked = await gatewayCall("/ui", validToken, relaynaKey, {}, "GET");
   await fetch(`${gatewayControlUrl}/admin-ui/admin/providers/litellm-credentials/${state.gatewayData.keyMapping.id}/disable`, {
     method: "POST",
     headers: { authorization: `Bearer ${adminToken}`, "content-type": "application/json" },
@@ -451,9 +493,34 @@ async function runTests() {
   const responseForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/responses"));
   const embeddingsForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/embeddings"));
   const customHeaderCredentials = frontDoorRequests.map((request) => request.litellmApiKey);
+  const firstProjectCredentialIndex = customHeaderCredentials.indexOf("sk-project");
+  const firstProviderCredentialIndex = customHeaderCredentials.indexOf("sk-provider");
+  const routeMode = routesAfterMode.body.find?.((route) => route.route_id === "chat-completions")?.mode;
+  const wildcardCapture = frontDoorRequests.find((request) => request.path.startsWith("/v1/models"));
 
   const checks = {
     canonical_chat_completions_passes_to_litellm: pass(chat.status === 200 && gatewayForwardedToLiteLlm, chat),
+    canonical_route_mode_can_switch_to_direct_passthrough: pass(
+      routeModeUpdate.status === 200 && routeMode === "direct_litellm_passthrough" && directModeChat.status === 200,
+      { routeModeUpdate, routeMode, directModeChat },
+    ),
+    wildcard_passthrough_defaults_disabled_then_can_enable_v1: pass(
+      passthroughDefaults.status === 200 &&
+        passthroughDefaults.body.enabled === false &&
+        passthroughEnable.status === 200 &&
+        passthroughEnable.body.enabled === true,
+      { passthroughDefaults, passthroughEnable },
+    ),
+    wildcard_v1_models_preserves_query_and_reaches_real_litellm: pass(
+      wildcardModels.status === 200 &&
+        Array.isArray(wildcardModels.body.data) &&
+        wildcardCapture?.path === "/v1/models?source=wildcard",
+      { wildcardModels, wildcardCapture },
+    ),
+    wildcard_ui_path_is_blocked_by_default: pass(
+      uiBlocked.status === 404 && codeOf(uiBlocked) === "unsupported_route",
+      uiBlocked,
+    ),
     canonical_responses_passes_to_litellm: pass(responses.status === 200 && responseForwardedToLiteLlm, responses),
     canonical_embeddings_passes_to_litellm: pass(
       embeddings.status === 200 && embeddingsForwardedToLiteLlm,
@@ -462,28 +529,43 @@ async function runTests() {
     apigee_trusted_header_chat_passes_to_litellm: pass(apigeeChat.status === 200, apigeeChat),
     upstream_receives_no_client_credentials: pass(!upstreamCredentialLeak, { providerRequests: state.providerRequests }),
     litellm_front_door_receives_custom_header_only: pass(!litellmCredentialLeak, { frontDoorRequests }),
-    litellm_key_mapping_precedes_project_mapping: pass(customHeaderCredentials[0] === "sk-key", {
-      firstCredential: customHeaderCredentials[0],
+    litellm_key_mapping_precedes_project_mapping: pass(
+      customHeaderCredentials[0] === "sk-key" && firstProjectCredentialIndex > 0,
+      {
+      credentials: customHeaderCredentials,
     }),
-    disabled_key_mapping_falls_back_to_project_mapping: pass(customHeaderCredentials[1] === "sk-project", {
-      secondCredential: customHeaderCredentials[1],
+    disabled_key_mapping_falls_back_to_project_mapping: pass(firstProjectCredentialIndex > 0, {
+      credentials: customHeaderCredentials,
     }),
-    disabled_project_mapping_falls_back_to_provider_default: pass(customHeaderCredentials[2] === "sk-provider", {
-      thirdCredential: customHeaderCredentials[2],
+    disabled_project_mapping_falls_back_to_provider_default: pass(
+      firstProviderCredentialIndex > firstProjectCredentialIndex,
+      {
+      credentials: customHeaderCredentials,
     }),
-    requested_literal_chatcompletion_path: pass(
-      chatLiteral.status === 404 && codeOf(chatLiteral) === "unsupported_route",
+    wildcard_literal_chatcompletion_reaches_litellm: pass(
+      chatLiteral.status === 404 &&
+        chatLiteral.body?.detail === "Not Found" &&
+        frontDoorRequests.some((request) => request.path === "/v1/chatcompletion"),
       chatLiteral,
     ),
-    requested_literal_response_path: pass(
-      responseLiteral.status === 404 && codeOf(responseLiteral) === "unsupported_route",
+    wildcard_literal_response_reaches_litellm: pass(
+      responseLiteral.status === 404 &&
+        responseLiteral.body?.detail === "Not Found" &&
+        frontDoorRequests.some((request) => request.path === "/v1/response"),
       responseLiteral,
     ),
-    requested_literal_embedding_path: pass(
-      embeddingLiteral.status === 404 && codeOf(embeddingLiteral) === "unsupported_route",
+    wildcard_literal_embedding_reaches_litellm: pass(
+      embeddingLiteral.status === 404 &&
+        embeddingLiteral.body?.detail === "Not Found" &&
+        frontDoorRequests.some((request) => request.path === "/v1/embedding"),
       embeddingLiteral,
     ),
-    requested_rerank_path: pass(rerank.status === 404 && codeOf(rerank) === "unsupported_route", rerank),
+    wildcard_rerank_reaches_litellm: pass(
+      rerank.status === 400 &&
+        codeOf(rerank) === "400" &&
+        frontDoorRequests.some((request) => request.path === "/v1/rerank"),
+      rerank,
+    ),
   };
 
   const requestedLiteLlmPathsPassThrough =
@@ -492,7 +574,7 @@ async function runTests() {
     ok: Object.values(checks).every((check) => check.ok),
     requestedLiteLlmPathsPassThrough,
     overallOutcome:
-      "PASS: canonical /v1/chat/completions, /v1/responses, and /v1/embeddings pass through to LiteLLM; literal aliases /v1/chatcompletion, /v1/response, /v1/embedding, and /v1/rerank remain unsupported.",
+      "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, /ui remains blocked by default, and credential translation strips client secrets.",
     generatedAt: new Date().toISOString(),
     environment: {
       gatewayProxyUrl,
@@ -505,7 +587,7 @@ async function runTests() {
       apigeeTrustedHeader: true,
     },
     requestedPaths: ["/v1/chatcompletion", "/v1/response", "/v1/embedding", "/v1/rerank"],
-    canonicalGatewayLiteLlmPaths: ["/v1/chat/completions", "/v1/responses", "/v1/embeddings"],
+    canonicalGatewayLiteLlmPaths: ["/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/models"],
     checks,
     providerRequests: state.providerRequests,
     frontDoorRequests,
@@ -590,7 +672,7 @@ function dashboardHtml() {
     <h1>LiteLLM Real Passthrough Report</h1>
     <p>Generated ${results?.generatedAt || "after /run-tests"}. Gateway used Entra JWT validation plus trusted Apigee headers in front of a real <code>litellm/litellm:latest</code> container.</p>
     <section class="summary">
-      <div class="metric"><span>Outcome</span><strong>${results?.requestedLiteLlmPathsPassThrough ? "PASS" : "RUN TESTS"}</strong></div>
+      <div class="metric"><span>Outcome</span><strong>${results?.ok ? "PASS" : "RUN TESTS"}</strong></div>
       <div class="metric"><span>Gateway LiteLLM paths</span><strong>${results?.canonicalGatewayLiteLlmPaths.length || 0}</strong></div>
       <div class="metric"><span>Front-door captures</span><strong>${results?.frontDoorRequests.length || 0}</strong></div>
     </section>
@@ -606,8 +688,8 @@ function dashboardHtml() {
           .join("")}
       </tbody>
     </table>
-    <h2>Interesting Finding</h2>
-    <p>The branch now routes <code>/v1/chat/completions</code>, <code>/v1/responses</code>, and <code>/v1/embeddings</code> to LiteLLM. The literal alias paths <code>/v1/chatcompletion</code>, <code>/v1/response</code>, <code>/v1/embedding</code>, and <code>/v1/rerank</code> return <code>unsupported_route</code> before reaching LiteLLM.</p>
+    <h2>Wildcard Coverage</h2>
+    <p>The branch routes managed canonical calls through LiteLLM, can switch a canonical route to direct LiteLLM passthrough, and forwards enabled wildcard <code>/v1/*</code> calls while preserving path and query. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
     <h2>LiteLLM Credential Mapping</h2>
     <p>Gateway sent <code>x-litellm-api-key</code> to the LiteLLM front door and did not send <code>Authorization</code>. Observed precedence: <code>${(results?.mappingCredentialsObserved || []).join(" -> ")}</code>.</p>
   </main>
@@ -624,7 +706,7 @@ async function handleFrontDoor(req, res) {
     jsonResponse(res, 200, state.frontDoorRequests);
     return true;
   }
-  if (req.method === "POST" && req.url.startsWith("/v1/")) {
+  if ((req.method === "POST" || req.method === "GET") && req.url.startsWith("/v1/")) {
     const body = await readBody(req);
     const capture = captureFrontDoorRequest(req, body);
     if (!capture.litellmApiKey || !allowedLiteLlmKeys.has(capture.litellmApiKey)) {
@@ -632,12 +714,12 @@ async function handleFrontDoor(req, res) {
       return true;
     }
     const upstream = await fetch(`${litellmUpstreamUrl}${req.url}`, {
-      method: "POST",
+      method: req.method,
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${litellmMasterKey}`,
       },
-      body: JSON.stringify(body),
+      body: req.method === "GET" ? undefined : JSON.stringify(body),
     });
     const text = await upstream.text();
     res.writeHead(upstream.status, {

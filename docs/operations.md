@@ -80,6 +80,63 @@ provider config overrides it. Disabled mappings are skipped and fall back to
 the next level. If no credential exists at any level, Gateway fails closed with
 the upstream configuration error behavior.
 
+### LiteLLM Wildcard Passthrough And Route Modes
+
+LiteLLM wildcard passthrough lets Gateway be the only public ingress in front
+of LiteLLM. Use it when clients can send standard Gateway credentials but
+cannot send the custom LiteLLM header required by your LiteLLM deployment.
+Gateway accepts Relayna credentials, strips all client credentials, and injects
+the resolved internal LiteLLM credential before forwarding.
+
+Client authentication remains Gateway authentication:
+
+| Gateway auth mode | Client request contract |
+| --- | --- |
+| Entra disabled | `Authorization: Bearer <Relayna rk_live_... key>` |
+| Entra enabled | `Authorization: Bearer <Entra JWT>` plus the configured Relayna key header, default `X-Relayna-Key: <Relayna rk_live_... key>` |
+| Trusted Apigee mode | Apigee supplies the signed identity headers and the configured Relayna key header. |
+
+Do not give clients the LiteLLM master key or LiteLLM virtual keys as Gateway
+credentials. Those secrets are upstream credentials selected by Gateway through
+the mapping/default/fallback precedence above.
+
+Configure passthrough from Admin portal Providers:
+
+1. Enable `LiteLLM passthrough`.
+2. Set `Allowed paths`. For OpenAI-compatible LiteLLM API passthrough, use
+   `/v1/*`. Add `/ui` and `/ui/*` only when the deployment has a deliberate
+   operator access pattern.
+3. Set `Allowed methods`. The safe default is `GET,POST`.
+4. Choose `LiteLLM UI exposure` and `LiteLLM admin API exposure`.
+5. Save settings and verify the audit event.
+
+Exposure modes are intentionally separate from the path allowlist:
+
+| Mode | Operational effect |
+| --- | --- |
+| `disabled` | Sensitive paths are rejected even when listed in `Allowed paths`. Use this unless you are actively exposing the path. |
+| `operator_only` | Sensitive paths require the Gateway Entra or trusted Apigee identity layer plus Relayna virtual-key auth. This is appropriate when an identity-aware browser/operator ingress adds the required Gateway auth context. If Entra/Apigee identity is not enabled on the proxy path, `operator_only` requests fail closed. |
+| `explicitly_exposed` | Sensitive paths are reachable to authenticated Relayna virtual-key clients when also allowed by path and method. Treat this as a high-risk setting and protect it with network and identity controls. |
+
+Canonical OpenAI-compatible routes have a separate mode on the Routes page:
+
+| Route mode | What Gateway enforces |
+| --- | --- |
+| `managed_by_gateway` | Route enablement, Relayna auth, policy, model/provider allowlists, RPM/TPM, budgets, guardrails, provider forwarding, and full usage when provider responses expose accounting fields. |
+| `direct_litellm_passthrough` | Route enablement, Relayna auth, policy, model/provider allowlists, RPM/TPM, budgets, credential stripping/injection, and direct LiteLLM forwarding. Guardrail body rewriting and token accounting are bypassed; usage is status-only. |
+
+Wildcard non-canonical passthrough, such as `/v1/models`, follows the
+allowlist/auth/audit model and records reduced status-only usage. It does not
+run Relayna policy, budget, guardrail, or token accounting because the route is
+not one of the canonical governed generation routes.
+
+Browser access to LiteLLM `/ui` through Gateway needs more than the passthrough
+setting. A plain browser address-bar request cannot attach `Authorization` and
+Relayna key headers by itself. In production, use an identity-aware ingress,
+reverse proxy, or equivalent operator portal flow that supplies Gateway auth
+for browser requests; otherwise open LiteLLM directly on a private operator
+network.
+
 ## Health and Metrics
 
 - `/admin-ui/healthz` confirms the process can serve the control API.
@@ -210,7 +267,7 @@ Before deploying a new release:
 3. Run CI, including Rust checks, security scans, admin UI tests, freeze
    perimeter tests, and docs build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.8`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.9`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
 
 ## Supply Chain and Runtime Hardening

@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.8` feature set. The `v0.1.8` production freeze
+This page summarizes the `v0.1.9` feature set. The `v0.1.9` production freeze
 baseline remains pinned for compatibility checks.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
@@ -124,13 +124,48 @@ See [Entra ID Auth](entra-id-auth.md) and
 [Apigee Gateway Path](apigee-gateway-path.md) for the detailed operator
 contracts.
 
-## LiteLLM OpenAI-Compatible Passthrough
+## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.8` routes canonical OpenAI-compatible
-`/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings` requests through
-LiteLLM when they pass Relayna authentication and policy. The singular or alias
-paths `/v1/chatcompletion`, `/v1/response`, `/v1/embedding`, and `/v1/rerank`
-are not passthrough routes and return `unsupported_route`.
+Release `0.1.9` lets Gateway sit in front of LiteLLM as the single ingress
+target while preserving Relayna-owned identity, policy, and credential
+translation. Relayna-owned routes such as `/services/*`, control-plane routes
+under `/admin-ui/*`, health, readiness, metrics, and canonical
+OpenAI-compatible routes keep explicit precedence before wildcard passthrough.
+Only unmatched paths that pass the configured LiteLLM passthrough allowlist are
+forwarded to LiteLLM.
+
+Canonical OpenAI-compatible routes are still first-class Gateway routes:
+
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
+- `POST /v1/embeddings`
+
+Each canonical route has a mode in the Routes page:
+
+| Mode | Behavior |
+| --- | --- |
+| `managed_by_gateway` | Current governed behavior. Gateway authenticates the Relayna key, evaluates route/model/provider policy, checks request and token rate limits, checks/reserves budgets, runs configured guardrails, forwards to LiteLLM or direct providers, and records full usage when response accounting data is available. |
+| `direct_litellm_passthrough` | Gateway still authenticates the Relayna key, honors route enablement, evaluates route/model/provider policy, checks rate limits and budgets, strips client credentials, injects the resolved LiteLLM credential, and forwards the original request to LiteLLM. It intentionally skips Gateway guardrail rewriting and token accounting, so usage is reduced to status/latency/request metadata. |
+
+Wildcard LiteLLM passthrough is configured from Providers. It is disabled by
+default. When enabled, the safe default allowlist is `/v1/*` for `GET` and
+`POST`, which covers LiteLLM-compatible API endpoints such as `/v1/models`
+without opening Relayna service/control routes. Gateway preserves the original
+LiteLLM path and query string for wildcard traffic.
+
+Sensitive LiteLLM paths require explicit exposure decisions:
+
+| Exposure value | Meaning |
+| --- | --- |
+| `disabled` | `/ui` or admin-like LiteLLM paths are blocked even if they appear in `allowed_paths`. This is the default. |
+| `operator_only` | The path can be allowlisted, but the proxy request must already have passed the Gateway Entra or trusted Apigee identity layer plus Relayna virtual-key auth. This is intended for identity-aware operator ingress. |
+| `explicitly_exposed` | The path can be allowlisted for authenticated Relayna virtual-key clients. Use only behind a deliberate ingress/auth design. |
+
+Gateway client credentials remain Relayna credentials, not LiteLLM credentials.
+When Entra is disabled, clients use `Authorization: Bearer rk_live_...`. When
+Entra is enabled, clients use `Authorization: Bearer <Entra JWT>` plus the
+configured Relayna key header. Gateway never forwards those client credentials
+to LiteLLM.
 
 Operators can manage LiteLLM upstream authentication from Admin portal
 Providers. The provider default credential remains write-only, and the
@@ -145,6 +180,12 @@ mapping, then active provider default credential, and finally the
 `LITELLM_SERVICE_KEY` startup fallback when no active provider config overrides
 it. Secrets are write-only in Admin API responses, audit snapshots, and the
 portal.
+
+The real LiteLLM verification harness under
+`internal/test-reports/litellm-real-passthrough` exercises canonical managed
+and direct route modes, wildcard `/v1/models?source=wildcard`, path/query
+preservation, sensitive `/ui` blocking by default, client credential stripping,
+and LiteLLM custom-header injection against a real `litellm/litellm` container.
 
 ## Observability Analytics
 
@@ -168,10 +209,10 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.8` freeze baseline hardens CI and release workflows with strict dependency,
-secret, static-analysis, filesystem, and image checks. Release images publish
-with SBOM, signature, and provenance artifacts, and release metadata validation
-guards tag, workspace version, and changelog alignment.
+The `v0.1.9` freeze baseline hardens CI and release workflows with strict
+dependency, secret, static-analysis, filesystem, and image checks. Release
+images publish with SBOM, signature, and provenance artifacts, and release
+metadata validation guards tag, workspace version, and changelog alignment.
 
 The Kubernetes example now defaults to restricted pod security settings:
 non-root UID/GID `10001`, read-only root filesystem, default seccomp profile,
@@ -179,7 +220,7 @@ no privilege escalation, and all Linux capabilities dropped. Proxy and control
 plane Services remain separate, and the control plane should stay private or
 protected by identity-aware access.
 
-The v0.1.8 freeze perimeter test pins the production baseline for public
+The v0.1.9 freeze perimeter test pins the production baseline for public
 routes, admin route inventory, error codes, config names, migrations, Redis key
 formats, release metadata, and Admin UI endpoint assumptions. Future changes
 should keep that perimeter passing unless a compatibility decision explicitly
