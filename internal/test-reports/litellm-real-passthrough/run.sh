@@ -41,7 +41,7 @@ const markdown = `# LiteLLM Real Passthrough Test Report
 
 Generated: ${result.generatedAt}
 
-Overall result: **${result.requestedLiteLlmPathsPassThrough ? "PASS" : "FAIL"}**
+Overall result: **${result.ok ? "PASS" : "FAIL"}**
 
 ${result.overallOutcome}
 
@@ -80,19 +80,19 @@ ${frontDoorRows}
 Observed LiteLLM credential precedence:
 \`${result.mappingCredentialsObserved.join(" -> ")}\`
 
-## Interesting Finding
+## Wildcard Coverage
 
-The current branch routes \`/v1/chat/completions\`, \`/v1/responses\`, and
-\`/v1/embeddings\` to LiteLLM. The singular or alias paths still return
-\`unsupported_route\` before reaching LiteLLM:
+The current branch routes managed canonical calls through LiteLLM, can switch a
+canonical route to direct LiteLLM passthrough, and forwards enabled wildcard
+\`/v1/*\` calls while preserving path and query.
+
+The literal alias probes below reached real LiteLLM and were rejected there with
+404 or 400 responses, proving they were not stopped by the Gateway router:
 
 - \`/v1/chatcompletion\`
 - \`/v1/response\`
 - \`/v1/embedding\`
 - \`/v1/rerank\`
-
-The Gateway also has an internal-service \`/embeddings\` route, but it is not a
-LiteLLM passthrough route.
 
 ## Screenshot Artifacts
 
@@ -100,6 +100,9 @@ LiteLLM passthrough route.
 - \`screenshots/02-admin-ui-project-mapping-control.png\`
 - \`screenshots/03-real-env-report-overview.png\`
 - \`screenshots/04-real-env-credential-capture.png\`
+- \`screenshots/05-real-litellm-issue-64-report.png\`
+- \`screenshots/06-admin-ui-litellm-passthrough-controls.png\`
+- \`screenshots/07-admin-ui-route-mode-controls.png\`
 
 ## Raw Results
 
