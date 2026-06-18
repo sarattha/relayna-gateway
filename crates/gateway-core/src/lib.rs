@@ -89,8 +89,11 @@ pub use provider_intelligence::{
 };
 pub use rate_limits::{RateLimitDecision, RateLimitStore};
 pub use route_settings::{
-    openai_route_from_id, openai_route_id, AdminOpenAiRouteStore, OpenAiRouteSetting,
-    OpenAiRouteSettingsLookup, CHAT_COMPLETIONS_ROUTE_ID, RESPONSES_ROUTE_ID,
+    litellm_exposure_str, openai_route_from_id, openai_route_id, openai_route_mode_str,
+    parse_litellm_exposure, parse_openai_route_mode, AdminOpenAiRouteStore,
+    LiteLlmPassthroughSettings, LiteLlmPassthroughSettingsPatchRequest,
+    LiteLlmSensitiveRouteExposure, OpenAiRouteMode, OpenAiRouteSetting, OpenAiRouteSettingsLookup,
+    CHAT_COMPLETIONS_ROUTE_ID, EMBEDDINGS_ROUTE_ID, RESPONSES_ROUTE_ID,
 };
 pub use routing::{is_retry_safe_status, BackendType, Provider, Route, RouteMatch};
 pub use services::{

@@ -1,16 +1,57 @@
-use crate::{GatewayResult, Route};
+use crate::{GatewayError, GatewayResult, Route};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use http::Method;
+use serde::{Deserialize, Serialize};
 
 pub const CHAT_COMPLETIONS_ROUTE_ID: &str = "chat-completions";
 pub const EMBEDDINGS_ROUTE_ID: &str = "embeddings";
 pub const RESPONSES_ROUTE_ID: &str = "responses";
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiRouteMode {
+    #[serde(rename = "managed_by_gateway")]
+    #[default]
+    ManagedByGateway,
+    #[serde(rename = "direct_litellm_passthrough")]
+    DirectLiteLlmPassthrough,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct OpenAiRouteSetting {
     pub route_id: String,
     pub route: String,
     pub enabled: bool,
+    pub mode: OpenAiRouteMode,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LiteLlmSensitiveRouteExposure {
+    #[default]
+    Disabled,
+    OperatorOnly,
+    ExplicitlyExposed,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct LiteLlmPassthroughSettingsPatchRequest {
+    pub enabled: Option<bool>,
+    pub allowed_paths: Option<Vec<String>>,
+    pub allowed_methods: Option<Vec<String>>,
+    pub ui_exposure: Option<LiteLlmSensitiveRouteExposure>,
+    pub admin_api_exposure: Option<LiteLlmSensitiveRouteExposure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LiteLlmPassthroughSettings {
+    pub enabled: bool,
+    pub allowed_paths: Vec<String>,
+    pub allowed_methods: Vec<String>,
+    pub ui_exposure: LiteLlmSensitiveRouteExposure,
+    pub admin_api_exposure: LiteLlmSensitiveRouteExposure,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -23,6 +64,19 @@ pub trait AdminOpenAiRouteStore: Send + Sync {
         route_id: &str,
         enabled: bool,
     ) -> GatewayResult<Option<OpenAiRouteSetting>>;
+
+    async fn set_openai_route_mode(
+        &self,
+        route_id: &str,
+        mode: OpenAiRouteMode,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>>;
+
+    async fn get_litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings>;
+
+    async fn patch_litellm_passthrough_settings(
+        &self,
+        patch: LiteLlmPassthroughSettingsPatchRequest,
+    ) -> GatewayResult<LiteLlmPassthroughSettings>;
 }
 
 #[async_trait]
@@ -41,11 +95,32 @@ where
     ) -> GatewayResult<Option<OpenAiRouteSetting>> {
         (**self).set_openai_route_enabled(route_id, enabled).await
     }
+
+    async fn set_openai_route_mode(
+        &self,
+        route_id: &str,
+        mode: OpenAiRouteMode,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        (**self).set_openai_route_mode(route_id, mode).await
+    }
+
+    async fn get_litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
+        (**self).get_litellm_passthrough_settings().await
+    }
+
+    async fn patch_litellm_passthrough_settings(
+        &self,
+        patch: LiteLlmPassthroughSettingsPatchRequest,
+    ) -> GatewayResult<LiteLlmPassthroughSettings> {
+        (**self).patch_litellm_passthrough_settings(patch).await
+    }
 }
 
 #[async_trait]
 pub trait OpenAiRouteSettingsLookup: Send + Sync {
     async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool>;
+    async fn openai_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode>;
+    async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings>;
 }
 
 #[async_trait]
@@ -55,6 +130,14 @@ where
 {
     async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool> {
         (**self).openai_route_enabled(route).await
+    }
+
+    async fn openai_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode> {
+        (**self).openai_route_mode(route).await
+    }
+
+    async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
+        (**self).litellm_passthrough_settings().await
     }
 }
 
@@ -74,4 +157,144 @@ pub fn openai_route_from_id(route_id: &str) -> Option<Route> {
         EMBEDDINGS_ROUTE_ID => Some(Route::LiteLlmEmbeddings),
         _ => None,
     }
+}
+
+impl LiteLlmPassthroughSettingsPatchRequest {
+    pub fn validate(&self) -> GatewayResult<()> {
+        if let Some(paths) = &self.allowed_paths {
+            validate_allowed_paths(paths)?;
+        }
+        if let Some(methods) = &self.allowed_methods {
+            validate_allowed_methods(methods)?;
+        }
+        Ok(())
+    }
+}
+
+impl LiteLlmPassthroughSettings {
+    pub fn default_with_updated_at(updated_at: DateTime<Utc>) -> Self {
+        Self {
+            enabled: false,
+            allowed_paths: vec!["/v1/*".to_owned()],
+            allowed_methods: vec!["GET".to_owned(), "POST".to_owned()],
+            ui_exposure: LiteLlmSensitiveRouteExposure::Disabled,
+            admin_api_exposure: LiteLlmSensitiveRouteExposure::Disabled,
+            updated_at,
+        }
+    }
+
+    pub fn allows(&self, method: &Method, path: &str) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        let method = method.as_str();
+        if !self
+            .allowed_methods
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(method))
+        {
+            return false;
+        }
+        if is_litellm_ui_path(path)
+            && self.ui_exposure != LiteLlmSensitiveRouteExposure::ExplicitlyExposed
+        {
+            return false;
+        }
+        if is_litellm_admin_path(path)
+            && self.admin_api_exposure != LiteLlmSensitiveRouteExposure::ExplicitlyExposed
+        {
+            return false;
+        }
+        self.allowed_paths
+            .iter()
+            .any(|allowed| path_matches_allowed_pattern(path, allowed))
+    }
+}
+
+pub fn openai_route_mode_str(mode: OpenAiRouteMode) -> &'static str {
+    match mode {
+        OpenAiRouteMode::ManagedByGateway => "managed_by_gateway",
+        OpenAiRouteMode::DirectLiteLlmPassthrough => "direct_litellm_passthrough",
+    }
+}
+
+pub fn parse_openai_route_mode(value: &str) -> GatewayResult<OpenAiRouteMode> {
+    match value {
+        "managed_by_gateway" => Ok(OpenAiRouteMode::ManagedByGateway),
+        "direct_litellm_passthrough" => Ok(OpenAiRouteMode::DirectLiteLlmPassthrough),
+        _ => Err(GatewayError::InvalidProviderConfigPayload),
+    }
+}
+
+pub fn litellm_exposure_str(exposure: LiteLlmSensitiveRouteExposure) -> &'static str {
+    match exposure {
+        LiteLlmSensitiveRouteExposure::Disabled => "disabled",
+        LiteLlmSensitiveRouteExposure::OperatorOnly => "operator_only",
+        LiteLlmSensitiveRouteExposure::ExplicitlyExposed => "explicitly_exposed",
+    }
+}
+
+pub fn parse_litellm_exposure(value: &str) -> GatewayResult<LiteLlmSensitiveRouteExposure> {
+    match value {
+        "disabled" => Ok(LiteLlmSensitiveRouteExposure::Disabled),
+        "operator_only" => Ok(LiteLlmSensitiveRouteExposure::OperatorOnly),
+        "explicitly_exposed" => Ok(LiteLlmSensitiveRouteExposure::ExplicitlyExposed),
+        _ => Err(GatewayError::InvalidProviderConfigPayload),
+    }
+}
+
+fn validate_allowed_paths(paths: &[String]) -> GatewayResult<()> {
+    if paths.is_empty() || paths.len() > 64 {
+        return Err(GatewayError::InvalidProviderConfigPayload);
+    }
+    for path in paths {
+        let path = path.trim();
+        if !path.starts_with('/') || path.contains("..") || path.contains(char::is_whitespace) {
+            return Err(GatewayError::InvalidProviderConfigPayload);
+        }
+    }
+    Ok(())
+}
+
+fn validate_allowed_methods(methods: &[String]) -> GatewayResult<()> {
+    if methods.is_empty() || methods.len() > 16 {
+        return Err(GatewayError::InvalidProviderConfigPayload);
+    }
+    for method in methods {
+        if method.trim().parse::<Method>().is_err() {
+            return Err(GatewayError::InvalidProviderConfigPayload);
+        }
+    }
+    Ok(())
+}
+
+fn path_matches_allowed_pattern(path: &str, pattern: &str) -> bool {
+    let pattern = pattern.trim();
+    if let Some(prefix) = pattern.strip_suffix('*') {
+        path.starts_with(prefix)
+    } else {
+        path == pattern
+    }
+}
+
+fn is_litellm_ui_path(path: &str) -> bool {
+    path == "/ui" || path.starts_with("/ui/")
+}
+
+fn is_litellm_admin_path(path: &str) -> bool {
+    const ADMIN_PREFIXES: &[&str] = &[
+        "/key/",
+        "/keys/",
+        "/user/",
+        "/team/",
+        "/config/",
+        "/spend/",
+        "/global/",
+        "/budget/",
+        "/customer/",
+        "/organization/",
+    ];
+    ADMIN_PREFIXES
+        .iter()
+        .any(|prefix| path == prefix.trim_end_matches('/') || path.starts_with(prefix))
 }

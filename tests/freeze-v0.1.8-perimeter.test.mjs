@@ -77,6 +77,7 @@ test("control-plane public route inventory is pinned", () => {
     "/admin-ui/admin/openai-routes",
     "/admin-ui/admin/openai-routes/{route_id}/disable",
     "/admin-ui/admin/openai-routes/{route_id}/enable",
+    "/admin-ui/admin/openai-routes/{route_id}/mode",
     "/admin-ui/admin/operator-token/rotate",
     "/admin-ui/admin/policy-layers",
     "/admin-ui/admin/policy-layers/{layer_id}",
@@ -92,6 +93,7 @@ test("control-plane public route inventory is pinned", () => {
     "/admin-ui/admin/providers/litellm-credentials/{mapping_id}",
     "/admin-ui/admin/providers/litellm-credentials/{mapping_id}/disable",
     "/admin-ui/admin/providers/litellm-credentials/{mapping_id}/enable",
+    "/admin-ui/admin/providers/litellm-passthrough",
     "/admin-ui/admin/providers/{provider_id}",
     "/admin-ui/admin/providers/{provider_id}/disable",
     "/admin-ui/admin/providers/{provider_id}/enable",
@@ -135,6 +137,7 @@ test("proxy route resolver keeps v0.1.8 public route semantics", () => {
     "/v1/chat/completions",
     "/v1/responses",
     "/v1/embeddings",
+    "/litellm/*",
     "/providers/openai/",
     "/services/",
     "/summary",
@@ -149,6 +152,7 @@ test("proxy route resolver keeps v0.1.8 public route semantics", () => {
     "Responses",
     "LiteLlmEmbeddings",
     "DirectOpenAi",
+    "LiteLlmPassthrough",
     "Summary",
     "Translation",
     "Ocr",
@@ -307,6 +311,7 @@ test("PostgreSQL migration inventory is pinned", () => {
     "20260530000100_litellm_embeddings_route.sql",
     "20260530000200_gateway_auth_settings.sql",
     "20260531000100_litellm_credential_mapping.sql",
+    "20260618000100_litellm_passthrough_settings.sql",
   ]);
 });
 
@@ -338,6 +343,7 @@ test("admin portal static test covers all control endpoints it depends on", () =
     "/admin-ui/admin/provider-health/state",
     "/admin-ui/admin/providers",
     "/admin-ui/admin/providers/litellm-credentials",
+    "/admin-ui/admin/providers/litellm-passthrough",
     "/admin-ui/admin/services",
     "/admin-ui/admin/services/import",
     "/admin-ui/admin/services/import/activate",

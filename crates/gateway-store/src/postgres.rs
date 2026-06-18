@@ -9,7 +9,8 @@ use gateway_core::{
     auth_settings::{
         AdminGatewayAuthSettingsStore, GatewayAuthSettingsPatchRequest, StoredGatewayAuthSettings,
     },
-    default_route_pattern, operator_token_prefix, parse_provider_config_kind,
+    default_route_pattern, litellm_exposure_str, openai_route_mode_str, operator_token_prefix,
+    parse_litellm_exposure, parse_openai_route_mode, parse_provider_config_kind,
     projects::{ProjectCreateRequest, ProjectPatchRequest, ProjectResponse},
     provider_config_kind_str,
     provider_configs::{
@@ -35,7 +36,8 @@ use gateway_core::{
     FallbackAttempt, GatewayError, GatewayResult, GuardrailAdminCreateRequest,
     GuardrailAdminPatchRequest, GuardrailDefinition, GuardrailEventQuery, GuardrailExecutionEvent,
     GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPolicy,
-    GuardrailProviderKind, GuardrailStore, KeyPolicy, OpenAiRouteSetting,
+    GuardrailProviderKind, GuardrailStore, KeyPolicy, LiteLlmPassthroughSettings,
+    LiteLlmPassthroughSettingsPatchRequest, OpenAiRouteMode, OpenAiRouteSetting,
     OpenAiRouteSettingsLookup, OperatorAuthorization, OperatorTokenMaterial, OperatorTokenResponse,
     OperatorTokenStore, PolicyLayer, PolicyLayerKind, ProjectUsageSummary, Provider,
     ProviderHealth, ProviderHealthCheckTarget, ProviderHealthState, ProviderHealthStatus,
@@ -2554,7 +2556,7 @@ impl AdminOpenAiRouteStore for PostgresStore {
     async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
         let rows = sqlx::query(
             r#"
-            SELECT route_id, route, enabled, updated_at
+            SELECT route_id, route, enabled, mode, updated_at
             FROM openai_route_settings
             ORDER BY route_id
             "#,
@@ -2593,7 +2595,7 @@ impl AdminOpenAiRouteStore for PostgresStore {
 
         sqlx::query(
             r#"
-            SELECT route_id, route, enabled, updated_at
+            SELECT route_id, route, enabled, mode, updated_at
             FROM openai_route_settings
             WHERE route_id = $1
             "#,
@@ -2604,6 +2606,104 @@ impl AdminOpenAiRouteStore for PostgresStore {
         .map_err(|_| GatewayError::StoreUnavailable)?
         .map(|row| openai_route_setting_from_row(&row))
         .transpose()
+    }
+
+    async fn set_openai_route_mode(
+        &self,
+        route_id: &str,
+        mode: OpenAiRouteMode,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        if gateway_core::openai_route_from_id(route_id).is_none() {
+            return Ok(None);
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE openai_route_settings
+            SET mode = $2,
+                updated_at = now()
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .bind(openai_route_mode_str(mode))
+        .execute(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        sqlx::query(
+            r#"
+            SELECT route_id, route, enabled, mode, updated_at
+            FROM openai_route_settings
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|row| openai_route_setting_from_row(&row))
+        .transpose()
+    }
+
+    async fn get_litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
+        self.litellm_passthrough_settings().await
+    }
+
+    async fn patch_litellm_passthrough_settings(
+        &self,
+        patch: LiteLlmPassthroughSettingsPatchRequest,
+    ) -> GatewayResult<LiteLlmPassthroughSettings> {
+        patch.validate()?;
+        let current = self.litellm_passthrough_settings().await?;
+        let enabled = patch.enabled.unwrap_or(current.enabled);
+        let allowed_paths = patch.allowed_paths.unwrap_or(current.allowed_paths);
+        let allowed_methods = patch
+            .allowed_methods
+            .map(|methods| {
+                methods
+                    .into_iter()
+                    .map(|method| method.trim().to_ascii_uppercase())
+                    .collect()
+            })
+            .unwrap_or(current.allowed_methods);
+        let ui_exposure = patch.ui_exposure.unwrap_or(current.ui_exposure);
+        let admin_api_exposure = patch
+            .admin_api_exposure
+            .unwrap_or(current.admin_api_exposure);
+
+        let row = sqlx::query(
+            r#"
+            INSERT INTO litellm_passthrough_settings (
+                id,
+                enabled,
+                allowed_paths,
+                allowed_methods,
+                ui_exposure,
+                admin_api_exposure,
+                updated_at
+            )
+            VALUES (true, $1, $2, $3, $4, $5, now())
+            ON CONFLICT (id) DO UPDATE SET
+                enabled = EXCLUDED.enabled,
+                allowed_paths = EXCLUDED.allowed_paths,
+                allowed_methods = EXCLUDED.allowed_methods,
+                ui_exposure = EXCLUDED.ui_exposure,
+                admin_api_exposure = EXCLUDED.admin_api_exposure,
+                updated_at = now()
+            RETURNING enabled, allowed_paths, allowed_methods, ui_exposure, admin_api_exposure, updated_at
+            "#,
+        )
+        .bind(enabled)
+        .bind(&allowed_paths)
+        .bind(&allowed_methods)
+        .bind(litellm_exposure_str(ui_exposure))
+        .bind(litellm_exposure_str(admin_api_exposure))
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        litellm_passthrough_settings_from_row(&row)
     }
 }
 
@@ -2626,6 +2726,47 @@ impl OpenAiRouteSettingsLookup for PostgresStore {
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?
         .ok_or(GatewayError::StoreUnavailable)
+    }
+
+    async fn openai_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode> {
+        let Some(route_id) = gateway_core::openai_route_id(route) else {
+            return Ok(OpenAiRouteMode::ManagedByGateway);
+        };
+
+        let mode = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT mode
+            FROM openai_route_settings
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .ok_or(GatewayError::StoreUnavailable)?;
+
+        parse_openai_route_mode(&mode)
+    }
+
+    async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
+        let row = sqlx::query(
+            r#"
+            SELECT enabled, allowed_paths, allowed_methods, ui_exposure, admin_api_exposure, updated_at
+            FROM litellm_passthrough_settings
+            WHERE id = true
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        match row {
+            Some(row) => litellm_passthrough_settings_from_row(&row),
+            None => Ok(LiteLlmPassthroughSettings::default_with_updated_at(
+                chrono::Utc::now(),
+            )),
+        }
     }
 }
 
@@ -4843,6 +4984,9 @@ fn guardrail_config_overrides_from_row(
 }
 
 fn openai_route_setting_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<OpenAiRouteSetting> {
+    let mode = row
+        .try_get::<String, _>("mode")
+        .unwrap_or_else(|_| "managed_by_gateway".to_owned());
     Ok(OpenAiRouteSetting {
         route_id: row
             .try_get("route_id")
@@ -4853,6 +4997,34 @@ fn openai_route_setting_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<O
         enabled: row
             .try_get("enabled")
             .map_err(|_| GatewayError::StoreUnavailable)?,
+        mode: parse_openai_route_mode(&mode)?,
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
+fn litellm_passthrough_settings_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> GatewayResult<LiteLlmPassthroughSettings> {
+    let ui_exposure: String = row
+        .try_get("ui_exposure")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let admin_api_exposure: String = row
+        .try_get("admin_api_exposure")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    Ok(LiteLlmPassthroughSettings {
+        enabled: row
+            .try_get("enabled")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        allowed_paths: row
+            .try_get("allowed_paths")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        allowed_methods: row
+            .try_get("allowed_methods")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        ui_exposure: parse_litellm_exposure(&ui_exposure)?,
+        admin_api_exposure: parse_litellm_exposure(&admin_api_exposure)?,
         updated_at: row
             .try_get("updated_at")
             .map_err(|_| GatewayError::StoreUnavailable)?,

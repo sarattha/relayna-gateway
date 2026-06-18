@@ -49,6 +49,7 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin-ui/admin/projects",
     "/admin-ui/admin/providers",
     "/admin-ui/admin/providers/litellm-credentials",
+    "/admin-ui/admin/providers/litellm-passthrough",
     "/admin-ui/admin/openai-routes",
     "/admin-ui/admin/keys",
     "/admin-ui/admin/policy/simulate",
@@ -176,10 +177,21 @@ test("providers view configures LiteLLM credential headers and mappings without 
   assert.match(js, /async function updateProviderAuthSettings\(event\)/);
   assert.match(js, /async function saveLiteLlmCredentialMapping\(event\)/);
   assert.match(js, /async function liteLlmCredentialMappingAction\(event\)/);
+  assert.match(js, /async function saveLiteLlmPassthroughSettings\(event\)/);
   assert.match(js, /\/admin\/providers\/litellm-credentials/);
+  assert.match(js, /\/admin-ui\/admin\/providers\/litellm-passthrough/);
+  assert.match(js, /LiteLLM passthrough/);
+  assert.match(js, /Exposure risk/);
   assert.match(js, /credential_configured/);
   assert.match(js, /name="credential" type="password"/);
   assert.doesNotMatch(js, /row\.credential_secret/);
+});
+
+test("routes view exposes canonical OpenAI route modes", () => {
+  assert.match(js, /managed_by_gateway/);
+  assert.match(js, /direct_litellm_passthrough/);
+  assert.match(js, /async function saveOpenAiRouteMode\(event\)/);
+  assert.match(js, /\/admin-ui\/admin\/openai-routes\/\$\{routeId\}\/mode/);
 });
 
 test("virtual keys use explicit owner and service selection controls", () => {
