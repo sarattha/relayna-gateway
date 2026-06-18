@@ -57,11 +57,14 @@ services:
       ]
     environment:
       LITELLM_MASTER_KEY: sk-ci
+      DATABASE_URL: postgresql://relayna_gateway:relayna_gateway@postgres:5432/relayna_gateway
     ports:
       - "19183:4000"
     volumes:
       - ./litellm_config.yaml:/app/litellm_config.yaml:ro
     depends_on:
+      postgres:
+        condition: service_healthy
       mock-provider:
         condition: service_healthy
     healthcheck:

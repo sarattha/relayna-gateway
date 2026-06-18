@@ -735,26 +735,58 @@ async function handleFrontDoor(req, res) {
     jsonResponse(res, 200, state.frontDoorRequests);
     return true;
   }
-  if ((req.method === "POST" || req.method === "GET") && req.url.startsWith("/v1/")) {
+  if (
+    (req.method === "POST" || req.method === "GET" || req.method === "PATCH" || req.method === "DELETE") &&
+    (req.url.startsWith("/v1/") ||
+      req.url.startsWith("/v2/") ||
+      req.url.startsWith("/v3/") ||
+      req.url.startsWith("/get/") ||
+      req.url.startsWith("/get_image") ||
+      req.url.startsWith("/public/") ||
+      req.url.startsWith("/config/") ||
+      req.url.startsWith("/health/") ||
+      req.url.startsWith("/in_product_nudges") ||
+      req.url.startsWith("/key/") ||
+      req.url.startsWith("/model/") ||
+      req.url.startsWith("/model_group/") ||
+      req.url.startsWith("/models") ||
+      req.url.startsWith("/organization/") ||
+      req.url.startsWith("/policies/") ||
+      req.url.startsWith("/project/") ||
+      req.url.startsWith("/prompts/") ||
+      req.url.startsWith("/sso/") ||
+      req.url.startsWith("/tag/") ||
+      req.url.startsWith("/team/") ||
+      req.url.startsWith("/user/"))
+  ) {
     const body = await readBody(req);
     const capture = captureFrontDoorRequest(req, body);
     if (!capture.litellmApiKey || !allowedLiteLlmKeys.has(capture.litellmApiKey)) {
       jsonResponse(res, 401, { error: { code: "invalid_litellm_virtual_key" } });
       return true;
     }
+    const headers = {
+      authorization: `Bearer ${litellmMasterKey}`,
+    };
+    if (body !== undefined) {
+      headers["content-type"] = "application/json";
+    }
     const upstream = await fetch(`${litellmUpstreamUrl}${req.url}`, {
       method: req.method,
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${litellmMasterKey}`,
-      },
+      headers,
       body: req.method === "GET" ? undefined : JSON.stringify(body),
+      redirect: "manual",
     });
     const text = await upstream.text();
-    res.writeHead(upstream.status, {
+    const responseHeaders = {
       "content-type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
       "content-length": Buffer.byteLength(text),
-    });
+    };
+    const location = upstream.headers.get("location");
+    if (location) {
+      responseHeaders.location = location;
+    }
+    res.writeHead(upstream.status, responseHeaders);
     res.end(text);
     return true;
   }
