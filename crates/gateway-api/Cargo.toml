@@ -9,6 +9,7 @@ repository.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+bytes.workspace = true
 chrono.workspace = true
 gateway-core = { path = "../gateway-core" }
 gateway-proxy = { path = "../gateway-proxy" }

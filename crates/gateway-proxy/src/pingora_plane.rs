@@ -2481,6 +2481,10 @@ mod tests {
             Some(LiteLlmSensitiveRouteExposure::OperatorOnly),
             None
         ));
+        assert!(!sensitive_litellm_passthrough_authorized(
+            Some(LiteLlmSensitiveRouteExposure::Disabled),
+            None
+        ));
         assert!(sensitive_litellm_passthrough_authorized(
             Some(LiteLlmSensitiveRouteExposure::ExplicitlyExposed),
             None
@@ -2500,6 +2504,10 @@ mod tests {
         };
         assert!(sensitive_litellm_passthrough_authorized(
             Some(LiteLlmSensitiveRouteExposure::OperatorOnly),
+            Some(&identity)
+        ));
+        assert!(!sensitive_litellm_passthrough_authorized(
+            Some(LiteLlmSensitiveRouteExposure::Disabled),
             Some(&identity)
         ));
     }

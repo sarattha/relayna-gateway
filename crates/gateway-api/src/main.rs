@@ -91,7 +91,15 @@ fn main() -> anyhow::Result<()> {
     let studio = config.relayna_studio_base_url.clone().map(|base_url| {
         app::StudioCatalogClient::new(base_url, config.relayna_studio_token.clone())
     });
-    let app = app::router_with_studio_and_auth(store.clone(), redis, studio, auth_env, shared_auth);
+    let app = app::router_with_studio_auth_and_litellm(
+        store.clone(),
+        redis,
+        studio,
+        auth_env,
+        shared_auth,
+        config.litellm_base_url.clone(),
+        config.litellm_service_key.clone(),
+    );
     let control_bind_addr = config.gateway_control_bind_addr;
     let reconciler_store = store.clone();
     let reconciler_redis = redis_control.clone();

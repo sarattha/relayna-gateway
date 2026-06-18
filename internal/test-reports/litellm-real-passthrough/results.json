@@ -1,8 +1,8 @@
 {
   "ok": true,
   "requestedLiteLlmPathsPassThrough": true,
-  "overallOutcome": "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, /ui remains blocked by default, and credential translation strips client secrets.",
-  "generatedAt": "2026-06-18T15:08:29.578Z",
+  "overallOutcome": "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, and credential translation strips client secrets.",
+  "generatedAt": "2026-06-18T17:30:16.612Z",
   "environment": {
     "gatewayProxyUrl": "http://gateway:8080",
     "gatewayControlUrl": "http://gateway:8081",
@@ -25,13 +25,14 @@
     "/v1/embeddings",
     "/v1/models"
   ],
+  "litellmUiProxyPath": "/admin-ui/litellm-ui/",
   "checks": {
     "canonical_chat_completions_passes_to_litellm": {
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-54e60441-f1ea-412a-8a31-e0a3a2e7bcbe",
-        "created": 1781795308,
+        "id": "chatcmpl-c90aba8a-1889-40fe-88dd-b2e03e95acf5",
+        "created": 1781803815,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -64,15 +65,15 @@
           "route": "/v1/chat/completions",
           "enabled": true,
           "mode": "direct_litellm_passthrough",
-          "updated_at": "2026-06-18T15:08:28.719053Z"
+          "updated_at": "2026-06-18T17:30:15.635849Z"
         }
       },
       "routeMode": "direct_litellm_passthrough",
       "directModeChat": {
         "status": 200,
         "body": {
-          "id": "chatcmpl-2dc48aae-3589-4735-a13a-a031b92cde43",
-          "created": 1781795308,
+          "id": "chatcmpl-89f63a88-35fb-475b-866a-0b65f51c9fea",
+          "created": 1781803815,
           "model": "gpt-review",
           "object": "chat.completion",
           "choices": [
@@ -112,7 +113,7 @@
           ],
           "ui_exposure": "disabled",
           "admin_api_exposure": "disabled",
-          "updated_at": "2026-06-18T15:08:27.425646Z"
+          "updated_at": "2026-06-18T17:30:13.408931Z"
         }
       },
       "passthroughEnable": {
@@ -128,7 +129,7 @@
           ],
           "ui_exposure": "disabled",
           "admin_api_exposure": "disabled",
-          "updated_at": "2026-06-18T15:08:28.978749Z"
+          "updated_at": "2026-06-18T17:30:15.897315Z"
         }
       }
     },
@@ -173,7 +174,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "5c60e9b0-47d7-4bdb-80cf-7cc952de2992"
+          "request_id": "34a890a4-ed8f-43ac-af20-7ab79d7aa28a"
         }
       }
     },
@@ -181,8 +182,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "resp_tfXU3tHYYV8PuBgT8pStpgBbZ6bMcP3gczic3stH_CzABwq8YbndOpG3JVswWEy_LREY0aninhXqyRGzk7XyywfpGyCTzQallPXPMvZ7Lltzy0Mmlk9vG67djiMJQha8yW2rA9LaFPFk0D98YVieF3_G_TM7v-2irmQQFpgW7isMCTQYLgNP57cD-D_3HVydcJsC6Of0Ha8VRTGEsHjCsecspJUb3SxVpSKPZD-gjXX5EOCqx3HXFqR9vDV-_mVCriMiVwfYpjM37FB7lcCvU-DDtYkivQI0voZOVSExc5DxUm5PSQmrSPuSiNz7inNxdjOYk4Ngtsm09sHynkN7r7eqPYw4TRETFgy2ffZE-GrbyPUdCr0zBy_dyQmfb3u3BdxEyw42z9kBItBOSRt9yOR16KEoVZ9hM3VHNq6q1YwXayl30UhCwRk06HJPSQ==",
-        "created_at": 1781795309,
+        "id": "resp_gX_Uo3Uo3OJJrektHmnBVbU7Xe22PayLYvGKOIFJOJ9-Ro6FvvF3wUAoQw660QRfR2b28aYWZVYkyQeGFCenV4RakQTtCfi-Jwjtm7sq_sGufsKI5UufxfPmYefDKV7Z17UbK9WrBh2WByYRTiV_T0KoQGe9OnGeBtWh3PPwA2ek45IiRGwfKi48IuiKs77C5vegl54EMftw584F2oXl2CtvcN_phkrO-rclKR2ucOaTmZda73xtQKIpwGNt0ZFV6MbL6UKXWj2RB9fEDH9uk26G8GWUIQQNIViQmjSvKod7ZK05ZFf8l6RQC85fygK8ICiuhpePISUL7_X4F42eOxk8pWVHzjn2X9sF92SI1oHWPQXiS9E_VcMVhQ17nTm1TlTWq3ZgP4fTQPiAoaKaSjTIlUxWzHmGwefZfgPiuBkr7evFjdAnEKidjVR2JQ==",
+        "created_at": 1781803816,
         "error": null,
         "incomplete_details": null,
         "instructions": null,
@@ -192,7 +193,7 @@
         "output": [
           {
             "type": "message",
-            "id": "msg-05728121-f9b9-4096-a442-8e5ec3694eb9",
+            "id": "msg-83b06112-e038-4b16-80b4-327ec66f9637",
             "status": "completed",
             "role": "assistant",
             "content": [
@@ -256,8 +257,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-559ffd25-1dbf-422c-a054-5d7295f7fc4b",
-        "created": 1781795309,
+        "id": "chatcmpl-b2faf635-669d-484b-b42e-195ce85621b2",
+        "created": 1781803816,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -518,6 +519,17 @@
           }
         },
         {
+          "path": "/ui/",
+          "method": "GET",
+          "authorization": null,
+          "litellmApiKey": "sk-provider",
+          "hasRelaynaKey": false,
+          "hasAihKey": false,
+          "hasApigeeIdentity": false,
+          "hasClientJwt": false,
+          "body": {}
+        },
+        {
           "path": "/v1/chat/completions",
           "method": "POST",
           "authorization": null,
@@ -550,6 +562,7 @@
         "sk-provider",
         "sk-provider",
         "sk-provider",
+        "sk-provider",
         "sk-provider"
       ]
     },
@@ -560,6 +573,7 @@
         "sk-key",
         "sk-key",
         "sk-project",
+        "sk-provider",
         "sk-provider",
         "sk-provider",
         "sk-provider",
@@ -580,8 +594,29 @@
         "sk-provider",
         "sk-provider",
         "sk-provider",
+        "sk-provider",
         "sk-provider"
       ]
+    },
+    "litellm_ui_proxy_requires_operator_token": {
+      "ok": true,
+      "status": 401
+    },
+    "litellm_ui_proxy_reaches_real_litellm_with_gateway_credential": {
+      "ok": true,
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "litellmUiCapture": {
+        "path": "/ui/",
+        "method": "GET",
+        "authorization": null,
+        "litellmApiKey": "sk-provider",
+        "hasRelaynaKey": false,
+        "hasAihKey": false,
+        "hasApigeeIdentity": false,
+        "hasClientJwt": false,
+        "body": {}
+      }
     },
     "wildcard_literal_chatcompletion_reaches_litellm": {
       "ok": true,
@@ -849,6 +884,17 @@
       }
     },
     {
+      "path": "/ui/",
+      "method": "GET",
+      "authorization": null,
+      "litellmApiKey": "sk-provider",
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {}
+    },
+    {
       "path": "/v1/chat/completions",
       "method": "POST",
       "authorization": null,
@@ -873,6 +919,7 @@
     "sk-key",
     "sk-key",
     "sk-project",
+    "sk-provider",
     "sk-provider",
     "sk-provider",
     "sk-provider",

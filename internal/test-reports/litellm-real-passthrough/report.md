@@ -1,10 +1,10 @@
 # LiteLLM Real Passthrough Test Report
 
-Generated: 2026-06-18T15:08:29.578Z
+Generated: 2026-06-18T17:30:16.612Z
 
 Overall result: **PASS**
 
-PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, /ui remains blocked by default, and credential translation strips client secrets.
+PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, and credential translation strips client secrets.
 
 ## Environment
 
@@ -37,6 +37,8 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | litellm key mapping precedes project mapping | PASS | n/a |  |
 | disabled key mapping falls back to project mapping | PASS | n/a |  |
 | disabled project mapping falls back to provider default | PASS | n/a |  |
+| litellm ui proxy requires operator token | PASS | 401 |  |
+| litellm ui proxy reaches real litellm with gateway credential | PASS | 200 |  |
 | wildcard literal chatcompletion reaches litellm | PASS | 404 |  |
 | wildcard literal response reaches litellm | PASS | 404 |  |
 | wildcard literal embedding reaches litellm | PASS | 404 |  |
@@ -65,16 +67,22 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | POST /v1/response |  | sk-provider | no |
 | POST /v1/embedding |  | sk-provider | no |
 | POST /v1/rerank |  | sk-provider | no |
+| GET /ui/ |  | sk-provider | no |
 | POST /v1/chat/completions |  | sk-provider | no |
 
 Observed LiteLLM credential precedence:
-`sk-key -> sk-key -> sk-key -> sk-project -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider`
+`sk-key -> sk-key -> sk-key -> sk-project -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider`
 
 ## Wildcard Coverage
 
 The current branch routes managed canonical calls through LiteLLM, can switch a
 canonical route to direct LiteLLM passthrough, and forwards enabled wildcard
 `/v1/*` calls while preserving path and query.
+
+The browser-safe LiteLLM UI path is also covered: unauthenticated
+`/admin-ui/litellm-ui/` is rejected, while the operator-authenticated path
+reaches the real LiteLLM `/ui/` through Gateway with only the server-side
+LiteLLM credential forwarded.
 
 The literal alias probes below reached real LiteLLM and were rejected there with
 404 or 400 responses, proving they were not stopped by the Gateway router:
@@ -93,6 +101,8 @@ The literal alias probes below reached real LiteLLM and were rejected there with
 - `screenshots/05-real-litellm-issue-64-report.png`
 - `screenshots/06-admin-ui-litellm-passthrough-controls.png`
 - `screenshots/07-admin-ui-route-mode-controls.png`
+- `screenshots/08-litellm-ui-proxy-real-env.png`
+- `screenshots/09-real-env-issue-66-report.png`
 
 ## Raw Results
 

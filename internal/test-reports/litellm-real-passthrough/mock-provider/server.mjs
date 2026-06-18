@@ -479,6 +479,14 @@ async function runTests() {
   const responseLiteral = await gatewayCall("/v1/response", validToken, relaynaKey, responsePayload);
   const embeddingLiteral = await gatewayCall("/v1/embedding", validToken, relaynaKey, embeddingPayload);
   const rerank = await gatewayCall("/v1/rerank", validToken, relaynaKey, rerankPayload);
+  const litellmUiUnauthenticated = await fetch(`${gatewayControlUrl}/admin-ui/litellm-ui/`);
+  const litellmUiProxiedResponse = await fetch(`${gatewayControlUrl}/admin-ui/litellm-ui/`, {
+    headers: {
+      authorization: `Bearer ${adminToken}`,
+      "x-litellm-api-key": "client-supplied-litellm-key",
+    },
+  });
+  const litellmUiProxiedText = await litellmUiProxiedResponse.text();
   const apigeeChat = await apigeeTrustedCall("/v1/chat/completions", validToken, relaynaKey, chatPayload);
   const frontDoorCapturesResponse = await fetch(`${litellmFrontDoorUrl}/front-door-captures`);
   const frontDoorRequests = await frontDoorCapturesResponse.json();
@@ -497,6 +505,7 @@ async function runTests() {
   const firstProviderCredentialIndex = customHeaderCredentials.indexOf("sk-provider");
   const routeMode = routesAfterMode.body.find?.((route) => route.route_id === "chat-completions")?.mode;
   const wildcardCapture = frontDoorRequests.find((request) => request.path.startsWith("/v1/models"));
+  const litellmUiCapture = frontDoorRequests.find((request) => request.path.startsWith("/ui"));
 
   const checks = {
     canonical_chat_completions_passes_to_litellm: pass(chat.status === 200 && gatewayForwardedToLiteLlm, chat),
@@ -542,6 +551,25 @@ async function runTests() {
       {
       credentials: customHeaderCredentials,
     }),
+    litellm_ui_proxy_requires_operator_token: pass(
+      litellmUiUnauthenticated.status === 401,
+      { status: litellmUiUnauthenticated.status },
+    ),
+    litellm_ui_proxy_reaches_real_litellm_with_gateway_credential: pass(
+      litellmUiProxiedResponse.status === 200 &&
+        litellmUiProxiedText.includes("<html") &&
+        litellmUiCapture?.path.startsWith("/ui") &&
+        litellmUiCapture?.litellmApiKey === "sk-provider" &&
+        !litellmUiCapture?.authorization &&
+        !litellmUiCapture?.hasRelaynaKey &&
+        !litellmUiCapture?.hasAihKey &&
+        !litellmUiCapture?.hasClientJwt,
+      {
+        status: litellmUiProxiedResponse.status,
+        contentType: litellmUiProxiedResponse.headers.get("content-type"),
+        litellmUiCapture,
+      },
+    ),
     wildcard_literal_chatcompletion_reaches_litellm: pass(
       chatLiteral.status === 404 &&
         chatLiteral.body?.detail === "Not Found" &&
@@ -574,7 +602,7 @@ async function runTests() {
     ok: Object.values(checks).every((check) => check.ok),
     requestedLiteLlmPathsPassThrough,
     overallOutcome:
-      "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, /ui remains blocked by default, and credential translation strips client secrets.",
+      "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, and credential translation strips client secrets.",
     generatedAt: new Date().toISOString(),
     environment: {
       gatewayProxyUrl,
@@ -588,6 +616,7 @@ async function runTests() {
     },
     requestedPaths: ["/v1/chatcompletion", "/v1/response", "/v1/embedding", "/v1/rerank"],
     canonicalGatewayLiteLlmPaths: ["/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/models"],
+    litellmUiProxyPath: "/admin-ui/litellm-ui/",
     checks,
     providerRequests: state.providerRequests,
     frontDoorRequests,
@@ -689,7 +718,7 @@ function dashboardHtml() {
       </tbody>
     </table>
     <h2>Wildcard Coverage</h2>
-    <p>The branch routes managed canonical calls through LiteLLM, can switch a canonical route to direct LiteLLM passthrough, and forwards enabled wildcard <code>/v1/*</code> calls while preserving path and query. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
+    <p>The branch routes managed canonical calls through LiteLLM, can switch a canonical route to direct LiteLLM passthrough, forwards enabled wildcard <code>/v1/*</code> calls while preserving path and query, and serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
     <h2>LiteLLM Credential Mapping</h2>
     <p>Gateway sent <code>x-litellm-api-key</code> to the LiteLLM front door and did not send <code>Authorization</code>. Observed precedence: <code>${(results?.mappingCredentialsObserved || []).join(" -> ")}</code>.</p>
   </main>
@@ -727,6 +756,37 @@ async function handleFrontDoor(req, res) {
       "content-length": Buffer.byteLength(text),
     });
     res.end(text);
+    return true;
+  }
+  if (
+    req.method === "GET" &&
+    (req.url.startsWith("/ui") ||
+      req.url.startsWith("/litellm-asset-prefix/") ||
+      req.url.startsWith("/litellm/"))
+  ) {
+    const capture = captureFrontDoorRequest(req, {});
+    if (!capture.litellmApiKey || !allowedLiteLlmKeys.has(capture.litellmApiKey)) {
+      jsonResponse(res, 401, { error: { code: "invalid_litellm_virtual_key" } });
+      return true;
+    }
+    const upstream = await fetch(`${litellmUpstreamUrl}${req.url}`, {
+      method: req.method,
+      headers: {
+        authorization: `Bearer ${litellmMasterKey}`,
+      },
+      redirect: "manual",
+    });
+    const body = await upstream.arrayBuffer();
+    const headers = {
+      "content-type": upstream.headers.get("content-type") || "application/octet-stream",
+      "content-length": Buffer.byteLength(Buffer.from(body)),
+    };
+    const location = upstream.headers.get("location");
+    if (location) {
+      headers.location = location;
+    }
+    res.writeHead(upstream.status, headers);
+    res.end(Buffer.from(body));
     return true;
   }
   return false;

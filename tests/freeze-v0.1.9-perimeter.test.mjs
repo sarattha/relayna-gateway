@@ -62,6 +62,11 @@ test("control-plane public route inventory is pinned", () => {
   assert.deepEqual(sorted(routes), sorted([
     "/admin-ui",
     "/admin-ui/{*path}",
+    "/admin-ui/litellm-ui",
+    "/admin-ui/litellm-ui/",
+    "/admin-ui/litellm-ui/litellm/.well-known/litellm-ui-config",
+    "/admin-ui/litellm-ui/litellm/{*path}",
+    "/admin-ui/litellm-ui/{*path}",
     "/admin-ui/admin/audit-events",
     "/admin-ui/admin/auth/front-door",
     "/admin-ui/admin/guardrails",
