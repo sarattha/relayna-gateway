@@ -493,7 +493,9 @@ where
             Route::ChatCompletions | Route::Responses | Route::LiteLlmEmbeddings
         ) {
             match self.store.openai_route_mode(matched.route).await {
-                Ok(OpenAiRouteMode::DirectLiteLlmPassthrough) => {
+                Ok(OpenAiRouteMode::DirectLiteLlmPassthrough)
+                    if !authorization_has_relayna_key(authorization) =>
+                {
                     if let Err(error) = self.ensure_openai_route_enabled(matched.route).await {
                         respond_error(session, error, &ctx.request_id).await?;
                         return Ok(true);
@@ -518,6 +520,7 @@ where
                     ctx.route_match = Some(matched);
                     return Ok(false);
                 }
+                Ok(OpenAiRouteMode::DirectLiteLlmPassthrough) => {}
                 Ok(OpenAiRouteMode::ManagedByGateway) => {}
                 Err(error) => {
                     respond_error(session, error, &ctx.request_id).await?;
@@ -1621,6 +1624,12 @@ fn litellm_bearer_credential(authorization: Option<&str>) -> GatewayResult<Strin
     Ok(token.to_owned())
 }
 
+fn authorization_has_relayna_key(authorization: Option<&str>) -> bool {
+    authorization
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .is_some_and(|token| token.trim().starts_with("rk_live_"))
+}
+
 fn request_public_origin(req: &RequestHeader) -> Option<String> {
     let host = header_value(req, "x-forwarded-host")
         .or_else(|| header_value(req, "host"))?
@@ -2344,6 +2353,22 @@ mod tests {
             litellm_bearer_credential(Some("Bearer   ")).unwrap_err(),
             GatewayError::MalformedAuthorization
         );
+    }
+
+    #[test]
+    fn relayna_authorization_is_not_litellm_passthrough_credential() {
+        let relayna_key = ["rk", "live", "existing_client_key"].join("_");
+        let relayna_bearer = format!("Bearer {relayna_key}");
+        let spaced_relayna_bearer = format!("Bearer   {relayna_key}");
+        let basic_relayna = format!("Basic {relayna_key}");
+
+        assert!(authorization_has_relayna_key(Some(&relayna_bearer)));
+        assert!(authorization_has_relayna_key(Some(&spaced_relayna_bearer)));
+        assert!(!authorization_has_relayna_key(Some(
+            "Bearer sk-litellm-client"
+        )));
+        assert!(!authorization_has_relayna_key(Some(&basic_relayna)));
+        assert!(!authorization_has_relayna_key(None));
     }
 
     #[test]
