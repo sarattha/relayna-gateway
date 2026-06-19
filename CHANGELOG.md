@@ -2,6 +2,41 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.11 - 2026-06-19
+
+### Added
+
+- Added direct LiteLLM bearer delegation for canonical
+  `direct_litellm_passthrough` routes. Non-Relayna `Authorization: Bearer ...`
+  credentials can now be translated to the configured LiteLLM upstream header
+  instead of being rejected by Gateway virtual-key auth.
+- Added trusted-ingress LiteLLM dashboard/admin API passthrough coverage for
+  explicitly exposed, allowlisted admin paths so browser sessions can remain
+  governed by LiteLLM when an external identity-aware ingress already protects
+  access.
+
+### Changed
+
+- Updated the freeze perimeter check and related workflow/docs references to the
+  new `v0.1.11` baseline test file `tests/freeze-v0.1.11-perimeter.test.mjs`.
+- Workspace crate versions now share the `0.1.11` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.11` gateway image.
+- Release documentation and operational checklists now treat `v0.1.11` as the
+  current release target and production freeze baseline.
+
+### Security
+
+- Relayna `rk_live_...` bearer credentials still use the Relayna-authenticated
+  direct passthrough path with mapping lookup, policy checks, rate limits,
+  budgets, credential stripping, and status-only usage.
+- Direct LiteLLM bearer delegation applies only to non-Relayna bearer
+  credentials on canonical direct-mode routes; those credentials are forwarded
+  using the configured upstream LiteLLM header mode/name.
+- Trusted-ingress dashboard/admin passthrough remains opt-in behind enabled
+  passthrough, `trusted_ingress` UI exposure, `explicitly_exposed` admin API
+  exposure, and configured method/path allowlists.
+
 ## 0.1.10 - 2026-06-19
 
 ### Added

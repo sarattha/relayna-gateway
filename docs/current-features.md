@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.10` feature set. The `v0.1.10` production freeze
+This page summarizes the `v0.1.11` feature set. The `v0.1.11` production freeze
 baseline remains pinned for compatibility checks.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
@@ -126,10 +126,10 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.10` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.11` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
-translation. Relayna-owned routes such as `/services/*`, control-plane routes
-under `/admin-ui/*`, health, readiness, metrics, and canonical
+translation for governed traffic. Relayna-owned routes such as `/services/*`,
+control-plane routes under `/admin-ui/*`, health, readiness, metrics, and canonical
 OpenAI-compatible routes keep explicit precedence before wildcard passthrough.
 Only unmatched paths that pass the configured LiteLLM passthrough allowlist are
 forwarded to LiteLLM.
@@ -145,7 +145,7 @@ Each canonical route has a mode in the Routes page:
 | Mode | Behavior |
 | --- | --- |
 | `managed_by_gateway` | Current governed behavior. Gateway authenticates the Relayna key, evaluates route/model/provider policy, checks request and token rate limits, checks/reserves budgets, runs configured guardrails, forwards to LiteLLM or direct providers, and records full usage when response accounting data is available. |
-| `direct_litellm_passthrough` | Gateway still authenticates the Relayna key, honors route enablement, evaluates route/model/provider policy, checks rate limits and budgets, strips client credentials, injects the resolved LiteLLM credential, and forwards the original request to LiteLLM. It intentionally skips Gateway guardrail rewriting and token accounting, so usage is reduced to status/latency/request metadata. |
+| `direct_litellm_passthrough` | Relayna `rk_live_...` bearer keys keep the Gateway-authenticated path: route enablement, policy, model/provider allowlists, rate limits, budgets, credential stripping/injection, and status-only usage. Non-Relayna `Authorization: Bearer ...` credentials bypass Relayna key lookup and are delegated to LiteLLM using the configured upstream credential header. Guardrail body rewriting and token accounting are bypassed. |
 
 Wildcard LiteLLM passthrough is configured from Providers. It is disabled by
 default. When enabled, the safe default allowlist is `/v1/*` for `GET` and
@@ -160,13 +160,14 @@ Sensitive LiteLLM paths require explicit exposure decisions:
 | `disabled` | `/ui` or admin-like LiteLLM paths are blocked even if they appear in `allowed_paths`. This is the default. |
 | `operator_only` | The path can be allowlisted, but the proxy request must already have passed the Gateway Entra or trusted Apigee identity layer plus Relayna virtual-key auth. This is intended for identity-aware operator ingress. |
 | `explicitly_exposed` | The path can be allowlisted for authenticated Relayna virtual-key clients. Use only behind a deliberate ingress/auth design. |
-| `trusted_ingress` | `/ui` support paths can be served to trusted ingress front doors without Relayna credentials for browser workflows, while non-ui passthrough paths keep normal Relayna auth requirements. |
+| `trusted_ingress` | `/ui` support paths can be served to trusted ingress front doors without Relayna credentials for browser workflows. Dashboard/admin API passthrough is allowed only when `ui_exposure` is `trusted_ingress`, `admin_api_exposure` is `explicitly_exposed`, passthrough is enabled, and method/path allowlists match. Other non-ui passthrough paths keep normal Relayna auth requirements. |
 
-Gateway client credentials remain Relayna credentials, not LiteLLM credentials.
-When Entra is disabled, clients use `Authorization: Bearer rk_live_...`. When
-Entra is enabled, clients use `Authorization: Bearer <Entra JWT>` plus the
-configured Relayna key header. Gateway never forwards those client credentials
-to LiteLLM.
+Gateway client credentials remain Relayna credentials for governed traffic. When
+Entra is disabled, clients use `Authorization: Bearer rk_live_...`. When Entra
+is enabled, clients use `Authorization: Bearer <Entra JWT>` plus the configured
+Relayna key header. Gateway never forwards those client credentials to LiteLLM.
+The direct-mode non-Relayna bearer exception leaves LiteLLM authentication and
+authorization to LiteLLM itself.
 
 Operators can manage LiteLLM upstream authentication from Admin portal
 Providers. The provider default credential remains write-only, and the
@@ -186,7 +187,9 @@ The real LiteLLM verification harness under
 `internal/test-reports/litellm-real-passthrough` exercises canonical managed
 and direct route modes, wildcard `/v1/models?source=wildcard`, path/query
 preservation, sensitive `/ui` blocking by default, client credential stripping,
-and LiteLLM custom-header injection against a real `litellm/litellm` container.
+LiteLLM custom-header injection, direct LiteLLM bearer delegation, and
+trusted-ingress dashboard/admin passthrough against a real `litellm/litellm`
+container.
 
 ## Observability Analytics
 
@@ -210,7 +213,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.10` freeze baseline hardens CI and release workflows with strict
+The `v0.1.11` freeze baseline hardens CI and release workflows with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.
@@ -221,7 +224,7 @@ no privilege escalation, and all Linux capabilities dropped. Proxy and control
 plane Services remain separate, and the control plane should stay private or
 protected by identity-aware access.
 
-The v0.1.10 freeze perimeter test pins the production baseline for public
+The v0.1.11 freeze perimeter test pins the production baseline for public
 routes, admin route inventory, error codes, config names, migrations, Redis key
 formats, release metadata, and Admin UI endpoint assumptions. Future changes
 should keep that perimeter passing unless a compatibility decision explicitly

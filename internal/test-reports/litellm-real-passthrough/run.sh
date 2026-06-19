@@ -115,6 +115,9 @@ The literal alias probes below reached real LiteLLM and were rejected there with
 - \`screenshots/07-admin-ui-route-mode-controls.png\`
 - \`screenshots/08-litellm-ui-proxy-real-env.png\`
 - \`screenshots/09-real-env-issue-66-report.png\`
+- \`screenshots/66-issue-68-real-litellm-evidence.png\`
+- \`screenshots/67-issue-68-real-env-dashboard.png\`
+- \`screenshots/68-issue-68-trusted-ingress-litellm-ui.png\`
 
 ## Raw Results
 

@@ -366,6 +366,26 @@ async function gatewayCall(path, token, relaynaKey, payload, method = "POST") {
   return { status: response.status, body };
 }
 
+async function gatewayBearerCall(path, bearerCredential, payload, method = "POST") {
+  const headers = {
+    authorization: `Bearer ${bearerCredential}`,
+    "content-type": "application/json",
+  };
+  const response = await fetch(`${gatewayProxyUrl}${path}`, {
+    method,
+    headers,
+    body: method === "GET" ? undefined : JSON.stringify(payload),
+  });
+  const text = await response.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = text;
+  }
+  return { status: response.status, body };
+}
+
 async function adminJson(path, options = {}) {
   const response = await fetch(`${gatewayControlUrl}${path}`, {
     ...options,
@@ -445,7 +465,7 @@ async function runTests() {
     body: JSON.stringify({ mode: "direct_litellm_passthrough" }),
   });
   const routesAfterMode = await adminJson("/admin-ui/admin/openai-routes");
-  const directModeChat = await gatewayCall("/v1/chat/completions", validToken, relaynaKey, chatPayload);
+  const directModeChat = await gatewayBearerCall("/v1/chat/completions", "sk-client", chatPayload);
   await adminJson("/admin-ui/admin/openai-routes/chat-completions/mode", {
     method: "PATCH",
     body: JSON.stringify({ mode: "managed_by_gateway" }),
@@ -513,15 +533,24 @@ async function runTests() {
         "/model/*",
         "/model_group/*",
         "/user/info",
+        "/global/spend/logs",
+        "/key/info",
       ],
       allowed_methods: ["GET", "POST", "OPTIONS"],
       ui_exposure: "trusted_ingress",
-      admin_api_exposure: "disabled",
+      admin_api_exposure: "explicitly_exposed",
     }),
   });
   const trustedIngressUi = await gatewayCall("/ui/", null, null, {}, "GET");
   const trustedIngressUserInfo = await gatewayCall("/user/info", null, null, {}, "GET");
+  const trustedIngressSpendLogs = await gatewayCall("/global/spend/logs", null, null, {}, "GET");
+  const trustedIngressKeyInfo = await gatewayCall("/key/info", null, null, {}, "GET");
   const trustedIngressModelsWithoutKey = await gatewayCall("/v1/models", null, null, {}, "GET");
+  const responsesRouteModeUpdate = await adminJson("/admin-ui/admin/openai-routes/responses/mode", {
+    method: "PATCH",
+    body: JSON.stringify({ mode: "direct_litellm_passthrough" }),
+  });
+  const directResponsesWithClientBearer = await gatewayBearerCall("/v1/responses", "sk-client", responsePayload);
   const frontDoorCapturesResponse = await fetch(`${litellmFrontDoorUrl}/front-door-captures`);
   const frontDoorRequests = await frontDoorCapturesResponse.json();
 
@@ -548,6 +577,23 @@ async function runTests() {
     .slice()
     .reverse()
     .find((request) => request.path === "/user/info");
+  const trustedIngressSpendLogsCapture = frontDoorRequests
+    .slice()
+    .reverse()
+    .find((request) => request.path === "/global/spend/logs");
+  const trustedIngressKeyInfoCapture = frontDoorRequests
+    .slice()
+    .reverse()
+    .find((request) => request.path === "/key/info");
+  const directResponsesClientBearerCapture = frontDoorRequests
+    .slice()
+    .reverse()
+    .find(
+      (request) =>
+        request.path === "/v1/responses" &&
+        request.litellmApiKey === "sk-client" &&
+        !request.authorization,
+    );
 
   const checks = {
     canonical_chat_completions_passes_to_litellm: pass(chat.status === 200 && gatewayForwardedToLiteLlm, chat),
@@ -648,10 +694,48 @@ async function runTests() {
         trustedIngressUserInfoCapture,
       },
     ),
+    trusted_ingress_no_auth_admin_spend_logs_reaches_litellm: pass(
+      trustedIngressSpendLogs.status !== 401 &&
+        trustedIngressSpendLogsCapture?.litellmApiKey === "sk-provider" &&
+        !trustedIngressSpendLogsCapture?.authorization &&
+        !trustedIngressSpendLogsCapture?.hasRelaynaKey &&
+        !trustedIngressSpendLogsCapture?.hasAihKey &&
+        !trustedIngressSpendLogsCapture?.hasClientJwt,
+      {
+        trustedIngressSpendLogs,
+        trustedIngressSpendLogsCapture,
+      },
+    ),
+    trusted_ingress_no_auth_admin_key_info_reaches_litellm: pass(
+      trustedIngressKeyInfo.status !== 401 &&
+        trustedIngressKeyInfoCapture?.litellmApiKey === "sk-provider" &&
+        !trustedIngressKeyInfoCapture?.authorization &&
+        !trustedIngressKeyInfoCapture?.hasRelaynaKey &&
+        !trustedIngressKeyInfoCapture?.hasAihKey &&
+        !trustedIngressKeyInfoCapture?.hasClientJwt,
+      {
+        trustedIngressKeyInfo,
+        trustedIngressKeyInfoCapture,
+      },
+    ),
     trusted_ingress_no_auth_v1_models_still_requires_relayna_auth: pass(
       trustedIngressModelsWithoutKey.status === 401 &&
         codeOf(trustedIngressModelsWithoutKey) === "missing_authorization",
       trustedIngressModelsWithoutKey,
+    ),
+    direct_responses_accepts_litellm_bearer_without_relayna_key: pass(
+      responsesRouteModeUpdate.status === 200 &&
+        directResponsesWithClientBearer.status === 200 &&
+        directResponsesClientBearerCapture?.litellmApiKey === "sk-client" &&
+        !directResponsesClientBearerCapture?.authorization &&
+        !directResponsesClientBearerCapture?.hasRelaynaKey &&
+        !directResponsesClientBearerCapture?.hasAihKey &&
+        !directResponsesClientBearerCapture?.hasClientJwt,
+      {
+        responsesRouteModeUpdate,
+        directResponsesWithClientBearer,
+        directResponsesClientBearerCapture,
+      },
     ),
     wildcard_literal_chatcompletion_reaches_litellm: pass(
       chatLiteral.status === 404 &&
@@ -685,7 +769,7 @@ async function runTests() {
     ok: Object.values(checks).every((check) => check.ok),
     requestedLiteLlmPathsPassThrough,
     overallOutcome:
-      "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress /ui works without Relayna auth when Entra is disabled, and credential translation strips client secrets.",
+      "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.",
     generatedAt: new Date().toISOString(),
     environment: {
       gatewayProxyUrl,
@@ -801,7 +885,7 @@ function dashboardHtml() {
       </tbody>
     </table>
     <h2>Wildcard Coverage</h2>
-    <p>The branch routes managed canonical calls through LiteLLM, can switch a canonical route to direct LiteLLM passthrough, forwards enabled wildcard <code>/v1/*</code> calls while preserving path and query, serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth, and serves trusted-ingress <code>/ui/</code> without Relayna auth when Entra is disabled. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
+    <p>The branch routes managed canonical calls through LiteLLM, can switch a canonical route to direct LiteLLM passthrough, forwards enabled wildcard <code>/v1/*</code> calls while preserving path and query, serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth, serves trusted-ingress <code>/ui/</code> and explicitly exposed admin paths without Relayna auth when Entra is disabled, and translates a direct <code>/v1/responses</code> LiteLLM bearer key into the configured upstream custom header. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
     <h2>LiteLLM Credential Mapping</h2>
     <p>Gateway sent <code>x-litellm-api-key</code> to the LiteLLM front door and did not send <code>Authorization</code>. Observed precedence: <code>${(results?.mappingCredentialsObserved || []).join(" -> ")}</code>.</p>
   </main>
@@ -825,6 +909,7 @@ async function handleFrontDoor(req, res) {
       req.url.startsWith("/v3/") ||
       req.url.startsWith("/get/") ||
       req.url.startsWith("/get_image") ||
+      req.url.startsWith("/global/") ||
       req.url.startsWith("/public/") ||
       req.url.startsWith("/config/") ||
       req.url.startsWith("/health/") ||

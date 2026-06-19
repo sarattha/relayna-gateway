@@ -81,7 +81,7 @@ services:
       ROLE: litellm-front-door
       LITELLM_UPSTREAM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: sk-ci
-      ALLOWED_LITELLM_KEYS: sk-key,sk-project,sk-provider
+      ALLOWED_LITELLM_KEYS: sk-key,sk-project,sk-provider,sk-client
     volumes:
       - ./mock-provider:/app:ro
     depends_on:

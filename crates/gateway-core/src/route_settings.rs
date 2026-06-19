@@ -236,6 +236,32 @@ impl LiteLlmPassthroughSettings {
             .iter()
             .any(|allowed| path_matches_allowed_pattern(path, allowed))
     }
+
+    pub fn trusted_ingress_passthrough_path_allowed(&self, method: &Method, path: &str) -> bool {
+        if self.trusted_ingress_ui_path_allowed(method, path) {
+            return true;
+        }
+        if self.ui_exposure != LiteLlmSensitiveRouteExposure::TrustedIngress
+            || self.admin_api_exposure != LiteLlmSensitiveRouteExposure::ExplicitlyExposed
+            || !self.enabled
+        {
+            return false;
+        }
+        let method = method.as_str();
+        if !self
+            .allowed_methods
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(method))
+        {
+            return false;
+        }
+        if !is_litellm_admin_path(path) {
+            return false;
+        }
+        self.allowed_paths
+            .iter()
+            .any(|allowed| path_matches_allowed_pattern(path, allowed))
+    }
 }
 
 pub fn openai_route_mode_str(mode: OpenAiRouteMode) -> &'static str {
@@ -412,6 +438,35 @@ mod tests {
         assert!(!settings.trusted_ingress_ui_path_allowed(&Method::GET, "/v1/models"));
         assert!(!settings.trusted_ingress_ui_path_allowed(&Method::GET, "/key/list"));
         assert!(!settings.trusted_ingress_ui_path_allowed(&Method::DELETE, "/ui"));
+    }
+
+    #[test]
+    fn trusted_ingress_passthrough_can_include_explicit_admin_paths() {
+        let mut settings = LiteLlmPassthroughSettings::default_with_updated_at(Utc::now());
+        settings.enabled = true;
+        settings.allowed_paths = vec![
+            "/ui".to_owned(),
+            "/global/spend/logs".to_owned(),
+            "/key/info".to_owned(),
+            "/key/*".to_owned(),
+            "/v1/*".to_owned(),
+        ];
+        settings.allowed_methods = vec!["GET".to_owned(), "POST".to_owned()];
+        settings.ui_exposure = LiteLlmSensitiveRouteExposure::TrustedIngress;
+        settings.admin_api_exposure = LiteLlmSensitiveRouteExposure::ExplicitlyExposed;
+
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/ui"));
+        assert!(
+            settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/global/spend/logs")
+        );
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::POST, "/key/info"));
+        assert!(!settings.trusted_ingress_passthrough_path_allowed(&Method::DELETE, "/key/info"));
+        assert!(!settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v1/models"));
+
+        settings.admin_api_exposure = LiteLlmSensitiveRouteExposure::Disabled;
+        assert!(
+            !settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/global/spend/logs")
+        );
     }
 
     #[test]
