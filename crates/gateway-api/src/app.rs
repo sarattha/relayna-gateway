@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, Method, StatusCode},
+    body::Body,
+    extract::{OriginalUri, Path, Query, State},
+    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
-    routing::{delete, get, patch, post},
+    routing::{any, delete, get, patch, post},
     Json, Router,
 };
+use bytes::Bytes;
 use chrono::Utc;
 use gateway_core::CircuitBreakerState;
 use gateway_core::{
@@ -16,26 +18,26 @@ use gateway_core::{
     AdminKeyResponse, AdminKeyStore, AdminOpenAiRouteStore, AdminPolicyLayerStore,
     AdminPolicyLayerUpsert, AdminProjectStore, AdminProviderConfigStore, AdminServiceStore,
     AdminStudioConnectionStore, AuditEvent, AuditEventCreate, AuditEventQuery,
-    CreatedAdminKeyResponse, CreatedOperatorTokenResponse, EffectiveGatewayAuthSettings,
-    EffectiveStudioConnection, GatewayAuthEnv, GatewayAuthSettingsPatchRequest, GatewayError,
-    GatewayResult, GuardrailAdminCreateRequest, GuardrailAdminPatchRequest,
-    GuardrailDefinitionResponse, GuardrailEventQuery, GuardrailExecutionEvent,
-    GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPlanRequest,
-    GuardrailPolicySet, GuardrailStore, GuardrailTestRequest, GuardrailTestResponse, KeyPolicy,
-    LiteLlmCredentialMappingResponse, LiteLlmCredentialMappingUpsertRequest,
-    LiteLlmPassthroughSettingsPatchRequest, OpenAiRouteMode, OperatorAuthorization,
-    OperatorTokenMaterial, OperatorTokenStore, PolicyLookup, ProjectCreateRequest,
-    ProjectPatchRequest, ProjectResponse, Provider, ProviderConfigCreateRequest,
-    ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus,
-    ProviderIntelligenceStore, Route, ServiceCreateRequest, ServiceImportDiff,
-    ServiceImportValidationIssue, ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse,
-    SharedGatewayAuthRuntime, StudioConnectionEnv, StudioConnectionPatchRequest,
-    StudioConnectionTestResponse, StudioServiceCatalogResponse, StudioServiceImportPreview,
-    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery,
-    UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE,
-    SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE,
-    SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT,
-    SCOPE_USAGE_READ,
+    CreatedAdminKeyResponse, CreatedOperatorTokenResponse, CredentialHeaderMode,
+    EffectiveGatewayAuthSettings, EffectiveStudioConnection, GatewayAuthEnv,
+    GatewayAuthSettingsPatchRequest, GatewayError, GatewayResult, GuardrailAdminCreateRequest,
+    GuardrailAdminPatchRequest, GuardrailDefinitionResponse, GuardrailEventQuery,
+    GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore,
+    GuardrailPlanRequest, GuardrailPolicySet, GuardrailStore, GuardrailTestRequest,
+    GuardrailTestResponse, KeyPolicy, LiteLlmCredentialMappingResponse,
+    LiteLlmCredentialMappingUpsertRequest, LiteLlmPassthroughSettingsPatchRequest, OpenAiRouteMode,
+    OperatorAuthorization, OperatorTokenMaterial, OperatorTokenStore, PolicyLookup,
+    ProjectCreateRequest, ProjectPatchRequest, ProjectResponse, Provider,
+    ProviderConfigCreateRequest, ProviderConfigLookup, ProviderConfigPatchRequest,
+    ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore,
+    Route, ServiceCreateRequest, ServiceImportDiff, ServiceImportValidationIssue,
+    ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse, SharedGatewayAuthRuntime,
+    StudioConnectionEnv, StudioConnectionPatchRequest, StudioConnectionTestResponse,
+    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
+    UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery, UsageQueryStore,
+    VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE,
+    SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE,
+    SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::{Deserialize, Serialize};
@@ -55,6 +57,7 @@ pub trait GatewayData:
     + AdminOpenAiRouteStore
     + AdminProjectStore
     + AdminProviderConfigStore
+    + ProviderConfigLookup
     + AdminServiceStore
     + AdminStudioConnectionStore
     + AdminGatewayAuthSettingsStore
@@ -91,9 +94,41 @@ pub struct AppState {
     studio_env: StudioConnectionEnv,
     auth_env: GatewayAuthEnv,
     auth_runtime: SharedGatewayAuthRuntime,
+    litellm_base_url: String,
+    litellm_service_key: String,
+    litellm_ui_client: reqwest::Client,
 }
 
 const STUDIO_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
+const DEFAULT_LITELLM_BASE_URL: &str = "http://127.0.0.1:4000";
+const LITELLM_UI_HTML_REWRITE_LIMIT: usize = 2 * 1024 * 1024;
+const LITELLM_UI_PROXY_PREFIX: &str = "/admin-ui/litellm-ui";
+const LITELLM_UI_OPERATOR_COOKIE: &str = "relayna_litellm_ui_operator";
+const LITELLM_UI_OPERATOR_COOKIE_MAX_AGE_SECONDS: u64 = 60 * 60;
+const LITELLM_UI_ROOT_PROXY_PREFIXES: &[&str] = &[
+    "v1/agents",
+    "v2/",
+    "v3/",
+    "get/",
+    "get_image",
+    "public/",
+    "config/",
+    "health/",
+    "in_product_nudges",
+    "key/",
+    "model/",
+    "model_group/",
+    "models",
+    "models/",
+    "organization/",
+    "policies/",
+    "project/",
+    "prompts/",
+    "sso/",
+    "tag/",
+    "team/",
+    "user/",
+];
 
 #[derive(Clone)]
 pub struct StudioCatalogClient {
@@ -146,6 +181,13 @@ impl StudioCatalogClient {
     }
 }
 
+fn litellm_ui_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("LiteLLM UI proxy client")
+}
+
 pub fn router(store: PostgresStore, redis: RedisReadiness) -> Router {
     let auth_env = GatewayAuthEnv::default();
     let auth_runtime = SharedGatewayAuthRuntime::new(
@@ -160,6 +202,9 @@ pub fn router(store: PostgresStore, redis: RedisReadiness) -> Router {
         studio_env: StudioConnectionEnv::default(),
         auth_env,
         auth_runtime,
+        litellm_base_url: DEFAULT_LITELLM_BASE_URL.to_owned(),
+        litellm_service_key: String::new(),
+        litellm_ui_client: litellm_ui_client(),
     })
 }
 
@@ -187,6 +232,9 @@ pub fn router_with_studio(
         studio_env,
         auth_env,
         auth_runtime,
+        litellm_base_url: DEFAULT_LITELLM_BASE_URL.to_owned(),
+        litellm_service_key: String::new(),
+        litellm_ui_client: litellm_ui_client(),
     })
 }
 
@@ -196,6 +244,26 @@ pub fn router_with_studio_and_auth(
     studio: Option<StudioCatalogClient>,
     auth_env: GatewayAuthEnv,
     auth_runtime: SharedGatewayAuthRuntime,
+) -> Router {
+    router_with_studio_auth_and_litellm(
+        store,
+        redis,
+        studio,
+        auth_env,
+        auth_runtime,
+        DEFAULT_LITELLM_BASE_URL.to_owned(),
+        String::new(),
+    )
+}
+
+pub fn router_with_studio_auth_and_litellm(
+    store: PostgresStore,
+    redis: RedisReadiness,
+    studio: Option<StudioCatalogClient>,
+    auth_env: GatewayAuthEnv,
+    auth_runtime: SharedGatewayAuthRuntime,
+    litellm_base_url: String,
+    litellm_service_key: String,
 ) -> Router {
     let studio_env = studio
         .map(|studio| StudioConnectionEnv {
@@ -209,6 +277,9 @@ pub fn router_with_studio_and_auth(
         studio_env,
         auth_env,
         auth_runtime,
+        litellm_base_url,
+        litellm_service_key,
+        litellm_ui_client: litellm_ui_client(),
     })
 }
 
@@ -216,6 +287,57 @@ pub fn router_with_state(state: AppState) -> Router {
     Router::new()
         .route("/admin-ui/healthz", get(healthz))
         .route("/admin-ui/readyz", get(readyz))
+        .route("/admin-ui/litellm-ui", any(litellm_ui_proxy_root))
+        .route("/admin-ui/litellm-ui/", any(litellm_ui_proxy_root))
+        .route(
+            "/admin-ui/litellm-ui/litellm/.well-known/litellm-ui-config",
+            any(litellm_ui_proxy_litellm_config),
+        )
+        .route(
+            "/admin-ui/litellm-ui/litellm/{*path}",
+            any(litellm_ui_proxy_litellm_prefix),
+        )
+        .route("/admin-ui/litellm-ui/{*path}", any(litellm_ui_proxy))
+        .route(
+            "/litellm-asset-prefix/{*path}",
+            any(litellm_ui_proxy_root_emitted_path),
+        )
+        .route(
+            "/litellm/.well-known/litellm-ui-config",
+            any(litellm_ui_proxy_root_emitted_path),
+        )
+        .route("/litellm/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/v1/agents", any(litellm_ui_proxy_root_emitted_path))
+        .route("/v2/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/v3/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/get_image", any(litellm_ui_proxy_root_emitted_path))
+        .route("/get/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/public/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/config/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/health/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/key/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route(
+            "/in_product_nudges",
+            any(litellm_ui_proxy_root_emitted_path),
+        )
+        .route("/model/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route(
+            "/model_group/{*path}",
+            any(litellm_ui_proxy_root_emitted_path),
+        )
+        .route("/models", any(litellm_ui_proxy_root_emitted_path))
+        .route("/models/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route(
+            "/organization/{*path}",
+            any(litellm_ui_proxy_root_emitted_path),
+        )
+        .route("/policies/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/project/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/prompts/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/sso/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/tag/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/team/{*path}", any(litellm_ui_proxy_root_emitted_path))
+        .route("/user/{*path}", any(litellm_ui_proxy_root_emitted_path))
         .route("/admin-ui/v1/guardrails", get(list_guardrails))
         .route("/admin-ui/v1/guardrails/test", post(test_guardrails))
         .route(
@@ -427,6 +549,125 @@ async fn readyz(State(state): State<AppState>) -> Response {
         )
             .into_response(),
     }
+}
+
+async fn litellm_ui_proxy_root(
+    State(state): State<AppState>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    method: Method,
+    body: Bytes,
+) -> Response {
+    let path = if uri.path().ends_with('/') { "/" } else { "" };
+    litellm_ui_proxy_inner(state, headers, method, path, uri.query(), body).await
+}
+
+async fn litellm_ui_proxy(
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    method: Method,
+    body: Bytes,
+) -> Response {
+    litellm_ui_proxy_inner(state, headers, method, &path, uri.query(), body).await
+}
+
+async fn litellm_ui_proxy_litellm_prefix(
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    method: Method,
+    body: Bytes,
+) -> Response {
+    litellm_ui_proxy_inner(
+        state,
+        headers,
+        method,
+        &format!("litellm/{path}"),
+        uri.query(),
+        body,
+    )
+    .await
+}
+
+async fn litellm_ui_proxy_litellm_config(
+    State(state): State<AppState>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    method: Method,
+    body: Bytes,
+) -> Response {
+    litellm_ui_proxy_inner(
+        state,
+        headers,
+        method,
+        "litellm/.well-known/litellm-ui-config",
+        uri.query(),
+        body,
+    )
+    .await
+}
+
+async fn litellm_ui_proxy_root_emitted_path(
+    State(state): State<AppState>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    method: Method,
+    body: Bytes,
+) -> Response {
+    let path = uri.path().trim_start_matches('/');
+    litellm_ui_proxy_inner(state, headers, method, path, uri.query(), body).await
+}
+
+async fn litellm_ui_proxy_inner(
+    state: AppState,
+    headers: HeaderMap,
+    method: Method,
+    path: &str,
+    query: Option<&str>,
+    body: Bytes,
+) -> Response {
+    let operator_cookie =
+        match require_litellm_ui_operator_scope(&state, &headers, SCOPE_PROVIDERS_UPDATE).await {
+            Ok(operator_cookie) => operator_cookie,
+            Err(response) => return response,
+        };
+
+    let upstream = match resolve_litellm_ui_upstream(&state).await {
+        Ok(upstream) => upstream,
+        Err(error) => return error_response(&headers, error),
+    };
+    let url = match litellm_ui_upstream_url(&upstream.base_url, path, query) {
+        Ok(url) => url,
+        Err(error) => return error_response(&headers, error),
+    };
+    let reqwest_method = match reqwest::Method::from_bytes(method.as_str().as_bytes()) {
+        Ok(method) => method,
+        Err(_) => return error_response(&headers, GatewayError::UnsupportedRoute),
+    };
+
+    let mut request = state
+        .litellm_ui_client
+        .request(reqwest_method, url)
+        .headers(litellm_ui_forward_headers(&headers, &state, &upstream))
+        .body(body);
+    request = match upstream.credential_header_mode {
+        CredentialHeaderMode::AuthorizationBearer => request.bearer_auth(&upstream.credential),
+        CredentialHeaderMode::CustomHeader => {
+            let Some(header_name) = upstream.credential_header_name.as_deref() else {
+                return error_response(&headers, GatewayError::InvalidConfiguration);
+            };
+            request.header(header_name, &upstream.credential)
+        }
+    };
+
+    let response = match request.send().await {
+        Ok(response) => response,
+        Err(_) => return error_response(&headers, GatewayError::UpstreamConnection),
+    };
+    litellm_ui_response(response, &upstream.base_url, operator_cookie).await
 }
 
 async fn list_guardrails(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -2875,6 +3116,65 @@ async fn require_admin_scopes(
     }
 }
 
+async fn require_litellm_ui_operator_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+    required_scope: &str,
+) -> Result<Option<String>, Response> {
+    match bearer_token(headers) {
+        Ok(token) => match verify_operator_scope(state, token, &[required_scope]).await {
+            Ok(()) => Ok(Some(token.to_owned())),
+            Err(error) => Err(error_response(headers, error)),
+        },
+        Err(GatewayError::MissingAuthorization) => {
+            let Some(token) = litellm_ui_operator_cookie(headers) else {
+                return Err(error_response(headers, GatewayError::MissingAuthorization));
+            };
+            match verify_operator_scope(state, token, &[required_scope]).await {
+                Ok(()) => Ok(None),
+                Err(error) => Err(error_response(headers, error)),
+            }
+        }
+        Err(error) => Err(error_response(headers, error)),
+    }
+}
+
+async fn verify_operator_scope(
+    state: &AppState,
+    token: &str,
+    required_scopes: &[&str],
+) -> GatewayResult<()> {
+    match state.store.verify_operator_token(token, Utc::now()).await {
+        Ok(authorization)
+            if required_scopes
+                .iter()
+                .all(|required_scope| authorization.has_scope(required_scope)) =>
+        {
+            Ok(())
+        }
+        Ok(_) => Err(GatewayError::InsufficientOperatorScope),
+        Err(error) => Err(error),
+    }
+}
+
+fn litellm_ui_operator_cookie(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|cookies| {
+            cookies.split(';').find_map(|cookie| {
+                let (name, value) = cookie.trim().split_once('=')?;
+                (name == LITELLM_UI_OPERATOR_COOKIE && !value.is_empty()).then_some(value)
+            })
+        })
+}
+
+fn litellm_ui_operator_set_cookie(raw_token: &str) -> String {
+    format!(
+        "{LITELLM_UI_OPERATOR_COOKIE}={raw_token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={LITELLM_UI_OPERATOR_COOKIE_MAX_AGE_SECONDS}"
+    )
+}
+
 async fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response> {
     require_admin_scope(state, headers, SCOPE_OPERATORS_MANAGE)
         .await
@@ -3162,6 +3462,322 @@ fn service_import_validation_issues(
     issues
 }
 
+#[derive(Debug, Clone)]
+struct LiteLlmUiUpstream {
+    base_url: String,
+    credential: String,
+    credential_header_mode: CredentialHeaderMode,
+    credential_header_name: Option<String>,
+}
+
+async fn resolve_litellm_ui_upstream(state: &AppState) -> GatewayResult<LiteLlmUiUpstream> {
+    let active = state.store.active_litellm_config().await?;
+    let base_url = active
+        .as_ref()
+        .map(|config| config.base_url.clone())
+        .unwrap_or_else(|| state.litellm_base_url.clone());
+    let credential = active
+        .as_ref()
+        .and_then(|config| config.credential.clone())
+        .unwrap_or_else(|| state.litellm_service_key.clone());
+    if credential.trim().is_empty() {
+        return Err(GatewayError::InvalidConfiguration);
+    }
+    let credential_header_mode = active
+        .as_ref()
+        .map(|config| config.credential_header_mode)
+        .unwrap_or(CredentialHeaderMode::AuthorizationBearer);
+    let credential_header_name = active
+        .as_ref()
+        .and_then(|config| config.credential_header_name.clone());
+    if credential_header_mode == CredentialHeaderMode::CustomHeader
+        && credential_header_name.as_deref().is_none()
+    {
+        return Err(GatewayError::InvalidConfiguration);
+    }
+
+    Ok(LiteLlmUiUpstream {
+        base_url,
+        credential,
+        credential_header_mode,
+        credential_header_name,
+    })
+}
+
+fn litellm_ui_upstream_url(
+    base_url: &str,
+    path: &str,
+    query: Option<&str>,
+) -> GatewayResult<reqwest::Url> {
+    let mut url = reqwest::Url::parse(base_url).map_err(|_| GatewayError::InvalidConfiguration)?;
+    let wants_trailing_slash = path == "/";
+    let path = path.trim_start_matches('/');
+    if wants_trailing_slash {
+        url.set_path("/ui/");
+    } else if litellm_ui_maps_to_upstream_root(path) {
+        url.set_path(&format!("/{path}"));
+    } else if path.is_empty() {
+        url.set_path("/ui");
+    } else {
+        url.set_path(&format!("/ui/{path}"));
+    }
+    url.set_query(query);
+    Ok(url)
+}
+
+fn litellm_ui_maps_to_upstream_root(path: &str) -> bool {
+    path.starts_with("litellm-asset-prefix/")
+        || path.starts_with("litellm/")
+        || LITELLM_UI_ROOT_PROXY_PREFIXES
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
+}
+
+fn litellm_ui_forward_headers(
+    headers: &HeaderMap,
+    state: &AppState,
+    upstream: &LiteLlmUiUpstream,
+) -> HeaderMap {
+    let relayna_key_header = state
+        .auth_runtime
+        .snapshot()
+        .ok()
+        .map(|snapshot| snapshot.config.relayna_key_header)
+        .unwrap_or_else(|| state.auth_env.relayna_key_header.clone());
+    let custom_litellm_header = upstream
+        .credential_header_name
+        .as_deref()
+        .and_then(|name| HeaderName::from_bytes(name.as_bytes()).ok());
+    let mut forwarded = HeaderMap::new();
+    for (name, value) in headers {
+        if litellm_ui_skips_request_header(
+            name,
+            &relayna_key_header,
+            custom_litellm_header.as_ref(),
+        ) {
+            continue;
+        }
+        forwarded.append(name.clone(), value.clone());
+    }
+    forwarded
+}
+
+fn litellm_ui_skips_request_header(
+    name: &HeaderName,
+    relayna_key_header: &str,
+    custom_litellm_header: Option<&HeaderName>,
+) -> bool {
+    name == header::AUTHORIZATION
+        || name.as_str().eq_ignore_ascii_case("proxy-authorization")
+        || name == header::HOST
+        || name == header::COOKIE
+        || name == header::CONTENT_LENGTH
+        || name == header::TRANSFER_ENCODING
+        || name == header::CONNECTION
+        || name == header::UPGRADE
+        || name.as_str().eq_ignore_ascii_case(relayna_key_header)
+        || name.as_str().eq_ignore_ascii_case("x-relayna-key")
+        || name.as_str().eq_ignore_ascii_case("x-litellm-api-key")
+        || name.as_str().eq_ignore_ascii_case("x-aih-api-key")
+        || name.as_str().eq_ignore_ascii_case("x-api-key")
+        || name.as_str().eq_ignore_ascii_case("x-relayna-worker-token")
+        || name
+            .as_str()
+            .eq_ignore_ascii_case("x-apigee-entra-identity")
+        || name
+            .as_str()
+            .eq_ignore_ascii_case("x-apigee-entra-signature")
+        || custom_litellm_header.is_some_and(|custom| name == custom)
+}
+
+async fn litellm_ui_response(
+    response: reqwest::Response,
+    upstream_base_url: &str,
+    operator_cookie: Option<String>,
+) -> Response {
+    let status = response.status();
+    let headers = response.headers().clone();
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    let is_html = content_type
+        .split(';')
+        .any(|part| part.trim().eq_ignore_ascii_case("text/html"));
+    let is_javascript = content_type.split(';').any(|part| {
+        let part = part.trim();
+        part.eq_ignore_ascii_case("text/javascript")
+            || part.eq_ignore_ascii_case("application/javascript")
+    });
+    let is_json = content_type
+        .split(';')
+        .any(|part| part.trim().eq_ignore_ascii_case("application/json"));
+    let body = match response.bytes().await {
+        Ok(body) => body,
+        Err(_) => return error_response(&HeaderMap::new(), GatewayError::UpstreamConnection),
+    };
+    let body = if (is_html || is_javascript) && body.len() <= LITELLM_UI_HTML_REWRITE_LIMIT {
+        Bytes::from(rewrite_litellm_ui_text(
+            &String::from_utf8_lossy(&body),
+            upstream_base_url,
+        ))
+    } else if is_json && body.len() <= LITELLM_UI_HTML_REWRITE_LIMIT {
+        rewrite_litellm_ui_json_body(&body, upstream_base_url).unwrap_or(body)
+    } else {
+        body
+    };
+
+    let mut builder = Response::builder().status(status);
+    if let Some(token) = operator_cookie {
+        builder = builder.header(header::SET_COOKIE, litellm_ui_operator_set_cookie(&token));
+    }
+    for (name, value) in &headers {
+        if litellm_ui_skips_response_header(name) {
+            continue;
+        }
+        if name == header::LOCATION {
+            if let Some(rewritten) = rewrite_litellm_ui_location(value, upstream_base_url) {
+                builder = builder.header(name, rewritten);
+            } else {
+                builder = builder.header(name, value);
+            }
+        } else {
+            builder = builder.header(name, value);
+        }
+    }
+    builder
+        .body(Body::from(body))
+        .unwrap_or_else(|_| error_response(&HeaderMap::new(), GatewayError::UpstreamConnection))
+}
+
+fn litellm_ui_skips_response_header(name: &HeaderName) -> bool {
+    name == header::CONTENT_LENGTH
+        || name == header::TRANSFER_ENCODING
+        || name == header::CONNECTION
+        || name == header::UPGRADE
+}
+
+fn rewrite_litellm_ui_location(value: &HeaderValue, upstream_base_url: &str) -> Option<String> {
+    let value = value.to_str().ok()?;
+    if let Some(rest) = value.strip_prefix("/ui") {
+        return Some(format!("{LITELLM_UI_PROXY_PREFIX}{rest}"));
+    }
+    let base = upstream_base_url.trim_end_matches('/');
+    let absolute_prefix = format!("{base}/ui");
+    if let Some(rest) = value.strip_prefix(&absolute_prefix) {
+        return Some(format!("{LITELLM_UI_PROXY_PREFIX}{rest}"));
+    }
+    if let Ok(url) = reqwest::Url::parse(value) {
+        if let Some(rest) = url.path().strip_prefix("/ui") {
+            let mut rewritten = format!("{LITELLM_UI_PROXY_PREFIX}{rest}");
+            if let Some(query) = url.query() {
+                rewritten.push('?');
+                rewritten.push_str(query);
+            }
+            return Some(rewritten);
+        }
+    }
+    None
+}
+
+fn rewrite_litellm_ui_text(body: &str, upstream_base_url: &str) -> String {
+    let base = upstream_base_url.trim_end_matches('/');
+    body.replace(
+        &format!("{base}/ui/"),
+        &format!("{LITELLM_UI_PROXY_PREFIX}/"),
+    )
+    .replace(base, LITELLM_UI_PROXY_PREFIX)
+    .replace("\"/ui/\"", &format!("\"{LITELLM_UI_PROXY_PREFIX}/\""))
+    .replace("'/ui/'", &format!("'{LITELLM_UI_PROXY_PREFIX}/'"))
+    .replace("\"/ui\"", &format!("\"{LITELLM_UI_PROXY_PREFIX}\""))
+    .replace("'/ui'", &format!("'{LITELLM_UI_PROXY_PREFIX}'"))
+    .replace("\"/ui/", &format!("\"{LITELLM_UI_PROXY_PREFIX}/"))
+    .replace("'/ui/", &format!("'{LITELLM_UI_PROXY_PREFIX}/"))
+    .replace("=/ui/", &format!("={LITELLM_UI_PROXY_PREFIX}/"))
+    .replace(
+        "\"/litellm-asset-prefix/",
+        &format!("\"{LITELLM_UI_PROXY_PREFIX}/litellm-asset-prefix/"),
+    )
+    .replace(
+        "'/litellm-asset-prefix/",
+        &format!("'{LITELLM_UI_PROXY_PREFIX}/litellm-asset-prefix/"),
+    )
+    .replace(
+        "=/litellm-asset-prefix/",
+        &format!("={LITELLM_UI_PROXY_PREFIX}/litellm-asset-prefix/"),
+    )
+    .replace(
+        "\"/litellm/",
+        &format!("\"{LITELLM_UI_PROXY_PREFIX}/litellm/"),
+    )
+    .replace(
+        "'/litellm/",
+        &format!("'{LITELLM_UI_PROXY_PREFIX}/litellm/"),
+    )
+    .replace(
+        "=/litellm/",
+        &format!("={LITELLM_UI_PROXY_PREFIX}/litellm/"),
+    )
+    .replace("\"/v2/", &format!("\"{LITELLM_UI_PROXY_PREFIX}/v2/"))
+    .replace("'/v2/", &format!("'{LITELLM_UI_PROXY_PREFIX}/v2/"))
+    .replace("`/v2/", &format!("`{LITELLM_UI_PROXY_PREFIX}/v2/"))
+    .replace("\"/v3/", &format!("\"{LITELLM_UI_PROXY_PREFIX}/v3/"))
+    .replace("'/v3/", &format!("'{LITELLM_UI_PROXY_PREFIX}/v3/"))
+    .replace("`/v3/", &format!("`{LITELLM_UI_PROXY_PREFIX}/v3/"))
+    .replace("\"/get/", &format!("\"{LITELLM_UI_PROXY_PREFIX}/get/"))
+    .replace("'/get/", &format!("'{LITELLM_UI_PROXY_PREFIX}/get/"))
+    .replace("`/get/", &format!("`{LITELLM_UI_PROXY_PREFIX}/get/"))
+    .replace(
+        "\"/get_image",
+        &format!("\"{LITELLM_UI_PROXY_PREFIX}/get_image"),
+    )
+    .replace(
+        "'/get_image",
+        &format!("'{LITELLM_UI_PROXY_PREFIX}/get_image"),
+    )
+    .replace(
+        "`/get_image",
+        &format!("`{LITELLM_UI_PROXY_PREFIX}/get_image"),
+    )
+    .replace(
+        "\"/public/",
+        &format!("\"{LITELLM_UI_PROXY_PREFIX}/public/"),
+    )
+    .replace("'/public/", &format!("'{LITELLM_UI_PROXY_PREFIX}/public/"))
+    .replace("`/public/", &format!("`{LITELLM_UI_PROXY_PREFIX}/public/"))
+}
+
+fn rewrite_litellm_ui_json_body(body: &[u8], upstream_base_url: &str) -> Option<Bytes> {
+    let mut value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    rewrite_litellm_ui_json_value(&mut value, upstream_base_url);
+    serde_json::to_vec(&value).ok().map(Bytes::from)
+}
+
+fn rewrite_litellm_ui_json_value(value: &mut serde_json::Value, upstream_base_url: &str) {
+    match value {
+        serde_json::Value::String(text) => {
+            if let Ok(header_value) = HeaderValue::from_str(text) {
+                if let Some(rewritten) =
+                    rewrite_litellm_ui_location(&header_value, upstream_base_url)
+                {
+                    *text = rewritten;
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                rewrite_litellm_ui_json_value(value, upstream_base_url);
+            }
+        }
+        serde_json::Value::Object(values) => {
+            for value in values.values_mut() {
+                rewrite_litellm_ui_json_value(value, upstream_base_url);
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3177,7 +3793,12 @@ mod tests {
         StoredGatewayAuthSettings, StoredStudioConnection, StudioConnectionPatchRequest,
         UsageBreakdown, UsageExportRow, UsageStatus, UsageSummary, UsageTimeseriesPoint,
     };
-    use std::sync::Mutex;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::{mpsc, Mutex},
+        thread,
+    };
     use tower::ServiceExt;
     use uuid::Uuid;
 
@@ -3219,6 +3840,23 @@ mod tests {
             } else {
                 Err(GatewayError::StoreUnavailable)
             }
+        }
+    }
+
+    #[async_trait]
+    impl ProviderConfigLookup for MemoryStore {
+        async fn active_litellm_config(
+            &self,
+        ) -> GatewayResult<Option<gateway_core::ProviderRuntimeConfig>> {
+            Ok(None)
+        }
+
+        async fn litellm_credential_mapping_for_context(
+            &self,
+            _key_id: Uuid,
+            _project_id: Option<Uuid>,
+        ) -> GatewayResult<Option<gateway_core::LiteLlmCredentialMappingRuntime>> {
+            Ok(None)
         }
     }
 
@@ -4656,6 +5294,9 @@ mod tests {
             studio_env: StudioConnectionEnv::default(),
             auth_env,
             auth_runtime,
+            litellm_base_url: DEFAULT_LITELLM_BASE_URL.to_owned(),
+            litellm_service_key: "test-litellm-service-key".to_owned(),
+            litellm_ui_client: litellm_ui_client(),
         }
     }
 
@@ -4674,6 +5315,9 @@ mod tests {
             studio_env,
             auth_env,
             auth_runtime,
+            litellm_base_url: DEFAULT_LITELLM_BASE_URL.to_owned(),
+            litellm_service_key: "test-litellm-service-key".to_owned(),
+            litellm_ui_client: litellm_ui_client(),
         }
     }
 
@@ -4808,6 +5452,108 @@ mod tests {
         serde_json::from_slice(&body).expect("json")
     }
 
+    #[derive(Debug)]
+    struct CapturedHttpRequest {
+        request_line: String,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    }
+
+    fn test_state_with_litellm(
+        store: MemoryStore,
+        litellm_base_url: String,
+        litellm_service_key: &str,
+    ) -> AppState {
+        let mut state = test_state(store);
+        state.litellm_base_url = litellm_base_url;
+        state.litellm_service_key = litellm_service_key.to_owned();
+        state
+    }
+
+    fn spawn_litellm_server(
+        status: &str,
+        response_headers: Vec<(&str, &str)>,
+        response_body: &str,
+    ) -> (String, mpsc::Receiver<CapturedHttpRequest>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock LiteLLM");
+        let addr = listener.local_addr().expect("mock address");
+        let (tx, rx) = mpsc::channel();
+        let status = status.to_owned();
+        let response_headers: Vec<(String, String)> = response_headers
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value.to_owned()))
+            .collect();
+        let response_body = response_body.as_bytes().to_vec();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept mock request");
+            let mut buffer = Vec::new();
+            let mut chunk = [0_u8; 1024];
+            loop {
+                let read = stream.read(&mut chunk).expect("read request");
+                if read == 0 {
+                    break;
+                }
+                buffer.extend_from_slice(&chunk[..read]);
+                if buffer.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let header_end = buffer
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .map(|position| position + 4)
+                .expect("request headers");
+            let header_text = String::from_utf8_lossy(&buffer[..header_end]);
+            let mut lines = header_text.split("\r\n");
+            let request_line = lines.next().unwrap_or_default().to_owned();
+            let headers: Vec<(String, String)> = lines
+                .filter_map(|line| line.split_once(':'))
+                .map(|(name, value)| (name.trim().to_owned(), value.trim().to_owned()))
+                .collect();
+            let content_length = headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                .and_then(|(_, value)| value.parse::<usize>().ok())
+                .unwrap_or(0);
+            while buffer.len().saturating_sub(header_end) < content_length {
+                let read = stream.read(&mut chunk).expect("read request body");
+                if read == 0 {
+                    break;
+                }
+                buffer.extend_from_slice(&chunk[..read]);
+            }
+            let body = buffer[header_end..].to_vec();
+            tx.send(CapturedHttpRequest {
+                request_line,
+                headers,
+                body,
+            })
+            .expect("send captured request");
+
+            let mut response = format!(
+                "HTTP/1.1 {status}\r\nContent-Length: {}\r\n",
+                response_body.len()
+            );
+            for (name, value) in response_headers {
+                response.push_str(&format!("{name}: {value}\r\n"));
+            }
+            response.push_str("\r\n");
+            stream
+                .write_all(response.as_bytes())
+                .expect("write headers");
+            stream.write_all(&response_body).expect("write body");
+        });
+        (format!("http://{addr}"), rx)
+    }
+
+    fn captured_header<'a>(request: &'a CapturedHttpRequest, name: &str) -> Option<&'a str> {
+        request
+            .headers
+            .iter()
+            .find(|(header, _)| header.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+
     #[tokio::test]
     async fn healthz_returns_ok() {
         let store = MemoryStore {
@@ -4830,6 +5576,285 @@ mod tests {
         let response = request(app, "/admin-ui/healthz").await;
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn litellm_ui_proxy_rejects_missing_operator_token() {
+        let app = router_with_state(test_state(default_store()));
+
+        let response = request(app, "/admin-ui/litellm-ui/").await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let value = response_json(response).await;
+        assert_eq!(value["error"]["code"], "missing_authorization");
+    }
+
+    #[tokio::test]
+    async fn litellm_ui_proxy_forwards_with_gateway_litellm_credential_only() {
+        let (base_url, captured) = spawn_litellm_server(
+            "200 OK",
+            vec![("content-type", "application/javascript; charset=utf-8")],
+            r#"self.__next_f.push(["/ui"]);fetch(`/v2/login`);fetch("/public/model_hub");fetch('/get_image');import('/litellm-asset-prefix/_next/app.js');"#,
+        );
+        let app = router_with_state(test_state_with_litellm(
+            default_store(),
+            base_url,
+            "server-litellm-key",
+        ));
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/admin-ui/litellm-ui/assets/app.js?bar=baz")
+                    .header("x-request-id", "req_test")
+                    .header("authorization", format!("Bearer {TEST_OPERATOR_TOKEN}"))
+                    .header("x-litellm-api-key", "client-litellm-key")
+                    .header("x-aih-api-key", "client-aih-key")
+                    .header("x-api-key", "client-api-key")
+                    .header("x-relayna-worker-token", "client-worker-token")
+                    .header("x-apigee-entra-identity", "client-identity")
+                    .header("x-apigee-entra-signature", "client-signature")
+                    .header(
+                        "cookie",
+                        format!("{LITELLM_UI_OPERATOR_COOKIE}=client-operator-token; lite=client"),
+                    )
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let set_cookie = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|value| value.to_str().ok())
+            .expect("operator cookie");
+        assert!(set_cookie.starts_with(&format!(
+            "{LITELLM_UI_OPERATOR_COOKIE}={TEST_OPERATOR_TOKEN};"
+        )));
+        assert!(set_cookie.contains("HttpOnly"));
+        assert!(set_cookie.contains("SameSite=Lax"));
+        assert!(set_cookie.contains("Path=/"));
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let body = String::from_utf8(body.to_vec()).expect("utf8 body");
+        assert!(body.contains(r#"self.__next_f.push(["/admin-ui/litellm-ui"])"#));
+        assert!(body.contains("fetch(`/admin-ui/litellm-ui/v2/login`)"));
+        assert!(body.contains(r#"fetch("/admin-ui/litellm-ui/public/model_hub")"#));
+        assert!(body.contains("fetch('/admin-ui/litellm-ui/get_image')"));
+        assert!(body.contains("import('/admin-ui/litellm-ui/litellm-asset-prefix/_next/app.js')"));
+
+        let captured = captured
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("captured upstream request");
+        assert_eq!(
+            captured.request_line,
+            "GET /ui/assets/app.js?bar=baz HTTP/1.1"
+        );
+        assert_eq!(
+            captured_header(&captured, "authorization"),
+            Some("Bearer server-litellm-key")
+        );
+        assert!(captured_header(&captured, "x-litellm-api-key").is_none());
+        assert!(captured_header(&captured, "x-aih-api-key").is_none());
+        assert!(captured_header(&captured, "x-api-key").is_none());
+        assert!(captured_header(&captured, "x-relayna-worker-token").is_none());
+        assert!(captured_header(&captured, "x-apigee-entra-identity").is_none());
+        assert!(captured_header(&captured, "x-apigee-entra-signature").is_none());
+        assert!(captured_header(&captured, "cookie").is_none());
+        assert!(captured.body.is_empty());
+    }
+
+    #[tokio::test]
+    async fn litellm_ui_proxy_maps_root_api_paths_to_litellm_root() {
+        let (base_url, captured) = spawn_litellm_server(
+            "200 OK",
+            vec![("content-type", "application/json")],
+            r#"{"ok":true,"redirect_url":"http://litellm:4000/ui/?login=success"}"#,
+        );
+        let app = router_with_state(test_state_with_litellm(
+            default_store(),
+            base_url,
+            "server-litellm-key",
+        ));
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(axum::http::Method::POST)
+                    .uri("/admin-ui/litellm-ui/v2/login?next=%2Fui%2Fmodels")
+                    .header("authorization", format!("Bearer {TEST_OPERATOR_TOKEN}"))
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(r#"{"username":"admin"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(value["redirect_url"], "/admin-ui/litellm-ui/?login=success");
+        let captured = captured
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("captured upstream request");
+        assert_eq!(
+            captured.request_line,
+            "POST /v2/login?next=%2Fui%2Fmodels HTTP/1.1"
+        );
+        assert_eq!(
+            captured_header(&captured, "authorization"),
+            Some("Bearer server-litellm-key")
+        );
+        assert_eq!(captured.body, br#"{"username":"admin"}"#);
+    }
+
+    #[tokio::test]
+    async fn litellm_ui_proxy_root_emitted_paths_still_require_operator_token() {
+        let app = router_with_state(test_state(default_store()));
+
+        let response = request(app, "/litellm-asset-prefix/_next/static/app.js").await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let value = response_json(response).await;
+        assert_eq!(value["error"]["code"], "missing_authorization");
+    }
+
+    #[tokio::test]
+    async fn litellm_ui_proxy_forwards_root_emitted_asset_paths() {
+        let (base_url, captured) = spawn_litellm_server(
+            "200 OK",
+            vec![("content-type", "application/javascript")],
+            r#"console.log("ok")"#,
+        );
+        let app = router_with_state(test_state_with_litellm(
+            default_store(),
+            base_url,
+            "server-litellm-key",
+        ));
+        let response = admin_get(
+            app,
+            "/litellm-asset-prefix/_next/static/app.js?v=1",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let captured = captured
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("captured upstream request");
+        assert_eq!(
+            captured.request_line,
+            "GET /litellm-asset-prefix/_next/static/app.js?v=1 HTTP/1.1"
+        );
+        assert_eq!(
+            captured_header(&captured, "authorization"),
+            Some("Bearer server-litellm-key")
+        );
+    }
+
+    #[tokio::test]
+    async fn litellm_ui_proxy_accepts_operator_cookie_for_browser_subrequests() {
+        let (base_url, captured) = spawn_litellm_server(
+            "200 OK",
+            vec![("content-type", "application/javascript")],
+            r#"console.log("ok")"#,
+        );
+        let app = router_with_state(test_state_with_litellm(
+            default_store(),
+            base_url,
+            "server-litellm-key",
+        ));
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/litellm-asset-prefix/_next/static/app.js")
+                    .header(
+                        header::COOKIE,
+                        format!("{LITELLM_UI_OPERATOR_COOKIE}={TEST_OPERATOR_TOKEN}"),
+                    )
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().get(header::SET_COOKIE).is_none());
+        let captured = captured
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("captured upstream request");
+        assert_eq!(
+            captured.request_line,
+            "GET /litellm-asset-prefix/_next/static/app.js HTTP/1.1"
+        );
+        assert_eq!(
+            captured_header(&captured, "authorization"),
+            Some("Bearer server-litellm-key")
+        );
+        assert!(captured_header(&captured, "cookie").is_none());
+    }
+
+    #[tokio::test]
+    async fn litellm_ui_proxy_rewrites_ui_redirect_locations() {
+        let (base_url, captured) =
+            spawn_litellm_server("302 Found", vec![("location", "/ui/login")], "");
+        let app = router_with_state(test_state_with_litellm(
+            default_store(),
+            base_url,
+            "server-litellm-key",
+        ));
+        let response = admin_get(app, "/admin-ui/litellm-ui", Some(TEST_OPERATOR_TOKEN)).await;
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("/admin-ui/litellm-ui/login")
+        );
+        let captured = captured
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("captured upstream request");
+        assert_eq!(captured.request_line, "GET /ui HTTP/1.1");
+    }
+
+    #[test]
+    fn litellm_ui_upstream_url_preserves_litellm_asset_prefix() {
+        let url = litellm_ui_upstream_url(
+            "http://litellm.internal:4000",
+            "litellm-asset-prefix/_next/static/app.js",
+            Some("v=1"),
+        )
+        .expect("url");
+
+        assert_eq!(
+            url.as_str(),
+            "http://litellm.internal:4000/litellm-asset-prefix/_next/static/app.js?v=1"
+        );
+    }
+
+    #[test]
+    fn litellm_ui_upstream_url_maps_ui_pages_and_root_api_paths() {
+        let root_api = litellm_ui_upstream_url(
+            "http://litellm.internal:4000",
+            "v2/login",
+            Some("redirect_to=%2Fui%2Fmodels"),
+        )
+        .expect("root api url");
+        assert_eq!(
+            root_api.as_str(),
+            "http://litellm.internal:4000/v2/login?redirect_to=%2Fui%2Fmodels"
+        );
+
+        let page = litellm_ui_upstream_url("http://litellm.internal:4000", "model_hub/", None)
+            .expect("page url");
+        assert_eq!(page.as_str(), "http://litellm.internal:4000/ui/model_hub/");
     }
 
     #[tokio::test]

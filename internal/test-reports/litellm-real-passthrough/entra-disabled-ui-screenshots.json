@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-06-19T02:48:22.121Z",
+  "settings": "ENTRA disabled; Apigee disabled; LiteLLM passthrough ui_exposure=explicitly_exposed; allowed_paths include /ui and LiteLLM UI asset/API paths",
+  "requestedScenario": "No Relayna Gateway auth checks, assuming trusted AKS ingress controller",
+  "result": "not_supported_currently_no_auth_returns_401_missing_authorization",
+  "noAuthBodySample": "{\"error\":{\"code\":\"missing_authorization\",\"message\":\"Authorization header is required.\",\"request_id\":\"aa617175-2bf6-4e2e-a466-081dde198abd\"}}",
+  "relaynaBearerComparison": "passes_with_valid_relayna_bearer",
+  "shots": [
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/40-entra-disabled-ui-no-gateway-auth-url.png",
+      "url": "http://127.0.0.1:19180/ui/",
+      "label": "Entra disabled + explicitly_exposed /ui/ without Gateway auth"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/41-entra-disabled-ui-with-relayna-bearer-url.png",
+      "url": "http://127.0.0.1:19180/ui/?login=success",
+      "label": "Entra disabled + explicitly_exposed /ui/ with Relayna bearer"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/42-entra-disabled-ui-models-with-relayna-bearer-url.png",
+      "url": "http://127.0.0.1:19180/ui/?login=success&page=models",
+      "label": "Entra disabled Models + Endpoints with Relayna bearer"
+    }
+  ]
+}

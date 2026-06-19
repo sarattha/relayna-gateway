@@ -1043,6 +1043,7 @@ function litellmPassthroughForm(settings2) {
       ${option("disabled", current.ui_exposure || "disabled")}
       ${option("operator_only", current.ui_exposure || "")}
       ${option("explicitly_exposed", current.ui_exposure || "")}
+      ${option("trusted_ingress", current.ui_exposure || "")}
     </select></label>
     <label>LiteLLM admin API exposure<select name="admin_api_exposure">
       ${option("disabled", current.admin_api_exposure || "disabled")}

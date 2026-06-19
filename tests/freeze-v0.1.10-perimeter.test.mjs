@@ -33,6 +33,7 @@ function stringLiterals(source) {
 
 const app = read("crates/gateway-api/src/app.rs");
 const routing = read("crates/gateway-core/src/routing.rs");
+const routeSettings = read("crates/gateway-core/src/route_settings.rs");
 const errors = read("crates/gateway-core/src/errors.rs");
 const config = read("crates/gateway-api/src/config.rs");
 const budgets = read("crates/gateway-core/src/budgets.rs");
@@ -44,9 +45,9 @@ const kubernetes = read("deploy/kubernetes/relayna-gateway.yaml");
 const cargoToml = read("Cargo.toml");
 const changelog = read("CHANGELOG.md");
 const releaseWorkflow = read(".github/workflows/release.yml");
-const freezeVersion = "0.1.9";
+const freezeVersion = "0.1.10";
 
-test("current release metadata is valid and v0.1.9 is the freeze baseline", () => {
+test("current release metadata is valid and v0.1.10 is the freeze baseline", () => {
   const currentVersion = cargoToml.match(
     /\[workspace\.package\][\s\S]*?version = "([^"]+)"/,
   )?.[1];
@@ -62,6 +63,36 @@ test("control-plane public route inventory is pinned", () => {
   assert.deepEqual(sorted(routes), sorted([
     "/admin-ui",
     "/admin-ui/{*path}",
+    "/admin-ui/litellm-ui",
+    "/admin-ui/litellm-ui/",
+    "/admin-ui/litellm-ui/litellm/.well-known/litellm-ui-config",
+    "/admin-ui/litellm-ui/litellm/{*path}",
+    "/admin-ui/litellm-ui/{*path}",
+    "/config/{*path}",
+    "/get/{*path}",
+    "/get_image",
+    "/health/{*path}",
+    "/in_product_nudges",
+    "/key/{*path}",
+    "/litellm/.well-known/litellm-ui-config",
+    "/litellm/{*path}",
+    "/litellm-asset-prefix/{*path}",
+    "/model/{*path}",
+    "/model_group/{*path}",
+    "/models",
+    "/models/{*path}",
+    "/organization/{*path}",
+    "/policies/{*path}",
+    "/project/{*path}",
+    "/prompts/{*path}",
+    "/public/{*path}",
+    "/sso/{*path}",
+    "/tag/{*path}",
+    "/team/{*path}",
+    "/user/{*path}",
+    "/v1/agents",
+    "/v2/{*path}",
+    "/v3/{*path}",
     "/admin-ui/admin/audit-events",
     "/admin-ui/admin/auth/front-door",
     "/admin-ui/admin/guardrails",
@@ -132,7 +163,7 @@ test("control-plane public route inventory is pinned", () => {
   ]));
 });
 
-test("proxy route resolver keeps v0.1.9 public route semantics", () => {
+test("proxy route resolver keeps v0.1.10 public route semantics", () => {
   for (const route of [
     "/v1/chat/completions",
     "/v1/responses",
@@ -326,6 +357,13 @@ test("Redis key formats and TTLs are pinned", () => {
   assert.match(redis, /\.arg\(5_356_800\)/);
   assert.match(redis, /\.arg\(3600\)/);
   assert.match(redis, /format!\("\{amount_usd\}\|\{daily_key\}\|\{monthly_key\}"\)/);
+});
+
+test("LiteLLM passthrough exposure modes are pinned", () => {
+  for (const mode of ["disabled", "operator_only", "explicitly_exposed", "trusted_ingress"]) {
+    assert.match(routeSettings, new RegExp(`"${mode}"`));
+    assert.ok(adminJs.includes(mode), `expected admin UI to expose ${mode}`);
+  }
 });
 
 test("admin portal static test covers all control endpoints it depends on", () => {

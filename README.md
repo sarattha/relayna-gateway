@@ -4,10 +4,10 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
-Version `0.1.9` is the current release target. The `v0.1.9` production freeze
+Version `0.1.10` is the current release target. The `v0.1.10` production freeze
 baseline remains pinned for Admin UI 2.0, scoped operator governance, policy
 simulation and inherited layers, provider intelligence, richer usage analytics,
-and supply-chain hardening. Release `0.1.9` adds LiteLLM wildcard passthrough,
+and supply-chain hardening. Release `0.1.10` adds LiteLLM wildcard passthrough,
 per-route canonical OpenAI mode selection, and Admin UI controls for LiteLLM
 passthrough exposure on top of the existing LiteLLM credential mapping,
 Microsoft Entra ID, and Apigee front-door provider traffic support.
@@ -94,7 +94,7 @@ simulation, policy layers, provider health state, debug bundles, service import
 preview/activation/version/rollback, and expanded usage analytics. These are
 documented in `docs/current-features.md`.
 
-Release `0.1.9` can run Relayna Gateway as the single ingress in front of
+Release `0.1.10` can run Relayna Gateway as the single ingress in front of
 LiteLLM. Canonical OpenAI-compatible routes remain governed by Relayna policy
 by default, and operators can optionally switch each canonical route to direct
 LiteLLM passthrough while preserving route enablement, policy, rate-limit, and
@@ -111,9 +111,10 @@ LiteLLM header mode/name. LiteLLM master keys or LiteLLM virtual keys are not
 accepted as Gateway client credentials.
 
 Sensitive LiteLLM `/ui` and admin-like paths remain blocked unless explicitly
-configured. Browser access to `/ui` through Gateway requires a deployment auth
-layer that supplies Gateway auth on browser requests; plain address-bar access
-without Gateway auth is rejected. See `docs/litellm-passthrough.md`,
+configured. For browser access, choose either operator-token proxy flow (`/admin-ui/litellm-ui/...`) or trusted-ingress `trusted_ingress` mode for browser-safe `/ui` support.
+The former requires a request with operator `Authorization`; the latter allows
+trusted front-door contexts while keeping non-UI passthrough on normal Relayna auth.
+See `docs/litellm-passthrough.md`,
 `docs/current-features.md`, `docs/operations.md`, `docs/entra-id-auth.md`, and
 `docs/apigee-gateway-path.md`.
 
@@ -138,7 +139,7 @@ curl http://127.0.0.1:8000/studio/gateway/services
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.1.9 .
+docker build -t relayna-gateway:0.1.10 .
 ```
 
 Run it:
@@ -152,7 +153,7 @@ docker run --rm \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
   -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.1.9
+  relayna-gateway:0.1.10
 ```
 
 `GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
@@ -162,7 +163,7 @@ Admin portal instead.
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.9`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.10`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Budgets, TPM, and Usage Exports
 

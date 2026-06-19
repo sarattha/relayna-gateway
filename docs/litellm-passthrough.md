@@ -6,7 +6,7 @@ ownership. Clients authenticate to Gateway with Relayna credentials. Gateway
 then strips client credentials and injects the internal LiteLLM credential
 selected by operator configuration.
 
-This page covers the `0.1.9` behavior.
+This page covers the `0.1.10` behavior.
 
 ## Request Model
 
@@ -90,43 +90,58 @@ OpenAI-compatible endpoint.
 Use direct mode when a canonical route must behave closest to LiteLLM while
 still preserving Relayna access control and credential isolation.
 
-## Wildcard Passthrough
+## LiteLLM Passthrough Setup (All Options)
 
-Open Admin portal Providers and configure `LiteLLM passthrough`.
+This section documents every LiteLLM passthrough option in one flow.
 
-Recommended starting point:
+### 1) Wildcard passthrough option set
 
-```text
-Enable wildcard passthrough: enabled
-Allowed paths: /v1/*
-Allowed methods: GET,POST
-LiteLLM UI exposure: disabled
-LiteLLM admin API exposure: disabled
+In **Providers → LiteLLM passthrough**, set these foundational fields first:
+
+- `Enable wildcard passthrough`: turns on fallback routing once service routes and
+  canonical OpenAI routes are not matched.
+- `Allowed paths`: array patterns. `/v1/*` and `GET,POST` keep canonical LiteLLM
+  discovery/query patterns covered while staying narrow.
+- `Allowed methods`: list of HTTP methods that may route to LiteLLM fallback.
+- `LiteLLM UI exposure`: controls `/ui` and `/ui` support paths.
+- `LiteLLM admin API exposure`: controls admin-like paths (e.g. `/key`, `/user`,
+  `/team`, `/config`, `/spend`, `/global`, `/budget`, `/customer`,
+  `/organization`).
+
+![LiteLLM passthrough controls](assets/screenshots/litellm-pass-through/06-admin-ui-litellm-passthrough-controls.png)
+
+Recommended safe default when starting:
+
+```json
+{
+  "enabled": true,
+  "allowed_paths": ["/v1/*"],
+  "allowed_methods": ["GET", "POST"],
+  "ui_exposure": "operator_only",
+  "admin_api_exposure": "disabled"
+}
 ```
 
-Wildcard passthrough preserves the original path and query string. For example:
+Wildcard passthrough preserves path and query strings:
 
-```text
-GET /v1/models?source=gateway
-```
+`GET /v1/models?source=operator` stays
+`GET /v1/models?source=operator` at LiteLLM.
 
-is forwarded to LiteLLM as:
+### 2) Canonical route mode options
 
-```text
-GET /v1/models?source=gateway
-```
+Canonical route mode is controlled from Routes, not by wildcard settings:
 
-Wildcard non-canonical paths record reduced status-only usage. They do not run
-Relayna policy, budgets, guardrails, or token accounting because they are not
-known canonical generation routes.
+| Route mode | Scope | Effect |
+| --- | --- | --- |
+| `managed_by_gateway` | `chat-completions`, `responses`, `embeddings` | Full Gateway policy path: full validation, route/model/provider allowlists, budgets/rate limits, guardrails, and standard accounting. |
+| `direct_litellm_passthrough` | `chat-completions`, `responses`, `embeddings` | Relayna auth and policy gates remain, but request is forwarded directly to LiteLLM with credential translation and without guardrail rewriting/token accounting. |
 
-## Sensitive Paths
+Canonical non-matching routes still honor route-mode behavior exactly as before.
 
-LiteLLM `/ui` and admin-like paths are sensitive because they may expose key
-management, spend, config, user, team, organization, budget, and global
-administration surfaces.
+### 3) Sensitive exposure options
 
-Sensitive path groups:
+`allowed_paths` matching these groups are sensitive and need explicit mode
+selection:
 
 - `/ui`, `/ui/*`
 - `/key`, `/key/*`, `/keys`, `/keys/*`
@@ -139,27 +154,63 @@ Sensitive path groups:
 - `/customer`, `/customer/*`
 - `/organization`, `/organization/*`
 
-Exposure modes:
+Exposure semantics:
 
-| Mode | Effect |
-| --- | --- |
-| `disabled` | Sensitive paths are blocked even if listed in `Allowed paths`. |
-| `operator_only` | Sensitive paths require Gateway Entra or trusted Apigee identity plus Relayna virtual-key auth. Use this behind identity-aware operator ingress. |
-| `explicitly_exposed` | Sensitive paths are reachable to authenticated Relayna virtual-key clients when path and method allowlists match. Use only with explicit network and identity controls. |
+| Mode | `ui_exposure` behavior | `admin_api_exposure` behavior |
+| --- | --- | --- |
+| `disabled` | No `/ui` access. | No admin-like access. |
+| `operator_only` | Requires Entra/Apigee identity context plus Relayna virtual-key auth for `/ui` and LiteLLM sensitive paths. |
+| `explicitly_exposed` | Allows `/ui` for authenticated Relayna virtual-key callers when allowlist methods/path are met. |
+| `trusted_ingress` | Lets trusted ingress deliver browser-safe `/ui` and support endpoints without Relayna credentials (for example `/ui`, `/models`, `/user/info`, `/login`, `/logout`, `/get_image`, `/litellm/.well-known/litellm-ui-config`). No effect for `admin_api_exposure`. |
 
-To expose LiteLLM UI to operators through Gateway:
+`trusted_ingress` should be used only when the network ingress is known, trusted,
+and already constrains browser-facing access patterns.
 
-1. Add `/ui` and `/ui/*` to `Allowed paths`.
-2. Set `LiteLLM UI exposure` to `operator_only` when your ingress supplies
-   Entra/Apigee identity, or `explicitly_exposed` only when authenticated
-   Relayna virtual-key access is intentionally acceptable.
-3. Keep `LiteLLM admin API exposure` disabled unless you have a separate
-   operator workflow for those APIs.
-4. Confirm the request path reaches Gateway with the required auth headers.
+### 4) Two browser access patterns
 
-A plain browser address bar cannot attach `Authorization` and Relayna key
-headers on its own. Browser access through Gateway needs an identity-aware
-ingress, reverse proxy, or operator portal flow that supplies Gateway auth.
+#### Option A: operator-authenticated UI proxy
+
+For operator-only flows, route browsers through the operator proxy path:
+
+- Keep `ui_exposure` at `operator_only` or `disabled` depending on whether you
+  want passthrough only, or operator-only browser-safe exposure.
+- `/admin-ui/litellm-ui/...` remains available to operators with a valid
+  operator token even when `ui_exposure` is `disabled`.
+- Use `GET /admin-ui/litellm-ui/...` in browser address bar.
+- This path always requires a valid operator token in `Authorization` headers.
+
+Unauthenticated LiteLLM UI call through this path is rejected; authenticated
+calls receive LiteLLM with Gateway-injected credentials.
+
+![Option A unauthenticated state](assets/screenshots/litellm-pass-through/35-option-a-raw-ui-without-trusted-identity-url.png)
+
+![Option A authenticated login view](assets/screenshots/litellm-pass-through/37-option-a-raw-ui-authenticated-home-url.png)
+
+#### Option B: trusted-ingress passthrough
+
+For AKS ingress / WAF flows that already authenticate browser users:
+
+- Set `ui_exposure` to `trusted_ingress`.
+- Keep `admin_api_exposure` at `disabled` unless those endpoints are intentionally
+  exposed.
+- Retain `allowed_methods` for the exact UI methods your ingress sends.
+
+With `trusted_ingress`, LiteLLM `/ui` and its support endpoints can be opened to
+the trusted browser ingress without Relayna headers, while normal non-UI
+wildcard paths still require normal Relayna proxy auth behavior.
+
+![Trusted ingress login path](assets/screenshots/litellm-pass-through/43-trusted-ingress-ui-login-url.png)
+
+![Trusted ingress home](assets/screenshots/litellm-pass-through/44-trusted-ingress-ui-home-url.png)
+
+![Trusted ingress models path](assets/screenshots/litellm-pass-through/45-trusted-ingress-ui-models-url.png)
+
+If the trusted ingress allows sessionless browser transitions, the final UI state
+and models listing should look like this:
+
+![Trusted ingress home page](assets/screenshots/litellm-pass-through/54-trusted-ingress-ui-home-page.png)
+
+![Trusted ingress models page](assets/screenshots/litellm-pass-through/55-trusted-ingress-ui-models-page.png)
 
 ## Admin API
 
@@ -214,7 +265,7 @@ All mutating calls require operator auth and write audit events.
 Focused local checks:
 
 ```bash
-node tests/freeze-v0.1.9-perimeter.test.mjs
+node tests/freeze-v0.1.10-perimeter.test.mjs
 cargo test -p gateway-core route_settings --all-features
 cargo test -p gateway-proxy passthrough --all-features
 ```

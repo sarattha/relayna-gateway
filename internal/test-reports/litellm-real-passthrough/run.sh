@@ -86,6 +86,16 @@ The current branch routes managed canonical calls through LiteLLM, can switch a
 canonical route to direct LiteLLM passthrough, and forwards enabled wildcard
 \`/v1/*\` calls while preserving path and query.
 
+The browser-safe LiteLLM UI path is also covered: unauthenticated
+\`/admin-ui/litellm-ui/\` is rejected, while the operator-authenticated path
+reaches the real LiteLLM \`/ui/\` through Gateway with only the server-side
+LiteLLM credential forwarded.
+
+The trusted-ingress LiteLLM UI path is covered with Entra and Apigee front-door
+checks disabled: unauthenticated \`/ui/\` and the UI support endpoint
+\`/user/info\` reach real LiteLLM with only the server-side LiteLLM credential,
+while unauthenticated \`/v1/models\` still fails at Gateway auth.
+
 The literal alias probes below reached real LiteLLM and were rejected there with
 404 or 400 responses, proving they were not stopped by the Gateway router:
 
@@ -103,6 +113,8 @@ The literal alias probes below reached real LiteLLM and were rejected there with
 - \`screenshots/05-real-litellm-issue-64-report.png\`
 - \`screenshots/06-admin-ui-litellm-passthrough-controls.png\`
 - \`screenshots/07-admin-ui-route-mode-controls.png\`
+- \`screenshots/08-litellm-ui-proxy-real-env.png\`
+- \`screenshots/09-real-env-issue-66-report.png\`
 
 ## Raw Results
 
