@@ -488,6 +488,40 @@ async function runTests() {
   });
   const litellmUiProxiedText = await litellmUiProxiedResponse.text();
   const apigeeChat = await apigeeTrustedCall("/v1/chat/completions", validToken, relaynaKey, chatPayload);
+  const frontDoorAuthDisabled = await adminJson("/admin-ui/admin/auth/front-door", {
+    method: "PATCH",
+    body: JSON.stringify({
+      entra_enabled: false,
+      apigee_trusted_header_enabled: false,
+    }),
+  });
+  const trustedIngressPassthrough = await adminJson("/admin-ui/admin/providers/litellm-passthrough", {
+    method: "PATCH",
+    body: JSON.stringify({
+      enabled: true,
+      allowed_paths: [
+        "/v1/*",
+        "/ui",
+        "/ui/*",
+        "/litellm-asset-prefix/*",
+        "/litellm/.well-known/litellm-ui-config",
+        "/public/*",
+        "/get/*",
+        "/get_image",
+        "/v2/*",
+        "/models",
+        "/model/*",
+        "/model_group/*",
+        "/user/info",
+      ],
+      allowed_methods: ["GET", "POST", "OPTIONS"],
+      ui_exposure: "trusted_ingress",
+      admin_api_exposure: "disabled",
+    }),
+  });
+  const trustedIngressUi = await gatewayCall("/ui/", null, null, {}, "GET");
+  const trustedIngressUserInfo = await gatewayCall("/user/info", null, null, {}, "GET");
+  const trustedIngressModelsWithoutKey = await gatewayCall("/v1/models", null, null, {}, "GET");
   const frontDoorCapturesResponse = await fetch(`${litellmFrontDoorUrl}/front-door-captures`);
   const frontDoorRequests = await frontDoorCapturesResponse.json();
 
@@ -506,6 +540,14 @@ async function runTests() {
   const routeMode = routesAfterMode.body.find?.((route) => route.route_id === "chat-completions")?.mode;
   const wildcardCapture = frontDoorRequests.find((request) => request.path.startsWith("/v1/models"));
   const litellmUiCapture = frontDoorRequests.find((request) => request.path.startsWith("/ui"));
+  const trustedIngressUiCapture = frontDoorRequests
+    .slice()
+    .reverse()
+    .find((request) => request.path === "/ui/");
+  const trustedIngressUserInfoCapture = frontDoorRequests
+    .slice()
+    .reverse()
+    .find((request) => request.path === "/user/info");
 
   const checks = {
     canonical_chat_completions_passes_to_litellm: pass(chat.status === 200 && gatewayForwardedToLiteLlm, chat),
@@ -570,6 +612,47 @@ async function runTests() {
         litellmUiCapture,
       },
     ),
+    trusted_ingress_disables_entra_and_apigee_front_door_checks: pass(
+      frontDoorAuthDisabled.status === 200 &&
+        frontDoorAuthDisabled.body?.entra?.enabled === false &&
+        frontDoorAuthDisabled.body?.apigee?.trusted_header_enabled === false,
+      frontDoorAuthDisabled,
+    ),
+    trusted_ingress_no_auth_ui_reaches_litellm_with_gateway_credential: pass(
+      trustedIngressPassthrough.status === 200 &&
+        trustedIngressPassthrough.body?.ui_exposure === "trusted_ingress" &&
+        trustedIngressUi.status === 200 &&
+        typeof trustedIngressUi.body === "string" &&
+        trustedIngressUi.body.includes("<html") &&
+        trustedIngressUiCapture?.litellmApiKey === "sk-provider" &&
+        !trustedIngressUiCapture?.authorization &&
+        !trustedIngressUiCapture?.hasRelaynaKey &&
+        !trustedIngressUiCapture?.hasAihKey &&
+        !trustedIngressUiCapture?.hasClientJwt,
+      {
+        trustedIngressPassthrough,
+        trustedIngressUiStatus: trustedIngressUi.status,
+        trustedIngressUiCapture,
+      },
+    ),
+    trusted_ingress_no_auth_ui_support_endpoint_reaches_litellm: pass(
+      trustedIngressUserInfo.status === 200 &&
+        trustedIngressUserInfo.body?.user_id === "default_user_id" &&
+        trustedIngressUserInfoCapture?.litellmApiKey === "sk-provider" &&
+        !trustedIngressUserInfoCapture?.authorization &&
+        !trustedIngressUserInfoCapture?.hasRelaynaKey &&
+        !trustedIngressUserInfoCapture?.hasAihKey &&
+        !trustedIngressUserInfoCapture?.hasClientJwt,
+      {
+        trustedIngressUserInfo,
+        trustedIngressUserInfoCapture,
+      },
+    ),
+    trusted_ingress_no_auth_v1_models_still_requires_relayna_auth: pass(
+      trustedIngressModelsWithoutKey.status === 401 &&
+        codeOf(trustedIngressModelsWithoutKey) === "missing_authorization",
+      trustedIngressModelsWithoutKey,
+    ),
     wildcard_literal_chatcompletion_reaches_litellm: pass(
       chatLiteral.status === 404 &&
         chatLiteral.body?.detail === "Not Found" &&
@@ -602,7 +685,7 @@ async function runTests() {
     ok: Object.values(checks).every((check) => check.ok),
     requestedLiteLlmPathsPassThrough,
     overallOutcome:
-      "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, and credential translation strips client secrets.",
+      "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress /ui works without Relayna auth when Entra is disabled, and credential translation strips client secrets.",
     generatedAt: new Date().toISOString(),
     environment: {
       gatewayProxyUrl,
@@ -718,7 +801,7 @@ function dashboardHtml() {
       </tbody>
     </table>
     <h2>Wildcard Coverage</h2>
-    <p>The branch routes managed canonical calls through LiteLLM, can switch a canonical route to direct LiteLLM passthrough, forwards enabled wildcard <code>/v1/*</code> calls while preserving path and query, and serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
+    <p>The branch routes managed canonical calls through LiteLLM, can switch a canonical route to direct LiteLLM passthrough, forwards enabled wildcard <code>/v1/*</code> calls while preserving path and query, serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth, and serves trusted-ingress <code>/ui/</code> without Relayna auth when Entra is disabled. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
     <h2>LiteLLM Credential Mapping</h2>
     <p>Gateway sent <code>x-litellm-api-key</code> to the LiteLLM front door and did not send <code>Authorization</code>. Observed precedence: <code>${(results?.mappingCredentialsObserved || []).join(" -> ")}</code>.</p>
   </main>

@@ -1,10 +1,10 @@
 # LiteLLM Real Passthrough Test Report
 
-Generated: 2026-06-18T17:30:16.612Z
+Generated: 2026-06-19T03:23:53.314Z
 
 Overall result: **PASS**
 
-PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, and credential translation strips client secrets.
+PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress /ui works without Relayna auth when Entra is disabled, and credential translation strips client secrets.
 
 ## Environment
 
@@ -39,6 +39,10 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | disabled project mapping falls back to provider default | PASS | n/a |  |
 | litellm ui proxy requires operator token | PASS | 401 |  |
 | litellm ui proxy reaches real litellm with gateway credential | PASS | 200 |  |
+| trusted ingress disables entra and apigee front door checks | PASS | 200 |  |
+| trusted ingress no auth ui reaches litellm with gateway credential | PASS | n/a |  |
+| trusted ingress no auth ui support endpoint reaches litellm | PASS | n/a |  |
+| trusted ingress no auth v1 models still requires relayna auth | PASS | 401 | missing_authorization |
 | wildcard literal chatcompletion reaches litellm | PASS | 404 |  |
 | wildcard literal response reaches litellm | PASS | 404 |  |
 | wildcard literal embedding reaches litellm | PASS | 404 |  |
@@ -69,9 +73,11 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | POST /v1/rerank |  | sk-provider | no |
 | GET /ui/ |  | sk-provider | no |
 | POST /v1/chat/completions |  | sk-provider | no |
+| GET /ui/ |  | sk-provider | no |
+| GET /user/info |  | sk-provider | no |
 
 Observed LiteLLM credential precedence:
-`sk-key -> sk-key -> sk-key -> sk-project -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider`
+`sk-key -> sk-key -> sk-key -> sk-project -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider`
 
 ## Wildcard Coverage
 
@@ -83,6 +89,11 @@ The browser-safe LiteLLM UI path is also covered: unauthenticated
 `/admin-ui/litellm-ui/` is rejected, while the operator-authenticated path
 reaches the real LiteLLM `/ui/` through Gateway with only the server-side
 LiteLLM credential forwarded.
+
+The trusted-ingress LiteLLM UI path is covered with Entra and Apigee front-door
+checks disabled: unauthenticated `/ui/` and the UI support endpoint
+`/user/info` reach real LiteLLM with only the server-side LiteLLM credential,
+while unauthenticated `/v1/models` still fails at Gateway auth.
 
 The literal alias probes below reached real LiteLLM and were rejected there with
 404 or 400 responses, proving they were not stopped by the Gateway router:

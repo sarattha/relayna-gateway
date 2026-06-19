@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-06-19T02:41:26.317Z",
+  "configuredGatewayPath": "http://127.0.0.1:19180/ui/",
+  "settings": "enabled=true; allowed_paths include /ui, /ui/*, LiteLLM asset/API paths; ui_exposure=operator_only; admin_api_exposure=disabled",
+  "trustedIngress": "Chrome context injected x-relayna-key, x-apigee-entra-identity, and x-apigee-entra-signature to simulate Entra/App Proxy or trusted ingress context.",
+  "checks": [
+    {
+      "name": "unauthenticated /ui rejected",
+      "status": "screenshot",
+      "url": "http://127.0.0.1:19180/ui/",
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/35-option-a-raw-ui-without-trusted-identity-url.png"
+    },
+    {
+      "name": "trusted /ui authenticated home",
+      "status": "screenshot",
+      "url": "http://127.0.0.1:19180/ui/?login=success",
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/37-option-a-raw-ui-authenticated-home-url.png"
+    },
+    {
+      "name": "trusted Models + Endpoints via sidebar",
+      "status": "screenshot",
+      "url": "http://127.0.0.1:19180/ui/?login=success&page=models",
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/38-option-a-raw-ui-models-endpoints-url.png"
+    },
+    {
+      "name": "trusted Model Hub",
+      "status": "screenshot",
+      "url": "http://127.0.0.1:19180/ui/model_hub/",
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/39-option-a-raw-ui-model-hub-url.png"
+    }
+  ]
+}

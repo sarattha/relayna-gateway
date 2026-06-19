@@ -1,0 +1,78 @@
+{
+  "generatedAt": "2026-06-19T02:30:29.231Z",
+  "harness": true,
+  "loginRedirect": "/admin-ui/litellm-ui/?login=success",
+  "latestBodySample": "Join Slack\nStar us on GitHub\nDocs\nBlog\n\nAbout\n\nProxy Server to call 100+ LLMs in the OpenAI format.\n\n🔧\nBuilt with litellm: v1.86.2\n\nHealth and Endpoint Status\n\nService status: I'm alive! ✓\n\nModel Hub\nSkill Hub\n\nAvailable Models\n\nSearch Models:\n\nProvider:\n\nSelect providers\n\nMode:\n\nSelect modes\n\nFeatures:\n\nSelect features\nModel Name\n\t\nProviders\n\t\nMode\n\t\nMax Input\n\t\nMax Output\n\t\nInput $/1M\n\t\nOutput $/1M\n\t\nFeatures\n\t\nHealth Status\n\t\nLimits\n\n\n\nNo models found\n\nShowing 0 of 0 models",
+  "shots": [
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/22-litellm-ui-gateway-login-empty-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/login/?redirect_to=http%3A%2F%2F127.0.0.1%3A19181%2Fadmin-ui%2Flitellm-ui%2F",
+      "label": "Gateway LiteLLM UI login through /admin-ui/litellm-ui/"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/23-litellm-ui-gateway-login-admin-filled-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/login/?redirect_to=http%3A%2F%2F127.0.0.1%3A19181%2Fadmin-ui%2Flitellm-ui%2F",
+      "label": "Gateway LiteLLM UI login filled as admin / master key"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/24-litellm-ui-gateway-after-admin-login-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/login/?redirect_to=http%3A%2F%2F127.0.0.1%3A19181%2Fadmin-ui%2Flitellm-ui%2F",
+      "label": "Gateway LiteLLM UI after successful admin login"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/25-litellm-ui-gateway-models-after-click-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/login/?redirect_to=http%3A%2F%2F127.0.0.1%3A19181%2Fadmin-ui%2Flitellm-ui%2F",
+      "label": "Gateway LiteLLM UI after login, Models click target not found"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/26-litellm-ui-gateway-model-hub-after-login-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/model_hub/",
+      "label": "Gateway LiteLLM UI Model Hub after login"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/27-litellm-ui-gateway-models-query-after-login-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/ui/?page=models",
+      "label": "Gateway LiteLLM UI models query after login"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/28-litellm-ui-gateway-login-ready-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/login/",
+      "label": "Gateway LiteLLM UI login page"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/29-litellm-ui-gateway-login-credentials-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/login/",
+      "label": "Gateway LiteLLM UI login credentials entered"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/30-litellm-ui-gateway-authenticated-home-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/?login=success",
+      "label": "Gateway LiteLLM UI authenticated home"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/31-litellm-ui-gateway-models-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/models",
+      "label": "Gateway LiteLLM UI /models page"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/32-litellm-ui-gateway-model-hub-authenticated-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/model_hub/",
+      "label": "Gateway LiteLLM UI /model_hub page"
+    },
+    {
+      "file": "/Users/jobz/Works/relayna-gateway/internal/test-reports/litellm-real-passthrough/screenshots/33-litellm-ui-gateway-models-endpoints-click-url.png",
+      "url": "http://127.0.0.1:19181/admin-ui/litellm-ui/?login=success&page=models",
+      "label": "Gateway LiteLLM UI Models + Endpoints via sidebar click"
+    }
+  ],
+  "cookies": [
+    {
+      "name": "relayna_litellm_ui_operator",
+      "domain": "127.0.0.1",
+      "path": "/",
+      "httpOnly": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "modelsEndpointsBodySample": "🌑\nv1.86.2\nJoin Slack\nStar us on GitHub\nDocs\nBlog\nUser\nAI GATEWAY\nVirtual Keys\nPlayground\nModels + Endpoints\nAgentic\nMCP Servers\nSkills\nGuardrails\nPolicies\nTools\nOBSERVABILITY\nUsage\nLogs\nGuardrails Monitor\nACCESS CONTROL\nTeams\nInternal Users\nOrganizations\nAccess Groups\nBudgets\nDEVELOPER TOOLS\nAPI Reference\nAI Hub\nLearning Resources \nExperimental\nSETTINGS\nSettings\nNew\nModel Management\n\nAdd and manage models for the proxy\n\nMissing a provider?\n\nThe LiteLLM engineering team is constantly adding support for new LLM models, providers, endpoints. If you don't see the one you need, let us know and we'll prioritize it.\n\nRequest Provider\nAll Models\nAdd Model\nLLM Credentials\nPass-Through Endpoints\nHealth Status\nModel Retry Settings\nModel Group Alias\nPrice Data Reload\nCurrent Team:\nPersonal\nView:\nCurrent Team Models\nTo access these models: Create a Virtual Key without selecting a team on the Virtual Keys page\nFilters\nReset Filters\nShowing 1 - 2 of 2 results\nPrevious\nNext\nModel ID\n\t\nModel Informati"
+}

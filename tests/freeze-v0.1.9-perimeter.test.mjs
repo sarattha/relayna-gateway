@@ -33,6 +33,7 @@ function stringLiterals(source) {
 
 const app = read("crates/gateway-api/src/app.rs");
 const routing = read("crates/gateway-core/src/routing.rs");
+const routeSettings = read("crates/gateway-core/src/route_settings.rs");
 const errors = read("crates/gateway-core/src/errors.rs");
 const config = read("crates/gateway-api/src/config.rs");
 const budgets = read("crates/gateway-core/src/budgets.rs");
@@ -356,6 +357,13 @@ test("Redis key formats and TTLs are pinned", () => {
   assert.match(redis, /\.arg\(5_356_800\)/);
   assert.match(redis, /\.arg\(3600\)/);
   assert.match(redis, /format!\("\{amount_usd\}\|\{daily_key\}\|\{monthly_key\}"\)/);
+});
+
+test("LiteLLM passthrough exposure modes are pinned", () => {
+  for (const mode of ["disabled", "operator_only", "explicitly_exposed", "trusted_ingress"]) {
+    assert.match(routeSettings, new RegExp(`"${mode}"`));
+    assert.ok(adminJs.includes(mode), `expected admin UI to expose ${mode}`);
+  }
 });
 
 test("admin portal static test covers all control endpoints it depends on", () => {

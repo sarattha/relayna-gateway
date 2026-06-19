@@ -262,12 +262,14 @@ pub struct PingoraContext {
     run_id: Option<String>,
     traceparent: Option<String>,
     trace_id: Option<String>,
+    public_origin: Option<String>,
     fallback_count: i32,
     terminal_usage_recorded: bool,
     service_upstream: Option<PingoraUpstreamConfig>,
     service_route_pattern: Option<String>,
     litellm_upstream: Option<PingoraUpstreamConfig>,
     litellm_passthrough: bool,
+    trusted_ingress_passthrough: bool,
     guardrail_definitions: Vec<GuardrailDefinition>,
     guardrail_policy: GuardrailPolicy,
     pre_guardrail_plan: Option<GuardrailPlan>,
@@ -322,12 +324,14 @@ where
             run_id: None,
             traceparent: None,
             trace_id: None,
+            public_origin: None,
             fallback_count: 0,
             terminal_usage_recorded: false,
             service_upstream: None,
             service_route_pattern: None,
             litellm_upstream: None,
             litellm_passthrough: false,
+            trusted_ingress_passthrough: false,
             guardrail_definitions: Vec::new(),
             guardrail_policy: GuardrailPolicy::default(),
             pre_guardrail_plan: None,
@@ -399,7 +403,11 @@ where
             match Route::resolve_match(&req.method, req.uri.path()) {
                 Ok(matched) => matched,
                 Err(error) => match self.store.litellm_passthrough_settings().await {
-                    Ok(settings) if settings.allows(&req.method, req.uri.path()) => {
+                    Ok(settings)
+                        if settings.allows(&req.method, req.uri.path())
+                            || settings
+                                .trusted_ingress_ui_path_allowed(&req.method, req.uri.path()) =>
+                    {
                         ctx.litellm_passthrough = true;
                         RouteMatch {
                             route: Route::LiteLlmPassthrough,
@@ -432,6 +440,7 @@ where
             .traceparent
             .as_deref()
             .and_then(trace_id_from_traceparent);
+        ctx.public_origin = request_public_origin(req);
         gateway_telemetry::gateway_request_span(
             &ctx.request_id,
             ctx.route.map(Route::as_str),
@@ -454,6 +463,26 @@ where
         ctx.relayna_key_header = auth.config.relayna_key_header.clone();
         let now = Utc::now();
         let authorization = header_value(req, "authorization");
+        if ctx.litellm_passthrough && matched.route == Route::LiteLlmPassthrough {
+            match self.store.litellm_passthrough_settings().await {
+                Ok(settings)
+                    if settings.trusted_ingress_ui_path_allowed(&req.method, req.uri.path()) =>
+                {
+                    if let Err(error) = self.configure_litellm_upstream(ctx, None).await {
+                        respond_error(session, error, &ctx.request_id).await?;
+                        return Ok(true);
+                    }
+                    ctx.trusted_ingress_passthrough = true;
+                    ctx.route_match = Some(matched);
+                    return Ok(false);
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(true);
+                }
+            }
+        }
         let key_result = if auth.entra_enabled() {
             match self.verify_entra_request(req, now, &auth).await {
                 Ok(identity) => {
@@ -566,59 +595,9 @@ where
                     }
                 }
                 if matched.provider == Provider::LiteLlm {
-                    let litellm_config = match self.store.active_litellm_config().await {
-                        Ok(config) => config,
-                        Err(error) => {
-                            respond_error(session, error, &ctx.request_id).await?;
-                            return Ok(true);
-                        }
-                    };
-                    let mapped_credential = match self
-                        .store
-                        .litellm_credential_mapping_for_context(key.key_id, key.project_id)
-                        .await
-                    {
-                        Ok(mapping) => mapping.map(|mapping| mapping.credential),
-                        Err(error) => {
-                            respond_error(session, error, &ctx.request_id).await?;
-                            return Ok(true);
-                        }
-                    };
-                    let has_mapped_credential = mapped_credential.is_some();
-                    let selected_credential = mapped_credential
-                        .or_else(|| {
-                            litellm_config
-                                .as_ref()
-                                .and_then(|config| config.credential.clone())
-                        })
-                        .unwrap_or_else(|| self.config.litellm.service_key.clone());
-                    if selected_credential.trim().is_empty() {
-                        respond_error(session, GatewayError::InvalidConfiguration, &ctx.request_id)
-                            .await?;
+                    if let Err(error) = self.configure_litellm_upstream(ctx, Some(&key)).await {
+                        respond_error(session, error, &ctx.request_id).await?;
                         return Ok(true);
-                    }
-                    if let Some(config) = litellm_config {
-                        let upstream = match PingoraUpstreamConfig::from_base_url(
-                            &config.base_url,
-                            selected_credential,
-                        )
-                        .and_then(|upstream| {
-                            upstream.with_litellm_credential_header(
-                                config.credential_header_mode,
-                                config.credential_header_name,
-                            )
-                        }) {
-                            Ok(upstream) => upstream,
-                            Err(error) => {
-                                respond_error(session, error, &ctx.request_id).await?;
-                                return Ok(true);
-                            }
-                        };
-                        ctx.litellm_upstream = Some(upstream);
-                    } else if has_mapped_credential {
-                        let mut upstream = self.config.litellm.clone();
-                        upstream.service_key = selected_credential;
-                        ctx.litellm_upstream = Some(upstream);
                     }
                 }
                 ctx.route_match = Some(matched);
@@ -835,14 +814,18 @@ where
             return Ok(false);
         };
         let route = matched.route;
-        let Some(key) = ctx.key.clone() else {
-            respond_error(session, GatewayError::MissingAuthorization, &ctx.request_id).await?;
-            return Ok(false);
-        };
         if self.upstream_for(ctx).is_none() {
             respond_error(session, GatewayError::InvalidConfiguration, &ctx.request_id).await?;
             return Ok(false);
         }
+        if ctx.trusted_ingress_passthrough {
+            gateway_telemetry::record_provider_selection();
+            return Ok(true);
+        }
+        let Some(key) = ctx.key.clone() else {
+            respond_error(session, GatewayError::MissingAuthorization, &ctx.request_id).await?;
+            return Ok(false);
+        };
         if let Some(error) = ctx.guardrail_error.clone() {
             self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), Utc::now())
                 .await;
@@ -1133,6 +1116,9 @@ where
         Self::CTX: Send + Sync,
     {
         upstream_response.remove_header("alt-svc");
+        if ctx.trusted_ingress_passthrough {
+            rewrite_trusted_ingress_location(upstream_response, ctx)?;
+        }
         let has_post_guardrails = ctx
             .post_guardrail_plan
             .as_ref()
@@ -1434,6 +1420,52 @@ where
 
 impl<S, R> RelaynaPingoraProxy<S, R>
 where
+    S: ProviderConfigLookup,
+{
+    async fn configure_litellm_upstream(
+        &self,
+        ctx: &mut PingoraContext,
+        key: Option<&AuthenticatedKey>,
+    ) -> GatewayResult<()> {
+        let litellm_config = self.store.active_litellm_config().await?;
+        let mapped_credential = if let Some(key) = key {
+            self.store
+                .litellm_credential_mapping_for_context(key.key_id, key.project_id)
+                .await?
+                .map(|mapping| mapping.credential)
+        } else {
+            None
+        };
+        let has_mapped_credential = mapped_credential.is_some();
+        let selected_credential = mapped_credential
+            .or_else(|| {
+                litellm_config
+                    .as_ref()
+                    .and_then(|config| config.credential.clone())
+            })
+            .unwrap_or_else(|| self.config.litellm.service_key.clone());
+        if selected_credential.trim().is_empty() {
+            return Err(GatewayError::InvalidConfiguration);
+        }
+        if let Some(config) = litellm_config {
+            let upstream =
+                PingoraUpstreamConfig::from_base_url(&config.base_url, selected_credential)?
+                    .with_litellm_credential_header(
+                        config.credential_header_mode,
+                        config.credential_header_name,
+                    )?;
+            ctx.litellm_upstream = Some(upstream);
+        } else if has_mapped_credential {
+            let mut upstream = self.config.litellm.clone();
+            upstream.service_key = selected_credential;
+            ctx.litellm_upstream = Some(upstream);
+        }
+        Ok(())
+    }
+}
+
+impl<S, R> RelaynaPingoraProxy<S, R>
+where
     S: UsageRecorder + ProviderIntelligenceStore,
     R: BudgetStore,
 {
@@ -1504,6 +1536,22 @@ where
 
 fn header_value<'a>(req: &'a RequestHeader, name: &str) -> Option<&'a str> {
     req.headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+fn request_public_origin(req: &RequestHeader) -> Option<String> {
+    let host = header_value(req, "x-forwarded-host")
+        .or_else(|| header_value(req, "host"))?
+        .trim();
+    if host.is_empty() || host.contains(char::is_whitespace) {
+        return None;
+    }
+    let proto = header_value(req, "x-forwarded-proto")
+        .unwrap_or("http")
+        .trim();
+    if !matches!(proto, "http" | "https") {
+        return None;
+    }
+    Some(format!("{proto}://{host}"))
 }
 
 fn is_valid_traceparent(value: &str) -> bool {
@@ -1593,6 +1641,44 @@ fn direct_openai_path_and_query(path_and_query: &str) -> String {
     }
 }
 
+fn rewrite_trusted_ingress_location(
+    upstream_response: &mut ResponseHeader,
+    ctx: &PingoraContext,
+) -> PingoraResult<()> {
+    let Some(public_origin) = ctx.public_origin.as_deref() else {
+        return Ok(());
+    };
+    let Some(location) = upstream_response
+        .headers
+        .get("location")
+        .and_then(|value| value.to_str().ok())
+    else {
+        return Ok(());
+    };
+    let Some(rewritten) = trusted_ingress_location(location, public_origin) else {
+        return Ok(());
+    };
+    upstream_response.remove_header("location");
+    upstream_response.insert_header("location", rewritten)?;
+    Ok(())
+}
+
+fn trusted_ingress_location(location: &str, public_origin: &str) -> Option<String> {
+    if location == "/ui" || location.starts_with("/ui/") || location.starts_with("/ui?") {
+        return Some(format!("{public_origin}{location}"));
+    }
+    let uri = location.parse::<Uri>().ok()?;
+    let path_and_query = uri.path_and_query()?.as_str();
+    if path_and_query == "/ui"
+        || path_and_query.starts_with("/ui/")
+        || path_and_query.starts_with("/ui?")
+    {
+        Some(format!("{public_origin}{path_and_query}"))
+    } else {
+        None
+    }
+}
+
 fn bypass_gateway_governance_for_passthrough(route: Route, litellm_passthrough: bool) -> bool {
     litellm_passthrough && route == Route::LiteLlmPassthrough
 }
@@ -1604,7 +1690,9 @@ fn sensitive_litellm_passthrough_authorized(
     match exposure {
         Some(LiteLlmSensitiveRouteExposure::Disabled) => false,
         Some(LiteLlmSensitiveRouteExposure::OperatorOnly) => entra_identity.is_some(),
-        Some(LiteLlmSensitiveRouteExposure::ExplicitlyExposed) | None => true,
+        Some(LiteLlmSensitiveRouteExposure::ExplicitlyExposed)
+        | Some(LiteLlmSensitiveRouteExposure::TrustedIngress)
+        | None => true,
     }
 }
 
@@ -1958,12 +2046,14 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         run_id: None,
         traceparent: None,
         trace_id: None,
+        public_origin: None,
         fallback_count: 0,
         terminal_usage_recorded: false,
         service_upstream: None,
         service_route_pattern: None,
         litellm_upstream: None,
         litellm_passthrough: false,
+        trusted_ingress_passthrough: false,
         guardrail_definitions: Vec::new(),
         guardrail_policy: GuardrailPolicy::default(),
         pre_guardrail_plan: None,
@@ -2489,6 +2579,10 @@ mod tests {
             Some(LiteLlmSensitiveRouteExposure::ExplicitlyExposed),
             None
         ));
+        assert!(sensitive_litellm_passthrough_authorized(
+            Some(LiteLlmSensitiveRouteExposure::TrustedIngress),
+            None
+        ));
 
         let identity = EntraIdentityContext {
             tenant_id: "tenant".to_owned(),
@@ -2510,6 +2604,115 @@ mod tests {
             Some(LiteLlmSensitiveRouteExposure::Disabled),
             Some(&identity)
         ));
+    }
+
+    #[test]
+    fn trusted_ingress_rewrites_ui_redirects_to_public_origin() {
+        assert_eq!(
+            trusted_ingress_location("/ui/login", "http://gateway.test"),
+            Some("http://gateway.test/ui/login".to_owned())
+        );
+        assert_eq!(
+            trusted_ingress_location(
+                "http://litellm:4000/ui/login?redirect_to=http%3A%2F%2Fgateway.test%2Fui%2F",
+                "http://gateway.test"
+            ),
+            Some(
+                "http://gateway.test/ui/login?redirect_to=http%3A%2F%2Fgateway.test%2Fui%2F"
+                    .to_owned()
+            )
+        );
+        assert_eq!(
+            trusted_ingress_location("http://litellm:4000/key/list", "http://gateway.test"),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn trusted_ingress_litellm_upstream_uses_active_config_without_key() {
+        let store = Arc::new(MemoryUsageStore::default());
+        *store
+            .active_litellm_config
+            .lock()
+            .expect("active config lock") = Some(gateway_core::ProviderRuntimeConfig {
+            provider: Provider::LiteLlm,
+            base_url: "http://litellm-config.internal:4010".to_owned(),
+            credential: Some("provider-litellm-key".to_owned()),
+            credential_header_mode: CredentialHeaderMode::CustomHeader,
+            credential_header_name: Some("x-litellm-api-key".to_owned()),
+        });
+        let proxy = RelaynaPingoraProxy {
+            store,
+            control_state: Arc::new(MemoryControlState::default()),
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "fallback-key")
+                .expect("config"),
+            auth_runtime: default_auth_runtime_for_tests(),
+        };
+        let mut ctx = new_pingora_context_for_tests();
+
+        proxy
+            .configure_litellm_upstream(&mut ctx, None)
+            .await
+            .expect("configure upstream");
+
+        let upstream = ctx.litellm_upstream.expect("active upstream");
+        assert_eq!(upstream.host, "litellm-config.internal");
+        assert_eq!(upstream.port, 4010);
+        assert_eq!(upstream.service_key, "provider-litellm-key");
+        assert_eq!(
+            upstream.credential_header_mode,
+            CredentialHeaderMode::CustomHeader
+        );
+        assert_eq!(
+            upstream.credential_header_name.as_deref(),
+            Some("x-litellm-api-key")
+        );
+    }
+
+    #[tokio::test]
+    async fn key_litellm_upstream_prefers_mapped_credential() {
+        let store = Arc::new(MemoryUsageStore::default());
+        *store
+            .active_litellm_config
+            .lock()
+            .expect("active config lock") = Some(gateway_core::ProviderRuntimeConfig {
+            provider: Provider::LiteLlm,
+            base_url: "http://litellm-config.internal:4010".to_owned(),
+            credential: Some("provider-litellm-key".to_owned()),
+            credential_header_mode: CredentialHeaderMode::AuthorizationBearer,
+            credential_header_name: None,
+        });
+        *store
+            .litellm_credential_mapping
+            .lock()
+            .expect("mapping lock") = Some(gateway_core::LiteLlmCredentialMappingRuntime {
+            credential: "mapped-litellm-key".to_owned(),
+        });
+        let proxy = RelaynaPingoraProxy {
+            store,
+            control_state: Arc::new(MemoryControlState::default()),
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "fallback-key")
+                .expect("config"),
+            auth_runtime: default_auth_runtime_for_tests(),
+        };
+        let key = AuthenticatedKey {
+            key_id: Uuid::new_v4(),
+            project_id: Some(Uuid::new_v4()),
+            key_prefix: "rk_live_test_key".to_owned(),
+        };
+        let mut ctx = new_pingora_context_for_tests();
+
+        proxy
+            .configure_litellm_upstream(&mut ctx, Some(&key))
+            .await
+            .expect("configure upstream");
+
+        let upstream = ctx.litellm_upstream.expect("active upstream");
+        assert_eq!(upstream.service_key, "mapped-litellm-key");
+        assert_eq!(
+            upstream.credential_header_mode,
+            CredentialHeaderMode::AuthorizationBearer
+        );
     }
 
     #[tokio::test]
@@ -2555,6 +2758,8 @@ mod tests {
         openai_routes_enabled: Mutex<bool>,
         openai_route_mode: Mutex<OpenAiRouteMode>,
         litellm_passthrough_settings: Mutex<LiteLlmPassthroughSettings>,
+        active_litellm_config: Mutex<Option<gateway_core::ProviderRuntimeConfig>>,
+        litellm_credential_mapping: Mutex<Option<gateway_core::LiteLlmCredentialMappingRuntime>>,
     }
 
     impl Default for MemoryUsageStore {
@@ -2568,6 +2773,8 @@ mod tests {
                 litellm_passthrough_settings: Mutex::new(
                     LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
                 ),
+                active_litellm_config: Mutex::new(None),
+                litellm_credential_mapping: Mutex::new(None),
             }
         }
     }
@@ -2682,6 +2889,31 @@ mod tests {
                 .litellm_passthrough_settings
                 .lock()
                 .expect("passthrough settings lock")
+                .clone())
+        }
+    }
+
+    #[async_trait]
+    impl ProviderConfigLookup for MemoryUsageStore {
+        async fn active_litellm_config(
+            &self,
+        ) -> GatewayResult<Option<gateway_core::ProviderRuntimeConfig>> {
+            Ok(self
+                .active_litellm_config
+                .lock()
+                .expect("active litellm config lock")
+                .clone())
+        }
+
+        async fn litellm_credential_mapping_for_context(
+            &self,
+            _key_id: Uuid,
+            _project_id: Option<Uuid>,
+        ) -> GatewayResult<Option<gateway_core::LiteLlmCredentialMappingRuntime>> {
+            Ok(self
+                .litellm_credential_mapping
+                .lock()
+                .expect("litellm mapping lock")
                 .clone())
         }
     }

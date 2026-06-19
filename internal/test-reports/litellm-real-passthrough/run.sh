@@ -91,6 +91,11 @@ The browser-safe LiteLLM UI path is also covered: unauthenticated
 reaches the real LiteLLM \`/ui/\` through Gateway with only the server-side
 LiteLLM credential forwarded.
 
+The trusted-ingress LiteLLM UI path is covered with Entra and Apigee front-door
+checks disabled: unauthenticated \`/ui/\` and the UI support endpoint
+\`/user/info\` reach real LiteLLM with only the server-side LiteLLM credential,
+while unauthenticated \`/v1/models\` still fails at Gateway auth.
+
 The literal alias probes below reached real LiteLLM and were rejected there with
 404 or 400 responses, proving they were not stopped by the Gateway router:
 

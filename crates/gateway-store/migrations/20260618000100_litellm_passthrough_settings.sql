@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS litellm_passthrough_settings (
     CONSTRAINT litellm_passthrough_settings_paths_check CHECK (cardinality(allowed_paths) > 0),
     CONSTRAINT litellm_passthrough_settings_methods_check CHECK (cardinality(allowed_methods) > 0),
     CONSTRAINT litellm_passthrough_settings_ui_exposure_check
-        CHECK (ui_exposure IN ('disabled', 'operator_only', 'explicitly_exposed')),
+        CHECK (ui_exposure IN ('disabled', 'operator_only', 'explicitly_exposed', 'trusted_ingress')),
     CONSTRAINT litellm_passthrough_settings_admin_api_exposure_check
         CHECK (admin_api_exposure IN ('disabled', 'operator_only', 'explicitly_exposed'))
 );
