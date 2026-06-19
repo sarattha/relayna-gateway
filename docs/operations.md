@@ -117,6 +117,7 @@ Exposure modes are intentionally separate from the path allowlist:
 | `disabled` | Sensitive paths are rejected even when listed in `Allowed paths`. Use this unless you are actively exposing the path. |
 | `operator_only` | Sensitive paths require the Gateway Entra or trusted Apigee identity layer plus Relayna virtual-key auth. This is appropriate when an identity-aware browser/operator ingress adds the required Gateway auth context. If Entra/Apigee identity is not enabled on the proxy path, `operator_only` requests fail closed. |
 | `explicitly_exposed` | Sensitive paths are reachable to authenticated Relayna virtual-key clients when also allowed by path and method. Treat this as a high-risk setting and protect it with network and identity controls. |
+| `trusted_ingress` | Allows browser-safe LiteLLM UI access for trusted identity-aware ingress without Relayna credentials when requesting `/ui` and LiteLLM support endpoints. Sensitive non-UI passthrough paths such as `/v1/models` still require normal Relayna proxy auth checks. |
 
 Canonical OpenAI-compatible routes have a separate mode on the Routes page:
 
@@ -267,7 +268,7 @@ Before deploying a new release:
 3. Run CI, including Rust checks, security scans, admin UI tests, freeze
    perimeter tests, and docs build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.9`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.10`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
 
 ## Supply Chain and Runtime Hardening

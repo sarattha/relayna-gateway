@@ -2,6 +2,40 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.10 - 2026-06-19
+
+### Added
+
+- Added a browser-safe LiteLLM UI access path at
+  `/admin-ui/litellm-ui/{*path}` that requires a valid operator token and
+  proxies directly to LiteLLM with upstream credential injection only.
+- Added a new LiteLLM UI exposure mode: `trusted_ingress` for trusted identity-
+  aware ingress flows that should allow browser-safe access to `/ui` and its
+  support endpoints without Relayna credential headers.
+- Added a complete setup walkthrough for LiteLLM passthrough options, including
+  wildcard path/method allowlists, `ui_exposure` and `admin_api_exposure` modes,
+  canonical route modes, and verified browser access patterns.
+- Added captured real-environment LiteLLM passthrough screenshots to
+  `docs/litellm-passthrough.md` to document setup and access options.
+
+### Changed
+
+- Updated the freeze perimeter check and related workflow/docs references to the
+  new `v0.1.10` baseline test file `tests/freeze-v0.1.10-perimeter.test.mjs`.
+- Workspace crate versions now share the `0.1.10` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.10` gateway image.
+- Release documentation and operational checklists now treat `v0.1.10` as the
+  current release target and production freeze baseline.
+
+### Security
+
+- Operator-only LiteLLM `/ui` flows remain protected by Entra/Apigee + Relayna
+  auth; they are still sensitive by default.
+- `trusted_ingress` mode intentionally allows `/ui` browser access through trusted
+  ingress while keeping `/v1/*` and other non-ui wildcard passthrough paths bound
+  to normal Relayna proxy authentication and policy checks.
+
 ## 0.1.9 - 2026-06-18
 
 ### Added

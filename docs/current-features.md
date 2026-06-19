@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.9` feature set. The `v0.1.9` production freeze
+This page summarizes the `v0.1.10` feature set. The `v0.1.10` production freeze
 baseline remains pinned for compatibility checks.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
@@ -126,7 +126,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.9` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.10` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation. Relayna-owned routes such as `/services/*`, control-plane routes
 under `/admin-ui/*`, health, readiness, metrics, and canonical
@@ -160,6 +160,7 @@ Sensitive LiteLLM paths require explicit exposure decisions:
 | `disabled` | `/ui` or admin-like LiteLLM paths are blocked even if they appear in `allowed_paths`. This is the default. |
 | `operator_only` | The path can be allowlisted, but the proxy request must already have passed the Gateway Entra or trusted Apigee identity layer plus Relayna virtual-key auth. This is intended for identity-aware operator ingress. |
 | `explicitly_exposed` | The path can be allowlisted for authenticated Relayna virtual-key clients. Use only behind a deliberate ingress/auth design. |
+| `trusted_ingress` | `/ui` support paths can be served to trusted ingress front doors without Relayna credentials for browser workflows, while non-ui passthrough paths keep normal Relayna auth requirements. |
 
 Gateway client credentials remain Relayna credentials, not LiteLLM credentials.
 When Entra is disabled, clients use `Authorization: Bearer rk_live_...`. When
@@ -209,7 +210,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.9` freeze baseline hardens CI and release workflows with strict
+The `v0.1.10` freeze baseline hardens CI and release workflows with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.
@@ -220,7 +221,7 @@ no privilege escalation, and all Linux capabilities dropped. Proxy and control
 plane Services remain separate, and the control plane should stay private or
 protected by identity-aware access.
 
-The v0.1.9 freeze perimeter test pins the production baseline for public
+The v0.1.10 freeze perimeter test pins the production baseline for public
 routes, admin route inventory, error codes, config names, migrations, Redis key
 formats, release metadata, and Admin UI endpoint assumptions. Future changes
 should keep that perimeter passing unless a compatibility decision explicitly

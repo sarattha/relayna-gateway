@@ -20,19 +20,19 @@ operator context.
 - [x] (2026-06-18 21:50+07:00) Issue #66 and comments inspected; there are no
   comments beyond the issue body.
 - [x] (2026-06-18 21:50+07:00) Baseline freeze perimeter test passed before
-  edits with `node tests/freeze-v0.1.9-perimeter.test.mjs`.
+  edits with `node tests/freeze-v0.1.10-perimeter.test.mjs`.
 - [x] (2026-06-18 21:51+07:00) Branch checked out:
   `codex/issue-66-litellm-ui-access`.
 - [x] (2026-06-18 22:05+07:00) Added the operator-authenticated Axum LiteLLM
   UI proxy route under `/admin-ui/litellm-ui`.
 - [x] (2026-06-18 22:08+07:00) Added Axum proxy tests and tightened
   trusted-ingress passthrough gate tests.
-- [x] (2026-06-18 22:09+07:00) Updated the v0.1.9 freeze perimeter route
+- [x] (2026-06-18 22:09+07:00) Updated the v0.1.10 freeze perimeter route
   inventory for the additive route.
 - [x] (2026-06-18 22:11+07:00) Focused tests passed:
   `cargo test -p gateway-api litellm_ui -- --nocapture`,
   `cargo test -p gateway-proxy litellm -- --nocapture`, and
-  `node tests/freeze-v0.1.9-perimeter.test.mjs`.
+  `node tests/freeze-v0.1.10-perimeter.test.mjs`.
 - [x] (2026-06-18 23:58+07:00) Full code-change verification passed with
   `bash .codex/skills/code-change-verification/scripts/run.sh`.
 - [x] (2026-06-19 00:27+07:00) Real Docker environment with real LiteLLM and
@@ -43,7 +43,7 @@ operator context.
   real-environment hardening with
   `bash .codex/skills/code-change-verification/scripts/run.sh`.
 - [x] (2026-06-19 00:32+07:00) Final freeze perimeter test passed with
-  `node tests/freeze-v0.1.9-perimeter.test.mjs`.
+  `node tests/freeze-v0.1.10-perimeter.test.mjs`.
 
 ## Surprises & Discoveries
 
@@ -103,8 +103,8 @@ credential upstream.
 
 ## Compatibility Boundary
 
-Freeze baseline: v0.1.9. Latest local release tag is v0.1.8, but workspace
-metadata and perimeter tests pin v0.1.9. This change touches public
+Freeze baseline: v0.1.10. Latest local release tag is v0.1.10, but workspace
+metadata and perimeter tests pin v0.1.10. This change touches public
 control-plane routes, auth behavior, LiteLLM proxy behavior, and credential
 handling. Compatibility strategy is additive: keep existing API-client
 passthrough behavior unchanged, add `/admin-ui/litellm-ui/{*path}`, and update
@@ -125,7 +125,7 @@ the JavaScript freeze perimeter test with the new route.
 ## Concrete Steps
 
     cd /Users/jobz/Works/relayna-gateway
-    node tests/freeze-v0.1.9-perimeter.test.mjs
+    node tests/freeze-v0.1.10-perimeter.test.mjs
     cargo test -p gateway-api litellm_ui
     cargo test -p gateway-proxy litellm
     bash .codex/skills/code-change-verification/scripts/run.sh

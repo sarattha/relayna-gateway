@@ -53,6 +53,9 @@ have additional exposure modes:
   plus Relayna virtual-key auth.
 - `explicitly_exposed`: allowed for authenticated Relayna virtual-key clients
   when also matched by the path/method allowlist.
+- `trusted_ingress`: allows browser-safe LiteLLM UI access from trusted ingress
+  without a client Relayna credential, while non-UI passthrough paths remain
+  protected by normal Relayna authentication.
 
 ## Control Plane
 

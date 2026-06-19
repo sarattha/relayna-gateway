@@ -175,6 +175,12 @@ Exposure values:
   identity layer plus Relayna virtual-key auth on the proxy request.
 - `explicitly_exposed`: sensitive paths can be reached by authenticated
   Relayna virtual-key clients when path and method allowlists also match.
+- `trusted_ingress`: browser-safe LiteLLM UI access is allowed for trusted
+  identity-aware ingress when accessing `/ui` and support endpoints such as
+  `/user/info`, `/models`, `/login`, `/logout`, `/litellm/.well-known/litellm-ui-config`,
+  and `/get_image`.
+  This option applies only to `ui_exposure`; `admin_api_exposure` remains
+  limited to `disabled`, `operator_only`, and `explicitly_exposed`.
 
 The portal shows an exposure-risk warning because LiteLLM `/ui` and admin
 endpoints can expose key management, spend, config, user, team, and other
