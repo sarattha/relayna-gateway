@@ -2,16 +2,17 @@
 
 LiteLLM passthrough lets Relayna Gateway sit in front of LiteLLM as the single
 public ingress while keeping Relayna identity, policy, usage, and credential
-ownership. Clients authenticate to Gateway with Relayna credentials. Gateway
-then strips client credentials and injects the internal LiteLLM credential
-selected by operator configuration.
+ownership for governed traffic. Clients normally authenticate to Gateway with
+Relayna credentials. Gateway then strips client credentials and injects the
+internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.10` behavior.
+This page covers the `0.1.11` behavior.
 
 ## Request Model
 
-Gateway never treats a LiteLLM master key or LiteLLM virtual key as a client
-credential. Those keys are upstream credentials managed by Gateway.
+Gateway-managed traffic never treats a LiteLLM master key or LiteLLM virtual key
+as a Relayna client credential. Those keys are upstream credentials managed by
+Gateway.
 
 Client request contracts:
 
@@ -20,6 +21,12 @@ Client request contracts:
 | Entra disabled | `Authorization: Bearer <Relayna rk_live_... key>` |
 | Entra enabled | `Authorization: Bearer <Entra JWT>` and `X-Relayna-Key: <Relayna rk_live_... key>` unless the Relayna key header has been renamed. |
 | Trusted Apigee mode | Signed Apigee identity headers plus the configured Relayna key header. |
+
+Canonical routes set to `direct_litellm_passthrough` have one intentional
+exception: a non-Relayna `Authorization: Bearer ...` credential is treated as a
+LiteLLM credential and translated to the configured upstream LiteLLM header.
+Relayna `rk_live_...` bearer keys are not consumed as LiteLLM credentials; they
+continue through the Relayna-authenticated direct passthrough path.
 
 Gateway strips the following before forwarding to LiteLLM:
 
@@ -85,10 +92,25 @@ OpenAI-compatible endpoint.
 | Mode | Behavior |
 | --- | --- |
 | `managed_by_gateway` | Full Gateway governance path. Gateway authenticates the Relayna key, checks global route enablement, evaluates policy, enforces model/provider allowlists, checks RPM/TPM and budgets, runs configured guardrails, forwards upstream, and records full usage when accounting data is available. |
-| `direct_litellm_passthrough` | Direct LiteLLM forwarding with Gateway governance retained. Gateway authenticates the Relayna key, checks route enablement, evaluates policy, enforces model/provider allowlists, checks RPM/TPM and budgets, strips/injects credentials, and preserves the original request. Guardrail body rewriting and token accounting are bypassed; usage is status-only. |
+| `direct_litellm_passthrough` | Direct LiteLLM forwarding. Relayna bearer keys keep Gateway governance: route enablement, policy, model/provider allowlists, RPM/TPM, budgets, credential stripping/injection, and status-only usage. Non-Relayna bearer credentials bypass Relayna key lookup and are delegated to LiteLLM using the configured upstream credential header. Guardrail body rewriting and token accounting are bypassed. |
 
-Use direct mode when a canonical route must behave closest to LiteLLM while
-still preserving Relayna access control and credential isolation.
+Use direct mode when a canonical route must behave closest to LiteLLM. Relayna
+keys still preserve Relayna access control and credential isolation; non-Relayna
+bearer credentials leave authentication and authorization to LiteLLM.
+
+Example direct LiteLLM bearer call:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8080/v1/responses \
+  -H "Authorization: Bearer $LITELLM_VIRTUAL_KEY" \
+  -H "Content-Type: application/json" \
+  --data '{"model":"gpt-4o-mini","input":"hello"}'
+```
+
+If the LiteLLM provider header mode is `authorization_bearer`, Gateway forwards
+the credential as `Authorization: Bearer <LiteLLM credential>`. If the header
+mode is `custom_header`, Gateway removes downstream `Authorization` and forwards
+the credential in the configured header name, such as `x-litellm-api-key`.
 
 ## LiteLLM Passthrough Setup (All Options)
 
@@ -159,9 +181,9 @@ Exposure semantics:
 | Mode | `ui_exposure` behavior | `admin_api_exposure` behavior |
 | --- | --- | --- |
 | `disabled` | No `/ui` access. | No admin-like access. |
-| `operator_only` | Requires Entra/Apigee identity context plus Relayna virtual-key auth for `/ui` and LiteLLM sensitive paths. |
-| `explicitly_exposed` | Allows `/ui` for authenticated Relayna virtual-key callers when allowlist methods/path are met. |
-| `trusted_ingress` | Lets trusted ingress deliver browser-safe `/ui` and support endpoints without Relayna credentials (for example `/ui`, `/models`, `/user/info`, `/login`, `/logout`, `/get_image`, `/litellm/.well-known/litellm-ui-config`). No effect for `admin_api_exposure`. |
+| `operator_only` | Requires Entra/Apigee identity context plus Relayna virtual-key auth for `/ui` and LiteLLM sensitive paths. | Requires Entra/Apigee identity context plus Relayna virtual-key auth for admin-like paths when allowlist methods/path are met. |
+| `explicitly_exposed` | Allows `/ui` for authenticated Relayna virtual-key callers when allowlist methods/path are met. | Allows admin-like paths for authenticated Relayna virtual-key callers when allowlist methods/path are met. |
+| `trusted_ingress` | Lets trusted ingress deliver browser-safe `/ui` and support endpoints without Relayna credentials (for example `/ui`, `/models`, `/user/info`, `/login`, `/logout`, `/get_image`, `/litellm/.well-known/litellm-ui-config`). | Not a valid `admin_api_exposure` value. Trusted-ingress admin/dashboard API passthrough is allowed only when `ui_exposure` is `trusted_ingress`, `admin_api_exposure` is `explicitly_exposed`, passthrough is enabled, and the method/path allowlists match. |
 
 `trusted_ingress` should be used only when the network ingress is known, trusted,
 and already constrains browser-facing access patterns.
@@ -192,7 +214,8 @@ For AKS ingress / WAF flows that already authenticate browser users:
 
 - Set `ui_exposure` to `trusted_ingress`.
 - Keep `admin_api_exposure` at `disabled` unless those endpoints are intentionally
-  exposed.
+  exposed. If the LiteLLM dashboard must call admin-like API paths directly,
+  set `admin_api_exposure` to `explicitly_exposed` and keep the allowlist narrow.
 - Retain `allowed_methods` for the exact UI methods your ingress sends.
 
 With `trusted_ingress`, LiteLLM `/ui` and its support endpoints can be opened to
@@ -265,7 +288,7 @@ All mutating calls require operator auth and write audit events.
 Focused local checks:
 
 ```bash
-node tests/freeze-v0.1.10-perimeter.test.mjs
+node tests/freeze-v0.1.11-perimeter.test.mjs
 cargo test -p gateway-core route_settings --all-features
 cargo test -p gateway-proxy passthrough --all-features
 ```
@@ -279,5 +302,6 @@ bash internal/test-reports/litellm-real-passthrough/run.sh
 That harness starts PostgreSQL, Redis, Gateway, a real `litellm/litellm`
 container, and a front-door capture service. It verifies canonical managed and
 direct modes, wildcard `/v1/models` query preservation, `/ui` default blocking,
-credential stripping, custom LiteLLM header injection, and credential
+credential stripping, custom LiteLLM header injection, direct LiteLLM bearer
+delegation, trusted-ingress dashboard/admin passthrough, and credential
 resolution precedence.
