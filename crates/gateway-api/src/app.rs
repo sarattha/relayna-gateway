@@ -103,6 +103,8 @@ const STUDIO_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
 const DEFAULT_LITELLM_BASE_URL: &str = "http://127.0.0.1:4000";
 const LITELLM_UI_HTML_REWRITE_LIMIT: usize = 2 * 1024 * 1024;
 const LITELLM_UI_PROXY_PREFIX: &str = "/admin-ui/litellm-ui";
+const LITELLM_UI_OPERATOR_COOKIE: &str = "relayna_litellm_ui_operator";
+const LITELLM_UI_OPERATOR_COOKIE_MAX_AGE_SECONDS: u64 = 60 * 60;
 const LITELLM_UI_ROOT_PROXY_PREFIXES: &[&str] = &[
     "v1/agents",
     "v2/",
@@ -627,9 +629,11 @@ async fn litellm_ui_proxy_inner(
     query: Option<&str>,
     body: Bytes,
 ) -> Response {
-    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_PROVIDERS_UPDATE).await {
-        return response;
-    }
+    let operator_cookie =
+        match require_litellm_ui_operator_scope(&state, &headers, SCOPE_PROVIDERS_UPDATE).await {
+            Ok(operator_cookie) => operator_cookie,
+            Err(response) => return response,
+        };
 
     let upstream = match resolve_litellm_ui_upstream(&state).await {
         Ok(upstream) => upstream,
@@ -663,7 +667,7 @@ async fn litellm_ui_proxy_inner(
         Ok(response) => response,
         Err(_) => return error_response(&headers, GatewayError::UpstreamConnection),
     };
-    litellm_ui_response(response, &upstream.base_url).await
+    litellm_ui_response(response, &upstream.base_url, operator_cookie).await
 }
 
 async fn list_guardrails(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -3112,6 +3116,65 @@ async fn require_admin_scopes(
     }
 }
 
+async fn require_litellm_ui_operator_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+    required_scope: &str,
+) -> Result<Option<String>, Response> {
+    match bearer_token(headers) {
+        Ok(token) => match verify_operator_scope(state, token, &[required_scope]).await {
+            Ok(()) => Ok(Some(token.to_owned())),
+            Err(error) => Err(error_response(headers, error)),
+        },
+        Err(GatewayError::MissingAuthorization) => {
+            let Some(token) = litellm_ui_operator_cookie(headers) else {
+                return Err(error_response(headers, GatewayError::MissingAuthorization));
+            };
+            match verify_operator_scope(state, token, &[required_scope]).await {
+                Ok(()) => Ok(None),
+                Err(error) => Err(error_response(headers, error)),
+            }
+        }
+        Err(error) => Err(error_response(headers, error)),
+    }
+}
+
+async fn verify_operator_scope(
+    state: &AppState,
+    token: &str,
+    required_scopes: &[&str],
+) -> GatewayResult<()> {
+    match state.store.verify_operator_token(token, Utc::now()).await {
+        Ok(authorization)
+            if required_scopes
+                .iter()
+                .all(|required_scope| authorization.has_scope(required_scope)) =>
+        {
+            Ok(())
+        }
+        Ok(_) => Err(GatewayError::InsufficientOperatorScope),
+        Err(error) => Err(error),
+    }
+}
+
+fn litellm_ui_operator_cookie(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|cookies| {
+            cookies.split(';').find_map(|cookie| {
+                let (name, value) = cookie.trim().split_once('=')?;
+                (name == LITELLM_UI_OPERATOR_COOKIE && !value.is_empty()).then_some(value)
+            })
+        })
+}
+
+fn litellm_ui_operator_set_cookie(raw_token: &str) -> String {
+    format!(
+        "{LITELLM_UI_OPERATOR_COOKIE}={raw_token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={LITELLM_UI_OPERATOR_COOKIE_MAX_AGE_SECONDS}"
+    )
+}
+
 async fn require_admin(state: &AppState, headers: &HeaderMap) -> Option<Response> {
     require_admin_scope(state, headers, SCOPE_OPERATORS_MANAGE)
         .await
@@ -3507,6 +3570,7 @@ fn litellm_ui_skips_request_header(
     name == header::AUTHORIZATION
         || name.as_str().eq_ignore_ascii_case("proxy-authorization")
         || name == header::HOST
+        || name == header::COOKIE
         || name == header::CONTENT_LENGTH
         || name == header::TRANSFER_ENCODING
         || name == header::CONNECTION
@@ -3514,10 +3578,23 @@ fn litellm_ui_skips_request_header(
         || name.as_str().eq_ignore_ascii_case(relayna_key_header)
         || name.as_str().eq_ignore_ascii_case("x-relayna-key")
         || name.as_str().eq_ignore_ascii_case("x-litellm-api-key")
+        || name.as_str().eq_ignore_ascii_case("x-aih-api-key")
+        || name.as_str().eq_ignore_ascii_case("x-api-key")
+        || name.as_str().eq_ignore_ascii_case("x-relayna-worker-token")
+        || name
+            .as_str()
+            .eq_ignore_ascii_case("x-apigee-entra-identity")
+        || name
+            .as_str()
+            .eq_ignore_ascii_case("x-apigee-entra-signature")
         || custom_litellm_header.is_some_and(|custom| name == custom)
 }
 
-async fn litellm_ui_response(response: reqwest::Response, upstream_base_url: &str) -> Response {
+async fn litellm_ui_response(
+    response: reqwest::Response,
+    upstream_base_url: &str,
+    operator_cookie: Option<String>,
+) -> Response {
     let status = response.status();
     let headers = response.headers().clone();
     let content_type = headers
@@ -3551,6 +3628,9 @@ async fn litellm_ui_response(response: reqwest::Response, upstream_base_url: &st
     };
 
     let mut builder = Response::builder().status(status);
+    if let Some(token) = operator_cookie {
+        builder = builder.header(header::SET_COOKIE, litellm_ui_operator_set_cookie(&token));
+    }
     for (name, value) in &headers {
         if litellm_ui_skips_response_header(name) {
             continue;
@@ -5529,6 +5609,15 @@ mod tests {
                     .header("x-request-id", "req_test")
                     .header("authorization", format!("Bearer {TEST_OPERATOR_TOKEN}"))
                     .header("x-litellm-api-key", "client-litellm-key")
+                    .header("x-aih-api-key", "client-aih-key")
+                    .header("x-api-key", "client-api-key")
+                    .header("x-relayna-worker-token", "client-worker-token")
+                    .header("x-apigee-entra-identity", "client-identity")
+                    .header("x-apigee-entra-signature", "client-signature")
+                    .header(
+                        "cookie",
+                        format!("{LITELLM_UI_OPERATOR_COOKIE}=client-operator-token; lite=client"),
+                    )
                     .body(axum::body::Body::empty())
                     .expect("request"),
             )
@@ -5536,6 +5625,17 @@ mod tests {
             .expect("response");
 
         assert_eq!(response.status(), StatusCode::OK);
+        let set_cookie = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|value| value.to_str().ok())
+            .expect("operator cookie");
+        assert!(set_cookie.starts_with(&format!(
+            "{LITELLM_UI_OPERATOR_COOKIE}={TEST_OPERATOR_TOKEN};"
+        )));
+        assert!(set_cookie.contains("HttpOnly"));
+        assert!(set_cookie.contains("SameSite=Lax"));
+        assert!(set_cookie.contains("Path=/"));
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("body");
@@ -5558,6 +5658,12 @@ mod tests {
             Some("Bearer server-litellm-key")
         );
         assert!(captured_header(&captured, "x-litellm-api-key").is_none());
+        assert!(captured_header(&captured, "x-aih-api-key").is_none());
+        assert!(captured_header(&captured, "x-api-key").is_none());
+        assert!(captured_header(&captured, "x-relayna-worker-token").is_none());
+        assert!(captured_header(&captured, "x-apigee-entra-identity").is_none());
+        assert!(captured_header(&captured, "x-apigee-entra-signature").is_none());
+        assert!(captured_header(&captured, "cookie").is_none());
         assert!(captured.body.is_empty());
     }
 
@@ -5648,6 +5754,49 @@ mod tests {
             captured_header(&captured, "authorization"),
             Some("Bearer server-litellm-key")
         );
+    }
+
+    #[tokio::test]
+    async fn litellm_ui_proxy_accepts_operator_cookie_for_browser_subrequests() {
+        let (base_url, captured) = spawn_litellm_server(
+            "200 OK",
+            vec![("content-type", "application/javascript")],
+            r#"console.log("ok")"#,
+        );
+        let app = router_with_state(test_state_with_litellm(
+            default_store(),
+            base_url,
+            "server-litellm-key",
+        ));
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/litellm-asset-prefix/_next/static/app.js")
+                    .header(
+                        header::COOKIE,
+                        format!("{LITELLM_UI_OPERATOR_COOKIE}={TEST_OPERATOR_TOKEN}"),
+                    )
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().get(header::SET_COOKIE).is_none());
+        let captured = captured
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("captured upstream request");
+        assert_eq!(
+            captured.request_line,
+            "GET /litellm-asset-prefix/_next/static/app.js HTTP/1.1"
+        );
+        assert_eq!(
+            captured_header(&captured, "authorization"),
+            Some("Bearer server-litellm-key")
+        );
+        assert!(captured_header(&captured, "cookie").is_none());
     }
 
     #[tokio::test]
