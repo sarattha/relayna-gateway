@@ -97,15 +97,26 @@ function captureProviderRequest(req, body) {
   });
 }
 
+function normalizeLiteLlmCredential(value) {
+  if (!value) {
+    return null;
+  }
+  return value.startsWith("Bearer ") ? value.slice("Bearer ".length).trim() : value;
+}
+
 function captureFrontDoorRequest(req, body) {
   const headers = Object.fromEntries(
     Object.entries(req.headers).map(([key, value]) => [key.toLowerCase(), String(value)]),
   );
+  const litellmApiKeyHeader = headers["x-litellm-api-key"] || null;
+  const litellmKeyHeader = headers["x-litellm-key"] || null;
   const capture = {
     path: req.url,
     method: req.method,
     authorization: headers.authorization || null,
-    litellmApiKey: headers["x-litellm-api-key"] || null,
+    litellmApiKey: normalizeLiteLlmCredential(litellmApiKeyHeader || litellmKeyHeader),
+    litellmApiKeyHeader,
+    litellmKeyHeader,
     hasRelaynaKey: "x-relayna-key" in headers,
     hasAihKey: "x-aih-api-key" in headers,
     hasApigeeIdentity: "x-apigee-entra-identity" in headers || "x-apigee-entra-signature" in headers,
@@ -275,7 +286,8 @@ async function setupGatewayData() {
     base_url: litellmFrontDoorUrl,
     credential: "sk-provider",
     credential_header_mode: "custom_header",
-    credential_header_name: "x-litellm-api-key",
+    credential_header_name: "x-litellm-key",
+    credential_header_value_format: "bearer",
     enabled: true,
   };
   const providerResponse = await fetch(
@@ -293,6 +305,7 @@ async function setupGatewayData() {
         credential: providerPayload.credential,
         credential_header_mode: providerPayload.credential_header_mode,
         credential_header_name: providerPayload.credential_header_name,
+        credential_header_value_format: providerPayload.credential_header_value_format,
         enabled: providerPayload.enabled,
       } : providerPayload),
     },
@@ -504,6 +517,7 @@ async function runTests() {
     headers: {
       authorization: `Bearer ${adminToken}`,
       "x-litellm-api-key": "client-supplied-litellm-key",
+      "x-litellm-key": "Bearer client-supplied-litellm-key",
     },
   });
   const litellmUiProxiedText = await litellmUiProxiedResponse.text();
@@ -564,6 +578,7 @@ async function runTests() {
   const responseForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/responses"));
   const embeddingsForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/embeddings"));
   const customHeaderCredentials = frontDoorRequests.map((request) => request.litellmApiKey);
+  const bearerCustomHeaderValues = frontDoorRequests.map((request) => request.litellmKeyHeader).filter(Boolean);
   const firstProjectCredentialIndex = customHeaderCredentials.indexOf("sk-project");
   const firstProviderCredentialIndex = customHeaderCredentials.indexOf("sk-provider");
   const routeMode = routesAfterMode.body.find?.((route) => route.route_id === "chat-completions")?.mode;
@@ -626,6 +641,12 @@ async function runTests() {
     apigee_trusted_header_chat_passes_to_litellm: pass(apigeeChat.status === 200, apigeeChat),
     upstream_receives_no_client_credentials: pass(!upstreamCredentialLeak, { providerRequests: state.providerRequests }),
     litellm_front_door_receives_custom_header_only: pass(!litellmCredentialLeak, { frontDoorRequests }),
+    litellm_front_door_receives_bearer_prefixed_custom_header: pass(
+      bearerCustomHeaderValues.length > 0 &&
+        bearerCustomHeaderValues.every((value) => value.startsWith("Bearer ")) &&
+        frontDoorRequests.every((request) => !request.litellmApiKeyHeader),
+      { bearerCustomHeaderValues, frontDoorRequests },
+    ),
     litellm_key_mapping_precedes_project_mapping: pass(
       customHeaderCredentials[0] === "sk-key" && firstProjectCredentialIndex > 0,
       {
@@ -887,7 +908,7 @@ function dashboardHtml() {
     <h2>Wildcard Coverage</h2>
     <p>The branch routes managed canonical calls through LiteLLM, can switch a canonical route to direct LiteLLM passthrough, forwards enabled wildcard <code>/v1/*</code> calls while preserving path and query, serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth, serves trusted-ingress <code>/ui/</code> and explicitly exposed admin paths without Relayna auth when Entra is disabled, and translates a direct <code>/v1/responses</code> LiteLLM bearer key into the configured upstream custom header. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
     <h2>LiteLLM Credential Mapping</h2>
-    <p>Gateway sent <code>x-litellm-api-key</code> to the LiteLLM front door and did not send <code>Authorization</code>. Observed precedence: <code>${(results?.mappingCredentialsObserved || []).join(" -> ")}</code>.</p>
+    <p>Gateway sent <code>x-litellm-key: Bearer &lt;credential&gt;</code> to the LiteLLM front door and did not send <code>Authorization</code> or raw <code>x-litellm-api-key</code>. Observed precedence: <code>${(results?.mappingCredentialsObserved || []).join(" -> ")}</code>.</p>
   </main>
 </body>
 </html>`;

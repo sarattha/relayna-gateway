@@ -22,6 +22,14 @@ pub enum CredentialHeaderMode {
     CustomHeader,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialHeaderValueFormat {
+    #[default]
+    Raw,
+    Bearer,
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct ProviderConfigCreateRequest {
     pub provider: ProviderConfigKind,
@@ -35,6 +43,8 @@ pub struct ProviderConfigCreateRequest {
     pub credential_header_mode: CredentialHeaderMode,
     #[serde(default)]
     pub credential_header_name: Option<String>,
+    #[serde(default)]
+    pub credential_header_value_format: CredentialHeaderValueFormat,
 }
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
@@ -45,6 +55,7 @@ pub struct ProviderConfigPatchRequest {
     pub credential: Option<Option<String>>,
     pub credential_header_mode: Option<CredentialHeaderMode>,
     pub credential_header_name: Option<Option<String>>,
+    pub credential_header_value_format: Option<CredentialHeaderValueFormat>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -57,6 +68,7 @@ pub struct ProviderConfigResponse {
     pub credential_configured: bool,
     pub credential_header_mode: CredentialHeaderMode,
     pub credential_header_name: Option<String>,
+    pub credential_header_value_format: CredentialHeaderValueFormat,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -68,6 +80,7 @@ pub struct ProviderRuntimeConfig {
     pub credential: Option<String>,
     pub credential_header_mode: CredentialHeaderMode,
     pub credential_header_name: Option<String>,
+    pub credential_header_value_format: CredentialHeaderValueFormat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -342,6 +355,23 @@ pub fn parse_credential_header_mode(value: &str) -> GatewayResult<CredentialHead
     }
 }
 
+pub fn credential_header_value_format_str(format: CredentialHeaderValueFormat) -> &'static str {
+    match format {
+        CredentialHeaderValueFormat::Raw => "raw",
+        CredentialHeaderValueFormat::Bearer => "bearer",
+    }
+}
+
+pub fn parse_credential_header_value_format(
+    value: &str,
+) -> GatewayResult<CredentialHeaderValueFormat> {
+    match value {
+        "raw" => Ok(CredentialHeaderValueFormat::Raw),
+        "bearer" => Ok(CredentialHeaderValueFormat::Bearer),
+        _ => Err(GatewayError::InvalidProviderConfigPayload),
+    }
+}
+
 pub fn credential_mapping_scope_str(scope: LiteLlmCredentialMappingScope) -> &'static str {
     match scope {
         LiteLlmCredentialMappingScope::Key => "key",
@@ -412,6 +442,22 @@ mod tests {
         );
         assert_eq!(
             validate_litellm_credential_header_name("not a header").unwrap_err(),
+            GatewayError::InvalidProviderConfigPayload
+        );
+    }
+
+    #[test]
+    fn parses_credential_header_value_format() {
+        assert_eq!(
+            parse_credential_header_value_format("raw").expect("raw"),
+            CredentialHeaderValueFormat::Raw
+        );
+        assert_eq!(
+            parse_credential_header_value_format("bearer").expect("bearer"),
+            CredentialHeaderValueFormat::Bearer
+        );
+        assert_eq!(
+            parse_credential_header_value_format("basic").unwrap_err(),
             GatewayError::InvalidProviderConfigPayload
         );
     }

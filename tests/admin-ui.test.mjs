@@ -171,8 +171,10 @@ test("admin portal uses structured project and provider controls", () => {
 
 test("providers view configures LiteLLM credential headers and mappings without rendering secrets", () => {
   assert.match(js, /credential_header_mode/);
+  assert.match(js, /credential_header_value_format/);
   assert.match(js, /authorization_bearer/);
   assert.match(js, /custom_header/);
+  assert.match(js, /bearer/);
   assert.match(js, /x-litellm-api-key/);
   assert.match(js, /async function updateProviderAuthSettings\(event\)/);
   assert.match(js, /async function saveLiteLlmCredentialMapping\(event\)/);

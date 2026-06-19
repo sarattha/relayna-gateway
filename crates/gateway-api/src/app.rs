@@ -19,12 +19,12 @@ use gateway_core::{
     AdminPolicyLayerUpsert, AdminProjectStore, AdminProviderConfigStore, AdminServiceStore,
     AdminStudioConnectionStore, AuditEvent, AuditEventCreate, AuditEventQuery,
     CreatedAdminKeyResponse, CreatedOperatorTokenResponse, CredentialHeaderMode,
-    EffectiveGatewayAuthSettings, EffectiveStudioConnection, GatewayAuthEnv,
-    GatewayAuthSettingsPatchRequest, GatewayError, GatewayResult, GuardrailAdminCreateRequest,
-    GuardrailAdminPatchRequest, GuardrailDefinitionResponse, GuardrailEventQuery,
-    GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore,
-    GuardrailPlanRequest, GuardrailPolicySet, GuardrailStore, GuardrailTestRequest,
-    GuardrailTestResponse, KeyPolicy, LiteLlmCredentialMappingResponse,
+    CredentialHeaderValueFormat, EffectiveGatewayAuthSettings, EffectiveStudioConnection,
+    GatewayAuthEnv, GatewayAuthSettingsPatchRequest, GatewayError, GatewayResult,
+    GuardrailAdminCreateRequest, GuardrailAdminPatchRequest, GuardrailDefinitionResponse,
+    GuardrailEventQuery, GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode,
+    GuardrailObservabilityStore, GuardrailPlanRequest, GuardrailPolicySet, GuardrailStore,
+    GuardrailTestRequest, GuardrailTestResponse, KeyPolicy, LiteLlmCredentialMappingResponse,
     LiteLlmCredentialMappingUpsertRequest, LiteLlmPassthroughSettingsPatchRequest, OpenAiRouteMode,
     OperatorAuthorization, OperatorTokenMaterial, OperatorTokenStore, PolicyLookup,
     ProjectCreateRequest, ProjectPatchRequest, ProjectResponse, Provider,
@@ -659,7 +659,7 @@ async fn litellm_ui_proxy_inner(
             let Some(header_name) = upstream.credential_header_name.as_deref() else {
                 return error_response(&headers, GatewayError::InvalidConfiguration);
             };
-            request.header(header_name, &upstream.credential)
+            request.header(header_name, litellm_ui_custom_header_credential(&upstream))
         }
     };
 
@@ -3468,6 +3468,7 @@ struct LiteLlmUiUpstream {
     credential: String,
     credential_header_mode: CredentialHeaderMode,
     credential_header_name: Option<String>,
+    credential_header_value_format: CredentialHeaderValueFormat,
 }
 
 async fn resolve_litellm_ui_upstream(state: &AppState) -> GatewayResult<LiteLlmUiUpstream> {
@@ -3490,6 +3491,10 @@ async fn resolve_litellm_ui_upstream(state: &AppState) -> GatewayResult<LiteLlmU
     let credential_header_name = active
         .as_ref()
         .and_then(|config| config.credential_header_name.clone());
+    let credential_header_value_format = active
+        .as_ref()
+        .map(|config| config.credential_header_value_format)
+        .unwrap_or(CredentialHeaderValueFormat::Raw);
     if credential_header_mode == CredentialHeaderMode::CustomHeader
         && credential_header_name.as_deref().is_none()
     {
@@ -3501,7 +3506,15 @@ async fn resolve_litellm_ui_upstream(state: &AppState) -> GatewayResult<LiteLlmU
         credential,
         credential_header_mode,
         credential_header_name,
+        credential_header_value_format,
     })
+}
+
+fn litellm_ui_custom_header_credential(upstream: &LiteLlmUiUpstream) -> String {
+    match upstream.credential_header_value_format {
+        CredentialHeaderValueFormat::Raw => upstream.credential.clone(),
+        CredentialHeaderValueFormat::Bearer => format!("Bearer {}", upstream.credential),
+    }
 }
 
 fn litellm_ui_upstream_url(
@@ -3578,6 +3591,7 @@ fn litellm_ui_skips_request_header(
         || name.as_str().eq_ignore_ascii_case(relayna_key_header)
         || name.as_str().eq_ignore_ascii_case("x-relayna-key")
         || name.as_str().eq_ignore_ascii_case("x-litellm-api-key")
+        || name.as_str().eq_ignore_ascii_case("x-litellm-key")
         || name.as_str().eq_ignore_ascii_case("x-aih-api-key")
         || name.as_str().eq_ignore_ascii_case("x-api-key")
         || name.as_str().eq_ignore_ascii_case("x-relayna-worker-token")
@@ -4568,6 +4582,7 @@ mod tests {
                 credential_configured: request.credential.is_some(),
                 credential_header_mode: request.credential_header_mode,
                 credential_header_name: request.credential_header_name,
+                credential_header_value_format: request.credential_header_value_format,
                 created_at: now,
                 updated_at: now,
             })
