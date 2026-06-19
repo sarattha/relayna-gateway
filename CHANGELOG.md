@@ -2,6 +2,36 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.12 - 2026-06-19
+
+### Added
+
+- Added `credential_header_value_format` for LiteLLM provider configs with
+  `raw` and `bearer` values. Custom LiteLLM credential headers can now send
+  `x-litellm-key: Bearer <credential>` for deployments that require a bearer-
+  prefixed custom header value.
+
+### Changed
+
+- Existing custom LiteLLM credential headers keep the `raw` value format by
+  default, preserving `x-litellm-api-key: <credential>` behavior for current
+  deployments.
+- LiteLLM service fallback credentials, key/project credential mappings, direct
+  LiteLLM bearer delegation, and the LiteLLM UI proxy all use the configured
+  custom-header value format consistently.
+- Workspace crate versions now share the `0.1.12` release version.
+- Deployment examples and the baseline Kubernetes image now target the
+  `0.1.12` gateway image.
+- Release documentation, workflow checks, and operational checklists now target
+  `v0.1.12`.
+
+### Security
+
+- Gateway still strips client-supplied Relayna, Authorization, API-key, worker,
+  Apigee/Entra, and configured LiteLLM credential headers before injecting the
+  resolved upstream LiteLLM credential.
+- Credential values remain write-only in Admin API responses and the Admin UI.
+
 ## 0.1.11 - 2026-06-19
 
 ### Added

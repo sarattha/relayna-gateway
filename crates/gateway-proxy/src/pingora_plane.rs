@@ -13,10 +13,10 @@ use gateway_core::{
     resolve_guardrail_plan, route_pattern_wildcard_suffix, service_wildcard_suffix,
     strip_client_guardrails, validate_relayna_key_header_name, verify_apigee_trusted_identity,
     ApigeeTrustedHeaderConfig, AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
-    EntraAuthConfig, EntraIdentityContext, GatewayAuthRuntimeConfig, GatewayAuthRuntimeSnapshot,
-    GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent,
-    GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet,
-    GuardrailStore, KeyPolicy, LiteLlmSensitiveRouteExposure, OpenAiRouteMode,
+    CredentialHeaderValueFormat, EntraAuthConfig, EntraIdentityContext, GatewayAuthRuntimeConfig,
+    GatewayAuthRuntimeSnapshot, GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition,
+    GuardrailExecutionEvent, GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy,
+    GuardrailPolicySet, GuardrailStore, KeyPolicy, LiteLlmSensitiveRouteExposure, OpenAiRouteMode,
     OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
     ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route, RouteMatch,
     ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent, UsageRecorder,
@@ -56,6 +56,7 @@ pub struct PingoraUpstreamConfig {
     pub service_key: String,
     pub credential_header_mode: CredentialHeaderMode,
     pub credential_header_name: Option<String>,
+    pub credential_header_value_format: CredentialHeaderValueFormat,
 }
 
 impl PingoraLiteLlmConfig {
@@ -144,6 +145,7 @@ impl PingoraUpstreamConfig {
             service_key: service_key.into(),
             credential_header_mode: CredentialHeaderMode::AuthorizationBearer,
             credential_header_name: None,
+            credential_header_value_format: CredentialHeaderValueFormat::Raw,
         })
     }
 
@@ -151,12 +153,14 @@ impl PingoraUpstreamConfig {
         mut self,
         mode: CredentialHeaderMode,
         header_name: Option<String>,
+        value_format: CredentialHeaderValueFormat,
     ) -> gateway_core::GatewayResult<Self> {
         if mode == CredentialHeaderMode::CustomHeader && header_name.as_deref().is_none() {
             return Err(GatewayError::InvalidConfiguration);
         }
         self.credential_header_mode = mode;
         self.credential_header_name = header_name.map(|value| value.trim().to_owned());
+        self.credential_header_value_format = value_format;
         Ok(self)
     }
 
@@ -1527,6 +1531,7 @@ where
                     .with_litellm_credential_header(
                         config.credential_header_mode,
                         config.credential_header_name,
+                        config.credential_header_value_format,
                     )?;
             ctx.litellm_upstream = Some(upstream);
         } else if has_mapped_credential || has_passthrough_credential {
@@ -1674,6 +1679,8 @@ fn prepare_upstream_authority_and_credentials(
     upstream_request.remove_header("x-relayna-key");
     upstream_request.remove_header("x-aih-api-key");
     upstream_request.remove_header("x-api-key");
+    upstream_request.remove_header("x-litellm-api-key");
+    upstream_request.remove_header("x-litellm-key");
     upstream_request.remove_header("x-relayna-worker-token");
     if let Some(header_name) = upstream.credential_header_name.as_deref() {
         upstream_request.remove_header(header_name);
@@ -1691,10 +1698,18 @@ fn prepare_upstream_authority_and_credentials(
                 .ok_or_else(|| pingora_core::Error::new(ErrorType::InternalError))?;
             let header_name = HeaderName::from_bytes(header_name.as_bytes())
                 .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
-            upstream_request.insert_header(header_name, upstream.service_key.clone())?;
+            upstream_request
+                .insert_header(header_name, custom_header_credential_value(upstream))?;
         }
     }
     Ok(())
+}
+
+fn custom_header_credential_value(upstream: &PingoraUpstreamConfig) -> String {
+    match upstream.credential_header_value_format {
+        CredentialHeaderValueFormat::Raw => upstream.service_key.clone(),
+        CredentialHeaderValueFormat::Bearer => format!("Bearer {}", upstream.service_key),
+    }
 }
 
 fn rewrite_direct_openai_uri(upstream_request: &mut RequestHeader) -> PingoraResult<()> {
@@ -2308,6 +2323,7 @@ mod tests {
                 .with_litellm_credential_header(
                     CredentialHeaderMode::CustomHeader,
                     Some("x-litellm-api-key".to_owned()),
+                    CredentialHeaderValueFormat::Raw,
                 )
                 .expect("custom header");
         let mut request = RequestHeader::build("POST", b"/v1/responses", None).expect("request");
@@ -2332,6 +2348,42 @@ mod tests {
                 .get("x-litellm-api-key")
                 .and_then(|value| value.to_str().ok()),
             Some("vk-litellm")
+        );
+    }
+
+    #[test]
+    fn upstream_header_preparation_can_use_bearer_custom_litellm_header() {
+        let upstream =
+            PingoraUpstreamConfig::from_base_url("https://litellm.internal", "vk-litellm")
+                .expect("service config")
+                .with_litellm_credential_header(
+                    CredentialHeaderMode::CustomHeader,
+                    Some("x-litellm-key".to_owned()),
+                    CredentialHeaderValueFormat::Bearer,
+                )
+                .expect("custom header");
+        let mut request = RequestHeader::build("POST", b"/v1/responses", None).expect("request");
+        request
+            .insert_header("authorization", "Bearer rk_live_client_key")
+            .expect("client authorization");
+        request
+            .insert_header("x-litellm-key", "client-supplied-litellm-key")
+            .expect("client litellm key");
+        request
+            .insert_header("x-litellm-api-key", "client-supplied-alt-litellm-key")
+            .expect("client alternate litellm key");
+
+        prepare_upstream_authority_and_credentials(&mut request, &upstream, Some("x-relayna-key"))
+            .expect("prepared upstream headers");
+
+        assert!(!request.headers.contains_key("authorization"));
+        assert!(!request.headers.contains_key("x-litellm-api-key"));
+        assert_eq!(
+            request
+                .headers
+                .get("x-litellm-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer vk-litellm")
         );
     }
 
@@ -2769,6 +2821,7 @@ mod tests {
             credential: Some("provider-litellm-key".to_owned()),
             credential_header_mode: CredentialHeaderMode::CustomHeader,
             credential_header_name: Some("x-litellm-api-key".to_owned()),
+            credential_header_value_format: CredentialHeaderValueFormat::Raw,
         });
         let proxy = RelaynaPingoraProxy {
             store,
@@ -2810,6 +2863,7 @@ mod tests {
             credential: Some("provider-litellm-key".to_owned()),
             credential_header_mode: CredentialHeaderMode::AuthorizationBearer,
             credential_header_name: None,
+            credential_header_value_format: CredentialHeaderValueFormat::Raw,
         });
         *store
             .litellm_credential_mapping
@@ -2856,6 +2910,7 @@ mod tests {
             credential: Some("provider-litellm-key".to_owned()),
             credential_header_mode: CredentialHeaderMode::CustomHeader,
             credential_header_name: Some("x-litellm-api-key".to_owned()),
+            credential_header_value_format: CredentialHeaderValueFormat::Bearer,
         });
         let proxy = RelaynaPingoraProxy {
             store,
@@ -2882,6 +2937,10 @@ mod tests {
             upstream.credential_header_name.as_deref(),
             Some("x-litellm-api-key")
         );
+        assert_eq!(
+            upstream.credential_header_value_format,
+            CredentialHeaderValueFormat::Bearer
+        );
 
         let mut request = RequestHeader::build("POST", b"/v1/responses", None).expect("request");
         request
@@ -2895,7 +2954,7 @@ mod tests {
                 .headers
                 .get("x-litellm-api-key")
                 .and_then(|value| value.to_str().ok()),
-            Some("client-litellm-key")
+            Some("Bearer client-litellm-key")
         );
     }
 

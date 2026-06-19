@@ -35,7 +35,7 @@ const providerRows = result.providerRequests
   .map((capture) => `| ${capture.method} ${capture.path} | ${capture.authorization} | ${capture.hasRelaynaKey || capture.hasAihKey || capture.hasClientJwt ? "yes" : "no"} | ${capture.hasApigeeIdentity ? "yes" : "no"} |`)
   .join("\n");
 const frontDoorRows = result.frontDoorRequests
-  .map((capture) => `| ${capture.method} ${capture.path} | ${capture.authorization || ""} | ${capture.litellmApiKey || ""} | ${capture.hasRelaynaKey || capture.hasAihKey || capture.hasClientJwt ? "yes" : "no"} |`)
+  .map((capture) => `| ${capture.method} ${capture.path} | ${capture.authorization || ""} | ${capture.litellmApiKeyHeader || ""} | ${capture.litellmKeyHeader || ""} | ${capture.hasRelaynaKey || capture.hasAihKey || capture.hasClientJwt ? "yes" : "no"} |`)
   .join("\n");
 const markdown = `# LiteLLM Real Passthrough Test Report
 
@@ -73,8 +73,8 @@ ${providerRows}
 
 ## LiteLLM Front-Door Capture
 
-| Request | Authorization from Gateway | x-litellm-api-key from Gateway | Client credential leaked? |
-| --- | --- | --- | --- |
+| Request | Authorization from Gateway | x-litellm-api-key from Gateway | x-litellm-key from Gateway | Client credential leaked? |
+| --- | --- | --- | --- | --- |
 ${frontDoorRows}
 
 Observed LiteLLM credential precedence:

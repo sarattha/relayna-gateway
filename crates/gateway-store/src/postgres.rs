@@ -14,8 +14,10 @@ use gateway_core::{
     projects::{ProjectCreateRequest, ProjectPatchRequest, ProjectResponse},
     provider_config_kind_str,
     provider_configs::{
-        credential_header_mode_str, credential_mapping_scope_str, parse_credential_header_mode,
-        parse_credential_mapping_scope, AdminProviderConfigStore, LiteLlmCredentialMappingResponse,
+        credential_header_mode_str, credential_header_value_format_str,
+        credential_mapping_scope_str, parse_credential_header_mode,
+        parse_credential_header_value_format, parse_credential_mapping_scope,
+        AdminProviderConfigStore, LiteLlmCredentialMappingResponse,
         LiteLlmCredentialMappingRuntime, LiteLlmCredentialMappingScope,
         LiteLlmCredentialMappingUpsertRequest, ProviderConfigCreateRequest, ProviderConfigLookup,
         ProviderConfigPatchRequest, ProviderConfigResponse, ProviderRuntimeConfig,
@@ -2786,9 +2788,10 @@ impl AdminProviderConfigStore for PostgresStore {
                 enabled,
                 credential_secret,
                 credential_header_mode,
-                credential_header_name
+                credential_header_name,
+                credential_header_value_format
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING
                 id,
                 provider,
@@ -2798,6 +2801,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_secret,
                 credential_header_mode,
                 credential_header_name,
+                credential_header_value_format,
                 created_at,
                 updated_at
             "#,
@@ -2813,6 +2817,9 @@ impl AdminProviderConfigStore for PostgresStore {
                 .credential_header_name
                 .map(|value| value.trim().to_owned()),
         )
+        .bind(credential_header_value_format_str(
+            request.credential_header_value_format,
+        ))
         .fetch_one(&self.pool)
         .await
         .map_err(|error| {
@@ -2837,6 +2844,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_secret,
                 credential_header_mode,
                 credential_header_name,
+                credential_header_value_format,
                 created_at,
                 updated_at
             FROM provider_configs
@@ -2868,6 +2876,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_secret,
                 credential_header_mode,
                 credential_header_name,
+                credential_header_value_format,
                 created_at,
                 updated_at
             FROM provider_configs
@@ -2901,6 +2910,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_secret,
                 credential_header_mode,
                 credential_header_name,
+                credential_header_value_format,
                 created_at,
                 updated_at
             FROM provider_configs
@@ -2930,6 +2940,9 @@ impl AdminProviderConfigStore for PostgresStore {
         if let Some(header) = patch.credential_header_name {
             response.credential_header_name = header.map(|value| value.trim().to_owned());
         }
+        if let Some(format) = patch.credential_header_value_format {
+            response.credential_header_value_format = format;
+        }
         response.validate_header_settings()?;
         let credential_secret: Option<Option<String>> = patch.credential;
 
@@ -2942,6 +2955,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_secret = CASE WHEN $5::boolean THEN $6 ELSE credential_secret END,
                 credential_header_mode = $7,
                 credential_header_name = $8,
+                credential_header_value_format = $9,
                 updated_at = now()
             WHERE id = $1
             RETURNING
@@ -2953,6 +2967,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_secret,
                 credential_header_mode,
                 credential_header_name,
+                credential_header_value_format,
                 created_at,
                 updated_at
             "#,
@@ -2965,6 +2980,9 @@ impl AdminProviderConfigStore for PostgresStore {
         .bind(credential_secret.flatten())
         .bind(credential_header_mode_str(response.credential_header_mode))
         .bind(&response.credential_header_name)
+        .bind(credential_header_value_format_str(
+            response.credential_header_value_format,
+        ))
         .fetch_optional(&self.pool)
         .await
         .map(|row| {
@@ -3008,6 +3026,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_secret,
                 credential_header_mode,
                 credential_header_name,
+                credential_header_value_format,
                 created_at,
                 updated_at
             "#,
@@ -3171,7 +3190,12 @@ impl ProviderConfigLookup for PostgresStore {
     async fn active_litellm_config(&self) -> GatewayResult<Option<ProviderRuntimeConfig>> {
         let row = sqlx::query(
             r#"
-            SELECT base_url, credential_secret, credential_header_mode, credential_header_name
+            SELECT
+                base_url,
+                credential_secret,
+                credential_header_mode,
+                credential_header_name,
+                credential_header_value_format
             FROM provider_configs
             WHERE provider = 'litellm'
               AND enabled
@@ -3195,6 +3219,11 @@ impl ProviderConfigLookup for PostgresStore {
                         .as_str(),
                 )?,
                 credential_header_name: row.try_get("credential_header_name").ok().flatten(),
+                credential_header_value_format: parse_credential_header_value_format(
+                    row.try_get::<String, _>("credential_header_value_format")
+                        .map_err(|_| GatewayError::StoreUnavailable)?
+                        .as_str(),
+                )?,
             })),
             None => Ok(None),
         }
@@ -5058,6 +5087,9 @@ fn provider_config_response_from_row(
     let credential_header_mode: String = row
         .try_get("credential_header_mode")
         .map_err(|_| GatewayError::StoreUnavailable)?;
+    let credential_header_value_format: String = row
+        .try_get("credential_header_value_format")
+        .map_err(|_| GatewayError::StoreUnavailable)?;
     let credential_secret: Option<String> = row
         .try_get("credential_secret")
         .map_err(|_| GatewayError::StoreUnavailable)?;
@@ -5082,6 +5114,9 @@ fn provider_config_response_from_row(
         credential_header_name: row
             .try_get("credential_header_name")
             .map_err(|_| GatewayError::StoreUnavailable)?,
+        credential_header_value_format: parse_credential_header_value_format(
+            &credential_header_value_format,
+        )?,
         created_at: row
             .try_get("created_at")
             .map_err(|_| GatewayError::StoreUnavailable)?,

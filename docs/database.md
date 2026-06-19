@@ -181,8 +181,8 @@ services.
 | --- | --- |
 | Primary key | `id uuid` generated with `gen_random_uuid()`. |
 | Unique keys | `(provider, name)` is unique. Only one enabled `litellm` config is allowed. |
-| Checks | `provider` must be `litellm` or `internal-service`; `name` must be non-empty and at most 120 characters; `base_url` must start with `http://` or `https://`; LiteLLM credential header mode is `authorization_bearer` or `custom_header`. |
-| Header fields | `credential_header_mode` and `credential_header_name` control whether LiteLLM receives `Authorization: Bearer <key>` or a custom credential header such as `x-litellm-api-key`. |
+| Checks | `provider` must be `litellm` or `internal-service`; `name` must be non-empty and at most 120 characters; `base_url` must start with `http://` or `https://`; LiteLLM credential header mode is `authorization_bearer` or `custom_header`; custom header value format is `raw` or `bearer`. |
+| Header fields | `credential_header_mode`, `credential_header_name`, and `credential_header_value_format` control whether LiteLLM receives `Authorization: Bearer <key>`, a raw custom credential header such as `x-litellm-api-key: <key>`, or a bearer-prefixed custom header such as `x-litellm-key: Bearer <key>`. |
 | Secret fields | `credential_secret` stores the internal upstream credential and is treated as write-only by API responses. |
 | Required data | Needed when operators configure runtime provider settings through the admin API or portal instead of environment fallback. |
 

@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.11` behavior.
+This page covers the `0.1.12` behavior.
 
 ## Request Model
 
@@ -41,7 +41,7 @@ Gateway strips the following before forwarding to LiteLLM:
 - worker-token headers
 
 Gateway then injects the resolved LiteLLM credential using the active LiteLLM
-provider's header mode:
+provider's header mode and value format:
 
 ```http
 Authorization: Bearer <resolved LiteLLM credential>
@@ -51,10 +51,15 @@ or:
 
 ```http
 x-litellm-api-key: <resolved LiteLLM credential>
+x-litellm-key: Bearer <resolved LiteLLM credential>
 ```
 
 The header name is configurable on the LiteLLM provider row and must pass
-Gateway's sensitive-header validation.
+Gateway's sensitive-header validation. For custom headers, the
+`credential_header_value_format` setting controls whether Gateway sends the raw
+credential value or a bearer-prefixed value. The default is `raw` to preserve
+existing deployments. Set it to `bearer` for LiteLLM deployments that require a
+custom header such as `x-litellm-key: Bearer <key>`.
 
 ## Credential Resolution
 
@@ -110,7 +115,10 @@ curl -sS -X POST http://127.0.0.1:8080/v1/responses \
 If the LiteLLM provider header mode is `authorization_bearer`, Gateway forwards
 the credential as `Authorization: Bearer <LiteLLM credential>`. If the header
 mode is `custom_header`, Gateway removes downstream `Authorization` and forwards
-the credential in the configured header name, such as `x-litellm-api-key`.
+the credential in the configured header name. Custom header values default to
+the raw credential, such as `x-litellm-api-key: <credential>`. Set
+`credential_header_value_format` to `bearer` when the upstream expects
+`x-litellm-key: Bearer <credential>`.
 
 ## LiteLLM Passthrough Setup (All Options)
 
@@ -288,7 +296,7 @@ All mutating calls require operator auth and write audit events.
 Focused local checks:
 
 ```bash
-node tests/freeze-v0.1.11-perimeter.test.mjs
+node tests/freeze-v0.1.12-perimeter.test.mjs
 cargo test -p gateway-core route_settings --all-features
 cargo test -p gateway-proxy passthrough --all-features
 ```

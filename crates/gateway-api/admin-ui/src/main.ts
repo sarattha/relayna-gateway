@@ -875,6 +875,10 @@ async function providers() {
           ${option("custom_header", "")}
         </select></label>
         <label>Custom header<input name="credential_header_name" placeholder="x-litellm-api-key"></label>
+        <label>Header value<select name="credential_header_value_format">
+          ${option("raw", "raw")}
+          ${option("bearer", "")}
+        </select></label>
         <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
         <div class="form-actions"><button class="primary">Create provider</button></div>
       </form>
@@ -966,6 +970,10 @@ function providerAuthSettingsForm(row) {
       ${option("custom_header", row.credential_header_mode || "")}
     </select>
     <input name="credential_header_name" placeholder="x-litellm-api-key" value="${attr(row.credential_header_name || "")}">
+    <select name="credential_header_value_format">
+      ${option("raw", row.credential_header_value_format || "raw")}
+      ${option("bearer", row.credential_header_value_format || "")}
+    </select>
     <input name="credential" type="password" autocomplete="new-password" placeholder="rotate default credential">
     <button type="submit">Update</button>
   </form>`;
@@ -993,6 +1001,7 @@ async function createProvider(event) {
   const form = new FormData(event.target);
   const credentialHeaderMode = form.get("credential_header_mode");
   const credentialHeaderName = nullableString(form.get("credential_header_name"));
+  const credentialHeaderValueFormat = form.get("credential_header_value_format");
   await api("/admin-ui/admin/providers", {
     method: "POST",
     body: JSON.stringify({
@@ -1002,6 +1011,7 @@ async function createProvider(event) {
       credential: blankToUndefined(form.get("credential")),
       credential_header_mode: credentialHeaderMode,
       credential_header_name: credentialHeaderMode === "custom_header" ? credentialHeaderName : null,
+      credential_header_value_format: credentialHeaderValueFormat,
       enabled: form.has("enabled"),
     }),
   });
@@ -1018,6 +1028,7 @@ async function updateProviderAuthSettings(event) {
   const body = {
     credential_header_mode: credentialHeaderMode,
     credential_header_name: credentialHeaderMode === "custom_header" ? nullableString(form.get("credential_header_name")) : null,
+    credential_header_value_format: form.get("credential_header_value_format"),
   };
   const credential = blankToUndefined(form.get("credential"));
   if (credential) body.credential = credential;
