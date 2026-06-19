@@ -270,6 +270,7 @@ pub struct PingoraContext {
     litellm_upstream: Option<PingoraUpstreamConfig>,
     litellm_passthrough: bool,
     trusted_ingress_passthrough: bool,
+    direct_litellm_passthrough: bool,
     guardrail_definitions: Vec<GuardrailDefinition>,
     guardrail_policy: GuardrailPolicy,
     pre_guardrail_plan: Option<GuardrailPlan>,
@@ -332,6 +333,7 @@ where
             litellm_upstream: None,
             litellm_passthrough: false,
             trusted_ingress_passthrough: false,
+            direct_litellm_passthrough: false,
             guardrail_definitions: Vec::new(),
             guardrail_policy: GuardrailPolicy::default(),
             pre_guardrail_plan: None,
@@ -405,8 +407,10 @@ where
                 Err(error) => match self.store.litellm_passthrough_settings().await {
                     Ok(settings)
                         if settings.allows(&req.method, req.uri.path())
-                            || settings
-                                .trusted_ingress_ui_path_allowed(&req.method, req.uri.path()) =>
+                            || settings.trusted_ingress_passthrough_path_allowed(
+                                &req.method,
+                                req.uri.path(),
+                            ) =>
                     {
                         ctx.litellm_passthrough = true;
                         RouteMatch {
@@ -466,7 +470,8 @@ where
         if ctx.litellm_passthrough && matched.route == Route::LiteLlmPassthrough {
             match self.store.litellm_passthrough_settings().await {
                 Ok(settings)
-                    if settings.trusted_ingress_ui_path_allowed(&req.method, req.uri.path()) =>
+                    if settings
+                        .trusted_ingress_passthrough_path_allowed(&req.method, req.uri.path()) =>
                 {
                     if let Err(error) = self.configure_litellm_upstream(ctx, None).await {
                         respond_error(session, error, &ctx.request_id).await?;
@@ -477,6 +482,43 @@ where
                     return Ok(false);
                 }
                 Ok(_) => {}
+                Err(error) => {
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(true);
+                }
+            }
+        }
+        if matches!(
+            matched.route,
+            Route::ChatCompletions | Route::Responses | Route::LiteLlmEmbeddings
+        ) {
+            match self.store.openai_route_mode(matched.route).await {
+                Ok(OpenAiRouteMode::DirectLiteLlmPassthrough) => {
+                    if let Err(error) = self.ensure_openai_route_enabled(matched.route).await {
+                        respond_error(session, error, &ctx.request_id).await?;
+                        return Ok(true);
+                    }
+                    let credential = match litellm_bearer_credential(authorization) {
+                        Ok(credential) => credential,
+                        Err(error) => {
+                            gateway_telemetry::record_auth_failure(error.code());
+                            respond_error(session, error, &ctx.request_id).await?;
+                            return Ok(true);
+                        }
+                    };
+                    if let Err(error) = self
+                        .configure_litellm_upstream_with_credential(ctx, credential)
+                        .await
+                    {
+                        respond_error(session, error, &ctx.request_id).await?;
+                        return Ok(true);
+                    }
+                    ctx.litellm_passthrough = true;
+                    ctx.direct_litellm_passthrough = true;
+                    ctx.route_match = Some(matched);
+                    return Ok(false);
+                }
+                Ok(OpenAiRouteMode::ManagedByGateway) => {}
                 Err(error) => {
                     respond_error(session, error, &ctx.request_id).await?;
                     return Ok(true);
@@ -819,6 +861,14 @@ where
             return Ok(false);
         }
         if ctx.trusted_ingress_passthrough {
+            gateway_telemetry::record_provider_selection();
+            return Ok(true);
+        }
+        if ctx.direct_litellm_passthrough {
+            if let Err(error) = self.ensure_openai_route_enabled(route).await {
+                respond_error(session, error, &ctx.request_id).await?;
+                return Ok(false);
+            }
             gateway_telemetry::record_provider_selection();
             return Ok(true);
         }
@@ -1427,6 +1477,25 @@ where
         ctx: &mut PingoraContext,
         key: Option<&AuthenticatedKey>,
     ) -> GatewayResult<()> {
+        self.configure_litellm_upstream_for_credential(ctx, key, None)
+            .await
+    }
+
+    async fn configure_litellm_upstream_with_credential(
+        &self,
+        ctx: &mut PingoraContext,
+        credential: String,
+    ) -> GatewayResult<()> {
+        self.configure_litellm_upstream_for_credential(ctx, None, Some(credential))
+            .await
+    }
+
+    async fn configure_litellm_upstream_for_credential(
+        &self,
+        ctx: &mut PingoraContext,
+        key: Option<&AuthenticatedKey>,
+        passthrough_credential: Option<String>,
+    ) -> GatewayResult<()> {
         let litellm_config = self.store.active_litellm_config().await?;
         let mapped_credential = if let Some(key) = key {
             self.store
@@ -1436,8 +1505,10 @@ where
         } else {
             None
         };
+        let has_passthrough_credential = passthrough_credential.is_some();
         let has_mapped_credential = mapped_credential.is_some();
-        let selected_credential = mapped_credential
+        let selected_credential = passthrough_credential
+            .or(mapped_credential)
             .or_else(|| {
                 litellm_config
                     .as_ref()
@@ -1455,7 +1526,7 @@ where
                         config.credential_header_name,
                     )?;
             ctx.litellm_upstream = Some(upstream);
-        } else if has_mapped_credential {
+        } else if has_mapped_credential || has_passthrough_credential {
             let mut upstream = self.config.litellm.clone();
             upstream.service_key = selected_credential;
             ctx.litellm_upstream = Some(upstream);
@@ -1536,6 +1607,18 @@ where
 
 fn header_value<'a>(req: &'a RequestHeader, name: &str) -> Option<&'a str> {
     req.headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+fn litellm_bearer_credential(authorization: Option<&str>) -> GatewayResult<String> {
+    let authorization = authorization.ok_or(GatewayError::MissingAuthorization)?;
+    let Some(token) = authorization.strip_prefix("Bearer ") else {
+        return Err(GatewayError::MalformedAuthorization);
+    };
+    let token = token.trim();
+    if token.is_empty() {
+        return Err(GatewayError::MalformedAuthorization);
+    }
+    Ok(token.to_owned())
 }
 
 fn request_public_origin(req: &RequestHeader) -> Option<String> {
@@ -2054,6 +2137,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         litellm_upstream: None,
         litellm_passthrough: false,
         trusted_ingress_passthrough: false,
+        direct_litellm_passthrough: false,
         guardrail_definitions: Vec::new(),
         guardrail_policy: GuardrailPolicy::default(),
         pre_guardrail_plan: None,
@@ -2239,6 +2323,26 @@ mod tests {
                 .get("x-litellm-api-key")
                 .and_then(|value| value.to_str().ok()),
             Some("vk-litellm")
+        );
+    }
+
+    #[test]
+    fn litellm_bearer_credential_accepts_non_relayna_keys() {
+        assert_eq!(
+            litellm_bearer_credential(Some("Bearer sk-litellm-client")).expect("credential"),
+            "sk-litellm-client"
+        );
+        assert_eq!(
+            litellm_bearer_credential(None).unwrap_err(),
+            GatewayError::MissingAuthorization
+        );
+        assert_eq!(
+            litellm_bearer_credential(Some("Basic sk-litellm-client")).unwrap_err(),
+            GatewayError::MalformedAuthorization
+        );
+        assert_eq!(
+            litellm_bearer_credential(Some("Bearer   ")).unwrap_err(),
+            GatewayError::MalformedAuthorization
         );
     }
 
@@ -2546,7 +2650,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_litellm_route_mode_still_uses_gateway_governance() {
+    fn passthrough_governance_bypass_helper_only_covers_wildcard_passthrough() {
         assert!(bypass_gateway_governance_for_passthrough(
             Route::LiteLlmPassthrough,
             true
@@ -2712,6 +2816,61 @@ mod tests {
         assert_eq!(
             upstream.credential_header_mode,
             CredentialHeaderMode::AuthorizationBearer
+        );
+    }
+
+    #[tokio::test]
+    async fn direct_litellm_upstream_uses_client_bearer_with_active_header_config() {
+        let store = Arc::new(MemoryUsageStore::default());
+        *store
+            .active_litellm_config
+            .lock()
+            .expect("active config lock") = Some(gateway_core::ProviderRuntimeConfig {
+            provider: Provider::LiteLlm,
+            base_url: "http://litellm-config.internal:4010".to_owned(),
+            credential: Some("provider-litellm-key".to_owned()),
+            credential_header_mode: CredentialHeaderMode::CustomHeader,
+            credential_header_name: Some("x-litellm-api-key".to_owned()),
+        });
+        let proxy = RelaynaPingoraProxy {
+            store,
+            control_state: Arc::new(MemoryControlState::default()),
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "fallback-key")
+                .expect("config"),
+            auth_runtime: default_auth_runtime_for_tests(),
+        };
+        let mut ctx = new_pingora_context_for_tests();
+
+        proxy
+            .configure_litellm_upstream_with_credential(&mut ctx, "client-litellm-key".to_owned())
+            .await
+            .expect("configure upstream");
+
+        let upstream = ctx.litellm_upstream.expect("active upstream");
+        assert_eq!(upstream.host, "litellm-config.internal");
+        assert_eq!(upstream.service_key, "client-litellm-key");
+        assert_eq!(
+            upstream.credential_header_mode,
+            CredentialHeaderMode::CustomHeader
+        );
+        assert_eq!(
+            upstream.credential_header_name.as_deref(),
+            Some("x-litellm-api-key")
+        );
+
+        let mut request = RequestHeader::build("POST", b"/v1/responses", None).expect("request");
+        request
+            .insert_header("authorization", "Bearer client-litellm-key")
+            .expect("client authorization");
+        prepare_upstream_authority_and_credentials(&mut request, &upstream, Some("x-relayna-key"))
+            .expect("prepared upstream headers");
+        assert!(!request.headers.contains_key("authorization"));
+        assert_eq!(
+            request
+                .headers
+                .get("x-litellm-api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("client-litellm-key")
         );
     }
 

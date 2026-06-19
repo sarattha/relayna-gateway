@@ -1,6 +1,6 @@
 # LiteLLM Real Passthrough Test Report
 
-Generated: 2026-06-19T03:23:53.314Z
+Generated: 2026-06-19T09:19:28.275Z
 
 Overall result: **PASS**
 
@@ -42,7 +42,10 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | trusted ingress disables entra and apigee front door checks | PASS | 200 |  |
 | trusted ingress no auth ui reaches litellm with gateway credential | PASS | n/a |  |
 | trusted ingress no auth ui support endpoint reaches litellm | PASS | n/a |  |
+| trusted ingress no auth admin spend logs reaches litellm | PASS | n/a |  |
+| trusted ingress no auth admin key info reaches litellm | PASS | n/a |  |
 | trusted ingress no auth v1 models still requires relayna auth | PASS | 401 | missing_authorization |
+| direct responses accepts litellm bearer without relayna key | PASS | n/a |  |
 | wildcard literal chatcompletion reaches litellm | PASS | 404 |  |
 | wildcard literal response reaches litellm | PASS | 404 |  |
 | wildcard literal embedding reaches litellm | PASS | 404 |  |
@@ -57,13 +60,14 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | POST /v1/responses | Bearer sk-upstream | no | no |
 | POST /v1/embeddings | Bearer sk-upstream | no | no |
 | POST /v1/chat/completions | Bearer sk-upstream | no | no |
+| POST /v1/responses | Bearer sk-upstream | no | no |
 
 ## LiteLLM Front-Door Capture
 
 | Request | Authorization from Gateway | x-litellm-api-key from Gateway | Client credential leaked? |
 | --- | --- | --- | --- |
 | POST /v1/chat/completions |  | sk-key | no |
-| POST /v1/chat/completions |  | sk-key | no |
+| POST /v1/chat/completions |  | sk-client | no |
 | GET /v1/models?source=wildcard |  | sk-key | no |
 | POST /v1/responses |  | sk-project | no |
 | POST /v1/embeddings |  | sk-provider | no |
@@ -75,9 +79,12 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | POST /v1/chat/completions |  | sk-provider | no |
 | GET /ui/ |  | sk-provider | no |
 | GET /user/info |  | sk-provider | no |
+| GET /global/spend/logs |  | sk-provider | no |
+| GET /key/info |  | sk-provider | no |
+| POST /v1/responses |  | sk-client | no |
 
 Observed LiteLLM credential precedence:
-`sk-key -> sk-key -> sk-key -> sk-project -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider`
+`sk-key -> sk-client -> sk-key -> sk-project -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-provider -> sk-client`
 
 ## Wildcard Coverage
 
@@ -114,6 +121,9 @@ The literal alias probes below reached real LiteLLM and were rejected there with
 - `screenshots/07-admin-ui-route-mode-controls.png`
 - `screenshots/08-litellm-ui-proxy-real-env.png`
 - `screenshots/09-real-env-issue-66-report.png`
+- `screenshots/66-issue-68-real-litellm-evidence.png`
+- `screenshots/67-issue-68-real-env-dashboard.png`
+- `screenshots/68-issue-68-trusted-ingress-litellm-ui.png`
 
 ## Raw Results
 
