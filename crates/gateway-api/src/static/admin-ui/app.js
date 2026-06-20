@@ -892,14 +892,26 @@ function validatePolicySimulationServicePath(path, serviceName) {
     return "Choose a concrete service path such as /services/service-name/test.";
   }
   if (!serviceName) return null;
+  const service = state.services.find((item) => item.name === serviceName);
+  if ((service == null ? void 0 : service.route_pattern) && policySimulationPathMatchesRoutePattern(trimmedPath, service.route_pattern)) {
+    return null;
+  }
   const segments = trimmedPath.split("/").filter(Boolean);
   if (segments[0] !== "services" || !segments[1]) {
-    return `Use /services/${serviceName} or /services/${serviceName}/... when simulating ${serviceName}.`;
+    const expectedRoute = (service == null ? void 0 : service.route_pattern) || `/services/${serviceName}`;
+    return `Use a concrete path matching ${expectedRoute} or /services/${serviceName}/... when simulating ${serviceName}.`;
   }
   if (segments[1] !== serviceName) {
     return `Path service ${segments[1]} does not match selected service ${serviceName}.`;
   }
   return null;
+}
+function policySimulationPathMatchesRoutePattern(path, routePattern) {
+  const prefix = routePattern.endsWith("/*") ? routePattern.slice(0, -2) : null;
+  if (prefix) {
+    return path === prefix || path.startsWith(`${prefix}/`);
+  }
+  return path === routePattern;
 }
 async function savePolicyLayer(event) {
   event.preventDefault();
@@ -1500,7 +1512,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.13")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.14")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>

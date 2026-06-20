@@ -268,7 +268,7 @@ Before deploying a new release:
 3. Run CI, including Rust checks, security scans, admin UI tests, and docs
    build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.13`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.14`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
 
 ## Supply Chain and Runtime Hardening

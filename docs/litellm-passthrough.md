@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.13` behavior.
+This page covers the `0.1.14` behavior.
 
 ## Request Model
 
