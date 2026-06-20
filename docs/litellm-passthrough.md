@@ -135,8 +135,8 @@ In **Providers → LiteLLM passthrough**, set these foundational fields first:
 - `Allowed methods`: list of HTTP methods that may route to LiteLLM fallback.
 - `LiteLLM UI exposure`: controls `/ui` and `/ui` support paths.
 - `LiteLLM admin API exposure`: controls admin-like paths (e.g. `/key`, `/user`,
-  `/team`, `/config`, `/spend`, `/global`, `/budget`, `/customer`,
-  `/organization`).
+  `/team`, `/config`, `/provider`, `/guardrails`, `/mcp-rest`, `/prompts`,
+  `/utils`, `/spend`, `/global`, `/budget`, `/customer`, `/organization`).
 
 ![LiteLLM passthrough controls](assets/screenshots/litellm-pass-through/06-admin-ui-litellm-passthrough-controls.png)
 
@@ -177,12 +177,25 @@ selection:
 - `/key`, `/key/*`, `/keys`, `/keys/*`
 - `/user`, `/user/*`
 - `/team`, `/team/*`
+- `/api`, `/api/*`
+- `/audit`, `/audit/*`
 - `/config`, `/config/*`
+- `/config_overrides`, `/config_overrides/*`
+- `/credentials`, `/credentials/*`
+- `/files`, `/files/*`
+- `/guardrails`, `/guardrails/*`
+- `/health`, `/health/*`
+- `/mcp`, `/mcp/*`, `/mcp-rest`, `/mcp-rest/*`
+- `/model_hub`, `/model_hub/*`, `/model_hub_table`, `/model_hub_table/*`
+- `/prompts`, `/prompts/*`
+- `/provider`, `/provider/*`
 - `/spend`, `/spend/*`
 - `/global`, `/global/*`
 - `/budget`, `/budget/*`
 - `/customer`, `/customer/*`
 - `/organization`, `/organization/*`
+- `/utils`, `/utils/*`
+- `/v2`, `/v2/*`
 
 Exposure semantics:
 

@@ -8,12 +8,20 @@ All notable changes to Relayna Gateway are documented in this file.
 
 - The Admin UI sidebar now shows the current Relayna Gateway version as a
   persistent `v0.1.13` indicator.
+- Policy simulation now returns operator-facing warnings and applied-layer
+  details when effective allowlists exclude a simulated request.
 
 ### Changed
 
 - The real LiteLLM passthrough fixture now mirrors production topology by
   connecting Relayna Gateway directly to LiteLLM without the test-only
   front-door service.
+- Trusted-ingress LiteLLM passthrough now classifies the current LiteLLM
+  dashboard route groups, including provider, guardrails, MCP, prompts, files,
+  model hub, utility, and v2 dashboard APIs, once operators explicitly
+  allowlist the matching methods and paths.
+- The Admin UI now makes raw versus bearer custom LiteLLM header values clearer,
+  including the common `x-litellm-key: Bearer <key>` deployment shape.
 - Active docs, skills, CI/release guidance, Admin UI release posture text, and
   tests no longer reference the obsolete freeze-perimeter workflow.
 - Workspace crate versions now share the `0.1.13` release version.

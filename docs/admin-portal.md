@@ -125,10 +125,12 @@ or an API gateway in front of LiteLLM expects a different header, such as
 ![LiteLLM provider header and key mapping controls](assets/screenshots/litellm-credential-mapping/01-provider-header-and-key-mapping.png)
 
 When `custom_header` is selected, enter the header name in `Custom header` and
-save the provider row. Gateway sends only that configured header to LiteLLM for
-the selected internal credential; it does not send `Authorization` in
-custom-header mode. Header names are validated as HTTP header names and reject
-sensitive or conflicting names such as `host`, `content-length`,
+choose how Gateway formats the header value. Use `raw` for headers such as
+`x-litellm-api-key: <key>`. Use `bearer` for LiteLLM deployments that require
+`x-litellm-key: Bearer <key>`. Gateway sends only that configured header to
+LiteLLM for the selected internal credential; it does not send `Authorization`
+in custom-header mode. Header names are validated as HTTP header names and
+reject sensitive or conflicting names such as `host`, `content-length`,
 `authorization`, Relayna key headers, Apigee proof headers, and proxy auth
 headers.
 
@@ -335,8 +337,11 @@ First-time setup is complete when:
   For registered service traffic, choose an `internal-service` provider or a
   `/services/<service-name>/...` path and select the service name so service
   allowlists are evaluated with the same route context used by the proxy.
-  Simulator output reports auth source, route match, policy version and merge
-  summary, guardrail plan, rate/budget projections, and final decision.
+  Simulator output reports auth source, route match, applied inherited policy
+  layers, final intersected allowlists, guardrail plan, rate/budget projections,
+  and final decision. When a route, provider, model, or service allowlist
+  excludes the simulated request, the result warns which effective allowlist is
+  restrictive.
 - Inherited policy layers can be managed from the Keys view. Global layers use
   no scope. Project, team, route, and model layers use a scope value such as a
   project UUID, team identifier, route string like `/v1/chat/completions`, or
@@ -642,6 +647,11 @@ Virtual-key policy is evaluated as an effective policy. Global and project
   allows them.
 - Mandatory guardrails are additive. Forbidden guardrails remove optional
   requests.
+
+Use the policy simulator after saving global or project layers. If a global
+layer is intended only for internal services, it will also restrict
+OpenAI-compatible LiteLLM keys unless the final intersected route and provider
+allowlists still include `/v1/chat/completions` and `litellm`.
 
 Request body limits return `request_body_too_large`. Response body limits return
 `response_body_too_large`. Both use the standard structured error envelope and

@@ -65,7 +65,8 @@ pub use operators::{
 };
 pub use policies::{
     evaluate_policy, evaluate_policy_limits, extract_generation_features, resolve_effective_policy,
-    EffectivePolicy, GenerationFeatures, KeyPolicy, PolicyLayer, PolicyLayerKind, PolicyLookup,
+    EffectivePolicy, GenerationFeatures, KeyPolicy, PolicyLayer, PolicyLayerKind, PolicyLayerTrace,
+    PolicyLookup,
 };
 pub use projects::{
     validate_project_name, AdminProjectStore, ProjectCreateRequest, ProjectPatchRequest,

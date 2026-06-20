@@ -367,14 +367,22 @@ fn is_litellm_ui_support_path(path: &str) -> bool {
 
 fn is_litellm_admin_path(path: &str) -> bool {
     const ADMIN_PREFIXES: &[&str] = &[
+        "/api/",
+        "/audit",
+        "/audit/",
         "/key/",
         "/keys/",
         "/user/",
         "/team/",
         "/config/",
+        "/config_overrides/",
         "/credentials",
         "/credentials/",
+        "/files",
+        "/files/",
         "/guardrails/",
+        "/health",
+        "/health/",
         "/spend/",
         "/global/",
         "/budget/",
@@ -384,16 +392,24 @@ fn is_litellm_admin_path(path: &str) -> bool {
         "/callbacks/",
         "/cloudzero/",
         "/email/",
+        "/mcp",
+        "/mcp/",
         "/mcp-rest/",
+        "/model_hub/",
+        "/model_hub_table",
+        "/model_hub_table/",
         "/organization/",
         "/policies/",
         "/project/",
         "/prompts/",
+        "/provider/",
         "/reload/",
         "/router/",
         "/search_tools/",
         "/sso/",
         "/tag/",
+        "/utils/",
+        "/v2/",
         "/v1/agents",
         "/v1/agents/",
         "/v1/mcp/",
@@ -495,7 +511,10 @@ mod tests {
         settings.enabled = true;
         settings.allowed_paths = vec![
             "/ui".to_owned(),
+            "/api/*".to_owned(),
+            "/audit".to_owned(),
             "/global/spend/logs".to_owned(),
+            "/config_overrides/*".to_owned(),
             "/credentials".to_owned(),
             "/alerting/*".to_owned(),
             "/budget/*".to_owned(),
@@ -504,14 +523,25 @@ mod tests {
             "/cloudzero/*".to_owned(),
             "/customer/*".to_owned(),
             "/email/*".to_owned(),
+            "/files".to_owned(),
+            "/files/*".to_owned(),
             "/guardrails/*".to_owned(),
+            "/health".to_owned(),
             "/key/info".to_owned(),
             "/key/*".to_owned(),
+            "/mcp".to_owned(),
+            "/mcp/*".to_owned(),
             "/mcp-rest/*".to_owned(),
+            "/model_hub/*".to_owned(),
+            "/model_hub_table".to_owned(),
+            "/model_hub_table/*".to_owned(),
             "/project/*".to_owned(),
+            "/prompts/*".to_owned(),
+            "/provider/*".to_owned(),
             "/router/*".to_owned(),
             "/search_tools/*".to_owned(),
             "/spend/*".to_owned(),
+            "/utils/*".to_owned(),
             "/v1/*".to_owned(),
             "/v2/*".to_owned(),
         ];
@@ -520,9 +550,13 @@ mod tests {
         settings.admin_api_exposure = LiteLlmSensitiveRouteExposure::ExplicitlyExposed;
 
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/ui"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/api/settings"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/audit"));
         assert!(
             settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/global/spend/logs")
         );
+        assert!(settings
+            .trusted_ingress_passthrough_path_allowed(&Method::GET, "/config_overrides/list"));
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/credentials"));
         assert!(
             settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/alerting/settings")
@@ -538,18 +572,31 @@ mod tests {
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/customer/list"));
         assert!(settings
             .trusted_ingress_passthrough_path_allowed(&Method::GET, "/email/event_settings"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/files"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/files/list"));
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/guardrails/list"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/health"));
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::POST, "/key/info"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/mcp"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/mcp/servers"));
         assert!(
             settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/mcp-rest/tools/list")
         );
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/model_hub/items"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/model_hub_table"));
+        assert!(settings
+            .trusted_ingress_passthrough_path_allowed(&Method::GET, "/model_hub_table/list"));
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/project/list"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/prompts/list"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/provider/list"));
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/router/settings"));
         assert!(settings.trusted_ingress_passthrough_path_allowed(
             &Method::GET,
             "/search_tools/ui/available_providers"
         ));
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/spend/logs/ui"));
+        assert!(settings
+            .trusted_ingress_passthrough_path_allowed(&Method::GET, "/utils/transform_request"));
         assert!(!settings.trusted_ingress_passthrough_path_allowed(&Method::DELETE, "/key/info"));
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v1/models"));
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v1/agents"));

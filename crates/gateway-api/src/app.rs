@@ -993,6 +993,7 @@ struct PolicySimulationResponse {
     auth: PolicySimulationAuth,
     route_match: PolicySimulationRoute,
     policy_merge: PolicySimulationPolicy,
+    warnings: Vec<String>,
     guardrail_plan: Vec<String>,
     rate_limit_projection: PolicySimulationRateLimitProjection,
     budget_projection: PolicySimulationBudgetProjection,
@@ -1020,6 +1021,7 @@ struct PolicySimulationPolicy {
     allowed_models: Vec<String>,
     allowed_providers: Vec<&'static str>,
     allowed_services: Vec<String>,
+    applied_layers: Vec<gateway_core::PolicyLayerTrace>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1110,6 +1112,7 @@ async fn simulate_policy(
             applied_layers: Vec::new(),
         },
     };
+    let applied_layers = effective.applied_layers;
     let policy = effective.policy;
     let policy = match request.policy {
         Some(policy_patch) => match apply_simulation_policy_patch(policy, policy_patch) {
@@ -1176,6 +1179,13 @@ async fn simulate_policy(
                 .collect()
         })
         .unwrap_or_default();
+    let warnings = policy_simulation_warnings(
+        &policy,
+        route_match.route,
+        provider,
+        &features,
+        applied_layers.len(),
+    );
 
     let response = PolicySimulationResponse {
         auth: PolicySimulationAuth {
@@ -1206,6 +1216,7 @@ async fn simulate_policy(
                 .map(|provider| provider.as_str())
                 .collect(),
             allowed_services: policy.allowed_services.clone(),
+            applied_layers,
         },
         rate_limit_projection: PolicySimulationRateLimitProjection {
             rpm_limit: policy.rpm_limit,
@@ -1219,6 +1230,7 @@ async fn simulate_policy(
             max_cost_per_request: policy.max_cost_per_request,
         },
         guardrail_plan,
+        warnings,
         final_decision,
     };
 
@@ -1237,6 +1249,63 @@ async fn simulate_policy(
         return error_response(&headers, error);
     }
     Json(response).into_response()
+}
+
+fn policy_simulation_warnings(
+    policy: &KeyPolicy,
+    route: Route,
+    provider: Provider,
+    features: &gateway_core::GenerationFeatures,
+    applied_layer_count: usize,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if policy.deny {
+        if applied_layer_count > 1 {
+            warnings.push(
+                "Effective policy is denied after merging inherited layers; check for disjoint route, provider, model, service, or hour intersections."
+                    .to_owned(),
+            );
+        } else {
+            warnings.push("Effective policy is explicitly denied.".to_owned());
+        }
+    }
+    if !policy.allowed_routes.is_empty() && !policy.allowed_routes.contains(&route) {
+        warnings.push(format!(
+            "Effective route allowlist excludes {}; inherited route allowlists intersect restrictively.",
+            route.as_str()
+        ));
+    }
+    if !policy.allowed_providers.is_empty() && !policy.allowed_providers.contains(&provider) {
+        warnings.push(format!(
+            "Effective provider allowlist excludes {}; inherited provider allowlists intersect restrictively.",
+            provider.as_str()
+        ));
+    }
+    if let Some(model) = features.model.as_deref() {
+        if !policy.allowed_models.is_empty()
+            && !policy
+                .allowed_models
+                .iter()
+                .any(|allowed_model| allowed_model == model)
+        {
+            warnings.push(format!(
+                "Effective model allowlist excludes {model}; inherited model allowlists intersect restrictively."
+            ));
+        }
+    }
+    if let Some(service_name) = features.service_name.as_deref() {
+        if !policy.allowed_services.is_empty()
+            && !policy
+                .allowed_services
+                .iter()
+                .any(|allowed_service| allowed_service == service_name)
+        {
+            warnings.push(format!(
+                "Effective service allowlist excludes {service_name}; inherited service allowlists intersect restrictively."
+            ));
+        }
+    }
+    warnings
 }
 
 async fn list_policy_layers(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -6274,6 +6343,35 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let value = response_json(response).await;
         assert_eq!(value["final_decision"]["allowed"], true);
+    }
+
+    #[tokio::test]
+    async fn admin_policy_simulator_warns_when_effective_allowlists_exclude_request() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_post(
+            app,
+            "/admin-ui/admin/policy/simulate",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"path":"/v1/chat/completions","body":{"model":"gpt-4.1-mini"},"policy":{"allowed_providers":["internal-service"]}}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["final_decision"]["allowed"], false);
+        assert_eq!(value["final_decision"]["error_code"], "policy_denied");
+        assert_eq!(
+            value["policy_merge"]["allowed_providers"][0],
+            "internal-service"
+        );
+        assert_eq!(
+            value["policy_merge"]["applied_layers"],
+            serde_json::json!([])
+        );
+        assert!(value["warnings"][0]
+            .as_str()
+            .expect("warning")
+            .contains("Effective provider allowlist excludes litellm"));
     }
 
     #[tokio::test]

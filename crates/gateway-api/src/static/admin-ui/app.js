@@ -997,6 +997,7 @@ async function providers() {
           ${option("raw", "raw")}
           ${option("bearer", "")}
         </select></label>
+        <div class="help wide-field">Use raw for headers like x-litellm-api-key: &lt;key&gt;. Use bearer for LiteLLM deployments that expect x-litellm-key: Bearer &lt;key&gt;.</div>
         <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
         <div class="form-actions"><button class="primary">Create provider</button></div>
       </form>
@@ -1091,6 +1092,7 @@ function providerAuthSettingsForm(row) {
     </select>
     <input name="credential" type="password" autocomplete="new-password" placeholder="rotate default credential">
     <button type="submit">Update</button>
+    <span class="subtle">x-litellm-key usually needs bearer.</span>
   </form>`;
 }
 function litellmCredentialMappingTable(rows) {
@@ -2520,19 +2522,22 @@ function guardrailPolicySummary(policy = {}) {
     <div class="subtle">${esc(forbidden.length ? `${forbidden.length} forbidden` : "none forbidden")}</div>`;
 }
 function policySimulationResult() {
-  var _a, _b, _c, _d, _e, _f, _g;
+  var _a, _b, _c, _d, _e, _f, _g, _h;
   const result = state.policySimulation;
   if (!result) return '<div class="empty-inline">No simulation run.</div>';
   const decision = result.final_decision || {};
-  return `<div class="kv">
+  const warnings = result.warnings || [];
+  const warningMarkup = warnings.length ? `<div class="notice warn wide-field"><strong>Policy warnings</strong><span>${warnings.map((warning) => esc(warning)).join("<br>")}</span></div>` : "";
+  return `${warningMarkup}<div class="kv">
     <div><strong>Decision</strong><span>${badge(decision.allowed ? "allowed" : decision.error_code || "denied", decision.allowed ? "good" : "bad")}</span></div>
     <div><strong>Matched route</strong><span>${esc(((_a = result.route_match) == null ? void 0 : _a.route) || "")}</span></div>
     <div><strong>Provider</strong><span>${esc(((_b = result.route_match) == null ? void 0 : _b.provider) || "")}</span></div>
     <div><strong>Service</strong><span>${esc(((_c = result.route_match) == null ? void 0 : _c.service_name) || "none")}</span></div>
     <div><strong>Policy version</strong><span>${esc(((_d = result.policy_merge) == null ? void 0 : _d.policy_version) ?? "n/a")}</span></div>
+    <div><strong>Applied layers</strong><span>${esc((((_e = result.policy_merge) == null ? void 0 : _e.applied_layers) || []).map((layer) => `${layer.kind}:${layer.scope_id || "all"}`).join(", ") || "none")}</span></div>
     <div><strong>Guardrails</strong><span>${esc((result.guardrail_plan || []).join(", ") || "none")}</span></div>
-    <div><strong>Rate</strong><span>RPM ${esc(((_e = result.rate_limit_projection) == null ? void 0 : _e.rpm_limit) ?? "none")} / TPM ${esc(((_f = result.rate_limit_projection) == null ? void 0 : _f.tpm_limit) ?? "none")}</span></div>
-    <div><strong>Budget</strong><span>${esc(money((_g = result.budget_projection) == null ? void 0 : _g.daily_budget_usd))} daily</span></div>
+    <div><strong>Rate</strong><span>RPM ${esc(((_f = result.rate_limit_projection) == null ? void 0 : _f.rpm_limit) ?? "none")} / TPM ${esc(((_g = result.rate_limit_projection) == null ? void 0 : _g.tpm_limit) ?? "none")}</span></div>
+    <div><strong>Budget</strong><span>${esc(money((_h = result.budget_projection) == null ? void 0 : _h.daily_budget_usd))} daily</span></div>
   </div>
   <details class="wide-field">
     <summary>Simulation trace</summary>
@@ -2542,6 +2547,7 @@ function policySimulationResult() {
     rate_limit_projection: result.rate_limit_projection,
     budget_projection: result.budget_projection,
     guardrail_plan: result.guardrail_plan,
+    warnings: result.warnings,
     final_decision: result.final_decision
   })}
   </details>`;
