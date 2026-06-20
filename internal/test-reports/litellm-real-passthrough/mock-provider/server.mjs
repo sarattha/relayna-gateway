@@ -187,11 +187,49 @@ async function waitForGateway() {
   throw new Error("gateway_not_ready");
 }
 
+async function createLiteLlmVirtualKey({ alias, models, allowedRoutes }) {
+  const response = await fetch(`${litellmDirectUrl}/key/generate`, {
+    method: "POST",
+    headers: {
+      "x-litellm-key": `Bearer ${litellmMasterKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      key_alias: `${alias}-${Date.now()}`,
+      models,
+      allowed_routes: allowedRoutes,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`create_litellm_virtual_key_failed:${response.status}:${await response.text()}`);
+  }
+  const body = await response.json();
+  if (!body.key) {
+    throw new Error(`create_litellm_virtual_key_missing_key:${JSON.stringify(body)}`);
+  }
+  return body.key;
+}
+
 async function setupGatewayData() {
   if (state.rawRelaynaKey) {
     return state.rawRelaynaKey;
   }
   await waitForGateway();
+  const providerDefaultCredential = await createLiteLlmVirtualKey({
+    alias: "relayna-provider-default-embeddings",
+    models: ["text-embedding-review"],
+    allowedRoutes: ["/v1/embeddings"],
+  });
+  const projectCredential = await createLiteLlmVirtualKey({
+    alias: "relayna-project-responses",
+    models: ["gpt-review"],
+    allowedRoutes: ["/v1/responses"],
+  });
+  const keyCredential = await createLiteLlmVirtualKey({
+    alias: "relayna-key-chat",
+    models: ["gpt-review"],
+    allowedRoutes: ["/v1/chat/completions", "/v1/models"],
+  });
   const projectResponse = await fetch(`${gatewayControlUrl}/admin-ui/admin/projects`, {
     method: "POST",
     headers: {
@@ -246,7 +284,7 @@ async function setupGatewayData() {
     provider: "litellm",
     name: `LiteLLM Direct ${Date.now()}`,
     base_url: litellmDirectUrl,
-    credential: litellmMasterKey,
+    credential: providerDefaultCredential,
     credential_header_mode: "custom_header",
     credential_header_name: "x-litellm-key",
     credential_header_value_format: "bearer",
@@ -284,7 +322,7 @@ async function setupGatewayData() {
     body: JSON.stringify({
       scope: "project",
       target_id: project.id,
-      credential: litellmMasterKey,
+      credential: projectCredential,
       enabled: true,
     }),
   });
@@ -300,7 +338,7 @@ async function setupGatewayData() {
     body: JSON.stringify({
       scope: "key",
       target_id: key.id,
-      credential: litellmMasterKey,
+      credential: keyCredential,
       enabled: true,
     }),
   });
@@ -313,6 +351,11 @@ async function setupGatewayData() {
     provider: await providerResponse.json(),
     projectMapping: await projectMappingResponse.json(),
     keyMapping: await keyMappingResponse.json(),
+    credentialPrecedence: {
+      providerDefault: "relayna-provider-default-embeddings",
+      project: "relayna-project-responses",
+      key: "relayna-key-chat",
+    },
   };
   state.rawRelaynaKey = createdKey.raw_key;
   return state.rawRelaynaKey;
@@ -414,6 +457,42 @@ function pass(condition, details = {}) {
 async function runTests() {
   state.providerRequests = [];
   const relaynaKey = await setupGatewayData();
+  await adminJson("/admin-ui/admin/auth/front-door", {
+    method: "PATCH",
+    body: JSON.stringify({
+      entra_enabled: true,
+      apigee_trusted_header_enabled: true,
+      relayna_key_header: "X-Relayna-Key",
+      tenant_id: tenantId,
+      audience,
+      issuer,
+      oidc_discovery_url: `${issuer}/.well-known/openid-configuration`,
+      required_scope: requiredScope,
+      allowed_groups: [allowedGroup],
+      accepted_algorithms: ["RS256"],
+      jwks_cache_ttl_seconds: 300,
+      clock_skew_seconds: 60,
+      apigee_trusted_header_secret: apigeeSecret,
+    }),
+  });
+  await adminJson("/admin-ui/admin/openai-routes/chat-completions/mode", {
+    method: "PATCH",
+    body: JSON.stringify({ mode: "managed_by_gateway" }),
+  });
+  await adminJson("/admin-ui/admin/openai-routes/responses/mode", {
+    method: "PATCH",
+    body: JSON.stringify({ mode: "managed_by_gateway" }),
+  });
+  await adminJson("/admin-ui/admin/providers/litellm-passthrough", {
+    method: "PATCH",
+    body: JSON.stringify({
+      enabled: false,
+      allowed_paths: ["/v1/*"],
+      allowed_methods: ["GET", "POST"],
+      ui_exposure: "disabled",
+      admin_api_exposure: "disabled",
+    }),
+  });
   const validToken = signJwt(tokenClaims());
   const chatPayload = {
     model: "gpt-review",
@@ -469,6 +548,16 @@ async function runTests() {
     body: "{}",
   });
   const embeddings = await gatewayCall("/v1/embeddings", validToken, relaynaKey, embeddingPayload);
+  const providerCredentialRestore = await adminJson(`/admin-ui/admin/providers/${state.gatewayData.provider.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      credential: litellmMasterKey,
+      credential_header_mode: "custom_header",
+      credential_header_name: "x-litellm-key",
+      credential_header_value_format: "bearer",
+      enabled: true,
+    }),
+  });
   const chatLiteral = await gatewayCall("/v1/chatcompletion", validToken, relaynaKey, chatPayload);
   const responseLiteral = await gatewayCall("/v1/response", validToken, relaynaKey, responsePayload);
   const embeddingLiteral = await gatewayCall("/v1/embedding", validToken, relaynaKey, embeddingPayload);
@@ -551,6 +640,7 @@ async function runTests() {
   const trustedIngressUserInfo = await gatewayCall("/user/info", null, null, {}, "GET");
   const trustedIngressSpendLogs = await gatewayCall("/global/spend/logs", null, null, {}, "GET");
   const trustedIngressKeyInfo = await gatewayCall("/key/info", null, null, {}, "GET");
+  const trustedIngressV3KeyInfo = await gatewayCall("/v3/key/info", null, null, {}, "GET");
   const trustedIngressModelsWithoutKey = await gatewayCall("/v1/models", null, null, {}, "GET");
   const responsesRouteModeUpdate = await adminJson("/admin-ui/admin/openai-routes/responses/mode", {
     method: "PATCH",
@@ -600,6 +690,10 @@ async function runTests() {
     ),
     disabled_key_mapping_falls_back_to_project_mapping: pass(responses.status === 200, responses),
     disabled_project_mapping_falls_back_to_provider_default: pass(embeddings.status === 200, embeddings),
+    provider_default_credential_restored_for_litellm_ui_checks: pass(
+      providerCredentialRestore.status === 200,
+      { status: providerCredentialRestore.status },
+    ),
     litellm_ui_proxy_requires_operator_token: pass(
       litellmUiUnauthenticated.status === 401,
       { status: litellmUiUnauthenticated.status },
@@ -646,6 +740,12 @@ async function runTests() {
       trustedIngressKeyInfo.status !== 401,
       {
         trustedIngressKeyInfo,
+      },
+    ),
+    trusted_ingress_no_auth_v3_admin_path_reaches_litellm: pass(
+      trustedIngressV3KeyInfo.status !== 401,
+      {
+        trustedIngressV3KeyInfo,
       },
     ),
     trusted_ingress_no_auth_v1_models_reaches_litellm_for_ui_support: pass(

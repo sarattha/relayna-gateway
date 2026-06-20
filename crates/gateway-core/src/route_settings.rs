@@ -422,6 +422,7 @@ fn is_litellm_admin_path(path: &str) -> bool {
         "/v2/model/",
         "/v2/team/",
         "/v2/user/",
+        "/v3/",
     ];
     ADMIN_PREFIXES
         .iter()
@@ -544,6 +545,7 @@ mod tests {
             "/utils/*".to_owned(),
             "/v1/*".to_owned(),
             "/v2/*".to_owned(),
+            "/v3/*".to_owned(),
         ];
         settings.allowed_methods = vec!["GET".to_owned(), "POST".to_owned()];
         settings.ui_exposure = LiteLlmSensitiveRouteExposure::TrustedIngress;
@@ -611,6 +613,7 @@ mod tests {
         assert!(
             settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v2/guardrails/list")
         );
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v3/key/info"));
         assert!(!settings
             .trusted_ingress_passthrough_path_allowed(&Method::POST, "/v1/chat/completions"));
 
