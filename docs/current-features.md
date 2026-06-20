@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.12` feature set.
+This page summarizes the `v0.1.13` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -125,7 +125,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.12` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.13` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and canonical
@@ -214,7 +214,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.12` release hardens CI and release workflows with strict
+The `v0.1.13` release hardens CI and release workflows with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.
