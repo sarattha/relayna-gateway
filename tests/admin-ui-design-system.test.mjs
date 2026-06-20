@@ -97,6 +97,7 @@ test("generated admin ui uses design-system helpers and exposes release controls
     "Manage provider health state",
     "Sync selected",
     "Security and release posture",
+    "version-indicator",
   ]) {
     assert.match(generatedJs + generatedHtml, new RegExp(marker));
   }

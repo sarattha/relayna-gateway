@@ -29,6 +29,7 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.12/);
 });
 
 test("admin portal calls the expected gateway admin APIs", () => {
