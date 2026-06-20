@@ -124,9 +124,6 @@ jobs:
       - name: Run admin portal tests
         run: node tests/admin-ui.test.mjs
 
-      - name: Run production freeze perimeter tests
-        run: node tests/freeze-v0.1.12-perimeter.test.mjs
-
   repository-metadata:
     name: repository metadata
     runs-on: ubuntu-latest

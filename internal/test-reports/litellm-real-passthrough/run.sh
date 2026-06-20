@@ -34,9 +34,6 @@ const rows = Object.entries(result.checks)
 const providerRows = result.providerRequests
   .map((capture) => `| ${capture.method} ${capture.path} | ${capture.authorization} | ${capture.hasRelaynaKey || capture.hasAihKey || capture.hasClientJwt ? "yes" : "no"} | ${capture.hasApigeeIdentity ? "yes" : "no"} |`)
   .join("\n");
-const frontDoorRows = result.frontDoorRequests
-  .map((capture) => `| ${capture.method} ${capture.path} | ${capture.authorization || ""} | ${capture.litellmApiKeyHeader || ""} | ${capture.litellmKeyHeader || ""} | ${capture.hasRelaynaKey || capture.hasAihKey || capture.hasClientJwt ? "yes" : "no"} |`)
-  .join("\n");
 const markdown = `# LiteLLM Real Passthrough Test Report
 
 Generated: ${result.generatedAt}
@@ -49,8 +46,7 @@ ${result.overallOutcome}
 
 - Gateway proxy: \`${result.environment.gatewayProxyUrl}\`
 - Gateway control: \`${result.environment.gatewayControlUrl}\`
-- LiteLLM upstream: \`${result.environment.litellmUrl}\`
-- LiteLLM front door: \`http://litellm-front-door:4000\`
+- LiteLLM direct upstream: \`${result.environment.litellmUrl}\`
 - LiteLLM image: \`docker.io/litellm/litellm:latest\`
 - LiteLLM image digest pulled locally: \`sha256:cae1ac3492d6d0bea69c26f4485381624e073eb753f3534ae7703a4204a4ce6b\`
 - Mock OIDC issuer: \`${result.environment.issuer}\`
@@ -71,15 +67,6 @@ ${rows}
 | --- | --- | --- | --- |
 ${providerRows}
 
-## LiteLLM Front-Door Capture
-
-| Request | Authorization from Gateway | x-litellm-api-key from Gateway | x-litellm-key from Gateway | Client credential leaked? |
-| --- | --- | --- | --- | --- |
-${frontDoorRows}
-
-Observed LiteLLM credential precedence:
-\`${result.mappingCredentialsObserved.join(" -> ")}\`
-
 ## Wildcard Coverage
 
 The current branch routes managed canonical calls through LiteLLM, can switch a
@@ -88,13 +75,13 @@ canonical route to direct LiteLLM passthrough, and forwards enabled wildcard
 
 The browser-safe LiteLLM UI path is also covered: unauthenticated
 \`/admin-ui/litellm-ui/\` is rejected, while the operator-authenticated path
-reaches the real LiteLLM \`/ui/\` through Gateway with only the server-side
-LiteLLM credential forwarded.
+reaches the real LiteLLM \`/ui/\` through Gateway.
 
-The trusted-ingress LiteLLM UI path is covered with Entra and Apigee front-door
-checks disabled: unauthenticated \`/ui/\` and the UI support endpoint
-\`/user/info\` reach real LiteLLM with only the server-side LiteLLM credential,
-while unauthenticated \`/v1/models\` still fails at Gateway auth.
+The trusted-ingress LiteLLM UI path is covered with Relayna Gateway Entra and
+Apigee checks disabled: unauthenticated \`/ui/\` and the UI support endpoint
+\`/user/info\` reach real LiteLLM. The UI support model endpoint
+\`/v1/models\` also reaches real LiteLLM without Relayna auth in trusted-ingress
+mode.
 
 The literal alias probes below reached real LiteLLM and were rejected there with
 404 or 400 responses, proving they were not stopped by the Gateway router:

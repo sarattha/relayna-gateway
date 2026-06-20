@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.12` behavior.
+This page covers the `0.1.13` behavior.
 
 ## Request Model
 
@@ -135,8 +135,8 @@ In **Providers → LiteLLM passthrough**, set these foundational fields first:
 - `Allowed methods`: list of HTTP methods that may route to LiteLLM fallback.
 - `LiteLLM UI exposure`: controls `/ui` and `/ui` support paths.
 - `LiteLLM admin API exposure`: controls admin-like paths (e.g. `/key`, `/user`,
-  `/team`, `/config`, `/spend`, `/global`, `/budget`, `/customer`,
-  `/organization`).
+  `/team`, `/config`, `/provider`, `/guardrails`, `/mcp-rest`, `/prompts`,
+  `/utils`, `/spend`, `/global`, `/budget`, `/customer`, `/organization`).
 
 ![LiteLLM passthrough controls](assets/screenshots/litellm-pass-through/06-admin-ui-litellm-passthrough-controls.png)
 
@@ -177,12 +177,25 @@ selection:
 - `/key`, `/key/*`, `/keys`, `/keys/*`
 - `/user`, `/user/*`
 - `/team`, `/team/*`
+- `/api`, `/api/*`
+- `/audit`, `/audit/*`
 - `/config`, `/config/*`
+- `/config_overrides`, `/config_overrides/*`
+- `/credentials`, `/credentials/*`
+- `/files`, `/files/*`
+- `/guardrails`, `/guardrails/*`
+- `/health`, `/health/*`
+- `/mcp`, `/mcp/*`, `/mcp-rest`, `/mcp-rest/*`
+- `/model_hub`, `/model_hub/*`, `/model_hub_table`, `/model_hub_table/*`
+- `/prompts`, `/prompts/*`
+- `/provider`, `/provider/*`
 - `/spend`, `/spend/*`
 - `/global`, `/global/*`
 - `/budget`, `/budget/*`
 - `/customer`, `/customer/*`
 - `/organization`, `/organization/*`
+- `/utils`, `/utils/*`
+- `/v2`, `/v2/*`
 
 Exposure semantics:
 
@@ -296,7 +309,6 @@ All mutating calls require operator auth and write audit events.
 Focused local checks:
 
 ```bash
-node tests/freeze-v0.1.12-perimeter.test.mjs
 cargo test -p gateway-core route_settings --all-features
 cargo test -p gateway-proxy passthrough --all-features
 ```
@@ -308,8 +320,9 @@ bash internal/test-reports/litellm-real-passthrough/run.sh
 ```
 
 That harness starts PostgreSQL, Redis, Gateway, a real `litellm/litellm`
-container, and a front-door capture service. It verifies canonical managed and
-direct modes, wildcard `/v1/models` query preservation, `/ui` default blocking,
-credential stripping, custom LiteLLM header injection, direct LiteLLM bearer
-delegation, trusted-ingress dashboard/admin passthrough, and credential
-resolution precedence.
+container, and the mock upstream provider behind LiteLLM. Gateway connects
+directly to LiteLLM, matching production topology. It verifies canonical
+managed and direct modes, wildcard `/v1/models` passthrough, `/ui` default
+blocking, credential stripping at the downstream mock provider, custom LiteLLM
+header injection against real LiteLLM, direct LiteLLM bearer delegation, and
+trusted-ingress dashboard/admin passthrough.

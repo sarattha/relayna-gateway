@@ -879,6 +879,7 @@ async function providers() {
           ${option("raw", "raw")}
           ${option("bearer", "")}
         </select></label>
+        <div class="help wide-field">Use raw for headers like x-litellm-api-key: &lt;key&gt;. Use bearer for LiteLLM deployments that expect x-litellm-key: Bearer &lt;key&gt;.</div>
         <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
         <div class="form-actions"><button class="primary">Create provider</button></div>
       </form>
@@ -976,6 +977,7 @@ function providerAuthSettingsForm(row) {
     </select>
     <input name="credential" type="password" autocomplete="new-password" placeholder="rotate default credential">
     <button type="submit">Update</button>
+    <span class="subtle">x-litellm-key usually needs bearer.</span>
   </form>`;
 }
 
@@ -1376,10 +1378,10 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Freeze baseline</strong><span>${badge("v0.1.0")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.13")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
-        <div><strong>Release guard</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/tests/freeze-v0.1.0-perimeter.test.mjs" target="_blank" rel="noreferrer">freeze perimeter test</a></span></div>
+        <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
       </div>
     </section>
   `;
@@ -2499,12 +2501,17 @@ function policySimulationResult() {
   const result = state.policySimulation;
   if (!result) return '<div class="empty-inline">No simulation run.</div>';
   const decision = result.final_decision || {};
-  return `<div class="kv">
+  const warnings = result.warnings || [];
+  const warningMarkup = warnings.length
+    ? `<div class="notice warn wide-field"><strong>Policy warnings</strong><span>${warnings.map((warning) => esc(warning)).join("<br>")}</span></div>`
+    : "";
+  return `${warningMarkup}<div class="kv">
     <div><strong>Decision</strong><span>${badge(decision.allowed ? "allowed" : decision.error_code || "denied", decision.allowed ? "good" : "bad")}</span></div>
     <div><strong>Matched route</strong><span>${esc(result.route_match?.route || "")}</span></div>
     <div><strong>Provider</strong><span>${esc(result.route_match?.provider || "")}</span></div>
     <div><strong>Service</strong><span>${esc(result.route_match?.service_name || "none")}</span></div>
     <div><strong>Policy version</strong><span>${esc(result.policy_merge?.policy_version ?? "n/a")}</span></div>
+    <div><strong>Applied layers</strong><span>${esc((result.policy_merge?.applied_layers || []).map((layer) => `${layer.kind}:${layer.scope_id || "all"}`).join(", ") || "none")}</span></div>
     <div><strong>Guardrails</strong><span>${esc((result.guardrail_plan || []).join(", ") || "none")}</span></div>
     <div><strong>Rate</strong><span>RPM ${esc(result.rate_limit_projection?.rpm_limit ?? "none")} / TPM ${esc(result.rate_limit_projection?.tpm_limit ?? "none")}</span></div>
     <div><strong>Budget</strong><span>${esc(money(result.budget_projection?.daily_budget_usd))} daily</span></div>
@@ -2517,6 +2524,7 @@ function policySimulationResult() {
       rate_limit_projection: result.rate_limit_projection,
       budget_projection: result.budget_projection,
       guardrail_plan: result.guardrail_plan,
+      warnings: result.warnings,
       final_decision: result.final_decision,
     })}
   </details>`;

@@ -29,6 +29,7 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.13/);
 });
 
 test("admin portal calls the expected gateway admin APIs", () => {
@@ -176,6 +177,8 @@ test("providers view configures LiteLLM credential headers and mappings without 
   assert.match(js, /custom_header/);
   assert.match(js, /bearer/);
   assert.match(js, /x-litellm-api-key/);
+  assert.match(js, /Use raw for headers like x-litellm-api-key/);
+  assert.match(js, /x-litellm-key usually needs bearer/);
   assert.match(js, /async function updateProviderAuthSettings\(event\)/);
   assert.match(js, /async function saveLiteLlmCredentialMapping\(event\)/);
   assert.match(js, /async function liteLlmCredentialMappingAction\(event\)/);
@@ -295,7 +298,7 @@ test("audit view exposes read-only operator event filters and redacted snapshots
   assert.doesNotMatch(js, /data-audit-action/);
 });
 
-test("post-freeze governance and provider intelligence controls are present", () => {
+test("governance and provider intelligence controls are present", () => {
   assert.match(js, /async function policyLayerAction\(event\)/);
   assert.match(js, /data-policy-layer-action="delete"/);
   assert.match(js, /\/admin-ui\/admin\/policy-layers\/\$\{layerId\}/);
@@ -339,6 +342,8 @@ test("virtual keys expose policy simulator presets and lifecycle controls", () =
   assert.match(js, /if \(!serviceMode && serviceSelect\) serviceSelect\.value = ""/);
   assert.match(js, /service_name: serviceName/);
   assert.match(js, /Use a concrete service path such as/);
+  assert.match(js, /Policy warnings/);
+  assert.match(js, /applied_layers/);
   assert.match(js, /async function savePolicyLayer\(event\)/);
   assert.match(js, /api\("\/admin-ui\/admin\/policy\/simulate"/);
   assert.match(js, /api\("\/admin-ui\/admin\/policy-layers"/);
