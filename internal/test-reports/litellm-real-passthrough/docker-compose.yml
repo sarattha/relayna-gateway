@@ -111,3 +111,26 @@ services:
     ports:
       - "19180:8080"
       - "19181:8081"
+
+  mock-hi-service:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["node", "server.mjs"]
+    environment:
+      PORT: 4000
+      SERVICE_CREDENTIAL: svc_hi_gateway_secret
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_KEY: ${MOCK_HI_LITELLM_KEY:-}
+      LITELLM_MODEL: gpt-5.4-mini
+    ports:
+      - "19184:4000"
+    volumes:
+      - ./mock-hi-service:/app:ro
+    depends_on:
+      litellm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
