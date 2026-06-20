@@ -339,9 +339,14 @@ test("virtual keys expose policy simulator presets and lifecycle controls", () =
   assert.match(js, /data-policy-sim-service/);
   assert.match(js, /const serviceMode = provider === "internal-service" \|\| path\.startsWith\("\/services\/"\)/);
   assert.match(js, /const serviceName = serviceMode \? form\.get\("service_name"\) \|\| null : null/);
+  assert.match(js, /clearPolicySimulationResult\(\)/);
+  assert.match(js, /function validatePolicySimulationServicePath\(path, serviceName\)/);
+  assert.match(js, /trimmedPath\.includes\("\*"\)/);
+  assert.match(js, /trimmedPath === "\/services" \|\| trimmedPath === "\/services\/"/);
+  assert.match(js, /Path service \$\{segments\[1\]\} does not match selected service \$\{serviceName\}/);
   assert.match(js, /if \(!serviceMode && serviceSelect\) serviceSelect\.value = ""/);
   assert.match(js, /service_name: serviceName/);
-  assert.match(js, /Use a concrete service path such as/);
+  assert.match(js, /Choose a concrete service path such as/);
   assert.match(js, /Policy warnings/);
   assert.match(js, /applied_layers/);
   assert.match(js, /async function savePolicyLayer\(event\)/);

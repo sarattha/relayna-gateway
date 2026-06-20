@@ -847,11 +847,13 @@ async function simulatePolicy(event) {
   const path = String(form.get("path") || "");
   const provider = form.get("provider") || null;
   const serviceMode = provider === "internal-service" || path.startsWith("/services/");
-  if (path.trim() === "/services/*") {
-    setNotice("Use a concrete service path such as /services/service-name/test.");
+  const serviceName = serviceMode ? form.get("service_name") || null : null;
+  clearPolicySimulationResult();
+  const servicePathError = validatePolicySimulationServicePath(path, serviceName);
+  if (servicePathError) {
+    setNotice(servicePathError);
     return;
   }
-  const serviceName = serviceMode ? form.get("service_name") || null : null;
   const body = {
     key_id: form.get("key_id") || null,
     team_id: form.get("team_id") || null,
@@ -872,8 +874,32 @@ async function simulatePolicy(event) {
   if (!body.service_name) delete body.service_name;
   if (body.request_body_bytes === null) delete body.request_body_bytes;
   if (body.response_body_bytes === null) delete body.response_body_bytes;
+  clearPolicySimulationResult();
   state.policySimulation = await api("/admin-ui/admin/policy/simulate", { method: "POST", body: JSON.stringify(body) });
   document.querySelector("#policy-sim-result").innerHTML = policySimulationResult();
+}
+function clearPolicySimulationResult() {
+  state.policySimulation = null;
+  const result = document.querySelector("#policy-sim-result");
+  if (result) result.innerHTML = policySimulationResult();
+}
+function validatePolicySimulationServicePath(path, serviceName) {
+  const trimmedPath = path.trim();
+  if (trimmedPath.includes("*")) {
+    return "Choose a concrete service path such as /services/service-name/test.";
+  }
+  if (trimmedPath === "/services" || trimmedPath === "/services/") {
+    return "Choose a concrete service path such as /services/service-name/test.";
+  }
+  if (!serviceName) return null;
+  const segments = trimmedPath.split("/").filter(Boolean);
+  if (segments[0] !== "services" || !segments[1]) {
+    return `Use /services/${serviceName} or /services/${serviceName}/... when simulating ${serviceName}.`;
+  }
+  if (segments[1] !== serviceName) {
+    return `Path service ${segments[1]} does not match selected service ${serviceName}.`;
+  }
+  return null;
 }
 async function savePolicyLayer(event) {
   event.preventDefault();
