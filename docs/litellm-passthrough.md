@@ -308,8 +308,9 @@ bash internal/test-reports/litellm-real-passthrough/run.sh
 ```
 
 That harness starts PostgreSQL, Redis, Gateway, a real `litellm/litellm`
-container, and a front-door capture service. It verifies canonical managed and
-direct modes, wildcard `/v1/models` query preservation, `/ui` default blocking,
-credential stripping, custom LiteLLM header injection, direct LiteLLM bearer
-delegation, trusted-ingress dashboard/admin passthrough, and credential
-resolution precedence.
+container, and the mock upstream provider behind LiteLLM. Gateway connects
+directly to LiteLLM, matching production topology. It verifies canonical
+managed and direct modes, wildcard `/v1/models` passthrough, `/ui` default
+blocking, credential stripping at the downstream mock provider, custom LiteLLM
+header injection against real LiteLLM, direct LiteLLM bearer delegation, and
+trusted-ingress dashboard/admin passthrough.

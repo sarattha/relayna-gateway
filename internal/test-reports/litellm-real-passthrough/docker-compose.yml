@@ -31,7 +31,6 @@ services:
       GATEWAY_CONTROL_URL: http://gateway:8081
       GATEWAY_ADMIN_TOKEN: op_live_ci_token1
       APIGEE_TRUSTED_HEADER_SECRET: apigee-litellm-review-secret
-      LITELLM_FRONT_DOOR_URL: http://litellm-front-door:4000
     ports:
       - "19182:4000"
     volumes:
@@ -57,6 +56,8 @@ services:
       ]
     environment:
       LITELLM_MASTER_KEY: sk-ci
+      LITELLM_SALT_KEY: sk-litellm-real-passthrough-salt
+      STORE_MODEL_IN_DB: "True"
       DATABASE_URL: postgresql://relayna_gateway:relayna_gateway@postgres:5432/relayna_gateway
     ports:
       - "19183:4000"
@@ -65,6 +66,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       mock-provider:
         condition: service_healthy
     healthcheck:
@@ -72,26 +75,6 @@ services:
       interval: 2s
       timeout: 5s
       retries: 60
-
-  litellm-front-door:
-    image: node:22-alpine
-    working_dir: /app
-    command: ["node", "server.mjs"]
-    environment:
-      ROLE: litellm-front-door
-      LITELLM_UPSTREAM_URL: http://litellm:4000
-      LITELLM_MASTER_KEY: sk-ci
-      ALLOWED_LITELLM_KEYS: sk-key,sk-project,sk-provider,sk-client
-    volumes:
-      - ./mock-provider:/app:ro
-    depends_on:
-      litellm:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/healthz"]
-      interval: 2s
-      timeout: 5s
-      retries: 30
 
   gateway:
     build:
@@ -104,7 +87,7 @@ services:
         condition: service_healthy
       mock-provider:
         condition: service_healthy
-      litellm-front-door:
+      litellm:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://relayna_gateway:relayna_gateway@postgres:5432/relayna_gateway

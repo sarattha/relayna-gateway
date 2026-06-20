@@ -338,20 +338,26 @@ fn is_litellm_ui_path(path: &str) -> bool {
 
 fn is_litellm_ui_support_path(path: &str) -> bool {
     const UI_SUPPORT_EXACT: &[&str] = &[
+        "/",
         "/get_image",
+        "/in_product_nudges",
         "/litellm/.well-known/litellm-ui-config",
         "/login",
         "/logout",
         "/models",
         "/user/info",
+        "/v1/models",
         "/v2/login",
     ];
     const UI_SUPPORT_PREFIXES: &[&str] = &[
         "/get/",
+        "/health/",
         "/litellm-asset-prefix/",
         "/model/",
         "/model_group/",
         "/public/",
+        "/schedule/",
+        "/v1/model/",
     ];
     UI_SUPPORT_EXACT.contains(&path)
         || UI_SUPPORT_PREFIXES
@@ -366,11 +372,40 @@ fn is_litellm_admin_path(path: &str) -> bool {
         "/user/",
         "/team/",
         "/config/",
+        "/credentials",
+        "/credentials/",
+        "/guardrails/",
         "/spend/",
         "/global/",
         "/budget/",
         "/customer/",
+        "/alerting/",
+        "/cache/",
+        "/callbacks/",
+        "/cloudzero/",
+        "/email/",
+        "/mcp-rest/",
         "/organization/",
+        "/policies/",
+        "/project/",
+        "/prompts/",
+        "/reload/",
+        "/router/",
+        "/search_tools/",
+        "/sso/",
+        "/tag/",
+        "/v1/agents",
+        "/v1/agents/",
+        "/v1/mcp/",
+        "/v1/memory",
+        "/v1/memory/",
+        "/v1/tool/",
+        "/v1/workflows/",
+        "/v2/guardrails/",
+        "/v2/key/",
+        "/v2/model/",
+        "/v2/team/",
+        "/v2/user/",
     ];
     ADMIN_PREFIXES
         .iter()
@@ -420,22 +455,36 @@ mod tests {
             "/ui".to_owned(),
             "/ui/*".to_owned(),
             "/litellm-asset-prefix/*".to_owned(),
+            "/".to_owned(),
             "/v2/login".to_owned(),
+            "/health/*".to_owned(),
             "/models".to_owned(),
+            "/in_product_nudges".to_owned(),
+            "/schedule/*".to_owned(),
             "/user/info".to_owned(),
             "/v1/*".to_owned(),
             "/key/*".to_owned(),
         ];
-        settings.allowed_methods = vec!["GET".to_owned(), "POST".to_owned()];
+        settings.allowed_methods = vec!["GET".to_owned(), "POST".to_owned(), "HEAD".to_owned()];
         settings.ui_exposure = LiteLlmSensitiveRouteExposure::TrustedIngress;
         settings.admin_api_exposure = LiteLlmSensitiveRouteExposure::TrustedIngress;
 
         assert!(settings.trusted_ingress_ui_path_allowed(&Method::GET, "/ui"));
+        assert!(settings.trusted_ingress_ui_path_allowed(&Method::GET, "/"));
+        assert!(settings.trusted_ingress_ui_path_allowed(&Method::HEAD, "/"));
         assert!(settings
             .trusted_ingress_ui_path_allowed(&Method::GET, "/litellm-asset-prefix/index.js"));
         assert!(settings.trusted_ingress_ui_path_allowed(&Method::POST, "/v2/login"));
+        assert!(settings.trusted_ingress_ui_path_allowed(
+            &Method::GET,
+            "/schedule/model_cost_map_reload/status"
+        ));
+        assert!(settings.trusted_ingress_ui_path_allowed(&Method::GET, "/health/readiness"));
+        assert!(settings.trusted_ingress_ui_path_allowed(&Method::GET, "/in_product_nudges"));
         assert!(settings.trusted_ingress_ui_path_allowed(&Method::GET, "/user/info"));
-        assert!(!settings.trusted_ingress_ui_path_allowed(&Method::GET, "/v1/models"));
+        assert!(settings.trusted_ingress_ui_path_allowed(&Method::GET, "/v1/models"));
+        assert!(settings.trusted_ingress_ui_path_allowed(&Method::GET, "/v1/model/info"));
+        assert!(!settings.trusted_ingress_ui_path_allowed(&Method::POST, "/v1/chat/completions"));
         assert!(!settings.trusted_ingress_ui_path_allowed(&Method::GET, "/key/list"));
         assert!(!settings.trusted_ingress_ui_path_allowed(&Method::DELETE, "/ui"));
     }
@@ -447,9 +496,24 @@ mod tests {
         settings.allowed_paths = vec![
             "/ui".to_owned(),
             "/global/spend/logs".to_owned(),
+            "/credentials".to_owned(),
+            "/alerting/*".to_owned(),
+            "/budget/*".to_owned(),
+            "/cache/*".to_owned(),
+            "/callbacks/*".to_owned(),
+            "/cloudzero/*".to_owned(),
+            "/customer/*".to_owned(),
+            "/email/*".to_owned(),
+            "/guardrails/*".to_owned(),
             "/key/info".to_owned(),
             "/key/*".to_owned(),
+            "/mcp-rest/*".to_owned(),
+            "/project/*".to_owned(),
+            "/router/*".to_owned(),
+            "/search_tools/*".to_owned(),
+            "/spend/*".to_owned(),
             "/v1/*".to_owned(),
+            "/v2/*".to_owned(),
         ];
         settings.allowed_methods = vec!["GET".to_owned(), "POST".to_owned()];
         settings.ui_exposure = LiteLlmSensitiveRouteExposure::TrustedIngress;
@@ -459,9 +523,49 @@ mod tests {
         assert!(
             settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/global/spend/logs")
         );
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/credentials"));
+        assert!(
+            settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/alerting/settings")
+        );
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/budget/list"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/cache/settings"));
+        assert!(
+            settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/callbacks/configs")
+        );
+        assert!(
+            settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/cloudzero/settings")
+        );
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/customer/list"));
+        assert!(settings
+            .trusted_ingress_passthrough_path_allowed(&Method::GET, "/email/event_settings"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/guardrails/list"));
         assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::POST, "/key/info"));
+        assert!(
+            settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/mcp-rest/tools/list")
+        );
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/project/list"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/router/settings"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(
+            &Method::GET,
+            "/search_tools/ui/available_providers"
+        ));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/spend/logs/ui"));
         assert!(!settings.trusted_ingress_passthrough_path_allowed(&Method::DELETE, "/key/info"));
-        assert!(!settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v1/models"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v1/models"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v1/agents"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v1/memory"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v1/mcp/server"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v1/tool/list"));
+        assert!(
+            settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v1/workflows/runs")
+        );
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v2/model/info"));
+        assert!(settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v2/team/list"));
+        assert!(
+            settings.trusted_ingress_passthrough_path_allowed(&Method::GET, "/v2/guardrails/list")
+        );
+        assert!(!settings
+            .trusted_ingress_passthrough_path_allowed(&Method::POST, "/v1/chat/completions"));
 
         settings.admin_api_exposure = LiteLlmSensitiveRouteExposure::Disabled;
         assert!(

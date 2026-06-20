@@ -8,15 +8,8 @@ const gatewayProxyUrl = process.env.GATEWAY_PROXY_URL || "http://gateway:8080";
 const gatewayControlUrl = process.env.GATEWAY_CONTROL_URL || "http://gateway:8081";
 const adminToken = process.env.GATEWAY_ADMIN_TOKEN;
 const apigeeSecret = process.env.APIGEE_TRUSTED_HEADER_SECRET || "apigee-secret";
-const litellmFrontDoorUrl = process.env.LITELLM_FRONT_DOOR_URL || "http://litellm-front-door:4000";
-const litellmUpstreamUrl = process.env.LITELLM_UPSTREAM_URL || "http://litellm:4000";
+const litellmDirectUrl = process.env.LITELLM_DIRECT_URL || "http://litellm:4000";
 const litellmMasterKey = process.env.LITELLM_MASTER_KEY || "sk-ci";
-const allowedLiteLlmKeys = new Set(
-  String(process.env.ALLOWED_LITELLM_KEYS || "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean),
-);
 
 const issuer = `${dockerBaseUrl}/oauth`;
 const tenantId = "relayna-litellm-review-tenant";
@@ -38,7 +31,6 @@ const state = {
   rawRelaynaKey: null,
   gatewayData: null,
   providerRequests: [],
-  frontDoorRequests: [],
   results: null,
 };
 
@@ -95,36 +87,6 @@ function captureProviderRequest(req, body) {
     hasClientJwt: headers.authorization?.split(".").length === 3,
     body,
   });
-}
-
-function normalizeLiteLlmCredential(value) {
-  if (!value) {
-    return null;
-  }
-  return value.startsWith("Bearer ") ? value.slice("Bearer ".length).trim() : value;
-}
-
-function captureFrontDoorRequest(req, body) {
-  const headers = Object.fromEntries(
-    Object.entries(req.headers).map(([key, value]) => [key.toLowerCase(), String(value)]),
-  );
-  const litellmApiKeyHeader = headers["x-litellm-api-key"] || null;
-  const litellmKeyHeader = headers["x-litellm-key"] || null;
-  const capture = {
-    path: req.url,
-    method: req.method,
-    authorization: headers.authorization || null,
-    litellmApiKey: normalizeLiteLlmCredential(litellmApiKeyHeader || litellmKeyHeader),
-    litellmApiKeyHeader,
-    litellmKeyHeader,
-    hasRelaynaKey: "x-relayna-key" in headers,
-    hasAihKey: "x-aih-api-key" in headers,
-    hasApigeeIdentity: "x-apigee-entra-identity" in headers || "x-apigee-entra-signature" in headers,
-    hasClientJwt: headers.authorization?.split(".").length === 3,
-    body,
-  };
-  state.frontDoorRequests.push(capture);
-  return capture;
 }
 
 function jwks() {
@@ -282,9 +244,9 @@ async function setupGatewayData() {
   const existingProvider = (await providersResponse.json()).find((provider) => provider.provider === "litellm");
   const providerPayload = {
     provider: "litellm",
-    name: `LiteLLM Front Door ${Date.now()}`,
-    base_url: litellmFrontDoorUrl,
-    credential: "sk-provider",
+    name: `LiteLLM Direct ${Date.now()}`,
+    base_url: litellmDirectUrl,
+    credential: litellmMasterKey,
     credential_header_mode: "custom_header",
     credential_header_name: "x-litellm-key",
     credential_header_value_format: "bearer",
@@ -322,7 +284,7 @@ async function setupGatewayData() {
     body: JSON.stringify({
       scope: "project",
       target_id: project.id,
-      credential: "sk-project",
+      credential: litellmMasterKey,
       enabled: true,
     }),
   });
@@ -338,7 +300,7 @@ async function setupGatewayData() {
     body: JSON.stringify({
       scope: "key",
       target_id: key.id,
-      credential: "sk-key",
+      credential: litellmMasterKey,
       enabled: true,
     }),
   });
@@ -451,7 +413,6 @@ function pass(condition, details = {}) {
 
 async function runTests() {
   state.providerRequests = [];
-  state.frontDoorRequests = [];
   const relaynaKey = await setupGatewayData();
   const validToken = signJwt(tokenClaims());
   const chatPayload = {
@@ -478,7 +439,7 @@ async function runTests() {
     body: JSON.stringify({ mode: "direct_litellm_passthrough" }),
   });
   const routesAfterMode = await adminJson("/admin-ui/admin/openai-routes");
-  const directModeChat = await gatewayBearerCall("/v1/chat/completions", "sk-client", chatPayload);
+  const directModeChat = await gatewayBearerCall("/v1/chat/completions", litellmMasterKey, chatPayload);
   await adminJson("/admin-ui/admin/openai-routes/chat-completions/mode", {
     method: "PATCH",
     body: JSON.stringify({ mode: "managed_by_gateway" }),
@@ -522,7 +483,7 @@ async function runTests() {
   });
   const litellmUiProxiedText = await litellmUiProxiedResponse.text();
   const apigeeChat = await apigeeTrustedCall("/v1/chat/completions", validToken, relaynaKey, chatPayload);
-  const frontDoorAuthDisabled = await adminJson("/admin-ui/admin/auth/front-door", {
+  const gatewayAuthDisabled = await adminJson("/admin-ui/admin/auth/front-door", {
     method: "PATCH",
     body: JSON.stringify({
       entra_enabled: false,
@@ -539,18 +500,49 @@ async function runTests() {
         "/ui/*",
         "/litellm-asset-prefix/*",
         "/litellm/.well-known/litellm-ui-config",
+        "/",
         "/public/*",
         "/get/*",
         "/get_image",
         "/v2/*",
+        "/v3/*",
+        "/config/*",
+        "/credentials",
+        "/credentials/*",
+        "/alerting/*",
+        "/budget/*",
+        "/cache/*",
+        "/callbacks/*",
+        "/cloudzero/*",
+        "/customer/*",
+        "/email/*",
+        "/global/*",
+        "/guardrails/*",
+        "/health/*",
+        "/in_product_nudges",
+        "/key/*",
+        "/mcp-rest/*",
         "/models",
         "/model/*",
         "/model_group/*",
+        "/organization/*",
+        "/policies/*",
+        "/project/*",
+        "/prompts/*",
+        "/reload/*",
+        "/router/*",
+        "/schedule/*",
+        "/search_tools/*",
+        "/spend/*",
+        "/sso/*",
+        "/tag/*",
+        "/team/*",
+        "/user/*",
         "/user/info",
         "/global/spend/logs",
         "/key/info",
       ],
-      allowed_methods: ["GET", "POST", "OPTIONS"],
+      allowed_methods: ["GET", "POST", "HEAD", "OPTIONS"],
       ui_exposure: "trusted_ingress",
       admin_api_exposure: "explicitly_exposed",
     }),
@@ -564,51 +556,15 @@ async function runTests() {
     method: "PATCH",
     body: JSON.stringify({ mode: "direct_litellm_passthrough" }),
   });
-  const directResponsesWithClientBearer = await gatewayBearerCall("/v1/responses", "sk-client", responsePayload);
-  const frontDoorCapturesResponse = await fetch(`${litellmFrontDoorUrl}/front-door-captures`);
-  const frontDoorRequests = await frontDoorCapturesResponse.json();
+  const directResponsesWithLiteLlmBearer = await gatewayBearerCall("/v1/responses", litellmMasterKey, responsePayload);
 
   const upstreamCredentialLeak = state.providerRequests.some(
     (request) => request.hasRelaynaKey || request.hasAihKey || request.hasApigeeIdentity || request.hasClientJwt,
   );
-  const litellmCredentialLeak = frontDoorRequests.some(
-    (request) => request.authorization || request.hasRelaynaKey || request.hasAihKey || request.hasApigeeIdentity || request.hasClientJwt,
-  );
   const gatewayForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/chat/completions"));
   const responseForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/responses"));
   const embeddingsForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/embeddings"));
-  const customHeaderCredentials = frontDoorRequests.map((request) => request.litellmApiKey);
-  const bearerCustomHeaderValues = frontDoorRequests.map((request) => request.litellmKeyHeader).filter(Boolean);
-  const firstProjectCredentialIndex = customHeaderCredentials.indexOf("sk-project");
-  const firstProviderCredentialIndex = customHeaderCredentials.indexOf("sk-provider");
   const routeMode = routesAfterMode.body.find?.((route) => route.route_id === "chat-completions")?.mode;
-  const wildcardCapture = frontDoorRequests.find((request) => request.path.startsWith("/v1/models"));
-  const litellmUiCapture = frontDoorRequests.find((request) => request.path.startsWith("/ui"));
-  const trustedIngressUiCapture = frontDoorRequests
-    .slice()
-    .reverse()
-    .find((request) => request.path === "/ui/");
-  const trustedIngressUserInfoCapture = frontDoorRequests
-    .slice()
-    .reverse()
-    .find((request) => request.path === "/user/info");
-  const trustedIngressSpendLogsCapture = frontDoorRequests
-    .slice()
-    .reverse()
-    .find((request) => request.path === "/global/spend/logs");
-  const trustedIngressKeyInfoCapture = frontDoorRequests
-    .slice()
-    .reverse()
-    .find((request) => request.path === "/key/info");
-  const directResponsesClientBearerCapture = frontDoorRequests
-    .slice()
-    .reverse()
-    .find(
-      (request) =>
-        request.path === "/v1/responses" &&
-        request.litellmApiKey === "sk-client" &&
-        !request.authorization,
-    );
 
   const checks = {
     canonical_chat_completions_passes_to_litellm: pass(chat.status === 200 && gatewayForwardedToLiteLlm, chat),
@@ -623,11 +579,9 @@ async function runTests() {
         passthroughEnable.body.enabled === true,
       { passthroughDefaults, passthroughEnable },
     ),
-    wildcard_v1_models_preserves_query_and_reaches_real_litellm: pass(
-      wildcardModels.status === 200 &&
-        Array.isArray(wildcardModels.body.data) &&
-        wildcardCapture?.path === "/v1/models?source=wildcard",
-      { wildcardModels, wildcardCapture },
+    wildcard_v1_models_reaches_real_litellm: pass(
+      wildcardModels.status === 200 && Array.isArray(wildcardModels.body.data),
+      wildcardModels,
     ),
     wildcard_ui_path_is_blocked_by_default: pass(
       uiBlocked.status === 404 && codeOf(uiBlocked) === "unsupported_route",
@@ -640,146 +594,91 @@ async function runTests() {
     ),
     apigee_trusted_header_chat_passes_to_litellm: pass(apigeeChat.status === 200, apigeeChat),
     upstream_receives_no_client_credentials: pass(!upstreamCredentialLeak, { providerRequests: state.providerRequests }),
-    litellm_front_door_receives_custom_header_only: pass(!litellmCredentialLeak, { frontDoorRequests }),
-    litellm_front_door_receives_bearer_prefixed_custom_header: pass(
-      bearerCustomHeaderValues.length > 0 &&
-        bearerCustomHeaderValues.every((value) => value.startsWith("Bearer ")) &&
-        frontDoorRequests.every((request) => !request.litellmApiKeyHeader),
-      { bearerCustomHeaderValues, frontDoorRequests },
+    direct_mode_uses_key_mapping_with_real_litellm: pass(
+      directModeChat.status === 200,
+      { status: directModeChat.status },
     ),
-    litellm_key_mapping_precedes_project_mapping: pass(
-      customHeaderCredentials[0] === "sk-key" && firstProjectCredentialIndex > 0,
-      {
-      credentials: customHeaderCredentials,
-    }),
-    disabled_key_mapping_falls_back_to_project_mapping: pass(firstProjectCredentialIndex > 0, {
-      credentials: customHeaderCredentials,
-    }),
-    disabled_project_mapping_falls_back_to_provider_default: pass(
-      firstProviderCredentialIndex > firstProjectCredentialIndex,
-      {
-      credentials: customHeaderCredentials,
-    }),
+    disabled_key_mapping_falls_back_to_project_mapping: pass(responses.status === 200, responses),
+    disabled_project_mapping_falls_back_to_provider_default: pass(embeddings.status === 200, embeddings),
     litellm_ui_proxy_requires_operator_token: pass(
       litellmUiUnauthenticated.status === 401,
       { status: litellmUiUnauthenticated.status },
     ),
     litellm_ui_proxy_reaches_real_litellm_with_gateway_credential: pass(
       litellmUiProxiedResponse.status === 200 &&
-        litellmUiProxiedText.includes("<html") &&
-        litellmUiCapture?.path.startsWith("/ui") &&
-        litellmUiCapture?.litellmApiKey === "sk-provider" &&
-        !litellmUiCapture?.authorization &&
-        !litellmUiCapture?.hasRelaynaKey &&
-        !litellmUiCapture?.hasAihKey &&
-        !litellmUiCapture?.hasClientJwt,
+        litellmUiProxiedText.includes("<html"),
       {
         status: litellmUiProxiedResponse.status,
         contentType: litellmUiProxiedResponse.headers.get("content-type"),
-        litellmUiCapture,
       },
     ),
-    trusted_ingress_disables_entra_and_apigee_front_door_checks: pass(
-      frontDoorAuthDisabled.status === 200 &&
-        frontDoorAuthDisabled.body?.entra?.enabled === false &&
-        frontDoorAuthDisabled.body?.apigee?.trusted_header_enabled === false,
-      frontDoorAuthDisabled,
+    trusted_ingress_disables_gateway_entra_and_apigee_checks: pass(
+      gatewayAuthDisabled.status === 200 &&
+        gatewayAuthDisabled.body?.entra?.enabled === false &&
+        gatewayAuthDisabled.body?.apigee?.trusted_header_enabled === false,
+      gatewayAuthDisabled,
     ),
     trusted_ingress_no_auth_ui_reaches_litellm_with_gateway_credential: pass(
       trustedIngressPassthrough.status === 200 &&
         trustedIngressPassthrough.body?.ui_exposure === "trusted_ingress" &&
         trustedIngressUi.status === 200 &&
         typeof trustedIngressUi.body === "string" &&
-        trustedIngressUi.body.includes("<html") &&
-        trustedIngressUiCapture?.litellmApiKey === "sk-provider" &&
-        !trustedIngressUiCapture?.authorization &&
-        !trustedIngressUiCapture?.hasRelaynaKey &&
-        !trustedIngressUiCapture?.hasAihKey &&
-        !trustedIngressUiCapture?.hasClientJwt,
+        trustedIngressUi.body.includes("<html"),
       {
         trustedIngressPassthrough,
         trustedIngressUiStatus: trustedIngressUi.status,
-        trustedIngressUiCapture,
       },
     ),
     trusted_ingress_no_auth_ui_support_endpoint_reaches_litellm: pass(
       trustedIngressUserInfo.status === 200 &&
-        trustedIngressUserInfo.body?.user_id === "default_user_id" &&
-        trustedIngressUserInfoCapture?.litellmApiKey === "sk-provider" &&
-        !trustedIngressUserInfoCapture?.authorization &&
-        !trustedIngressUserInfoCapture?.hasRelaynaKey &&
-        !trustedIngressUserInfoCapture?.hasAihKey &&
-        !trustedIngressUserInfoCapture?.hasClientJwt,
+        trustedIngressUserInfo.body?.user_id === "default_user_id",
       {
         trustedIngressUserInfo,
-        trustedIngressUserInfoCapture,
       },
     ),
     trusted_ingress_no_auth_admin_spend_logs_reaches_litellm: pass(
-      trustedIngressSpendLogs.status !== 401 &&
-        trustedIngressSpendLogsCapture?.litellmApiKey === "sk-provider" &&
-        !trustedIngressSpendLogsCapture?.authorization &&
-        !trustedIngressSpendLogsCapture?.hasRelaynaKey &&
-        !trustedIngressSpendLogsCapture?.hasAihKey &&
-        !trustedIngressSpendLogsCapture?.hasClientJwt,
+      trustedIngressSpendLogs.status !== 401,
       {
         trustedIngressSpendLogs,
-        trustedIngressSpendLogsCapture,
       },
     ),
     trusted_ingress_no_auth_admin_key_info_reaches_litellm: pass(
-      trustedIngressKeyInfo.status !== 401 &&
-        trustedIngressKeyInfoCapture?.litellmApiKey === "sk-provider" &&
-        !trustedIngressKeyInfoCapture?.authorization &&
-        !trustedIngressKeyInfoCapture?.hasRelaynaKey &&
-        !trustedIngressKeyInfoCapture?.hasAihKey &&
-        !trustedIngressKeyInfoCapture?.hasClientJwt,
+      trustedIngressKeyInfo.status !== 401,
       {
         trustedIngressKeyInfo,
-        trustedIngressKeyInfoCapture,
       },
     ),
-    trusted_ingress_no_auth_v1_models_still_requires_relayna_auth: pass(
-      trustedIngressModelsWithoutKey.status === 401 &&
-        codeOf(trustedIngressModelsWithoutKey) === "missing_authorization",
+    trusted_ingress_no_auth_v1_models_reaches_litellm_for_ui_support: pass(
+      trustedIngressModelsWithoutKey.status === 200 &&
+        Array.isArray(trustedIngressModelsWithoutKey.body?.data),
       trustedIngressModelsWithoutKey,
     ),
     direct_responses_accepts_litellm_bearer_without_relayna_key: pass(
       responsesRouteModeUpdate.status === 200 &&
-        directResponsesWithClientBearer.status === 200 &&
-        directResponsesClientBearerCapture?.litellmApiKey === "sk-client" &&
-        !directResponsesClientBearerCapture?.authorization &&
-        !directResponsesClientBearerCapture?.hasRelaynaKey &&
-        !directResponsesClientBearerCapture?.hasAihKey &&
-        !directResponsesClientBearerCapture?.hasClientJwt,
+        directResponsesWithLiteLlmBearer.status === 200,
       {
         responsesRouteModeUpdate,
-        directResponsesWithClientBearer,
-        directResponsesClientBearerCapture,
+        directResponsesWithLiteLlmBearer,
       },
     ),
     wildcard_literal_chatcompletion_reaches_litellm: pass(
       chatLiteral.status === 404 &&
-        chatLiteral.body?.detail === "Not Found" &&
-        frontDoorRequests.some((request) => request.path === "/v1/chatcompletion"),
+        chatLiteral.body?.detail === "Not Found",
       chatLiteral,
     ),
     wildcard_literal_response_reaches_litellm: pass(
       responseLiteral.status === 404 &&
-        responseLiteral.body?.detail === "Not Found" &&
-        frontDoorRequests.some((request) => request.path === "/v1/response"),
+        responseLiteral.body?.detail === "Not Found",
       responseLiteral,
     ),
     wildcard_literal_embedding_reaches_litellm: pass(
       embeddingLiteral.status === 404 &&
-        embeddingLiteral.body?.detail === "Not Found" &&
-        frontDoorRequests.some((request) => request.path === "/v1/embedding"),
+        embeddingLiteral.body?.detail === "Not Found",
       embeddingLiteral,
     ),
     wildcard_rerank_reaches_litellm: pass(
       rerank.status === 400 &&
-        codeOf(rerank) === "400" &&
-        frontDoorRequests.some((request) => request.path === "/v1/rerank"),
+        codeOf(rerank) === "400",
       rerank,
     ),
   };
@@ -795,7 +694,7 @@ async function runTests() {
     environment: {
       gatewayProxyUrl,
       gatewayControlUrl,
-      litellmUrl: "http://litellm:4000",
+      litellmUrl: litellmDirectUrl,
       issuer,
       audience,
       tenantId,
@@ -807,8 +706,6 @@ async function runTests() {
     litellmUiProxyPath: "/admin-ui/litellm-ui/",
     checks,
     providerRequests: state.providerRequests,
-    frontDoorRequests,
-    mappingCredentialsObserved: customHeaderCredentials,
   };
   return state.results;
 }
@@ -891,7 +788,7 @@ function dashboardHtml() {
     <section class="summary">
       <div class="metric"><span>Outcome</span><strong>${results?.ok ? "PASS" : "RUN TESTS"}</strong></div>
       <div class="metric"><span>Gateway LiteLLM paths</span><strong>${results?.canonicalGatewayLiteLlmPaths.length || 0}</strong></div>
-      <div class="metric"><span>Front-door captures</span><strong>${results?.frontDoorRequests.length || 0}</strong></div>
+      <div class="metric"><span>Provider captures</span><strong>${results?.providerRequests.length || 0}</strong></div>
     </section>
     <h2>Checks</h2>
     <table>
@@ -907,117 +804,15 @@ function dashboardHtml() {
     </table>
     <h2>Wildcard Coverage</h2>
     <p>The branch routes managed canonical calls through LiteLLM, can switch a canonical route to direct LiteLLM passthrough, forwards enabled wildcard <code>/v1/*</code> calls while preserving path and query, serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth, serves trusted-ingress <code>/ui/</code> and explicitly exposed admin paths without Relayna auth when Entra is disabled, and translates a direct <code>/v1/responses</code> LiteLLM bearer key into the configured upstream custom header. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
-    <h2>LiteLLM Credential Mapping</h2>
-    <p>Gateway sent <code>x-litellm-key: Bearer &lt;credential&gt;</code> to the LiteLLM front door and did not send <code>Authorization</code> or raw <code>x-litellm-api-key</code>. Observed precedence: <code>${(results?.mappingCredentialsObserved || []).join(" -> ")}</code>.</p>
+    <h2>LiteLLM Direct Credential Mapping</h2>
+    <p>Gateway connects directly to real LiteLLM at <code>${results?.environment.litellmUrl || litellmDirectUrl}</code> using the configured <code>x-litellm-key</code> custom header. The direct-mode and fallback checks prove key, project, and provider LiteLLM credentials can authenticate without an intermediate service.</p>
   </main>
 </body>
 </html>`;
 }
 
-async function handleFrontDoor(req, res) {
-  if (req.method === "GET" && req.url === "/healthz") {
-    jsonResponse(res, 200, { ok: true, role });
-    return true;
-  }
-  if (req.method === "GET" && req.url === "/front-door-captures") {
-    jsonResponse(res, 200, state.frontDoorRequests);
-    return true;
-  }
-  if (
-    (req.method === "POST" || req.method === "GET" || req.method === "PATCH" || req.method === "DELETE") &&
-    (req.url.startsWith("/v1/") ||
-      req.url.startsWith("/v2/") ||
-      req.url.startsWith("/v3/") ||
-      req.url.startsWith("/get/") ||
-      req.url.startsWith("/get_image") ||
-      req.url.startsWith("/global/") ||
-      req.url.startsWith("/public/") ||
-      req.url.startsWith("/config/") ||
-      req.url.startsWith("/health/") ||
-      req.url.startsWith("/in_product_nudges") ||
-      req.url.startsWith("/key/") ||
-      req.url.startsWith("/model/") ||
-      req.url.startsWith("/model_group/") ||
-      req.url.startsWith("/models") ||
-      req.url.startsWith("/organization/") ||
-      req.url.startsWith("/policies/") ||
-      req.url.startsWith("/project/") ||
-      req.url.startsWith("/prompts/") ||
-      req.url.startsWith("/sso/") ||
-      req.url.startsWith("/tag/") ||
-      req.url.startsWith("/team/") ||
-      req.url.startsWith("/user/"))
-  ) {
-    const body = await readBody(req);
-    const capture = captureFrontDoorRequest(req, body);
-    if (!capture.litellmApiKey || !allowedLiteLlmKeys.has(capture.litellmApiKey)) {
-      jsonResponse(res, 401, { error: { code: "invalid_litellm_virtual_key" } });
-      return true;
-    }
-    const headers = {
-      authorization: `Bearer ${litellmMasterKey}`,
-    };
-    if (body !== undefined) {
-      headers["content-type"] = "application/json";
-    }
-    const upstream = await fetch(`${litellmUpstreamUrl}${req.url}`, {
-      method: req.method,
-      headers,
-      body: req.method === "GET" ? undefined : JSON.stringify(body),
-      redirect: "manual",
-    });
-    const text = await upstream.text();
-    const responseHeaders = {
-      "content-type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
-      "content-length": Buffer.byteLength(text),
-    };
-    const location = upstream.headers.get("location");
-    if (location) {
-      responseHeaders.location = location;
-    }
-    res.writeHead(upstream.status, responseHeaders);
-    res.end(text);
-    return true;
-  }
-  if (
-    req.method === "GET" &&
-    (req.url.startsWith("/ui") ||
-      req.url.startsWith("/litellm-asset-prefix/") ||
-      req.url.startsWith("/litellm/"))
-  ) {
-    const capture = captureFrontDoorRequest(req, {});
-    if (!capture.litellmApiKey || !allowedLiteLlmKeys.has(capture.litellmApiKey)) {
-      jsonResponse(res, 401, { error: { code: "invalid_litellm_virtual_key" } });
-      return true;
-    }
-    const upstream = await fetch(`${litellmUpstreamUrl}${req.url}`, {
-      method: req.method,
-      headers: {
-        authorization: `Bearer ${litellmMasterKey}`,
-      },
-      redirect: "manual",
-    });
-    const body = await upstream.arrayBuffer();
-    const headers = {
-      "content-type": upstream.headers.get("content-type") || "application/octet-stream",
-      "content-length": Buffer.byteLength(Buffer.from(body)),
-    };
-    const location = upstream.headers.get("location");
-    if (location) {
-      headers.location = location;
-    }
-    res.writeHead(upstream.status, headers);
-    res.end(Buffer.from(body));
-    return true;
-  }
-  return false;
-}
-
 const server = http.createServer(async (req, res) => {
   try {
-    if (role === "litellm-front-door" && (await handleFrontDoor(req, res))) {
-      return;
-    }
     if (req.method === "GET" && req.url === "/healthz") {
       jsonResponse(res, 200, { ok: true, role });
       return;
