@@ -164,7 +164,7 @@ The Kubernetes example uses restricted pod security defaults:
 - `allowPrivilegeEscalation: false`
 - all Linux capabilities dropped
 
-The post-freeze supply-chain work also adds strict CI security checks, release
+The supply-chain work also adds strict CI security checks, release
 metadata validation, SBOM generation, image signing, provenance, and documented
 temporary security exceptions. Treat failures in those checks as blocking
 unless an exception is explicitly documented in

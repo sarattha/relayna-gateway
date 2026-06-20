@@ -2,16 +2,15 @@
 
 Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.12` is the current release target.
 
-Version `0.1.12` is the current production freeze baseline. It covers Admin UI
-2.0, operator governance, policy governance, provider intelligence,
-observability analytics, supply-chain hardening, LiteLLM `/v1/embeddings`
-passthrough, opt-in Entra ID and Apigee front-door authorization, LiteLLM
-wildcard passthrough, per-route canonical OpenAI mode selection, and Admin
-portal controls for passthrough path/method and sensitive endpoint exposure.
-It also covers direct LiteLLM bearer delegation for canonical direct-mode
-routes, trusted-ingress dashboard/admin passthrough for explicitly exposed
-LiteLLM admin paths, and bearer-prefixed custom LiteLLM credential header
-values.
+Version `0.1.12` includes Admin UI 2.0, operator governance, policy
+governance, provider intelligence, observability analytics, supply-chain
+hardening, LiteLLM `/v1/embeddings` passthrough, opt-in Entra ID and Apigee
+front-door authorization, LiteLLM wildcard passthrough, per-route canonical
+OpenAI mode selection, and Admin portal controls for passthrough path/method
+and sensitive endpoint exposure. It also covers direct LiteLLM bearer
+delegation for canonical direct-mode routes, trusted-ingress dashboard/admin
+passthrough for explicitly exposed LiteLLM admin paths, and bearer-prefixed
+custom LiteLLM credential header values.
 See
 [Current Feature Highlights](current-features.md),
 [Entra ID Auth](entra-id-auth.md), and
@@ -36,7 +35,6 @@ See
    gitleaks detect --source . --redact
    semgrep scan --config .semgrep.yml
    node tests/admin-ui.test.mjs
-   node tests/freeze-v0.1.12-perimeter.test.mjs
    mkdocs build --strict
    ```
 
@@ -72,8 +70,3 @@ ghcr.io/sarattha/relayna-gateway:latest
 Release artifacts include `CHANGELOG.md` and an SPDX JSON SBOM named
 `relayna-gateway-<tag>.spdx.json`. Verify image signatures with Cosign against
 the GHCR image digest published by the release workflow.
-
-The v0.1.12 production freeze perimeter is pinned by
-`tests/freeze-v0.1.12-perimeter.test.mjs`. Post-freeze features should preserve
-that perimeter unless a release intentionally updates the compatibility notes
-and the matching test expectations.

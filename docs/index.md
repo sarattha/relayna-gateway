@@ -33,8 +33,7 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - [Getting Started](getting-started.md) covers local PostgreSQL, Redis, LiteLLM, and gateway startup.
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
 - [Current Feature Highlights](current-features.md) summarizes the `v0.1.12`
-  feature set and the `v0.1.12` production freeze baseline, including Admin UI
-  screenshots.
+  feature set, including Admin UI screenshots.
 - [LiteLLM Passthrough](litellm-passthrough.md) covers wildcard passthrough,
   canonical route modes, credential translation, `/ui` exposure, and browser
   access constraints.

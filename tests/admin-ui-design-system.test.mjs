@@ -84,7 +84,7 @@ test("admin ui design system exposes 2.0 tokens and operator-console components"
   }
 });
 
-test("generated admin ui uses design-system helpers and exposes post-freeze controls", () => {
+test("generated admin ui uses design-system helpers and exposes release controls", () => {
   for (const marker of [
     "function badge",
     "function panel",

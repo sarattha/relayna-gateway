@@ -1472,10 +1472,10 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Freeze baseline</strong><span>${badge("v0.1.0")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.12")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
-        <div><strong>Release guard</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/tests/freeze-v0.1.0-perimeter.test.mjs" target="_blank" rel="noreferrer">freeze perimeter test</a></span></div>
+        <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
       </div>
     </section>
   `;

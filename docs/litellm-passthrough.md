@@ -296,7 +296,6 @@ All mutating calls require operator auth and write audit events.
 Focused local checks:
 
 ```bash
-node tests/freeze-v0.1.12-perimeter.test.mjs
 cargo test -p gateway-core route_settings --all-features
 cargo test -p gateway-proxy passthrough --all-features
 ```

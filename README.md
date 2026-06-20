@@ -4,14 +4,14 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
-Version `0.1.12` is the current release target. The `v0.1.12` production freeze
-baseline remains pinned for Admin UI 2.0, scoped operator governance, policy
-simulation and inherited layers, provider intelligence, richer usage analytics,
-and supply-chain hardening. Release `0.1.12` adds bearer-prefixed custom
-LiteLLM credential header values on top of direct LiteLLM bearer delegation,
-trusted-ingress LiteLLM dashboard/admin passthrough coverage, Admin UI controls
-for LiteLLM passthrough exposure, LiteLLM wildcard passthrough, credential
-mapping, Microsoft Entra ID, and Apigee front-door provider traffic support.
+Version `0.1.12` is the current release target. Release `0.1.12` includes
+Admin UI 2.0, scoped operator governance, policy simulation and inherited
+layers, provider intelligence, richer usage analytics, supply-chain hardening,
+bearer-prefixed custom LiteLLM credential header values on top of direct
+LiteLLM bearer delegation, trusted-ingress LiteLLM dashboard/admin passthrough
+coverage, Admin UI controls for LiteLLM passthrough exposure, LiteLLM wildcard
+passthrough, credential mapping, Microsoft Entra ID, and Apigee front-door
+provider traffic support.
 See `docs/current-features.md`, `docs/litellm-passthrough.md`,
 `docs/entra-id-auth.md`, and `docs/apigee-gateway-path.md` for the public
 feature highlights.

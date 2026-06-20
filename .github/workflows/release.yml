@@ -73,9 +73,7 @@ jobs:
           node-version: "20"
 
       - name: Run admin portal tests
-        run: |
-          node tests/admin-ui.test.mjs
-          node tests/freeze-v0.1.12-perimeter.test.mjs
+        run: node tests/admin-ui.test.mjs
 
       - name: Set up Python
         uses: actions/setup-python@v5

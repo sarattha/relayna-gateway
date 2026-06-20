@@ -114,7 +114,6 @@ For Admin UI source or generated asset changes, run:
 ```bash
 npm run build:admin-ui
 npm test
-node tests/freeze-v0.1.0-perimeter.test.mjs
 ```
 
 Run the full `$code-change-verification` stack when the change also touches

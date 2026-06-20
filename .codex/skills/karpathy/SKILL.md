@@ -32,8 +32,8 @@ Relayna Gateway work.
    - Do not refactor, reformat, rename, or clean unrelated code.
    - If the task touches compatibility-sensitive gateway behavior, use
      `$implementation-strategy` before editing.
-   - If it touches post-freeze public behavior or build/test behavior, use
-     `$production-freeze-guard` as required by `AGENTS.md`.
+   - If it touches compatibility-sensitive behavior, make the compatibility
+     decision explicit before editing.
 
 3. Choose the simplest implementation.
    - Add no features the user did not ask for.

@@ -295,7 +295,7 @@ test("audit view exposes read-only operator event filters and redacted snapshots
   assert.doesNotMatch(js, /data-audit-action/);
 });
 
-test("post-freeze governance and provider intelligence controls are present", () => {
+test("governance and provider intelligence controls are present", () => {
   assert.match(js, /async function policyLayerAction\(event\)/);
   assert.match(js, /data-policy-layer-action="delete"/);
   assert.match(js, /\/admin-ui\/admin\/policy-layers\/\$\{layerId\}/);
