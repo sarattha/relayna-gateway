@@ -2,6 +2,28 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.14 - 2026-06-20
+
+### Changed
+
+- The Admin UI Policy simulator now blocks incomplete internal-service
+  simulations before they reach the backend. Service simulations must use a
+  concrete path matching the selected service's configured route pattern or a
+  `/services/service-name/...` path, and selected service names must match the
+  service segment when the `/services/*` route is used.
+- The Policy simulator now clears stale route/provider results before
+  validation failures and before new simulation requests, avoiding misleading
+  LiteLLM denial output after an operator selects an internal service.
+- Workspace crate versions now share the `0.1.14` release version.
+- Deployment examples and release documentation now target the `0.1.14`
+  gateway image and `v0.1.14` release tag.
+
+### Security
+
+- The service-path validation is client-side only and does not change gateway
+  policy enforcement, provider credential handling, persisted schemas, or
+  runtime route behavior.
+
 ## 0.1.13 - 2026-06-20
 
 ### Added

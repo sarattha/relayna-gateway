@@ -847,11 +847,13 @@ async function simulatePolicy(event) {
   const path = String(form.get("path") || "");
   const provider = form.get("provider") || null;
   const serviceMode = provider === "internal-service" || path.startsWith("/services/");
-  if (path.trim() === "/services/*") {
-    setNotice("Use a concrete service path such as /services/service-name/test.");
+  const serviceName = serviceMode ? form.get("service_name") || null : null;
+  clearPolicySimulationResult();
+  const servicePathError = validatePolicySimulationServicePath(path, serviceName);
+  if (servicePathError) {
+    setNotice(servicePathError);
     return;
   }
-  const serviceName = serviceMode ? form.get("service_name") || null : null;
   const body = {
     key_id: form.get("key_id") || null,
     team_id: form.get("team_id") || null,
@@ -872,8 +874,44 @@ async function simulatePolicy(event) {
   if (!body.service_name) delete body.service_name;
   if (body.request_body_bytes === null) delete body.request_body_bytes;
   if (body.response_body_bytes === null) delete body.response_body_bytes;
+  clearPolicySimulationResult();
   state.policySimulation = await api("/admin-ui/admin/policy/simulate", { method: "POST", body: JSON.stringify(body) });
   document.querySelector("#policy-sim-result").innerHTML = policySimulationResult();
+}
+function clearPolicySimulationResult() {
+  state.policySimulation = null;
+  const result = document.querySelector("#policy-sim-result");
+  if (result) result.innerHTML = policySimulationResult();
+}
+function validatePolicySimulationServicePath(path, serviceName) {
+  const trimmedPath = path.trim();
+  if (trimmedPath.includes("*")) {
+    return "Choose a concrete service path such as /services/service-name/test.";
+  }
+  if (trimmedPath === "/services" || trimmedPath === "/services/") {
+    return "Choose a concrete service path such as /services/service-name/test.";
+  }
+  if (!serviceName) return null;
+  const service = state.services.find((item) => item.name === serviceName);
+  if ((service == null ? void 0 : service.route_pattern) && policySimulationPathMatchesRoutePattern(trimmedPath, service.route_pattern)) {
+    return null;
+  }
+  const segments = trimmedPath.split("/").filter(Boolean);
+  if (segments[0] !== "services" || !segments[1]) {
+    const expectedRoute = (service == null ? void 0 : service.route_pattern) || `/services/${serviceName}`;
+    return `Use a concrete path matching ${expectedRoute} or /services/${serviceName}/... when simulating ${serviceName}.`;
+  }
+  if (segments[1] !== serviceName) {
+    return `Path service ${segments[1]} does not match selected service ${serviceName}.`;
+  }
+  return null;
+}
+function policySimulationPathMatchesRoutePattern(path, routePattern) {
+  const prefix = routePattern.endsWith("/*") ? routePattern.slice(0, -2) : null;
+  if (prefix) {
+    return path === prefix || path.startsWith(`${prefix}/`);
+  }
+  return path === routePattern;
 }
 async function savePolicyLayer(event) {
   event.preventDefault();
@@ -1474,7 +1512,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.13")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.14")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>

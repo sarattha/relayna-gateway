@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.13` feature set.
+This page summarizes the `v0.1.14` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -52,7 +52,10 @@ and response-size inputs before issuing or changing a key.
 
 Policy simulation also accepts explicit registered-service context
 so operators can dry-run `/services/<service-name>/*` access against stored keys
-and service allowlists before issuing or editing credentials.
+and service allowlists before issuing or editing credentials. The Admin UI
+requires concrete paths that match the selected service route pattern, such as
+`/translation` or `/services/service-name/test`, and blocks mismatched service
+selections before running a simulation.
 
 ![Keys policy governance](assets/screenshots/admin-ui-2/keys-policy-governance.png)
 
@@ -125,7 +128,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.13` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.14` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and canonical
@@ -214,7 +217,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.13` release hardens CI and release workflows with strict
+The `v0.1.14` release hardens CI and release workflows with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

@@ -335,8 +335,12 @@ First-time setup is complete when:
   model, provider, stream/tools flags, and request/response byte projections
   against a stored key or the default policy before issuing or changing access.
   For registered service traffic, choose an `internal-service` provider or a
-  `/services/<service-name>/...` path and select the service name so service
-  allowlists are evaluated with the same route context used by the proxy.
+  path matching the registered service route pattern, then select the service
+  name so service allowlists are evaluated with the same route context used by
+  the proxy. Built-in service route patterns such as `/translation` and
+  wildcard paths such as `/services/<service-name>/...` are both valid. The
+  simulator blocks incomplete paths such as `/services/` and selected-service
+  mismatches before sending the dry run.
   Simulator output reports auth source, route match, applied inherited policy
   layers, final intersected allowlists, guardrail plan, rate/budget projections,
   and final decision. When a route, provider, model, or service allowlist
