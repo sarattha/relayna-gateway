@@ -1,10 +1,10 @@
 # LiteLLM Real Passthrough Test Report
 
-Generated: 2026-06-20T11:57:27.639Z
+Generated: 2026-07-02T15:53:38.919Z
 
 Overall result: **PASS**
 
-PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.
+PASS: canonical managed and direct route modes reach LiteLLM, Anthropic /v1/messages direct passthrough reaches LiteLLM, canonical /v1/models takes precedence over wildcard passthrough, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.
 
 ## Environment
 
@@ -26,7 +26,7 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | canonical chat completions passes to litellm | PASS | 200 |  |
 | canonical route mode can switch to direct passthrough | PASS | n/a |  |
 | wildcard passthrough defaults disabled then can enable v1 | PASS | n/a |  |
-| wildcard v1 models reaches real litellm | PASS | 200 |  |
+| canonical v1 models takes precedence over wildcard passthrough | PASS | 403 | policy_denied |
 | wildcard ui path is blocked by default | PASS | 404 | unsupported_route |
 | canonical responses passes to litellm | PASS | 200 |  |
 | canonical embeddings passes to litellm | PASS | 200 |  |
@@ -35,6 +35,7 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | direct mode uses key mapping with real litellm | PASS | 200 |  |
 | disabled key mapping falls back to project mapping | PASS | 200 |  |
 | disabled project mapping falls back to provider default | PASS | 200 |  |
+| provider default credential restored for litellm ui checks | PASS | 200 |  |
 | litellm ui proxy requires operator token | PASS | 401 |  |
 | litellm ui proxy reaches real litellm with gateway credential | PASS | 200 |  |
 | trusted ingress disables gateway entra and apigee checks | PASS | 200 |  |
@@ -42,8 +43,10 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | trusted ingress no auth ui support endpoint reaches litellm | PASS | n/a |  |
 | trusted ingress no auth admin spend logs reaches litellm | PASS | n/a |  |
 | trusted ingress no auth admin key info reaches litellm | PASS | n/a |  |
-| trusted ingress no auth v1 models reaches litellm for ui support | PASS | 200 |  |
+| trusted ingress no auth v3 admin path reaches litellm | PASS | n/a |  |
+| trusted ingress no auth v1 models stays canonical route | PASS | 401 | missing_authorization |
 | direct responses accepts litellm bearer without relayna key | PASS | n/a |  |
+| direct anthropic messages accepts litellm bearer without relayna key | PASS | n/a |  |
 | wildcard literal chatcompletion reaches litellm | PASS | 404 |  |
 | wildcard literal response reaches litellm | PASS | 404 |  |
 | wildcard literal embedding reaches litellm | PASS | 404 |  |
@@ -59,12 +62,13 @@ PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/model
 | POST /v1/embeddings | Bearer sk-upstream | no | no |
 | POST /v1/chat/completions | Bearer sk-upstream | no | no |
 | POST /v1/responses | Bearer sk-upstream | no | no |
+| POST /v1/messages | null | no | no |
 
 ## Wildcard Coverage
 
 The current branch routes managed canonical calls through LiteLLM, can switch a
-canonical route to direct LiteLLM passthrough, and forwards enabled wildcard
-`/v1/*` calls while preserving path and query.
+canonical OpenAI or Anthropic route to direct LiteLLM passthrough, and keeps
+canonical `/v1/models` ahead of wildcard passthrough.
 
 The browser-safe LiteLLM UI path is also covered: unauthenticated
 `/admin-ui/litellm-ui/` is rejected, while the operator-authenticated path
@@ -72,9 +76,8 @@ reaches the real LiteLLM `/ui/` through Gateway.
 
 The trusted-ingress LiteLLM UI path is covered with Relayna Gateway Entra and
 Apigee checks disabled: unauthenticated `/ui/` and the UI support endpoint
-`/user/info` reach real LiteLLM. The UI support model endpoint
-`/v1/models` also reaches real LiteLLM without Relayna auth in trusted-ingress
-mode.
+`/user/info` reach real LiteLLM. The model endpoint `/v1/models` remains a
+canonical Anthropic route and still requires normal Gateway route authentication.
 
 The literal alias probes below reached real LiteLLM and were rejected there with
 404 or 400 responses, proving they were not stopped by the Gateway router:

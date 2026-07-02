@@ -9,6 +9,11 @@ model_list:
       model: openai/text-embedding-review
       api_key: sk-upstream
       api_base: http://mock-provider:4000/v1
+  - model_name: claude-review
+    litellm_params:
+      model: anthropic/claude-review
+      api_key: sk-upstream
+      api_base: http://mock-provider:4000
 
 litellm_settings:
   drop_params: true

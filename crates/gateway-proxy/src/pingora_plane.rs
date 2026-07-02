@@ -492,15 +492,15 @@ where
                 }
             }
         }
-        if matches!(
-            matched.route,
-            Route::ChatCompletions | Route::Responses | Route::LiteLlmEmbeddings
-        ) {
-            match self.store.openai_route_mode(matched.route).await {
+        if gateway_core::is_litellm_canonical_route(matched.route) {
+            match self.route_mode(matched.route).await {
                 Ok(OpenAiRouteMode::DirectLiteLlmPassthrough)
                     if !authorization_has_relayna_key(authorization) =>
                 {
-                    if let Err(error) = self.ensure_openai_route_enabled(matched.route).await {
+                    if let Err(error) = self
+                        .ensure_litellm_canonical_route_enabled(matched.route)
+                        .await
+                    {
                         respond_error(session, error, &ctx.request_id).await?;
                         return Ok(true);
                     }
@@ -606,11 +606,8 @@ where
                     ctx.service_route_pattern = Some(registration.route_pattern);
                     ctx.service_upstream = Some(upstream);
                 }
-                if matches!(
-                    matched.route,
-                    Route::ChatCompletions | Route::Responses | Route::LiteLlmEmbeddings
-                ) {
-                    match self.store.openai_route_mode(matched.route).await {
+                if gateway_core::is_litellm_canonical_route(matched.route) {
+                    match self.route_mode(matched.route).await {
                         Ok(OpenAiRouteMode::DirectLiteLlmPassthrough) => {
                             ctx.litellm_passthrough = true;
                         }
@@ -872,7 +869,7 @@ where
             return Ok(true);
         }
         if ctx.direct_litellm_passthrough {
-            if let Err(error) = self.ensure_openai_route_enabled(route).await {
+            if let Err(error) = self.ensure_litellm_canonical_route_enabled(route).await {
                 respond_error(session, error, &ctx.request_id).await?;
                 return Ok(false);
             }
@@ -891,7 +888,7 @@ where
         }
 
         let now = Utc::now();
-        if let Err(error) = self.ensure_openai_route_enabled(route).await {
+        if let Err(error) = self.ensure_litellm_canonical_route_enabled(route).await {
             self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
                 .await;
             respond_error(session, error, &ctx.request_id).await?;
@@ -1466,8 +1463,24 @@ impl<S, R> RelaynaPingoraProxy<S, R>
 where
     S: OpenAiRouteSettingsLookup,
 {
-    async fn ensure_openai_route_enabled(&self, route: Route) -> GatewayResult<()> {
-        if self.store.openai_route_enabled(route).await? {
+    async fn route_enabled(&self, route: Route) -> GatewayResult<bool> {
+        if gateway_core::is_anthropic_route(route) {
+            self.store.anthropic_route_enabled(route).await
+        } else {
+            self.store.openai_route_enabled(route).await
+        }
+    }
+
+    async fn route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode> {
+        if gateway_core::is_anthropic_route(route) {
+            self.store.anthropic_route_mode(route).await
+        } else {
+            self.store.openai_route_mode(route).await
+        }
+    }
+
+    async fn ensure_litellm_canonical_route_enabled(&self, route: Route) -> GatewayResult<()> {
+        if self.route_enabled(route).await? {
             Ok(())
         } else {
             Err(GatewayError::DisabledRoute)
@@ -2683,7 +2696,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn openai_route_setting_blocks_disabled_litellm_routes_only() {
+    async fn route_setting_blocks_disabled_canonical_litellm_routes_only() {
         let store = Arc::new(MemoryUsageStore::default());
         *store.openai_routes_enabled.lock().expect("routes lock") = false;
         let proxy = RelaynaPingoraProxy {
@@ -2696,20 +2709,27 @@ mod tests {
 
         assert_eq!(
             proxy
-                .ensure_openai_route_enabled(Route::ChatCompletions)
+                .ensure_litellm_canonical_route_enabled(Route::ChatCompletions)
                 .await
                 .unwrap_err(),
             GatewayError::DisabledRoute
         );
         assert_eq!(
             proxy
-                .ensure_openai_route_enabled(Route::LiteLlmEmbeddings)
+                .ensure_litellm_canonical_route_enabled(Route::LiteLlmEmbeddings)
+                .await
+                .unwrap_err(),
+            GatewayError::DisabledRoute
+        );
+        assert_eq!(
+            proxy
+                .ensure_litellm_canonical_route_enabled(Route::AnthropicMessages)
                 .await
                 .unwrap_err(),
             GatewayError::DisabledRoute
         );
         proxy
-            .ensure_openai_route_enabled(Route::ServiceWildcard)
+            .ensure_litellm_canonical_route_enabled(Route::ServiceWildcard)
             .await
             .expect("service wildcard is not controlled by OpenAI route settings");
     }
@@ -3121,6 +3141,22 @@ mod tests {
 
         async fn openai_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode> {
             if gateway_core::openai_route_id(route).is_some() {
+                Ok(*self.openai_route_mode.lock().expect("route mode lock"))
+            } else {
+                Ok(OpenAiRouteMode::ManagedByGateway)
+            }
+        }
+
+        async fn anthropic_route_enabled(&self, route: Route) -> GatewayResult<bool> {
+            if gateway_core::anthropic_route_id(route).is_some() {
+                Ok(*self.openai_routes_enabled.lock().expect("routes lock"))
+            } else {
+                Ok(true)
+            }
+        }
+
+        async fn anthropic_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode> {
+            if gateway_core::anthropic_route_id(route).is_some() {
                 Ok(*self.openai_route_mode.lock().expect("route mode lock"))
             } else {
                 Ok(OpenAiRouteMode::ManagedByGateway)

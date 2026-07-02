@@ -119,15 +119,16 @@ Exposure modes are intentionally separate from the path allowlist:
 | `explicitly_exposed` | Sensitive paths are reachable to authenticated Relayna virtual-key clients when also allowed by path and method. Treat this as a high-risk setting and protect it with network and identity controls. |
 | `trusted_ingress` | Allows browser-safe LiteLLM UI access for trusted identity-aware ingress without Relayna credentials when requesting `/ui` and LiteLLM support endpoints. Sensitive non-UI passthrough paths such as `/v1/models` still require normal Relayna proxy auth checks. |
 
-Canonical OpenAI-compatible routes have a separate mode on the Routes page:
+Canonical OpenAI-compatible and Anthropic-compatible routes have separate modes
+on the Routes page:
 
 | Route mode | What Gateway enforces |
 | --- | --- |
 | `managed_by_gateway` | Route enablement, Relayna auth, policy, model/provider allowlists, RPM/TPM, budgets, guardrails, provider forwarding, and full usage when provider responses expose accounting fields. |
 | `direct_litellm_passthrough` | Route enablement, Relayna auth, policy, model/provider allowlists, RPM/TPM, budgets, credential stripping/injection, and direct LiteLLM forwarding. Guardrail body rewriting and token accounting are bypassed; usage is status-only. |
 
-Wildcard non-canonical passthrough, such as `/v1/models`, follows the
-allowlist/auth/audit model and records reduced status-only usage. It does not
+Wildcard non-canonical passthrough follows the allowlist/auth/audit model and
+records reduced status-only usage. It does not
 run Relayna policy, budget, guardrail, or token accounting because the route is
 not one of the canonical governed generation routes.
 
@@ -268,7 +269,7 @@ Before deploying a new release:
 3. Run CI, including Rust checks, security scans, admin UI tests, and docs
    build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.14`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.15`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
 
 ## Supply Chain and Runtime Hardening

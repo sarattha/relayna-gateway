@@ -2572,6 +2572,23 @@ impl AdminOpenAiRouteStore for PostgresStore {
             .collect::<GatewayResult<Vec<_>>>()
     }
 
+    async fn list_anthropic_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT route_id, route, enabled, mode, updated_at
+            FROM anthropic_route_settings
+            ORDER BY route_id
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        rows.iter()
+            .map(openai_route_setting_from_row)
+            .collect::<GatewayResult<Vec<_>>>()
+    }
+
     async fn set_openai_route_enabled(
         &self,
         route_id: &str,
@@ -2637,6 +2654,82 @@ impl AdminOpenAiRouteStore for PostgresStore {
             r#"
             SELECT route_id, route, enabled, mode, updated_at
             FROM openai_route_settings
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|row| openai_route_setting_from_row(&row))
+        .transpose()
+    }
+
+    async fn set_anthropic_route_enabled(
+        &self,
+        route_id: &str,
+        enabled: bool,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        if gateway_core::anthropic_route_from_id(route_id).is_none() {
+            return Ok(None);
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE anthropic_route_settings
+            SET enabled = $2,
+                updated_at = now()
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .bind(enabled)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        sqlx::query(
+            r#"
+            SELECT route_id, route, enabled, mode, updated_at
+            FROM anthropic_route_settings
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|row| openai_route_setting_from_row(&row))
+        .transpose()
+    }
+
+    async fn set_anthropic_route_mode(
+        &self,
+        route_id: &str,
+        mode: OpenAiRouteMode,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        if gateway_core::anthropic_route_from_id(route_id).is_none() {
+            return Ok(None);
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE anthropic_route_settings
+            SET mode = $2,
+                updated_at = now()
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .bind(openai_route_mode_str(mode))
+        .execute(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        sqlx::query(
+            r#"
+            SELECT route_id, route, enabled, mode, updated_at
+            FROM anthropic_route_settings
             WHERE route_id = $1
             "#,
         )
@@ -2739,6 +2832,46 @@ impl OpenAiRouteSettingsLookup for PostgresStore {
             r#"
             SELECT mode
             FROM openai_route_settings
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .ok_or(GatewayError::StoreUnavailable)?;
+
+        parse_openai_route_mode(&mode)
+    }
+
+    async fn anthropic_route_enabled(&self, route: Route) -> GatewayResult<bool> {
+        let Some(route_id) = gateway_core::anthropic_route_id(route) else {
+            return Ok(true);
+        };
+
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT enabled
+            FROM anthropic_route_settings
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .ok_or(GatewayError::StoreUnavailable)
+    }
+
+    async fn anthropic_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode> {
+        let Some(route_id) = gateway_core::anthropic_route_id(route) else {
+            return Ok(OpenAiRouteMode::ManagedByGateway);
+        };
+
+        let mode = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT mode
+            FROM anthropic_route_settings
             WHERE route_id = $1
             "#,
         )
@@ -4721,6 +4854,13 @@ fn parse_routes(values: &[String]) -> GatewayResult<Vec<Route>> {
             "/v1/chat/completions" => Ok(Route::ChatCompletions),
             "/v1/responses" => Ok(Route::Responses),
             "/v1/embeddings" => Ok(Route::LiteLlmEmbeddings),
+            "/v1/messages" => Ok(Route::AnthropicMessages),
+            "/v1/messages/count_tokens" => Ok(Route::AnthropicMessagesCountTokens),
+            "/v1/messages/batches" => Ok(Route::AnthropicMessageBatches),
+            "/v1/messages/batches/*" => Ok(Route::AnthropicMessageBatch),
+            "/v1/messages/batches/*/results" => Ok(Route::AnthropicMessageBatchResults),
+            "/v1/messages/batches/*/cancel" => Ok(Route::AnthropicMessageBatchCancel),
+            "/v1/models" => Ok(Route::AnthropicModels),
             "/providers/openai/*" => Ok(Route::DirectOpenAi),
             "/summary" => Ok(Route::Summary),
             "/translation" => Ok(Route::Translation),
@@ -5955,6 +6095,33 @@ mod tests {
         assert_eq!(service_route_policy_route("/summary"), "/summary");
         assert_eq!(service_route_policy_route("/translation"), "/translation");
         assert_eq!(service_route_policy_route("/custom/*"), "/services/*");
+    }
+
+    #[test]
+    fn parses_anthropic_policy_routes() {
+        let routes = parse_routes(&[
+            "/v1/messages".to_owned(),
+            "/v1/messages/count_tokens".to_owned(),
+            "/v1/messages/batches".to_owned(),
+            "/v1/messages/batches/*".to_owned(),
+            "/v1/messages/batches/*/results".to_owned(),
+            "/v1/messages/batches/*/cancel".to_owned(),
+            "/v1/models".to_owned(),
+        ])
+        .expect("routes");
+
+        assert_eq!(
+            routes,
+            vec![
+                Route::AnthropicMessages,
+                Route::AnthropicMessagesCountTokens,
+                Route::AnthropicMessageBatches,
+                Route::AnthropicMessageBatch,
+                Route::AnthropicMessageBatchResults,
+                Route::AnthropicMessageBatchCancel,
+                Route::AnthropicModels,
+            ]
+        );
     }
 
     #[test]

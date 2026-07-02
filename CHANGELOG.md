@@ -2,6 +2,35 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.15 - 2026-07-02
+
+### Added
+
+- Added native Anthropic-compatible LiteLLM route settings for Claude and
+  Claude Code traffic, including `/v1/messages`,
+  `/v1/messages/count_tokens`, `/v1/messages/batches`,
+  `/v1/messages/batches/*`, `/v1/messages/batches/*/results`,
+  `/v1/messages/batches/*/cancel`, and `/v1/models`.
+- Added Admin API and Admin UI route controls for Anthropic Claude routes with
+  clear OpenAI and Anthropic sections on the Routes page.
+- Added PostgreSQL seed data for Anthropic route settings so operators can
+  enable, disable, and switch direct LiteLLM passthrough mode per route.
+
+### Changed
+
+- Direct LiteLLM passthrough mode now applies to both OpenAI-compatible and
+  Anthropic-compatible canonical LiteLLM routes while preserving Relayna auth,
+  policy, rate-limit, budget, and credential translation behavior.
+- Workspace crate versions now share the `0.1.15` release version.
+- Deployment examples and release documentation now target the `0.1.15`
+  gateway image and `v0.1.15` release tag.
+
+### Security
+
+- Client Relayna, Entra, Apigee, and non-Relayna LiteLLM credentials remain
+  stripped or translated before upstream forwarding; Anthropic direct
+  passthrough records status-only usage like OpenAI direct passthrough.
+
 ## 0.1.14 - 2026-06-20
 
 ### Changed

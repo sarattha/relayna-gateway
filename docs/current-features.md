@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.14` feature set.
+This page summarizes the `v0.1.15` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -128,11 +128,12 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.14` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.15` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
-control-plane routes under `/admin-ui/*`, health, readiness, metrics, and canonical
-OpenAI-compatible routes keep explicit precedence before wildcard passthrough.
+control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
+canonical OpenAI-compatible and Anthropic-compatible routes keep explicit
+precedence before wildcard passthrough.
 Only unmatched paths that pass the configured LiteLLM passthrough allowlist are
 forwarded to LiteLLM.
 
@@ -142,7 +143,19 @@ Canonical OpenAI-compatible routes are still first-class Gateway routes:
 - `POST /v1/responses`
 - `POST /v1/embeddings`
 
-Each canonical route has a mode in the Routes page:
+Canonical Anthropic-compatible routes are also first-class Gateway routes for
+Claude and Claude Code clients:
+
+- `POST /v1/messages`
+- `POST /v1/messages/count_tokens`
+- `GET` and `POST /v1/messages/batches`
+- `GET /v1/messages/batches/*`
+- `GET /v1/messages/batches/*/results`
+- `POST /v1/messages/batches/*/cancel`
+- `GET /v1/models`
+
+Each canonical route has a mode in the Routes page under its OpenAI or
+Anthropic section:
 
 | Mode | Behavior |
 | --- | --- |
@@ -189,11 +202,11 @@ portal.
 
 The real LiteLLM verification harness under
 `internal/test-reports/litellm-real-passthrough` exercises canonical managed
-and direct route modes, wildcard `/v1/models?source=wildcard`, path/query
-preservation, sensitive `/ui` blocking by default, client credential stripping,
-LiteLLM custom-header injection, direct LiteLLM bearer delegation, and
-trusted-ingress dashboard/admin passthrough against a real `litellm/litellm`
-container.
+and direct route modes, Anthropic `/v1/messages` direct passthrough, wildcard
+`/v1/models?source=wildcard`, path/query preservation, sensitive `/ui` blocking
+by default, client credential stripping, LiteLLM custom-header injection,
+direct LiteLLM bearer delegation, and trusted-ingress dashboard/admin
+passthrough against a real `litellm/litellm` container.
 
 ## Observability Analytics
 
@@ -217,7 +230,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.14` release hardens CI and release workflows with strict
+The `v0.1.15` release hardens CI and release workflows with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

@@ -25,10 +25,10 @@ flowchart LR
 
 ## Request Flow
 
-1. A client sends an OpenAI-compatible or registered service request with Gateway credentials. With Entra disabled this is `Authorization: Bearer rk_live_...`; with Entra enabled the Entra JWT stays in `Authorization` and the Relayna key moves to the configured Relayna key header.
+1. A client sends an OpenAI-compatible, Anthropic-compatible, or registered service request with Gateway credentials. With Entra disabled this is `Authorization: Bearer rk_live_...`; with Entra enabled the Entra JWT stays in `Authorization` and the Relayna key moves to the configured Relayna key header.
 2. The proxy validates any configured Entra or trusted Apigee identity layer, extracts the Relayna key prefix, and loads the hashed key record from PostgreSQL.
-3. Route precedence is explicit: Relayna control/admin/operational routes, registered service routes, canonical OpenAI-compatible routes, and then configurable LiteLLM wildcard passthrough for remaining allowed paths.
-4. Globally disabled OpenAI-compatible LiteLLM routes are rejected before policy, rate-limit, and budget checks.
+3. Route precedence is explicit: Relayna control/admin/operational routes, registered service routes, canonical OpenAI-compatible and Anthropic-compatible routes, and then configurable LiteLLM wildcard passthrough for remaining allowed paths.
+4. Globally disabled canonical LiteLLM routes are rejected before policy, rate-limit, and budget checks.
 5. `gateway-core` verifies the key secret, disabled state, revocation state, expiry, allowed route, allowed model, allowed provider, streaming permission, service method permission, rate limit, and budget.
 6. Redis request-per-minute, token-per-minute, and budget counters are checked
    and updated for rate limit and budget decisions.
@@ -37,10 +37,10 @@ flowchart LR
    header derived from the selected upstream.
 8. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields when available.
 
-Canonical OpenAI-compatible routes can run in `managed_by_gateway` mode or
-`direct_litellm_passthrough` mode. Direct mode still enforces Relayna auth,
-route enablement, route/model/provider policy, request and token rate limits,
-and budgets before forwarding to LiteLLM. It bypasses Gateway guardrail
+Canonical OpenAI-compatible and Anthropic-compatible routes can run in
+`managed_by_gateway` mode or `direct_litellm_passthrough` mode. Direct mode
+still enforces Relayna auth, route enablement, route/model/provider policy,
+request and token rate limits, and budgets before forwarding to LiteLLM. It bypasses Gateway guardrail
 rewriting and provider token accounting, so usage for that path is reduced.
 
 Wildcard LiteLLM passthrough is for non-canonical LiteLLM paths such as

@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.14` behavior.
+This page covers the `0.1.15` behavior.
 
 ## Request Model
 
@@ -84,7 +84,15 @@ When a request reaches the proxy listener, routing is evaluated in this order:
    - `POST /v1/chat/completions`
    - `POST /v1/responses`
    - `POST /v1/embeddings`
-4. LiteLLM wildcard passthrough for remaining allowed paths.
+4. Canonical Anthropic-compatible routes:
+   - `POST /v1/messages`
+   - `POST /v1/messages/count_tokens`
+   - `GET` and `POST /v1/messages/batches`
+   - `GET /v1/messages/batches/*`
+   - `GET /v1/messages/batches/*/results`
+   - `POST /v1/messages/batches/*/cancel`
+   - `GET /v1/models`
+5. LiteLLM wildcard passthrough for remaining allowed paths.
 
 This means `/services/*` and the Admin/control API cannot accidentally fall
 through to LiteLLM wildcard passthrough.
@@ -92,7 +100,7 @@ through to LiteLLM wildcard passthrough.
 ## Canonical Route Modes
 
 Open the Admin portal Routes page to choose a mode for each canonical
-OpenAI-compatible endpoint.
+OpenAI-compatible or Anthropic-compatible endpoint.
 
 | Mode | Behavior |
 | --- | --- |
@@ -163,8 +171,8 @@ Canonical route mode is controlled from Routes, not by wildcard settings:
 
 | Route mode | Scope | Effect |
 | --- | --- | --- |
-| `managed_by_gateway` | `chat-completions`, `responses`, `embeddings` | Full Gateway policy path: full validation, route/model/provider allowlists, budgets/rate limits, guardrails, and standard accounting. |
-| `direct_litellm_passthrough` | `chat-completions`, `responses`, `embeddings` | Relayna auth and policy gates remain, but request is forwarded directly to LiteLLM with credential translation and without guardrail rewriting/token accounting. |
+| `managed_by_gateway` | OpenAI and Anthropic route IDs | Full Gateway policy path: full validation, route/model/provider allowlists, budgets/rate limits, guardrails, and standard accounting. |
+| `direct_litellm_passthrough` | OpenAI and Anthropic route IDs | Relayna auth and policy gates remain, but request is forwarded directly to LiteLLM with credential translation and without guardrail rewriting/token accounting. |
 
 Canonical non-matching routes still honor route-mode behavior exactly as before.
 
@@ -322,7 +330,8 @@ bash internal/test-reports/litellm-real-passthrough/run.sh
 That harness starts PostgreSQL, Redis, Gateway, a real `litellm/litellm`
 container, and the mock upstream provider behind LiteLLM. Gateway connects
 directly to LiteLLM, matching production topology. It verifies canonical
-managed and direct modes, wildcard `/v1/models` passthrough, `/ui` default
-blocking, credential stripping at the downstream mock provider, custom LiteLLM
-header injection against real LiteLLM, direct LiteLLM bearer delegation, and
-trusted-ingress dashboard/admin passthrough.
+managed and direct modes, Anthropic `/v1/messages` direct passthrough, wildcard
+`/v1/models` passthrough, `/ui` default blocking, credential stripping at the
+downstream mock provider, custom LiteLLM header injection against real LiteLLM,
+direct LiteLLM bearer delegation, and trusted-ingress dashboard/admin
+passthrough.

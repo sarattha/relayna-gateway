@@ -427,6 +427,10 @@ pub fn router_with_state(state: AppState) -> Router {
         )
         .route("/admin-ui/admin/openai-routes", get(list_openai_routes))
         .route(
+            "/admin-ui/admin/anthropic-routes",
+            get(list_anthropic_routes),
+        )
+        .route(
             "/admin-ui/admin/openai-routes/{route_id}/disable",
             post(disable_openai_route),
         )
@@ -437,6 +441,18 @@ pub fn router_with_state(state: AppState) -> Router {
         .route(
             "/admin-ui/admin/openai-routes/{route_id}/mode",
             patch(patch_openai_route_mode),
+        )
+        .route(
+            "/admin-ui/admin/anthropic-routes/{route_id}/disable",
+            post(disable_anthropic_route),
+        )
+        .route(
+            "/admin-ui/admin/anthropic-routes/{route_id}/enable",
+            post(enable_anthropic_route),
+        )
+        .route(
+            "/admin-ui/admin/anthropic-routes/{route_id}/mode",
+            patch(patch_anthropic_route_mode),
         )
         .route(
             "/admin-ui/admin/services",
@@ -1404,6 +1420,13 @@ fn apply_simulation_policy_patch(
                 "/v1/chat/completions" => Ok(Route::ChatCompletions),
                 "/v1/responses" => Ok(Route::Responses),
                 "/v1/embeddings" => Ok(Route::LiteLlmEmbeddings),
+                "/v1/messages" => Ok(Route::AnthropicMessages),
+                "/v1/messages/count_tokens" => Ok(Route::AnthropicMessagesCountTokens),
+                "/v1/messages/batches" => Ok(Route::AnthropicMessageBatches),
+                "/v1/messages/batches/*" => Ok(Route::AnthropicMessageBatch),
+                "/v1/messages/batches/*/results" => Ok(Route::AnthropicMessageBatchResults),
+                "/v1/messages/batches/*/cancel" => Ok(Route::AnthropicMessageBatchCancel),
+                "/v1/models" => Ok(Route::AnthropicModels),
                 "/providers/openai/*" => Ok(Route::DirectOpenAi),
                 "/summary" => Ok(Route::Summary),
                 "/translation" => Ok(Route::Translation),
@@ -2052,6 +2075,13 @@ async fn list_openai_routes(State(state): State<AppState>, headers: HeaderMap) -
     .await
 }
 
+async fn list_anthropic_routes(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+        store.list_anthropic_route_settings().await
+    })
+    .await
+}
+
 async fn disable_openai_route(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2066,6 +2096,22 @@ async fn enable_openai_route(
     Path(route_id): Path<String>,
 ) -> Response {
     mutate_openai_route_enabled(state, headers, route_id, true).await
+}
+
+async fn disable_anthropic_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(route_id): Path<String>,
+) -> Response {
+    mutate_anthropic_route_enabled(state, headers, route_id, false).await
+}
+
+async fn enable_anthropic_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(route_id): Path<String>,
+) -> Response {
+    mutate_anthropic_route_enabled(state, headers, route_id, true).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -2096,6 +2142,44 @@ async fn patch_openai_route_mode(
                 &actor,
                 "policies:route_mode_update",
                 "openai_route",
+                Some(route_id),
+                None,
+                audit_json(&setting),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(setting).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn patch_anthropic_route_mode(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(route_id): Path<String>,
+    Json(request): Json<OpenAiRouteModePatchRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+
+    match state
+        .store
+        .set_anthropic_route_mode(&route_id, request.mode)
+        .await
+    {
+        Ok(Some(setting)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "policies:route_mode_update",
+                "anthropic_route",
                 Some(route_id),
                 None,
                 audit_json(&setting),
@@ -3055,6 +3139,48 @@ async fn mutate_openai_route_enabled(
     }
 }
 
+async fn mutate_anthropic_route_enabled(
+    state: AppState,
+    headers: HeaderMap,
+    route_id: String,
+    enabled: bool,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+
+    match state
+        .store
+        .set_anthropic_route_enabled(&route_id, enabled)
+        .await
+    {
+        Ok(Some(setting)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                if enabled {
+                    "policies:route_enable"
+                } else {
+                    "policies:route_disable"
+                },
+                "anthropic_route",
+                Some(route_id),
+                None,
+                audit_json(&setting),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(setting).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn mutate_provider_enabled(
     state: AppState,
     headers: HeaderMap,
@@ -3891,6 +4017,7 @@ mod tests {
         admin_key: Arc<Mutex<Option<AdminKeyResponse>>>,
         services: Arc<Mutex<Vec<ServiceResponse>>>,
         openai_routes: Arc<Mutex<Vec<OpenAiRouteSetting>>>,
+        anthropic_routes: Arc<Mutex<Vec<OpenAiRouteSetting>>>,
         operator_tokens: Arc<Mutex<Vec<String>>>,
         events: Arc<Mutex<Vec<UsageEvent>>>,
         audit_events: Arc<Mutex<Vec<AuditEvent>>>,
@@ -4079,6 +4206,15 @@ mod tests {
                         "/v1/chat/completions" => Some(Route::ChatCompletions),
                         "/v1/responses" => Some(Route::Responses),
                         "/v1/embeddings" => Some(Route::LiteLlmEmbeddings),
+                        "/v1/messages" => Some(Route::AnthropicMessages),
+                        "/v1/messages/count_tokens" => Some(Route::AnthropicMessagesCountTokens),
+                        "/v1/messages/batches" => Some(Route::AnthropicMessageBatches),
+                        "/v1/messages/batches/*" => Some(Route::AnthropicMessageBatch),
+                        "/v1/messages/batches/*/results" => {
+                            Some(Route::AnthropicMessageBatchResults)
+                        }
+                        "/v1/messages/batches/*/cancel" => Some(Route::AnthropicMessageBatchCancel),
+                        "/v1/models" => Some(Route::AnthropicModels),
                         "/providers/openai/*" => Some(Route::DirectOpenAi),
                         "/summary" => Some(Route::Summary),
                         "/translation" => Some(Route::Translation),
@@ -4564,6 +4700,10 @@ mod tests {
             Ok(self.openai_routes.lock().expect("lock poisoned").clone())
         }
 
+        async fn list_anthropic_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
+            Ok(self.anthropic_routes.lock().expect("lock poisoned").clone())
+        }
+
         async fn set_openai_route_enabled(
             &self,
             route_id: &str,
@@ -4584,6 +4724,34 @@ mod tests {
             mode: OpenAiRouteMode,
         ) -> GatewayResult<Option<OpenAiRouteSetting>> {
             let mut routes = self.openai_routes.lock().expect("lock poisoned");
+            let Some(route) = routes.iter_mut().find(|route| route.route_id == route_id) else {
+                return Ok(None);
+            };
+            route.mode = mode;
+            route.updated_at = Utc::now();
+            Ok(Some(route.clone()))
+        }
+
+        async fn set_anthropic_route_enabled(
+            &self,
+            route_id: &str,
+            enabled: bool,
+        ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+            let mut routes = self.anthropic_routes.lock().expect("lock poisoned");
+            let Some(route) = routes.iter_mut().find(|route| route.route_id == route_id) else {
+                return Ok(None);
+            };
+            route.enabled = enabled;
+            route.updated_at = Utc::now();
+            Ok(Some(route.clone()))
+        }
+
+        async fn set_anthropic_route_mode(
+            &self,
+            route_id: &str,
+            mode: OpenAiRouteMode,
+        ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+            let mut routes = self.anthropic_routes.lock().expect("lock poisoned");
             let Some(route) = routes.iter_mut().find(|route| route.route_id == route_id) else {
                 return Ok(None);
             };
@@ -5411,6 +5579,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -5443,6 +5612,61 @@ mod tests {
             OpenAiRouteSetting {
                 route_id: "embeddings".to_owned(),
                 route: "/v1/embeddings".to_owned(),
+                enabled: true,
+                mode: OpenAiRouteMode::ManagedByGateway,
+                updated_at: now,
+            },
+        ]
+    }
+
+    fn default_anthropic_routes() -> Vec<OpenAiRouteSetting> {
+        let now = Utc::now();
+        vec![
+            OpenAiRouteSetting {
+                route_id: "messages".to_owned(),
+                route: "/v1/messages".to_owned(),
+                enabled: true,
+                mode: OpenAiRouteMode::ManagedByGateway,
+                updated_at: now,
+            },
+            OpenAiRouteSetting {
+                route_id: "messages-count-tokens".to_owned(),
+                route: "/v1/messages/count_tokens".to_owned(),
+                enabled: true,
+                mode: OpenAiRouteMode::ManagedByGateway,
+                updated_at: now,
+            },
+            OpenAiRouteSetting {
+                route_id: "message-batches".to_owned(),
+                route: "/v1/messages/batches".to_owned(),
+                enabled: true,
+                mode: OpenAiRouteMode::ManagedByGateway,
+                updated_at: now,
+            },
+            OpenAiRouteSetting {
+                route_id: "message-batch".to_owned(),
+                route: "/v1/messages/batches/*".to_owned(),
+                enabled: true,
+                mode: OpenAiRouteMode::ManagedByGateway,
+                updated_at: now,
+            },
+            OpenAiRouteSetting {
+                route_id: "message-batch-results".to_owned(),
+                route: "/v1/messages/batches/*/results".to_owned(),
+                enabled: true,
+                mode: OpenAiRouteMode::ManagedByGateway,
+                updated_at: now,
+            },
+            OpenAiRouteSetting {
+                route_id: "message-batch-cancel".to_owned(),
+                route: "/v1/messages/batches/*/cancel".to_owned(),
+                enabled: true,
+                mode: OpenAiRouteMode::ManagedByGateway,
+                updated_at: now,
+            },
+            OpenAiRouteSetting {
+                route_id: "models".to_owned(),
+                route: "/v1/models".to_owned(),
                 enabled: true,
                 mode: OpenAiRouteMode::ManagedByGateway,
                 updated_at: now,
@@ -5645,6 +5869,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -5949,6 +6174,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6150,6 +6376,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6174,6 +6401,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6204,6 +6432,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6346,6 +6575,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_policy_simulator_accepts_anthropic_policy_routes() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_post(
+            app,
+            "/admin-ui/admin/policy/simulate",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"path":"/v1/messages","body":{"model":"claude-review"},"policy":{"allowed_routes":["/v1/messages","/v1/messages/batches","/v1/messages/batches/*/results"]}}"#,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["route_match"]["route"], "/v1/messages");
+        assert_eq!(value["final_decision"]["allowed"], true);
+        assert_eq!(value["policy_merge"]["allowed_routes"][0], "/v1/messages");
+        assert_eq!(
+            value["policy_merge"]["allowed_routes"][2],
+            "/v1/messages/batches/*/results"
+        );
+    }
+
+    #[tokio::test]
     async fn admin_policy_simulator_warns_when_effective_allowlists_exclude_request() {
         let app = router_with_state(test_state(default_store()));
         let response = admin_post(
@@ -6442,6 +6693,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6480,6 +6732,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6548,6 +6801,7 @@ mod tests {
             )))),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_POLICY_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6579,6 +6833,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6614,6 +6869,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6650,6 +6906,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6692,6 +6949,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6784,6 +7042,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6823,6 +7082,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6933,6 +7193,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -6968,6 +7229,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -7180,6 +7442,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -7251,6 +7514,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn anthropic_route_settings_can_be_listed_and_toggled() {
+        let store = default_store();
+        let app = router_with_state(test_state(store));
+
+        let response = admin_get(
+            app.clone(),
+            "/admin-ui/admin/anthropic-routes",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value.as_array().expect("routes").len(), 7);
+        assert_eq!(value[0]["mode"], "managed_by_gateway");
+
+        let response = admin_post(
+            app.clone(),
+            "/admin-ui/admin/anthropic-routes/messages/disable",
+            Some(TEST_OPERATOR_TOKEN),
+            "{}",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["route_id"], "messages");
+        assert_eq!(value["enabled"], false);
+
+        let response = admin_patch(
+            app.clone(),
+            "/admin-ui/admin/anthropic-routes/messages/mode",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"mode":"direct_litellm_passthrough"}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["mode"], "direct_litellm_passthrough");
+
+        let response = admin_post(
+            app,
+            "/admin-ui/admin/anthropic-routes/messages/enable",
+            Some(TEST_OPERATOR_TOKEN),
+            "{}",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["enabled"], true);
+    }
+
+    #[tokio::test]
     async fn litellm_passthrough_settings_can_be_read_and_patched() {
         let store = default_store();
         let audit_events = store.audit_events.clone();
@@ -7305,6 +7619,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -7370,6 +7685,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -7418,6 +7734,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
@@ -7500,6 +7817,7 @@ mod tests {
             admin_key: Arc::new(Mutex::new(None)),
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
+            anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
