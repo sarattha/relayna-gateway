@@ -14,6 +14,13 @@ pub enum Route {
     ChatCompletions,
     Responses,
     LiteLlmEmbeddings,
+    AnthropicMessages,
+    AnthropicMessagesCountTokens,
+    AnthropicMessageBatches,
+    AnthropicMessageBatch,
+    AnthropicMessageBatchResults,
+    AnthropicMessageBatchCancel,
+    AnthropicModels,
     DirectOpenAi,
     LiteLlmPassthrough,
     Summary,
@@ -55,6 +62,31 @@ impl Route {
             "/v1/embeddings" if method == Method::POST => {
                 Ok(RouteMatch::litellm(Self::LiteLlmEmbeddings))
             }
+            "/v1/messages" if method == Method::POST => {
+                Ok(RouteMatch::litellm(Self::AnthropicMessages))
+            }
+            "/v1/messages/count_tokens" if method == Method::POST => {
+                Ok(RouteMatch::litellm(Self::AnthropicMessagesCountTokens))
+            }
+            "/v1/messages/batches" if method == Method::POST || method == Method::GET => {
+                Ok(RouteMatch::litellm(Self::AnthropicMessageBatches))
+            }
+            _ if method == Method::GET
+                && path.starts_with("/v1/messages/batches/")
+                && path.ends_with("/results") =>
+            {
+                Ok(RouteMatch::litellm(Self::AnthropicMessageBatchResults))
+            }
+            _ if method == Method::GET && path.starts_with("/v1/messages/batches/") => {
+                Ok(RouteMatch::litellm(Self::AnthropicMessageBatch))
+            }
+            _ if method == Method::POST
+                && path.starts_with("/v1/messages/batches/")
+                && path.ends_with("/cancel") =>
+            {
+                Ok(RouteMatch::litellm(Self::AnthropicMessageBatchCancel))
+            }
+            "/v1/models" if method == Method::GET => Ok(RouteMatch::litellm(Self::AnthropicModels)),
             "/summary" if method == Method::POST => {
                 Ok(RouteMatch::service(Self::Summary, "summary"))
             }
@@ -94,6 +126,13 @@ impl Route {
             Self::ChatCompletions => "/v1/chat/completions",
             Self::Responses => "/v1/responses",
             Self::LiteLlmEmbeddings => "/v1/embeddings",
+            Self::AnthropicMessages => "/v1/messages",
+            Self::AnthropicMessagesCountTokens => "/v1/messages/count_tokens",
+            Self::AnthropicMessageBatches => "/v1/messages/batches",
+            Self::AnthropicMessageBatch => "/v1/messages/batches/*",
+            Self::AnthropicMessageBatchResults => "/v1/messages/batches/*/results",
+            Self::AnthropicMessageBatchCancel => "/v1/messages/batches/*/cancel",
+            Self::AnthropicModels => "/v1/models",
             Self::DirectOpenAi => "/providers/openai/*",
             Self::LiteLlmPassthrough => "/litellm/*",
             Self::Summary => "/summary",
@@ -166,6 +205,45 @@ mod tests {
     }
 
     #[test]
+    fn resolves_anthropic_litellm_routes() {
+        let messages = Route::resolve_match(&Method::POST, "/v1/messages").expect("messages");
+        assert_eq!(messages.route, Route::AnthropicMessages);
+        assert_eq!(messages.backend, BackendType::LiteLlm);
+        assert_eq!(messages.provider, Provider::LiteLlm);
+
+        assert_eq!(
+            Route::resolve(&Method::POST, "/v1/messages/count_tokens").expect("count tokens"),
+            Route::AnthropicMessagesCountTokens
+        );
+        assert_eq!(
+            Route::resolve(&Method::POST, "/v1/messages/batches").expect("create batch"),
+            Route::AnthropicMessageBatches
+        );
+        assert_eq!(
+            Route::resolve(&Method::GET, "/v1/messages/batches").expect("list batches"),
+            Route::AnthropicMessageBatches
+        );
+        assert_eq!(
+            Route::resolve(&Method::GET, "/v1/messages/batches/msgbatch_123").expect("get batch"),
+            Route::AnthropicMessageBatch
+        );
+        assert_eq!(
+            Route::resolve(&Method::GET, "/v1/messages/batches/msgbatch_123/results")
+                .expect("batch results"),
+            Route::AnthropicMessageBatchResults
+        );
+        assert_eq!(
+            Route::resolve(&Method::POST, "/v1/messages/batches/msgbatch_123/cancel")
+                .expect("cancel batch"),
+            Route::AnthropicMessageBatchCancel
+        );
+        assert_eq!(
+            Route::resolve(&Method::GET, "/v1/models").expect("models"),
+            Route::AnthropicModels
+        );
+    }
+
+    #[test]
     fn rejects_unsupported_routes() {
         assert_eq!(
             Route::resolve(&Method::GET, "/v1/responses").unwrap_err(),
@@ -181,6 +259,14 @@ mod tests {
         );
         assert_eq!(
             Route::resolve(&Method::GET, "/v1/embeddings").unwrap_err(),
+            GatewayError::UnsupportedRoute
+        );
+        assert_eq!(
+            Route::resolve(&Method::GET, "/v1/messages").unwrap_err(),
+            GatewayError::UnsupportedRoute
+        );
+        assert_eq!(
+            Route::resolve(&Method::DELETE, "/v1/messages/batches/msgbatch_123").unwrap_err(),
             GatewayError::UnsupportedRoute
         );
     }

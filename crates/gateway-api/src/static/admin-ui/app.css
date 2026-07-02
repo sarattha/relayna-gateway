@@ -552,6 +552,32 @@ tr:last-child td {
   border-bottom: 0;
 }
 
+.route-logo {
+  align-items: center;
+  border: 1px solid var(--rg-color-border);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 800;
+  height: 23px;
+  justify-content: center;
+  margin-right: var(--rg-space-2);
+  vertical-align: middle;
+  width: 23px;
+}
+
+.route-logo.openai {
+  background: #e9f8f2;
+  border-color: #9bd8c0;
+  color: #0d6b53;
+}
+
+.route-logo.anthropic {
+  background: #f7efe7;
+  border-color: #d8bfa5;
+  color: #6d4b2f;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

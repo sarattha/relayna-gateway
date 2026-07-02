@@ -7,6 +7,13 @@ use serde::{Deserialize, Serialize};
 pub const CHAT_COMPLETIONS_ROUTE_ID: &str = "chat-completions";
 pub const EMBEDDINGS_ROUTE_ID: &str = "embeddings";
 pub const RESPONSES_ROUTE_ID: &str = "responses";
+pub const ANTHROPIC_MESSAGES_ROUTE_ID: &str = "messages";
+pub const ANTHROPIC_MESSAGES_COUNT_TOKENS_ROUTE_ID: &str = "messages-count-tokens";
+pub const ANTHROPIC_MESSAGE_BATCHES_ROUTE_ID: &str = "message-batches";
+pub const ANTHROPIC_MESSAGE_BATCH_ROUTE_ID: &str = "message-batch";
+pub const ANTHROPIC_MESSAGE_BATCH_RESULTS_ROUTE_ID: &str = "message-batch-results";
+pub const ANTHROPIC_MESSAGE_BATCH_CANCEL_ROUTE_ID: &str = "message-batch-cancel";
+pub const ANTHROPIC_MODELS_ROUTE_ID: &str = "models";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -59,6 +66,7 @@ pub struct LiteLlmPassthroughSettings {
 #[async_trait]
 pub trait AdminOpenAiRouteStore: Send + Sync {
     async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>>;
+    async fn list_anthropic_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>>;
 
     async fn set_openai_route_enabled(
         &self,
@@ -67,6 +75,18 @@ pub trait AdminOpenAiRouteStore: Send + Sync {
     ) -> GatewayResult<Option<OpenAiRouteSetting>>;
 
     async fn set_openai_route_mode(
+        &self,
+        route_id: &str,
+        mode: OpenAiRouteMode,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>>;
+
+    async fn set_anthropic_route_enabled(
+        &self,
+        route_id: &str,
+        enabled: bool,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>>;
+
+    async fn set_anthropic_route_mode(
         &self,
         route_id: &str,
         mode: OpenAiRouteMode,
@@ -89,6 +109,10 @@ where
         (**self).list_openai_route_settings().await
     }
 
+    async fn list_anthropic_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
+        (**self).list_anthropic_route_settings().await
+    }
+
     async fn set_openai_route_enabled(
         &self,
         route_id: &str,
@@ -103,6 +127,24 @@ where
         mode: OpenAiRouteMode,
     ) -> GatewayResult<Option<OpenAiRouteSetting>> {
         (**self).set_openai_route_mode(route_id, mode).await
+    }
+
+    async fn set_anthropic_route_enabled(
+        &self,
+        route_id: &str,
+        enabled: bool,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        (**self)
+            .set_anthropic_route_enabled(route_id, enabled)
+            .await
+    }
+
+    async fn set_anthropic_route_mode(
+        &self,
+        route_id: &str,
+        mode: OpenAiRouteMode,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        (**self).set_anthropic_route_mode(route_id, mode).await
     }
 
     async fn get_litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
@@ -121,6 +163,8 @@ where
 pub trait OpenAiRouteSettingsLookup: Send + Sync {
     async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool>;
     async fn openai_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode>;
+    async fn anthropic_route_enabled(&self, route: Route) -> GatewayResult<bool>;
+    async fn anthropic_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode>;
     async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings>;
 }
 
@@ -135,6 +179,14 @@ where
 
     async fn openai_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode> {
         (**self).openai_route_mode(route).await
+    }
+
+    async fn anthropic_route_enabled(&self, route: Route) -> GatewayResult<bool> {
+        (**self).anthropic_route_enabled(route).await
+    }
+
+    async fn anthropic_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode> {
+        (**self).anthropic_route_mode(route).await
     }
 
     async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
@@ -158,6 +210,44 @@ pub fn openai_route_from_id(route_id: &str) -> Option<Route> {
         EMBEDDINGS_ROUTE_ID => Some(Route::LiteLlmEmbeddings),
         _ => None,
     }
+}
+
+pub fn anthropic_route_id(route: Route) -> Option<&'static str> {
+    match route {
+        Route::AnthropicMessages => Some(ANTHROPIC_MESSAGES_ROUTE_ID),
+        Route::AnthropicMessagesCountTokens => Some(ANTHROPIC_MESSAGES_COUNT_TOKENS_ROUTE_ID),
+        Route::AnthropicMessageBatches => Some(ANTHROPIC_MESSAGE_BATCHES_ROUTE_ID),
+        Route::AnthropicMessageBatch => Some(ANTHROPIC_MESSAGE_BATCH_ROUTE_ID),
+        Route::AnthropicMessageBatchResults => Some(ANTHROPIC_MESSAGE_BATCH_RESULTS_ROUTE_ID),
+        Route::AnthropicMessageBatchCancel => Some(ANTHROPIC_MESSAGE_BATCH_CANCEL_ROUTE_ID),
+        Route::AnthropicModels => Some(ANTHROPIC_MODELS_ROUTE_ID),
+        _ => None,
+    }
+}
+
+pub fn anthropic_route_from_id(route_id: &str) -> Option<Route> {
+    match route_id {
+        ANTHROPIC_MESSAGES_ROUTE_ID => Some(Route::AnthropicMessages),
+        ANTHROPIC_MESSAGES_COUNT_TOKENS_ROUTE_ID => Some(Route::AnthropicMessagesCountTokens),
+        ANTHROPIC_MESSAGE_BATCHES_ROUTE_ID => Some(Route::AnthropicMessageBatches),
+        ANTHROPIC_MESSAGE_BATCH_ROUTE_ID => Some(Route::AnthropicMessageBatch),
+        ANTHROPIC_MESSAGE_BATCH_RESULTS_ROUTE_ID => Some(Route::AnthropicMessageBatchResults),
+        ANTHROPIC_MESSAGE_BATCH_CANCEL_ROUTE_ID => Some(Route::AnthropicMessageBatchCancel),
+        ANTHROPIC_MODELS_ROUTE_ID => Some(Route::AnthropicModels),
+        _ => None,
+    }
+}
+
+pub fn is_openai_route(route: Route) -> bool {
+    openai_route_id(route).is_some()
+}
+
+pub fn is_anthropic_route(route: Route) -> bool {
+    anthropic_route_id(route).is_some()
+}
+
+pub fn is_litellm_canonical_route(route: Route) -> bool {
+    is_openai_route(route) || is_anthropic_route(route)
 }
 
 impl LiteLlmPassthroughSettingsPatchRequest {

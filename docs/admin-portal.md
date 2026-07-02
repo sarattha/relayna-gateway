@@ -211,17 +211,20 @@ Studio imports, preview changes before importing or syncing.
 
 ### 6. Confirm exposed routes
 
-Open Routes. Confirm the OpenAI-compatible routes and registered service routes
-that clients will call.
+Open Routes. Confirm the OpenAI-compatible routes, Anthropic Claude routes, and
+registered service routes that clients will call.
 
 ![Routes confirmation view](assets/screenshots/admin-first-time-setup/06-routes-confirmation.png)
 
 What to check: `/v1/chat/completions` and `/v1/responses` should be enabled
-when clients need OpenAI-compatible traffic. Registered service routes should
+when clients need OpenAI-compatible traffic. `/v1/messages`,
+`/v1/messages/count_tokens`, and `/v1/messages/batches` should be enabled when
+clients need Claude or Claude Code traffic. Registered service routes should
 show the expected route pattern, allowed methods, upstream, and credential
 state.
 
-Each canonical OpenAI-compatible route also has a mode selector:
+Each canonical OpenAI-compatible and Anthropic-compatible route also has a mode
+selector:
 
 - `managed_by_gateway` keeps the full Gateway path: Relayna auth, route/model
   and provider policy, RPM/TPM, budgets, guardrails, provider forwarding, and

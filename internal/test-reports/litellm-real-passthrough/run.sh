@@ -70,8 +70,8 @@ ${providerRows}
 ## Wildcard Coverage
 
 The current branch routes managed canonical calls through LiteLLM, can switch a
-canonical route to direct LiteLLM passthrough, and forwards enabled wildcard
-\`/v1/*\` calls while preserving path and query.
+canonical OpenAI or Anthropic route to direct LiteLLM passthrough, and keeps
+canonical \`/v1/models\` ahead of wildcard passthrough.
 
 The browser-safe LiteLLM UI path is also covered: unauthenticated
 \`/admin-ui/litellm-ui/\` is rejected, while the operator-authenticated path
@@ -79,9 +79,8 @@ reaches the real LiteLLM \`/ui/\` through Gateway.
 
 The trusted-ingress LiteLLM UI path is covered with Relayna Gateway Entra and
 Apigee checks disabled: unauthenticated \`/ui/\` and the UI support endpoint
-\`/user/info\` reach real LiteLLM. The UI support model endpoint
-\`/v1/models\` also reaches real LiteLLM without Relayna auth in trusted-ingress
-mode.
+\`/user/info\` reach real LiteLLM. The model endpoint \`/v1/models\` remains a
+canonical Anthropic route and still requires normal Gateway route authentication.
 
 The literal alias probes below reached real LiteLLM and were rejected there with
 404 or 400 responses, proving they were not stopped by the Gateway router:

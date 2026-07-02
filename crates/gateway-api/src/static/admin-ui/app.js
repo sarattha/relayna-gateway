@@ -183,6 +183,7 @@ const state = {
   litellmCredentialMappings: [],
   litellmPassthroughSettings: null,
   openaiRoutes: [],
+  anthropicRoutes: [],
   services: [],
   guardrails: [],
   guardrailExecutions: [],
@@ -425,23 +426,25 @@ async function refresh() {
   }
 }
 async function overview() {
-  const [summary, healthRows, ready, keysRows, openaiRoutes, servicesRows] = await Promise.all([
+  const [summary, healthRows, ready, keysRows, openaiRoutes, anthropicRoutes, servicesRows] = await Promise.all([
     api("/admin-ui/admin/usage/summary"),
     api("/admin-ui/admin/provider-health"),
     json("/admin-ui/readyz"),
     api("/admin-ui/admin/keys"),
     api("/admin-ui/admin/openai-routes"),
+    api("/admin-ui/admin/anthropic-routes"),
     api("/admin-ui/admin/services")
   ]);
   const activeKeys = keysRows.filter((key) => !key.disabled && !key.revoked_at).length;
-  const enabledRoutes = openaiRoutes.filter((route) => route.enabled).length;
+  const enabledRoutes = openaiRoutes.filter((route) => route.enabled).length + anthropicRoutes.filter((route) => route.enabled).length;
+  const totalRoutes = openaiRoutes.length + anthropicRoutes.length;
   const enabledServices = servicesRows.filter((service) => service.enabled).length;
   content.innerHTML = `
     <div class="grid stats">
       ${stat("Readiness", ready.status)}
       ${stat("Requests", summary.request_count)}
       ${stat("Active keys", activeKeys)}
-      ${stat("OpenAI routes", `${enabledRoutes}/${openaiRoutes.length}`)}
+      ${stat("AI routes", `${enabledRoutes}/${totalRoutes}`)}
       ${stat("Enabled services", enabledServices)}
       ${stat("Failures", summary.failure_count)}
       ${stat("Cost", money(summary.estimated_cost_usd))}
@@ -1253,14 +1256,25 @@ function updateLiteLlmMappingTargetVisibility() {
   (_e = (_d = document.querySelector("[data-litellm-project-target]")) == null ? void 0 : _d.closest("label")) == null ? void 0 : _e.toggleAttribute("hidden", scope !== "project");
 }
 async function routes() {
-  [state.openaiRoutes, state.services] = await Promise.all([
+  [state.openaiRoutes, state.anthropicRoutes, state.services] = await Promise.all([
     api("/admin-ui/admin/openai-routes"),
+    api("/admin-ui/admin/anthropic-routes"),
     api("/admin-ui/admin/services")
   ]);
   content.innerHTML = `
     <section class="panel">
-      <div class="panel-heading"><h3>OpenAI-compatible routes</h3><span class="subtle">${state.openaiRoutes.length} total</span></div>
-      ${openaiRouteTable(state.openaiRoutes)}
+      <div class="panel-heading">
+        <h3>${routeFamilyLogo("openai")} OpenAI-compatible routes</h3>
+        <span class="subtle">${state.openaiRoutes.length} total</span>
+      </div>
+      ${providerRouteTable(state.openaiRoutes, "openai")}
+    </section>
+    <section class="panel">
+      <div class="panel-heading">
+        <h3>${routeFamilyLogo("anthropic")} Anthropic Claude routes</h3>
+        <span class="subtle">${state.anthropicRoutes.length} total</span>
+      </div>
+      ${providerRouteTable(state.anthropicRoutes, "anthropic")}
     </section>
     <section class="panel">
       <div class="panel-heading"><h3>Registered service routes</h3><span class="subtle">${state.services.length} total</span></div>
@@ -1273,23 +1287,45 @@ async function routes() {
   document.querySelectorAll("[data-openai-route-mode-form]").forEach((form) => {
     form.addEventListener("submit", handleAsync(saveOpenAiRouteMode));
   });
+  document.querySelectorAll("[data-anthropic-route-action]").forEach((button) => {
+    button.addEventListener("click", handleAsync(anthropicRouteAction));
+  });
+  document.querySelectorAll("[data-anthropic-route-mode-form]").forEach((form) => {
+    form.addEventListener("submit", handleAsync(saveAnthropicRouteMode));
+  });
 }
-function openaiRouteTable(rows) {
+function routeFamilyLogo(family) {
+  const label = family === "anthropic" ? "A" : "OA";
+  const title = family === "anthropic" ? "Anthropic" : "OpenAI";
+  return `<span class="route-logo ${family}" title="${title}" aria-label="${title}">${label}</span>`;
+}
+function providerRouteTable(rows, family) {
+  const actionAttr = family === "anthropic" ? "data-anthropic-route-action" : "data-openai-route-action";
+  const modeForm = family === "anthropic" ? anthropicRouteModeForm : openaiRouteModeForm;
   return table(
     ["Route", "State", "Mode", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
-      openaiRouteModeForm(row),
+      modeForm(row),
       time(row.updated_at),
       `<div class="actions">
-        <button data-openai-route-action="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}">${row.enabled ? "Disable" : "Enable"}</button>
+        <button ${actionAttr}="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}">${row.enabled ? "Disable" : "Enable"}</button>
       </div>`
     ])
   );
 }
 function openaiRouteModeForm(row) {
   return `<form class="inline-form" data-openai-route-mode-form data-route-id="${attr(row.route_id)}">
+    <select name="mode">
+      ${option("managed_by_gateway", row.mode || "managed_by_gateway")}
+      ${option("direct_litellm_passthrough", row.mode || "")}
+    </select>
+    <button type="submit">Save</button>
+  </form>`;
+}
+function anthropicRouteModeForm(row) {
+  return `<form class="inline-form" data-anthropic-route-mode-form data-route-id="${attr(row.route_id)}">
     <select name="mode">
       ${option("managed_by_gateway", row.mode || "managed_by_gateway")}
       ${option("direct_litellm_passthrough", row.mode || "")}
@@ -1318,6 +1354,13 @@ async function openaiRouteAction(event) {
   setNotice(`OpenAI route ${action}d.`, "success");
   await routes();
 }
+async function anthropicRouteAction(event) {
+  const { routeId, anthropicRouteAction: action } = event.currentTarget.dataset;
+  if (!await confirmAction(`${action} ${routeId}`, "This gateway route change is written to the database.")) return;
+  await api(`/admin-ui/admin/anthropic-routes/${routeId}/${action}`, { method: "POST", body: "{}" });
+  setNotice(`Anthropic route ${action}d.`, "success");
+  await routes();
+}
 async function saveOpenAiRouteMode(event) {
   event.preventDefault();
   const formElement = event.currentTarget;
@@ -1328,6 +1371,18 @@ async function saveOpenAiRouteMode(event) {
     body: JSON.stringify({ mode: form.get("mode") })
   });
   setNotice("OpenAI route mode updated.", "success");
+  await routes();
+}
+async function saveAnthropicRouteMode(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const routeId = formElement.dataset.routeId;
+  const form = new FormData(formElement);
+  await api(`/admin-ui/admin/anthropic-routes/${routeId}/mode`, {
+    method: "PATCH",
+    body: JSON.stringify({ mode: form.get("mode") })
+  });
+  setNotice("Anthropic route mode updated.", "success");
   await routes();
 }
 async function services() {
@@ -1512,7 +1567,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.14")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.15")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>

@@ -29,7 +29,7 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.14/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.15/);
 });
 
 test("admin portal calls the expected gateway admin APIs", () => {
@@ -52,6 +52,7 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin-ui/admin/providers/litellm-credentials",
     "/admin-ui/admin/providers/litellm-passthrough",
     "/admin-ui/admin/openai-routes",
+    "/admin-ui/admin/anthropic-routes",
     "/admin-ui/admin/keys",
     "/admin-ui/admin/policy/simulate",
     "/admin-ui/admin/policy-layers",
@@ -192,11 +193,17 @@ test("providers view configures LiteLLM credential headers and mappings without 
   assert.doesNotMatch(js, /row\.credential_secret/);
 });
 
-test("routes view exposes canonical OpenAI route modes", () => {
+test("routes view exposes canonical provider route modes", () => {
   assert.match(js, /managed_by_gateway/);
   assert.match(js, /direct_litellm_passthrough/);
+  assert.match(js, /OpenAI-compatible routes/);
+  assert.match(js, /Anthropic Claude routes/);
+  assert.match(css, /\.route-logo\.openai/);
+  assert.match(css, /\.route-logo\.anthropic/);
   assert.match(js, /async function saveOpenAiRouteMode\(event\)/);
   assert.match(js, /\/admin-ui\/admin\/openai-routes\/\$\{routeId\}\/mode/);
+  assert.match(js, /async function saveAnthropicRouteMode\(event\)/);
+  assert.match(js, /\/admin-ui\/admin\/anthropic-routes\/\$\{routeId\}\/mode/);
 });
 
 test("virtual keys use explicit owner and service selection controls", () => {

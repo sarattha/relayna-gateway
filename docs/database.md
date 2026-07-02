@@ -26,7 +26,7 @@ of that schema.
 | Projects | `projects` | Groups project-owned virtual keys and service access. |
 | Virtual keys | `api_keys`, `key_policies`, `key_guardrail_policies`, `policy_layers` | Stores key identity, inherited request policy, limits, budgets, lifecycle metadata, and guardrail policy. |
 | Services | `service_registrations`, `project_service_links`, `key_service_links` | Registers `/services/<service-name>/*` routes and grants project or individual-key access. |
-| Providers and routes | `provider_configs`, `litellm_credential_mappings`, `litellm_passthrough_settings`, `openai_route_settings`, `route_policies` | Stores upstream provider settings, LiteLLM credential mapping, wildcard passthrough settings, and global OpenAI-compatible route toggles/modes. |
+| Providers and routes | `provider_configs`, `litellm_credential_mappings`, `litellm_passthrough_settings`, `openai_route_settings`, `anthropic_route_settings`, `route_policies` | Stores upstream provider settings, LiteLLM credential mapping, wildcard passthrough settings, and global OpenAI-compatible and Anthropic-compatible route toggles/modes. |
 | Guardrails | `guardrail_definitions`, `guardrail_execution_events` | Stores guardrail catalog entries and execution audit records. |
 | Studio settings | `studio_connection_settings` | Stores the optional Relayna Studio import connection. |
 | Operators | `operator_tokens` | Stores hashed tokens for `/admin-ui/admin/*` and `/admin-ui` access. |
@@ -227,6 +227,21 @@ OpenAI-compatible proxy routes.
 | Mode | `mode` is `managed_by_gateway` or `direct_litellm_passthrough`. `managed_by_gateway` is the default. |
 | Seed data | Migrations insert supported routes as enabled and managed by Gateway. |
 | Required data | These rows must exist for operators to toggle global OpenAI-compatible route availability and direct LiteLLM passthrough mode. |
+| Runtime role | Both modes preserve Relayna auth, global route enablement, policy, provider/model allowlists, rate limits, and budgets. Direct LiteLLM passthrough skips Gateway guardrail rewriting and token accounting, then forwards directly to LiteLLM with credential translation. |
+
+### `anthropic_route_settings`
+
+`anthropic_route_settings` stores global enablement and mode selection for
+Anthropic-compatible Claude proxy routes.
+
+| Key | Details |
+| --- | --- |
+| Primary key | `route_id text`. |
+| Unique keys | `route` is unique. |
+| Checks | `route_id` is limited to `messages`, `messages-count-tokens`, `message-batches`, `message-batch`, `message-batch-results`, `message-batch-cancel`, and `models`; `route` is limited to the matching `/v1/messages...` and `/v1/models` patterns. |
+| Mode | `mode` is `managed_by_gateway` or `direct_litellm_passthrough`. `managed_by_gateway` is the default. |
+| Seed data | Migrations insert supported Anthropic routes as enabled and managed by Gateway. |
+| Required data | These rows must exist for operators to toggle Anthropic-compatible route availability and direct LiteLLM passthrough mode. |
 | Runtime role | Both modes preserve Relayna auth, global route enablement, policy, provider/model allowlists, rate limits, and budgets. Direct LiteLLM passthrough skips Gateway guardrail rewriting and token accounting, then forwards directly to LiteLLM with credential translation. |
 
 ### `studio_connection_settings`

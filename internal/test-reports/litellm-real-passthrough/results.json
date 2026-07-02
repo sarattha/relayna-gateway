@@ -1,8 +1,8 @@
 {
   "ok": true,
   "requestedLiteLlmPathsPassThrough": true,
-  "overallOutcome": "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.",
-  "generatedAt": "2026-06-20T11:57:27.639Z",
+  "overallOutcome": "PASS: canonical managed and direct route modes reach LiteLLM, Anthropic /v1/messages direct passthrough reaches LiteLLM, canonical /v1/models takes precedence over wildcard passthrough, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.",
+  "generatedAt": "2026-07-02T15:53:38.919Z",
   "environment": {
     "gatewayProxyUrl": "http://gateway:8080",
     "gatewayControlUrl": "http://gateway:8081",
@@ -23,6 +23,7 @@
     "/v1/chat/completions",
     "/v1/responses",
     "/v1/embeddings",
+    "/v1/messages",
     "/v1/models"
   ],
   "litellmUiProxyPath": "/admin-ui/litellm-ui/",
@@ -31,8 +32,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-d6a730fa-b582-4548-b090-e19477f585c3",
-        "created": 1781956646,
+        "id": "chatcmpl-b82c6148-9c2d-4697-b33e-ad2e7086a273",
+        "created": 1783007617,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -65,15 +66,15 @@
           "route": "/v1/chat/completions",
           "enabled": true,
           "mode": "direct_litellm_passthrough",
-          "updated_at": "2026-06-20T11:57:26.602184Z"
+          "updated_at": "2026-07-02T15:53:37.727482Z"
         }
       },
       "routeMode": "direct_litellm_passthrough",
       "directModeChat": {
         "status": 200,
         "body": {
-          "id": "chatcmpl-f2b0c291-fc6c-421e-8355-e96222e7b722",
-          "created": 1781956646,
+          "id": "chatcmpl-38c5a772-53bc-4fc0-950a-487d3d236859",
+          "created": 1783007617,
           "model": "gpt-review",
           "object": "chat.completion",
           "choices": [
@@ -113,7 +114,7 @@
           ],
           "ui_exposure": "disabled",
           "admin_api_exposure": "disabled",
-          "updated_at": "2026-06-20T11:57:24.777991Z"
+          "updated_at": "2026-07-02T15:53:37.298185Z"
         }
       },
       "passthroughEnable": {
@@ -129,29 +130,19 @@
           ],
           "ui_exposure": "disabled",
           "admin_api_exposure": "disabled",
-          "updated_at": "2026-06-20T11:57:26.809829Z"
+          "updated_at": "2026-07-02T15:53:37.942431Z"
         }
       }
     },
-    "wildcard_v1_models_reaches_real_litellm": {
+    "canonical_v1_models_takes_precedence_over_wildcard_passthrough": {
       "ok": true,
-      "status": 200,
+      "status": 403,
       "body": {
-        "data": [
-          {
-            "id": "gpt-review",
-            "object": "model",
-            "created": 1677610602,
-            "owned_by": "openai"
-          },
-          {
-            "id": "text-embedding-review",
-            "object": "model",
-            "created": 1677610602,
-            "owned_by": "openai"
-          }
-        ],
-        "object": "list"
+        "error": {
+          "code": "policy_denied",
+          "message": "Request is denied by key policy.",
+          "request_id": "824e8149-425f-400e-b8ed-1e627fe105a4"
+        }
       }
     },
     "wildcard_ui_path_is_blocked_by_default": {
@@ -161,7 +152,7 @@
         "error": {
           "code": "unsupported_route",
           "message": "Route is not supported by this gateway.",
-          "request_id": "a45f25dc-7454-4ece-8512-7dbbc65c40c1"
+          "request_id": "d021d0ff-d3c4-4927-81ea-ab9418d252a9"
         }
       }
     },
@@ -169,8 +160,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "resp_bvGEgd342DjA9XaMUtZ4xwFNKi3pxs3bypjeBS57oxLAInLVTt0Gkrrym_Orny7Qa7mJVLV8iEXsSQQdveorOESGXKyABQ4A3xJ3ATEVmLbaXB5LOFBNEAv5sGxYlzp3xK-dzBiIxXfC-EZumjkdV8cAFlC7vypKqMqw445iGG3Oc1khWjitQINNlrF_kPwr5LrQx7PQmvFmscqTBaGWsecrJzX1woE_B-fdZTQ7woCYtDXbOh8cf3Vh7C4ILRsWR8-AFgu0GIbrEVYMOtmCOxHhHse6Yn5feN7_TpHf7AQHAKnRySEpoU5N5tFBZjc9nqCT31CNgdua8zkc1PdjH6B4zlG8tXRWiDwmWEGVu22wzpJFkDn2TJgfggdWTKE-9OSsurK8oBaOvirPl3l-W4AkVKYEkq_78kKjtrAGpvgRWLeKezBjamjOYdKmzg==",
-        "created_at": 1781956646,
+        "id": "resp_1ScdOQmJ4OMYuJqBicQ7DOhexy_ekC7Nv46GX9gs63kwA8Whg_8HKoPh9ifadrnkZT5SSpJFs5L8C7P6wJocGgJYXExqnLXGCoh4OfWVD7SV71PHEmlIpXsW-d8KRJsLqHyftNOKjLNa2J7ZcWpCX4Bl7fcLPg8BXMEMME-hVPAYL9gqRUV6bXUqJPrlUJ9TmKZyz93VPW6DSslnEhKQ3GwoPE7xoDpTGtrhDV-jnj6owz9mpF1zqkefn7EDvUHKz1PYnEhznJAskxmqyZxlpFeLXdvLgeXqeKPoAQLxtV4UuyaYYqRePMiJZQjx8d7Prrbldbf-hCzQA7QY_XIKkBn7i9hWjLgrhGdZyKLu0N99QS65Z5x7fWmkdeDhgGgXfk2phhFjdjkYVxQNI8D03_2YZbCUvs92TTeOp_6B6w==",
+        "created_at": 1783007618,
         "error": null,
         "incomplete_details": null,
         "instructions": null,
@@ -180,7 +171,7 @@
         "output": [
           {
             "type": "message",
-            "id": "msg-33e7f1fc-8016-48bc-9344-1259bb0ae13c",
+            "id": "msg-48681f6b-bbf2-41ba-b193-afad28781e06",
             "status": "completed",
             "role": "assistant",
             "content": [
@@ -244,8 +235,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "chatcmpl-d017ac80-98f4-4f13-908c-41a976b88730",
-        "created": 1781956647,
+        "id": "chatcmpl-4258a229-f609-4620-b4d0-7e5896aed6e9",
+        "created": 1783007618,
         "model": "gpt-review",
         "object": "chat.completion",
         "choices": [
@@ -371,6 +362,27 @@
             "model": "gpt-review",
             "input": "gateway to litellm responses passthrough"
           }
+        },
+        {
+          "path": "/v1/messages",
+          "method": "POST",
+          "authorization": null,
+          "hasGatewayServiceKey": false,
+          "hasRelaynaKey": false,
+          "hasAihKey": false,
+          "hasApigeeIdentity": false,
+          "hasClientJwt": false,
+          "body": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "gateway to litellm anthropic messages passthrough"
+              }
+            ],
+            "max_tokens": 128,
+            "model": "claude-review",
+            "stream": false
+          }
         }
       ]
     },
@@ -382,8 +394,8 @@
       "ok": true,
       "status": 200,
       "body": {
-        "id": "resp_bvGEgd342DjA9XaMUtZ4xwFNKi3pxs3bypjeBS57oxLAInLVTt0Gkrrym_Orny7Qa7mJVLV8iEXsSQQdveorOESGXKyABQ4A3xJ3ATEVmLbaXB5LOFBNEAv5sGxYlzp3xK-dzBiIxXfC-EZumjkdV8cAFlC7vypKqMqw445iGG3Oc1khWjitQINNlrF_kPwr5LrQx7PQmvFmscqTBaGWsecrJzX1woE_B-fdZTQ7woCYtDXbOh8cf3Vh7C4ILRsWR8-AFgu0GIbrEVYMOtmCOxHhHse6Yn5feN7_TpHf7AQHAKnRySEpoU5N5tFBZjc9nqCT31CNgdua8zkc1PdjH6B4zlG8tXRWiDwmWEGVu22wzpJFkDn2TJgfggdWTKE-9OSsurK8oBaOvirPl3l-W4AkVKYEkq_78kKjtrAGpvgRWLeKezBjamjOYdKmzg==",
-        "created_at": 1781956646,
+        "id": "resp_1ScdOQmJ4OMYuJqBicQ7DOhexy_ekC7Nv46GX9gs63kwA8Whg_8HKoPh9ifadrnkZT5SSpJFs5L8C7P6wJocGgJYXExqnLXGCoh4OfWVD7SV71PHEmlIpXsW-d8KRJsLqHyftNOKjLNa2J7ZcWpCX4Bl7fcLPg8BXMEMME-hVPAYL9gqRUV6bXUqJPrlUJ9TmKZyz93VPW6DSslnEhKQ3GwoPE7xoDpTGtrhDV-jnj6owz9mpF1zqkefn7EDvUHKz1PYnEhznJAskxmqyZxlpFeLXdvLgeXqeKPoAQLxtV4UuyaYYqRePMiJZQjx8d7Prrbldbf-hCzQA7QY_XIKkBn7i9hWjLgrhGdZyKLu0N99QS65Z5x7fWmkdeDhgGgXfk2phhFjdjkYVxQNI8D03_2YZbCUvs92TTeOp_6B6w==",
+        "created_at": 1783007618,
         "error": null,
         "incomplete_details": null,
         "instructions": null,
@@ -393,7 +405,7 @@
         "output": [
           {
             "type": "message",
-            "id": "msg-33e7f1fc-8016-48bc-9344-1259bb0ae13c",
+            "id": "msg-48681f6b-bbf2-41ba-b193-afad28781e06",
             "status": "completed",
             "role": "assistant",
             "content": [
@@ -453,6 +465,10 @@
         }
       }
     },
+    "provider_default_credential_restored_for_litellm_ui_checks": {
+      "ok": true,
+      "status": 200
+    },
     "litellm_ui_proxy_requires_operator_token": {
       "ok": true,
       "status": 401
@@ -467,7 +483,7 @@
       "status": 200,
       "body": {
         "source": "persisted",
-        "updated_at": "2026-06-20T11:57:27.490979Z",
+        "updated_at": "2026-07-02T15:53:38.699499Z",
         "relayna_key_header": "X-Relayna-Key",
         "entra": {
           "enabled": false,
@@ -552,7 +568,7 @@
           ],
           "ui_exposure": "trusted_ingress",
           "admin_api_exposure": "explicitly_exposed",
-          "updated_at": "2026-06-20T11:57:27.542572Z"
+          "updated_at": "2026-07-02T15:53:38.749218Z"
         }
       },
       "trustedIngressUiStatus": 200
@@ -564,7 +580,159 @@
         "body": {
           "user_id": "default_user_id",
           "user_info": null,
-          "keys": [],
+          "keys": [
+            {
+              "token": "[REDACTED]",
+              "key_name": "sk-...KCsw",
+              "key_alias": "relayna-provider-default-embeddings-1783007616617",
+              "spend": 0,
+              "max_budget": null,
+              "expires": null,
+              "models": [
+                "text-embedding-review"
+              ],
+              "aliases": {},
+              "config": {},
+              "user_id": null,
+              "team_id": null,
+              "agent_id": null,
+              "project_id": null,
+              "max_parallel_requests": null,
+              "metadata": {},
+              "tpm_limit": null,
+              "rpm_limit": null,
+              "budget_duration": null,
+              "budget_reset_at": null,
+              "allowed_cache_controls": [],
+              "allowed_routes": [
+                "/v1/embeddings"
+              ],
+              "permissions": {},
+              "model_spend": {},
+              "model_max_budget": {},
+              "soft_budget_cooldown": false,
+              "blocked": null,
+              "litellm_budget_table": null,
+              "org_id": null,
+              "created_at": "2026-07-02T15:53:36.650000",
+              "created_by": "default_user_id",
+              "updated_at": "2026-07-02T15:53:36.650000",
+              "updated_by": "default_user_id",
+              "last_active": null,
+              "object_permission_id": null,
+              "object_permission": null,
+              "access_group_ids": [],
+              "rotation_count": 0,
+              "auto_rotate": false,
+              "rotation_interval": null,
+              "last_rotation_at": null,
+              "key_rotation_at": null,
+              "router_settings": {},
+              "budget_limits": null,
+              "team_alias": "None"
+            },
+            {
+              "token": "[REDACTED]",
+              "key_name": "sk-...neMQ",
+              "key_alias": "relayna-project-responses-1783007616657",
+              "spend": 0,
+              "max_budget": null,
+              "expires": null,
+              "models": [
+                "gpt-review"
+              ],
+              "aliases": {},
+              "config": {},
+              "user_id": null,
+              "team_id": null,
+              "agent_id": null,
+              "project_id": null,
+              "max_parallel_requests": null,
+              "metadata": {},
+              "tpm_limit": null,
+              "rpm_limit": null,
+              "budget_duration": null,
+              "budget_reset_at": null,
+              "allowed_cache_controls": [],
+              "allowed_routes": [
+                "/v1/responses"
+              ],
+              "permissions": {},
+              "model_spend": {},
+              "model_max_budget": {},
+              "soft_budget_cooldown": false,
+              "blocked": null,
+              "litellm_budget_table": null,
+              "org_id": null,
+              "created_at": "2026-07-02T15:53:36.665000",
+              "created_by": "default_user_id",
+              "updated_at": "2026-07-02T15:53:36.665000",
+              "updated_by": "default_user_id",
+              "last_active": null,
+              "object_permission_id": null,
+              "object_permission": null,
+              "access_group_ids": [],
+              "rotation_count": 0,
+              "auto_rotate": false,
+              "rotation_interval": null,
+              "last_rotation_at": null,
+              "key_rotation_at": null,
+              "router_settings": {},
+              "budget_limits": null,
+              "team_alias": "None"
+            },
+            {
+              "token": "[REDACTED]",
+              "key_name": "sk-...iZYQ",
+              "key_alias": "relayna-key-chat-1783007616669",
+              "spend": 0,
+              "max_budget": null,
+              "expires": null,
+              "models": [
+                "gpt-review"
+              ],
+              "aliases": {},
+              "config": {},
+              "user_id": null,
+              "team_id": null,
+              "agent_id": null,
+              "project_id": null,
+              "max_parallel_requests": null,
+              "metadata": {},
+              "tpm_limit": null,
+              "rpm_limit": null,
+              "budget_duration": null,
+              "budget_reset_at": null,
+              "allowed_cache_controls": [],
+              "allowed_routes": [
+                "/v1/chat/completions",
+                "/v1/models"
+              ],
+              "permissions": {},
+              "model_spend": {},
+              "model_max_budget": {},
+              "soft_budget_cooldown": false,
+              "blocked": null,
+              "litellm_budget_table": null,
+              "org_id": null,
+              "created_at": "2026-07-02T15:53:36.677000",
+              "created_by": "default_user_id",
+              "updated_at": "2026-07-02T15:53:36.677000",
+              "updated_by": "default_user_id",
+              "last_active": null,
+              "object_permission_id": null,
+              "object_permission": null,
+              "access_group_ids": [],
+              "rotation_count": 0,
+              "auto_rotate": false,
+              "rotation_interval": null,
+              "last_rotation_at": null,
+              "key_rotation_at": null,
+              "router_settings": {},
+              "budget_limits": null,
+              "team_alias": "None"
+            }
+          ],
           "teams": []
         }
       }
@@ -590,25 +758,24 @@
         }
       }
     },
-    "trusted_ingress_no_auth_v1_models_reaches_litellm_for_ui_support": {
+    "trusted_ingress_no_auth_v3_admin_path_reaches_litellm": {
       "ok": true,
-      "status": 200,
+      "trustedIngressV3KeyInfo": {
+        "status": 404,
+        "body": {
+          "detail": "Not Found"
+        }
+      }
+    },
+    "trusted_ingress_no_auth_v1_models_stays_canonical_route": {
+      "ok": true,
+      "status": 401,
       "body": {
-        "data": [
-          {
-            "id": "gpt-review",
-            "object": "model",
-            "created": 1677610602,
-            "owned_by": "openai"
-          },
-          {
-            "id": "text-embedding-review",
-            "object": "model",
-            "created": 1677610602,
-            "owned_by": "openai"
-          }
-        ],
-        "object": "list"
+        "error": {
+          "code": "missing_authorization",
+          "message": "Authorization header is required.",
+          "request_id": "e34d6702-d897-4315-b534-e93e9fa57931"
+        }
       }
     },
     "direct_responses_accepts_litellm_bearer_without_relayna_key": {
@@ -620,14 +787,14 @@
           "route": "/v1/responses",
           "enabled": true,
           "mode": "direct_litellm_passthrough",
-          "updated_at": "2026-06-20T11:57:27.627711Z"
+          "updated_at": "2026-07-02T15:53:38.836597Z"
         }
       },
       "directResponsesWithLiteLlmBearer": {
         "status": 200,
         "body": {
-          "id": "resp_oVtNrl5E1VQ07Lxzn-x-EasNAvooi_67lChCbChEnyMoA31eAwloBOq9dN-wg8bwgB0TzE_hvSsx53pPLl0sMzbZ1oL4mnQUDMXHylNC8bflZyOASoN9Ft5hTxZieRCEyWjucfiwz9kkgg5-Pbbno5ZgAVhOy2sKkgd1OX8c0XoeBkReW-e_wZRSuMrxDnAcS1hNnauncvzR1gqWjF1VKnk65v5lT0t7-tVh6-qQmnfsBMW7KLiSdl7FA7_P-eg18F5YYrybfHqu5E-AU92OTobArQvAvqj2qaWrcx_xEUWnSvlJzxqYiXLC3Gt7fGfDx299pcHKBu77MkVpkgv2iMbCYn54O8fS3rubw7IqIle8XyJU2ZIF9OtJI5XWQ3IXsEtPDdpjVmISdpMH4SnjzoQrVLZnODXdCiBOrx1HU5M5DxfkhlznyKIxE9N2xQ==",
-          "created_at": 1781956647,
+          "id": "resp_gEjzSki3zSOjK-50gceyc-_Ay2yYJS91v2TKZtZQ9Lkc8vrPPd2NMjJQYQUwTpHUshT79in7M1YMIvK6uoLorXLGnsiIt04HYZ6b-FKWiMxdh9dQwR9Pgn93_kB6DtQVi1N_jQRbszxAKH1oImZ-fKlkReGjAiHc3x9n1t8yWZaGUWFES1VGbFfSAfTCiaFtRvcvBbTQwTGRatnVoNyq0Eivqm-Ml3ecgTRvV2kJUiomz1S3MoIG42IxAmqNX-VV--Arq1ltWkC7teQWgyCkKx-d6yC52lBGJhWmWLaT81hSWvOAzeb-SleJcQOKkiaSlwTHOVGZKdwsM3hIxuPQhoTFuoXqn3icPgxiBKB_NlNhQ9PgrT1zjvhv1XxEXa2oNRanscy99qMLiJavqa3ObsSjvHIvnFVA3fPjxc4a7mDgF3bBeGBsfZUwP8Yg3g==",
+          "created_at": 1783007618,
           "error": null,
           "incomplete_details": null,
           "instructions": null,
@@ -637,7 +804,7 @@
           "output": [
             {
               "type": "message",
-              "id": "msg-201ac867-76a5-4ae0-93f6-783b5644c0cc",
+              "id": "msg-c217b81c-04f4-4d83-8860-2b100a3824e8",
               "status": "completed",
               "role": "assistant",
               "content": [
@@ -671,6 +838,42 @@
           "store": null
         }
       }
+    },
+    "direct_anthropic_messages_accepts_litellm_bearer_without_relayna_key": {
+      "ok": true,
+      "anthropicRouteModeUpdate": {
+        "status": 200,
+        "body": {
+          "route_id": "messages",
+          "route": "/v1/messages",
+          "enabled": true,
+          "mode": "direct_litellm_passthrough",
+          "updated_at": "2026-07-02T15:53:38.897246Z"
+        }
+      },
+      "directAnthropicMessagesWithLiteLlmBearer": {
+        "status": 200,
+        "body": {
+          "id": "msg_eb828e47217f452db19f20c53f0ca167",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-review",
+          "content": [
+            {
+              "type": "text",
+              "text": "anthropic messages passthrough ok"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 9,
+            "output_tokens": 5,
+            "total_tokens": 14
+          }
+        }
+      },
+      "anthropicMessagesForwardedToLiteLlm": true
     },
     "wildcard_literal_chatcompletion_reaches_litellm": {
       "ok": true,
@@ -805,6 +1008,27 @@
       "body": {
         "model": "gpt-review",
         "input": "gateway to litellm responses passthrough"
+      }
+    },
+    {
+      "path": "/v1/messages",
+      "method": "POST",
+      "authorization": null,
+      "hasGatewayServiceKey": false,
+      "hasRelaynaKey": false,
+      "hasAihKey": false,
+      "hasApigeeIdentity": false,
+      "hasClientJwt": false,
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "gateway to litellm anthropic messages passthrough"
+          }
+        ],
+        "max_tokens": 128,
+        "model": "claude-review",
+        "stream": false
       }
     }
   ]

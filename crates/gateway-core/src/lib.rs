@@ -91,11 +91,15 @@ pub use provider_intelligence::{
 };
 pub use rate_limits::{RateLimitDecision, RateLimitStore};
 pub use route_settings::{
-    litellm_exposure_str, openai_route_from_id, openai_route_id, openai_route_mode_str,
-    parse_litellm_exposure, parse_openai_route_mode, AdminOpenAiRouteStore,
+    anthropic_route_from_id, anthropic_route_id, is_anthropic_route, is_litellm_canonical_route,
+    is_openai_route, litellm_exposure_str, openai_route_from_id, openai_route_id,
+    openai_route_mode_str, parse_litellm_exposure, parse_openai_route_mode, AdminOpenAiRouteStore,
     LiteLlmPassthroughSettings, LiteLlmPassthroughSettingsPatchRequest,
     LiteLlmSensitiveRouteExposure, OpenAiRouteMode, OpenAiRouteSetting, OpenAiRouteSettingsLookup,
-    CHAT_COMPLETIONS_ROUTE_ID, EMBEDDINGS_ROUTE_ID, RESPONSES_ROUTE_ID,
+    ANTHROPIC_MESSAGES_COUNT_TOKENS_ROUTE_ID, ANTHROPIC_MESSAGES_ROUTE_ID,
+    ANTHROPIC_MESSAGE_BATCHES_ROUTE_ID, ANTHROPIC_MESSAGE_BATCH_CANCEL_ROUTE_ID,
+    ANTHROPIC_MESSAGE_BATCH_RESULTS_ROUTE_ID, ANTHROPIC_MESSAGE_BATCH_ROUTE_ID,
+    ANTHROPIC_MODELS_ROUTE_ID, CHAT_COMPLETIONS_ROUTE_ID, EMBEDDINGS_ROUTE_ID, RESPONSES_ROUTE_ID,
 };
 pub use routing::{is_retry_safe_status, BackendType, Provider, Route, RouteMatch};
 pub use services::{

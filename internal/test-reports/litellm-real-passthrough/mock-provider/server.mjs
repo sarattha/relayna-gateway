@@ -506,6 +506,11 @@ async function runTests() {
     model: "text-embedding-review",
     input: "gateway embedding passthrough",
   };
+  const anthropicMessagesPayload = {
+    model: "claude-review",
+    max_tokens: 128,
+    messages: [{ role: "user", content: "gateway to litellm anthropic messages passthrough" }],
+  };
   const rerankPayload = {
     model: "rerank-review",
     query: "gateway rerank passthrough",
@@ -647,6 +652,15 @@ async function runTests() {
     body: JSON.stringify({ mode: "direct_litellm_passthrough" }),
   });
   const directResponsesWithLiteLlmBearer = await gatewayBearerCall("/v1/responses", litellmMasterKey, responsePayload);
+  const anthropicRouteModeUpdate = await adminJson("/admin-ui/admin/anthropic-routes/messages/mode", {
+    method: "PATCH",
+    body: JSON.stringify({ mode: "direct_litellm_passthrough" }),
+  });
+  const directAnthropicMessagesWithLiteLlmBearer = await gatewayBearerCall(
+    "/v1/messages",
+    litellmMasterKey,
+    anthropicMessagesPayload,
+  );
 
   const upstreamCredentialLeak = state.providerRequests.some(
     (request) => request.hasRelaynaKey || request.hasAihKey || request.hasApigeeIdentity || request.hasClientJwt,
@@ -654,6 +668,9 @@ async function runTests() {
   const gatewayForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/chat/completions"));
   const responseForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/responses"));
   const embeddingsForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/embeddings"));
+  const anthropicMessagesForwardedToLiteLlm = state.providerRequests.some((request) =>
+    request.path.includes("/messages"),
+  );
   const routeMode = routesAfterMode.body.find?.((route) => route.route_id === "chat-completions")?.mode;
 
   const checks = {
@@ -669,8 +686,8 @@ async function runTests() {
         passthroughEnable.body.enabled === true,
       { passthroughDefaults, passthroughEnable },
     ),
-    wildcard_v1_models_reaches_real_litellm: pass(
-      wildcardModels.status === 200 && Array.isArray(wildcardModels.body.data),
+    canonical_v1_models_takes_precedence_over_wildcard_passthrough: pass(
+      wildcardModels.status === 403 && codeOf(wildcardModels) === "policy_denied",
       wildcardModels,
     ),
     wildcard_ui_path_is_blocked_by_default: pass(
@@ -748,9 +765,8 @@ async function runTests() {
         trustedIngressV3KeyInfo,
       },
     ),
-    trusted_ingress_no_auth_v1_models_reaches_litellm_for_ui_support: pass(
-      trustedIngressModelsWithoutKey.status === 200 &&
-        Array.isArray(trustedIngressModelsWithoutKey.body?.data),
+    trusted_ingress_no_auth_v1_models_stays_canonical_route: pass(
+      trustedIngressModelsWithoutKey.status === 401 && codeOf(trustedIngressModelsWithoutKey) === "missing_authorization",
       trustedIngressModelsWithoutKey,
     ),
     direct_responses_accepts_litellm_bearer_without_relayna_key: pass(
@@ -759,6 +775,16 @@ async function runTests() {
       {
         responsesRouteModeUpdate,
         directResponsesWithLiteLlmBearer,
+      },
+    ),
+    direct_anthropic_messages_accepts_litellm_bearer_without_relayna_key: pass(
+      anthropicRouteModeUpdate.status === 200 &&
+        directAnthropicMessagesWithLiteLlmBearer.status === 200 &&
+        anthropicMessagesForwardedToLiteLlm,
+      {
+        anthropicRouteModeUpdate,
+        directAnthropicMessagesWithLiteLlmBearer,
+        anthropicMessagesForwardedToLiteLlm,
       },
     ),
     wildcard_literal_chatcompletion_reaches_litellm: pass(
@@ -784,12 +810,15 @@ async function runTests() {
   };
 
   const requestedLiteLlmPathsPassThrough =
-    chat.status === 200 && responses.status === 200 && embeddings.status === 200;
+    chat.status === 200 &&
+    responses.status === 200 &&
+    embeddings.status === 200 &&
+    directAnthropicMessagesWithLiteLlmBearer.status === 200;
   state.results = {
     ok: Object.values(checks).every((check) => check.ok),
     requestedLiteLlmPathsPassThrough,
     overallOutcome:
-      "PASS: canonical managed and direct route modes reach LiteLLM, wildcard /v1/models passes through with query preservation when enabled, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.",
+      "PASS: canonical managed and direct route modes reach LiteLLM, Anthropic /v1/messages direct passthrough reaches LiteLLM, canonical /v1/models takes precedence over wildcard passthrough, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.",
     generatedAt: new Date().toISOString(),
     environment: {
       gatewayProxyUrl,
@@ -802,7 +831,13 @@ async function runTests() {
       apigeeTrustedHeader: true,
     },
     requestedPaths: ["/v1/chatcompletion", "/v1/response", "/v1/embedding", "/v1/rerank"],
-    canonicalGatewayLiteLlmPaths: ["/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/models"],
+    canonicalGatewayLiteLlmPaths: [
+      "/v1/chat/completions",
+      "/v1/responses",
+      "/v1/embeddings",
+      "/v1/messages",
+      "/v1/models",
+    ],
     litellmUiProxyPath: "/admin-ui/litellm-ui/",
     checks,
     providerRequests: state.providerRequests,
@@ -846,6 +881,18 @@ function providerResponse(req, body) {
       model: body.model || "text-embedding-review",
       data: [{ object: "embedding", index: 0, embedding: [0.1, 0.2, 0.3] }],
       usage: { prompt_tokens: 3, total_tokens: 3 },
+    };
+  }
+  if (req.url.includes("/messages")) {
+    return {
+      id: `msg_${crypto.randomUUID().replaceAll("-", "")}`,
+      type: "message",
+      role: "assistant",
+      model: body.model || "claude-review",
+      content: [{ type: "text", text: "anthropic messages passthrough ok" }],
+      stop_reason: "end_turn",
+      stop_sequence: null,
+      usage: { input_tokens: 9, output_tokens: 5 },
     };
   }
   if (req.url.includes("/rerank")) {
@@ -903,7 +950,7 @@ function dashboardHtml() {
       </tbody>
     </table>
     <h2>Wildcard Coverage</h2>
-    <p>The branch routes managed canonical calls through LiteLLM, can switch a canonical route to direct LiteLLM passthrough, forwards enabled wildcard <code>/v1/*</code> calls while preserving path and query, serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth, serves trusted-ingress <code>/ui/</code> and explicitly exposed admin paths without Relayna auth when Entra is disabled, and translates a direct <code>/v1/responses</code> LiteLLM bearer key into the configured upstream custom header. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
+    <p>The branch routes managed canonical calls through LiteLLM, can switch canonical OpenAI and Anthropic routes to direct LiteLLM passthrough, keeps canonical <code>/v1/models</code> ahead of wildcard passthrough, serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth, serves trusted-ingress <code>/ui/</code> and explicitly exposed admin paths without Relayna auth when Entra is disabled, and translates direct LiteLLM bearer keys into the configured upstream custom header. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
     <h2>LiteLLM Direct Credential Mapping</h2>
     <p>Gateway connects directly to real LiteLLM at <code>${results?.environment.litellmUrl || litellmDirectUrl}</code> using the configured <code>x-litellm-key</code> custom header. The direct-mode and fallback checks prove key, project, and provider LiteLLM credentials can authenticate without an intermediate service.</p>
   </main>
