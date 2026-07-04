@@ -4316,7 +4316,7 @@ impl UsageQueryStore for PostgresStore {
                 u.run_id,
                 u.trace_id,
                 u.fallback_count,
-                COALESCE(g.guardrail_action_count, 0)::bigint,
+                COALESCE(g.guardrail_action_count, 0)::bigint AS guardrail_action_count,
                 u.created_at
             FROM usage_events u
             LEFT JOIN (
@@ -4427,7 +4427,7 @@ impl UsageQueryStore for PostgresStore {
                 u.run_id,
                 u.trace_id,
                 u.fallback_count,
-                COALESCE(g.guardrail_action_count, 0)::bigint,
+                COALESCE(g.guardrail_action_count, 0)::bigint AS guardrail_action_count,
                 u.created_at
             FROM usage_events u
             LEFT JOIN (
