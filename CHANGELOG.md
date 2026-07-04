@@ -2,6 +2,30 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.17 - 2026-07-05
+
+### Added
+
+- Added a structured Admin UI pricing-rule editor for service registrations so
+  operators can add and remove rules without hand-editing JSON.
+- Added operator-facing pricing-rule guidance and examples that clarify
+  `json_pointer` values use JSON Pointer selectors such as `/model` and
+  `/payload/page_count`; request bodies still use normal key names.
+
+### Changed
+
+- The Admin UI Services page now stacks Create service and Edit service panels
+  vertically and wraps pricing-rule controls inside the service form to avoid
+  horizontal overflow.
+- Workspace crate versions now share the `0.1.17` release version.
+- Deployment examples and release documentation now target the `0.1.17`
+  gateway image and `v0.1.17` release tag.
+
+### Security
+
+- Service credentials remain write-only while pricing-rule edits continue to use
+  the existing service registration payload contract.
+
 ## 0.1.16 - 2026-07-04
 
 ### Added
