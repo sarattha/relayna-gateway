@@ -45,6 +45,7 @@ pub struct RouteMatch {
     pub service_name: Option<String>,
     pub timeout_ms: u64,
     pub max_body_bytes: usize,
+    pub max_response_body_bytes: usize,
     pub estimated_cost_usd: Option<f64>,
 }
 
@@ -114,6 +115,7 @@ impl Route {
                     service_name: None,
                     timeout_ms: 60_000,
                     max_body_bytes: 1_048_576,
+                    max_response_body_bytes: 1_048_576,
                     estimated_cost_usd: Some(0.01),
                 })
             }
@@ -163,6 +165,7 @@ impl RouteMatch {
             service_name: None,
             timeout_ms: 120_000,
             max_body_bytes: 1_048_576,
+            max_response_body_bytes: 1_048_576,
             estimated_cost_usd: Some(0.01),
         }
     }
@@ -175,6 +178,7 @@ impl RouteMatch {
             service_name: Some(service_name.to_owned()),
             timeout_ms: 60_000,
             max_body_bytes: 2_097_152,
+            max_response_body_bytes: usize::MAX,
             estimated_cost_usd: Some(0.01),
         }
     }
@@ -288,6 +292,15 @@ mod tests {
             Route::resolve_match(&Method::POST, "/services/custom-ai/run").expect("service");
         assert_eq!(wildcard.route, Route::ServiceWildcard);
         assert_eq!(wildcard.service_name.as_deref(), Some("custom-ai"));
+    }
+
+    #[test]
+    fn service_routes_do_not_cap_responses_with_request_limit() {
+        let matched = Route::resolve_match(&Method::POST, "/ocr").expect("route");
+
+        assert_eq!(matched.provider, Provider::InternalService);
+        assert_eq!(matched.max_body_bytes, 2_097_152);
+        assert_eq!(matched.max_response_body_bytes, usize::MAX);
     }
 
     #[test]

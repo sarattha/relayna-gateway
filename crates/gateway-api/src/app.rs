@@ -25,10 +25,10 @@ use gateway_core::{
     GuardrailEventQuery, GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode,
     GuardrailObservabilityStore, GuardrailPlanRequest, GuardrailPolicySet, GuardrailStore,
     GuardrailTestRequest, GuardrailTestResponse, KeyPolicy, LiteLlmCredentialMappingResponse,
-    LiteLlmCredentialMappingUpsertRequest, LiteLlmPassthroughSettingsPatchRequest, OpenAiRouteMode,
-    OperatorAuthorization, OperatorTokenMaterial, OperatorTokenStore, PolicyLookup,
-    ProjectCreateRequest, ProjectPatchRequest, ProjectResponse, Provider,
-    ProviderConfigCreateRequest, ProviderConfigLookup, ProviderConfigPatchRequest,
+    LiteLlmCredentialMappingUpsertRequest, LiteLlmPassthroughSettingsPatchRequest,
+    OpenAiRouteConfigPatchRequest, OpenAiRouteMode, OperatorAuthorization, OperatorTokenMaterial,
+    OperatorTokenStore, PolicyLookup, ProjectCreateRequest, ProjectPatchRequest, ProjectResponse,
+    Provider, ProviderConfigCreateRequest, ProviderConfigLookup, ProviderConfigPatchRequest,
     ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore,
     Route, ServiceCreateRequest, ServiceImportDiff, ServiceImportValidationIssue,
     ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse, SharedGatewayAuthRuntime,
@@ -443,6 +443,10 @@ pub fn router_with_state(state: AppState) -> Router {
             patch(patch_openai_route_mode),
         )
         .route(
+            "/admin-ui/admin/openai-routes/{route_id}/config",
+            patch(patch_openai_route_config),
+        )
+        .route(
             "/admin-ui/admin/anthropic-routes/{route_id}/disable",
             post(disable_anthropic_route),
         )
@@ -453,6 +457,10 @@ pub fn router_with_state(state: AppState) -> Router {
         .route(
             "/admin-ui/admin/anthropic-routes/{route_id}/mode",
             patch(patch_anthropic_route_mode),
+        )
+        .route(
+            "/admin-ui/admin/anthropic-routes/{route_id}/config",
+            patch(patch_anthropic_route_config),
         )
         .route(
             "/admin-ui/admin/services",
@@ -2157,6 +2165,44 @@ async fn patch_openai_route_mode(
     }
 }
 
+async fn patch_openai_route_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(route_id): Path<String>,
+    Json(request): Json<OpenAiRouteConfigPatchRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+
+    match state
+        .store
+        .patch_openai_route_config(&route_id, request)
+        .await
+    {
+        Ok(Some(setting)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "policies:route_config_update",
+                "openai_route",
+                Some(route_id),
+                None,
+                audit_json(&setting),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(setting).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn patch_anthropic_route_mode(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2179,6 +2225,44 @@ async fn patch_anthropic_route_mode(
                 &headers,
                 &actor,
                 "policies:route_mode_update",
+                "anthropic_route",
+                Some(route_id),
+                None,
+                audit_json(&setting),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(setting).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn patch_anthropic_route_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(route_id): Path<String>,
+    Json(request): Json<OpenAiRouteConfigPatchRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+
+    match state
+        .store
+        .patch_anthropic_route_config(&route_id, request)
+        .await
+    {
+        Ok(Some(setting)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "policies:route_config_update",
                 "anthropic_route",
                 Some(route_id),
                 None,
@@ -3995,12 +4079,13 @@ mod tests {
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
         default_operator_roles, default_operator_scopes, LiteLlmPassthroughSettings,
-        OpenAiRouteMode, OpenAiRouteSetting, OperatorTokenResponse, PatchValue,
-        ProjectCreateRequest, ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest,
-        ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealth, Route, ServiceCostMode,
-        ServiceResponse, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
-        StoredGatewayAuthSettings, StoredStudioConnection, StudioConnectionPatchRequest,
-        UsageBreakdown, UsageExportRow, UsageStatus, UsageSummary, UsageTimeseriesPoint,
+        OpenAiRouteConfigPatchRequest, OpenAiRouteMode, OpenAiRouteSetting, OperatorTokenResponse,
+        PatchValue, ProjectCreateRequest, ProjectPatchRequest, ProjectResponse,
+        ProviderConfigCreateRequest, ProviderConfigPatchRequest, ProviderConfigResponse,
+        ProviderHealth, Route, ServiceCostMode, ServiceResponse, ServiceSource, ServiceSyncStatus,
+        ServiceSyncStatusResponse, StoredGatewayAuthSettings, StoredStudioConnection,
+        StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow, UsageStatus, UsageSummary,
+        UsageTimeseriesPoint,
     };
     use std::{
         io::{Read, Write},
@@ -4732,6 +4817,14 @@ mod tests {
             Ok(Some(route.clone()))
         }
 
+        async fn patch_openai_route_config(
+            &self,
+            route_id: &str,
+            patch: OpenAiRouteConfigPatchRequest,
+        ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+            patch_route_config(&self.openai_routes, route_id, patch)
+        }
+
         async fn set_anthropic_route_enabled(
             &self,
             route_id: &str,
@@ -4758,6 +4851,14 @@ mod tests {
             route.mode = mode;
             route.updated_at = Utc::now();
             Ok(Some(route.clone()))
+        }
+
+        async fn patch_anthropic_route_config(
+            &self,
+            route_id: &str,
+            patch: OpenAiRouteConfigPatchRequest,
+        ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+            patch_route_config(&self.anthropic_routes, route_id, patch)
         }
 
         async fn get_litellm_passthrough_settings(
@@ -4797,9 +4898,44 @@ mod tests {
             if let Some(exposure) = patch.admin_api_exposure {
                 settings.admin_api_exposure = exposure;
             }
+            if let Some(timeout_ms) = patch.timeout_ms {
+                settings.timeout_ms = timeout_ms;
+            }
+            if let Some(max_request_body_bytes) = patch.max_request_body_bytes {
+                settings.max_request_body_bytes = max_request_body_bytes;
+            }
+            if let Some(max_response_body_bytes) = patch.max_response_body_bytes {
+                settings.max_response_body_bytes = max_response_body_bytes;
+            }
             settings.updated_at = Utc::now();
             Ok(settings.clone())
         }
+    }
+
+    fn patch_route_config(
+        routes: &Arc<Mutex<Vec<OpenAiRouteSetting>>>,
+        route_id: &str,
+        patch: OpenAiRouteConfigPatchRequest,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        patch.validate()?;
+        let mut routes = routes.lock().expect("lock poisoned");
+        let Some(route) = routes.iter_mut().find(|route| route.route_id == route_id) else {
+            return Ok(None);
+        };
+        if let Some(mode) = patch.mode {
+            route.mode = mode;
+        }
+        if let Some(timeout_ms) = patch.timeout_ms {
+            route.timeout_ms = timeout_ms;
+        }
+        if let Some(max_request_body_bytes) = patch.max_request_body_bytes {
+            route.max_request_body_bytes = max_request_body_bytes;
+        }
+        if let Some(max_response_body_bytes) = patch.max_response_body_bytes {
+            route.max_response_body_bytes = max_response_body_bytes;
+        }
+        route.updated_at = Utc::now();
+        Ok(Some(route.clone()))
     }
 
     #[async_trait]
@@ -5595,83 +5731,44 @@ mod tests {
     fn default_openai_routes() -> Vec<OpenAiRouteSetting> {
         let now = Utc::now();
         vec![
-            OpenAiRouteSetting {
-                route_id: "chat-completions".to_owned(),
-                route: "/v1/chat/completions".to_owned(),
-                enabled: true,
-                mode: OpenAiRouteMode::ManagedByGateway,
-                updated_at: now,
-            },
-            OpenAiRouteSetting {
-                route_id: "responses".to_owned(),
-                route: "/v1/responses".to_owned(),
-                enabled: true,
-                mode: OpenAiRouteMode::ManagedByGateway,
-                updated_at: now,
-            },
-            OpenAiRouteSetting {
-                route_id: "embeddings".to_owned(),
-                route: "/v1/embeddings".to_owned(),
-                enabled: true,
-                mode: OpenAiRouteMode::ManagedByGateway,
-                updated_at: now,
-            },
+            test_route_setting("chat-completions", "/v1/chat/completions", now),
+            test_route_setting("responses", "/v1/responses", now),
+            test_route_setting("embeddings", "/v1/embeddings", now),
         ]
     }
 
     fn default_anthropic_routes() -> Vec<OpenAiRouteSetting> {
         let now = Utc::now();
         vec![
-            OpenAiRouteSetting {
-                route_id: "messages".to_owned(),
-                route: "/v1/messages".to_owned(),
-                enabled: true,
-                mode: OpenAiRouteMode::ManagedByGateway,
-                updated_at: now,
-            },
-            OpenAiRouteSetting {
-                route_id: "messages-count-tokens".to_owned(),
-                route: "/v1/messages/count_tokens".to_owned(),
-                enabled: true,
-                mode: OpenAiRouteMode::ManagedByGateway,
-                updated_at: now,
-            },
-            OpenAiRouteSetting {
-                route_id: "message-batches".to_owned(),
-                route: "/v1/messages/batches".to_owned(),
-                enabled: true,
-                mode: OpenAiRouteMode::ManagedByGateway,
-                updated_at: now,
-            },
-            OpenAiRouteSetting {
-                route_id: "message-batch".to_owned(),
-                route: "/v1/messages/batches/*".to_owned(),
-                enabled: true,
-                mode: OpenAiRouteMode::ManagedByGateway,
-                updated_at: now,
-            },
-            OpenAiRouteSetting {
-                route_id: "message-batch-results".to_owned(),
-                route: "/v1/messages/batches/*/results".to_owned(),
-                enabled: true,
-                mode: OpenAiRouteMode::ManagedByGateway,
-                updated_at: now,
-            },
-            OpenAiRouteSetting {
-                route_id: "message-batch-cancel".to_owned(),
-                route: "/v1/messages/batches/*/cancel".to_owned(),
-                enabled: true,
-                mode: OpenAiRouteMode::ManagedByGateway,
-                updated_at: now,
-            },
-            OpenAiRouteSetting {
-                route_id: "models".to_owned(),
-                route: "/v1/models".to_owned(),
-                enabled: true,
-                mode: OpenAiRouteMode::ManagedByGateway,
-                updated_at: now,
-            },
+            test_route_setting("messages", "/v1/messages", now),
+            test_route_setting("messages-count-tokens", "/v1/messages/count_tokens", now),
+            test_route_setting("message-batches", "/v1/messages/batches", now),
+            test_route_setting("message-batch", "/v1/messages/batches/*", now),
+            test_route_setting(
+                "message-batch-results",
+                "/v1/messages/batches/*/results",
+                now,
+            ),
+            test_route_setting("message-batch-cancel", "/v1/messages/batches/*/cancel", now),
+            test_route_setting("models", "/v1/models", now),
         ]
+    }
+
+    fn test_route_setting(
+        route_id: &str,
+        route: &str,
+        updated_at: chrono::DateTime<Utc>,
+    ) -> OpenAiRouteSetting {
+        OpenAiRouteSetting {
+            route_id: route_id.to_owned(),
+            route: route.to_owned(),
+            enabled: true,
+            mode: OpenAiRouteMode::ManagedByGateway,
+            timeout_ms: gateway_core::DEFAULT_LITELLM_ROUTE_TIMEOUT_MS,
+            max_request_body_bytes: gateway_core::DEFAULT_LITELLM_ROUTE_REQUEST_BODY_BYTES,
+            max_response_body_bytes: gateway_core::DEFAULT_LITELLM_ROUTE_RESPONSE_BODY_BYTES,
+            updated_at,
+        }
     }
 
     async fn request(app: Router, route: &str) -> Response {
@@ -7498,6 +7595,26 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(value["mode"], "direct_litellm_passthrough");
 
+        let response = admin_patch(
+            app.clone(),
+            "/admin-ui/admin/openai-routes/responses/config",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{
+                "mode":"direct_litellm_passthrough",
+                "timeout_ms":240000,
+                "max_request_body_bytes":8388608,
+                "max_response_body_bytes":4194304
+            }"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["route_id"], "responses");
+        assert_eq!(value["mode"], "direct_litellm_passthrough");
+        assert_eq!(value["timeout_ms"], 240000);
+        assert_eq!(value["max_request_body_bytes"], 8388608);
+        assert_eq!(value["max_response_body_bytes"], 4194304);
+
         let response = admin_post(
             app,
             "/admin-ui/admin/openai-routes/chat-completions/enable",
@@ -7552,6 +7669,24 @@ mod tests {
         let value = response_json(response).await;
         assert_eq!(value["mode"], "direct_litellm_passthrough");
 
+        let response = admin_patch(
+            app.clone(),
+            "/admin-ui/admin/anthropic-routes/messages/config",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{
+                "timeout_ms":180000,
+                "max_request_body_bytes":6291456,
+                "max_response_body_bytes":3145728
+            }"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let value = response_json(response).await;
+        assert_eq!(value["route_id"], "messages");
+        assert_eq!(value["timeout_ms"], 180000);
+        assert_eq!(value["max_request_body_bytes"], 6291456);
+        assert_eq!(value["max_response_body_bytes"], 3145728);
+
         let response = admin_post(
             app,
             "/admin-ui/admin/anthropic-routes/messages/enable",
@@ -7593,7 +7728,10 @@ mod tests {
                 "allowed_paths": ["/v1/*", "/ui"],
                 "allowed_methods": ["GET", "POST"],
                 "ui_exposure": "operator_only",
-                "admin_api_exposure": "disabled"
+                "admin_api_exposure": "disabled",
+                "timeout_ms": 240000,
+                "max_request_body_bytes": 8388608,
+                "max_response_body_bytes": 4194304
             }"#,
         )
         .await;
@@ -7604,6 +7742,9 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(value["enabled"], true);
         assert_eq!(value["ui_exposure"], "operator_only");
+        assert_eq!(value["timeout_ms"], 240000);
+        assert_eq!(value["max_request_body_bytes"], 8388608);
+        assert_eq!(value["max_response_body_bytes"], 4194304);
         assert!(value.get("credential").is_none());
 
         let events = audit_events.lock().expect("audit events lock");

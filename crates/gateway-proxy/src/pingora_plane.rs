@@ -397,10 +397,11 @@ where
                 req.uri.path(),
                 &service_name,
             );
-            matched.timeout_ms = u64::try_from(registration.timeout_ms)
-                .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
-            matched.max_body_bytes = usize::try_from(registration.max_body_bytes)
-                .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+            apply_service_registration_runtime_limits(
+                &mut matched,
+                registration.timeout_ms,
+                registration.max_body_bytes,
+            )?;
             matched.estimated_cost_usd = registration.estimated_cost_usd;
             ctx.service_route_pattern = Some(registration.route_pattern);
             ctx.service_upstream = Some(upstream);
@@ -424,6 +425,7 @@ where
                             service_name: None,
                             timeout_ms: 120_000,
                             max_body_bytes: 1_048_576,
+                            max_response_body_bytes: 1_048_576,
                             estimated_cost_usd: None,
                         }
                     }
@@ -438,9 +440,26 @@ where
                 },
             }
         };
+        if gateway_core::is_litellm_canonical_route(matched.route) {
+            match self.apply_litellm_route_limits(&mut matched).await {
+                Ok(()) => {}
+                Err(error) => {
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(true);
+                }
+            }
+        } else if matched.route == Route::LiteLlmPassthrough {
+            match self.apply_litellm_passthrough_limits(&mut matched).await {
+                Ok(()) => {}
+                Err(error) => {
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(true);
+                }
+            }
+        }
         ctx.route = Some(matched.route);
         ctx.request_rewriter = Some(BoundedBodyRewriter::new(matched.max_body_bytes));
-        ctx.response_rewriter = Some(BoundedBodyRewriter::new(matched.max_body_bytes));
+        ctx.response_rewriter = Some(BoundedBodyRewriter::new(matched.max_response_body_bytes));
         ctx.traceparent = header_value(req, "traceparent")
             .filter(|value| is_valid_traceparent(value))
             .map(ToOwned::to_owned);
@@ -598,10 +617,11 @@ where
                             return Ok(true);
                         }
                     };
-                    matched.timeout_ms = u64::try_from(registration.timeout_ms)
-                        .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
-                    matched.max_body_bytes = usize::try_from(registration.max_body_bytes)
-                        .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+                    apply_service_registration_runtime_limits(
+                        &mut matched,
+                        registration.timeout_ms,
+                        registration.max_body_bytes,
+                    )?;
                     matched.estimated_cost_usd = registration.estimated_cost_usd;
                     ctx.service_route_pattern = Some(registration.route_pattern);
                     ctx.service_upstream = Some(upstream);
@@ -1220,6 +1240,12 @@ where
         }
         if let Some(body) = body.as_ref() {
             ctx.response_bytes_seen = ctx.response_bytes_seen.saturating_add(body.len());
+            if let Some(matched) = &ctx.route_match {
+                if ctx.response_bytes_seen > matched.max_response_body_bytes {
+                    ctx.guardrail_error = Some(GatewayError::ResponseBodyTooLarge);
+                    return Err(PingoraError::new(ErrorType::InternalError));
+                }
+            }
             if let Some(policy) = &ctx.policy {
                 if let Err(error) = evaluate_policy_limits(
                     policy,
@@ -1477,6 +1503,30 @@ where
         } else {
             self.store.openai_route_mode(route).await
         }
+    }
+
+    async fn apply_litellm_route_limits(&self, matched: &mut RouteMatch) -> GatewayResult<()> {
+        let limits = if gateway_core::is_anthropic_route(matched.route) {
+            self.store.anthropic_route_limits(matched.route).await?
+        } else {
+            self.store.openai_route_limits(matched.route).await?
+        };
+        apply_litellm_limits_to_match(matched, limits)
+    }
+
+    async fn apply_litellm_passthrough_limits(
+        &self,
+        matched: &mut RouteMatch,
+    ) -> GatewayResult<()> {
+        let settings = self.store.litellm_passthrough_settings().await?;
+        apply_litellm_limits_to_match(
+            matched,
+            gateway_core::LiteLlmRouteLimits {
+                timeout_ms: settings.timeout_ms,
+                max_request_body_bytes: settings.max_request_body_bytes,
+                max_response_body_bytes: settings.max_response_body_bytes,
+            },
+        )
     }
 
     async fn ensure_litellm_canonical_route_enabled(&self, route: Route) -> GatewayResult<()> {
@@ -1851,6 +1901,19 @@ fn should_check_service_routes(path: &str) -> bool {
     !path.starts_with("/v1/") && !path.starts_with("/providers/openai/")
 }
 
+fn apply_litellm_limits_to_match(
+    matched: &mut RouteMatch,
+    limits: gateway_core::LiteLlmRouteLimits,
+) -> GatewayResult<()> {
+    matched.timeout_ms =
+        u64::try_from(limits.timeout_ms).map_err(|_| GatewayError::InvalidConfiguration)?;
+    matched.max_body_bytes = usize::try_from(limits.max_request_body_bytes)
+        .map_err(|_| GatewayError::InvalidConfiguration)?;
+    matched.max_response_body_bytes = usize::try_from(limits.max_response_body_bytes)
+        .map_err(|_| GatewayError::InvalidConfiguration)?;
+    Ok(())
+}
+
 fn service_route_match_for_persisted_registration(
     method: &http::Method,
     path: &str,
@@ -1862,6 +1925,19 @@ fn service_route_match_for_persisted_registration(
         }
         _ => RouteMatch::service(Route::ServiceWildcard, service_name),
     }
+}
+
+fn apply_service_registration_runtime_limits(
+    matched: &mut RouteMatch,
+    timeout_ms: i64,
+    max_body_bytes: i64,
+) -> PingoraResult<()> {
+    matched.timeout_ms = u64::try_from(timeout_ms)
+        .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+    matched.max_body_bytes = usize::try_from(max_body_bytes)
+        .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+    matched.max_response_body_bytes = usize::MAX;
+    Ok(())
 }
 
 fn observe_response_body_chunk(ctx: &mut PingoraContext, body: &[u8]) {
@@ -2547,6 +2623,21 @@ mod tests {
     }
 
     #[test]
+    fn persisted_service_runtime_limits_do_not_cap_responses() {
+        let mut matched = service_route_match_for_persisted_registration(
+            &http::Method::POST,
+            "/services/custom/run",
+            "custom",
+        );
+
+        apply_service_registration_runtime_limits(&mut matched, 45_000, 64 * 1024).expect("limits");
+
+        assert_eq!(matched.timeout_ms, 45_000);
+        assert_eq!(matched.max_body_bytes, 64 * 1024);
+        assert_eq!(matched.max_response_body_bytes, usize::MAX);
+    }
+
+    #[test]
     fn guardrail_header_deduplicates_pre_and_post_plans() {
         let mut ctx = new_pingora_context_for_tests();
         let definition = gateway_core::pii_redact_definition();
@@ -2744,6 +2835,47 @@ mod tests {
         assert!(!settings.allows(&http::Method::DELETE, "/v1/models/model-a"));
         assert!(!settings.allows(&http::Method::GET, "/ui"));
         assert!(!settings.allows(&http::Method::GET, "/key/list"));
+    }
+
+    #[test]
+    fn configured_litellm_limits_apply_to_openai_route_match() {
+        let mut matched =
+            Route::resolve_match(&http::Method::POST, "/v1/responses").expect("route");
+
+        apply_litellm_limits_to_match(
+            &mut matched,
+            gateway_core::LiteLlmRouteLimits {
+                timeout_ms: 240_000,
+                max_request_body_bytes: 8_388_608,
+                max_response_body_bytes: 4_194_304,
+            },
+        )
+        .expect("limits apply");
+
+        assert_eq!(matched.route, Route::Responses);
+        assert_eq!(matched.timeout_ms, 240_000);
+        assert_eq!(matched.max_body_bytes, 8_388_608);
+        assert_eq!(matched.max_response_body_bytes, 4_194_304);
+    }
+
+    #[test]
+    fn configured_litellm_limits_apply_to_anthropic_route_match() {
+        let mut matched = Route::resolve_match(&http::Method::POST, "/v1/messages").expect("route");
+
+        apply_litellm_limits_to_match(
+            &mut matched,
+            gateway_core::LiteLlmRouteLimits {
+                timeout_ms: 180_000,
+                max_request_body_bytes: 6_291_456,
+                max_response_body_bytes: 3_145_728,
+            },
+        )
+        .expect("limits apply");
+
+        assert_eq!(matched.route, Route::AnthropicMessages);
+        assert_eq!(matched.timeout_ms, 180_000);
+        assert_eq!(matched.max_body_bytes, 6_291_456);
+        assert_eq!(matched.max_response_body_bytes, 3_145_728);
     }
 
     #[test]
@@ -3147,6 +3279,13 @@ mod tests {
             }
         }
 
+        async fn openai_route_limits(
+            &self,
+            _route: Route,
+        ) -> GatewayResult<gateway_core::LiteLlmRouteLimits> {
+            Ok(gateway_core::LiteLlmRouteLimits::default())
+        }
+
         async fn anthropic_route_enabled(&self, route: Route) -> GatewayResult<bool> {
             if gateway_core::anthropic_route_id(route).is_some() {
                 Ok(*self.openai_routes_enabled.lock().expect("routes lock"))
@@ -3161,6 +3300,13 @@ mod tests {
             } else {
                 Ok(OpenAiRouteMode::ManagedByGateway)
             }
+        }
+
+        async fn anthropic_route_limits(
+            &self,
+            _route: Route,
+        ) -> GatewayResult<gateway_core::LiteLlmRouteLimits> {
+            Ok(gateway_core::LiteLlmRouteLimits::default())
         }
 
         async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {

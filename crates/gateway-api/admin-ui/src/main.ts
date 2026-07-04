@@ -972,6 +972,9 @@ function litellmPassthroughForm(settings) {
     <label class="check"><input name="enabled" type="checkbox" ${current.enabled ? "checked" : ""}> Enable wildcard passthrough</label>
     <label>Allowed paths<input name="allowed_paths" value="${attr(listValue(current.allowed_paths, "/v1/*"))}"></label>
     <label>Allowed methods<input name="allowed_methods" value="${attr(listValue(current.allowed_methods, "GET,POST"))}"></label>
+    <label>Timeout ms<input name="timeout_ms" type="number" min="1" max="600000" value="${attr(current.timeout_ms ?? 120000)}"></label>
+    <label>Max request bytes<input name="max_request_body_bytes" type="number" min="1" max="104857600" value="${attr(current.max_request_body_bytes ?? 1048576)}"></label>
+    <label>Max response bytes<input name="max_response_body_bytes" type="number" min="1" max="104857600" value="${attr(current.max_response_body_bytes ?? 1048576)}"></label>
     <label>LiteLLM UI exposure<select name="ui_exposure">
       ${option("disabled", current.ui_exposure || "disabled")}
       ${option("operator_only", current.ui_exposure || "")}
@@ -1140,6 +1143,9 @@ async function saveLiteLlmPassthroughSettings(event) {
       allowed_methods: csv(form.get("allowed_methods")).map((method) => method.toUpperCase()),
       ui_exposure: form.get("ui_exposure"),
       admin_api_exposure: form.get("admin_api_exposure"),
+      timeout_ms: nullableNumber(form.get("timeout_ms")),
+      max_request_body_bytes: nullableNumber(form.get("max_request_body_bytes")),
+      max_response_body_bytes: nullableNumber(form.get("max_response_body_bytes")),
     }),
   });
   setNotice("LiteLLM passthrough settings updated.", "success");
@@ -1202,7 +1208,7 @@ function providerRouteTable(rows, family) {
   const actionAttr = family === "anthropic" ? "data-anthropic-route-action" : "data-openai-route-action";
   const modeForm = family === "anthropic" ? anthropicRouteModeForm : openaiRouteModeForm;
   return table(
-    ["Route", "State", "Mode", "Updated", "Actions"],
+    ["Route", "State", "Configuration", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
@@ -1216,21 +1222,22 @@ function providerRouteTable(rows, family) {
 }
 
 function openaiRouteModeForm(row) {
-  return `<form class="inline-form" data-openai-route-mode-form data-route-id="${attr(row.route_id)}">
-    <select name="mode">
-      ${option("managed_by_gateway", row.mode || "managed_by_gateway")}
-      ${option("direct_litellm_passthrough", row.mode || "")}
-    </select>
-    <button type="submit">Save</button>
-  </form>`;
+  return routeConfigForm(row, "data-openai-route-mode-form");
 }
 
 function anthropicRouteModeForm(row) {
-  return `<form class="inline-form" data-anthropic-route-mode-form data-route-id="${attr(row.route_id)}">
-    <select name="mode">
+  return routeConfigForm(row, "data-anthropic-route-mode-form");
+}
+
+function routeConfigForm(row, dataAttrName) {
+  return `<form class="inline-form route-config-form" ${dataAttrName} data-route-id="${attr(row.route_id)}">
+    <label class="route-config-field">Mode<select name="mode">
       ${option("managed_by_gateway", row.mode || "managed_by_gateway")}
       ${option("direct_litellm_passthrough", row.mode || "")}
-    </select>
+    </select></label>
+    <label class="route-config-field">Timeout ms<input name="timeout_ms" type="number" min="1" max="600000" value="${attr(row.timeout_ms ?? 120000)}" title="Timeout ms"></label>
+    <label class="route-config-field">Max request bytes<input name="max_request_body_bytes" type="number" min="1" max="104857600" value="${attr(row.max_request_body_bytes ?? 1048576)}" title="Max request bytes"></label>
+    <label class="route-config-field">Max response bytes<input name="max_response_body_bytes" type="number" min="1" max="104857600" value="${attr(row.max_response_body_bytes ?? 1048576)}" title="Max response bytes"></label>
     <button type="submit">Save</button>
   </form>`;
 }
@@ -1271,11 +1278,11 @@ async function saveOpenAiRouteMode(event) {
   const formElement = event.currentTarget;
   const routeId = formElement.dataset.routeId;
   const form = new FormData(formElement);
-  await api(`/admin-ui/admin/openai-routes/${routeId}/mode`, {
+  await api(`/admin-ui/admin/openai-routes/${routeId}/config`, {
     method: "PATCH",
-    body: JSON.stringify({ mode: form.get("mode") }),
+    body: JSON.stringify(routeConfigPayload(form)),
   });
-  setNotice("OpenAI route mode updated.", "success");
+  setNotice("OpenAI route configuration updated.", "success");
   await routes();
 }
 
@@ -1284,12 +1291,21 @@ async function saveAnthropicRouteMode(event) {
   const formElement = event.currentTarget;
   const routeId = formElement.dataset.routeId;
   const form = new FormData(formElement);
-  await api(`/admin-ui/admin/anthropic-routes/${routeId}/mode`, {
+  await api(`/admin-ui/admin/anthropic-routes/${routeId}/config`, {
     method: "PATCH",
-    body: JSON.stringify({ mode: form.get("mode") }),
+    body: JSON.stringify(routeConfigPayload(form)),
   });
-  setNotice("Anthropic route mode updated.", "success");
+  setNotice("Anthropic route configuration updated.", "success");
   await routes();
+}
+
+function routeConfigPayload(form) {
+  return {
+    mode: form.get("mode"),
+    timeout_ms: nullableNumber(form.get("timeout_ms")),
+    max_request_body_bytes: nullableNumber(form.get("max_request_body_bytes")),
+    max_response_body_bytes: nullableNumber(form.get("max_response_body_bytes")),
+  };
 }
 
 async function services() {
@@ -1479,7 +1495,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.15")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.16")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>

@@ -475,11 +475,11 @@ async function runTests() {
       apigee_trusted_header_secret: apigeeSecret,
     }),
   });
-  await adminJson("/admin-ui/admin/openai-routes/chat-completions/mode", {
+  await adminJson("/admin-ui/admin/openai-routes/chat-completions/config", {
     method: "PATCH",
     body: JSON.stringify({ mode: "managed_by_gateway" }),
   });
-  await adminJson("/admin-ui/admin/openai-routes/responses/mode", {
+  await adminJson("/admin-ui/admin/openai-routes/responses/config", {
     method: "PATCH",
     body: JSON.stringify({ mode: "managed_by_gateway" }),
   });
@@ -489,6 +489,9 @@ async function runTests() {
       enabled: false,
       allowed_paths: ["/v1/*"],
       allowed_methods: ["GET", "POST"],
+      timeout_ms: 120000,
+      max_request_body_bytes: 1048576,
+      max_response_body_bytes: 1048576,
       ui_exposure: "disabled",
       admin_api_exposure: "disabled",
     }),
@@ -518,13 +521,18 @@ async function runTests() {
   };
 
   const chat = await gatewayCall("/v1/chat/completions", validToken, relaynaKey, chatPayload);
-  const routeModeUpdate = await adminJson("/admin-ui/admin/openai-routes/chat-completions/mode", {
+  const routeModeUpdate = await adminJson("/admin-ui/admin/openai-routes/chat-completions/config", {
     method: "PATCH",
-    body: JSON.stringify({ mode: "direct_litellm_passthrough" }),
+    body: JSON.stringify({
+      mode: "direct_litellm_passthrough",
+      timeout_ms: 240000,
+      max_request_body_bytes: 8388608,
+      max_response_body_bytes: 4194304,
+    }),
   });
   const routesAfterMode = await adminJson("/admin-ui/admin/openai-routes");
   const directModeChat = await gatewayBearerCall("/v1/chat/completions", litellmMasterKey, chatPayload);
-  await adminJson("/admin-ui/admin/openai-routes/chat-completions/mode", {
+  await adminJson("/admin-ui/admin/openai-routes/chat-completions/config", {
     method: "PATCH",
     body: JSON.stringify({ mode: "managed_by_gateway" }),
   });
@@ -535,6 +543,9 @@ async function runTests() {
       enabled: true,
       allowed_paths: ["/v1/*"],
       allowed_methods: ["GET", "POST"],
+      timeout_ms: 240000,
+      max_request_body_bytes: 8388608,
+      max_response_body_bytes: 4194304,
       ui_exposure: "disabled",
       admin_api_exposure: "disabled",
     }),
@@ -647,14 +658,29 @@ async function runTests() {
   const trustedIngressKeyInfo = await gatewayCall("/key/info", null, null, {}, "GET");
   const trustedIngressV3KeyInfo = await gatewayCall("/v3/key/info", null, null, {}, "GET");
   const trustedIngressModelsWithoutKey = await gatewayCall("/v1/models", null, null, {}, "GET");
-  const responsesRouteModeUpdate = await adminJson("/admin-ui/admin/openai-routes/responses/mode", {
+  const responsesRouteModeUpdate = await adminJson("/admin-ui/admin/openai-routes/responses/config", {
     method: "PATCH",
-    body: JSON.stringify({ mode: "direct_litellm_passthrough" }),
+    body: JSON.stringify({
+      mode: "direct_litellm_passthrough",
+      timeout_ms: 240000,
+      max_request_body_bytes: 8388608,
+      max_response_body_bytes: 4194304,
+    }),
   });
   const directResponsesWithLiteLlmBearer = await gatewayBearerCall("/v1/responses", litellmMasterKey, responsePayload);
-  const anthropicRouteModeUpdate = await adminJson("/admin-ui/admin/anthropic-routes/messages/mode", {
+  const longResponsePayload = {
+    model: "gpt-review",
+    input: `long codex context ${"x".repeat(1_100_000)}`,
+  };
+  const directResponsesLongContext = await gatewayBearerCall("/v1/responses", litellmMasterKey, longResponsePayload);
+  const anthropicRouteModeUpdate = await adminJson("/admin-ui/admin/anthropic-routes/messages/config", {
     method: "PATCH",
-    body: JSON.stringify({ mode: "direct_litellm_passthrough" }),
+    body: JSON.stringify({
+      mode: "direct_litellm_passthrough",
+      timeout_ms: 180000,
+      max_request_body_bytes: 6291456,
+      max_response_body_bytes: 3145728,
+    }),
   });
   const directAnthropicMessagesWithLiteLlmBearer = await gatewayBearerCall(
     "/v1/messages",
@@ -777,8 +803,18 @@ async function runTests() {
         directResponsesWithLiteLlmBearer,
       },
     ),
+    direct_responses_accepts_long_context_after_request_limit_raise: pass(
+      responsesRouteModeUpdate.body?.max_request_body_bytes === 8388608 &&
+        directResponsesLongContext.status === 200,
+      {
+        configuredRequestBytes: responsesRouteModeUpdate.body?.max_request_body_bytes,
+        status: directResponsesLongContext.status,
+        code: codeOf(directResponsesLongContext),
+      },
+    ),
     direct_anthropic_messages_accepts_litellm_bearer_without_relayna_key: pass(
       anthropicRouteModeUpdate.status === 200 &&
+        anthropicRouteModeUpdate.body?.max_request_body_bytes === 6291456 &&
         directAnthropicMessagesWithLiteLlmBearer.status === 200 &&
         anthropicMessagesForwardedToLiteLlm,
       {
@@ -818,7 +854,7 @@ async function runTests() {
     ok: Object.values(checks).every((check) => check.ok),
     requestedLiteLlmPathsPassThrough,
     overallOutcome:
-      "PASS: canonical managed and direct route modes reach LiteLLM, Anthropic /v1/messages direct passthrough reaches LiteLLM, canonical /v1/models takes precedence over wildcard passthrough, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.",
+      "PASS: canonical managed and direct route modes reach LiteLLM, configurable route limits accept long-context /v1/responses payloads, Anthropic /v1/messages direct passthrough reaches LiteLLM, canonical /v1/models takes precedence over wildcard passthrough, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.",
     generatedAt: new Date().toISOString(),
     environment: {
       gatewayProxyUrl,
@@ -950,7 +986,7 @@ function dashboardHtml() {
       </tbody>
     </table>
     <h2>Wildcard Coverage</h2>
-    <p>The branch routes managed canonical calls through LiteLLM, can switch canonical OpenAI and Anthropic routes to direct LiteLLM passthrough, keeps canonical <code>/v1/models</code> ahead of wildcard passthrough, serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth, serves trusted-ingress <code>/ui/</code> and explicitly exposed admin paths without Relayna auth when Entra is disabled, and translates direct LiteLLM bearer keys into the configured upstream custom header. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
+    <p>The branch routes managed canonical calls through LiteLLM, can switch canonical OpenAI and Anthropic routes to direct LiteLLM passthrough, accepts a long-context <code>/v1/responses</code> payload after raising route request limits, keeps canonical <code>/v1/models</code> ahead of wildcard passthrough, serves real LiteLLM UI through <code>/admin-ui/litellm-ui/</code> with operator auth, serves trusted-ingress <code>/ui/</code> and explicitly exposed admin paths without Relayna auth when Entra is disabled, and translates direct LiteLLM bearer keys into the configured upstream custom header. Real LiteLLM rejects the literal alias probes itself with 404 or 400 responses, proving those requests reached LiteLLM instead of being stopped by the Gateway router.</p>
     <h2>LiteLLM Direct Credential Mapping</h2>
     <p>Gateway connects directly to real LiteLLM at <code>${results?.environment.litellmUrl || litellmDirectUrl}</code> using the configured <code>x-litellm-key</code> custom header. The direct-mode and fallback checks prove key, project, and provider LiteLLM credentials can authenticate without an intermediate service.</p>
   </main>

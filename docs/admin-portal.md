@@ -167,6 +167,9 @@ Fields:
 | Enable wildcard passthrough | Turns on fallback routing for unmatched LiteLLM-bound paths. Relayna-owned service/control routes and canonical OpenAI route matching still take precedence. |
 | Allowed paths | Comma-separated allowlist such as `/v1/*`. Add sensitive paths like `/ui` and `/ui/*` only when you have chosen an exposure mode and ingress auth pattern intentionally. |
 | Allowed methods | Comma-separated methods, usually `GET,POST`. |
+| Timeout ms | Upstream timeout for wildcard LiteLLM passthrough. Default `120000`, maximum `600000`. |
+| Max request bytes | Request payload cap for wildcard passthrough. Default `1048576`, maximum `104857600`. |
+| Max response bytes | Response payload cap for wildcard passthrough. Default `1048576`, maximum `104857600`. |
 | LiteLLM UI exposure | Controls `/ui` and `/ui/*`. Default `disabled` blocks those paths even if allowlisted. |
 | LiteLLM admin API exposure | Controls admin-like LiteLLM paths such as key, user/team, config, spend, budget, customer, organization, and global endpoints. Default `disabled` blocks them even if allowlisted. |
 
@@ -224,7 +227,7 @@ show the expected route pattern, allowed methods, upstream, and credential
 state.
 
 Each canonical OpenAI-compatible and Anthropic-compatible route also has a mode
-selector:
+selector and direct-passthrough runtime limits:
 
 - `managed_by_gateway` keeps the full Gateway path: Relayna auth, route/model
   and provider policy, RPM/TPM, budgets, guardrails, provider forwarding, and
@@ -233,9 +236,14 @@ selector:
   RPM/TPM, budgets, and LiteLLM credential translation, but forwards directly
   to LiteLLM without Gateway guardrail rewriting or token accounting. Usage is
   reduced to status/latency/request metadata.
+- `Timeout ms`, `Max request bytes`, and `Max response bytes` set route-level
+  proxy limits. Defaults are `120000`, `1048576`, and `1048576`. Virtual-key
+  policy fields with the same request/response semantics can still be stricter
+  for selected keys or policy layers.
 
-Use direct mode only for canonical OpenAI routes that should behave closest to
-LiteLLM while still preserving Gateway governance and credential isolation.
+Use direct mode only for canonical OpenAI or Anthropic routes that should
+behave closest to LiteLLM while still preserving Gateway governance and
+credential isolation.
 
 ### 7. Create the project
 

@@ -14,6 +14,11 @@ pub const ANTHROPIC_MESSAGE_BATCH_ROUTE_ID: &str = "message-batch";
 pub const ANTHROPIC_MESSAGE_BATCH_RESULTS_ROUTE_ID: &str = "message-batch-results";
 pub const ANTHROPIC_MESSAGE_BATCH_CANCEL_ROUTE_ID: &str = "message-batch-cancel";
 pub const ANTHROPIC_MODELS_ROUTE_ID: &str = "models";
+pub const DEFAULT_LITELLM_ROUTE_TIMEOUT_MS: i64 = 120_000;
+pub const DEFAULT_LITELLM_ROUTE_REQUEST_BODY_BYTES: i64 = 1_048_576;
+pub const DEFAULT_LITELLM_ROUTE_RESPONSE_BODY_BYTES: i64 = 1_048_576;
+pub const MAX_LITELLM_ROUTE_TIMEOUT_MS: i64 = 600_000;
+pub const MAX_LITELLM_ROUTE_BODY_BYTES: i64 = 104_857_600;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -31,7 +36,25 @@ pub struct OpenAiRouteSetting {
     pub route: String,
     pub enabled: bool,
     pub mode: OpenAiRouteMode,
+    pub timeout_ms: i64,
+    pub max_request_body_bytes: i64,
+    pub max_response_body_bytes: i64,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct LiteLlmRouteLimits {
+    pub timeout_ms: i64,
+    pub max_request_body_bytes: i64,
+    pub max_response_body_bytes: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct OpenAiRouteConfigPatchRequest {
+    pub mode: Option<OpenAiRouteMode>,
+    pub timeout_ms: Option<i64>,
+    pub max_request_body_bytes: Option<i64>,
+    pub max_response_body_bytes: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +74,9 @@ pub struct LiteLlmPassthroughSettingsPatchRequest {
     pub allowed_methods: Option<Vec<String>>,
     pub ui_exposure: Option<LiteLlmSensitiveRouteExposure>,
     pub admin_api_exposure: Option<LiteLlmSensitiveRouteExposure>,
+    pub timeout_ms: Option<i64>,
+    pub max_request_body_bytes: Option<i64>,
+    pub max_response_body_bytes: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -60,6 +86,9 @@ pub struct LiteLlmPassthroughSettings {
     pub allowed_methods: Vec<String>,
     pub ui_exposure: LiteLlmSensitiveRouteExposure,
     pub admin_api_exposure: LiteLlmSensitiveRouteExposure,
+    pub timeout_ms: i64,
+    pub max_request_body_bytes: i64,
+    pub max_response_body_bytes: i64,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -80,6 +109,12 @@ pub trait AdminOpenAiRouteStore: Send + Sync {
         mode: OpenAiRouteMode,
     ) -> GatewayResult<Option<OpenAiRouteSetting>>;
 
+    async fn patch_openai_route_config(
+        &self,
+        route_id: &str,
+        patch: OpenAiRouteConfigPatchRequest,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>>;
+
     async fn set_anthropic_route_enabled(
         &self,
         route_id: &str,
@@ -90,6 +125,12 @@ pub trait AdminOpenAiRouteStore: Send + Sync {
         &self,
         route_id: &str,
         mode: OpenAiRouteMode,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>>;
+
+    async fn patch_anthropic_route_config(
+        &self,
+        route_id: &str,
+        patch: OpenAiRouteConfigPatchRequest,
     ) -> GatewayResult<Option<OpenAiRouteSetting>>;
 
     async fn get_litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings>;
@@ -129,6 +170,14 @@ where
         (**self).set_openai_route_mode(route_id, mode).await
     }
 
+    async fn patch_openai_route_config(
+        &self,
+        route_id: &str,
+        patch: OpenAiRouteConfigPatchRequest,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        (**self).patch_openai_route_config(route_id, patch).await
+    }
+
     async fn set_anthropic_route_enabled(
         &self,
         route_id: &str,
@@ -147,6 +196,14 @@ where
         (**self).set_anthropic_route_mode(route_id, mode).await
     }
 
+    async fn patch_anthropic_route_config(
+        &self,
+        route_id: &str,
+        patch: OpenAiRouteConfigPatchRequest,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        (**self).patch_anthropic_route_config(route_id, patch).await
+    }
+
     async fn get_litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
         (**self).get_litellm_passthrough_settings().await
     }
@@ -163,8 +220,10 @@ where
 pub trait OpenAiRouteSettingsLookup: Send + Sync {
     async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool>;
     async fn openai_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode>;
+    async fn openai_route_limits(&self, route: Route) -> GatewayResult<LiteLlmRouteLimits>;
     async fn anthropic_route_enabled(&self, route: Route) -> GatewayResult<bool>;
     async fn anthropic_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode>;
+    async fn anthropic_route_limits(&self, route: Route) -> GatewayResult<LiteLlmRouteLimits>;
     async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings>;
 }
 
@@ -181,12 +240,20 @@ where
         (**self).openai_route_mode(route).await
     }
 
+    async fn openai_route_limits(&self, route: Route) -> GatewayResult<LiteLlmRouteLimits> {
+        (**self).openai_route_limits(route).await
+    }
+
     async fn anthropic_route_enabled(&self, route: Route) -> GatewayResult<bool> {
         (**self).anthropic_route_enabled(route).await
     }
 
     async fn anthropic_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode> {
         (**self).anthropic_route_mode(route).await
+    }
+
+    async fn anthropic_route_limits(&self, route: Route) -> GatewayResult<LiteLlmRouteLimits> {
+        (**self).anthropic_route_limits(route).await
     }
 
     async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
@@ -261,7 +328,27 @@ impl LiteLlmPassthroughSettingsPatchRequest {
         if self.admin_api_exposure == Some(LiteLlmSensitiveRouteExposure::TrustedIngress) {
             return Err(GatewayError::InvalidProviderConfigPayload);
         }
+        validate_optional_runtime_limit(self.timeout_ms, self.max_request_body_bytes)?;
+        validate_optional_runtime_limit(self.timeout_ms, self.max_response_body_bytes)?;
         Ok(())
+    }
+}
+
+impl OpenAiRouteConfigPatchRequest {
+    pub fn validate(&self) -> GatewayResult<()> {
+        validate_optional_runtime_limit(self.timeout_ms, self.max_request_body_bytes)?;
+        validate_optional_runtime_limit(self.timeout_ms, self.max_response_body_bytes)?;
+        Ok(())
+    }
+}
+
+impl Default for LiteLlmRouteLimits {
+    fn default() -> Self {
+        Self {
+            timeout_ms: DEFAULT_LITELLM_ROUTE_TIMEOUT_MS,
+            max_request_body_bytes: DEFAULT_LITELLM_ROUTE_REQUEST_BODY_BYTES,
+            max_response_body_bytes: DEFAULT_LITELLM_ROUTE_RESPONSE_BODY_BYTES,
+        }
     }
 }
 
@@ -273,6 +360,9 @@ impl LiteLlmPassthroughSettings {
             allowed_methods: vec!["GET".to_owned(), "POST".to_owned()],
             ui_exposure: LiteLlmSensitiveRouteExposure::Disabled,
             admin_api_exposure: LiteLlmSensitiveRouteExposure::Disabled,
+            timeout_ms: DEFAULT_LITELLM_ROUTE_TIMEOUT_MS,
+            max_request_body_bytes: DEFAULT_LITELLM_ROUTE_REQUEST_BODY_BYTES,
+            max_response_body_bytes: DEFAULT_LITELLM_ROUTE_RESPONSE_BODY_BYTES,
             updated_at,
         }
     }
@@ -407,6 +497,23 @@ fn validate_allowed_methods(methods: &[String]) -> GatewayResult<()> {
     }
     for method in methods {
         if method.trim().parse::<Method>().is_err() {
+            return Err(GatewayError::InvalidProviderConfigPayload);
+        }
+    }
+    Ok(())
+}
+
+fn validate_optional_runtime_limit(
+    timeout_ms: Option<i64>,
+    max_body_bytes: Option<i64>,
+) -> GatewayResult<()> {
+    if let Some(timeout_ms) = timeout_ms {
+        if !(1..=MAX_LITELLM_ROUTE_TIMEOUT_MS).contains(&timeout_ms) {
+            return Err(GatewayError::InvalidProviderConfigPayload);
+        }
+    }
+    if let Some(max_body_bytes) = max_body_bytes {
+        if !(1..=MAX_LITELLM_ROUTE_BODY_BYTES).contains(&max_body_bytes) {
             return Err(GatewayError::InvalidProviderConfigPayload);
         }
     }
@@ -721,12 +828,42 @@ mod tests {
             allowed_methods: None,
             ui_exposure: Some(LiteLlmSensitiveRouteExposure::TrustedIngress),
             admin_api_exposure: Some(LiteLlmSensitiveRouteExposure::TrustedIngress),
+            timeout_ms: None,
+            max_request_body_bytes: None,
+            max_response_body_bytes: None,
         };
 
         assert_eq!(
             patch
                 .validate()
                 .expect_err("admin trusted ingress rejected"),
+            GatewayError::InvalidProviderConfigPayload
+        );
+    }
+
+    #[test]
+    fn route_config_rejects_invalid_runtime_limits() {
+        let patch = OpenAiRouteConfigPatchRequest {
+            mode: Some(OpenAiRouteMode::DirectLiteLlmPassthrough),
+            timeout_ms: Some(MAX_LITELLM_ROUTE_TIMEOUT_MS + 1),
+            max_request_body_bytes: Some(DEFAULT_LITELLM_ROUTE_REQUEST_BODY_BYTES),
+            max_response_body_bytes: Some(DEFAULT_LITELLM_ROUTE_RESPONSE_BODY_BYTES),
+        };
+
+        assert_eq!(
+            patch.validate().expect_err("timeout rejected"),
+            GatewayError::InvalidProviderConfigPayload
+        );
+
+        let patch = OpenAiRouteConfigPatchRequest {
+            mode: None,
+            timeout_ms: Some(DEFAULT_LITELLM_ROUTE_TIMEOUT_MS),
+            max_request_body_bytes: Some(MAX_LITELLM_ROUTE_BODY_BYTES + 1),
+            max_response_body_bytes: None,
+        };
+
+        assert_eq!(
+            patch.validate().expect_err("body limit rejected"),
             GatewayError::InvalidProviderConfigPayload
         );
     }
