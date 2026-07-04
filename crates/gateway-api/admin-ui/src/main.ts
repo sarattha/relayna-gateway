@@ -1312,7 +1312,7 @@ async function services() {
   [state.services, state.projects] = await Promise.all([api("/admin-ui/admin/services"), api("/admin-ui/admin/projects")]);
   const editing = state.services.find((service) => service.name === state.editingServiceName);
   content.innerHTML = `
-    <div class="split">
+    <div class="service-stack">
       <section class="panel">
         <div class="panel-heading">
           <h3>Create service</h3>

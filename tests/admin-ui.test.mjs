@@ -259,6 +259,7 @@ test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /placeholder="temp-service-2"/);
   assert.match(js, /Use lowercase letters, numbers, and hyphens/);
   assert.match(js, /function serviceRouteOptions\(\)/);
+  assert.match(js, /class="service-stack"/);
   assert.match(js, /Import from Studio/);
   assert.match(js, /function studioImportTable\(rows\)/);
   assert.match(js, /async function syncSelectedStudioServices\(event\)/);
@@ -275,6 +276,7 @@ test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /Use JSON Pointer selectors such as \/model or \/payload\/page_count/);
   assert.doesNotMatch(js, /<label>Pricing rules<textarea/);
   assert.match(css, /\.pricing-rule-row/);
+  assert.match(css, /\.service-stack/);
   assert.match(css, /\.help/);
 });
 

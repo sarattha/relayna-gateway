@@ -434,6 +434,11 @@ td code {
   align-items: start;
 }
 
+.service-stack {
+  display: grid;
+  gap: var(--rg-space-4);
+}
+
 .panel {
   border: 1px solid var(--rg-color-border);
   border-radius: var(--rg-radius-md);
@@ -518,13 +523,7 @@ td code {
 
 .pricing-rule-row {
   display: grid;
-  grid-template-columns:
-    minmax(120px, 1fr)
-    minmax(130px, 1fr)
-    minmax(120px, 1fr)
-    minmax(110px, 0.8fr)
-    minmax(100px, 0.7fr)
-    auto;
+  grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr));
   gap: 8px;
   align-items: end;
   padding: 9px;
@@ -535,6 +534,7 @@ td code {
 
 .pricing-rule-row button {
   width: auto;
+  justify-self: start;
 }
 
 .pricing-rules-empty {
