@@ -203,6 +203,13 @@ test("routes view exposes canonical provider route modes", () => {
   assert.match(js, /Anthropic Claude routes/);
   assert.match(css, /\.route-logo\.openai/);
   assert.match(css, /\.route-logo\.anthropic/);
+  assert.match(js, /class="inline-form route-config-form"/);
+  assert.match(js, /Mode<select name="mode"/);
+  assert.match(js, /Timeout ms<input name="timeout_ms"/);
+  assert.match(js, /Max request bytes<input name="max_request_body_bytes"/);
+  assert.match(js, /Max response bytes<input name="max_response_body_bytes"/);
+  assert.match(css, /\.route-config-form/);
+  assert.match(css, /\.route-config-field/);
   assert.match(js, /async function saveOpenAiRouteMode\(event\)/);
   assert.match(js, /\/admin-ui\/admin\/openai-routes\/\$\{routeId\}\/config/);
   assert.match(js, /async function saveAnthropicRouteMode\(event\)/);

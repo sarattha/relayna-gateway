@@ -1328,14 +1328,14 @@ function anthropicRouteModeForm(row) {
   return routeConfigForm(row, "data-anthropic-route-mode-form");
 }
 function routeConfigForm(row, dataAttrName) {
-  return `<form class="inline-form" ${dataAttrName} data-route-id="${attr(row.route_id)}">
-    <select name="mode">
+  return `<form class="inline-form route-config-form" ${dataAttrName} data-route-id="${attr(row.route_id)}">
+    <label class="route-config-field">Mode<select name="mode">
       ${option("managed_by_gateway", row.mode || "managed_by_gateway")}
       ${option("direct_litellm_passthrough", row.mode || "")}
-    </select>
-    <input name="timeout_ms" type="number" min="1" max="600000" value="${attr(row.timeout_ms ?? 12e4)}" title="Timeout ms">
-    <input name="max_request_body_bytes" type="number" min="1" max="104857600" value="${attr(row.max_request_body_bytes ?? 1048576)}" title="Max request bytes">
-    <input name="max_response_body_bytes" type="number" min="1" max="104857600" value="${attr(row.max_response_body_bytes ?? 1048576)}" title="Max response bytes">
+    </select></label>
+    <label class="route-config-field">Timeout ms<input name="timeout_ms" type="number" min="1" max="600000" value="${attr(row.timeout_ms ?? 12e4)}" title="Timeout ms"></label>
+    <label class="route-config-field">Max request bytes<input name="max_request_body_bytes" type="number" min="1" max="104857600" value="${attr(row.max_request_body_bytes ?? 1048576)}" title="Max request bytes"></label>
+    <label class="route-config-field">Max response bytes<input name="max_response_body_bytes" type="number" min="1" max="104857600" value="${attr(row.max_response_body_bytes ?? 1048576)}" title="Max response bytes"></label>
     <button type="submit">Save</button>
   </form>`;
 }
