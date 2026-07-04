@@ -18,9 +18,9 @@ use gateway_core::{
     GuardrailExecutionEvent, GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy,
     GuardrailPolicySet, GuardrailStore, KeyPolicy, LiteLlmSensitiveRouteExposure, OpenAiRouteMode,
     OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
-    ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, Route, RouteMatch,
-    ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent, UsageRecorder,
-    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, ResolvedServiceCost, Route,
+    RouteMatch, ServiceCostMode, ServicePricingRule, ServiceRegistryLookup, ServiceRouteLookup,
+    SharedGatewayAuthRuntime, UsageEvent, UsageRecorder, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use http::{header::HeaderName, Uri};
 use pingora_core::{
@@ -271,6 +271,10 @@ pub struct PingoraContext {
     terminal_usage_recorded: bool,
     service_upstream: Option<PingoraUpstreamConfig>,
     service_route_pattern: Option<String>,
+    service_cost_mode: Option<ServiceCostMode>,
+    service_estimated_cost_usd: Option<f64>,
+    service_pricing_rules: Vec<ServicePricingRule>,
+    resolved_service_cost: Option<ResolvedServiceCost>,
     litellm_upstream: Option<PingoraUpstreamConfig>,
     litellm_passthrough: bool,
     trusted_ingress_passthrough: bool,
@@ -334,6 +338,10 @@ where
             terminal_usage_recorded: false,
             service_upstream: None,
             service_route_pattern: None,
+            service_cost_mode: None,
+            service_estimated_cost_usd: None,
+            service_pricing_rules: Vec::new(),
+            resolved_service_cost: None,
             litellm_upstream: None,
             litellm_passthrough: false,
             trusted_ingress_passthrough: false,
@@ -403,6 +411,9 @@ where
                 registration.max_body_bytes,
             )?;
             matched.estimated_cost_usd = registration.estimated_cost_usd;
+            ctx.service_cost_mode = Some(registration.cost_mode);
+            ctx.service_estimated_cost_usd = registration.estimated_cost_usd;
+            ctx.service_pricing_rules = registration.pricing_rules;
             ctx.service_route_pattern = Some(registration.route_pattern);
             ctx.service_upstream = Some(upstream);
             matched
@@ -623,6 +634,9 @@ where
                         registration.max_body_bytes,
                     )?;
                     matched.estimated_cost_usd = registration.estimated_cost_usd;
+                    ctx.service_cost_mode = Some(registration.cost_mode);
+                    ctx.service_estimated_cost_usd = registration.estimated_cost_usd;
+                    ctx.service_pricing_rules = registration.pricing_rules;
                     ctx.service_route_pattern = Some(registration.route_pattern);
                     ctx.service_upstream = Some(upstream);
                 }
@@ -875,7 +889,7 @@ where
     where
         Self::CTX: Send + Sync,
     {
-        let Some(matched) = ctx.route_match.clone() else {
+        let Some(mut matched) = ctx.route_match.clone() else {
             respond_error(session, GatewayError::UnsupportedRoute, &ctx.request_id).await?;
             return Ok(false);
         };
@@ -905,6 +919,10 @@ where
                 .await;
             respond_error(session, error, &ctx.request_id).await?;
             return Ok(false);
+        }
+        resolve_service_cost_for_ctx(ctx);
+        if let Some(updated) = ctx.route_match.clone() {
+            matched = updated;
         }
 
         let now = Utc::now();
@@ -1271,7 +1289,7 @@ where
                         None,
                         None,
                         output_tokens.and_then(|tokens| i32::try_from(tokens).ok()),
-                        extract_estimated_cost_usd(&ctx.response_body_prefix),
+                        resolved_usage_cost(ctx).estimated_cost_usd,
                     ) {
                         ctx.guardrail_error = Some(error);
                         return Err(PingoraError::new(ErrorType::InternalError));
@@ -1303,15 +1321,8 @@ where
             .response_written()
             .map(|response| response.status.as_u16())
             .unwrap_or_else(|| if error.is_some() { 502 } else { 500 });
-        let estimated_cost_usd = if ctx.litellm_passthrough {
-            None
-        } else {
-            extract_estimated_cost_usd(&ctx.response_body_prefix).or_else(|| {
-                ctx.route_match
-                    .as_ref()
-                    .and_then(|matched| matched.estimated_cost_usd)
-            })
-        };
+        let usage_cost = resolved_usage_cost(ctx);
+        let estimated_cost_usd = usage_cost.estimated_cost_usd;
         let (input_tokens, output_tokens, total_tokens) = if ctx.litellm_passthrough {
             (None, None, None)
         } else {
@@ -1331,6 +1342,11 @@ where
         .with_provider(provider)
         .with_usage_tokens(input_tokens, output_tokens, total_tokens)
         .with_estimated_cost_usd(estimated_cost_usd)
+        .with_cost_metadata(
+            usage_cost.cost_source,
+            usage_cost.cost_mode,
+            usage_cost.pricing_rule_name,
+        )
         .with_service_name(
             ctx.route_match
                 .as_ref()
@@ -1625,13 +1641,8 @@ where
 
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
         let provider = provider_for_usage(ctx);
-        let estimated_cost_usd = if ctx.litellm_passthrough {
-            None
-        } else {
-            ctx.route_match
-                .as_ref()
-                .and_then(|matched| matched.estimated_cost_usd)
-        };
+        let usage_cost = resolved_usage_cost(ctx);
+        let estimated_cost_usd = usage_cost.estimated_cost_usd;
         let event = UsageEvent::new(
             &ctx.request_id,
             key,
@@ -1643,6 +1654,11 @@ where
         )
         .with_provider(provider)
         .with_estimated_cost_usd(estimated_cost_usd)
+        .with_cost_metadata(
+            usage_cost.cost_source,
+            usage_cost.cost_mode,
+            usage_cost.pricing_rule_name,
+        )
         .with_service_name(
             ctx.route_match
                 .as_ref()
@@ -2111,6 +2127,113 @@ fn provider_for_usage(ctx: &PingoraContext) -> Provider {
         .unwrap_or(Provider::LiteLlm)
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct ResolvedUsageCost {
+    estimated_cost_usd: Option<f64>,
+    cost_source: Option<String>,
+    cost_mode: Option<ServiceCostMode>,
+    pricing_rule_name: Option<String>,
+}
+
+fn resolve_service_cost_for_ctx(ctx: &mut PingoraContext) {
+    if ctx.resolved_service_cost.is_some() {
+        return;
+    }
+    let Some(matched) = ctx.route_match.as_mut() else {
+        return;
+    };
+    if matched.provider != Provider::InternalService {
+        return;
+    }
+    let resolved = gateway_core::resolve_service_cost(
+        &ctx.body_prefix,
+        ctx.service_cost_mode.unwrap_or(ServiceCostMode::None),
+        ctx.service_estimated_cost_usd,
+        &ctx.service_pricing_rules,
+    );
+    matched.estimated_cost_usd = match resolved.cost_mode {
+        ServiceCostMode::Fixed => resolved.estimated_cost_usd,
+        ServiceCostMode::Passthrough | ServiceCostMode::None => None,
+    };
+    ctx.resolved_service_cost = Some(resolved);
+}
+
+fn resolved_usage_cost(ctx: &PingoraContext) -> ResolvedUsageCost {
+    if ctx.litellm_passthrough {
+        return ResolvedUsageCost {
+            estimated_cost_usd: None,
+            cost_source: Some("none".to_owned()),
+            cost_mode: Some(ServiceCostMode::None),
+            pricing_rule_name: None,
+        };
+    }
+
+    if let Some(service_cost) = &ctx.resolved_service_cost {
+        let from_rule = service_cost.pricing_rule_name.is_some();
+        return match service_cost.cost_mode {
+            ServiceCostMode::None => ResolvedUsageCost {
+                estimated_cost_usd: None,
+                cost_source: Some("none".to_owned()),
+                cost_mode: Some(ServiceCostMode::None),
+                pricing_rule_name: service_cost.pricing_rule_name.clone(),
+            },
+            ServiceCostMode::Fixed => ResolvedUsageCost {
+                estimated_cost_usd: service_cost.estimated_cost_usd,
+                cost_source: Some(
+                    if from_rule {
+                        "service_pricing_rule_fixed"
+                    } else {
+                        "service_default_fixed"
+                    }
+                    .to_owned(),
+                ),
+                cost_mode: Some(ServiceCostMode::Fixed),
+                pricing_rule_name: service_cost.pricing_rule_name.clone(),
+            },
+            ServiceCostMode::Passthrough => {
+                let upstream_cost = extract_estimated_cost_usd(&ctx.response_body_prefix);
+                ResolvedUsageCost {
+                    estimated_cost_usd: upstream_cost,
+                    cost_source: Some(
+                        if upstream_cost.is_some() {
+                            if from_rule {
+                                "service_pricing_rule_passthrough"
+                            } else {
+                                "service_default_passthrough"
+                            }
+                        } else {
+                            "missing_upstream_cost"
+                        }
+                        .to_owned(),
+                    ),
+                    cost_mode: Some(ServiceCostMode::Passthrough),
+                    pricing_rule_name: service_cost.pricing_rule_name.clone(),
+                }
+            }
+        };
+    }
+
+    if let Some(upstream_cost) = extract_estimated_cost_usd(&ctx.response_body_prefix) {
+        return ResolvedUsageCost {
+            estimated_cost_usd: Some(upstream_cost),
+            cost_source: Some("upstream_passthrough".to_owned()),
+            cost_mode: None,
+            pricing_rule_name: None,
+        };
+    }
+
+    let route_cost = ctx
+        .route_match
+        .as_ref()
+        .and_then(|matched| matched.estimated_cost_usd);
+    ResolvedUsageCost {
+        estimated_cost_usd: route_cost,
+        cost_source: route_cost.map(|_| "route_default".to_owned()),
+        cost_mode: None,
+        pricing_rule_name: None,
+    }
+}
+
 fn debug_bundle_for_ctx(ctx: &PingoraContext, status_code: u16) -> gateway_core::DebugBundle {
     let provider = provider_for_usage(ctx);
     let route = ctx.route;
@@ -2247,6 +2370,10 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         terminal_usage_recorded: false,
         service_upstream: None,
         service_route_pattern: None,
+        service_cost_mode: None,
+        service_estimated_cost_usd: None,
+        service_pricing_rules: Vec::new(),
+        resolved_service_cost: None,
         litellm_upstream: None,
         litellm_passthrough: false,
         trusted_ingress_passthrough: false,

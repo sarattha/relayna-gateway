@@ -94,6 +94,8 @@ pub enum GatewayError {
     InvalidServicePayload,
     #[error("service upstream configuration is invalid")]
     InvalidServiceUpstream,
+    #[error("usage query is invalid")]
+    InvalidUsageQuery,
     #[error("studio catalog is unavailable")]
     StudioUnavailable,
     #[error("studio connection payload is invalid")]
@@ -162,6 +164,7 @@ impl GatewayError {
             Self::IncompleteService => StatusCode::CONFLICT,
             Self::InvalidServicePayload
             | Self::InvalidServiceUpstream
+            | Self::InvalidUsageQuery
             | Self::InvalidStudioConnectionPayload => StatusCode::BAD_REQUEST,
             Self::StudioUnavailable => StatusCode::BAD_GATEWAY,
             Self::UpstreamTimeout => StatusCode::GATEWAY_TIMEOUT,
@@ -217,6 +220,7 @@ impl GatewayError {
             Self::IncompleteService => "incomplete_service",
             Self::InvalidServicePayload => "invalid_service_payload",
             Self::InvalidServiceUpstream => "invalid_service_upstream",
+            Self::InvalidUsageQuery => "invalid_usage_query",
             Self::StudioUnavailable => "studio_unavailable",
             Self::InvalidStudioConnectionPayload => "invalid_studio_connection_payload",
             Self::ControlStateUnavailable => "control_state_unavailable",
@@ -271,6 +275,7 @@ impl GatewayError {
             Self::IncompleteService => "Service registration is incomplete.",
             Self::InvalidServicePayload => "Service registration payload is invalid.",
             Self::InvalidServiceUpstream => "Service upstream configuration is invalid.",
+            Self::InvalidUsageQuery => "Usage query is invalid.",
             Self::StudioUnavailable => "Relayna Studio catalog is unavailable.",
             Self::InvalidStudioConnectionPayload => "Studio connection payload is invalid.",
             Self::UpstreamTimeout => "Upstream provider timed out.",

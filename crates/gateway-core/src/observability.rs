@@ -22,6 +22,10 @@ pub struct UsageQuery {
     pub interval: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    pub breakdown_limit: Option<i64>,
+    pub breakdown_offset: Option<i64>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
@@ -34,6 +38,7 @@ pub struct UsageSummary {
     pub total_tokens: i64,
     pub estimated_cost_usd: Option<f64>,
     pub total_latency_ms: i64,
+    pub average_latency_ms: Option<f64>,
     pub fallback_count: i64,
     pub policy_denial_count: i64,
     pub rate_limit_denial_count: i64,
@@ -70,6 +75,9 @@ pub struct UsageExportRow {
     pub output_tokens: i64,
     pub total_tokens: i64,
     pub estimated_cost_usd: Option<f64>,
+    pub cost_source: Option<String>,
+    pub cost_mode: Option<String>,
+    pub pricing_rule_name: Option<String>,
     pub service_name: Option<String>,
     pub task_id: Option<String>,
     pub run_id: Option<String>,
@@ -83,6 +91,46 @@ pub struct UsageExportRow {
 pub struct UsageExport {
     pub summary: UsageSummary,
     pub rows: Vec<UsageExportRow>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageDashboard {
+    pub summary: UsageSummary,
+    pub breakdowns: UsageDashboardBreakdowns,
+    pub timeseries: Vec<UsageTimeseriesPoint>,
+    pub unused_keys: Vec<UnusedKey>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageDashboardBreakdowns {
+    pub projects: Vec<UsageBreakdown>,
+    pub keys: Vec<UsageBreakdown>,
+    pub services: Vec<UsageBreakdown>,
+    pub providers: Vec<UsageBreakdown>,
+    pub models: Vec<UsageBreakdown>,
+    pub tasks: Vec<UsageBreakdown>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageEventsPage {
+    pub rows: Vec<UsageExportRow>,
+    pub limit: i64,
+    pub offset: i64,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct UsageFilterValuesQuery {
+    pub field: String,
+    pub q: Option<String>,
+    #[serde(flatten)]
+    pub usage: UsageQuery,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageFilterValues {
+    pub field: String,
+    pub values: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -118,6 +166,15 @@ pub trait UsageQueryStore: Send + Sync {
     ) -> GatewayResult<Vec<UsageBreakdown>>;
 
     async fn usage_export(&self, query: UsageQuery) -> GatewayResult<UsageExport>;
+
+    async fn usage_dashboard(&self, query: UsageQuery) -> GatewayResult<UsageDashboard>;
+
+    async fn usage_events(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage>;
+
+    async fn usage_filter_values(
+        &self,
+        query: UsageFilterValuesQuery,
+    ) -> GatewayResult<UsageFilterValues>;
 
     async fn provider_health(&self, query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>>;
 
@@ -160,6 +217,21 @@ where
 
     async fn usage_export(&self, query: UsageQuery) -> GatewayResult<UsageExport> {
         (**self).usage_export(query).await
+    }
+
+    async fn usage_dashboard(&self, query: UsageQuery) -> GatewayResult<UsageDashboard> {
+        (**self).usage_dashboard(query).await
+    }
+
+    async fn usage_events(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage> {
+        (**self).usage_events(query).await
+    }
+
+    async fn usage_filter_values(
+        &self,
+        query: UsageFilterValuesQuery,
+    ) -> GatewayResult<UsageFilterValues> {
+        (**self).usage_filter_values(query).await
     }
 
     async fn provider_health(&self, query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {

@@ -1,4 +1,4 @@
-use crate::{AuthenticatedKey, Provider, Route};
+use crate::{AuthenticatedKey, Provider, Route, ServiceCostMode};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -27,6 +27,9 @@ pub struct UsageEvent {
     pub output_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
     pub estimated_cost_usd: Option<f64>,
+    pub cost_source: Option<String>,
+    pub cost_mode: Option<ServiceCostMode>,
+    pub pricing_rule_name: Option<String>,
     pub service_name: Option<String>,
     pub task_id: Option<String>,
     pub run_id: Option<String>,
@@ -70,6 +73,9 @@ impl UsageEvent {
             output_tokens: None,
             total_tokens: None,
             estimated_cost_usd: None,
+            cost_source: None,
+            cost_mode: None,
+            pricing_rule_name: None,
             service_name: None,
             task_id: None,
             run_id: None,
@@ -81,6 +87,18 @@ impl UsageEvent {
 
     pub fn with_estimated_cost_usd(mut self, estimated_cost_usd: Option<f64>) -> Self {
         self.estimated_cost_usd = estimated_cost_usd;
+        self
+    }
+
+    pub fn with_cost_metadata(
+        mut self,
+        cost_source: Option<String>,
+        cost_mode: Option<ServiceCostMode>,
+        pricing_rule_name: Option<String>,
+    ) -> Self {
+        self.cost_source = cost_source;
+        self.cost_mode = cost_mode;
+        self.pricing_rule_name = pricing_rule_name;
         self
     }
 

@@ -25,8 +25,9 @@ use gateway_core::{
     resolve_effective_policy,
     services::{
         AdminServiceStore, ServiceCostMode, ServiceCreateRequest, ServicePatchRequest,
-        ServiceRegistration, ServiceRegistryLookup, ServiceResponse, ServiceRouteLookup,
-        ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse, StudioServiceImportRequest,
+        ServicePricingRule, ServiceRegistration, ServiceRegistryLookup, ServiceResponse,
+        ServiceRouteLookup, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
+        StudioServiceImportRequest,
     },
     studio_settings::{
         normalize_base_url, normalize_secret, AdminStudioConnectionStore, PatchValue,
@@ -45,8 +46,10 @@ use gateway_core::{
     ProjectUsageSummary, Provider, ProviderHealth, ProviderHealthCheckTarget, ProviderHealthState,
     ProviderHealthStatus, ProviderIntelligenceStore, Route, ServiceImportDiff,
     ServiceRegistrySnapshot, StoredOperatorToken, UnusedKey, UsageBreakdown,
-    UsageBreakdownDimension, UsageEvent, UsageExport, UsageExportRow, UsageQuery, UsageQueryStore,
-    UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
+    UsageBreakdownDimension, UsageDashboard, UsageDashboardBreakdowns, UsageEvent, UsageEventsPage,
+    UsageExport, UsageExportRow, UsageFilterValues, UsageFilterValuesQuery, UsageQuery,
+    UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint,
+    VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -627,6 +630,11 @@ impl PostgresStore {
             .default_pricing
             .as_ref()
             .and_then(|pricing| pricing.estimated_cost_usd);
+        let pricing_rules = request
+            .default_pricing
+            .as_ref()
+            .map(|pricing| pricing.pricing_rules.clone())
+            .unwrap_or_default();
 
         sqlx::query(
             r#"
@@ -642,11 +650,12 @@ impl PostgresStore {
                 allowed_methods,
                 cost_mode,
                 estimated_cost_usd,
+                pricing_rules,
                 source,
                 sync_status,
                 last_synced_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, 'studio', 'incomplete', now())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, $11, 'studio', 'incomplete', now())
             ON CONFLICT (studio_service_id) WHERE studio_service_id IS NOT NULL
             DO UPDATE SET
                 name = EXCLUDED.name,
@@ -659,6 +668,7 @@ impl PostgresStore {
                     ELSE service_registrations.health_check_method
                 END,
                 source = 'studio',
+                pricing_rules = EXCLUDED.pricing_rules,
                 sync_status = CASE
                     WHEN service_registrations.upstream_base_url IS NULL
                         OR service_registrations.credential_secret IS NULL
@@ -679,6 +689,7 @@ impl PostgresStore {
         .bind(&request.allowed_methods)
         .bind(service_cost_mode_str(cost_mode))
         .bind(estimated_cost_usd)
+        .bind(Json(pricing_rules))
         .execute(&self.pool)
         .await
         .map_err(|error| {
@@ -715,6 +726,11 @@ impl PostgresStore {
             .default_pricing
             .as_ref()
             .and_then(|pricing| pricing.estimated_cost_usd);
+        let pricing_rules = request
+            .default_pricing
+            .as_ref()
+            .map(|pricing| pricing.pricing_rules.clone())
+            .unwrap_or_default();
 
         sqlx::query(
             r#"
@@ -730,11 +746,12 @@ impl PostgresStore {
                 allowed_methods,
                 cost_mode,
                 estimated_cost_usd,
+                pricing_rules,
                 source,
                 sync_status,
                 last_synced_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, 'studio', 'incomplete', now())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, $11, 'studio', 'incomplete', now())
             ON CONFLICT (studio_service_id) WHERE studio_service_id IS NOT NULL
             DO UPDATE SET
                 name = EXCLUDED.name,
@@ -747,6 +764,7 @@ impl PostgresStore {
                     ELSE service_registrations.health_check_method
                 END,
                 source = 'studio',
+                pricing_rules = EXCLUDED.pricing_rules,
                 sync_status = CASE
                     WHEN service_registrations.upstream_base_url IS NULL
                         OR service_registrations.credential_secret IS NULL
@@ -767,6 +785,7 @@ impl PostgresStore {
         .bind(&request.allowed_methods)
         .bind(service_cost_mode_str(cost_mode))
         .bind(estimated_cost_usd)
+        .bind(Json(pricing_rules))
         .execute(&mut **tx)
         .await
         .map_err(|error| {
@@ -888,6 +907,9 @@ impl PostgresStore {
                 output_tokens,
                 total_tokens,
                 estimated_cost,
+                cost_source,
+                cost_mode,
+                pricing_rule_name,
                 service_name,
                 task_id,
                 run_id,
@@ -895,7 +917,7 @@ impl PostgresStore {
                 fallback_count,
                 created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
             "#,
         )
         .bind(&event.request_id)
@@ -911,6 +933,9 @@ impl PostgresStore {
         .bind(event.output_tokens)
         .bind(event.total_tokens)
         .bind(event.estimated_cost_usd)
+        .bind(&event.cost_source)
+        .bind(event.cost_mode.map(service_cost_mode_str))
+        .bind(&event.pricing_rule_name)
         .bind(&event.service_name)
         .bind(&event.task_id)
         .bind(&event.run_id)
@@ -3760,6 +3785,7 @@ impl AdminServiceStore for PostgresStore {
                 max_body_bytes,
                 cost_mode,
                 estimated_cost_usd,
+                pricing_rules,
                 credential_secret,
                 fallback_services,
                 source,
@@ -3767,7 +3793,7 @@ impl AdminServiceStore for PostgresStore {
                 last_synced_at,
                 disabled_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END)
             "#,
         )
         .bind(&request.name)
@@ -3783,6 +3809,7 @@ impl AdminServiceStore for PostgresStore {
         .bind(request.max_body_bytes)
         .bind(service_cost_mode_str(request.cost_mode))
         .bind(request.estimated_cost_usd)
+        .bind(Json(request.pricing_rules))
         .bind(&request.credential)
         .bind(&request.fallback_services)
         .bind(if request.studio_service_id.is_some() { "studio" } else { "gateway" })
@@ -3879,6 +3906,11 @@ impl AdminServiceStore for PostgresStore {
         if let Some(estimated_cost_usd) = patch.estimated_cost_usd {
             registration.estimated_cost_usd = estimated_cost_usd;
         }
+        registration.validate_cost()?;
+        if let Some(pricing_rules) = patch.pricing_rules {
+            registration.pricing_rules = pricing_rules;
+        }
+        registration.validate_pricing_rules()?;
         if let Some(fallback_services) = patch.fallback_services {
             registration.fallback_services = fallback_services;
         }
@@ -3910,10 +3942,11 @@ impl AdminServiceStore for PostgresStore {
                 max_body_bytes = $11,
                 cost_mode = $12,
                 estimated_cost_usd = $13,
-                credential_secret = $14,
-                fallback_services = $15,
-                source = $16,
-                sync_status = $17,
+                pricing_rules = $14,
+                credential_secret = $15,
+                fallback_services = $16,
+                source = $17,
+                sync_status = $18,
                 disabled_at = CASE WHEN $8 THEN NULL ELSE COALESCE(disabled_at, now()) END,
                 updated_at = now()
             WHERE name = $1
@@ -3932,6 +3965,7 @@ impl AdminServiceStore for PostgresStore {
         .bind(registration.max_body_bytes)
         .bind(service_cost_mode_str(registration.cost_mode))
         .bind(registration.estimated_cost_usd)
+        .bind(Json(registration.pricing_rules.clone()))
         .bind(&registration.credential_secret)
         .bind(&registration.fallback_services)
         .bind(service_source_str(registration.source))
@@ -4155,6 +4189,10 @@ impl UsageQueryStore for PostgresStore {
                                 total_tokens,
                                 estimated_cost_usd,
                                 total_latency_ms,
+                                average_latency_ms: average_latency_ms(
+                                    request_count,
+                                    total_latency_ms,
+                                ),
                                 fallback_count,
                                 fallback_rate: fallback_rate(request_count, fallback_count),
                                 ..UsageSummary::default()
@@ -4196,7 +4234,17 @@ impl UsageQueryStore for PostgresStore {
             "#,
         );
         append_usage_filters(&mut builder, &query);
-        builder.push(" GROUP BY name ORDER BY 2 DESC, name ASC");
+        builder.push(" GROUP BY name ORDER BY ");
+        builder.push(usage_breakdown_sort_column(query.sort_by.as_deref()));
+        builder.push(if usage_sort_desc(query.sort_order.as_deref()) {
+            " DESC, name ASC"
+        } else {
+            " ASC, name ASC"
+        });
+        builder.push(" LIMIT ");
+        builder.push_bind(query.breakdown_limit.unwrap_or(20).clamp(1, 500));
+        builder.push(" OFFSET ");
+        builder.push_bind(query.breakdown_offset.unwrap_or_default().max(0));
 
         builder
             .build_query_as::<(String, i64, i64, i64, i64, i64, i64, Option<f64>, i64, i64)>()
@@ -4227,6 +4275,10 @@ impl UsageQueryStore for PostgresStore {
                                 total_tokens,
                                 estimated_cost_usd,
                                 total_latency_ms,
+                                average_latency_ms: average_latency_ms(
+                                    request_count,
+                                    total_latency_ms,
+                                ),
                                 fallback_count,
                                 fallback_rate: fallback_rate(request_count, fallback_count),
                                 ..UsageSummary::default()
@@ -4256,6 +4308,9 @@ impl UsageQueryStore for PostgresStore {
                 COALESCE(u.output_tokens, 0)::bigint,
                 COALESCE(u.total_tokens, 0)::bigint,
                 u.estimated_cost::double precision,
+                u.cost_source,
+                u.cost_mode,
+                u.pricing_rule_name,
                 u.service_name,
                 u.task_id,
                 u.run_id,
@@ -4299,6 +4354,9 @@ impl UsageQueryStore for PostgresStore {
                     output_tokens: row.try_get("output_tokens")?,
                     total_tokens: row.try_get("total_tokens")?,
                     estimated_cost_usd: row.try_get("estimated_cost_usd")?,
+                    cost_source: row.try_get("cost_source")?,
+                    cost_mode: row.try_get("cost_mode")?,
+                    pricing_rule_name: row.try_get("pricing_rule_name")?,
                     service_name: row.try_get("service_name")?,
                     task_id: row.try_get("task_id")?,
                     run_id: row.try_get("run_id")?,
@@ -4312,6 +4370,129 @@ impl UsageQueryStore for PostgresStore {
             .map_err(|_| GatewayError::StoreUnavailable)?;
 
         Ok(UsageExport { summary, rows })
+    }
+
+    async fn usage_dashboard(&self, query: UsageQuery) -> GatewayResult<UsageDashboard> {
+        Ok(UsageDashboard {
+            summary: self.usage_summary(query.clone()).await?,
+            breakdowns: UsageDashboardBreakdowns {
+                projects: self
+                    .usage_breakdown(query.clone(), UsageBreakdownDimension::Project)
+                    .await?,
+                keys: self
+                    .usage_breakdown(query.clone(), UsageBreakdownDimension::Key)
+                    .await?,
+                services: self
+                    .usage_breakdown(query.clone(), UsageBreakdownDimension::Service)
+                    .await?,
+                providers: self
+                    .usage_breakdown(query.clone(), UsageBreakdownDimension::Provider)
+                    .await?,
+                models: self
+                    .usage_breakdown(query.clone(), UsageBreakdownDimension::Model)
+                    .await?,
+                tasks: self
+                    .usage_breakdown(query.clone(), UsageBreakdownDimension::Task)
+                    .await?,
+            },
+            timeseries: self.usage_timeseries(query.clone()).await?,
+            unused_keys: self.unused_keys(query).await?,
+        })
+    }
+
+    async fn usage_events(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage> {
+        let limit = query.limit.unwrap_or(50).clamp(1, 500);
+        let offset = query.offset.unwrap_or_default().max(0);
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            SELECT
+                u.request_id,
+                u.key_id,
+                u.project_id,
+                u.route,
+                u.model,
+                u.provider,
+                u.status,
+                u.status_code,
+                u.latency_ms,
+                COALESCE(u.input_tokens, 0)::bigint,
+                COALESCE(u.output_tokens, 0)::bigint,
+                COALESCE(u.total_tokens, 0)::bigint,
+                u.estimated_cost::double precision,
+                u.cost_source,
+                u.cost_mode,
+                u.pricing_rule_name,
+                u.service_name,
+                u.task_id,
+                u.run_id,
+                u.trace_id,
+                u.fallback_count,
+                COALESCE(g.guardrail_action_count, 0)::bigint,
+                u.created_at
+            FROM usage_events u
+            LEFT JOIN (
+                SELECT request_id, COUNT(*)::bigint AS guardrail_action_count
+                FROM guardrail_execution_events
+                GROUP BY request_id
+            ) g ON g.request_id = u.request_id
+            "#,
+        );
+        append_usage_filters_with_alias(&mut builder, &query, "u");
+        builder.push(" ORDER BY ");
+        builder.push(usage_event_sort_column(query.sort_by.as_deref()));
+        builder.push(if usage_sort_desc(query.sort_order.as_deref()) {
+            " DESC, u.request_id ASC"
+        } else {
+            " ASC, u.request_id ASC"
+        });
+        builder.push(" LIMIT ");
+        builder.push_bind(limit + 1);
+        builder.push(" OFFSET ");
+        builder.push_bind(offset);
+
+        let mut rows = usage_export_rows_from_query(&self.pool, builder).await?;
+        let has_more = rows.len() > limit as usize;
+        rows.truncate(limit as usize);
+        Ok(UsageEventsPage {
+            rows,
+            limit,
+            offset,
+            has_more,
+        })
+    }
+
+    async fn usage_filter_values(
+        &self,
+        query: UsageFilterValuesQuery,
+    ) -> GatewayResult<UsageFilterValues> {
+        let Some(column) = usage_filter_value_column(&query.field) else {
+            return Err(GatewayError::InvalidUsageQuery);
+        };
+        let limit = query.usage.limit.unwrap_or(50).clamp(1, 100);
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT DISTINCT ");
+        builder.push(column);
+        builder.push(" AS value FROM usage_events");
+        append_usage_filters(&mut builder, &query.usage);
+        builder.push(" AND ");
+        builder.push(column);
+        builder.push(" IS NOT NULL");
+        if let Some(q) = query.q.as_deref().filter(|value| !value.is_empty()) {
+            builder.push(" AND ");
+            builder.push(column);
+            builder.push(" ILIKE ");
+            builder.push_bind(format!("{q}%"));
+        }
+        builder.push(" ORDER BY value ASC LIMIT ");
+        builder.push_bind(limit);
+        let values = builder
+            .build_query_scalar::<String>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(UsageFilterValues {
+            field: query.field,
+            values,
+        })
     }
 
     async fn provider_health(&self, query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
@@ -5709,6 +5890,10 @@ fn service_registration_from_row(
     let cost_mode: String = row.try_get("cost_mode")?;
     let source: String = row.try_get("source")?;
     let sync_status: String = row.try_get("sync_status")?;
+    let pricing_rules = row
+        .try_get::<Json<Vec<ServicePricingRule>>, _>("pricing_rules")
+        .map(|json| json.0)
+        .unwrap_or_default();
     Ok(ServiceRegistration {
         name: row.try_get("name")?,
         project_id: row.try_get("project_id")?,
@@ -5723,6 +5908,7 @@ fn service_registration_from_row(
         max_body_bytes: row.try_get("max_body_bytes")?,
         cost_mode: parse_service_cost_mode(&cost_mode).map_err(sqlx::Error::Decode)?,
         estimated_cost_usd: row.try_get("estimated_cost_usd")?,
+        pricing_rules,
         credential_secret: row.try_get("credential_secret")?,
         fallback_services: row.try_get("fallback_services")?,
         source: parse_service_source(&source).map_err(sqlx::Error::Decode)?,
@@ -5935,6 +6121,47 @@ fn append_usage_filters_with_alias<'a>(
     }
 }
 
+async fn usage_export_rows_from_query(
+    pool: &PgPool,
+    mut builder: QueryBuilder<'_, Postgres>,
+) -> GatewayResult<Vec<UsageExportRow>> {
+    builder
+        .build()
+        .fetch_all(pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .into_iter()
+        .map(|row| {
+            Ok(UsageExportRow {
+                request_id: row.try_get("request_id")?,
+                key_id: row.try_get("key_id")?,
+                project_id: row.try_get("project_id")?,
+                route: row.try_get("route")?,
+                model: row.try_get("model")?,
+                provider: row.try_get("provider")?,
+                status: row.try_get("status")?,
+                status_code: row.try_get("status_code")?,
+                latency_ms: row.try_get("latency_ms")?,
+                input_tokens: row.try_get("input_tokens")?,
+                output_tokens: row.try_get("output_tokens")?,
+                total_tokens: row.try_get("total_tokens")?,
+                estimated_cost_usd: row.try_get("estimated_cost_usd")?,
+                cost_source: row.try_get("cost_source")?,
+                cost_mode: row.try_get("cost_mode")?,
+                pricing_rule_name: row.try_get("pricing_rule_name")?,
+                service_name: row.try_get("service_name")?,
+                task_id: row.try_get("task_id")?,
+                run_id: row.try_get("run_id")?,
+                trace_id: row.try_get("trace_id")?,
+                fallback_count: row.try_get("fallback_count")?,
+                guardrail_action_count: row.try_get("guardrail_action_count")?,
+                created_at: row.try_get("created_at")?,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()
+        .map_err(|_| GatewayError::StoreUnavailable)
+}
+
 async fn enrich_usage_summary(
     pool: &PgPool,
     query: &UsageQuery,
@@ -6059,10 +6286,59 @@ fn summary_from_row(
         total_tokens,
         estimated_cost_usd,
         total_latency_ms,
+        average_latency_ms: average_latency_ms(request_count, total_latency_ms),
         fallback_count,
         fallback_rate: fallback_rate(request_count, fallback_count),
         ..UsageSummary::default()
     }
+}
+
+fn average_latency_ms(request_count: i64, total_latency_ms: i64) -> Option<f64> {
+    if request_count <= 0 {
+        None
+    } else {
+        Some(total_latency_ms as f64 / request_count as f64)
+    }
+}
+
+fn usage_breakdown_sort_column(sort_by: Option<&str>) -> &'static str {
+    match sort_by {
+        Some("cost") => "estimated_cost_usd",
+        Some("failures") => "failure_count",
+        Some("success") => "success_count",
+        Some("latency") => "total_latency_ms",
+        Some("tokens") => "total_tokens",
+        Some("fallbacks") => "fallback_count",
+        Some("requests") => "request_count",
+        _ => "request_count",
+    }
+}
+
+fn usage_event_sort_column(sort_by: Option<&str>) -> &'static str {
+    match sort_by {
+        Some("cost") => "u.estimated_cost",
+        Some("latency") => "u.latency_ms",
+        Some("tokens") => "u.total_tokens",
+        Some("status_code") => "u.status_code",
+        Some("created_at") => "u.created_at",
+        _ => "u.created_at",
+    }
+}
+
+fn usage_filter_value_column(field: &str) -> Option<&'static str> {
+    match field {
+        "route" => Some("route"),
+        "provider" => Some("provider"),
+        "service" => Some("service_name"),
+        "model" => Some("model"),
+        "task_id" => Some("task_id"),
+        "run_id" => Some("run_id"),
+        _ => None,
+    }
+}
+
+fn usage_sort_desc(sort_order: Option<&str>) -> bool {
+    !matches!(sort_order, Some("asc"))
 }
 
 fn fallback_rate(request_count: i64, fallback_count: i64) -> f64 {

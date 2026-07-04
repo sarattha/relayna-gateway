@@ -34,14 +34,9 @@ test("admin portal shell exposes all release-critical views", () => {
 
 test("admin portal calls the expected gateway admin APIs", () => {
   for (const endpoint of [
-    "/admin-ui/admin/usage/summary",
-    "/admin-ui/admin/usage/by-model",
-    "/admin-ui/admin/usage/by-provider",
-    "/admin-ui/admin/usage/by-task",
-    "/admin-ui/admin/usage/timeseries",
-    "/admin-ui/admin/usage/export.json",
-    "/admin-ui/admin/usage/export.csv",
-    "/admin-ui/admin/usage/unused-keys",
+    "/admin-ui/admin/usage/dashboard",
+    "/admin-ui/admin/usage/events",
+    "/admin-ui/admin/usage/filter-values",
     "/admin-ui/admin/provider-health",
     "/admin-ui/admin/provider-health/check",
     "/admin-ui/admin/provider-health/state",
@@ -290,18 +285,28 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /api\("\/admin-ui\/admin\/projects"\)/);
   assert.match(js, /api\("\/admin-ui\/admin\/keys"\)/);
   assert.match(js, /api\("\/admin-ui\/admin\/services"\)/);
-  for (const field of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status", "min_cost_usd"]) {
+  for (const field of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status", "time_preset", "from", "to", "interval", "min_cost_usd", "breakdown_limit", "sort_by", "limit"]) {
     assert.match(js, new RegExp(`name="${field}"`));
   }
-  assert.match(js, /\/admin-ui\/admin\/usage\/by-project/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/by-key/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/by-service/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/by-task/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/timeseries/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/export\.json/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/export\.csv/);
+  for (const preset of ["last_1h", "last_6h", "last_24h", "last_7d", "last_30d", "today", "yesterday", "this_week", "this_month", "custom"]) {
+    assert.match(js, new RegExp(`value="${preset}"`));
+  }
+  assert.match(js, /type="datetime-local"/);
+  assert.match(js, /query\.set\("from", range\.from\)/);
+  assert.match(js, /query\.set\("to", range\.to\)/);
+  assert.match(js, /query\.set\("interval", interval\)/);
+  assert.match(js, /Usage start time must be before the end time/);
+  assert.match(js, /function usageDateRange\(form\)/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/dashboard/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/events/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/filter-values/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/export\.\$\{format\}/);
+  assert.match(js, /value="json">JSON/);
+  assert.match(js, /value="csv">CSV/);
   assert.match(js, /\/admin-ui\/admin\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/usage/);
-  assert.match(js, /async function loadUsageExport\(event\)/);
+  assert.match(js, /async function usageExportAction\(event\)/);
+  assert.match(js, /GATEWAY_OPERATOR_TOKEN/);
+  assert.match(js, /data-debug-request/);
   assert.match(js, /async function loadTaskUsage\(event\)/);
   assert.match(js, /function usageTimeseriesTable\(rows\)/);
 });
