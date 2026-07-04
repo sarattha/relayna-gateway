@@ -55,6 +55,13 @@ pub struct UsageTimeseriesPoint {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageServiceTimeseriesPoint {
+    pub bucket: DateTime<Utc>,
+    pub service_name: String,
+    pub summary: UsageSummary,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct UsageBreakdown {
     pub name: String,
     pub summary: UsageSummary,
@@ -98,6 +105,7 @@ pub struct UsageDashboard {
     pub summary: UsageSummary,
     pub breakdowns: UsageDashboardBreakdowns,
     pub timeseries: Vec<UsageTimeseriesPoint>,
+    pub service_timeseries: Vec<UsageServiceTimeseriesPoint>,
     pub unused_keys: Vec<UnusedKey>,
 }
 

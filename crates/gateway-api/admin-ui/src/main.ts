@@ -1960,6 +1960,7 @@ async function loadUsage(event) {
     <h4>Tasks</h4>${usageBreakdownTable(dashboard.breakdowns.tasks)}
     <h4>Recent requests</h4>${usageEventsTable(events.rows)}
     <h4>Timeseries</h4>${usageTimeseriesTable(dashboard.timeseries)}
+    <h4>Service timeseries</h4>${usageServiceTimeseriesTable(dashboard.service_timeseries || [])}
     <h4>Unused keys</h4>${unusedKeysTable(dashboard.unused_keys)}
   `;
   results.querySelectorAll("[data-debug-request]").forEach((button) => {
@@ -2180,6 +2181,21 @@ function usageTimeseriesTable(rows) {
       row.summary?.request_count ?? row.request_count ?? 0,
       row.summary?.success_count ?? row.success_count ?? 0,
       row.summary?.failure_count ?? row.failure_count ?? 0,
+      money(row.summary?.estimated_cost_usd ?? row.estimated_cost_usd),
+    ]),
+  );
+}
+
+function usageServiceTimeseriesTable(rows) {
+  return table(
+    ["Bucket", "Service", "Requests", "Success", "Failure", "Avg latency", "Cost"],
+    rows.map((row) => [
+      esc(row.bucket_start || row.bucket || row.name),
+      esc(row.service_name || "none"),
+      row.summary?.request_count ?? row.request_count ?? 0,
+      row.summary?.success_count ?? row.success_count ?? 0,
+      row.summary?.failure_count ?? row.failure_count ?? 0,
+      row.summary?.average_latency_ms == null ? "n/a" : `${Math.round(row.summary.average_latency_ms)} ms`,
       money(row.summary?.estimated_cost_usd ?? row.estimated_cost_usd),
     ]),
   );

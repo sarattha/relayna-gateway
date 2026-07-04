@@ -312,6 +312,9 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /data-debug-request/);
   assert.match(js, /async function loadTaskUsage\(event\)/);
   assert.match(js, /function usageTimeseriesTable\(rows\)/);
+  assert.match(js, /Service timeseries/);
+  assert.match(js, /function usageServiceTimeseriesTable\(rows\)/);
+  assert.match(js, /dashboard\.service_timeseries \|\| \[\]/);
 });
 
 test("audit view exposes read-only operator event filters and redacted snapshots", () => {

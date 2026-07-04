@@ -48,8 +48,8 @@ use gateway_core::{
     ServiceRegistrySnapshot, StoredOperatorToken, UnusedKey, UsageBreakdown,
     UsageBreakdownDimension, UsageDashboard, UsageDashboardBreakdowns, UsageEvent, UsageEventsPage,
     UsageExport, UsageExportRow, UsageFilterValues, UsageFilterValuesQuery, UsageQuery,
-    UsageQueryStore, UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint,
-    VirtualKeyMaterial,
+    UsageQueryStore, UsageRecorder, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary,
+    UsageTimeseriesPoint, VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -4396,6 +4396,7 @@ impl UsageQueryStore for PostgresStore {
                     .await?,
             },
             timeseries: self.usage_timeseries(query.clone()).await?,
+            service_timeseries: usage_service_timeseries(&self.pool, query.clone()).await?,
             unused_keys: self.unused_keys(query).await?,
         })
     }
@@ -6147,6 +6148,89 @@ async fn usage_export_rows_from_query(
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()
+        .map_err(|_| GatewayError::StoreUnavailable)
+}
+
+async fn usage_service_timeseries(
+    pool: &PgPool,
+    query: UsageQuery,
+) -> GatewayResult<Vec<UsageServiceTimeseriesPoint>> {
+    let interval = match query.interval.as_deref() {
+        Some("day") => "day",
+        _ => "hour",
+    };
+    let mut builder = QueryBuilder::<Postgres>::new("SELECT date_trunc(");
+    builder.push_bind(interval);
+    builder.push(
+        r#", created_at) AS bucket,
+            COALESCE(service_name, 'none') AS service_name,
+            COUNT(*)::bigint,
+            COUNT(*) FILTER (WHERE status = 'success')::bigint,
+            COUNT(*) FILTER (WHERE status = 'failure')::bigint,
+            COALESCE(SUM(input_tokens), 0)::bigint,
+            COALESCE(SUM(output_tokens), 0)::bigint,
+            COALESCE(SUM(total_tokens), 0)::bigint,
+            COALESCE(SUM(estimated_cost), 0)::double precision,
+            COALESCE(SUM(latency_ms), 0)::bigint,
+            COALESCE(SUM(fallback_count), 0)::bigint
+        FROM usage_events
+        "#,
+    );
+    append_usage_filters(&mut builder, &query);
+    builder.push(" GROUP BY bucket, service_name ORDER BY bucket ASC, service_name ASC");
+
+    builder
+        .build_query_as::<(
+            chrono::DateTime<chrono::Utc>,
+            String,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            Option<f64>,
+            i64,
+            i64,
+        )>()
+        .fetch_all(pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(
+                    |(
+                        bucket,
+                        service_name,
+                        request_count,
+                        success_count,
+                        failure_count,
+                        input_tokens,
+                        output_tokens,
+                        total_tokens,
+                        estimated_cost_usd,
+                        total_latency_ms,
+                        fallback_count,
+                    )| UsageServiceTimeseriesPoint {
+                        bucket,
+                        service_name,
+                        summary: UsageSummary {
+                            request_count,
+                            success_count,
+                            failure_count,
+                            input_tokens,
+                            output_tokens,
+                            total_tokens,
+                            estimated_cost_usd,
+                            total_latency_ms,
+                            average_latency_ms: average_latency_ms(request_count, total_latency_ms),
+                            fallback_count,
+                            fallback_rate: fallback_rate(request_count, fallback_count),
+                            ..UsageSummary::default()
+                        },
+                    },
+                )
+                .collect()
+        })
         .map_err(|_| GatewayError::StoreUnavailable)
 }
 

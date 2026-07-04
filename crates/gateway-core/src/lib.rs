@@ -53,7 +53,8 @@ pub use guardrails::{
 pub use observability::{
     ProviderHealth, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageDashboard,
     UsageDashboardBreakdowns, UsageEventsPage, UsageExport, UsageExportRow, UsageFilterValues,
-    UsageFilterValuesQuery, UsageQuery, UsageQueryStore, UsageSummary, UsageTimeseriesPoint,
+    UsageFilterValuesQuery, UsageQuery, UsageQueryStore, UsageServiceTimeseriesPoint, UsageSummary,
+    UsageTimeseriesPoint,
 };
 pub use operators::{
     default_operator_roles, default_operator_scopes, operator_token_prefix,

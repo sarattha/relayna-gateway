@@ -4147,10 +4147,11 @@ mod tests {
         ProviderConfigCreateRequest, ProviderConfigPatchRequest, ProviderConfigResponse,
         ProviderHealth, Route, ServiceCostMode, ServiceResponse, ServiceSource, ServiceSyncStatus,
         ServiceSyncStatusResponse, StoredGatewayAuthSettings, StoredStudioConnection,
-        StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow, UsageStatus, UsageSummary,
-        UsageTimeseriesPoint,
+        StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow, UsageServiceTimeseriesPoint,
+        UsageStatus, UsageSummary, UsageTimeseriesPoint,
     };
     use std::{
+        collections::BTreeMap,
         io::{Read, Write},
         net::TcpListener,
         sync::{mpsc, Mutex},
@@ -5491,6 +5492,10 @@ mod tests {
                         .await?,
                 },
                 timeseries: self.usage_timeseries(query.clone()).await?,
+                service_timeseries: usage_service_timeseries_from_rows(
+                    &self.usage_export(query.clone()).await?.rows,
+                    query.interval.as_deref(),
+                ),
                 unused_keys: self.unused_keys(query).await?,
             })
         }
@@ -5745,6 +5750,43 @@ mod tests {
             },
             ..UsageSummary::default()
         }
+    }
+
+    fn usage_service_timeseries_from_rows(
+        rows: &[UsageExportRow],
+        interval: Option<&str>,
+    ) -> Vec<UsageServiceTimeseriesPoint> {
+        let bucket_seconds = if interval == Some("day") {
+            86_400
+        } else {
+            3_600
+        };
+        let mut grouped = BTreeMap::<(chrono::DateTime<Utc>, String), Vec<UsageExportRow>>::new();
+        for row in rows {
+            let timestamp = row.created_at.timestamp();
+            let bucket_timestamp = timestamp.div_euclid(bucket_seconds) * bucket_seconds;
+            let bucket =
+                chrono::DateTime::from_timestamp(bucket_timestamp, 0).expect("valid bucket");
+            grouped
+                .entry((
+                    bucket,
+                    row.service_name
+                        .clone()
+                        .unwrap_or_else(|| "none".to_owned()),
+                ))
+                .or_default()
+                .push(row.clone());
+        }
+        grouped
+            .into_iter()
+            .map(
+                |((bucket, service_name), rows)| UsageServiceTimeseriesPoint {
+                    bucket,
+                    service_name,
+                    summary: usage_summary_from_rows(&rows),
+                },
+            )
+            .collect()
     }
 
     fn stored_key(raw: &str) -> StoredVirtualKey {
@@ -7469,6 +7511,101 @@ mod tests {
         assert!(csv.starts_with("request_id,key_id,project_id"));
         assert!(csv.contains("'=req-failure"));
         assert!(!csv.contains("req-success"));
+    }
+
+    #[tokio::test]
+    async fn usage_dashboard_returns_service_timeseries() {
+        let store = default_store();
+        let key_id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+        let bucket = chrono::DateTime::parse_from_rfc3339("2026-07-04T15:22:00Z")
+            .expect("time")
+            .with_timezone(&Utc);
+        store.events.lock().expect("events lock").extend([
+            UsageEvent {
+                request_id: "svc-fixed".to_owned(),
+                key_id,
+                project_id: Some(project_id),
+                route: Route::Summary,
+                model: None,
+                provider: gateway_core::Provider::InternalService,
+                status: UsageStatus::Success,
+                status_code: 200,
+                latency_ms: 120,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: Some(0.026),
+                cost_source: Some("service_default".to_owned()),
+                cost_mode: Some(ServiceCostMode::Fixed),
+                pricing_rule_name: None,
+                service_name: Some("summarizer".to_owned()),
+                task_id: None,
+                run_id: None,
+                trace_id: Some("trace-fixed".to_owned()),
+                fallback_count: 0,
+                created_at: bucket,
+            },
+            UsageEvent {
+                request_id: "svc-rule".to_owned(),
+                key_id,
+                project_id: Some(project_id),
+                route: Route::Translation,
+                model: None,
+                provider: gateway_core::Provider::InternalService,
+                status: UsageStatus::Success,
+                status_code: 200,
+                latency_ms: 180,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: Some(0.042),
+                cost_source: Some("pricing_rule".to_owned()),
+                cost_mode: Some(ServiceCostMode::Fixed),
+                pricing_rule_name: Some("legal-es".to_owned()),
+                service_name: Some("translation".to_owned()),
+                task_id: None,
+                run_id: None,
+                trace_id: Some("trace-rule".to_owned()),
+                fallback_count: 0,
+                created_at: bucket,
+            },
+        ]);
+        let app = router_with_state(test_state(store));
+
+        let response = admin_get(
+            app,
+            "/admin-ui/admin/usage/dashboard?interval=hour",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(
+            value["service_timeseries"].as_array().expect("rows").len(),
+            2
+        );
+        assert_eq!(
+            value["service_timeseries"][0]["bucket"],
+            "2026-07-04T15:00:00Z"
+        );
+        assert_eq!(value["service_timeseries"][0]["service_name"], "summarizer");
+        assert_eq!(
+            value["service_timeseries"][0]["summary"]["estimated_cost_usd"],
+            0.026
+        );
+        assert_eq!(
+            value["service_timeseries"][1]["service_name"],
+            "translation"
+        );
+        assert_eq!(
+            value["service_timeseries"][1]["summary"]["estimated_cost_usd"],
+            0.042
+        );
     }
 
     #[tokio::test]
