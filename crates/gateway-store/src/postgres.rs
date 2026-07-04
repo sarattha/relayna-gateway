@@ -6052,71 +6052,59 @@ fn append_usage_filters_with_alias<'a>(
             format!("{alias}.{name}")
         }
     };
+    builder.push(" WHERE ");
     let mut separated = builder.separated(" AND ");
-    separated.push_unseparated(" WHERE true");
+    separated.push("true");
     if let Some(from) = query.from {
-        separated.push(column("created_at"));
-        separated.push(" >= ");
+        separated.push(format!("{} >= ", column("created_at")));
         separated.push_bind_unseparated(from);
     }
     if let Some(to) = query.to {
-        separated.push(column("created_at"));
-        separated.push(" < ");
+        separated.push(format!("{} < ", column("created_at")));
         separated.push_bind_unseparated(to);
     }
     if let Some(project_id) = query.project_id {
-        separated.push(column("project_id"));
-        separated.push(" = ");
+        separated.push(format!("{} = ", column("project_id")));
         separated.push_bind_unseparated(project_id);
     }
     if let Some(key_id) = query.key_id {
-        separated.push(column("key_id"));
-        separated.push(" = ");
+        separated.push(format!("{} = ", column("key_id")));
         separated.push_bind_unseparated(key_id);
     }
     if let Some(route) = query.route.as_deref() {
-        separated.push(column("route"));
-        separated.push(" = ");
+        separated.push(format!("{} = ", column("route")));
         separated.push_bind_unseparated(route);
     }
     if let Some(provider) = query.provider.as_deref() {
-        separated.push(column("provider"));
-        separated.push(" = ");
+        separated.push(format!("{} = ", column("provider")));
         separated.push_bind_unseparated(provider);
     }
     if let Some(service) = query.service.as_deref() {
-        separated.push(column("service_name"));
-        separated.push(" = ");
+        separated.push(format!("{} = ", column("service_name")));
         separated.push_bind_unseparated(service);
     }
     if let Some(task_id) = query.task_id.as_deref() {
-        separated.push(column("task_id"));
-        separated.push(" = ");
+        separated.push(format!("{} = ", column("task_id")));
         separated.push_bind_unseparated(task_id);
     }
     if let Some(run_id) = query.run_id.as_deref() {
-        separated.push(column("run_id"));
-        separated.push(" = ");
+        separated.push(format!("{} = ", column("run_id")));
         separated.push_bind_unseparated(run_id);
     }
     if let Some(model) = query.model.as_deref() {
-        separated.push(column("model"));
-        separated.push(" = ");
+        separated.push(format!("{} = ", column("model")));
         separated.push_bind_unseparated(model);
     }
     if let Some(status) = query.status.as_deref() {
-        separated.push(column("status"));
-        separated.push(" = ");
+        separated.push(format!("{} = ", column("status")));
         separated.push_bind_unseparated(status);
     }
     if let Some(trace_id) = query.trace_id.as_deref() {
-        separated.push(column("trace_id"));
-        separated.push(" = ");
+        separated.push(format!("{} = ", column("trace_id")));
         separated.push_bind_unseparated(trace_id);
     }
     if let Some(min_cost_usd) = query.min_cost_usd {
-        separated.push(column("estimated_cost"));
-        separated.push(" >= ");
+        separated.push(format!("{} >= ", column("estimated_cost")));
         separated.push_bind_unseparated(min_cost_usd.max(0.0));
     }
 }
@@ -6505,6 +6493,7 @@ fn service_registry_snapshot_from_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::Execute;
 
     #[test]
     fn summary_from_row_preserves_zero_cost_aggregate() {
@@ -6523,6 +6512,29 @@ mod tests {
 
         assert_eq!(day_start.to_rfc3339(), "2026-05-22T00:00:00+00:00");
         assert_eq!(month_start.to_rfc3339(), "2026-05-01T00:00:00+00:00");
+    }
+
+    #[test]
+    fn usage_filters_emit_complete_sql_predicates() {
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT * FROM usage_events u");
+        let query = UsageQuery {
+            project_id: Some(
+                Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").expect("uuid"),
+            ),
+            key_id: Some(Uuid::parse_str("33333333-3333-4333-8333-333333333333").expect("uuid")),
+            route: Some("/v1/responses".to_owned()),
+            min_cost_usd: Some(0.01),
+            ..UsageQuery::default()
+        };
+        append_usage_filters_with_alias(&mut builder, &query, "u");
+
+        let sql = builder.build().sql().to_owned();
+
+        assert!(sql.contains(
+            "WHERE true AND u.project_id = $1 AND u.key_id = $2 AND u.route = $3 AND u.estimated_cost >= $4"
+        ));
+        assert!(!sql.contains("u.project_id AND  ="));
+        assert!(!sql.contains("u.route AND  ="));
     }
 
     #[test]
