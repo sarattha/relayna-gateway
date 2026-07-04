@@ -1423,7 +1423,7 @@ async function services() {
           <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
           <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01"></label>
           <div class="help">Fixed records the configured estimate per request. Passthrough records provider-reported response cost when the upstream returns one.</div>
-          <label>Pricing rules<textarea name="pricing_rules" rows="4" placeholder='[{"name":"ocr-doc-int","json_pointer":"/model","equals":"doct-int","cost_mode":"fixed","estimated_cost_usd":0.08}]'></textarea></label>
+          ${pricingRulesEditor([])}
           <label>Fallback services<input name="fallback_services" placeholder="backup-a,backup-b"></label>
           <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
           <div class="form-actions">
@@ -1443,9 +1443,82 @@ async function services() {
   `;
   document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
   (_a = document.querySelector("#service-edit-form")) == null ? void 0 : _a.addEventListener("submit", handleAsync(patchService));
+  bindPricingRuleEditors();
   document.querySelectorAll("[data-service-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(serviceAction));
   });
+}
+function pricingRulesEditor(rules) {
+  return `
+    <div class="field wide-field pricing-rule-editor" data-pricing-rule-editor>
+      <span>Pricing rules</span>
+      <input type="hidden" name="pricing_rules" value="${attr(JSON.stringify(rules || []))}">
+      <div class="pricing-rule-rows" data-pricing-rule-rows>
+        ${(rules || []).map((rule) => pricingRuleRow(rule)).join("")}
+        <div class="empty-state pricing-rules-empty" ${(rules || []).length ? "hidden" : ""}>
+          <h3>No pricing rules</h3>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" data-pricing-rule-action="add">Add rule</button>
+      </div>
+      <div class="help">Use JSON Pointer selectors such as /model or /payload/page_count. Request bodies still use normal key names.</div>
+    </div>
+  `;
+}
+function pricingRuleRow(rule = {}) {
+  const costMode = rule.cost_mode || "fixed";
+  return `
+    <div class="pricing-rule-row" data-pricing-rule-row>
+      <label>Name<input data-pricing-rule-field="name" value="${attr(rule.name ?? "")}" placeholder="ocr-doc-int"></label>
+      <label>JSON pointer<input data-pricing-rule-field="json_pointer" value="${attr(rule.json_pointer ?? rule.path ?? "")}" placeholder="/model"></label>
+      <label>Equals<input data-pricing-rule-field="equals" value="${attr(rule.equals ?? "")}" placeholder="doct-int"></label>
+      <label>Cost mode<select data-pricing-rule-field="cost_mode">${option("fixed", costMode)}${option("passthrough", costMode)}${option("none", costMode)}</select></label>
+      <label>Estimated cost<input data-pricing-rule-field="estimated_cost_usd" type="number" min="0" step="0.001" value="${attr(rule.estimated_cost_usd ?? "")}" placeholder="0.08"></label>
+      <button type="button" class="danger" data-pricing-rule-action="remove">Remove</button>
+    </div>
+  `;
+}
+function bindPricingRuleEditors() {
+  document.querySelectorAll("[data-pricing-rule-editor]").forEach((editor) => {
+    syncPricingRuleEditor(editor);
+    editor.addEventListener("input", () => syncPricingRuleEditor(editor));
+    editor.addEventListener("change", () => syncPricingRuleEditor(editor));
+    editor.addEventListener("click", (event) => {
+      var _a;
+      const button = event.target.closest("[data-pricing-rule-action]");
+      if (!button) return;
+      if (button.dataset.pricingRuleAction === "add") {
+        editor.querySelector("[data-pricing-rule-rows]").insertAdjacentHTML("beforeend", pricingRuleRow());
+      } else if (button.dataset.pricingRuleAction === "remove") {
+        (_a = button.closest("[data-pricing-rule-row]")) == null ? void 0 : _a.remove();
+      }
+      syncPricingRuleEditor(editor);
+    });
+  });
+}
+function syncPricingRuleEditor(editor) {
+  const rows = Array.from(editor.querySelectorAll("[data-pricing-rule-row]"));
+  const rules = rows.map(pricingRuleFromRow).filter(Boolean);
+  editor.querySelector('input[name="pricing_rules"]').value = JSON.stringify(rules);
+  editor.querySelector(".pricing-rules-empty").hidden = rows.length > 0;
+}
+function pricingRuleFromRow(row) {
+  const value = (field) => {
+    var _a;
+    return String(((_a = row.querySelector(`[data-pricing-rule-field="${field}"]`)) == null ? void 0 : _a.value) || "").trim();
+  };
+  const estimatedCost = value("estimated_cost_usd");
+  const rule = {
+    name: value("name"),
+    json_pointer: value("json_pointer"),
+    equals: value("equals"),
+    cost_mode: value("cost_mode") || "fixed",
+    estimated_cost_usd: estimatedCost === "" ? null : Number(estimatedCost)
+  };
+  if (!rule.name && !rule.json_pointer && !rule.equals && estimatedCost === "") return null;
+  if (!rule.name) delete rule.name;
+  return rule;
 }
 function serviceEditForm(service) {
   return `
@@ -1463,7 +1536,7 @@ function serviceEditForm(service) {
       <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
       <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
       <div class="help">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
-      <label>Pricing rules<textarea name="pricing_rules" rows="4">${esc(JSON.stringify(service.pricing_rules || [], null, 2))}</textarea></label>
+      ${pricingRulesEditor(service.pricing_rules || [])}
       <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       <label>Sync status<select name="sync_status">${["local", "synced", "incomplete", "stale", "failed"].map((value) => option(value, service.sync_status)).join("")}</select></label>
       <label class="check"><input name="enabled" type="checkbox" ${service.enabled ? "checked" : ""}> Enabled</label>
@@ -2454,8 +2527,18 @@ function fillProviderHealthStateForm(key) {
 async function loadDebugBundle(event) {
   event.preventDefault();
   const requestId = new FormData(event.target).get("request_id");
-  state.debugBundle = await api(`/admin-ui/admin/debug-bundles/${encodeURIComponent(requestId)}`);
-  await health();
+  try {
+    state.debugBundle = await api(`/admin-ui/admin/debug-bundles/${encodeURIComponent(requestId)}`);
+    await health();
+  } catch (error) {
+    state.debugBundle = null;
+    if (error.message === "debug_bundle_not_found") {
+      setNotice("No debug bundle was captured for this request. Service demo rows may have usage data without proxy debug traces.");
+      await health();
+      return;
+    }
+    throw error;
+  }
 }
 async function rollbackImportVersion(event) {
   const version = event.currentTarget.dataset.importRollback;

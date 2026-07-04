@@ -267,6 +267,14 @@ test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /function importDiffTemplate/);
   assert.match(js, /Fixed records the configured estimate per request/);
   assert.match(js, /Passthrough records provider-reported response cost/);
+  assert.match(js, /function pricingRulesEditor\(rules\)/);
+  assert.match(js, /data-pricing-rule-editor/);
+  assert.match(js, /name="pricing_rules"/);
+  assert.match(js, /data-pricing-rule-action="add"/);
+  assert.match(js, /data-pricing-rule-field="json_pointer"/);
+  assert.match(js, /Use JSON Pointer selectors such as \/model or \/payload\/page_count/);
+  assert.doesNotMatch(js, /<label>Pricing rules<textarea/);
+  assert.match(css, /\.pricing-rule-row/);
   assert.match(css, /\.help/);
 });
 

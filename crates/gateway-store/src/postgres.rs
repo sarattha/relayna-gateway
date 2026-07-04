@@ -5892,9 +5892,8 @@ fn service_registration_from_row(
     let source: String = row.try_get("source")?;
     let sync_status: String = row.try_get("sync_status")?;
     let pricing_rules = row
-        .try_get::<Json<Vec<ServicePricingRule>>, _>("pricing_rules")
-        .map(|json| json.0)
-        .unwrap_or_default();
+        .try_get::<Json<Vec<ServicePricingRule>>, _>("pricing_rules")?
+        .0;
     Ok(ServiceRegistration {
         name: row.try_get("name")?,
         project_id: row.try_get("project_id")?,

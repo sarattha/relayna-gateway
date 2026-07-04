@@ -471,6 +471,41 @@ td code {
   grid-column: 1 / -1;
 }
 
+.pricing-rule-editor {
+  align-self: stretch;
+}
+
+.pricing-rule-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.pricing-rule-row {
+  display: grid;
+  grid-template-columns:
+    minmax(120px, 1fr)
+    minmax(130px, 1fr)
+    minmax(120px, 1fr)
+    minmax(110px, 0.8fr)
+    minmax(100px, 0.7fr)
+    auto;
+  gap: 8px;
+  align-items: end;
+  padding: 9px;
+  border: 1px solid var(--rg-color-border);
+  border-radius: var(--rg-radius-sm);
+  background: var(--rg-color-surface-muted);
+}
+
+.pricing-rule-row button {
+  width: auto;
+}
+
+.pricing-rules-empty {
+  min-height: 44px;
+  padding: 9px;
+}
+
 .form-actions,
 .actions {
   display: flex;
@@ -898,6 +933,10 @@ tr:last-child td {
   .form-actions,
   .actions {
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .pricing-rule-row {
     grid-template-columns: 1fr;
   }
 

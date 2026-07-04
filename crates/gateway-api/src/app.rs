@@ -2929,7 +2929,7 @@ async fn get_debug_bundle(
     }
     match state.store.get_debug_bundle(&request_id).await {
         Ok(Some(bundle)) => Json(bundle).into_response(),
-        Ok(None) => error_response(&headers, GatewayError::UnsupportedRoute),
+        Ok(None) => error_response(&headers, GatewayError::MissingDebugBundle),
         Err(error) => error_response(&headers, error),
     }
 }
@@ -7394,6 +7394,24 @@ mod tests {
             let response = request(app.clone(), route).await;
             assert_eq!(response.status(), StatusCode::NOT_FOUND, "{route}");
         }
+    }
+
+    #[tokio::test]
+    async fn missing_debug_bundle_returns_specific_error() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_get(
+            app,
+            "/admin-ui/admin/debug-bundles/mock-service-ts-0004",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["error"]["code"], "debug_bundle_not_found");
     }
 
     #[tokio::test]

@@ -2,7 +2,7 @@ use crate::{GatewayError, GatewayResult};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use http::Method;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -151,7 +151,9 @@ pub struct StudioServicePricing {
 pub struct ServicePricingRule {
     #[serde(default)]
     pub name: Option<String>,
+    #[serde(alias = "path")]
     pub json_pointer: String,
+    #[serde(deserialize_with = "deserialize_pricing_rule_equals")]
     pub equals: String,
     pub cost_mode: ServiceCostMode,
     #[serde(default)]
@@ -819,6 +821,21 @@ pub fn resolve_service_cost(
     }
 }
 
+fn deserialize_pricing_rule_equals<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    match value {
+        Value::String(value) => Ok(value),
+        Value::Number(value) => Ok(value.to_string()),
+        Value::Bool(value) => Ok(value.to_string()),
+        _ => Err(serde::de::Error::custom(
+            "pricing rule equals must be a string, number, or boolean",
+        )),
+    }
+}
+
 fn validate_fallback_services(services: &[String]) -> GatewayResult<()> {
     for service in services {
         validate_service_name(service)?;
@@ -1140,6 +1157,32 @@ mod tests {
             request.validate().unwrap_err(),
             GatewayError::InvalidServicePayload
         );
+    }
+
+    #[test]
+    fn deserializes_legacy_service_pricing_rule_shape() {
+        let rules: Vec<ServicePricingRule> = serde_json::from_value(serde_json::json!([
+            {
+                "name": "long-doc",
+                "path": "/payload/page_count",
+                "equals": 25,
+                "cost_mode": "fixed",
+                "estimated_cost_usd": 0.072
+            },
+            {
+                "name": "legal-es",
+                "path": "/target_locale",
+                "equals": "es-MX",
+                "cost_mode": "fixed",
+                "estimated_cost_usd": 0.046
+            }
+        ]))
+        .expect("legacy pricing rules deserialize");
+
+        assert_eq!(rules[0].json_pointer, "/payload/page_count");
+        assert_eq!(rules[0].equals, "25");
+        assert_eq!(rules[1].json_pointer, "/target_locale");
+        assert_eq!(rules[1].equals, "es-MX");
     }
 
     fn valid_create_request() -> ServiceCreateRequest {

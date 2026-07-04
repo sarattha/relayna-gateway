@@ -96,6 +96,8 @@ pub enum GatewayError {
     InvalidServiceUpstream,
     #[error("usage query is invalid")]
     InvalidUsageQuery,
+    #[error("debug bundle was not found")]
+    MissingDebugBundle,
     #[error("studio catalog is unavailable")]
     StudioUnavailable,
     #[error("studio connection payload is invalid")]
@@ -159,7 +161,7 @@ impl GatewayError {
             Self::InvalidProjectPayload | Self::InvalidProviderConfigPayload => {
                 StatusCode::BAD_REQUEST
             }
-            Self::MissingService => StatusCode::NOT_FOUND,
+            Self::MissingService | Self::MissingDebugBundle => StatusCode::NOT_FOUND,
             Self::DisabledService => StatusCode::FORBIDDEN,
             Self::IncompleteService => StatusCode::CONFLICT,
             Self::InvalidServicePayload
@@ -221,6 +223,7 @@ impl GatewayError {
             Self::InvalidServicePayload => "invalid_service_payload",
             Self::InvalidServiceUpstream => "invalid_service_upstream",
             Self::InvalidUsageQuery => "invalid_usage_query",
+            Self::MissingDebugBundle => "debug_bundle_not_found",
             Self::StudioUnavailable => "studio_unavailable",
             Self::InvalidStudioConnectionPayload => "invalid_studio_connection_payload",
             Self::ControlStateUnavailable => "control_state_unavailable",
@@ -276,6 +279,9 @@ impl GatewayError {
             Self::InvalidServicePayload => "Service registration payload is invalid.",
             Self::InvalidServiceUpstream => "Service upstream configuration is invalid.",
             Self::InvalidUsageQuery => "Usage query is invalid.",
+            Self::MissingDebugBundle => {
+                "No debug bundle was captured for this request. Try a proxy request that records debug traces."
+            }
             Self::StudioUnavailable => "Relayna Studio catalog is unavailable.",
             Self::InvalidStudioConnectionPayload => "Studio connection payload is invalid.",
             Self::UpstreamTimeout => "Upstream provider timed out.",
