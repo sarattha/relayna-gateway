@@ -397,11 +397,11 @@ where
                 req.uri.path(),
                 &service_name,
             );
-            matched.timeout_ms = u64::try_from(registration.timeout_ms)
-                .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
-            matched.max_body_bytes = usize::try_from(registration.max_body_bytes)
-                .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
-            matched.max_response_body_bytes = matched.max_body_bytes;
+            apply_service_registration_runtime_limits(
+                &mut matched,
+                registration.timeout_ms,
+                registration.max_body_bytes,
+            )?;
             matched.estimated_cost_usd = registration.estimated_cost_usd;
             ctx.service_route_pattern = Some(registration.route_pattern);
             ctx.service_upstream = Some(upstream);
@@ -617,11 +617,11 @@ where
                             return Ok(true);
                         }
                     };
-                    matched.timeout_ms = u64::try_from(registration.timeout_ms)
-                        .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
-                    matched.max_body_bytes = usize::try_from(registration.max_body_bytes)
-                        .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
-                    matched.max_response_body_bytes = matched.max_body_bytes;
+                    apply_service_registration_runtime_limits(
+                        &mut matched,
+                        registration.timeout_ms,
+                        registration.max_body_bytes,
+                    )?;
                     matched.estimated_cost_usd = registration.estimated_cost_usd;
                     ctx.service_route_pattern = Some(registration.route_pattern);
                     ctx.service_upstream = Some(upstream);
@@ -1927,6 +1927,19 @@ fn service_route_match_for_persisted_registration(
     }
 }
 
+fn apply_service_registration_runtime_limits(
+    matched: &mut RouteMatch,
+    timeout_ms: i64,
+    max_body_bytes: i64,
+) -> PingoraResult<()> {
+    matched.timeout_ms = u64::try_from(timeout_ms)
+        .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+    matched.max_body_bytes = usize::try_from(max_body_bytes)
+        .map_err(|_| pingora_core::Error::new(ErrorType::InternalError))?;
+    matched.max_response_body_bytes = usize::MAX;
+    Ok(())
+}
+
 fn observe_response_body_chunk(ctx: &mut PingoraContext, body: &[u8]) {
     if ctx.is_streaming && !ctx.first_chunk_recorded {
         ctx.first_chunk_recorded = true;
@@ -2607,6 +2620,21 @@ mod tests {
         );
         assert_eq!(custom.route, Route::ServiceWildcard);
         assert_eq!(custom.service_name.as_deref(), Some("custom"));
+    }
+
+    #[test]
+    fn persisted_service_runtime_limits_do_not_cap_responses() {
+        let mut matched = service_route_match_for_persisted_registration(
+            &http::Method::POST,
+            "/services/custom/run",
+            "custom",
+        );
+
+        apply_service_registration_runtime_limits(&mut matched, 45_000, 64 * 1024).expect("limits");
+
+        assert_eq!(matched.timeout_ms, 45_000);
+        assert_eq!(matched.max_body_bytes, 64 * 1024);
+        assert_eq!(matched.max_response_body_bytes, usize::MAX);
     }
 
     #[test]
