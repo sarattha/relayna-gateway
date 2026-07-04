@@ -205,6 +205,37 @@ local service by entering:
 - `Methods`: the HTTP methods the gateway may forward.
 - `Timeout`, `Max body bytes`, `Cost mode`, and `Estimated cost`: operational
   limits and usage accounting defaults.
+- `Pricing rules`: optional JSON rules that override the service default cost
+  for matching request bodies. Each rule uses `json_pointer`, which must be a
+  JSON Pointer path starting with `/`, not a bare key name. For a top-level
+  request field such as `"model"`, use `"/model"`. For nested fields, separate
+  object levels with `/`, such as `"/payload/page_count"`.
+
+Example pricing rules:
+
+```json
+[
+  {
+    "name": "ocr-doc-int",
+    "json_pointer": "/model",
+    "equals": "doct-int",
+    "cost_mode": "fixed",
+    "estimated_cost_usd": 0.08
+  },
+  {
+    "name": "long-doc",
+    "json_pointer": "/payload/page_count",
+    "equals": "25",
+    "cost_mode": "fixed",
+    "estimated_cost_usd": 0.12
+  }
+]
+```
+
+These examples match request bodies like `{"model":"doct-int"}` and
+`{"payload":{"page_count":"25"}}`. The request body keeps normal key names; the
+pricing rule uses `/...` only because Gateway resolves the selector as a JSON
+Pointer.
 
 ![Service creation and import controls](assets/screenshots/admin-first-time-setup/05-service-create-or-import.png)
 

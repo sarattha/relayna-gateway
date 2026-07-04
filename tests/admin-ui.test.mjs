@@ -29,19 +29,14 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.16/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.17/);
 });
 
 test("admin portal calls the expected gateway admin APIs", () => {
   for (const endpoint of [
-    "/admin-ui/admin/usage/summary",
-    "/admin-ui/admin/usage/by-model",
-    "/admin-ui/admin/usage/by-provider",
-    "/admin-ui/admin/usage/by-task",
-    "/admin-ui/admin/usage/timeseries",
-    "/admin-ui/admin/usage/export.json",
-    "/admin-ui/admin/usage/export.csv",
-    "/admin-ui/admin/usage/unused-keys",
+    "/admin-ui/admin/usage/dashboard",
+    "/admin-ui/admin/usage/events",
+    "/admin-ui/admin/usage/filter-values",
     "/admin-ui/admin/provider-health",
     "/admin-ui/admin/provider-health/check",
     "/admin-ui/admin/provider-health/state",
@@ -264,6 +259,7 @@ test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /placeholder="temp-service-2"/);
   assert.match(js, /Use lowercase letters, numbers, and hyphens/);
   assert.match(js, /function serviceRouteOptions\(\)/);
+  assert.match(js, /class="service-stack"/);
   assert.match(js, /Import from Studio/);
   assert.match(js, /function studioImportTable\(rows\)/);
   assert.match(js, /async function syncSelectedStudioServices\(event\)/);
@@ -272,6 +268,15 @@ test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /function importDiffTemplate/);
   assert.match(js, /Fixed records the configured estimate per request/);
   assert.match(js, /Passthrough records provider-reported response cost/);
+  assert.match(js, /function pricingRulesEditor\(rules\)/);
+  assert.match(js, /data-pricing-rule-editor/);
+  assert.match(js, /name="pricing_rules"/);
+  assert.match(js, /data-pricing-rule-action="add"/);
+  assert.match(js, /data-pricing-rule-field="json_pointer"/);
+  assert.match(js, /Use JSON Pointer selectors such as \/model or \/payload\/page_count/);
+  assert.doesNotMatch(js, /<label>Pricing rules<textarea/);
+  assert.match(css, /\.pricing-rule-row/);
+  assert.match(css, /\.service-stack/);
   assert.match(css, /\.help/);
 });
 
@@ -290,20 +295,36 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /api\("\/admin-ui\/admin\/projects"\)/);
   assert.match(js, /api\("\/admin-ui\/admin\/keys"\)/);
   assert.match(js, /api\("\/admin-ui\/admin\/services"\)/);
-  for (const field of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status", "min_cost_usd"]) {
+  for (const field of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status", "time_preset", "from", "to", "interval", "min_cost_usd", "breakdown_limit", "sort_by", "limit"]) {
     assert.match(js, new RegExp(`name="${field}"`));
   }
-  assert.match(js, /\/admin-ui\/admin\/usage\/by-project/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/by-key/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/by-service/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/by-task/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/timeseries/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/export\.json/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/export\.csv/);
+  for (const preset of ["last_1h", "last_6h", "last_24h", "last_7d", "last_30d", "today", "yesterday", "this_week", "this_month", "custom"]) {
+    assert.match(js, new RegExp(`value="${preset}"`));
+  }
+  assert.match(js, /type="datetime-local"/);
+  assert.match(js, /query\.set\("from", range\.from\)/);
+  assert.match(js, /query\.set\("to", range\.to\)/);
+  assert.match(js, /query\.set\("interval", interval\)/);
+  assert.match(js, /Usage start time must be before the end time/);
+  assert.match(js, /function usageDateRange\(form\)/);
+  assert.match(js, /function usageFilterValuesQueryFromForm\(formElement = document\.querySelector\("#usage-form"\)\)/);
+  assert.match(js, /const filterQuery = usageFilterValuesQueryFromForm\(/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/filter-values\?\$\{filterQuery\}&field=route/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/dashboard/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/events/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/filter-values/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/export\.\$\{format\}/);
+  assert.match(js, /value="json">JSON/);
+  assert.match(js, /value="csv">CSV/);
   assert.match(js, /\/admin-ui\/admin\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/usage/);
-  assert.match(js, /async function loadUsageExport\(event\)/);
+  assert.match(js, /async function usageExportAction\(event\)/);
+  assert.match(js, /GATEWAY_OPERATOR_TOKEN/);
+  assert.match(js, /data-debug-request/);
   assert.match(js, /async function loadTaskUsage\(event\)/);
   assert.match(js, /function usageTimeseriesTable\(rows\)/);
+  assert.match(js, /Service timeseries/);
+  assert.match(js, /function usageServiceTimeseriesTable\(rows\)/);
+  assert.match(js, /dashboard\.service_timeseries \|\| \[\]/);
 });
 
 test("audit view exposes read-only operator event filters and redacted snapshots", () => {

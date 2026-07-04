@@ -51,8 +51,10 @@ pub use guardrails::{
     InMemoryGuardrailExecutor, PII_REDACT_GUARDRAIL,
 };
 pub use observability::{
-    ProviderHealth, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageExport,
-    UsageExportRow, UsageQuery, UsageQueryStore, UsageSummary, UsageTimeseriesPoint,
+    ProviderHealth, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageDashboard,
+    UsageDashboardBreakdowns, UsageEventsPage, UsageExport, UsageExportRow, UsageFilterValues,
+    UsageFilterValuesQuery, UsageQuery, UsageQueryStore, UsageServiceTimeseriesPoint, UsageSummary,
+    UsageTimeseriesPoint,
 };
 pub use operators::{
     default_operator_roles, default_operator_scopes, operator_token_prefix,
@@ -105,12 +107,13 @@ pub use route_settings::{
 };
 pub use routing::{is_retry_safe_status, BackendType, Provider, Route, RouteMatch};
 pub use services::{
-    default_route_pattern, route_pattern_wildcard_suffix, service_wildcard_suffix,
-    validate_service_name, AdminServiceStore, ServiceCostMode, ServiceCreateRequest,
-    ServicePatchRequest, ServiceRegistration, ServiceRegistryLookup, ServiceResponse,
-    ServiceRouteLookup, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
-    StudioCatalogService, StudioServiceCatalogResponse, StudioServiceImportPreview,
-    StudioServiceImportRequest, StudioServicePricing,
+    default_route_pattern, resolve_service_cost, route_pattern_wildcard_suffix,
+    service_wildcard_suffix, validate_service_name, AdminServiceStore, ResolvedServiceCost,
+    ServiceCostMode, ServiceCreateRequest, ServicePatchRequest, ServicePricingRule,
+    ServiceRegistration, ServiceRegistryLookup, ServiceResponse, ServiceRouteLookup, ServiceSource,
+    ServiceSyncStatus, ServiceSyncStatusResponse, StudioCatalogService,
+    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
+    StudioServicePricing,
 };
 pub use studio_settings::{
     normalize_base_url, normalize_secret, AdminStudioConnectionStore, EffectiveStudioConnection,

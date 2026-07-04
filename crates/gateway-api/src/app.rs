@@ -34,10 +34,11 @@ use gateway_core::{
     ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse, SharedGatewayAuthRuntime,
     StudioConnectionEnv, StudioConnectionPatchRequest, StudioConnectionTestResponse,
     StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
-    UsageBreakdownDimension, UsageEvent, UsageExport, UsageQuery, UsageQueryStore,
-    VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE,
-    SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE,
-    SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
+    UsageBreakdownDimension, UsageEvent, UsageExport, UsageFilterValuesQuery, UsageQuery,
+    UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE,
+    SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE,
+    SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT,
+    SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::{Deserialize, Serialize};
@@ -502,6 +503,7 @@ pub fn router_with_state(state: AppState) -> Router {
             get(project_usage),
         )
         .route("/admin-ui/admin/usage/summary", get(usage_summary))
+        .route("/admin-ui/admin/usage/dashboard", get(usage_dashboard))
         .route("/admin-ui/admin/usage/timeseries", get(usage_timeseries))
         .route("/admin-ui/admin/usage/by-key", get(usage_by_key))
         .route("/admin-ui/admin/usage/by-project", get(usage_by_project))
@@ -509,6 +511,11 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin-ui/admin/usage/by-provider", get(usage_by_provider))
         .route("/admin-ui/admin/usage/by-service", get(usage_by_service))
         .route("/admin-ui/admin/usage/by-task", get(usage_by_task))
+        .route("/admin-ui/admin/usage/events", get(usage_events))
+        .route(
+            "/admin-ui/admin/usage/filter-values",
+            get(usage_filter_values),
+        )
         .route("/admin-ui/admin/usage/unused-keys", get(usage_unused_keys))
         .route("/admin-ui/admin/usage/export.json", get(usage_export_json))
         .route("/admin-ui/admin/usage/export.csv", get(usage_export_csv))
@@ -2610,6 +2617,17 @@ async fn usage_summary(
     .await
 }
 
+async fn usage_dashboard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+        store.usage_dashboard(query).await
+    })
+    .await
+}
+
 async fn usage_timeseries(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2669,15 +2687,51 @@ async fn usage_by_task(
     usage_breakdown(state, headers, query, UsageBreakdownDimension::Task).await
 }
 
+async fn usage_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+        store.usage_events(query).await
+    })
+    .await
+}
+
+async fn usage_filter_values(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsageFilterValuesQuery>,
+) -> Response {
+    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+        store.usage_filter_values(query).await
+    })
+    .await
+}
+
 async fn usage_export_json(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    admin_query(headers, &state, SCOPE_USAGE_EXPORT, |store| async move {
-        store.usage_export(query).await
-    })
-    .await
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_USAGE_EXPORT).await {
+        return response;
+    }
+    match state.store.usage_export(query).await {
+        Ok(export) => (
+            StatusCode::OK,
+            [
+                ("content-type", "application/json"),
+                (
+                    "content-disposition",
+                    "attachment; filename=\"relayna-usage.json\"",
+                ),
+            ],
+            Json(export),
+        )
+            .into_response(),
+        Err(error) => error_response(&headers, error),
+    }
 }
 
 async fn usage_unused_keys(
@@ -2702,7 +2756,13 @@ async fn usage_export_csv(
     match state.store.usage_export(query).await {
         Ok(export) => (
             StatusCode::OK,
-            [("content-type", "text/csv; charset=utf-8")],
+            [
+                ("content-type", "text/csv; charset=utf-8"),
+                (
+                    "content-disposition",
+                    "attachment; filename=\"relayna-usage.csv\"",
+                ),
+            ],
             usage_export_csv_body(&export),
         )
             .into_response(),
@@ -2724,7 +2784,7 @@ async fn task_usage(
 }
 
 fn usage_export_csv_body(export: &UsageExport) -> String {
-    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,task_id,run_id,trace_id,fallback_count,guardrail_action_count,created_at\n".to_owned();
+    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,task_id,run_id,trace_id,fallback_count,guardrail_action_count,created_at,cost_source,cost_mode,pricing_rule_name\n".to_owned();
     for row in &export.rows {
         let fields = [
             row.request_id.clone(),
@@ -2751,6 +2811,9 @@ fn usage_export_csv_body(export: &UsageExport) -> String {
             row.fallback_count.to_string(),
             row.guardrail_action_count.to_string(),
             row.created_at.to_rfc3339(),
+            row.cost_source.clone().unwrap_or_default(),
+            row.cost_mode.clone().unwrap_or_default(),
+            row.pricing_rule_name.clone().unwrap_or_default(),
         ];
         csv.push_str(
             &fields
@@ -2866,7 +2929,7 @@ async fn get_debug_bundle(
     }
     match state.store.get_debug_bundle(&request_id).await {
         Ok(Some(bundle)) => Json(bundle).into_response(),
-        Ok(None) => error_response(&headers, GatewayError::UnsupportedRoute),
+        Ok(None) => error_response(&headers, GatewayError::MissingDebugBundle),
         Err(error) => error_response(&headers, error),
     }
 }
@@ -4084,10 +4147,11 @@ mod tests {
         ProviderConfigCreateRequest, ProviderConfigPatchRequest, ProviderConfigResponse,
         ProviderHealth, Route, ServiceCostMode, ServiceResponse, ServiceSource, ServiceSyncStatus,
         ServiceSyncStatusResponse, StoredGatewayAuthSettings, StoredStudioConnection,
-        StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow, UsageStatus, UsageSummary,
-        UsageTimeseriesPoint,
+        StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow, UsageServiceTimeseriesPoint,
+        UsageStatus, UsageSummary, UsageTimeseriesPoint,
     };
     use std::{
+        collections::BTreeMap,
         io::{Read, Write},
         net::TcpListener,
         sync::{mpsc, Mutex},
@@ -5068,6 +5132,7 @@ mod tests {
                 max_body_bytes: request.max_body_bytes,
                 cost_mode: request.cost_mode,
                 estimated_cost_usd: request.estimated_cost_usd,
+                pricing_rules: request.pricing_rules.clone(),
                 fallback_services: request.fallback_services.clone(),
                 source: if request.studio_service_id.is_some() {
                     ServiceSource::Studio
@@ -5134,6 +5199,15 @@ mod tests {
             }
             if let Some(allowed_methods) = patch.allowed_methods {
                 service.allowed_methods = allowed_methods;
+            }
+            if let Some(cost_mode) = patch.cost_mode {
+                service.cost_mode = cost_mode;
+            }
+            if let Some(estimated_cost_usd) = patch.estimated_cost_usd {
+                service.estimated_cost_usd = estimated_cost_usd;
+            }
+            if let Some(pricing_rules) = patch.pricing_rules {
+                service.pricing_rules = pricing_rules;
             }
             if let Some(credential) = patch.credential {
                 service.credential_configured = credential.is_some();
@@ -5225,6 +5299,11 @@ mod tests {
                     .default_pricing
                     .as_ref()
                     .and_then(|pricing| pricing.estimated_cost_usd),
+                pricing_rules: request
+                    .default_pricing
+                    .as_ref()
+                    .map(|pricing| pricing.pricing_rules.clone())
+                    .unwrap_or_default(),
                 fallback_services: Vec::new(),
                 source: ServiceSource::Studio,
                 sync_status: ServiceSyncStatus::Incomplete,
@@ -5364,6 +5443,12 @@ mod tests {
                     output_tokens: event.output_tokens.unwrap_or_default(),
                     total_tokens: event.total_tokens.unwrap_or_default(),
                     estimated_cost_usd: event.estimated_cost_usd,
+                    cost_source: event.cost_source.clone(),
+                    cost_mode: event
+                        .cost_mode
+                        .map(|mode| serde_json::to_value(mode).unwrap_or_default())
+                        .and_then(|value| value.as_str().map(ToOwned::to_owned)),
+                    pricing_rule_name: event.pricing_rule_name.clone(),
                     service_name: event.service_name.clone(),
                     task_id: event.task_id.clone(),
                     run_id: event.run_id.clone(),
@@ -5378,6 +5463,102 @@ mod tests {
             let limit = query.limit.unwrap_or(1_000).clamp(1, 10_000) as usize;
             let rows = rows.into_iter().skip(offset).take(limit).collect();
             Ok(UsageExport { summary, rows })
+        }
+
+        async fn usage_dashboard(
+            &self,
+            query: UsageQuery,
+        ) -> GatewayResult<gateway_core::UsageDashboard> {
+            Ok(gateway_core::UsageDashboard {
+                summary: self.usage_summary(query.clone()).await?,
+                breakdowns: gateway_core::UsageDashboardBreakdowns {
+                    projects: self
+                        .usage_breakdown(query.clone(), UsageBreakdownDimension::Project)
+                        .await?,
+                    keys: self
+                        .usage_breakdown(query.clone(), UsageBreakdownDimension::Key)
+                        .await?,
+                    services: self
+                        .usage_breakdown(query.clone(), UsageBreakdownDimension::Service)
+                        .await?,
+                    providers: self
+                        .usage_breakdown(query.clone(), UsageBreakdownDimension::Provider)
+                        .await?,
+                    models: self
+                        .usage_breakdown(query.clone(), UsageBreakdownDimension::Model)
+                        .await?,
+                    tasks: self
+                        .usage_breakdown(query.clone(), UsageBreakdownDimension::Task)
+                        .await?,
+                },
+                timeseries: self.usage_timeseries(query.clone()).await?,
+                service_timeseries: usage_service_timeseries_from_rows(
+                    &self.usage_export(query.clone()).await?.rows,
+                    query.interval.as_deref(),
+                ),
+                unused_keys: self.unused_keys(query).await?,
+            })
+        }
+
+        async fn usage_events(
+            &self,
+            query: UsageQuery,
+        ) -> GatewayResult<gateway_core::UsageEventsPage> {
+            let limit = query.limit.unwrap_or(50).clamp(1, 500);
+            let offset = query.offset.unwrap_or_default().max(0);
+            let mut export_query = query;
+            export_query.limit = Some(limit + 1);
+            export_query.offset = Some(offset);
+            let mut rows = self.usage_export(export_query).await?.rows;
+            let has_more = rows.len() > limit as usize;
+            rows.truncate(limit as usize);
+            Ok(gateway_core::UsageEventsPage {
+                rows,
+                limit,
+                offset,
+                has_more,
+            })
+        }
+
+        async fn usage_filter_values(
+            &self,
+            query: UsageFilterValuesQuery,
+        ) -> GatewayResult<gateway_core::UsageFilterValues> {
+            if !matches!(
+                query.field.as_str(),
+                "route" | "provider" | "service" | "model" | "task_id" | "run_id"
+            ) {
+                return Err(GatewayError::InvalidUsageQuery);
+            }
+            let limit = query.usage.limit.unwrap_or(50).clamp(1, 100) as usize;
+            let mut values = self
+                .usage_export(query.usage)
+                .await?
+                .rows
+                .into_iter()
+                .filter_map(|row| match query.field.as_str() {
+                    "route" => Some(row.route),
+                    "provider" => Some(row.provider),
+                    "service" => row.service_name,
+                    "model" => row.model,
+                    "task_id" => row.task_id,
+                    "run_id" => row.run_id,
+                    _ => None,
+                })
+                .filter(|value| {
+                    query
+                        .q
+                        .as_deref()
+                        .is_none_or(|prefix| value.starts_with(prefix))
+                })
+                .collect::<Vec<_>>();
+            values.sort();
+            values.dedup();
+            values.truncate(limit);
+            Ok(gateway_core::UsageFilterValues {
+                field: query.field,
+                values,
+            })
         }
 
         async fn provider_health(&self, _query: UsageQuery) -> GatewayResult<Vec<ProviderHealth>> {
@@ -5537,6 +5718,7 @@ mod tests {
     }
 
     fn usage_summary_from_rows(rows: &[UsageExportRow]) -> UsageSummary {
+        let total_latency_ms = rows.iter().map(|row| row.latency_ms).sum();
         UsageSummary {
             request_count: i64::try_from(rows.len()).unwrap_or(i64::MAX),
             success_count: i64::try_from(rows.iter().filter(|row| row.status == "success").count())
@@ -5551,7 +5733,12 @@ mod tests {
                     .filter_map(|row| row.estimated_cost_usd)
                     .sum::<f64>(),
             ),
-            total_latency_ms: rows.iter().map(|row| row.latency_ms).sum(),
+            total_latency_ms,
+            average_latency_ms: if rows.is_empty() {
+                None
+            } else {
+                Some(total_latency_ms as f64 / rows.len() as f64)
+            },
             fallback_count: rows.iter().map(|row| i64::from(row.fallback_count)).sum(),
             fallback_rate: if rows.is_empty() {
                 0.0
@@ -5563,6 +5750,43 @@ mod tests {
             },
             ..UsageSummary::default()
         }
+    }
+
+    fn usage_service_timeseries_from_rows(
+        rows: &[UsageExportRow],
+        interval: Option<&str>,
+    ) -> Vec<UsageServiceTimeseriesPoint> {
+        let bucket_seconds = if interval == Some("day") {
+            86_400
+        } else {
+            3_600
+        };
+        let mut grouped = BTreeMap::<(chrono::DateTime<Utc>, String), Vec<UsageExportRow>>::new();
+        for row in rows {
+            let timestamp = row.created_at.timestamp();
+            let bucket_timestamp = timestamp.div_euclid(bucket_seconds) * bucket_seconds;
+            let bucket =
+                chrono::DateTime::from_timestamp(bucket_timestamp, 0).expect("valid bucket");
+            grouped
+                .entry((
+                    bucket,
+                    row.service_name
+                        .clone()
+                        .unwrap_or_else(|| "none".to_owned()),
+                ))
+                .or_default()
+                .push(row.clone());
+        }
+        grouped
+            .into_iter()
+            .map(
+                |((bucket, service_name), rows)| UsageServiceTimeseriesPoint {
+                    bucket,
+                    service_name,
+                    summary: usage_summary_from_rows(&rows),
+                },
+            )
+            .collect()
     }
 
     fn stored_key(raw: &str) -> StoredVirtualKey {
@@ -7173,6 +7397,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn missing_debug_bundle_returns_specific_error() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_get(
+            app,
+            "/admin-ui/admin/debug-bundles/mock-service-ts-0004",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["error"]["code"], "debug_bundle_not_found");
+    }
+
+    #[tokio::test]
     async fn task_usage_requires_admin_token_and_returns_summary() {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
@@ -7221,6 +7463,9 @@ mod tests {
                 output_tokens: Some(4),
                 total_tokens: Some(7),
                 estimated_cost_usd: Some(0.25),
+                cost_source: Some("upstream_passthrough".to_owned()),
+                cost_mode: Some(gateway_core::ServiceCostMode::Passthrough),
+                pricing_rule_name: None,
                 service_name: None,
                 task_id: Some("task-1".to_owned()),
                 run_id: Some("run-1".to_owned()),
@@ -7242,6 +7487,9 @@ mod tests {
                 output_tokens: None,
                 total_tokens: None,
                 estimated_cost_usd: None,
+                cost_source: None,
+                cost_mode: None,
+                pricing_rule_name: None,
                 service_name: None,
                 task_id: Some("task-1".to_owned()),
                 run_id: Some("run-2".to_owned()),
@@ -7281,6 +7529,101 @@ mod tests {
         assert!(csv.starts_with("request_id,key_id,project_id"));
         assert!(csv.contains("'=req-failure"));
         assert!(!csv.contains("req-success"));
+    }
+
+    #[tokio::test]
+    async fn usage_dashboard_returns_service_timeseries() {
+        let store = default_store();
+        let key_id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+        let bucket = chrono::DateTime::parse_from_rfc3339("2026-07-04T15:22:00Z")
+            .expect("time")
+            .with_timezone(&Utc);
+        store.events.lock().expect("events lock").extend([
+            UsageEvent {
+                request_id: "svc-fixed".to_owned(),
+                key_id,
+                project_id: Some(project_id),
+                route: Route::Summary,
+                model: None,
+                provider: gateway_core::Provider::InternalService,
+                status: UsageStatus::Success,
+                status_code: 200,
+                latency_ms: 120,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: Some(0.026),
+                cost_source: Some("service_default".to_owned()),
+                cost_mode: Some(ServiceCostMode::Fixed),
+                pricing_rule_name: None,
+                service_name: Some("summarizer".to_owned()),
+                task_id: None,
+                run_id: None,
+                trace_id: Some("trace-fixed".to_owned()),
+                fallback_count: 0,
+                created_at: bucket,
+            },
+            UsageEvent {
+                request_id: "svc-rule".to_owned(),
+                key_id,
+                project_id: Some(project_id),
+                route: Route::Translation,
+                model: None,
+                provider: gateway_core::Provider::InternalService,
+                status: UsageStatus::Success,
+                status_code: 200,
+                latency_ms: 180,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: Some(0.042),
+                cost_source: Some("pricing_rule".to_owned()),
+                cost_mode: Some(ServiceCostMode::Fixed),
+                pricing_rule_name: Some("legal-es".to_owned()),
+                service_name: Some("translation".to_owned()),
+                task_id: None,
+                run_id: None,
+                trace_id: Some("trace-rule".to_owned()),
+                fallback_count: 0,
+                created_at: bucket,
+            },
+        ]);
+        let app = router_with_state(test_state(store));
+
+        let response = admin_get(
+            app,
+            "/admin-ui/admin/usage/dashboard?interval=hour",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(
+            value["service_timeseries"].as_array().expect("rows").len(),
+            2
+        );
+        assert_eq!(
+            value["service_timeseries"][0]["bucket"],
+            "2026-07-04T15:00:00Z"
+        );
+        assert_eq!(value["service_timeseries"][0]["service_name"], "summarizer");
+        assert_eq!(
+            value["service_timeseries"][0]["summary"]["estimated_cost_usd"],
+            0.026
+        );
+        assert_eq!(
+            value["service_timeseries"][1]["service_name"],
+            "translation"
+        );
+        assert_eq!(
+            value["service_timeseries"][1]["summary"]["estimated_cost_usd"],
+            0.042
+        );
     }
 
     #[tokio::test]

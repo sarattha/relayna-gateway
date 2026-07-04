@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.16` feature set.
+This page summarizes the `v0.1.17` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -91,6 +91,13 @@ Service health checks can target a service-specific path and method
 when the upstream root is not a valid health endpoint. The previous root probe
 remains the default for services without explicit health-check settings.
 
+Service cost overrides now use structured pricing-rule rows instead of raw JSON
+textareas. Operators can configure a rule name, JSON Pointer selector, match
+value, cost mode, and optional estimated cost in the Services form. The stored
+API payload still uses `pricing_rules` with `json_pointer` fields; a top-level
+request key such as `model` is selected as `/model`, while nested request data
+such as `payload.page_count` is selected as `/payload/page_count`.
+
 ![Service import workflow](assets/screenshots/admin-ui-2/services-import-workflow.png)
 
 See [Provider Intelligence](provider-intelligence.md) for the deeper routing,
@@ -128,7 +135,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.16` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.17` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -239,7 +246,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.16` release hardens CI and release workflows with strict
+The `v0.1.17` release hardens CI and release workflows with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

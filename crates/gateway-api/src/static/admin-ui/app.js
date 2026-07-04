@@ -1404,7 +1404,7 @@ async function services() {
   [state.services, state.projects] = await Promise.all([api("/admin-ui/admin/services"), api("/admin-ui/admin/projects")]);
   const editing = state.services.find((service) => service.name === state.editingServiceName);
   content.innerHTML = `
-    <div class="split">
+    <div class="service-stack">
       <section class="panel">
         <div class="panel-heading">
           <h3>Create service</h3>
@@ -1423,6 +1423,7 @@ async function services() {
           <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
           <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01"></label>
           <div class="help">Fixed records the configured estimate per request. Passthrough records provider-reported response cost when the upstream returns one.</div>
+          ${pricingRulesEditor([])}
           <label>Fallback services<input name="fallback_services" placeholder="backup-a,backup-b"></label>
           <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
           <div class="form-actions">
@@ -1442,9 +1443,82 @@ async function services() {
   `;
   document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
   (_a = document.querySelector("#service-edit-form")) == null ? void 0 : _a.addEventListener("submit", handleAsync(patchService));
+  bindPricingRuleEditors();
   document.querySelectorAll("[data-service-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(serviceAction));
   });
+}
+function pricingRulesEditor(rules) {
+  return `
+    <div class="field wide-field pricing-rule-editor" data-pricing-rule-editor>
+      <span>Pricing rules</span>
+      <input type="hidden" name="pricing_rules" value="${attr(JSON.stringify(rules || []))}">
+      <div class="pricing-rule-rows" data-pricing-rule-rows>
+        ${(rules || []).map((rule) => pricingRuleRow(rule)).join("")}
+        <div class="empty-state pricing-rules-empty" ${(rules || []).length ? "hidden" : ""}>
+          <h3>No pricing rules</h3>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" data-pricing-rule-action="add">Add rule</button>
+      </div>
+      <div class="help">Use JSON Pointer selectors such as /model or /payload/page_count. Request bodies still use normal key names.</div>
+    </div>
+  `;
+}
+function pricingRuleRow(rule = {}) {
+  const costMode = rule.cost_mode || "fixed";
+  return `
+    <div class="pricing-rule-row" data-pricing-rule-row>
+      <label>Name<input data-pricing-rule-field="name" value="${attr(rule.name ?? "")}" placeholder="ocr-doc-int"></label>
+      <label>JSON pointer<input data-pricing-rule-field="json_pointer" value="${attr(rule.json_pointer ?? rule.path ?? "")}" placeholder="/model"></label>
+      <label>Equals<input data-pricing-rule-field="equals" value="${attr(rule.equals ?? "")}" placeholder="doct-int"></label>
+      <label>Cost mode<select data-pricing-rule-field="cost_mode">${option("fixed", costMode)}${option("passthrough", costMode)}${option("none", costMode)}</select></label>
+      <label>Estimated cost<input data-pricing-rule-field="estimated_cost_usd" type="number" min="0" step="0.001" value="${attr(rule.estimated_cost_usd ?? "")}" placeholder="0.08"></label>
+      <button type="button" class="danger" data-pricing-rule-action="remove">Remove</button>
+    </div>
+  `;
+}
+function bindPricingRuleEditors() {
+  document.querySelectorAll("[data-pricing-rule-editor]").forEach((editor) => {
+    syncPricingRuleEditor(editor);
+    editor.addEventListener("input", () => syncPricingRuleEditor(editor));
+    editor.addEventListener("change", () => syncPricingRuleEditor(editor));
+    editor.addEventListener("click", (event) => {
+      var _a;
+      const button = event.target.closest("[data-pricing-rule-action]");
+      if (!button) return;
+      if (button.dataset.pricingRuleAction === "add") {
+        editor.querySelector("[data-pricing-rule-rows]").insertAdjacentHTML("beforeend", pricingRuleRow());
+      } else if (button.dataset.pricingRuleAction === "remove") {
+        (_a = button.closest("[data-pricing-rule-row]")) == null ? void 0 : _a.remove();
+      }
+      syncPricingRuleEditor(editor);
+    });
+  });
+}
+function syncPricingRuleEditor(editor) {
+  const rows = Array.from(editor.querySelectorAll("[data-pricing-rule-row]"));
+  const rules = rows.map(pricingRuleFromRow).filter(Boolean);
+  editor.querySelector('input[name="pricing_rules"]').value = JSON.stringify(rules);
+  editor.querySelector(".pricing-rules-empty").hidden = rows.length > 0;
+}
+function pricingRuleFromRow(row) {
+  const value = (field) => {
+    var _a;
+    return String(((_a = row.querySelector(`[data-pricing-rule-field="${field}"]`)) == null ? void 0 : _a.value) || "").trim();
+  };
+  const estimatedCost = value("estimated_cost_usd");
+  const rule = {
+    name: value("name"),
+    json_pointer: value("json_pointer"),
+    equals: value("equals"),
+    cost_mode: value("cost_mode") || "fixed",
+    estimated_cost_usd: estimatedCost === "" ? null : Number(estimatedCost)
+  };
+  if (!rule.name && !rule.json_pointer && !rule.equals && estimatedCost === "") return null;
+  if (!rule.name) delete rule.name;
+  return rule;
 }
 function serviceEditForm(service) {
   return `
@@ -1462,6 +1536,7 @@ function serviceEditForm(service) {
       <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
       <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
       <div class="help">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
+      ${pricingRulesEditor(service.pricing_rules || [])}
       <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       <label>Sync status<select name="sync_status">${["local", "synced", "incomplete", "stale", "failed"].map((value) => option(value, service.sync_status)).join("")}</select></label>
       <label class="check"><input name="enabled" type="checkbox" ${service.enabled ? "checked" : ""}> Enabled</label>
@@ -1581,7 +1656,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.16")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.17")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -1915,19 +1990,51 @@ async function usage() {
         <label>Project<select name="project_id"><option value="">All</option>${projectOptions()}</select></label>
         <label>Virtual key<select name="key_id"><option value="">All</option>${keyOptions()}</select></label>
         <label>Service<select name="service"><option value="">All</option>${serviceOptions()}</select></label>
-        <label>Route<input name="route"></label>
-        <label>Provider<input name="provider"></label>
-        <label>Model<input name="model"></label>
-        <label>Task<input name="task_id"></label>
-        <label>Run<input name="run_id"></label>
+        <label>Route<input name="route" list="usage-route-options" placeholder="/v1/chat/completions"></label>
+        <label>Provider<select name="provider"><option value="">All</option><option value="litellm">litellm</option><option value="openai-compatible">openai-compatible</option><option value="internal-service">internal-service</option></select></label>
+        <label>Model<input name="model" list="usage-model-options" placeholder="exact model"></label>
+        <label>Task<input name="task_id" placeholder="exact task ID"></label>
+        <label>Run<input name="run_id" placeholder="exact run ID"></label>
         <label>Trace<input name="trace_id"></label>
         <label>Status<select name="status"><option value="">All</option><option value="success">Success</option><option value="failure">Failure</option></select></label>
+        <label>Time range<select name="time_preset">
+          <option value="">All time</option>
+          <option value="last_1h">Last 1h</option>
+          <option value="last_6h">Last 6h</option>
+          <option value="last_24h">Last 24h</option>
+          <option value="last_7d">Last 7d</option>
+          <option value="last_30d">Last 30d</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="this_week">This week</option>
+          <option value="this_month">This month</option>
+          <option value="custom">Custom</option>
+        </select></label>
+        <label>From<input name="from" type="datetime-local"></label>
+        <label>To<input name="to" type="datetime-local"></label>
+        <label>Interval<select name="interval"><option value="hour">Hour</option><option value="day">Day</option></select></label>
         <label>Min cost<input name="min_cost_usd" type="number" min="0" step="0.0001"></label>
+        <label>Show top<select name="breakdown_limit"><option value="20">20</option><option value="10">10</option><option value="50">50</option><option value="100">100</option></select></label>
+        <label>Sort by<select name="sort_by"><option value="requests">Requests</option><option value="cost">Cost</option><option value="failures">Failures</option><option value="latency">Latency</option><option value="tokens">Tokens</option><option value="fallbacks">Fallbacks</option></select></label>
+        <label>Request rows<select name="limit"><option value="50">50</option><option value="20">20</option><option value="100">100</option></select></label>
         <div class="form-actions">
           <button class="primary">Apply</button>
-          <button type="button" data-usage-export="json">Export JSON</button>
-          <button type="button" data-usage-export="csv">Export CSV</button>
         </div>
+        <div class="help">Text filters are exact-match. Use suggestions where available.</div>
+      </form>
+      <datalist id="usage-route-options"></datalist>
+      <datalist id="usage-model-options"></datalist>
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Export options</h3></div>
+      <form id="usage-export-form" class="inline-form">
+        <select name="export_format"><option value="csv">CSV</option><option value="json">JSON</option></select>
+        <select name="export_limit"><option value="1000">1,000</option><option value="100">100</option><option value="5000">5,000</option><option value="10000">10,000</option></select>
+        <input name="export_offset" type="number" min="0" value="0" aria-label="Export offset">
+        <button type="button" data-usage-export-action="preview">Preview</button>
+        <button type="button" data-usage-export-action="download">Download</button>
+        <button type="button" data-usage-export-action="copy-url">Copy URL</button>
+        <button type="button" data-usage-export-action="copy-curl">Copy curl</button>
       </form>
     </section>
     <section class="panel">
@@ -1942,25 +2049,23 @@ async function usage() {
   `;
   document.querySelector("#usage-form").addEventListener("submit", handleAsync(loadUsage));
   document.querySelector("#task-usage-form").addEventListener("submit", handleAsync(loadTaskUsage));
-  document.querySelectorAll("[data-usage-export]").forEach((button) => {
-    button.addEventListener("click", handleAsync(loadUsageExport));
+  document.querySelectorAll("[data-usage-export-action]").forEach((button) => {
+    button.addEventListener("click", handleAsync(usageExportAction));
   });
   await loadUsage();
 }
 async function loadUsage(event) {
   event == null ? void 0 : event.preventDefault();
   const query = usageQueryFromForm(event == null ? void 0 : event.target);
-  const [summary, projectRows, keyRows, serviceRows, providerRows, modelRows, taskRows, timeseriesRows, unusedKeys] = await Promise.all([
-    api(`/admin-ui/admin/usage/summary?${query}`),
-    api(`/admin-ui/admin/usage/by-project?${query}`),
-    api(`/admin-ui/admin/usage/by-key?${query}`),
-    api(`/admin-ui/admin/usage/by-service?${query}`),
-    api(`/admin-ui/admin/usage/by-provider?${query}`),
-    api(`/admin-ui/admin/usage/by-model?${query}`),
-    api(`/admin-ui/admin/usage/by-task?${query}`),
-    api(`/admin-ui/admin/usage/timeseries?${query}`),
-    api(`/admin-ui/admin/usage/unused-keys?${query}`)
+  const filterQuery = usageFilterValuesQueryFromForm(event == null ? void 0 : event.target);
+  const [dashboard, events, routeOptions, modelOptions] = await Promise.all([
+    api(`/admin-ui/admin/usage/dashboard?${query}`),
+    api(`/admin-ui/admin/usage/events?${query}`),
+    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=route`),
+    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=model`)
   ]);
+  const summary = dashboard.summary;
+  updateUsageDatalists(routeOptions.values, modelOptions.values);
   const results = document.querySelector("#usage-results");
   if (!results) return;
   results.innerHTML = `
@@ -1968,42 +2073,147 @@ async function loadUsage(event) {
       ${stat("Requests", summary.request_count)}
       ${stat("Failures", summary.failure_count)}
       ${stat("Cost", money(summary.estimated_cost_usd))}
+      ${stat("Avg latency", summary.average_latency_ms == null ? "n/a" : `${Math.round(summary.average_latency_ms)} ms`)}
       ${stat("Fallback rate", percent(summary.fallback_rate))}
       ${stat("Expensive", summary.expensive_request_count || 0)}
       ${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
     </div>
-    <h4>Projects</h4>${usageBreakdownTable(projectRows, projectName)}
-    <h4>Keys</h4>${usageBreakdownTable(keyRows, keyName)}
-    <h4>Services</h4>${usageBreakdownTable(serviceRows)}
-    <h4>Providers</h4>${usageBreakdownTable(providerRows)}
-    <h4>Models</h4>${usageBreakdownTable(modelRows)}
-    <h4>Tasks</h4>${usageBreakdownTable(taskRows)}
-    <h4>Timeseries</h4>${usageTimeseriesTable(timeseriesRows)}
-    <h4>Unused keys</h4>${unusedKeysTable(unusedKeys)}
+    <h4>Projects</h4>${usageBreakdownTable(dashboard.breakdowns.projects, projectName)}
+    <h4>Keys</h4>${usageBreakdownTable(dashboard.breakdowns.keys, keyName)}
+    <h4>Services</h4>${usageBreakdownTable(dashboard.breakdowns.services)}
+    <h4>Providers</h4>${usageBreakdownTable(dashboard.breakdowns.providers)}
+    <h4>Models</h4>${usageBreakdownTable(dashboard.breakdowns.models)}
+    <h4>Tasks</h4>${usageBreakdownTable(dashboard.breakdowns.tasks)}
+    <h4>Recent requests</h4>${usageEventsTable(events.rows)}
+    <h4>Timeseries</h4>${usageTimeseriesTable(dashboard.timeseries)}
+    <h4>Service timeseries</h4>${usageServiceTimeseriesTable(dashboard.service_timeseries || [])}
+    <h4>Unused keys</h4>${unusedKeysTable(dashboard.unused_keys)}
   `;
+  results.querySelectorAll("[data-debug-request]").forEach((button) => {
+    button.addEventListener("click", handleAsync(openDebugRequest));
+  });
 }
 function usageQueryFromForm(formElement = document.querySelector("#usage-form")) {
   const form = formElement ? new FormData(formElement) : new FormData();
   const query = new URLSearchParams();
-  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status", "min_cost_usd"]) {
+  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status", "min_cost_usd", "breakdown_limit", "sort_by", "limit"]) {
     const value = form.get(key);
     if (value) query.set(key, value);
   }
+  const range = usageDateRange(form);
+  if (range.from) query.set("from", range.from);
+  if (range.to) query.set("to", range.to);
+  const interval = form.get("interval");
+  if (interval) query.set("interval", interval);
   return query;
 }
-async function loadUsageExport(event) {
-  const format = event.currentTarget.dataset.usageExport;
-  const query = usageQueryFromForm();
-  if (format === "json") {
-    const body = await api(`/admin-ui/admin/usage/export.json?${query}`);
-    showTextModal("Usage export JSON", JSON.stringify(body, null, 2));
+function usageFilterValuesQueryFromForm(formElement = document.querySelector("#usage-form")) {
+  const form = formElement ? new FormData(formElement) : new FormData();
+  const query = new URLSearchParams();
+  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status"]) {
+    const value = form.get(key);
+    if (value) query.set(key, value);
+  }
+  const range = usageDateRange(form);
+  if (range.from) query.set("from", range.from);
+  if (range.to) query.set("to", range.to);
+  return query;
+}
+function updateUsageDatalists(routes2 = [], models = []) {
+  const routeDefaults = ["/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/messages", "/summary", "/translation", "/ocr", "/embeddings", "/services/*", "/providers/openai/*"];
+  const routeList = document.querySelector("#usage-route-options");
+  const modelList = document.querySelector("#usage-model-options");
+  if (routeList) routeList.innerHTML = [.../* @__PURE__ */ new Set([...routeDefaults, ...routes2])].map((value) => `<option value="${attr(value)}"></option>`).join("");
+  if (modelList) modelList.innerHTML = [...new Set(models)].map((value) => `<option value="${attr(value)}"></option>`).join("");
+}
+function usageDateRange(form) {
+  const preset = form.get("time_preset");
+  if (!preset) return {};
+  const now = /* @__PURE__ */ new Date();
+  if (preset === "custom") {
+    const fromInput = form.get("from");
+    const toInput = form.get("to");
+    const from = fromInput ? new Date(fromInput) : null;
+    const to = toInput ? new Date(toInput) : null;
+    if (from && Number.isNaN(from.getTime()) || to && Number.isNaN(to.getTime())) {
+      throw new Error("Use valid custom usage dates.");
+    }
+    if (from && to && from > to) {
+      throw new Error("Usage start time must be before the end time.");
+    }
+    return {
+      from: from ? from.toISOString() : "",
+      to: to ? to.toISOString() : ""
+    };
+  }
+  const start = new Date(now);
+  const end = new Date(now);
+  if (preset === "last_1h") start.setHours(start.getHours() - 1);
+  if (preset === "last_6h") start.setHours(start.getHours() - 6);
+  if (preset === "last_24h") start.setHours(start.getHours() - 24);
+  if (preset === "last_7d") start.setDate(start.getDate() - 7);
+  if (preset === "last_30d") start.setDate(start.getDate() - 30);
+  if (preset === "today") {
+    start.setHours(0, 0, 0, 0);
+  }
+  if (preset === "yesterday") {
+    start.setDate(start.getDate() - 1);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+  }
+  if (preset === "this_week") {
+    const day = start.getDay();
+    const daysSinceMonday = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - daysSinceMonday);
+    start.setHours(0, 0, 0, 0);
+  }
+  if (preset === "this_month") {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+  }
+  return { from: start.toISOString(), to: end.toISOString() };
+}
+async function usageExportAction(event) {
+  const action = event.currentTarget.dataset.usageExportAction;
+  const exportForm = document.querySelector("#usage-export-form");
+  const format = exportForm ? new FormData(exportForm).get("export_format") || "csv" : "csv";
+  const path = usageExportPath(format);
+  if (action === "copy-url") {
+    await navigator.clipboard.writeText(path);
+    setNotice("Export URL copied.", "success");
     return;
   }
-  const response = await fetchWithTimeout(`/admin-ui/admin/usage/export.csv?${query}`, {
+  if (action === "copy-curl") {
+    await navigator.clipboard.writeText(`curl -sS -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" "${location.origin}${path}"`);
+    setNotice("Export curl copied.", "success");
+    return;
+  }
+  const response = await fetchWithTimeout(path, {
     headers: { authorization: `Bearer ${token()}` }
   });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-  showTextModal("Usage export CSV", await response.text());
+  if (action === "download") {
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `relayna-usage-${(/* @__PURE__ */ new Date()).toISOString()}.${format}`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    return;
+  }
+  const text = format === "json" ? JSON.stringify(await response.json(), null, 2) : await response.text();
+  showTextModal(`Usage export ${format.toUpperCase()}`, text);
+}
+function usageExportPath(format) {
+  const query = usageQueryFromForm();
+  const form = document.querySelector("#usage-export-form");
+  if (form) {
+    const data = new FormData(form);
+    if (data.get("export_limit")) query.set("limit", data.get("export_limit"));
+    if (data.get("export_offset")) query.set("offset", data.get("export_offset"));
+  }
+  return `/admin-ui/admin/usage/export.${format}?${query}`;
 }
 async function loadTaskUsage(event) {
   event.preventDefault();
@@ -2023,16 +2233,47 @@ async function loadTaskUsage(event) {
 }
 function usageBreakdownTable(rows, label = (value) => value) {
   return table(
-    ["Name", "Requests", "Success", "Failure", "Latency", "Cost"],
+    ["Name", "Requests", "Success", "Failure", "Avg latency", "Total latency", "Cost"],
     rows.map((row) => [
       esc(label(row.name)),
       row.summary.request_count,
       row.summary.success_count,
       row.summary.failure_count,
+      row.summary.average_latency_ms == null ? "n/a" : `${Math.round(row.summary.average_latency_ms)} ms`,
       `${row.summary.total_latency_ms} ms`,
       money(row.summary.estimated_cost_usd)
     ])
   );
+}
+function usageEventsTable(rows) {
+  return table(
+    ["Created", "Request", "Route", "Service", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
+    rows.map((row) => [
+      time(row.created_at),
+      `<code>${esc(row.request_id)}</code>`,
+      esc(row.route),
+      esc(row.service_name || ""),
+      esc(row.model || ""),
+      esc(row.provider),
+      badge(row.status === "success" ? "good" : "bad", row.status),
+      `${esc(row.latency_ms)} ms`,
+      esc(row.total_tokens),
+      money(row.estimated_cost_usd),
+      esc(row.cost_source || ""),
+      esc(row.pricing_rule_name || ""),
+      row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",
+      `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}">Debug</button>`
+    ])
+  );
+}
+async function openDebugRequest(event) {
+  const requestId = event.currentTarget.dataset.debugRequest;
+  state.view = "health";
+  await refresh();
+  const input = document.querySelector("#debug-bundle-form input[name='request_id']");
+  if (input) input.value = requestId;
+  await loadDebugBundle({ preventDefault() {
+  }, target: document.querySelector("#debug-bundle-form") });
 }
 function unusedKeysTable(rows) {
   return table(
@@ -2056,6 +2297,23 @@ function usageTimeseriesTable(rows) {
         ((_b = row.summary) == null ? void 0 : _b.success_count) ?? row.success_count ?? 0,
         ((_c = row.summary) == null ? void 0 : _c.failure_count) ?? row.failure_count ?? 0,
         money(((_d = row.summary) == null ? void 0 : _d.estimated_cost_usd) ?? row.estimated_cost_usd)
+      ];
+    })
+  );
+}
+function usageServiceTimeseriesTable(rows) {
+  return table(
+    ["Bucket", "Service", "Requests", "Success", "Failure", "Avg latency", "Cost"],
+    rows.map((row) => {
+      var _a, _b, _c, _d, _e;
+      return [
+        esc(row.bucket_start || row.bucket || row.name),
+        esc(row.service_name || "none"),
+        ((_a = row.summary) == null ? void 0 : _a.request_count) ?? row.request_count ?? 0,
+        ((_b = row.summary) == null ? void 0 : _b.success_count) ?? row.success_count ?? 0,
+        ((_c = row.summary) == null ? void 0 : _c.failure_count) ?? row.failure_count ?? 0,
+        ((_d = row.summary) == null ? void 0 : _d.average_latency_ms) == null ? "n/a" : `${Math.round(row.summary.average_latency_ms)} ms`,
+        money(((_e = row.summary) == null ? void 0 : _e.estimated_cost_usd) ?? row.estimated_cost_usd)
       ];
     })
   );
@@ -2269,8 +2527,18 @@ function fillProviderHealthStateForm(key) {
 async function loadDebugBundle(event) {
   event.preventDefault();
   const requestId = new FormData(event.target).get("request_id");
-  state.debugBundle = await api(`/admin-ui/admin/debug-bundles/${encodeURIComponent(requestId)}`);
-  await health();
+  try {
+    state.debugBundle = await api(`/admin-ui/admin/debug-bundles/${encodeURIComponent(requestId)}`);
+    await health();
+  } catch (error) {
+    state.debugBundle = null;
+    if (error.message === "debug_bundle_not_found") {
+      setNotice("No debug bundle was captured for this request. Service demo rows may have usage data without proxy debug traces.");
+      await health();
+      return;
+    }
+    throw error;
+  }
 }
 async function rollbackImportVersion(event) {
   const version = event.currentTarget.dataset.importRollback;
@@ -2529,6 +2797,7 @@ function serviceBody(form, patch) {
     max_body_bytes: Number(form.get("max_body_bytes")),
     cost_mode: form.get("cost_mode"),
     estimated_cost_usd: nullableNumber(form.get("estimated_cost_usd")),
+    pricing_rules: pricingRulesFromForm(form),
     fallback_services: csv(form.get("fallback_services"))
   };
   if (!patch) {
@@ -2541,6 +2810,13 @@ function serviceBody(form, patch) {
   }
   if (patch) body.sync_status = form.get("sync_status");
   return body;
+}
+function pricingRulesFromForm(form) {
+  const value = String(form.get("pricing_rules") || "").trim();
+  if (!value) return void 0;
+  const parsed = JSON.parse(value);
+  if (!Array.isArray(parsed)) throw new Error("pricing_rules must be a JSON array");
+  return parsed;
 }
 function keyStatus(key) {
   if (key.revoked_at) return '<span class="badge bad">revoked</span>';

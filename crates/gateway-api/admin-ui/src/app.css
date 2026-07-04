@@ -398,6 +398,11 @@ td code {
   align-items: start;
 }
 
+.service-stack {
+  display: grid;
+  gap: var(--rg-space-4);
+}
+
 .panel {
   border: 1px solid var(--rg-color-border);
   border-radius: var(--rg-radius-md);
@@ -469,6 +474,36 @@ td code {
 
 .form-grid .wide-field {
   grid-column: 1 / -1;
+}
+
+.pricing-rule-editor {
+  align-self: stretch;
+}
+
+.pricing-rule-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.pricing-rule-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr));
+  gap: 8px;
+  align-items: end;
+  padding: 9px;
+  border: 1px solid var(--rg-color-border);
+  border-radius: var(--rg-radius-sm);
+  background: var(--rg-color-surface-muted);
+}
+
+.pricing-rule-row button {
+  width: auto;
+  justify-self: start;
+}
+
+.pricing-rules-empty {
+  min-height: 44px;
+  padding: 9px;
 }
 
 .form-actions,
@@ -898,6 +933,10 @@ tr:last-child td {
   .form-actions,
   .actions {
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .pricing-rule-row {
     grid-template-columns: 1fr;
   }
 

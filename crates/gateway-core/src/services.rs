@@ -2,7 +2,8 @@ use crate::{GatewayError, GatewayResult};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use http::Method;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 const DEFAULT_TIMEOUT_MS: i64 = 60_000;
@@ -49,6 +50,7 @@ pub struct ServiceRegistration {
     pub max_body_bytes: i64,
     pub cost_mode: ServiceCostMode,
     pub estimated_cost_usd: Option<f64>,
+    pub pricing_rules: Vec<ServicePricingRule>,
     pub credential_secret: Option<String>,
     pub fallback_services: Vec<String>,
     pub source: ServiceSource,
@@ -89,6 +91,8 @@ pub struct ServiceCreateRequest {
     #[serde(default)]
     pub estimated_cost_usd: Option<f64>,
     #[serde(default)]
+    pub pricing_rules: Vec<ServicePricingRule>,
+    #[serde(default)]
     pub fallback_services: Vec<String>,
 }
 
@@ -107,6 +111,7 @@ pub struct ServicePatchRequest {
     pub max_body_bytes: Option<i64>,
     pub cost_mode: Option<ServiceCostMode>,
     pub estimated_cost_usd: Option<Option<f64>>,
+    pub pricing_rules: Option<Vec<ServicePricingRule>>,
     pub fallback_services: Option<Vec<String>>,
     pub sync_status: Option<ServiceSyncStatus>,
 }
@@ -138,6 +143,28 @@ pub struct StudioServicePricing {
     pub cost_mode: ServiceCostMode,
     #[serde(default)]
     pub estimated_cost_usd: Option<f64>,
+    #[serde(default)]
+    pub pricing_rules: Vec<ServicePricingRule>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct ServicePricingRule {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(alias = "path")]
+    pub json_pointer: String,
+    #[serde(deserialize_with = "deserialize_pricing_rule_equals")]
+    pub equals: String,
+    pub cost_mode: ServiceCostMode,
+    #[serde(default)]
+    pub estimated_cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedServiceCost {
+    pub cost_mode: ServiceCostMode,
+    pub estimated_cost_usd: Option<f64>,
+    pub pricing_rule_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -207,6 +234,7 @@ pub struct ServiceResponse {
     pub max_body_bytes: i64,
     pub cost_mode: ServiceCostMode,
     pub estimated_cost_usd: Option<f64>,
+    pub pricing_rules: Vec<ServicePricingRule>,
     pub fallback_services: Vec<String>,
     pub source: ServiceSource,
     pub sync_status: ServiceSyncStatus,
@@ -372,6 +400,7 @@ impl ServiceCreateRequest {
         validate_allowed_methods(&self.allowed_methods)?;
         validate_runtime_limits(self.timeout_ms, self.max_body_bytes)?;
         validate_cost(self.cost_mode, self.estimated_cost_usd)?;
+        validate_pricing_rules(&self.pricing_rules)?;
         validate_fallback_services(&self.fallback_services)?;
         validate_optional_secret(self.credential.as_deref())?;
         Ok(())
@@ -401,11 +430,11 @@ impl ServicePatchRequest {
         if let Some(max_body_bytes) = self.max_body_bytes {
             validate_runtime_limits(self.timeout_ms.unwrap_or(1), max_body_bytes)?;
         }
-        if let Some(cost_mode) = self.cost_mode {
-            validate_cost(cost_mode, self.estimated_cost_usd.flatten())?;
+        if let Some(Some(cost)) = self.estimated_cost_usd {
+            validate_cost(self.cost_mode.unwrap_or_default(), Some(cost))?;
         }
-        if let Some(cost) = self.estimated_cost_usd {
-            validate_cost(self.cost_mode.unwrap_or_default(), cost)?;
+        if let Some(pricing_rules) = &self.pricing_rules {
+            validate_pricing_rules(pricing_rules)?;
         }
         if let Some(fallback_services) = &self.fallback_services {
             validate_fallback_services(fallback_services)?;
@@ -432,6 +461,7 @@ impl StudioServiceImportRequest {
         validate_allowed_methods(&self.allowed_methods)?;
         if let Some(pricing) = &self.default_pricing {
             validate_cost(pricing.cost_mode, pricing.estimated_cost_usd)?;
+            validate_pricing_rules(&pricing.pricing_rules)?;
         }
         Ok(())
     }
@@ -459,6 +489,7 @@ impl StudioCatalogService {
         validate_allowed_methods(&allowed_methods)?;
         if let Some(pricing) = &self.default_pricing {
             validate_cost(pricing.cost_mode, pricing.estimated_cost_usd)?;
+            validate_pricing_rules(&pricing.pricing_rules)?;
         }
 
         let import_request = StudioServiceImportRequest {
@@ -532,6 +563,14 @@ impl ServiceRegistration {
         Ok(())
     }
 
+    pub fn validate_cost(&self) -> GatewayResult<()> {
+        validate_cost(self.cost_mode, self.estimated_cost_usd)
+    }
+
+    pub fn validate_pricing_rules(&self) -> GatewayResult<()> {
+        validate_pricing_rules(&self.pricing_rules)
+    }
+
     pub fn to_response(&self) -> ServiceResponse {
         ServiceResponse {
             name: self.name.clone(),
@@ -551,6 +590,7 @@ impl ServiceRegistration {
             max_body_bytes: self.max_body_bytes,
             cost_mode: self.cost_mode,
             estimated_cost_usd: self.estimated_cost_usd,
+            pricing_rules: self.pricing_rules.clone(),
             fallback_services: self.fallback_services.clone(),
             source: self.source,
             sync_status: self.sync_status,
@@ -724,6 +764,78 @@ fn validate_cost(cost_mode: ServiceCostMode, estimated_cost_usd: Option<f64>) ->
     Ok(())
 }
 
+fn validate_pricing_rules(rules: &[ServicePricingRule]) -> GatewayResult<()> {
+    if rules.len() > 50 {
+        return Err(GatewayError::InvalidServicePayload);
+    }
+    for rule in rules {
+        if let Some(name) = rule.name.as_deref() {
+            validate_service_name(name)?;
+        }
+        if !rule.json_pointer.starts_with('/') {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+        if rule.equals.is_empty() {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+        validate_cost(rule.cost_mode, rule.estimated_cost_usd)?;
+    }
+    Ok(())
+}
+
+pub fn resolve_service_cost(
+    body: &[u8],
+    default_cost_mode: ServiceCostMode,
+    default_estimated_cost_usd: Option<f64>,
+    rules: &[ServicePricingRule],
+) -> ResolvedServiceCost {
+    let value: Value = match serde_json::from_slice(body) {
+        Ok(value) => value,
+        Err(_) => {
+            return ResolvedServiceCost {
+                cost_mode: default_cost_mode,
+                estimated_cost_usd: default_estimated_cost_usd,
+                pricing_rule_name: None,
+            };
+        }
+    };
+
+    for rule in rules {
+        let matched = value
+            .pointer(&rule.json_pointer)
+            .and_then(Value::as_str)
+            .is_some_and(|actual| actual == rule.equals);
+        if matched {
+            return ResolvedServiceCost {
+                cost_mode: rule.cost_mode,
+                estimated_cost_usd: rule.estimated_cost_usd,
+                pricing_rule_name: rule.name.clone(),
+            };
+        }
+    }
+
+    ResolvedServiceCost {
+        cost_mode: default_cost_mode,
+        estimated_cost_usd: default_estimated_cost_usd,
+        pricing_rule_name: None,
+    }
+}
+
+fn deserialize_pricing_rule_equals<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    match value {
+        Value::String(value) => Ok(value),
+        Value::Number(value) => Ok(value.to_string()),
+        Value::Bool(value) => Ok(value.to_string()),
+        _ => Err(serde::de::Error::custom(
+            "pricing rule equals must be a string, number, or boolean",
+        )),
+    }
+}
+
 fn validate_fallback_services(services: &[String]) -> GatewayResult<()> {
     for service in services {
         validate_service_name(service)?;
@@ -793,6 +905,7 @@ mod tests {
             max_body_bytes: 1024,
             cost_mode: ServiceCostMode::Fixed,
             estimated_cost_usd: Some(0.01),
+            pricing_rules: Vec::new(),
             credential_secret: Some("secret-token".to_owned()),
             fallback_services: Vec::new(),
             source: ServiceSource::Gateway,
@@ -807,6 +920,73 @@ mod tests {
 
         assert!(response.credential_configured);
         assert!(response.missing_runtime_fields.is_empty());
+    }
+
+    #[test]
+    fn create_service_requires_estimate_for_fixed_cost_mode() {
+        let mut request = valid_create_request();
+        request.cost_mode = ServiceCostMode::Fixed;
+        request.estimated_cost_usd = None;
+
+        assert_eq!(
+            request.validate().unwrap_err(),
+            GatewayError::InvalidServicePayload
+        );
+
+        request.estimated_cost_usd = Some(0.0);
+        request.validate().expect("fixed cost with estimate");
+    }
+
+    #[test]
+    fn patch_cost_validation_uses_effective_service_state() {
+        let mut registration = service_registration(ServiceCostMode::None, Some(0.02));
+        let patch = ServicePatchRequest {
+            cost_mode: Some(ServiceCostMode::Fixed),
+            ..ServicePatchRequest::default()
+        };
+
+        patch.validate().expect("partial patch is valid");
+        if let Some(cost_mode) = patch.cost_mode {
+            registration.cost_mode = cost_mode;
+        }
+        registration
+            .validate_cost()
+            .expect("existing estimate satisfies fixed cost mode");
+
+        registration.estimated_cost_usd = None;
+        assert_eq!(
+            registration.validate_cost().unwrap_err(),
+            GatewayError::InvalidServicePayload
+        );
+    }
+
+    #[test]
+    fn patch_clearing_estimate_is_rejected_for_effective_fixed_cost_mode() {
+        let mut registration = service_registration(ServiceCostMode::Fixed, Some(0.02));
+        let patch = ServicePatchRequest {
+            estimated_cost_usd: Some(None),
+            ..ServicePatchRequest::default()
+        };
+
+        patch.validate().expect("clearing estimate is patch-shaped");
+        if let Some(estimated_cost_usd) = patch.estimated_cost_usd {
+            registration.estimated_cost_usd = estimated_cost_usd;
+        }
+
+        assert_eq!(
+            registration.validate_cost().unwrap_err(),
+            GatewayError::InvalidServicePayload
+        );
+    }
+
+    #[test]
+    fn passthrough_and_none_cost_modes_do_not_require_estimate() {
+        service_registration(ServiceCostMode::None, None)
+            .validate_cost()
+            .expect("none mode");
+        service_registration(ServiceCostMode::Passthrough, None)
+            .validate_cost()
+            .expect("passthrough mode");
     }
 
     #[test]
@@ -900,9 +1080,160 @@ mod tests {
             default_pricing: Some(StudioServicePricing {
                 cost_mode: ServiceCostMode::Fixed,
                 estimated_cost_usd: Some(0.02),
+                pricing_rules: Vec::new(),
             }),
         };
 
         request.validate().expect("valid studio import");
+    }
+
+    #[test]
+    fn resolves_first_matching_service_pricing_rule() {
+        let rules = vec![
+            ServicePricingRule {
+                name: Some("ocr-doc-int".to_owned()),
+                json_pointer: "/model".to_owned(),
+                equals: "doct-int".to_owned(),
+                cost_mode: ServiceCostMode::Fixed,
+                estimated_cost_usd: Some(0.08),
+            },
+            ServicePricingRule {
+                name: Some("ocr-internal".to_owned()),
+                json_pointer: "/model".to_owned(),
+                equals: "internal".to_owned(),
+                cost_mode: ServiceCostMode::Fixed,
+                estimated_cost_usd: Some(0.02),
+            },
+        ];
+
+        let resolved = resolve_service_cost(
+            br#"{"model":"doct-int"}"#,
+            ServiceCostMode::Fixed,
+            Some(0.01),
+            &rules,
+        );
+
+        assert_eq!(resolved.cost_mode, ServiceCostMode::Fixed);
+        assert_eq!(resolved.estimated_cost_usd, Some(0.08));
+        assert_eq!(resolved.pricing_rule_name.as_deref(), Some("ocr-doc-int"));
+    }
+
+    #[test]
+    fn falls_back_to_service_default_when_pricing_rule_does_not_match() {
+        let rules = vec![ServicePricingRule {
+            name: Some("ocr-doc-int".to_owned()),
+            json_pointer: "/model".to_owned(),
+            equals: "doct-int".to_owned(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.08),
+        }];
+
+        let resolved = resolve_service_cost(
+            br#"{"model":"unknown"}"#,
+            ServiceCostMode::Fixed,
+            Some(0.01),
+            &rules,
+        );
+
+        assert_eq!(resolved.cost_mode, ServiceCostMode::Fixed);
+        assert_eq!(resolved.estimated_cost_usd, Some(0.01));
+        assert_eq!(resolved.pricing_rule_name, None);
+    }
+
+    #[test]
+    fn validates_service_pricing_rules() {
+        let mut request = valid_create_request();
+        request.pricing_rules = vec![ServicePricingRule {
+            name: Some("ocr-doc-int".to_owned()),
+            json_pointer: "/model".to_owned(),
+            equals: "doct-int".to_owned(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.08),
+        }];
+        request.validate().expect("valid pricing rule");
+
+        request.pricing_rules[0].json_pointer = "model".to_owned();
+        assert_eq!(
+            request.validate().unwrap_err(),
+            GatewayError::InvalidServicePayload
+        );
+    }
+
+    #[test]
+    fn deserializes_legacy_service_pricing_rule_shape() {
+        let rules: Vec<ServicePricingRule> = serde_json::from_value(serde_json::json!([
+            {
+                "name": "long-doc",
+                "path": "/payload/page_count",
+                "equals": 25,
+                "cost_mode": "fixed",
+                "estimated_cost_usd": 0.072
+            },
+            {
+                "name": "legal-es",
+                "path": "/target_locale",
+                "equals": "es-MX",
+                "cost_mode": "fixed",
+                "estimated_cost_usd": 0.046
+            }
+        ]))
+        .expect("legacy pricing rules deserialize");
+
+        assert_eq!(rules[0].json_pointer, "/payload/page_count");
+        assert_eq!(rules[0].equals, "25");
+        assert_eq!(rules[1].json_pointer, "/target_locale");
+        assert_eq!(rules[1].equals, "es-MX");
+    }
+
+    fn valid_create_request() -> ServiceCreateRequest {
+        ServiceCreateRequest {
+            name: "summary".to_owned(),
+            project_id: None,
+            studio_service_id: None,
+            route_pattern: Some("/summary".to_owned()),
+            upstream_base_url: Some("http://summary.internal".to_owned()),
+            health_check_path: Some("/health".to_owned()),
+            health_check_method: "GET".to_owned(),
+            enabled: true,
+            allowed_methods: vec!["POST".to_owned()],
+            credential: Some("secret-token".to_owned()),
+            timeout_ms: 60_000,
+            max_body_bytes: 1024,
+            cost_mode: ServiceCostMode::None,
+            estimated_cost_usd: None,
+            pricing_rules: Vec::new(),
+            fallback_services: Vec::new(),
+        }
+    }
+
+    fn service_registration(
+        cost_mode: ServiceCostMode,
+        estimated_cost_usd: Option<f64>,
+    ) -> ServiceRegistration {
+        let now = Utc::now();
+        ServiceRegistration {
+            name: "summary".to_owned(),
+            project_id: None,
+            studio_service_id: None,
+            route_pattern: "/summary".to_owned(),
+            upstream_base_url: Some("http://summary.internal".to_owned()),
+            health_check_path: Some("/health".to_owned()),
+            health_check_method: "GET".to_owned(),
+            enabled: true,
+            allowed_methods: vec!["POST".to_owned()],
+            timeout_ms: 60_000,
+            max_body_bytes: 1024,
+            cost_mode,
+            estimated_cost_usd,
+            pricing_rules: Vec::new(),
+            credential_secret: Some("secret-token".to_owned()),
+            fallback_services: Vec::new(),
+            source: ServiceSource::Gateway,
+            sync_status: ServiceSyncStatus::Local,
+            last_synced_at: None,
+            disabled_at: None,
+            created_at: now,
+            updated_at: now,
+        }
     }
 }
