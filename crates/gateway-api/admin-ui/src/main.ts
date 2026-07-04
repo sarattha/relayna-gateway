@@ -1931,11 +1931,12 @@ async function usage() {
 async function loadUsage(event) {
   event?.preventDefault();
   const query = usageQueryFromForm(event?.target);
+  const filterQuery = usageFilterValuesQueryFromForm(event?.target);
   const [dashboard, events, routeOptions, modelOptions] = await Promise.all([
     api(`/admin-ui/admin/usage/dashboard?${query}`),
     api(`/admin-ui/admin/usage/events?${query}`),
-    api(`/admin-ui/admin/usage/filter-values?${query}&field=route`),
-    api(`/admin-ui/admin/usage/filter-values?${query}&field=model`),
+    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=route`),
+    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=model`),
   ]);
   const summary = dashboard.summary;
   updateUsageDatalists(routeOptions.values, modelOptions.values);
@@ -1978,6 +1979,19 @@ function usageQueryFromForm(formElement = document.querySelector("#usage-form"))
   if (range.to) query.set("to", range.to);
   const interval = form.get("interval");
   if (interval) query.set("interval", interval);
+  return query;
+}
+
+function usageFilterValuesQueryFromForm(formElement = document.querySelector("#usage-form")) {
+  const form = formElement ? new FormData(formElement) : new FormData();
+  const query = new URLSearchParams();
+  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status"]) {
+    const value = form.get(key);
+    if (value) query.set(key, value);
+  }
+  const range = usageDateRange(form);
+  if (range.from) query.set("from", range.from);
+  if (range.to) query.set("to", range.to);
   return query;
 }
 

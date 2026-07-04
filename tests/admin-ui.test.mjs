@@ -297,6 +297,9 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /query\.set\("interval", interval\)/);
   assert.match(js, /Usage start time must be before the end time/);
   assert.match(js, /function usageDateRange\(form\)/);
+  assert.match(js, /function usageFilterValuesQueryFromForm\(formElement = document\.querySelector\("#usage-form"\)\)/);
+  assert.match(js, /const filterQuery = usageFilterValuesQueryFromForm\(/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/filter-values\?\$\{filterQuery\}&field=route/);
   assert.match(js, /\/admin-ui\/admin\/usage\/dashboard/);
   assert.match(js, /\/admin-ui\/admin\/usage\/events/);
   assert.match(js, /\/admin-ui\/admin\/usage\/filter-values/);
