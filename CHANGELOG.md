@@ -2,6 +2,33 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.16 - 2026-07-04
+
+### Added
+
+- Added configurable timeout, request payload size, and response payload size
+  limits for canonical OpenAI-compatible and Anthropic-compatible direct
+  LiteLLM passthrough routes.
+- Added matching wildcard LiteLLM passthrough limits so operators can raise the
+  route-level 1 MiB default for long-context Codex and model harness traffic
+  without changing virtual-key policy.
+- Added Admin UI controls and Admin API route config endpoints for editing
+  passthrough route mode and payload limits in one flow.
+
+### Changed
+
+- Route-level response byte limits are now enforced while response chunks pass
+  through the proxy, avoiding full-response buffering.
+- Workspace crate versions now share the `0.1.16` release version.
+- Deployment examples and release documentation now target the `0.1.16`
+  gateway image and `v0.1.16` release tag.
+
+### Security
+
+- Virtual-key policy request and response payload limits remain stricter when
+  configured, so operators can set large route defaults for Codex while still
+  constraining individual keys or policy layers.
+
 ## 0.1.15 - 2026-07-02
 
 ### Added

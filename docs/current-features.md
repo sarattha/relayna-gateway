@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.15` feature set.
+This page summarizes the `v0.1.16` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -128,7 +128,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.15` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.16` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -155,18 +155,27 @@ Claude and Claude Code clients:
 - `GET /v1/models`
 
 Each canonical route has a mode in the Routes page under its OpenAI or
-Anthropic section:
+Anthropic section, plus timeout, request payload, and response payload limits:
 
 | Mode | Behavior |
 | --- | --- |
 | `managed_by_gateway` | Current governed behavior. Gateway authenticates the Relayna key, evaluates route/model/provider policy, checks request and token rate limits, checks/reserves budgets, runs configured guardrails, forwards to LiteLLM or direct providers, and records full usage when response accounting data is available. |
 | `direct_litellm_passthrough` | Relayna `rk_live_...` bearer keys keep the Gateway-authenticated path: route enablement, policy, model/provider allowlists, rate limits, budgets, credential stripping/injection, and status-only usage. Non-Relayna `Authorization: Bearer ...` credentials bypass Relayna key lookup and are delegated to LiteLLM using the configured upstream credential header. Guardrail body rewriting and token accounting are bypassed. |
 
+Route limits default to `timeout_ms = 120000`,
+`max_request_body_bytes = 1048576`, and
+`max_response_body_bytes = 1048576`. Operators can raise them for long-context
+direct passthrough traffic such as Codex `/v1/responses`, while virtual-key and
+policy-layer request/response byte limits can remain stricter for individual
+keys.
+
 Wildcard LiteLLM passthrough is configured from Providers. It is disabled by
 default. When enabled, the safe default allowlist is `/v1/*` for `GET` and
 `POST`, which covers LiteLLM-compatible API endpoints such as `/v1/models`
 without opening Relayna service/control routes. Gateway preserves the original
-LiteLLM path and query string for wildcard traffic.
+LiteLLM path and query string for wildcard traffic. Wildcard passthrough also
+has timeout, request byte, and response byte settings with the same defaults
+and upper bounds as canonical direct passthrough routes.
 
 Sensitive LiteLLM paths require explicit exposure decisions:
 
@@ -230,7 +239,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.15` release hardens CI and release workflows with strict
+The `v0.1.16` release hardens CI and release workflows with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

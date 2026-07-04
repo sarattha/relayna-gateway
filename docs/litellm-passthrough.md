@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.15` behavior.
+This page covers the `0.1.16` behavior.
 
 ## Request Model
 
@@ -141,6 +141,12 @@ In **Providers → LiteLLM passthrough**, set these foundational fields first:
 - `Allowed paths`: array patterns. `/v1/*` and `GET,POST` keep canonical LiteLLM
   discovery/query patterns covered while staying narrow.
 - `Allowed methods`: list of HTTP methods that may route to LiteLLM fallback.
+- `Timeout ms`: wildcard passthrough upstream timeout. Default `120000`, maximum
+  `600000`.
+- `Max request bytes`: wildcard passthrough request payload cap. Default
+  `1048576`, maximum `104857600`.
+- `Max response bytes`: wildcard passthrough response payload cap. Default
+  `1048576`, maximum `104857600`.
 - `LiteLLM UI exposure`: controls `/ui` and `/ui` support paths.
 - `LiteLLM admin API exposure`: controls admin-like paths (e.g. `/key`, `/user`,
   `/team`, `/config`, `/provider`, `/guardrails`, `/mcp-rest`, `/prompts`,
@@ -155,6 +161,9 @@ Recommended safe default when starting:
   "enabled": true,
   "allowed_paths": ["/v1/*"],
   "allowed_methods": ["GET", "POST"],
+  "timeout_ms": 120000,
+  "max_request_body_bytes": 1048576,
+  "max_response_body_bytes": 1048576,
   "ui_exposure": "operator_only",
   "admin_api_exposure": "disabled"
 }
@@ -175,6 +184,14 @@ Canonical route mode is controlled from Routes, not by wildcard settings:
 | `direct_litellm_passthrough` | OpenAI and Anthropic route IDs | Relayna auth and policy gates remain, but request is forwarded directly to LiteLLM with credential translation and without guardrail rewriting/token accounting. |
 
 Canonical non-matching routes still honor route-mode behavior exactly as before.
+
+Each canonical route also has `timeout_ms`, `max_request_body_bytes`, and
+`max_response_body_bytes` settings on the Routes page. These defaults are
+120000 ms, 1048576 bytes, and 1048576 bytes. Raise
+`max_request_body_bytes` for long Codex harness context on `/v1/responses`, and
+use virtual-key or policy-layer `max_request_body_bytes` /
+`max_response_body_bytes` when a specific key should remain stricter than the
+route default.
 
 ### 3) Sensitive exposure options
 
@@ -284,6 +301,9 @@ curl -sS -X PATCH \
     "enabled": true,
     "allowed_paths": ["/v1/*"],
     "allowed_methods": ["GET", "POST"],
+    "timeout_ms": 120000,
+    "max_request_body_bytes": 8388608,
+    "max_response_body_bytes": 4194304,
     "ui_exposure": "disabled",
     "admin_api_exposure": "disabled"
   }' \
@@ -296,8 +316,13 @@ Set a canonical route to direct LiteLLM passthrough:
 curl -sS -X PATCH \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
-  --data '{"mode":"direct_litellm_passthrough"}' \
-  http://127.0.0.1:8081/admin-ui/admin/openai-routes/chat-completions/mode
+  --data '{
+    "mode":"direct_litellm_passthrough",
+    "timeout_ms":240000,
+    "max_request_body_bytes":8388608,
+    "max_response_body_bytes":4194304
+  }' \
+  http://127.0.0.1:8081/admin-ui/admin/openai-routes/responses/config
 ```
 
 Return it to managed mode:
@@ -307,7 +332,7 @@ curl -sS -X PATCH \
   -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
   --data '{"mode":"managed_by_gateway"}' \
-  http://127.0.0.1:8081/admin-ui/admin/openai-routes/chat-completions/mode
+  http://127.0.0.1:8081/admin-ui/admin/openai-routes/responses/config
 ```
 
 All mutating calls require operator auth and write audit events.

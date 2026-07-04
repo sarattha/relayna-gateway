@@ -39,14 +39,14 @@ use gateway_core::{
     GuardrailAdminPatchRequest, GuardrailDefinition, GuardrailEventQuery, GuardrailExecutionEvent,
     GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPolicy,
     GuardrailProviderKind, GuardrailStore, KeyPolicy, LiteLlmPassthroughSettings,
-    LiteLlmPassthroughSettingsPatchRequest, OpenAiRouteMode, OpenAiRouteSetting,
-    OpenAiRouteSettingsLookup, OperatorAuthorization, OperatorTokenMaterial, OperatorTokenResponse,
-    OperatorTokenStore, PolicyLayer, PolicyLayerKind, ProjectUsageSummary, Provider,
-    ProviderHealth, ProviderHealthCheckTarget, ProviderHealthState, ProviderHealthStatus,
-    ProviderIntelligenceStore, Route, ServiceImportDiff, ServiceRegistrySnapshot,
-    StoredOperatorToken, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageEvent,
-    UsageExport, UsageExportRow, UsageQuery, UsageQueryStore, UsageRecorder, UsageStatus,
-    UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
+    LiteLlmPassthroughSettingsPatchRequest, LiteLlmRouteLimits, OpenAiRouteConfigPatchRequest,
+    OpenAiRouteMode, OpenAiRouteSetting, OpenAiRouteSettingsLookup, OperatorAuthorization,
+    OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore, PolicyLayer, PolicyLayerKind,
+    ProjectUsageSummary, Provider, ProviderHealth, ProviderHealthCheckTarget, ProviderHealthState,
+    ProviderHealthStatus, ProviderIntelligenceStore, Route, ServiceImportDiff,
+    ServiceRegistrySnapshot, StoredOperatorToken, UnusedKey, UsageBreakdown,
+    UsageBreakdownDimension, UsageEvent, UsageExport, UsageExportRow, UsageQuery, UsageQueryStore,
+    UsageRecorder, UsageStatus, UsageSummary, UsageTimeseriesPoint, VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -2558,7 +2558,8 @@ impl AdminOpenAiRouteStore for PostgresStore {
     async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
         let rows = sqlx::query(
             r#"
-            SELECT route_id, route, enabled, mode, updated_at
+            SELECT route_id, route, enabled, mode, timeout_ms, max_request_body_bytes,
+                   max_response_body_bytes, updated_at
             FROM openai_route_settings
             ORDER BY route_id
             "#,
@@ -2575,7 +2576,8 @@ impl AdminOpenAiRouteStore for PostgresStore {
     async fn list_anthropic_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
         let rows = sqlx::query(
             r#"
-            SELECT route_id, route, enabled, mode, updated_at
+            SELECT route_id, route, enabled, mode, timeout_ms, max_request_body_bytes,
+                   max_response_body_bytes, updated_at
             FROM anthropic_route_settings
             ORDER BY route_id
             "#,
@@ -2614,7 +2616,8 @@ impl AdminOpenAiRouteStore for PostgresStore {
 
         sqlx::query(
             r#"
-            SELECT route_id, route, enabled, mode, updated_at
+            SELECT route_id, route, enabled, mode, timeout_ms, max_request_body_bytes,
+                   max_response_body_bytes, updated_at
             FROM openai_route_settings
             WHERE route_id = $1
             "#,
@@ -2652,7 +2655,8 @@ impl AdminOpenAiRouteStore for PostgresStore {
 
         sqlx::query(
             r#"
-            SELECT route_id, route, enabled, mode, updated_at
+            SELECT route_id, route, enabled, mode, timeout_ms, max_request_body_bytes,
+                   max_response_body_bytes, updated_at
             FROM openai_route_settings
             WHERE route_id = $1
             "#,
@@ -2663,6 +2667,42 @@ impl AdminOpenAiRouteStore for PostgresStore {
         .map_err(|_| GatewayError::StoreUnavailable)?
         .map(|row| openai_route_setting_from_row(&row))
         .transpose()
+    }
+
+    async fn patch_openai_route_config(
+        &self,
+        route_id: &str,
+        patch: OpenAiRouteConfigPatchRequest,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        if gateway_core::openai_route_from_id(route_id).is_none() {
+            return Ok(None);
+        }
+        patch.validate()?;
+
+        let row = sqlx::query(
+            r#"
+            UPDATE openai_route_settings
+            SET mode = COALESCE($2, mode),
+                timeout_ms = COALESCE($3, timeout_ms),
+                max_request_body_bytes = COALESCE($4, max_request_body_bytes),
+                max_response_body_bytes = COALESCE($5, max_response_body_bytes),
+                updated_at = now()
+            WHERE route_id = $1
+            RETURNING route_id, route, enabled, mode, timeout_ms, max_request_body_bytes,
+                      max_response_body_bytes, updated_at
+            "#,
+        )
+        .bind(route_id)
+        .bind(patch.mode.map(openai_route_mode_str))
+        .bind(patch.timeout_ms)
+        .bind(patch.max_request_body_bytes)
+        .bind(patch.max_response_body_bytes)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        row.map(|row| openai_route_setting_from_row(&row))
+            .transpose()
     }
 
     async fn set_anthropic_route_enabled(
@@ -2690,7 +2730,8 @@ impl AdminOpenAiRouteStore for PostgresStore {
 
         sqlx::query(
             r#"
-            SELECT route_id, route, enabled, mode, updated_at
+            SELECT route_id, route, enabled, mode, timeout_ms, max_request_body_bytes,
+                   max_response_body_bytes, updated_at
             FROM anthropic_route_settings
             WHERE route_id = $1
             "#,
@@ -2728,7 +2769,8 @@ impl AdminOpenAiRouteStore for PostgresStore {
 
         sqlx::query(
             r#"
-            SELECT route_id, route, enabled, mode, updated_at
+            SELECT route_id, route, enabled, mode, timeout_ms, max_request_body_bytes,
+                   max_response_body_bytes, updated_at
             FROM anthropic_route_settings
             WHERE route_id = $1
             "#,
@@ -2739,6 +2781,42 @@ impl AdminOpenAiRouteStore for PostgresStore {
         .map_err(|_| GatewayError::StoreUnavailable)?
         .map(|row| openai_route_setting_from_row(&row))
         .transpose()
+    }
+
+    async fn patch_anthropic_route_config(
+        &self,
+        route_id: &str,
+        patch: OpenAiRouteConfigPatchRequest,
+    ) -> GatewayResult<Option<OpenAiRouteSetting>> {
+        if gateway_core::anthropic_route_from_id(route_id).is_none() {
+            return Ok(None);
+        }
+        patch.validate()?;
+
+        let row = sqlx::query(
+            r#"
+            UPDATE anthropic_route_settings
+            SET mode = COALESCE($2, mode),
+                timeout_ms = COALESCE($3, timeout_ms),
+                max_request_body_bytes = COALESCE($4, max_request_body_bytes),
+                max_response_body_bytes = COALESCE($5, max_response_body_bytes),
+                updated_at = now()
+            WHERE route_id = $1
+            RETURNING route_id, route, enabled, mode, timeout_ms, max_request_body_bytes,
+                      max_response_body_bytes, updated_at
+            "#,
+        )
+        .bind(route_id)
+        .bind(patch.mode.map(openai_route_mode_str))
+        .bind(patch.timeout_ms)
+        .bind(patch.max_request_body_bytes)
+        .bind(patch.max_response_body_bytes)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+
+        row.map(|row| openai_route_setting_from_row(&row))
+            .transpose()
     }
 
     async fn get_litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
@@ -2766,6 +2844,13 @@ impl AdminOpenAiRouteStore for PostgresStore {
         let admin_api_exposure = patch
             .admin_api_exposure
             .unwrap_or(current.admin_api_exposure);
+        let timeout_ms = patch.timeout_ms.unwrap_or(current.timeout_ms);
+        let max_request_body_bytes = patch
+            .max_request_body_bytes
+            .unwrap_or(current.max_request_body_bytes);
+        let max_response_body_bytes = patch
+            .max_response_body_bytes
+            .unwrap_or(current.max_response_body_bytes);
 
         let row = sqlx::query(
             r#"
@@ -2776,17 +2861,24 @@ impl AdminOpenAiRouteStore for PostgresStore {
                 allowed_methods,
                 ui_exposure,
                 admin_api_exposure,
+                timeout_ms,
+                max_request_body_bytes,
+                max_response_body_bytes,
                 updated_at
             )
-            VALUES (true, $1, $2, $3, $4, $5, now())
+            VALUES (true, $1, $2, $3, $4, $5, $6, $7, $8, now())
             ON CONFLICT (id) DO UPDATE SET
                 enabled = EXCLUDED.enabled,
                 allowed_paths = EXCLUDED.allowed_paths,
                 allowed_methods = EXCLUDED.allowed_methods,
                 ui_exposure = EXCLUDED.ui_exposure,
                 admin_api_exposure = EXCLUDED.admin_api_exposure,
+                timeout_ms = EXCLUDED.timeout_ms,
+                max_request_body_bytes = EXCLUDED.max_request_body_bytes,
+                max_response_body_bytes = EXCLUDED.max_response_body_bytes,
                 updated_at = now()
-            RETURNING enabled, allowed_paths, allowed_methods, ui_exposure, admin_api_exposure, updated_at
+            RETURNING enabled, allowed_paths, allowed_methods, ui_exposure, admin_api_exposure,
+                      timeout_ms, max_request_body_bytes, max_response_body_bytes, updated_at
             "#,
         )
         .bind(enabled)
@@ -2794,6 +2886,9 @@ impl AdminOpenAiRouteStore for PostgresStore {
         .bind(&allowed_methods)
         .bind(litellm_exposure_str(ui_exposure))
         .bind(litellm_exposure_str(admin_api_exposure))
+        .bind(timeout_ms)
+        .bind(max_request_body_bytes)
+        .bind(max_response_body_bytes)
         .fetch_one(&self.pool)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
@@ -2844,6 +2939,27 @@ impl OpenAiRouteSettingsLookup for PostgresStore {
         parse_openai_route_mode(&mode)
     }
 
+    async fn openai_route_limits(&self, route: Route) -> GatewayResult<LiteLlmRouteLimits> {
+        let Some(route_id) = gateway_core::openai_route_id(route) else {
+            return Ok(LiteLlmRouteLimits::default());
+        };
+
+        let row = sqlx::query(
+            r#"
+            SELECT timeout_ms, max_request_body_bytes, max_response_body_bytes
+            FROM openai_route_settings
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .ok_or(GatewayError::StoreUnavailable)?;
+
+        litellm_route_limits_from_row(&row)
+    }
+
     async fn anthropic_route_enabled(&self, route: Route) -> GatewayResult<bool> {
         let Some(route_id) = gateway_core::anthropic_route_id(route) else {
             return Ok(true);
@@ -2884,10 +3000,32 @@ impl OpenAiRouteSettingsLookup for PostgresStore {
         parse_openai_route_mode(&mode)
     }
 
+    async fn anthropic_route_limits(&self, route: Route) -> GatewayResult<LiteLlmRouteLimits> {
+        let Some(route_id) = gateway_core::anthropic_route_id(route) else {
+            return Ok(LiteLlmRouteLimits::default());
+        };
+
+        let row = sqlx::query(
+            r#"
+            SELECT timeout_ms, max_request_body_bytes, max_response_body_bytes
+            FROM anthropic_route_settings
+            WHERE route_id = $1
+            "#,
+        )
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .ok_or(GatewayError::StoreUnavailable)?;
+
+        litellm_route_limits_from_row(&row)
+    }
+
     async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
         let row = sqlx::query(
             r#"
-            SELECT enabled, allowed_paths, allowed_methods, ui_exposure, admin_api_exposure, updated_at
+            SELECT enabled, allowed_paths, allowed_methods, ui_exposure, admin_api_exposure,
+                   timeout_ms, max_request_body_bytes, max_response_body_bytes, updated_at
             FROM litellm_passthrough_settings
             WHERE id = true
             "#,
@@ -5167,8 +5305,31 @@ fn openai_route_setting_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<O
             .try_get("enabled")
             .map_err(|_| GatewayError::StoreUnavailable)?,
         mode: parse_openai_route_mode(&mode)?,
+        timeout_ms: row
+            .try_get("timeout_ms")
+            .unwrap_or(gateway_core::DEFAULT_LITELLM_ROUTE_TIMEOUT_MS),
+        max_request_body_bytes: row
+            .try_get("max_request_body_bytes")
+            .unwrap_or(gateway_core::DEFAULT_LITELLM_ROUTE_REQUEST_BODY_BYTES),
+        max_response_body_bytes: row
+            .try_get("max_response_body_bytes")
+            .unwrap_or(gateway_core::DEFAULT_LITELLM_ROUTE_RESPONSE_BODY_BYTES),
         updated_at: row
             .try_get("updated_at")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+    })
+}
+
+fn litellm_route_limits_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<LiteLlmRouteLimits> {
+    Ok(LiteLlmRouteLimits {
+        timeout_ms: row
+            .try_get("timeout_ms")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        max_request_body_bytes: row
+            .try_get("max_request_body_bytes")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
+        max_response_body_bytes: row
+            .try_get("max_response_body_bytes")
             .map_err(|_| GatewayError::StoreUnavailable)?,
     })
 }
@@ -5194,6 +5355,15 @@ fn litellm_passthrough_settings_from_row(
             .map_err(|_| GatewayError::StoreUnavailable)?,
         ui_exposure: parse_litellm_exposure(&ui_exposure)?,
         admin_api_exposure: parse_litellm_exposure(&admin_api_exposure)?,
+        timeout_ms: row
+            .try_get("timeout_ms")
+            .unwrap_or(gateway_core::DEFAULT_LITELLM_ROUTE_TIMEOUT_MS),
+        max_request_body_bytes: row
+            .try_get("max_request_body_bytes")
+            .unwrap_or(gateway_core::DEFAULT_LITELLM_ROUTE_REQUEST_BODY_BYTES),
+        max_response_body_bytes: row
+            .try_get("max_response_body_bytes")
+            .unwrap_or(gateway_core::DEFAULT_LITELLM_ROUTE_RESPONSE_BODY_BYTES),
         updated_at: row
             .try_get("updated_at")
             .map_err(|_| GatewayError::StoreUnavailable)?,

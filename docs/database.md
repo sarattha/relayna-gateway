@@ -211,6 +211,7 @@ wildcard passthrough.
 | Enablement | `enabled` controls whether unmatched LiteLLM-bound traffic can fall through to wildcard passthrough after Relayna routes and canonical OpenAI routes have had precedence. |
 | Allowlists | `allowed_paths` and `allowed_methods` are non-empty arrays. A path ending in `*` matches by prefix. The safe default when enabled is `/v1/*` with `GET` and `POST`. |
 | Sensitive exposure | `ui_exposure` and `admin_api_exposure` are `disabled`, `operator_only`, or `explicitly_exposed` by default. `trusted_ingress` is also supported by `ui_exposure` only. `disabled` blocks matching sensitive paths even when they are listed in `allowed_paths`; `operator_only` requires Gateway Entra or trusted Apigee identity plus Relayna virtual-key auth; `explicitly_exposed` allows authenticated Relayna virtual-key clients when path and method allowlists match; `trusted_ingress` allows browser-safe LiteLLM UI access for trusted ingress flows when `/ui` and support paths match. |
+| Runtime limits | `timeout_ms`, `max_request_body_bytes`, and `max_response_body_bytes` default to 120000, 1048576, and 1048576. Operators can raise these up to 600000 ms and 104857600 bytes for long-context direct passthrough traffic. |
 | Auditability | Admin API updates write audit events with before/after settings. No LiteLLM credential secret is stored in this table. |
 | Runtime role | Wildcard passthrough preserves the original path and query, strips client credentials, injects the resolved LiteLLM credential, and records reduced status-only usage for non-canonical paths. |
 
@@ -225,6 +226,7 @@ OpenAI-compatible proxy routes.
 | Unique keys | `route` is unique. |
 | Checks | `route_id` is limited to `chat-completions`, `responses`, and `embeddings`; `route` is limited to `/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings`. |
 | Mode | `mode` is `managed_by_gateway` or `direct_litellm_passthrough`. `managed_by_gateway` is the default. |
+| Runtime limits | `timeout_ms`, `max_request_body_bytes`, and `max_response_body_bytes` default to 120000, 1048576, and 1048576. These route-level limits apply before virtual-key policy limits; configured key or policy-layer limits can still be stricter. |
 | Seed data | Migrations insert supported routes as enabled and managed by Gateway. |
 | Required data | These rows must exist for operators to toggle global OpenAI-compatible route availability and direct LiteLLM passthrough mode. |
 | Runtime role | Both modes preserve Relayna auth, global route enablement, policy, provider/model allowlists, rate limits, and budgets. Direct LiteLLM passthrough skips Gateway guardrail rewriting and token accounting, then forwards directly to LiteLLM with credential translation. |
@@ -240,6 +242,7 @@ Anthropic-compatible Claude proxy routes.
 | Unique keys | `route` is unique. |
 | Checks | `route_id` is limited to `messages`, `messages-count-tokens`, `message-batches`, `message-batch`, `message-batch-results`, `message-batch-cancel`, and `models`; `route` is limited to the matching `/v1/messages...` and `/v1/models` patterns. |
 | Mode | `mode` is `managed_by_gateway` or `direct_litellm_passthrough`. `managed_by_gateway` is the default. |
+| Runtime limits | `timeout_ms`, `max_request_body_bytes`, and `max_response_body_bytes` default to 120000, 1048576, and 1048576. These route-level limits apply before virtual-key policy limits; configured key or policy-layer limits can still be stricter. |
 | Seed data | Migrations insert supported Anthropic routes as enabled and managed by Gateway. |
 | Required data | These rows must exist for operators to toggle Anthropic-compatible route availability and direct LiteLLM passthrough mode. |
 | Runtime role | Both modes preserve Relayna auth, global route enablement, policy, provider/model allowlists, rate limits, and budgets. Direct LiteLLM passthrough skips Gateway guardrail rewriting and token accounting, then forwards directly to LiteLLM with credential translation. |

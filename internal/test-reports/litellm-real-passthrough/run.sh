@@ -28,6 +28,22 @@ node - "$RESULT_JSON" "$REPORT_MD" <<'NODE'
 const fs = require("node:fs");
 const [resultPath, reportPath] = process.argv.slice(2);
 const result = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+function redactReportSecrets(value) {
+  if (Array.isArray(value)) {
+    return value.map(redactReportSecrets);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        key.toLowerCase() === "token" ? "[redacted]" : redactReportSecrets(entry),
+      ]),
+    );
+  }
+  return value;
+}
+const sanitized = redactReportSecrets(result);
+fs.writeFileSync(resultPath, `${JSON.stringify(sanitized, null, 2)}\n`);
 const rows = Object.entries(result.checks)
   .map(([name, check]) => `| ${name.replaceAll("_", " ")} | ${check.ok ? "PASS" : "FAIL"} | ${check.status ?? "n/a"} | ${check.body?.error?.code ?? ""} |`)
   .join("\n");
@@ -104,6 +120,9 @@ The literal alias probes below reached real LiteLLM and were rejected there with
 - \`screenshots/66-issue-68-real-litellm-evidence.png\`
 - \`screenshots/67-issue-68-real-env-dashboard.png\`
 - \`screenshots/68-issue-68-trusted-ingress-litellm-ui.png\`
+- \`screenshots/69-admin-ui-litellm-passthrough-limits.png\`
+- \`screenshots/70-admin-ui-route-limit-controls.png\`
+- \`screenshots/71-admin-ui-anthropic-route-limit-controls.png\`
 
 ## Raw Results
 

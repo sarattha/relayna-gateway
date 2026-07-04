@@ -1,10 +1,10 @@
 # LiteLLM Real Passthrough Test Report
 
-Generated: 2026-07-02T15:53:38.919Z
+Generated: 2026-07-04T08:12:40.839Z
 
 Overall result: **PASS**
 
-PASS: canonical managed and direct route modes reach LiteLLM, Anthropic /v1/messages direct passthrough reaches LiteLLM, canonical /v1/models takes precedence over wildcard passthrough, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.
+PASS: canonical managed and direct route modes reach LiteLLM, configurable route limits accept long-context /v1/responses payloads, Anthropic /v1/messages direct passthrough reaches LiteLLM, canonical /v1/models takes precedence over wildcard passthrough, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.
 
 ## Environment
 
@@ -46,6 +46,7 @@ PASS: canonical managed and direct route modes reach LiteLLM, Anthropic /v1/mess
 | trusted ingress no auth v3 admin path reaches litellm | PASS | n/a |  |
 | trusted ingress no auth v1 models stays canonical route | PASS | 401 | missing_authorization |
 | direct responses accepts litellm bearer without relayna key | PASS | n/a |  |
+| direct responses accepts long context after request limit raise | PASS | 200 |  |
 | direct anthropic messages accepts litellm bearer without relayna key | PASS | n/a |  |
 | wildcard literal chatcompletion reaches litellm | PASS | 404 |  |
 | wildcard literal response reaches litellm | PASS | 404 |  |
@@ -61,6 +62,7 @@ PASS: canonical managed and direct route modes reach LiteLLM, Anthropic /v1/mess
 | POST /v1/responses | Bearer sk-upstream | no | no |
 | POST /v1/embeddings | Bearer sk-upstream | no | no |
 | POST /v1/chat/completions | Bearer sk-upstream | no | no |
+| POST /v1/responses | Bearer sk-upstream | no | no |
 | POST /v1/responses | Bearer sk-upstream | no | no |
 | POST /v1/messages | null | no | no |
 
@@ -101,6 +103,9 @@ The literal alias probes below reached real LiteLLM and were rejected there with
 - `screenshots/66-issue-68-real-litellm-evidence.png`
 - `screenshots/67-issue-68-real-env-dashboard.png`
 - `screenshots/68-issue-68-trusted-ingress-litellm-ui.png`
+- `screenshots/69-admin-ui-litellm-passthrough-limits.png`
+- `screenshots/70-admin-ui-route-limit-controls.png`
+- `screenshots/71-admin-ui-anthropic-route-limit-controls.png`
 
 ## Raw Results
 

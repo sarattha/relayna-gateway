@@ -45,6 +45,7 @@ pub struct RouteMatch {
     pub service_name: Option<String>,
     pub timeout_ms: u64,
     pub max_body_bytes: usize,
+    pub max_response_body_bytes: usize,
     pub estimated_cost_usd: Option<f64>,
 }
 
@@ -114,6 +115,7 @@ impl Route {
                     service_name: None,
                     timeout_ms: 60_000,
                     max_body_bytes: 1_048_576,
+                    max_response_body_bytes: 1_048_576,
                     estimated_cost_usd: Some(0.01),
                 })
             }
@@ -163,6 +165,7 @@ impl RouteMatch {
             service_name: None,
             timeout_ms: 120_000,
             max_body_bytes: 1_048_576,
+            max_response_body_bytes: 1_048_576,
             estimated_cost_usd: Some(0.01),
         }
     }
@@ -175,6 +178,7 @@ impl RouteMatch {
             service_name: Some(service_name.to_owned()),
             timeout_ms: 60_000,
             max_body_bytes: 2_097_152,
+            max_response_body_bytes: 2_097_152,
             estimated_cost_usd: Some(0.01),
         }
     }
