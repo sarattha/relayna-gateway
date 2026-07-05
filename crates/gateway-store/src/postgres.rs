@@ -47,7 +47,7 @@ use gateway_core::{
     ProviderHealthStatus, ProviderIntelligenceStore, Route, ServiceImportDiff,
     ServiceRegistrySnapshot, StoredOperatorToken, UnusedKey, UsageBreakdown,
     UsageBreakdownDimension, UsageDashboard, UsageDashboardBreakdowns, UsageEvent, UsageEventsPage,
-    UsageExport, UsageExportRow, UsageFilterValues, UsageFilterValuesQuery, UsageQuery,
+    UsageExport, UsageExportRow, UsageFilterValues, UsageFilterValuesQuery, UsagePage, UsageQuery,
     UsageQueryStore, UsageRecorder, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary,
     UsageTimeseriesPoint, VirtualKeyMaterial,
 };
@@ -4126,82 +4126,9 @@ impl UsageQueryStore for PostgresStore {
         &self,
         query: UsageQuery,
     ) -> GatewayResult<Vec<UsageTimeseriesPoint>> {
-        let interval = match query.interval.as_deref() {
-            Some("day") => "day",
-            _ => "hour",
-        };
-        let mut builder = QueryBuilder::<Postgres>::new("SELECT date_trunc(");
-        builder.push_bind(interval);
-        builder.push(
-            r#", created_at) AS bucket,
-                COUNT(*)::bigint,
-                COUNT(*) FILTER (WHERE status = 'success')::bigint,
-                COUNT(*) FILTER (WHERE status = 'failure')::bigint,
-                COALESCE(SUM(input_tokens), 0)::bigint,
-                COALESCE(SUM(output_tokens), 0)::bigint,
-                COALESCE(SUM(total_tokens), 0)::bigint,
-                COALESCE(SUM(estimated_cost), 0)::double precision,
-                COALESCE(SUM(latency_ms), 0)::bigint,
-                COALESCE(SUM(fallback_count), 0)::bigint
-            FROM usage_events
-            "#,
-        );
-        append_usage_filters(&mut builder, &query);
-        builder.push(" GROUP BY bucket ORDER BY bucket ASC");
-
-        builder
-            .build_query_as::<(
-                chrono::DateTime<chrono::Utc>,
-                i64,
-                i64,
-                i64,
-                i64,
-                i64,
-                i64,
-                Option<f64>,
-                i64,
-                i64,
-            )>()
-            .fetch_all(&self.pool)
+        usage_timeseries_page(&self.pool, query)
             .await
-            .map(|rows| {
-                rows.into_iter()
-                    .map(
-                        |(
-                            bucket,
-                            request_count,
-                            success_count,
-                            failure_count,
-                            input_tokens,
-                            output_tokens,
-                            total_tokens,
-                            estimated_cost_usd,
-                            total_latency_ms,
-                            fallback_count,
-                        )| UsageTimeseriesPoint {
-                            bucket,
-                            summary: UsageSummary {
-                                request_count,
-                                success_count,
-                                failure_count,
-                                input_tokens,
-                                output_tokens,
-                                total_tokens,
-                                estimated_cost_usd,
-                                total_latency_ms,
-                                average_latency_ms: average_latency_ms(
-                                    request_count,
-                                    total_latency_ms,
-                                ),
-                                fallback_count,
-                                fallback_rate: fallback_rate(request_count, fallback_count),
-                                ..UsageSummary::default()
-                            },
-                        },
-                    )
-                    .collect()
-            })
-            .map_err(|_| GatewayError::StoreUnavailable)
+            .map(|page| page.rows)
     }
 
     async fn usage_breakdown(
@@ -4373,6 +4300,8 @@ impl UsageQueryStore for PostgresStore {
     }
 
     async fn usage_dashboard(&self, query: UsageQuery) -> GatewayResult<UsageDashboard> {
+        let timeseries = usage_timeseries_page(&self.pool, query.clone()).await?;
+        let service_timeseries = usage_service_timeseries(&self.pool, query.clone()).await?;
         Ok(UsageDashboard {
             summary: self.usage_summary(query.clone()).await?,
             breakdowns: UsageDashboardBreakdowns {
@@ -4395,8 +4324,10 @@ impl UsageQueryStore for PostgresStore {
                     .usage_breakdown(query.clone(), UsageBreakdownDimension::Task)
                     .await?,
             },
-            timeseries: self.usage_timeseries(query.clone()).await?,
-            service_timeseries: usage_service_timeseries(&self.pool, query.clone()).await?,
+            timeseries: timeseries.rows,
+            service_timeseries: service_timeseries.rows,
+            timeseries_page: timeseries.page,
+            service_timeseries_page: service_timeseries.page,
             unused_keys: self.unused_keys(query).await?,
         })
     }
@@ -6150,14 +6081,120 @@ async fn usage_export_rows_from_query(
         .map_err(|_| GatewayError::StoreUnavailable)
 }
 
-async fn usage_service_timeseries(
+struct UsageRowsPage<T> {
+    rows: Vec<T>,
+    page: UsagePage,
+}
+
+async fn usage_timeseries_page(
     pool: &PgPool,
     query: UsageQuery,
-) -> GatewayResult<Vec<UsageServiceTimeseriesPoint>> {
+) -> GatewayResult<UsageRowsPage<UsageTimeseriesPoint>> {
     let interval = match query.interval.as_deref() {
         Some("day") => "day",
         _ => "hour",
     };
+    let paged = query.timeseries_limit.is_some();
+    let limit = query.timeseries_limit.unwrap_or(0).clamp(1, 500);
+    let offset = query.timeseries_offset.unwrap_or_default().max(0);
+    let mut builder = QueryBuilder::<Postgres>::new("SELECT date_trunc(");
+    builder.push_bind(interval);
+    builder.push(
+        r#", created_at) AS bucket,
+            COUNT(*)::bigint,
+            COUNT(*) FILTER (WHERE status = 'success')::bigint,
+            COUNT(*) FILTER (WHERE status = 'failure')::bigint,
+            COALESCE(SUM(input_tokens), 0)::bigint,
+            COALESCE(SUM(output_tokens), 0)::bigint,
+            COALESCE(SUM(total_tokens), 0)::bigint,
+            COALESCE(SUM(estimated_cost), 0)::double precision,
+            COALESCE(SUM(latency_ms), 0)::bigint,
+            COALESCE(SUM(fallback_count), 0)::bigint
+        FROM usage_events
+        "#,
+    );
+    append_usage_filters(&mut builder, &query);
+    builder.push(" GROUP BY bucket ORDER BY bucket ASC");
+    if paged {
+        builder.push(" LIMIT ");
+        builder.push_bind(limit + 1);
+        builder.push(" OFFSET ");
+        builder.push_bind(offset);
+    }
+
+    let mut rows: Vec<UsageTimeseriesPoint> = builder
+        .build_query_as::<(
+            chrono::DateTime<chrono::Utc>,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            Option<f64>,
+            i64,
+            i64,
+        )>()
+        .fetch_all(pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(
+                    |(
+                        bucket,
+                        request_count,
+                        success_count,
+                        failure_count,
+                        input_tokens,
+                        output_tokens,
+                        total_tokens,
+                        estimated_cost_usd,
+                        total_latency_ms,
+                        fallback_count,
+                    )| UsageTimeseriesPoint {
+                        bucket,
+                        summary: UsageSummary {
+                            request_count,
+                            success_count,
+                            failure_count,
+                            input_tokens,
+                            output_tokens,
+                            total_tokens,
+                            estimated_cost_usd,
+                            total_latency_ms,
+                            average_latency_ms: average_latency_ms(request_count, total_latency_ms),
+                            fallback_count,
+                            fallback_rate: fallback_rate(request_count, fallback_count),
+                            ..UsageSummary::default()
+                        },
+                    },
+                )
+                .collect::<Vec<_>>()
+        })
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let has_more = paged && rows.len() > limit as usize;
+    if paged {
+        rows.truncate(limit as usize);
+    }
+    let page = UsagePage {
+        limit: if paged { limit } else { rows.len() as i64 },
+        offset: if paged { offset } else { 0 },
+        has_more,
+    };
+    Ok(UsageRowsPage { rows, page })
+}
+
+async fn usage_service_timeseries(
+    pool: &PgPool,
+    query: UsageQuery,
+) -> GatewayResult<UsageRowsPage<UsageServiceTimeseriesPoint>> {
+    let interval = match query.interval.as_deref() {
+        Some("day") => "day",
+        _ => "hour",
+    };
+    let paged = query.service_timeseries_limit.is_some();
+    let limit = query.service_timeseries_limit.unwrap_or(0).clamp(1, 500);
+    let offset = query.service_timeseries_offset.unwrap_or_default().max(0);
     let mut builder = QueryBuilder::<Postgres>::new("SELECT date_trunc(");
     builder.push_bind(interval);
     builder.push(
@@ -6177,8 +6214,14 @@ async fn usage_service_timeseries(
     );
     append_usage_filters(&mut builder, &query);
     builder.push(" GROUP BY bucket, service_name ORDER BY bucket ASC, service_name ASC");
+    if paged {
+        builder.push(" LIMIT ");
+        builder.push_bind(limit + 1);
+        builder.push(" OFFSET ");
+        builder.push_bind(offset);
+    }
 
-    builder
+    let mut rows: Vec<UsageServiceTimeseriesPoint> = builder
         .build_query_as::<(
             chrono::DateTime<chrono::Utc>,
             String,
@@ -6230,7 +6273,17 @@ async fn usage_service_timeseries(
                 )
                 .collect()
         })
-        .map_err(|_| GatewayError::StoreUnavailable)
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+    let has_more = paged && rows.len() > limit as usize;
+    if paged {
+        rows.truncate(limit as usize);
+    }
+    let page = UsagePage {
+        limit: if paged { limit } else { rows.len() as i64 },
+        offset: if paged { offset } else { 0 },
+        has_more,
+    };
+    Ok(UsageRowsPage { rows, page })
 }
 
 async fn enrich_usage_summary(

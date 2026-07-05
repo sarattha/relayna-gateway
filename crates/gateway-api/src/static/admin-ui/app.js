@@ -199,7 +199,12 @@ const state = {
   debugBundle: null,
   editingKeyId: null,
   editingServiceName: null,
-  editingGuardrailName: null
+  editingGuardrailName: null,
+  usagePagination: {
+    eventsOffset: 0,
+    timeseriesOffset: 0,
+    serviceTimeseriesOffset: 0
+  }
 };
 const login = document.querySelector("#login");
 const app = document.querySelector("#app");
@@ -2016,7 +2021,7 @@ async function usage() {
         <label>Min cost<input name="min_cost_usd" type="number" min="0" step="0.0001"></label>
         <label>Show top<select name="breakdown_limit"><option value="20">20</option><option value="10">10</option><option value="50">50</option><option value="100">100</option></select></label>
         <label>Sort by<select name="sort_by"><option value="requests">Requests</option><option value="cost">Cost</option><option value="failures">Failures</option><option value="latency">Latency</option><option value="tokens">Tokens</option><option value="fallbacks">Fallbacks</option></select></label>
-        <label>Request rows<select name="limit"><option value="50">50</option><option value="20">20</option><option value="100">100</option></select></label>
+        <label>Rows per page<select name="limit"><option value="50">50</option><option value="20">20</option><option value="100">100</option></select></label>
         <div class="form-actions">
           <button class="primary">Apply</button>
         </div>
@@ -2047,7 +2052,7 @@ async function usage() {
     </section>
     <section class="panel"><div class="panel-heading"><h3>Usage breakdown</h3></div><div id="usage-results"></div></section>
   `;
-  document.querySelector("#usage-form").addEventListener("submit", handleAsync(loadUsage));
+  document.querySelector("#usage-form").addEventListener("submit", handleAsync(applyUsageFilters));
   document.querySelector("#task-usage-form").addEventListener("submit", handleAsync(loadTaskUsage));
   document.querySelectorAll("[data-usage-export-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(usageExportAction));
@@ -2058,6 +2063,12 @@ async function loadUsage(event) {
   event == null ? void 0 : event.preventDefault();
   const query = usageQueryFromForm(event == null ? void 0 : event.target);
   const filterQuery = usageFilterValuesQueryFromForm(event == null ? void 0 : event.target);
+  const pageSize = usagePageSize();
+  query.set("offset", String(state.usagePagination.eventsOffset));
+  query.set("timeseries_limit", String(pageSize));
+  query.set("timeseries_offset", String(state.usagePagination.timeseriesOffset));
+  query.set("service_timeseries_limit", String(pageSize));
+  query.set("service_timeseries_offset", String(state.usagePagination.serviceTimeseriesOffset));
   const [dashboard, events, routeOptions, modelOptions] = await Promise.all([
     api(`/admin-ui/admin/usage/dashboard?${query}`),
     api(`/admin-ui/admin/usage/events?${query}`),
@@ -2084,14 +2095,48 @@ async function loadUsage(event) {
     <h4>Providers</h4>${usageBreakdownTable(dashboard.breakdowns.providers)}
     <h4>Models</h4>${usageBreakdownTable(dashboard.breakdowns.models)}
     <h4>Tasks</h4>${usageBreakdownTable(dashboard.breakdowns.tasks)}
-    <h4>Recent requests</h4>${usageEventsTable(events.rows)}
-    <h4>Timeseries</h4>${usageTimeseriesTable(dashboard.timeseries)}
-    <h4>Service timeseries</h4>${usageServiceTimeseriesTable(dashboard.service_timeseries || [])}
+    ${usagePagedTable("Recent requests", "events", usageEventsTable(events.rows), events, events.rows.length)}
+    ${usagePagedTable("Timeseries", "timeseries", usageTimeseriesTable(dashboard.timeseries), dashboard.timeseries_page, dashboard.timeseries.length)}
+    ${usagePagedTable("Service timeseries", "service-timeseries", usageServiceTimeseriesTable(dashboard.service_timeseries || []), dashboard.service_timeseries_page, (dashboard.service_timeseries || []).length)}
     <h4>Unused keys</h4>${unusedKeysTable(dashboard.unused_keys)}
   `;
   results.querySelectorAll("[data-debug-request]").forEach((button) => {
     button.addEventListener("click", handleAsync(openDebugRequest));
   });
+  results.querySelectorAll("[data-usage-page-section]").forEach((button) => {
+    button.addEventListener("click", handleAsync(changeUsagePage));
+  });
+}
+async function applyUsageFilters(event) {
+  resetUsagePagination();
+  await loadUsage(event);
+}
+function resetUsagePagination() {
+  state.usagePagination.eventsOffset = 0;
+  state.usagePagination.timeseriesOffset = 0;
+  state.usagePagination.serviceTimeseriesOffset = 0;
+}
+function usagePageSize() {
+  const form = document.querySelector("#usage-form");
+  const value = form ? Number(new FormData(form).get("limit")) : 50;
+  if (!Number.isFinite(value)) return 50;
+  return Math.min(Math.max(Math.trunc(value), 1), 500);
+}
+async function changeUsagePage(event) {
+  const section = event.currentTarget.dataset.usagePageSection;
+  const direction = event.currentTarget.dataset.usagePageDirection;
+  const pageSize = usagePageSize();
+  const key = usagePaginationKey(section);
+  if (!key) return;
+  const current = state.usagePagination[key];
+  state.usagePagination[key] = direction === "next" ? current + pageSize : Math.max(0, current - pageSize);
+  await loadUsage();
+}
+function usagePaginationKey(section) {
+  if (section === "events") return "eventsOffset";
+  if (section === "timeseries") return "timeseriesOffset";
+  if (section === "service-timeseries") return "serviceTimeseriesOffset";
+  return "";
 }
 function usageQueryFromForm(formElement = document.querySelector("#usage-form")) {
   const form = formElement ? new FormData(formElement) : new FormData();
@@ -2244,6 +2289,24 @@ function usageBreakdownTable(rows, label = (value) => value) {
       money(row.summary.estimated_cost_usd)
     ])
   );
+}
+function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
+  const offset = Number(page.offset || 0);
+  Number(page.limit || usagePageSize());
+  const hasMore = Boolean(page.has_more);
+  const start = rowCount ? offset + 1 : 0;
+  const end = rowCount ? offset + rowCount : 0;
+  return `
+    <div class="usage-section-heading">
+      <h4>${esc(title)}</h4>
+      <div class="table-pager" aria-label="${attr(`${title} pagination`)}">
+        <span>Showing ${start}-${end}</span>
+        <button type="button" data-usage-page-section="${attr(section)}" data-usage-page-direction="previous" ${offset <= 0 ? "disabled" : ""}>Previous</button>
+        <button type="button" data-usage-page-section="${attr(section)}" data-usage-page-direction="next" ${hasMore ? "" : "disabled"}>Next</button>
+      </div>
+    </div>
+    ${tableMarkup}
+  `;
 }
 function usageEventsTable(rows) {
   return table(
