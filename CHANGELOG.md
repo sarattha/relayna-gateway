@@ -2,6 +2,30 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.18 - 2026-07-05
+
+### Added
+
+- Added independent Admin UI pagination for Usage Recent requests, Timeseries,
+  and Service timeseries sections so large usage logs stay scannable.
+- Added dashboard time-series pagination query parameters and response metadata
+  while preserving existing `timeseries` and `service_timeseries` response
+  fields for existing dashboard consumers.
+
+### Changed
+
+- The Admin UI Usage filters now expose a shared rows-per-page control used by
+  the three paged Usage sections, and applying filters resets each section to
+  the first page.
+- Workspace crate versions now share the `0.1.18` release version.
+- Deployment examples and release documentation now target the `0.1.18`
+  gateway image and `v0.1.18` release tag.
+
+### Security
+
+- Usage pagination does not change virtual-key authentication, operator-token
+  authorization, provider credential handling, or usage export permissions.
+
 ## 0.1.17 - 2026-07-05
 
 ### Added

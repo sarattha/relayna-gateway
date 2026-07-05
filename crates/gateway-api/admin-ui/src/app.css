@@ -525,6 +525,32 @@ td code {
   margin-top: var(--rg-space-5);
 }
 
+.usage-section-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rg-space-3);
+  justify-content: space-between;
+  margin-top: var(--rg-space-5);
+}
+
+.usage-section-heading h4 {
+  margin: 0;
+}
+
+.table-pager {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rg-space-2);
+}
+
+.table-pager span {
+  color: var(--rg-color-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 table {
   width: 100%;
   min-width: 780px;

@@ -22,6 +22,10 @@ pub struct UsageQuery {
     pub interval: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    pub timeseries_limit: Option<i64>,
+    pub timeseries_offset: Option<i64>,
+    pub service_timeseries_limit: Option<i64>,
+    pub service_timeseries_offset: Option<i64>,
     pub breakdown_limit: Option<i64>,
     pub breakdown_offset: Option<i64>,
     pub sort_by: Option<String>,
@@ -106,6 +110,8 @@ pub struct UsageDashboard {
     pub breakdowns: UsageDashboardBreakdowns,
     pub timeseries: Vec<UsageTimeseriesPoint>,
     pub service_timeseries: Vec<UsageServiceTimeseriesPoint>,
+    pub timeseries_page: UsagePage,
+    pub service_timeseries_page: UsagePage,
     pub unused_keys: Vec<UnusedKey>,
 }
 
@@ -122,6 +128,13 @@ pub struct UsageDashboardBreakdowns {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct UsageEventsPage {
     pub rows: Vec<UsageExportRow>,
+    pub limit: i64,
+    pub offset: i64,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsagePage {
     pub limit: i64,
     pub offset: i64,
     pub has_more: bool,

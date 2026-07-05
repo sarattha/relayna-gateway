@@ -4147,8 +4147,8 @@ mod tests {
         ProviderConfigCreateRequest, ProviderConfigPatchRequest, ProviderConfigResponse,
         ProviderHealth, Route, ServiceCostMode, ServiceResponse, ServiceSource, ServiceSyncStatus,
         ServiceSyncStatusResponse, StoredGatewayAuthSettings, StoredStudioConnection,
-        StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow, UsageServiceTimeseriesPoint,
-        UsageStatus, UsageSummary, UsageTimeseriesPoint,
+        StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow, UsagePage,
+        UsageServiceTimeseriesPoint, UsageStatus, UsageSummary, UsageTimeseriesPoint,
     };
     use std::{
         collections::BTreeMap,
@@ -5406,9 +5406,16 @@ mod tests {
 
         async fn usage_timeseries(
             &self,
-            _query: UsageQuery,
+            query: UsageQuery,
         ) -> GatewayResult<Vec<UsageTimeseriesPoint>> {
-            Ok(Vec::new())
+            let mut export_query = query;
+            export_query.limit = Some(10_000);
+            export_query.offset = Some(0);
+            let rows = self.usage_export(export_query.clone()).await?.rows;
+            Ok(usage_timeseries_from_rows(
+                &rows,
+                export_query.interval.as_deref(),
+            ))
         }
 
         async fn usage_breakdown(
@@ -5469,6 +5476,20 @@ mod tests {
             &self,
             query: UsageQuery,
         ) -> GatewayResult<gateway_core::UsageDashboard> {
+            let mut export_query = query.clone();
+            export_query.limit = Some(10_000);
+            export_query.offset = Some(0);
+            let export = self.usage_export(export_query).await?;
+            let timeseries = paginate_usage_rows(
+                usage_timeseries_from_rows(&export.rows, query.interval.as_deref()),
+                query.timeseries_limit,
+                query.timeseries_offset,
+            );
+            let service_timeseries = paginate_usage_rows(
+                usage_service_timeseries_from_rows(&export.rows, query.interval.as_deref()),
+                query.service_timeseries_limit,
+                query.service_timeseries_offset,
+            );
             Ok(gateway_core::UsageDashboard {
                 summary: self.usage_summary(query.clone()).await?,
                 breakdowns: gateway_core::UsageDashboardBreakdowns {
@@ -5491,11 +5512,10 @@ mod tests {
                         .usage_breakdown(query.clone(), UsageBreakdownDimension::Task)
                         .await?,
                 },
-                timeseries: self.usage_timeseries(query.clone()).await?,
-                service_timeseries: usage_service_timeseries_from_rows(
-                    &self.usage_export(query.clone()).await?.rows,
-                    query.interval.as_deref(),
-                ),
+                timeseries: timeseries.rows,
+                service_timeseries: service_timeseries.rows,
+                timeseries_page: timeseries.page,
+                service_timeseries_page: service_timeseries.page,
                 unused_keys: self.unused_keys(query).await?,
             })
         }
@@ -5750,6 +5770,70 @@ mod tests {
             },
             ..UsageSummary::default()
         }
+    }
+
+    struct UsageRowsPage<T> {
+        rows: Vec<T>,
+        page: UsagePage,
+    }
+
+    fn paginate_usage_rows<T>(
+        rows: Vec<T>,
+        limit: Option<i64>,
+        offset: Option<i64>,
+    ) -> UsageRowsPage<T> {
+        let Some(limit) = limit.map(|value| value.clamp(1, 500)) else {
+            return UsageRowsPage {
+                page: UsagePage {
+                    limit: rows.len() as i64,
+                    offset: 0,
+                    has_more: false,
+                },
+                rows,
+            };
+        };
+        let offset = offset.unwrap_or_default().max(0) as usize;
+        let mut page_rows: Vec<T> = rows
+            .into_iter()
+            .skip(offset)
+            .take(limit as usize + 1)
+            .collect();
+        let has_more = page_rows.len() > limit as usize;
+        page_rows.truncate(limit as usize);
+        UsageRowsPage {
+            rows: page_rows,
+            page: UsagePage {
+                limit,
+                offset: offset as i64,
+                has_more,
+            },
+        }
+    }
+
+    fn usage_timeseries_from_rows(
+        rows: &[UsageExportRow],
+        interval: Option<&str>,
+    ) -> Vec<UsageTimeseriesPoint> {
+        let bucket_seconds = if interval == Some("day") {
+            86_400
+        } else {
+            3_600
+        };
+        let mut grouped = BTreeMap::<chrono::DateTime<Utc>, Vec<UsageExportRow>>::new();
+        for row in rows {
+            let timestamp = row.created_at.timestamp();
+            let bucket_timestamp = timestamp.div_euclid(bucket_seconds) * bucket_seconds;
+            let bucket =
+                chrono::DateTime::from_timestamp(bucket_timestamp, 0).expect("valid bucket");
+            grouped.entry(bucket).or_default().push(row.clone());
+        }
+        grouped
+            .into_iter()
+            .map(|(bucket, rows)| UsageTimeseriesPoint {
+                bucket,
+                summary: usage_summary_from_rows(&rows),
+            })
+            .collect()
     }
 
     fn usage_service_timeseries_from_rows(
@@ -7624,6 +7708,118 @@ mod tests {
             value["service_timeseries"][1]["summary"]["estimated_cost_usd"],
             0.042
         );
+    }
+
+    #[tokio::test]
+    async fn usage_dashboard_paginates_timeseries_sections() {
+        let store = default_store();
+        let key_id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+        let first_bucket = chrono::DateTime::parse_from_rfc3339("2026-07-04T15:22:00Z")
+            .expect("time")
+            .with_timezone(&Utc);
+        let second_bucket = chrono::DateTime::parse_from_rfc3339("2026-07-04T16:05:00Z")
+            .expect("time")
+            .with_timezone(&Utc);
+        store.events.lock().expect("events lock").extend([
+            UsageEvent {
+                request_id: "svc-fixed".to_owned(),
+                key_id,
+                project_id: Some(project_id),
+                route: Route::Summary,
+                model: None,
+                provider: gateway_core::Provider::InternalService,
+                status: UsageStatus::Success,
+                status_code: 200,
+                latency_ms: 120,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: Some(0.026),
+                cost_source: Some("service_default".to_owned()),
+                cost_mode: Some(ServiceCostMode::Fixed),
+                pricing_rule_name: None,
+                service_name: Some("summarizer".to_owned()),
+                task_id: None,
+                run_id: None,
+                trace_id: Some("trace-fixed".to_owned()),
+                fallback_count: 0,
+                created_at: first_bucket,
+            },
+            UsageEvent {
+                request_id: "svc-rule".to_owned(),
+                key_id,
+                project_id: Some(project_id),
+                route: Route::Translation,
+                model: None,
+                provider: gateway_core::Provider::InternalService,
+                status: UsageStatus::Success,
+                status_code: 200,
+                latency_ms: 180,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: Some(0.042),
+                cost_source: Some("pricing_rule".to_owned()),
+                cost_mode: Some(ServiceCostMode::Fixed),
+                pricing_rule_name: Some("legal-es".to_owned()),
+                service_name: Some("translation".to_owned()),
+                task_id: None,
+                run_id: None,
+                trace_id: Some("trace-rule".to_owned()),
+                fallback_count: 0,
+                created_at: first_bucket,
+            },
+            UsageEvent {
+                request_id: "svc-next".to_owned(),
+                key_id,
+                project_id: Some(project_id),
+                route: Route::Summary,
+                model: None,
+                provider: gateway_core::Provider::InternalService,
+                status: UsageStatus::Failure,
+                status_code: 500,
+                latency_ms: 240,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: Some(0.018),
+                cost_source: Some("service_default".to_owned()),
+                cost_mode: Some(ServiceCostMode::Fixed),
+                pricing_rule_name: None,
+                service_name: Some("summarizer".to_owned()),
+                task_id: None,
+                run_id: None,
+                trace_id: Some("trace-next".to_owned()),
+                fallback_count: 0,
+                created_at: second_bucket,
+            },
+        ]);
+        let app = router_with_state(test_state(store));
+
+        let response = admin_get(
+            app,
+            "/admin-ui/admin/usage/dashboard?interval=hour&timeseries_limit=1&service_timeseries_limit=1",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["timeseries"].as_array().expect("rows").len(), 1);
+        assert_eq!(value["timeseries_page"]["limit"], 1);
+        assert_eq!(value["timeseries_page"]["offset"], 0);
+        assert_eq!(value["timeseries_page"]["has_more"], true);
+        assert_eq!(
+            value["service_timeseries"].as_array().expect("rows").len(),
+            1
+        );
+        assert_eq!(value["service_timeseries_page"]["limit"], 1);
+        assert_eq!(value["service_timeseries_page"]["offset"], 0);
+        assert_eq!(value["service_timeseries_page"]["has_more"], true);
     }
 
     #[tokio::test]

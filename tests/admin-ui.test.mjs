@@ -29,7 +29,7 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.17/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.18/);
 });
 
 test("admin portal calls the expected gateway admin APIs", () => {
@@ -325,6 +325,13 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /Service timeseries/);
   assert.match(js, /function usageServiceTimeseriesTable\(rows\)/);
   assert.match(js, /dashboard\.service_timeseries \|\| \[\]/);
+  assert.match(js, /Rows per page/);
+  assert.match(js, /function resetUsagePagination\(\)/);
+  assert.match(js, /function usagePagedTable\(title, section, tableMarkup, page = \{\}, rowCount = 0\)/);
+  assert.match(js, /query\.set\("timeseries_limit", String\(pageSize\)\)/);
+  assert.match(js, /query\.set\("service_timeseries_offset", String\(state\.usagePagination\.serviceTimeseriesOffset\)\)/);
+  assert.match(js, /data-usage-page-direction="next"/);
+  assert.match(css, /\.table-pager/);
 });
 
 test("audit view exposes read-only operator event filters and redacted snapshots", () => {
