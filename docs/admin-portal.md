@@ -34,6 +34,13 @@ preserve the same capabilities on narrower screens. The source package owns
 design-system tokens, view metadata, templates, and reusable components, while
 the generated asset paths stay stable for deployed gateways.
 
+![Aurora Teal operational Overview](assets/screenshots/admin-ui-2/aurora-teal-overview.png)
+
+On narrow screens, the same Monitor, Discover, and Govern structure moves into
+an accessible drawer without removing operator workflows.
+
+![Responsive Admin UI navigation drawer](assets/screenshots/admin-ui-2/aurora-teal-mobile-navigation.png)
+
 ## Authentication
 
 Use the operator token seeded by `GATEWAY_ADMIN_TOKEN` on first startup, or the

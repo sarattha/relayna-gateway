@@ -45,6 +45,9 @@ and comparing desktop and mobile captures with the approved visual target.
   fixes for review-thread resolution.
 - [x] (2026-07-10 05:35Z) Prepared the `v0.1.19` release metadata, changelog,
   deployment examples, and operator documentation for the completed redesign.
+- [x] (2026-07-10 05:45Z) Captured fresh `v0.1.19` desktop and mobile Admin UI
+  screenshots from the running gateway and placed them in the matching feature
+  and operator-guide sections.
 
 ## Surprises & Discoveries
 
@@ -179,6 +182,11 @@ Release preparation advances active workspace, deployment, UI, and
 documentation targets to `0.1.19` / `v0.1.19`. The changelog records the
 redesign, review fixes, and unchanged authorization and secret boundaries;
 historical compatibility references continue to name the `v0.1.18` base.
+
+The feature highlights and Admin Portal guide now use fresh sanitized captures
+of Overview, Health, Usage, Services, Keys, Audit, and responsive navigation.
+Each image is located beside the workflow it explains rather than in a detached
+gallery.
 
 ## Context and Orientation
 
