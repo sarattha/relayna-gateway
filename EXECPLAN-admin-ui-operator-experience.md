@@ -38,7 +38,8 @@ and comparing desktop and mobile captures with the approved visual target.
   `design-qa.md` with `final result: passed`.
 - [x] (2026-07-10 02:20Z) Run the full repository verification stack and capture
   the final desktop, dialog, menu, and mobile screenshots.
-- [ ] Publish the reviewed branch as a draft pull request.
+- [x] (2026-07-10 02:39Z) Published the reviewed branch as draft pull request
+  [#92](https://github.com/sarattha/relayna-gateway/pull/92).
 
 ## Surprises & Discoveries
 
@@ -133,6 +134,10 @@ locally hung Docker credential helper: formatting, Clippy with warnings denied,
 workspace tests, RustSec, cargo-deny, cargo-machete, nextest, Trivy, gitleaks,
 and Semgrep. The focused Admin UI build/tests and production-dependency audit
 also pass.
+
+The completed branch is published for review as draft pull request
+[#92](https://github.com/sarattha/relayna-gateway/pull/92), including the full
+desktop/mobile screenshot set, compatibility notes, and validation record.
 
 ## Context and Orientation
 
