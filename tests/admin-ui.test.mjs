@@ -5,8 +5,13 @@ import { dirname, join } from "node:path";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const uiDir = join(root, "crates/gateway-api/src/static/admin-ui");
+const sourceDir = join(root, "crates/gateway-api/admin-ui/src");
 const html = readFileSync(join(uiDir, "index.html"), "utf8");
-const js = readFileSync(join(uiDir, "app.js"), "utf8");
+const deployedJs = readFileSync(join(uiDir, "app.js"), "utf8");
+const sourceJs = readFileSync(join(sourceDir, "main.ts"), "utf8");
+// Source-level behavior assertions must not depend on Rollup's internal symbol
+// naming. The deployed bundle remains part of endpoint-contract coverage below.
+const js = `${sourceJs}\n${deployedJs}`;
 const css = readFileSync(join(uiDir, "app.css"), "utf8");
 
 function test(name, fn) {
@@ -19,6 +24,19 @@ function test(name, fn) {
   }
 }
 
+function sourceFunction(name) {
+  const start = sourceJs.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `missing source function ${name}`);
+  const bodyStart = sourceJs.indexOf("{", start);
+  let depth = 0;
+  for (let index = bodyStart; index < sourceJs.length; index += 1) {
+    if (sourceJs[index] === "{") depth += 1;
+    if (sourceJs[index] === "}") depth -= 1;
+    if (depth === 0) return sourceJs.slice(start, index + 1);
+  }
+  throw new Error(`unterminated source function ${name}`);
+}
+
 test("admin portal shell exposes all release-critical views", () => {
   for (const view of ["overview", "projects", "keys", "guardrails", "audit", "providers", "routes", "services", "usage", "health", "settings"]) {
     assert.match(html, new RegExp(`data-view="${view}"`));
@@ -29,7 +47,37 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.18/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.19/);
+});
+
+test("admin portal exposes responsive operator navigation and accessible workflows", () => {
+  for (const marker of [
+    'class="skip-link"',
+    'id="nav-toggle"',
+    'id="command-trigger"',
+    'id="governed-change-trigger"',
+    'id="last-refreshed"',
+    'id="content" tabindex="-1"',
+    'role="dialog" aria-modal="true"',
+  ]) {
+    assert.match(html, new RegExp(marker));
+  }
+  for (const behavior of [
+    "function mountDialog",
+    'window.addEventListener("hashchange"',
+    'setAttribute("aria-current", "page")',
+    "function showCommandPalette",
+    "function openNavigation",
+    "function formSection",
+    'id="overview-chart" role="img"',
+    "new Chart",
+  ]) {
+    assert.match(js, new RegExp(behavior.replace(/[()]/g, "\\$&")));
+  }
+  for (const style of [".nav-backdrop", ".command-palette", ".form-section", ".sticky-form-actions", ".overview-chart-wrap"]) {
+    assert.match(css, new RegExp(style.replace(".", "\\.")));
+  }
+  assert.match(css, /@media \(max-width: 920px\)/);
 });
 
 test("admin portal calls the expected gateway admin APIs", () => {
@@ -68,7 +116,7 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin-ui/admin/operator-token/rotate",
     "/admin-ui/readyz",
   ]) {
-    assert.ok(js.includes(endpoint), `expected app.js to call ${endpoint}`);
+    assert.ok(deployedJs.includes(endpoint), `expected app.js to call ${endpoint}`);
   }
 });
 
@@ -413,6 +461,34 @@ test("floating notifications auto-dismiss and still support manual close", () =>
   assert.match(js, /data-close-message/);
   assert.match(js, /mouseenter/);
   assert.match(js, /focusin/);
+});
+
+test("overview ignores clean provider health rows without a status field", () => {
+  const overviewRisks = Function(`return (${sourceFunction("overviewRisks")})`)();
+  const cleanRow = {
+    name: "clean-provider",
+    request_count: 10,
+    error_count: 0,
+    timeout_count: 0,
+    fallback_count: 0,
+  };
+  assert.deepEqual(overviewRisks([cleanRow]), []);
+  assert.equal(overviewRisks([{ ...cleanRow, error_count: 1 }]).length, 1);
+});
+
+test("top dialog selection is independent of later section elements", () => {
+  const calls = [];
+  const firstBackdrop = { closeDialog: () => calls.push("first") };
+  const topBackdrop = { closeDialog: (value) => calls.push(["top", value]) };
+  const document = {
+    querySelectorAll(selector) {
+      assert.equal(selector, ".modal-backdrop");
+      return [firstBackdrop, topBackdrop];
+    },
+  };
+  const closeTopDialog = Function("document", `return (${sourceFunction("closeTopDialog")})`)(document);
+  closeTopDialog(true);
+  assert.deepEqual(calls, [["top", true]]);
 });
 
 test("service configuration exposes health check endpoint fields", () => {

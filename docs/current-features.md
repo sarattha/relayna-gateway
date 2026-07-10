@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.18` feature set.
+This page summarizes the `v0.1.19` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -8,11 +8,14 @@ customer, provider, token, or prompt data.
 
 ## Admin UI 2.0
 
-Admin UI 2.0 turns the embedded portal into a denser operator console for
-governing AI traffic. The UI is still served from `/admin-ui`, with the static
-asset contract preserved at `/admin-ui/app.js` and `/admin-ui/app.css`, but the
-source of truth is now the Vite and TypeScript package in
-`crates/gateway-api/admin-ui`.
+Admin UI 2.0 turns the embedded portal into a compact operator console for
+governing AI traffic. The `v0.1.19` redesign applies the Aurora Teal visual
+system and adds a live Overview with usage charts, gateway posture,
+provider-health attention signals, recent operations, and governed-change
+shortcuts backed by existing Admin APIs. The UI is still served from
+`/admin-ui`, with the static asset contract preserved at `/admin-ui/app.js` and
+`/admin-ui/app.css`, but the source of truth is the Vite and TypeScript package
+in `crates/gateway-api/admin-ui`.
 
 The navigation is grouped by the operator jobs it supports:
 
@@ -20,12 +23,16 @@ The navigation is grouped by the operator jobs it supports:
 - Discover: providers, services, routes, and projects.
 - Govern: keys, guardrails, audit, and settings.
 
-![Admin UI 2.0 shell](assets/screenshots/admin-ui-2/admin-ui-shell.png)
+![Aurora Teal operational Overview](assets/screenshots/admin-ui-2/aurora-teal-overview.png)
 
-The redesign adds reusable design-system tokens and components, compact panels,
-wide-table scrolling, responsive layouts, and floating message boxes for async
-action results. The Rust binary still embeds generated assets, so production
+The redesign adds reusable design-system tokens and components, command
+navigation, hash-backed deep links, accessible modal focus handling, compact
+panels, progressive disclosure for long forms, wide-table scrolling,
+responsive drawer navigation, and floating message boxes for async action
+results. The Rust binary still embeds generated assets, so production
 deployments do not need a separate frontend service.
+
+![Responsive Admin UI navigation drawer](assets/screenshots/admin-ui-2/aurora-teal-mobile-navigation.png)
 
 ## Operator Governance
 
@@ -41,7 +48,7 @@ lacks the required scope. Mutating admin operations write append-only audit
 events that include actor token ID, action, target, request metadata, and
 redacted before/after snapshots.
 
-![Audit governance view](assets/screenshots/admin-ui-2/audit-governance.png)
+![Operator audit governance view](assets/screenshots/admin-ui-2/aurora-teal-audit.png)
 
 ## Policy Governance
 
@@ -57,7 +64,7 @@ requires concrete paths that match the selected service route pattern, such as
 `/translation` or `/services/service-name/test`, and blocks mismatched service
 selections before running a simulation.
 
-![Keys policy governance](assets/screenshots/admin-ui-2/keys-policy-governance.png)
+![Virtual key and inherited policy governance](assets/screenshots/admin-ui-2/aurora-teal-keys.png)
 
 Effective policy is resolved from global, project, team, key, route, and model
 layers when context is available. Layers use neutral defaults so an empty layer
@@ -73,7 +80,7 @@ circuit breaker state, fallback traces, and debug bundles. Supported routing
 strategies include priority, weighted, least-latency, least-cost, health-aware,
 budget-aware, region-affinity, and capability-aware selection.
 
-![Provider intelligence health view](assets/screenshots/admin-ui-2/health-provider-intelligence.png)
+![Provider intelligence health view](assets/screenshots/admin-ui-2/aurora-teal-health.png)
 
 Fallback remains conservative. Gateway retries only configured safe HTTP status
 classes and timeout classes, strips client credentials before upstream calls,
@@ -98,7 +105,7 @@ API payload still uses `pricing_rules` with `json_pointer` fields; a top-level
 request key such as `model` is selected as `/model`, while nested request data
 such as `payload.page_count` is selected as `/payload/page_count`.
 
-![Service import workflow](assets/screenshots/admin-ui-2/services-import-workflow.png)
+![Service registration and governance workflow](assets/screenshots/admin-ui-2/aurora-teal-services.png)
 
 See [Provider Intelligence](provider-intelligence.md) for the deeper routing,
 fallback, health, debug bundle, and import rollback reference.
@@ -135,7 +142,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.18` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.19` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -233,7 +240,7 @@ inspect large usage logs without rendering every row at once. Filters include
 time range, project, key, route, provider, service, task ID, run ID, model,
 status, trace ID, and minimum cost.
 
-![Usage analytics view](assets/screenshots/admin-ui-2/usage-analytics.png)
+![Usage analytics filters and exports](assets/screenshots/admin-ui-2/aurora-teal-usage.png)
 
 Usage events and debug bundles can store W3C trace IDs so operators can move
 from Studio analytics to gateway logs or provider traces without exposing raw
@@ -248,7 +255,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.18` release hardens CI and release workflows with strict
+The `v0.1.19` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

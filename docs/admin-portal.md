@@ -22,12 +22,24 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The Admin UI 2.0 shell groups operator work into Monitor, Discover, and Govern
-navigation domains. Monitor contains overview, health, and usage workflows;
+The `v0.1.19` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+operator work into Monitor, Discover, and Govern navigation domains. Monitor
+contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains
-keys, guardrails, audit, and settings. The source package owns design-system
-tokens, view metadata, templates, and reusable components, while the generated
-asset paths stay stable for deployed gateways.
+keys, guardrails, audit, and settings. Hash-backed navigation supports deep
+links and browser history without changing the `/admin-ui` server route.
+Command navigation and governed-change shortcuts help operators move directly
+to common workflows, while responsive drawer navigation and accessible dialogs
+preserve the same capabilities on narrower screens. The source package owns
+design-system tokens, view metadata, templates, and reusable components, while
+the generated asset paths stay stable for deployed gateways.
+
+![Aurora Teal operational Overview](assets/screenshots/admin-ui-2/aurora-teal-overview.png)
+
+On narrow screens, the same Monitor, Discover, and Govern structure moves into
+an accessible drawer without removing operator workflows.
+
+![Responsive Admin UI navigation drawer](assets/screenshots/admin-ui-2/aurora-teal-mobile-navigation.png)
 
 ## Authentication
 
