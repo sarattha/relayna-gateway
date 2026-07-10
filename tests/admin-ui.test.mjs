@@ -5,8 +5,13 @@ import { dirname, join } from "node:path";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const uiDir = join(root, "crates/gateway-api/src/static/admin-ui");
+const sourceDir = join(root, "crates/gateway-api/admin-ui/src");
 const html = readFileSync(join(uiDir, "index.html"), "utf8");
-const js = readFileSync(join(uiDir, "app.js"), "utf8");
+const deployedJs = readFileSync(join(uiDir, "app.js"), "utf8");
+const sourceJs = readFileSync(join(sourceDir, "main.ts"), "utf8");
+// Source-level behavior assertions must not depend on Rollup's internal symbol
+// naming. The deployed bundle remains part of endpoint-contract coverage below.
+const js = `${sourceJs}\n${deployedJs}`;
 const css = readFileSync(join(uiDir, "app.css"), "utf8");
 
 function test(name, fn) {
@@ -30,6 +35,36 @@ test("admin portal shell exposes all release-critical views", () => {
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
   assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.18/);
+});
+
+test("admin portal exposes responsive operator navigation and accessible workflows", () => {
+  for (const marker of [
+    'class="skip-link"',
+    'id="nav-toggle"',
+    'id="command-trigger"',
+    'id="governed-change-trigger"',
+    'id="last-refreshed"',
+    'id="content" tabindex="-1"',
+    'role="dialog" aria-modal="true"',
+  ]) {
+    assert.match(html, new RegExp(marker));
+  }
+  for (const behavior of [
+    "function mountDialog",
+    'window.addEventListener("hashchange"',
+    'setAttribute("aria-current", "page")',
+    "function showCommandPalette",
+    "function openNavigation",
+    "function formSection",
+    'id="overview-chart" role="img"',
+    "new Chart",
+  ]) {
+    assert.match(js, new RegExp(behavior.replace(/[()]/g, "\\$&")));
+  }
+  for (const style of [".nav-backdrop", ".command-palette", ".form-section", ".sticky-form-actions", ".overview-chart-wrap"]) {
+    assert.match(css, new RegExp(style.replace(".", "\\.")));
+  }
+  assert.match(css, /@media \(max-width: 920px\)/);
 });
 
 test("admin portal calls the expected gateway admin APIs", () => {
@@ -68,7 +103,7 @@ test("admin portal calls the expected gateway admin APIs", () => {
     "/admin-ui/admin/operator-token/rotate",
     "/admin-ui/readyz",
   ]) {
-    assert.ok(js.includes(endpoint), `expected app.js to call ${endpoint}`);
+    assert.ok(deployedJs.includes(endpoint), `expected app.js to call ${endpoint}`);
   }
 });
 

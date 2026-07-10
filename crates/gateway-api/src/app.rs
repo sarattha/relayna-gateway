@@ -3134,12 +3134,33 @@ async fn admin_ui_asset(Path(path): Path<String>) -> Response {
             "application/javascript; charset=utf-8",
             include_str!("static/admin-ui/app.js"),
         ),
+        "admin-ui-tabler-icons.woff2" => static_binary_response(
+            "font/woff2",
+            include_bytes!("static/admin-ui/admin-ui-tabler-icons.woff2"),
+        ),
+        "admin-ui-tabler-icons.woff" => static_binary_response(
+            "font/woff",
+            include_bytes!("static/admin-ui/admin-ui-tabler-icons.woff"),
+        ),
+        "admin-ui-tabler-icons.ttf" => static_binary_response(
+            "font/ttf",
+            include_bytes!("static/admin-ui/admin-ui-tabler-icons.ttf"),
+        ),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
 fn static_response(content_type: &'static str, body: &'static str) -> Response {
     (StatusCode::OK, [("content-type", content_type)], body).into_response()
+}
+
+fn static_binary_response(content_type: &'static str, body: &'static [u8]) -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+        .body(Body::from(body))
+        .expect("static asset response is valid")
 }
 
 #[derive(Clone, Copy)]
@@ -7854,8 +7875,27 @@ mod tests {
         let response = request(app.clone(), "/admin-ui/app.js").await;
         assert_eq!(response.status(), StatusCode::OK);
 
-        let response = request(app, "/admin-ui/app.css").await;
+        let response = request(app.clone(), "/admin-ui/app.css").await;
         assert_eq!(response.status(), StatusCode::OK);
+
+        for (path, content_type) in [
+            ("admin-ui-tabler-icons.woff2", "font/woff2"),
+            ("admin-ui-tabler-icons.woff", "font/woff"),
+            ("admin-ui-tabler-icons.ttf", "font/ttf"),
+        ] {
+            let response = request(app.clone(), &format!("/admin-ui/{path}")).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response.headers().get(header::CONTENT_TYPE),
+                Some(&HeaderValue::from_static(content_type))
+            );
+            assert_eq!(
+                response.headers().get(header::CACHE_CONTROL),
+                Some(&HeaderValue::from_static(
+                    "public, max-age=31536000, immutable"
+                ))
+            );
+        }
     }
 
     #[tokio::test]

@@ -1,3 +1,5 @@
+import "@tabler/icons-webfont/dist/tabler-icons.min.css";
+import Chart from "chart.js/auto";
 import "./app.css";
 import {
   actionGroup,
@@ -10,11 +12,13 @@ import {
   metricTile,
   panel,
   tableWrap,
+  viewMeta,
 } from "./design-system";
 
 const tokenKey = "relayna_gateway_operator_token";
+const viewIds = new Set(Object.keys(viewMeta));
 const state = {
-  view: "overview",
+  view: viewFromHash(),
   keys: [],
   projects: [],
   providers: [],
@@ -43,6 +47,7 @@ const state = {
     timeseriesOffset: 0,
     serviceTimeseriesOffset: 0,
   },
+  overviewWindow: "7d",
 };
 
 const login = document.querySelector("#login");
@@ -50,6 +55,8 @@ const app = document.querySelector("#app");
 const content = document.querySelector("#content");
 const requestTimeoutMs = 8000;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+let dialogCounter = 0;
+let overviewChart: Chart | null = null;
 
 function token() {
   return sessionStorage.getItem(tokenKey);
@@ -103,12 +110,34 @@ function setNotice(message, kind = "error") {
 
 function handleAsync(handler) {
   return async (event) => {
+    const pendingRoot = event.currentTarget || event.target;
+    const pendingControls = setPending(pendingRoot, true);
     try {
       await handler(event);
     } catch (error) {
       setNotice(error.message);
+    } finally {
+      setPending(pendingRoot, false, pendingControls);
     }
   };
+}
+
+function setPending(root, pending, controls = null) {
+  if (!(root instanceof HTMLElement)) return [];
+  const targets = controls || (root.matches("button") ? [root] : [...root.querySelectorAll("button")]);
+  root.setAttribute("aria-busy", String(pending));
+  root.classList.toggle("is-pending", pending);
+  targets.forEach((button) => {
+    if (!(button instanceof HTMLButtonElement)) return;
+    if (pending) {
+      button.dataset.pendingDisabled = String(button.disabled);
+      button.disabled = true;
+    } else {
+      button.disabled = button.dataset.pendingDisabled === "true";
+      delete button.dataset.pendingDisabled;
+    }
+  });
+  return targets;
 }
 
 async function api(path, options = {}) {
@@ -124,7 +153,9 @@ async function api(path, options = {}) {
     let message = `${response.status} ${response.statusText}`;
     try {
       const body = await response.json();
-      message = body.error?.code || message;
+      const code = body.error?.code;
+      const detail = body.error?.message || body.error?.detail;
+      message = [code, detail].filter(Boolean).join(": ") || message;
     } catch (_) {}
     throw new Error(message);
   }
@@ -161,60 +192,226 @@ function showRawToken(rawToken, label = "Token shown once") {
   const node = template.content.cloneNode(true);
   node.querySelector("h3").textContent = label;
   node.querySelector("textarea").value = rawToken;
-  node.querySelector("[data-close-modal]").addEventListener("click", () => {
-    document.querySelector(".modal-backdrop")?.remove();
-  });
   document.body.appendChild(node);
+  const backdrop = document.querySelector(".modal-backdrop:last-of-type");
+  const close = mountDialog(backdrop, { initialFocus: "[data-copy-token]" });
+  backdrop.querySelector("[data-copy-token]").addEventListener("click", async () => {
+    await navigator.clipboard.writeText(rawToken);
+    setNotice("Token copied. Store it in your secret manager now.", "success");
+  });
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => close());
 }
 
 function showTextModal(titleText, value) {
   const backdrop = document.createElement("section");
   backdrop.className = "modal-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
   backdrop.innerHTML = `
-    <div class="modal wide">
-      <h3>${esc(titleText)}</h3>
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+      <h3 id="${titleId}">${esc(titleText)}</h3>
       <textarea readonly rows="18">${esc(value)}</textarea>
       ${actionGroup('<button type="button" data-close-modal>Close</button>')}
     </div>
   `;
-  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => backdrop.remove());
-  backdrop.addEventListener("click", (event) => {
-    if (event.target === backdrop) backdrop.remove();
-  });
   document.body.appendChild(backdrop);
+  const close = mountDialog(backdrop, { initialFocus: "[data-close-modal]" });
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => close());
 }
 
 function confirmAction(titleText, bodyText) {
   return new Promise((resolve) => {
     const backdrop = document.createElement("section");
     backdrop.className = "modal-backdrop";
+    const titleId = `dialog-title-${++dialogCounter}`;
     backdrop.innerHTML = `
-      <div class="modal">
-        <h3>${esc(titleText)}</h3>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+        <h3 id="${titleId}">${esc(titleText)}</h3>
         <p>${esc(bodyText)}</p>
         <div class="form-actions">
-          <button class="danger" data-confirm-yes>Confirm</button>
-          <button data-confirm-no>Cancel</button>
+          <button type="button" class="danger" data-confirm-yes>Confirm</button>
+          <button type="button" data-confirm-no>Cancel</button>
         </div>
       </div>
     `;
-    const close = (value) => {
-      backdrop.remove();
-      resolve(value);
-    };
+    document.body.appendChild(backdrop);
+    const close = mountDialog(backdrop, { initialFocus: "[data-confirm-no]", onClose: resolve });
     backdrop.querySelector("[data-confirm-yes]").addEventListener("click", () => close(true));
     backdrop.querySelector("[data-confirm-no]").addEventListener("click", () => close(false));
-    backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop) close(false);
-    });
-    document.body.appendChild(backdrop);
   });
+}
+
+function mountDialog(backdrop, { initialFocus = "button", onClose = () => {} } = {}) {
+  const dialog = backdrop?.querySelector('[role="dialog"]');
+  if (!(backdrop instanceof HTMLElement) || !(dialog instanceof HTMLElement)) {
+    return () => {};
+  }
+  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  let closed = false;
+  const focusableSelector = [
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    'a[href]',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(",");
+  const close = (value) => {
+    if (closed) return;
+    closed = true;
+    backdrop.removeEventListener("keydown", onKeyDown);
+    backdrop.remove();
+    previousFocus?.focus();
+    onClose(value);
+  };
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close(false);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...dialog.querySelectorAll(focusableSelector)].filter((item) => item instanceof HTMLElement && !item.hidden);
+    if (!focusable.length) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  backdrop.addEventListener("keydown", onKeyDown);
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) close(false);
+  });
+  backdrop.closeDialog = close;
+  queueMicrotask(() => {
+    const target = dialog.querySelector(initialFocus) || dialog.querySelector(focusableSelector) || dialog;
+    if (target instanceof HTMLElement) {
+      if (target === dialog) target.tabIndex = -1;
+      target.focus();
+    }
+  });
+  return close;
+}
+
+function closeTopDialog(value = false) {
+  const backdrop = document.querySelector(".modal-backdrop:last-of-type");
+  if (typeof backdrop?.closeDialog === "function") backdrop.closeDialog(value);
+  else backdrop?.remove();
 }
 
 function signedIn() {
   login.classList.add("hidden");
   app.classList.remove("hidden");
+  state.view = viewFromHash();
+  syncNavigation();
   refresh();
+}
+
+function viewFromHash() {
+  const value = location.hash.replace(/^#\/?/, "");
+  return viewIds?.has(value) ? value : "overview";
+}
+
+function navigateToView(view, { replace = false, focus = true } = {}) {
+  if (!viewIds.has(view)) return;
+  const nextHash = `#/${view}`;
+  const changed = location.hash !== nextHash;
+  if (replace) history.replaceState(null, "", nextHash);
+  else if (changed) location.hash = nextHash;
+  state.view = view;
+  state.editingKeyId = null;
+  state.editingServiceName = null;
+  state.editingGuardrailName = null;
+  syncNavigation();
+  closeNavigation();
+  closeGovernedMenu();
+  window.scrollTo({ top: 0, behavior: "auto" });
+  if (!changed || replace) refresh({ focus });
+}
+
+function syncNavigation() {
+  document.querySelectorAll(".nav").forEach((item) => {
+    const active = item.dataset.view === state.view;
+    item.classList.toggle("active", active);
+    if (active) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  });
+}
+
+function openNavigation() {
+  document.body.classList.add("nav-open");
+  document.querySelector("#nav-backdrop")?.classList.remove("hidden");
+  document.querySelector("#nav-toggle")?.setAttribute("aria-expanded", "true");
+  document.querySelector("#nav-close")?.focus();
+}
+
+function closeNavigation() {
+  document.body.classList.remove("nav-open");
+  document.querySelector("#nav-backdrop")?.classList.add("hidden");
+  document.querySelector("#nav-toggle")?.setAttribute("aria-expanded", "false");
+}
+
+function toggleGovernedMenu() {
+  const trigger = document.querySelector("#governed-change-trigger");
+  const menu = document.querySelector("#governed-change-menu");
+  const opening = menu.classList.contains("hidden");
+  menu.classList.toggle("hidden", !opening);
+  trigger.setAttribute("aria-expanded", String(opening));
+  if (opening) menu.querySelector("[role='menuitem']")?.focus();
+}
+
+function closeGovernedMenu() {
+  document.querySelector("#governed-change-menu")?.classList.add("hidden");
+  document.querySelector("#governed-change-trigger")?.setAttribute("aria-expanded", "false");
+}
+
+function showCommandPalette() {
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
+  const commands = Object.entries(viewMeta)
+    .map(([view, meta]) => `<button type="button" class="command-item" data-command-view="${attr(view)}">
+      <span><strong>${esc(meta.title)}</strong><small>${esc(meta.domain)} · ${esc(meta.summary)}</small></span>
+      <kbd>↵</kbd>
+    </button>`)
+    .join("");
+  backdrop.innerHTML = `
+    <div class="modal command-palette" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+      <h3 id="${titleId}">Go to Admin view</h3>
+      <label class="command-search"><span class="sr-only">Filter views</span><input type="search" placeholder="Search views…" autocomplete="off" data-command-search></label>
+      <div class="command-list" role="list">${commands}</div>
+      <div class="command-footer"><span>Enter to open</span><span>Esc to close</span></div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const close = mountDialog(backdrop, { initialFocus: "[data-command-search]" });
+  const input = backdrop.querySelector("[data-command-search]");
+  const filter = () => {
+    const query = input.value.trim().toLowerCase();
+    backdrop.querySelectorAll("[data-command-view]").forEach((button) => {
+      button.hidden = query && !button.textContent.toLowerCase().includes(query);
+    });
+  };
+  input.addEventListener("input", filter);
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    const visible = [...backdrop.querySelectorAll("[data-command-view]")].find((button) => !button.hidden);
+    if (visible) visible.click();
+  });
+  backdrop.querySelectorAll("[data-command-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const view = button.dataset.commandView;
+      close();
+      navigateToView(view);
+    });
+  });
 }
 
 document.querySelector("#login-form").addEventListener("submit", async (event) => {
@@ -236,6 +433,23 @@ document.querySelector("#sign-out").addEventListener("click", () => {
 });
 
 document.querySelector("#refresh").addEventListener("click", refresh);
+document.querySelector("#nav-toggle").addEventListener("click", openNavigation);
+document.querySelector("#nav-close").addEventListener("click", closeNavigation);
+document.querySelector("#nav-backdrop").addEventListener("click", closeNavigation);
+document.querySelector("#command-trigger").addEventListener("click", showCommandPalette);
+document.querySelector("#governed-change-trigger").addEventListener("click", toggleGovernedMenu);
+document.querySelectorAll("[data-governed-view]").forEach((button) => {
+  button.addEventListener("click", () => navigateToView(button.dataset.governedView));
+});
+document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    showCommandPalette();
+  }
+});
+document.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element) || !event.target.closest(".governed-change")) closeGovernedMenu();
+});
 
 document.querySelector("#rotate-token").addEventListener("click", async () => {
   if (!(await confirmAction("Rotate operator token", "The current token stops working."))) return;
@@ -250,21 +464,27 @@ document.querySelector("#rotate-token").addEventListener("click", async () => {
 });
 
 document.querySelectorAll(".nav").forEach((button) => {
-  button.addEventListener("click", () => {
-    document.querySelectorAll(".nav").forEach((item) => item.classList.remove("active"));
-    button.classList.add("active");
-    state.view = button.dataset.view;
-    state.editingKeyId = null;
-    state.editingServiceName = null;
-    state.editingGuardrailName = null;
-    refresh();
-  });
+  button.addEventListener("click", () => navigateToView(button.dataset.view));
 });
 
-async function refresh() {
+window.addEventListener("hashchange", () => {
+  if (!token()) return;
+  state.view = viewFromHash();
+  syncNavigation();
+  closeNavigation();
+  window.scrollTo({ top: 0, behavior: "auto" });
+  refresh({ focus: true });
+});
+
+async function refresh({ focus = false } = {}) {
   setNotice("");
+  destroyOverviewChart();
   applyViewChrome(state.view);
+  const meta = viewMeta[state.view] || viewMeta.overview;
+  document.querySelector("#breadcrumb-domain").textContent = meta.domain;
+  document.querySelector("#breadcrumb-title").textContent = meta.title;
   content.innerHTML = panel("", emptyState("Loading..."));
+  content.setAttribute("aria-busy", "true");
   try {
     if (state.view === "overview") await overview();
     if (state.view === "projects") await projects();
@@ -277,42 +497,235 @@ async function refresh() {
     if (state.view === "usage") await usage();
     if (state.view === "health") await health();
     if (state.view === "settings") await settings();
+    document.querySelector("#last-refreshed").textContent = `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    if (focus) content.focus({ preventScroll: true });
   } catch (error) {
     setNotice(error.message);
     content.innerHTML = `<section class="panel"><div class="empty-state"><p>${esc(error.message)}</p></div></section>`;
+  } finally {
+    content.setAttribute("aria-busy", "false");
   }
 }
 
 async function overview() {
-  const [summary, healthRows, ready, keysRows, openaiRoutes, anthropicRoutes, servicesRows] = await Promise.all([
-    api("/admin-ui/admin/usage/summary"),
+  const usageQuery = overviewUsageQuery();
+  const [dashboard, healthRows, ready, keysRows, openaiRoutes, anthropicRoutes, servicesRows, projectsRows, auditEvents, policyLayers] = await Promise.all([
+    api(`/admin-ui/admin/usage/dashboard?${usageQuery}`),
     api("/admin-ui/admin/provider-health"),
     json("/admin-ui/readyz"),
     api("/admin-ui/admin/keys"),
     api("/admin-ui/admin/openai-routes"),
     api("/admin-ui/admin/anthropic-routes"),
     api("/admin-ui/admin/services"),
+    api("/admin-ui/admin/projects"),
+    api("/admin-ui/admin/audit-events?limit=8"),
+    api("/admin-ui/admin/policy-layers"),
   ]);
+  const summary = dashboard.summary;
   const activeKeys = keysRows.filter((key) => !key.disabled && !key.revoked_at).length;
   const enabledRoutes =
     openaiRoutes.filter((route) => route.enabled).length + anthropicRoutes.filter((route) => route.enabled).length;
   const totalRoutes = openaiRoutes.length + anthropicRoutes.length;
   const enabledServices = servicesRows.filter((service) => service.enabled).length;
+  const risks = overviewRisks(healthRows);
+  const readyState = ready.status === "ready";
   content.innerHTML = `
-    <div class="grid stats">
-      ${stat("Readiness", ready.status)}
-      ${stat("Requests", summary.request_count)}
-      ${stat("Active keys", activeKeys)}
-      ${stat("AI routes", `${enabledRoutes}/${totalRoutes}`)}
-      ${stat("Enabled services", enabledServices)}
-      ${stat("Failures", summary.failure_count)}
-      ${stat("Cost", money(summary.estimated_cost_usd))}
+    <div class="overview-top">
+      <section class="panel posture-panel">
+        <div class="posture-state ${risks.length ? "warn" : "good"}">
+          <span class="posture-icon" aria-hidden="true"><i class="ti ${readyState ? "ti-check" : "ti-alert-triangle"}"></i></span>
+          <div><strong>${readyState ? "Ready" : esc(ready.status)}</strong><span>${risks.length ? `${risks.length} risk${risks.length === 1 ? "" : "s"} require attention` : "No active risks"}</span></div>
+          <button type="button" class="link-button" data-overview-nav="health">View details <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
+        </div>
+        <div class="posture-facts">
+          ${overviewFact("Requests", summary.request_count, overviewWindowLabel())}
+          ${overviewFact("Failures", summary.failure_count, overviewWindowLabel())}
+          ${overviewFact("Cost", money(summary.estimated_cost_usd), overviewWindowLabel())}
+          ${overviewFact("Active keys", activeKeys, `${projectsRows.length} project${projectsRows.length === 1 ? "" : "s"}`)}
+        </div>
+      </section>
+      <section class="panel change-center">
+        <div class="panel-heading"><h3>Change center</h3></div>
+        <button type="button" class="change-row" data-overview-nav="audit"><i class="ti ti-history" aria-hidden="true"></i><span><strong>Recent governed changes</strong><small>Operator audit history</small></span><b>${auditEvents.length}</b><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+        <button type="button" class="change-row" data-overview-nav="keys"><i class="ti ti-layers-subtract" aria-hidden="true"></i><span><strong>Policy layers</strong><small>Inherited governance</small></span><b>${policyLayers.length}</b><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+        <div class="change-divider"></div>
+        <button type="button" class="change-row" data-overview-nav="keys"><i class="ti ti-plus" aria-hidden="true"></i><span><strong>Create key</strong><small>Issue a virtual key with policy</small></span><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+        <button type="button" class="change-row" data-overview-nav="services"><i class="ti ti-plus" aria-hidden="true"></i><span><strong>Register service</strong><small>Add an upstream service</small></span><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+        <button type="button" class="change-row" data-overview-nav="providers"><i class="ti ti-plus" aria-hidden="true"></i><span><strong>Add provider</strong><small>Connect a model provider</small></span><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+      </section>
     </div>
-    <section class="panel">
-      <div class="panel-heading"><h3>Provider and service health</h3></div>
-      ${healthTable(healthRows)}
+    <div class="overview-insights">
+      <section class="panel chart-panel">
+        <div class="panel-heading chart-heading">
+          <div><h3>Traffic, failures & latency</h3><span class="subtle">Real usage events grouped by ${state.overviewWindow === "30d" ? "day" : "hour"}</span></div>
+          <label class="compact-field"><span class="sr-only">Overview time range</span><select id="overview-window">
+            ${option("24h", state.overviewWindow).replace(">24h<", ">Last 24 hours<")}
+            ${option("7d", state.overviewWindow).replace(">7d<", ">Last 7 days<")}
+            ${option("30d", state.overviewWindow).replace(">30d<", ">Last 30 days<")}
+          </select></label>
+        </div>
+        <div class="overview-chart-wrap"><canvas id="overview-chart" role="img" aria-label="Requests, failures, and average latency over ${overviewWindowLabel().toLowerCase()}"></canvas></div>
+        <p class="sr-only">${esc(overviewChartSummary(dashboard.timeseries || []))}</p>
+      </section>
+      <section class="panel attention-panel">
+        <div class="panel-heading"><h3><i class="ti ti-alert-triangle" aria-hidden="true"></i>Attention and recommendations</h3><span class="badge warn">${risks.length}</span></div>
+        <div class="attention-list">${risks.length ? risks.slice(0, 3).map(overviewRiskRow).join("") : emptyState("No provider or service risks in this window.")}</div>
+        <button type="button" class="link-button panel-link" data-overview-nav="health">View all health signals <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
+      </section>
+    </div>
+    <section class="panel operations-panel">
+      <div class="panel-heading"><div><h3>Gateway operations</h3><span class="subtle">Live provider, service, route, and key posture</span></div><span class="subtle">${enabledRoutes}/${totalRoutes} routes · ${enabledServices} services</span></div>
+      ${overviewOperationsTable(healthRows, keysRows)}
     </section>
   `;
+  renderOverviewChart(dashboard.timeseries || []);
+  document.querySelector("#overview-window")?.addEventListener("change", (event) => {
+    state.overviewWindow = event.currentTarget.value;
+    overview();
+  });
+  document.querySelectorAll("[data-overview-nav]").forEach((button) => {
+    button.addEventListener("click", () => navigateToView(button.dataset.overviewNav));
+  });
+}
+
+function overviewUsageQuery() {
+  const now = new Date();
+  const start = new Date(now);
+  const days = state.overviewWindow === "30d" ? 30 : state.overviewWindow === "7d" ? 7 : 1;
+  start.setDate(start.getDate() - days);
+  const query = new URLSearchParams({
+    from: start.toISOString(),
+    to: now.toISOString(),
+    interval: state.overviewWindow === "30d" ? "day" : "hour",
+    breakdown_limit: "20",
+    timeseries_limit: state.overviewWindow === "30d" ? "31" : state.overviewWindow === "7d" ? "168" : "24",
+    service_timeseries_limit: "1",
+  });
+  return query.toString();
+}
+
+function overviewWindowLabel() {
+  if (state.overviewWindow === "30d") return "Last 30 days";
+  if (state.overviewWindow === "24h") return "Last 24 hours";
+  return "Last 7 days";
+}
+
+function overviewFact(label, value, detail) {
+  return `<div class="posture-fact"><strong>${esc(value)}</strong><span>${esc(label)}</span><small>${esc(detail)}</small></div>`;
+}
+
+function overviewRisks(rows) {
+  return rows
+    .map((row) => {
+      const requests = Math.max(Number(row.request_count || 0), 1);
+      const errors = Number(row.error_count || 0);
+      const timeouts = Number(row.timeout_count || 0);
+      const fallbacks = Number(row.fallback_count || 0);
+      const errorRate = errors / requests;
+      const timeoutRate = timeouts / requests;
+      const fallbackRate = fallbacks / requests;
+      let severity = "low";
+      let issue = "Provider signal requires review";
+      let score = errorRate + timeoutRate + fallbackRate;
+      if (String(row.status).toLowerCase().includes("timeout") || timeoutRate >= 0.05) {
+        severity = timeoutRate >= 0.1 ? "high" : "medium";
+        issue = "Timeout rate elevated";
+        score += 2;
+      } else if (errorRate >= 0.05) {
+        severity = errorRate >= 0.1 ? "high" : "medium";
+        issue = "Error rate elevated";
+        score += 1.5;
+      } else if (fallbackRate > 0) {
+        severity = fallbackRate >= 0.1 ? "medium" : "low";
+        issue = "Fallback activity detected";
+        score += 1;
+      } else if (["unhealthy", "degraded", "open"].includes(String(row.status).toLowerCase())) {
+        severity = row.status === "unhealthy" ? "high" : "medium";
+        issue = `${row.status} health state`;
+        score += 1;
+      }
+      return { ...row, severity, issue, score, errorRate, timeoutRate, fallbackRate };
+    })
+    .filter((row) => row.score > 0 || !["healthy", "ready", "ok"].includes(String(row.status).toLowerCase()))
+    .sort((a, b) => b.score - a.score);
+}
+
+function overviewRiskRow(row) {
+  const signal = row.issue.startsWith("Timeout") ? row.timeoutRate : row.issue.startsWith("Error") ? row.errorRate : row.fallbackRate;
+  return `<div class="attention-row">
+    ${badge(row.severity, row.severity === "high" ? "bad" : "warn")}
+    <span><strong>${esc(row.issue)}</strong><small>${esc(row.name)} · ${percent(signal)}</small></span>
+    <button type="button" class="primary" data-overview-nav="health" aria-label="Open health investigation for ${attr(row.name)}">Open investigation</button>
+  </div>`;
+}
+
+function overviewOperationsTable(healthRows, keysRows) {
+  const health = healthRows.slice(0, 5).map((row) => [
+    `<strong>${esc(row.name)}</strong>`,
+    esc(row.provider || row.provider_kind || "Service"),
+    healthBadge(row),
+    `<strong>${esc(row.error_count || 0)} errors · ${esc(row.fallback_count || 0)} fallbacks</strong><div class="subtle">${averageLatency(row)}</div>`,
+    "Live",
+    `<button type="button" class="icon-button" data-overview-nav="health" aria-label="Inspect health for ${attr(row.name)}"><i class="ti ti-dots" aria-hidden="true"></i></button>`,
+  ]);
+  const key = keysRows.find((row) => !row.revoked_at) || keysRows[0];
+  if (key) {
+    health.push([
+      `<strong>${esc(key.key_prefix)}</strong>`,
+      "Virtual key",
+      keyStatus(key),
+      keyPolicySummary(key),
+      key.updated_at ? time(key.updated_at) : time(key.created_at),
+      `<button type="button" class="icon-button" data-overview-nav="keys" aria-label="Inspect key ${attr(key.key_prefix)}"><i class="ti ti-dots" aria-hidden="true"></i></button>`,
+    ]);
+  }
+  return table(["Item", "Type", "Status", "Key signal", "Last change", "Action"], health);
+}
+
+function overviewChartSummary(rows) {
+  if (!rows.length) return "No usage timeseries data is available for this period.";
+  const latest = rows[rows.length - 1];
+  const summary = latest.summary || latest;
+  return `Latest bucket: ${summary.request_count || 0} requests, ${summary.failure_count || 0} failures, and ${summary.average_latency_ms == null ? "no latency data" : `${Math.round(summary.average_latency_ms)} milliseconds average latency`}.`;
+}
+
+function renderOverviewChart(rows) {
+  const canvas = document.querySelector("#overview-chart");
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  const labels = rows.map((row) => time(row.bucket_start || row.bucket || row.name));
+  const values = (key) => rows.map((row) => Number(row.summary?.[key] ?? row[key] ?? 0));
+  overviewChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label: "Requests", data: values("request_count"), borderColor: "#205f59", backgroundColor: "#205f59", yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
+        { label: "Failures", data: values("failure_count"), borderColor: "#d84a3a", backgroundColor: "#d84a3a", yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
+        { label: "Latency (ms)", data: values("average_latency_ms"), borderColor: "#d98b00", backgroundColor: "#d98b00", yAxisID: "latency", tension: 0.32, pointRadius: 0, borderWidth: 2 },
+      ],
+    },
+    options: {
+      animation: false,
+      maintainAspectRatio: false,
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "top", align: "start", labels: { boxWidth: 18, boxHeight: 2, usePointStyle: false, color: "#536276", font: { size: 11, weight: 600 } } },
+        tooltip: { backgroundColor: "#121820", padding: 10, titleFont: { size: 12 }, bodyFont: { size: 12 } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: "#66758a", maxTicksLimit: 7, font: { size: 10 } } },
+        y: { beginAtZero: true, grid: { color: "#e7ebef" }, ticks: { color: "#66758a", precision: 0, font: { size: 10 } } },
+        latency: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, ticks: { color: "#66758a", font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+function destroyOverviewChart() {
+  if (!overviewChart) return;
+  overviewChart.destroy();
+  overviewChart = null;
 }
 
 function stat(label, value) {
@@ -353,8 +766,8 @@ function projectTable(rows) {
       projectServiceForm(row),
       time(row.updated_at),
       `<div class="actions">
-        <button data-project-action="usage" data-project-id="${attr(row.id)}">Usage</button>
-        <button class="danger" data-project-action="delete" data-project-id="${attr(row.id)}">Delete</button>
+        <button data-project-action="usage" data-project-id="${attr(row.id)}" aria-label="View usage for project ${attr(row.name)}">Usage</button>
+        <button class="danger" data-project-action="delete" data-project-id="${attr(row.id)}" aria-label="Delete project ${attr(row.name)}">Delete</button>
       </div>`,
     ]),
   );
@@ -415,21 +828,23 @@ async function keys() {
           <h3>Create virtual key</h3>
         </div>
         <form id="key-form" class="form-grid">
-          <label>Preset<select name="preset">
-            <option value="">Custom</option>
-            <option value="developer">Developer</option>
-            <option value="production_worker">Production worker</option>
-            <option value="read_only_service">Read-only service</option>
-            <option value="external_partner">External partner</option>
-            <option value="temporary_debugging">Temporary debugging</option>
-          </select></label>
-          ${keyOwnershipFields()}
-          <label>Expires at<input name="expires_at" type="datetime-local"></label>
-          <label>Rotation due<input name="rotation_due_at" type="datetime-local"></label>
-          <label class="check"><input name="no_expires_at" type="checkbox"> No expiration</label>
-          ${policyFields()}
-          ${guardrailPolicyFields()}
-          <div class="form-actions">
+          ${formSection("Identity and ownership", "Choose a safe preset, owner, and lifecycle.", `
+            <label>Preset<select name="preset">
+              <option value="">Custom</option>
+              <option value="developer">Developer</option>
+              <option value="production_worker">Production worker</option>
+              <option value="read_only_service">Read-only service</option>
+              <option value="external_partner">External partner</option>
+              <option value="temporary_debugging">Temporary debugging</option>
+            </select></label>
+            ${keyOwnershipFields()}
+            <label>Expires at<input name="expires_at" type="datetime-local"></label>
+            <label>Rotation due<input name="rotation_due_at" type="datetime-local"></label>
+            <label class="check"><input name="no_expires_at" type="checkbox"> No expiration</label>
+          `, true)}
+          ${formSection("Access and limits", "Restrict routes, models, providers, rate, budget, and payload size.", policyFields())}
+          ${formSection("Guardrail policy", "Choose mandatory, optional, and forbidden safeguards.", guardrailPolicyFields())}
+          <div class="form-actions sticky-form-actions wide-field">
             <button type="submit" class="primary">Create key</button>
           </div>
         </form>
@@ -444,16 +859,18 @@ async function keys() {
         <span class="subtle">${state.policyLayers.length} configured</span>
       </div>
       <form id="policy-layer-form" class="form-grid">
-        <label>Layer<select name="kind">
-          <option value="global">Global</option>
-          <option value="project">Project</option>
-          <option value="team">Team</option>
-          <option value="route">Route</option>
-          <option value="model">Model</option>
-        </select></label>
-        <label>Scope<input name="scope_id" placeholder="project UUID, team, route, or model"></label>
-        ${policyFields(null, true)}
-        ${guardrailPolicyFields()}
+        ${formSection("Layer identity", "Set the inheritance level and exact scope.", `
+          <label>Layer<select name="kind">
+            <option value="global">Global</option>
+            <option value="project">Project</option>
+            <option value="team">Team</option>
+            <option value="route">Route</option>
+            <option value="model">Model</option>
+          </select></label>
+          <label>Scope<input name="scope_id" placeholder="project UUID, team, route, or model"></label>
+        `, true)}
+        ${formSection("Inherited access and limits", "Neutral fields inherit unless you set an explicit value.", policyFields(null, true))}
+        ${formSection("Inherited guardrails", "Apply guardrail requirements at this policy layer.", guardrailPolicyFields())}
         <div class="form-actions wide-field">
           <button type="submit" class="primary">Save layer</button>
         </div>
@@ -605,14 +1022,16 @@ function keyEditForm(key) {
       <span class="subtle">${esc(key.key_prefix)}</span>
     </div>
     <form id="key-edit-form" class="form-grid" data-key-id="${attr(key.id)}">
-      ${keyOwnershipFields(key)}
-      <label>Expires at<input name="expires_at" type="datetime-local" value="${attr(toLocalInput(key.expires_at))}"></label>
-      <label>Rotation due<input name="rotation_due_at" type="datetime-local" value="${attr(toLocalInput(key.rotation_due_at))}"></label>
-      <label class="check"><input name="no_expires_at" type="checkbox" ${key.expires_at ? "" : "checked"}> No expiration</label>
-      <label class="check"><input name="disabled" type="checkbox" ${key.disabled ? "checked" : ""}> Disabled</label>
-      ${policyFields(key)}
-      ${guardrailPolicyFields(key)}
-      <div class="form-actions">
+      ${formSection("Identity and lifecycle", "Update ownership, expiry, rotation, and availability.", `
+        ${keyOwnershipFields(key)}
+        <label>Expires at<input name="expires_at" type="datetime-local" value="${attr(toLocalInput(key.expires_at))}"></label>
+        <label>Rotation due<input name="rotation_due_at" type="datetime-local" value="${attr(toLocalInput(key.rotation_due_at))}"></label>
+        <label class="check"><input name="no_expires_at" type="checkbox" ${key.expires_at ? "" : "checked"}> No expiration</label>
+        <label class="check"><input name="disabled" type="checkbox" ${key.disabled ? "checked" : ""}> Disabled</label>
+      `, true)}
+      ${formSection("Access and limits", "Edit the effective key policy.", policyFields(key))}
+      ${formSection("Guardrail policy", "Edit mandatory, optional, and forbidden safeguards.", guardrailPolicyFields(key))}
+      <div class="form-actions sticky-form-actions wide-field">
         <button type="submit" class="primary">Save changes</button>
         <button type="button" data-key-action="cancel-edit">Cancel</button>
       </div>
@@ -652,16 +1071,17 @@ function policyLayerTable(rows) {
 }
 
 function keyLifecycleActions(key) {
+  const keyLabel = attr(key.key_prefix);
   const toggle = key.revoked_at
     ? ""
     : key.disabled
-      ? `<button data-key-action="enable" data-key-id="${attr(key.id)}">Enable</button>`
-      : `<button data-key-action="disable" data-key-id="${attr(key.id)}">Disable</button>`;
+      ? `<button data-key-action="enable" data-key-id="${attr(key.id)}" aria-label="Enable virtual key ${keyLabel}">Enable</button>`
+      : `<button data-key-action="disable" data-key-id="${attr(key.id)}" aria-label="Disable virtual key ${keyLabel}">Disable</button>`;
   return `<div class="actions">
-        <button data-key-action="edit" data-key-id="${attr(key.id)}">Edit</button>
-        <button data-key-action="usage" data-key-id="${attr(key.id)}">Usage</button>
+        <button data-key-action="edit" data-key-id="${attr(key.id)}" aria-label="Edit virtual key ${keyLabel}">Edit</button>
+        <button data-key-action="usage" data-key-id="${attr(key.id)}" aria-label="View usage for virtual key ${keyLabel}">Usage</button>
         ${toggle}
-        <button class="danger" data-key-action="revoke" data-key-id="${attr(key.id)}" ${key.revoked_at ? "disabled" : ""}>Revoke</button>
+        <button class="danger" data-key-action="revoke" data-key-id="${attr(key.id)}" aria-label="Revoke virtual key ${keyLabel}" ${key.revoked_at ? "disabled" : ""}>Revoke</button>
       </div>`;
 }
 
@@ -916,22 +1336,26 @@ async function providers() {
     <section class="panel">
       <div class="panel-heading"><h3>Create provider</h3></div>
       <form id="provider-form" class="form-grid">
-        <label>Provider<select name="provider">${option("litellm", "litellm")}${option("internal-service", "")}</select></label>
-        <label>Name<input name="name" required value="LiteLLM"></label>
-        <label>Endpoint<input name="base_url" required placeholder="http://litellm:4000"></label>
-        <label>Default credential<input name="credential" type="password" autocomplete="new-password"></label>
-        <label>Credential mode<select name="credential_header_mode">
-          ${option("authorization_bearer", "authorization_bearer")}
-          ${option("custom_header", "")}
-        </select></label>
-        <label>Custom header<input name="credential_header_name" placeholder="x-litellm-api-key"></label>
-        <label>Header value<select name="credential_header_value_format">
-          ${option("raw", "raw")}
-          ${option("bearer", "")}
-        </select></label>
-        <div class="help wide-field">Use raw for headers like x-litellm-api-key: &lt;key&gt;. Use bearer for LiteLLM deployments that expect x-litellm-key: Bearer &lt;key&gt;.</div>
-        <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
-        <div class="form-actions"><button class="primary">Create provider</button></div>
+        ${formSection("Identity and endpoint", "Choose the adapter and upstream address.", `
+          <label>Provider<select name="provider">${option("litellm", "litellm")}${option("internal-service", "")}</select></label>
+          <label>Name<input name="name" required value="LiteLLM"></label>
+          <label>Endpoint<input name="base_url" required placeholder="http://litellm:4000"></label>
+          <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
+        `, true)}
+        ${formSection("Authentication", "Credentials remain write-only after save.", `
+          <label>Default credential<input name="credential" type="password" autocomplete="new-password"></label>
+          <label>Credential mode<select name="credential_header_mode">
+            ${option("authorization_bearer", "authorization_bearer")}
+            ${option("custom_header", "")}
+          </select></label>
+          <label>Custom header<input name="credential_header_name" placeholder="x-litellm-api-key"></label>
+          <label>Header value<select name="credential_header_value_format">
+            ${option("raw", "raw")}
+            ${option("bearer", "")}
+          </select></label>
+          <div class="help wide-field">Use raw for headers like x-litellm-api-key: &lt;key&gt;. Use bearer for LiteLLM deployments that expect x-litellm-key: Bearer &lt;key&gt;.</div>
+        `)}
+        <div class="form-actions sticky-form-actions wide-field"><button class="primary">Create provider</button></div>
       </form>
     </section>
     <section class="panel">
@@ -974,25 +1398,29 @@ async function providers() {
 function litellmPassthroughForm(settings) {
   const current = settings || {};
   return `<form id="litellm-passthrough-form" class="form-grid">
-    <label class="check"><input name="enabled" type="checkbox" ${current.enabled ? "checked" : ""}> Enable wildcard passthrough</label>
-    <label>Allowed paths<input name="allowed_paths" value="${attr(listValue(current.allowed_paths, "/v1/*"))}"></label>
-    <label>Allowed methods<input name="allowed_methods" value="${attr(listValue(current.allowed_methods, "GET,POST"))}"></label>
-    <label>Timeout ms<input name="timeout_ms" type="number" min="1" max="600000" value="${attr(current.timeout_ms ?? 120000)}"></label>
-    <label>Max request bytes<input name="max_request_body_bytes" type="number" min="1" max="104857600" value="${attr(current.max_request_body_bytes ?? 1048576)}"></label>
-    <label>Max response bytes<input name="max_response_body_bytes" type="number" min="1" max="104857600" value="${attr(current.max_response_body_bytes ?? 1048576)}"></label>
-    <label>LiteLLM UI exposure<select name="ui_exposure">
-      ${option("disabled", current.ui_exposure || "disabled")}
-      ${option("operator_only", current.ui_exposure || "")}
-      ${option("explicitly_exposed", current.ui_exposure || "")}
-      ${option("trusted_ingress", current.ui_exposure || "")}
-    </select></label>
-    <label>LiteLLM admin API exposure<select name="admin_api_exposure">
-      ${option("disabled", current.admin_api_exposure || "disabled")}
-      ${option("operator_only", current.admin_api_exposure || "")}
-      ${option("explicitly_exposed", current.admin_api_exposure || "")}
-    </select></label>
-    <div class="notice warn"><strong>Exposure risk</strong><span>/ui, key, config, user/team, spend, and other LiteLLM admin endpoints stay blocked unless explicitly exposed.</span></div>
-    <div class="form-actions"><button class="primary">Save passthrough settings</button></div>
+    ${formSection("Ingress allowlist", "Restrict wildcard forwarding by path, method, timeout, and payload size.", `
+      <label class="check"><input name="enabled" type="checkbox" ${current.enabled ? "checked" : ""}> Enable wildcard passthrough</label>
+      <label>Allowed paths<input name="allowed_paths" value="${attr(listValue(current.allowed_paths, "/v1/*"))}"></label>
+      <label>Allowed methods<input name="allowed_methods" value="${attr(listValue(current.allowed_methods, "GET,POST"))}"></label>
+      <label>Timeout ms<input name="timeout_ms" type="number" min="1" max="600000" value="${attr(current.timeout_ms ?? 120000)}"></label>
+      <label>Max request bytes<input name="max_request_body_bytes" type="number" min="1" max="104857600" value="${attr(current.max_request_body_bytes ?? 1048576)}"></label>
+      <label>Max response bytes<input name="max_response_body_bytes" type="number" min="1" max="104857600" value="${attr(current.max_response_body_bytes ?? 1048576)}"></label>
+    `, true)}
+    ${formSection("Administrative exposure", "Keep LiteLLM UI and control endpoints closed unless explicitly required.", `
+      <label>LiteLLM UI exposure<select name="ui_exposure">
+        ${option("disabled", current.ui_exposure || "disabled")}
+        ${option("operator_only", current.ui_exposure || "")}
+        ${option("explicitly_exposed", current.ui_exposure || "")}
+        ${option("trusted_ingress", current.ui_exposure || "")}
+      </select></label>
+      <label>LiteLLM admin API exposure<select name="admin_api_exposure">
+        ${option("disabled", current.admin_api_exposure || "disabled")}
+        ${option("operator_only", current.admin_api_exposure || "")}
+        ${option("explicitly_exposed", current.admin_api_exposure || "")}
+      </select></label>
+      <div class="notice warn wide-field"><strong>Exposure risk</strong><span>/ui, key, config, user/team, spend, and other LiteLLM admin endpoints stay blocked unless explicitly exposed.</span></div>
+    `)}
+    <div class="form-actions sticky-form-actions wide-field"><button class="primary">Save passthrough settings</button></div>
   </form>`;
 }
 
@@ -1007,8 +1435,8 @@ function providerTable(rows) {
       providerAuthSettingsForm(row),
       time(row.updated_at),
       `<div class="actions">
-        <button data-provider-action="${row.enabled ? "disable" : "enable"}" data-provider-id="${attr(row.id)}">${row.enabled ? "Disable" : "Enable"}</button>
-        <button class="danger" data-provider-action="delete" data-provider-id="${attr(row.id)}">Delete</button>
+        <button data-provider-action="${row.enabled ? "disable" : "enable"}" data-provider-id="${attr(row.id)}" aria-label="${row.enabled ? "Disable" : "Enable"} provider ${attr(row.name)}">${row.enabled ? "Disable" : "Enable"}</button>
+        <button class="danger" data-provider-action="delete" data-provider-id="${attr(row.id)}" aria-label="Delete provider ${attr(row.name)}">Delete</button>
       </div>`,
     ]),
   );
@@ -1018,7 +1446,7 @@ function providerAuthSettingsForm(row) {
   if (row.provider !== "litellm") {
     return '<span class="subtle">not applicable</span>';
   }
-  return `<form class="inline-form" data-provider-config-form data-provider-id="${attr(row.id)}">
+  return `<form class="inline-form" data-provider-config-form data-provider-id="${attr(row.id)}" aria-label="Authentication settings for provider ${attr(row.name)}">
     <select name="credential_header_mode">
       ${option("authorization_bearer", row.credential_header_mode || "authorization_bearer")}
       ${option("custom_header", row.credential_header_mode || "")}
@@ -1029,7 +1457,7 @@ function providerAuthSettingsForm(row) {
       ${option("bearer", row.credential_header_value_format || "")}
     </select>
     <input name="credential" type="password" autocomplete="new-password" placeholder="rotate default credential">
-    <button type="submit">Update</button>
+    <button type="submit" aria-label="Update authentication for provider ${attr(row.name)}">Update</button>
     <span class="subtle">x-litellm-key usually needs bearer.</span>
   </form>`;
 }
@@ -1044,8 +1472,8 @@ function litellmCredentialMappingTable(rows) {
       row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
       time(row.updated_at),
       `<div class="actions">
-        <button data-litellm-mapping-action="${row.enabled ? "disable" : "enable"}" data-mapping-id="${attr(row.id)}">${row.enabled ? "Disable" : "Enable"}</button>
-        <button class="danger" data-litellm-mapping-action="delete" data-mapping-id="${attr(row.id)}">Delete</button>
+        <button data-litellm-mapping-action="${row.enabled ? "disable" : "enable"}" data-mapping-id="${attr(row.id)}" aria-label="${row.enabled ? "Disable" : "Enable"} LiteLLM mapping for ${attr(row.target_label || mappingTargetName(row))}">${row.enabled ? "Disable" : "Enable"}</button>
+        <button class="danger" data-litellm-mapping-action="delete" data-mapping-id="${attr(row.id)}" aria-label="Delete LiteLLM mapping for ${attr(row.target_label || mappingTargetName(row))}">Delete</button>
       </div>`,
     ]),
   );
@@ -1324,22 +1752,28 @@ async function services() {
           <button type="button" data-service-action="studio-import">Import from Studio</button>
         </div>
         <form id="service-form" class="form-grid">
-          <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
-          <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
-          <label>Upstream URL<input name="upstream_base_url"></label>
-          <label>Health path<input name="health_check_path" placeholder="/health"></label>
-          <label>Health method<select name="health_check_method"><option value="GET">GET</option><option value="HEAD">HEAD</option></select></label>
-          <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
-          <div class="field"><span>Methods</span>${methodSelect(["POST"])}</div>
-          <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="60000"></label>
-          <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="2097152"></label>
-          <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
-          <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01"></label>
-          <div class="help">Fixed records the configured estimate per request. Passthrough records provider-reported response cost when the upstream returns one.</div>
-          ${pricingRulesEditor([])}
-          <label>Fallback services<input name="fallback_services" placeholder="backup-a,backup-b"></label>
-          <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
-          <div class="form-actions">
+          ${formSection("Identity and routing", "Name the service and define its public route and upstream.", `
+            <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
+            <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
+            <label>Upstream URL<input name="upstream_base_url"></label>
+            <div class="field"><span>Methods</span>${methodSelect(["POST"])}</div>
+            <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
+          `, true)}
+          ${formSection("Reliability and credentials", "Configure health checks, write-only credentials, limits, and fallback.", `
+            <label>Health path<input name="health_check_path" placeholder="/health"></label>
+            <label>Health method<select name="health_check_method"><option value="GET">GET</option><option value="HEAD">HEAD</option></select></label>
+            <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
+            <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="60000"></label>
+            <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="2097152"></label>
+            <label>Fallback services<input name="fallback_services" placeholder="backup-a,backup-b"></label>
+          `)}
+          ${formSection("Usage pricing", "Choose the cost source and optional request-matching rules.", `
+            <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
+            <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01"></label>
+            <div class="help wide-field">Fixed records the configured estimate per request. Passthrough records provider-reported response cost when the upstream returns one.</div>
+            ${pricingRulesEditor([])}
+          `)}
+          <div class="form-actions sticky-form-actions wide-field">
             <button name="action" value="create" class="primary">Create</button>
           </div>
         </form>
@@ -1439,24 +1873,30 @@ function serviceEditForm(service) {
   return `
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
     <form id="service-edit-form" class="form-grid" data-service-name="${attr(service.name)}">
-      <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
-      <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
-      <label>Upstream URL<input name="upstream_base_url" value="${attr(service.upstream_base_url ?? "")}"></label>
-      <label>Health path<input name="health_check_path" value="${attr(service.health_check_path ?? "")}" placeholder="/health"></label>
-      <label>Health method<select name="health_check_method">${["GET", "HEAD"].map((value) => option(value, service.health_check_method || "GET")).join("")}</select></label>
-      <label>Credential<input name="credential" type="password" autocomplete="new-password" placeholder="${service.credential_configured ? "configured" : "missing"}"></label>
-      <div class="field"><span>Methods</span>${methodSelect(service.allowed_methods)}</div>
-      <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="${attr(service.timeout_ms)}"></label>
-      <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
-      <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
-      <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
-      <div class="help">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
-      ${pricingRulesEditor(service.pricing_rules || [])}
-      <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
-      <label>Sync status<select name="sync_status">${["local", "synced", "incomplete", "stale", "failed"].map((value) => option(value, service.sync_status)).join("")}</select></label>
-      <label class="check"><input name="enabled" type="checkbox" ${service.enabled ? "checked" : ""}> Enabled</label>
-      <label class="check"><input name="clear_credential" type="checkbox"> Clear credential</label>
-      <div class="form-actions">
+      ${formSection("Identity and routing", "Update registry identity, route, upstream, and methods.", `
+        <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
+        <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
+        <label>Upstream URL<input name="upstream_base_url" value="${attr(service.upstream_base_url ?? "")}"></label>
+        <div class="field"><span>Methods</span>${methodSelect(service.allowed_methods)}</div>
+        <label>Sync status<select name="sync_status">${["local", "synced", "incomplete", "stale", "failed"].map((value) => option(value, service.sync_status)).join("")}</select></label>
+        <label class="check"><input name="enabled" type="checkbox" ${service.enabled ? "checked" : ""}> Enabled</label>
+      `, true)}
+      ${formSection("Reliability and credentials", "Update health checks, credentials, limits, and fallback.", `
+        <label>Health path<input name="health_check_path" value="${attr(service.health_check_path ?? "")}" placeholder="/health"></label>
+        <label>Health method<select name="health_check_method">${["GET", "HEAD"].map((value) => option(value, service.health_check_method || "GET")).join("")}</select></label>
+        <label>Credential<input name="credential" type="password" autocomplete="new-password" placeholder="${service.credential_configured ? "configured" : "missing"}"></label>
+        <label class="check"><input name="clear_credential" type="checkbox"> Clear credential</label>
+        <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="${attr(service.timeout_ms)}"></label>
+        <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
+        <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
+      `)}
+      ${formSection("Usage pricing", "Update cost source and request-matching rules.", `
+        <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
+        <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
+        <div class="help wide-field">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
+        ${pricingRulesEditor(service.pricing_rules || [])}
+      `)}
+      <div class="form-actions sticky-form-actions wide-field">
         <button type="submit" class="primary">Save service</button>
         <button type="button" data-service-action="cancel-edit">Cancel</button>
       </div>
@@ -1495,9 +1935,10 @@ async function openStudioImportPicker() {
     state.studioServices = await api("/admin-ui/admin/studio/services");
     const backdrop = document.createElement("section");
     backdrop.className = "modal-backdrop";
+    const titleId = `dialog-title-${++dialogCounter}`;
     backdrop.innerHTML = `
-      <div class="modal wide">
-        <h3>Import from Studio</h3>
+      <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+        <h3 id="${titleId}">Import from Studio</h3>
         <form id="studio-import-form" class="modal-form">
           <div class="modal-scroll">${studioImportTable(state.studioServices)}</div>
           <div id="studio-import-preview"></div>
@@ -1510,14 +1951,12 @@ async function openStudioImportPicker() {
         </form>
       </div>
     `;
-    backdrop.querySelector("[data-close-modal]").addEventListener("click", () => backdrop.remove());
-    backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop) backdrop.remove();
-    });
+    document.body.appendChild(backdrop);
+    const close = mountDialog(backdrop, { initialFocus: "[data-close-modal]" });
+    backdrop.querySelector("[data-close-modal]").addEventListener("click", () => close());
     backdrop.querySelector("#studio-import-form").addEventListener("submit", handleAsync(importSelectedStudioServices));
     backdrop.querySelector("[data-import-preview]").addEventListener("click", handleAsync(previewSelectedStudioServices));
     backdrop.querySelector("[data-import-sync]").addEventListener("click", handleAsync(syncSelectedStudioServices));
-    document.body.appendChild(backdrop);
   } catch (error) {
     setNotice(`${error.message}. Check Settings for the Studio connection.`);
   }
@@ -1540,9 +1979,11 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Studio connection</h3><span class="subtle">${esc(state.studioConnection.updated_at ? time(state.studioConnection.updated_at) : "fallback or unset")}</span></div>
       <form id="studio-connection-form" class="form-grid">
-        <label>Base URL<input name="base_url" type="url" placeholder="http://127.0.0.1:8000" value="${attr(state.studioConnection.base_url || "")}"></label>
-        <label>Bearer token<input name="token" type="password" autocomplete="new-password" placeholder="${state.studioConnection.token_configured ? "Leave blank to keep current token" : "Optional"}"></label>
-        <div class="form-actions">
+        ${formSection("Connection", "Configure the Studio origin and write-only service token.", `
+          <label>Base URL<input name="base_url" type="url" placeholder="http://127.0.0.1:8000" value="${attr(state.studioConnection.base_url || "")}"></label>
+          <label>Bearer token<input name="token" type="password" autocomplete="new-password" placeholder="${state.studioConnection.token_configured ? "Leave blank to keep current token" : "Optional"}"></label>
+        `, true)}
+        <div class="form-actions sticky-form-actions wide-field">
           <button class="primary">Save connection</button>
           <button type="button" data-studio-action="test">Test connection</button>
           <button type="button" data-studio-action="clear-token">Clear token</button>
@@ -1553,21 +1994,25 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Entra ID and Apigee front door</h3><span class="subtle">${esc(state.authSettings.updated_at ? time(state.authSettings.updated_at) : "environment or unset")}</span></div>
       <form id="auth-settings-form" class="form-grid">
-        <label class="check"><input name="entra_enabled" type="checkbox" ${state.authSettings.entra.enabled ? "checked" : ""}> Enable Entra ID</label>
-        <label class="check"><input name="apigee_trusted_header_enabled" type="checkbox" ${state.authSettings.apigee.trusted_header_enabled ? "checked" : ""}> Enable Apigee trusted headers</label>
-        <label>Relayna key header<input name="relayna_key_header" value="${attr(state.authSettings.relayna_key_header || "X-Relayna-Key")}"></label>
-        <label>Tenant ID<input name="tenant_id" value="${attr(state.authSettings.entra.tenant_id || "")}"></label>
-        <label>Audience<input name="audience" value="${attr(state.authSettings.entra.audience || "")}" placeholder="api://relayna-gateway"></label>
-        <label>Trusted issuer<input name="issuer" type="url" value="${attr(state.authSettings.entra.issuer || "")}"></label>
-        <label class="wide-field">OIDC discovery URL<input name="oidc_discovery_url" type="url" value="${attr(state.authSettings.entra.oidc_discovery_url || "")}"></label>
-        <label>Required scope<input name="required_scope" value="${attr(state.authSettings.entra.required_scope || "")}" placeholder="gateway.invoke"></label>
-        <label>Required role<input name="required_role" value="${attr(state.authSettings.entra.required_role || "")}" placeholder="Gateway.Invoke"></label>
-        <label>Allowed groups<input name="allowed_groups" value="${attr(listValue(state.authSettings.entra.allowed_groups, ""))}" placeholder="group-a,group-b"></label>
-        <label>Accepted algorithms<input name="accepted_algorithms" value="${attr(listValue(state.authSettings.entra.accepted_algorithms, "RS256"))}"></label>
-        <label>JWKS cache TTL<input name="jwks_cache_ttl_seconds" type="number" min="1" value="${attr(state.authSettings.entra.jwks_cache_ttl_seconds ?? 300)}"></label>
-        <label>Clock skew seconds<input name="clock_skew_seconds" type="number" min="0" value="${attr(state.authSettings.entra.clock_skew_seconds ?? 60)}"></label>
-        <label>Apigee secret<input name="apigee_trusted_header_secret" type="password" autocomplete="new-password" placeholder="${apigeeSecretPlaceholder()}"></label>
-        <div class="form-actions wide-field">
+        ${formSection("Gateway headers", "Keep native key and trusted-ingress behavior explicit.", `
+          <label>Relayna key header<input name="relayna_key_header" value="${attr(state.authSettings.relayna_key_header || "X-Relayna-Key")}"></label>
+          <label class="check"><input name="apigee_trusted_header_enabled" type="checkbox" ${state.authSettings.apigee.trusted_header_enabled ? "checked" : ""}> Enable Apigee trusted headers</label>
+          <label>Apigee secret<input name="apigee_trusted_header_secret" type="password" autocomplete="new-password" placeholder="${apigeeSecretPlaceholder()}"></label>
+        `, true)}
+        ${formSection("Microsoft Entra ID", "Validate tenant, audience, issuer, claims, and JWKS behavior.", `
+          <label class="check"><input name="entra_enabled" type="checkbox" ${state.authSettings.entra.enabled ? "checked" : ""}> Enable Entra ID</label>
+          <label>Tenant ID<input name="tenant_id" value="${attr(state.authSettings.entra.tenant_id || "")}"></label>
+          <label>Audience<input name="audience" value="${attr(state.authSettings.entra.audience || "")}" placeholder="api://relayna-gateway"></label>
+          <label>Trusted issuer<input name="issuer" type="url" value="${attr(state.authSettings.entra.issuer || "")}"></label>
+          <label class="wide-field">OIDC discovery URL<input name="oidc_discovery_url" type="url" value="${attr(state.authSettings.entra.oidc_discovery_url || "")}"></label>
+          <label>Required scope<input name="required_scope" value="${attr(state.authSettings.entra.required_scope || "")}" placeholder="gateway.invoke"></label>
+          <label>Required role<input name="required_role" value="${attr(state.authSettings.entra.required_role || "")}" placeholder="Gateway.Invoke"></label>
+          <label>Allowed groups<input name="allowed_groups" value="${attr(listValue(state.authSettings.entra.allowed_groups, ""))}" placeholder="group-a,group-b"></label>
+          <label>Accepted algorithms<input name="accepted_algorithms" value="${attr(listValue(state.authSettings.entra.accepted_algorithms, "RS256"))}"></label>
+          <label>JWKS cache TTL<input name="jwks_cache_ttl_seconds" type="number" min="1" value="${attr(state.authSettings.entra.jwks_cache_ttl_seconds ?? 300)}"></label>
+          <label>Clock skew seconds<input name="clock_skew_seconds" type="number" min="0" value="${attr(state.authSettings.entra.clock_skew_seconds ?? 60)}"></label>
+        `)}
+        <div class="form-actions sticky-form-actions wide-field">
           <button class="primary">Save auth settings</button>
           <button type="button" data-auth-action="clear-apigee-secret">Clear Apigee secret</button>
         </div>
@@ -1718,9 +2163,10 @@ function openServiceSelectionPicker(trigger) {
   const selected = new Set(selectedServiceNames(form, fieldName));
   const backdrop = document.createElement("section");
   backdrop.className = "modal-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
   backdrop.innerHTML = `
-    <div class="modal wide">
-      <h3>${esc(trigger.dataset.servicePickerTitle || "Select services")}</h3>
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+      <h3 id="${titleId}">${esc(trigger.dataset.servicePickerTitle || "Select services")}</h3>
       <form id="service-picker-form" class="modal-form">
         <div class="modal-scroll">${servicePickerTable(state.services, selected)}</div>
         <div class="form-actions">
@@ -1730,17 +2176,15 @@ function openServiceSelectionPicker(trigger) {
       </form>
     </div>
   `;
-  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => backdrop.remove());
-  backdrop.addEventListener("click", (event) => {
-    if (event.target === backdrop) backdrop.remove();
-  });
+  document.body.appendChild(backdrop);
+  const close = mountDialog(backdrop, { initialFocus: "[data-close-modal]" });
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => close());
   backdrop.querySelector("#service-picker-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = new FormData(event.target).getAll("service_name");
     setSelectedServiceNames(form, fieldName, values);
-    backdrop.remove();
+    close();
   });
-  document.body.appendChild(backdrop);
 }
 
 function openGuardrailSelectionPicker(trigger) {
@@ -1750,9 +2194,10 @@ function openGuardrailSelectionPicker(trigger) {
   const rows = state.guardrails?.guardrails || [];
   const backdrop = document.createElement("section");
   backdrop.className = "modal-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
   backdrop.innerHTML = `
-    <div class="modal wide">
-      <h3>${esc(trigger.dataset.guardrailPickerTitle || "Select guardrails")}</h3>
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+      <h3 id="${titleId}">${esc(trigger.dataset.guardrailPickerTitle || "Select guardrails")}</h3>
       <form id="guardrail-picker-form" class="modal-form">
         <div class="modal-scroll">${guardrailPickerTable(rows, selected)}</div>
         <div class="form-actions">
@@ -1762,18 +2207,16 @@ function openGuardrailSelectionPicker(trigger) {
       </form>
     </div>
   `;
-  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => backdrop.remove());
-  backdrop.addEventListener("click", (event) => {
-    if (event.target === backdrop) backdrop.remove();
-  });
+  document.body.appendChild(backdrop);
+  const close = mountDialog(backdrop, { initialFocus: "[data-close-modal]" });
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => close());
   backdrop.querySelector("#guardrail-picker-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = new FormData(event.target).getAll("guardrail_name");
     setSelectedServiceNames(form, fieldName, values);
     updateGuardrailOverrideControls(form);
-    backdrop.remove();
+    close();
   });
-  document.body.appendChild(backdrop);
 }
 
 function servicePickerTable(rows, selected) {
@@ -1815,7 +2258,7 @@ async function importSelectedStudioServices(event) {
     method: "POST",
     body: JSON.stringify({ source: "studio", services: selected.map((service) => service.import_request) }),
   });
-  document.querySelector(".modal-backdrop")?.remove();
+  closeTopDialog();
   setNotice(`${selected.length} Studio service${selected.length === 1 ? "" : "s"} imported.`, "success");
   await services();
 }
@@ -1843,7 +2286,7 @@ async function syncSelectedStudioServices(event) {
       body: JSON.stringify(service.import_request),
     });
   }
-  document.querySelector(".modal-backdrop")?.remove();
+  closeTopDialog();
   setNotice(`${selected.length} Studio service${selected.length === 1 ? "" : "s"} synced.`, "success");
   await services();
 }
@@ -1912,10 +2355,10 @@ function serviceTable(rows) {
       row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
       `${esc(row.cost_mode)} ${row.estimated_cost_usd == null ? "" : money(row.estimated_cost_usd)}`,
       `<div class="actions">
-        <button data-service-action="edit" data-service-name="${attr(row.name)}">Edit</button>
-        <button data-service-action="sync-status" data-service-name="${attr(row.name)}">Status</button>
-        <button data-service-action="${row.enabled ? "disable" : "enable"}" data-service-name="${attr(row.name)}">${row.enabled ? "Disable" : "Enable"}</button>
-        <button class="danger" data-service-action="delete" data-service-name="${attr(row.name)}">Delete</button>
+        <button data-service-action="edit" data-service-name="${attr(row.name)}" aria-label="Edit service ${attr(row.name)}">Edit</button>
+        <button data-service-action="sync-status" data-service-name="${attr(row.name)}" aria-label="View sync status for service ${attr(row.name)}">Status</button>
+        <button data-service-action="${row.enabled ? "disable" : "enable"}" data-service-name="${attr(row.name)}" aria-label="${row.enabled ? "Disable" : "Enable"} service ${attr(row.name)}">${row.enabled ? "Disable" : "Enable"}</button>
+        <button class="danger" data-service-action="delete" data-service-name="${attr(row.name)}" aria-label="Delete service ${attr(row.name)}">Delete</button>
       </div>`,
     ]),
   );
@@ -1939,15 +2382,11 @@ async function usage() {
     <section class="panel">
       <div class="panel-heading"><h3>Usage filters</h3></div>
       <form id="usage-form" class="form-grid">
+        ${formSection("Primary filters", "Start with ownership, service, status, and time range.", `
         <label>Project<select name="project_id"><option value="">All</option>${projectOptions()}</select></label>
         <label>Virtual key<select name="key_id"><option value="">All</option>${keyOptions()}</select></label>
         <label>Service<select name="service"><option value="">All</option>${serviceOptions()}</select></label>
-        <label>Route<input name="route" list="usage-route-options" placeholder="/v1/chat/completions"></label>
         <label>Provider<select name="provider"><option value="">All</option><option value="litellm">litellm</option><option value="openai-compatible">openai-compatible</option><option value="internal-service">internal-service</option></select></label>
-        <label>Model<input name="model" list="usage-model-options" placeholder="exact model"></label>
-        <label>Task<input name="task_id" placeholder="exact task ID"></label>
-        <label>Run<input name="run_id" placeholder="exact run ID"></label>
-        <label>Trace<input name="trace_id"></label>
         <label>Status<select name="status"><option value="">All</option><option value="success">Success</option><option value="failure">Failure</option></select></label>
         <label>Time range<select name="time_preset">
           <option value="">All time</option>
@@ -1964,15 +2403,23 @@ async function usage() {
         </select></label>
         <label>From<input name="from" type="datetime-local"></label>
         <label>To<input name="to" type="datetime-local"></label>
+        `, true)}
+        ${formSection("Advanced filters", "Narrow by route, model, execution identifiers, cost, and presentation.", `
+        <label>Route<input name="route" list="usage-route-options" placeholder="/v1/chat/completions"></label>
+        <label>Model<input name="model" list="usage-model-options" placeholder="exact model"></label>
+        <label>Task<input name="task_id" placeholder="exact task ID"></label>
+        <label>Run<input name="run_id" placeholder="exact run ID"></label>
+        <label>Trace<input name="trace_id"></label>
         <label>Interval<select name="interval"><option value="hour">Hour</option><option value="day">Day</option></select></label>
         <label>Min cost<input name="min_cost_usd" type="number" min="0" step="0.0001"></label>
         <label>Show top<select name="breakdown_limit"><option value="20">20</option><option value="10">10</option><option value="50">50</option><option value="100">100</option></select></label>
         <label>Sort by<select name="sort_by"><option value="requests">Requests</option><option value="cost">Cost</option><option value="failures">Failures</option><option value="latency">Latency</option><option value="tokens">Tokens</option><option value="fallbacks">Fallbacks</option></select></label>
         <label>Rows per page<select name="limit"><option value="50">50</option><option value="20">20</option><option value="100">100</option></select></label>
-        <div class="form-actions">
+        `)}
+        <div class="form-actions sticky-form-actions wide-field">
           <button class="primary">Apply</button>
         </div>
-        <div class="help">Text filters are exact-match. Use suggestions where available.</div>
+        <div class="help wide-field">Text filters are exact-match. Use suggestions where available.</div>
       </form>
       <datalist id="usage-route-options"></datalist>
       <datalist id="usage-model-options"></datalist>
@@ -2583,6 +3030,13 @@ async function rollbackImportVersion(event) {
   await api(`/admin-ui/admin/services/import/rollback/${version}`, { method: "POST", body: "{}" });
   setNotice(`Service registry rolled back to ${version}.`, "success");
   await health();
+}
+
+function formSection(title, description, body, open = false) {
+  return `<details class="form-section wide-field" ${open ? "open" : ""}>
+    <summary><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><i class="ti ti-chevron-down" aria-hidden="true"></i></summary>
+    <div class="form-section-grid">${body}</div>
+  </details>`;
 }
 
 function table(headers, rows) {

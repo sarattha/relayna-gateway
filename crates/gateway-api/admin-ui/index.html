@@ -6,6 +6,7 @@
     <title>Relayna Gateway Admin</title>
   </head>
   <body>
+    <a class="skip-link" href="#content">Skip to main content</a>
     <div id="login" class="login-shell">
       <form id="login-form" class="login-panel">
         <div class="login-mark">Relayna</div>
@@ -21,61 +22,110 @@
     </div>
 
     <main id="app" class="app-shell hidden">
-      <aside class="sidebar">
-        <div class="brand">
-          <span class="brand-kicker">Relayna</span>
-          <span class="brand-title">
-            <strong>Gateway Admin</strong>
-            <span class="version-indicator" aria-label="Current Relayna Gateway version">v0.1.18</span>
-          </span>
+      <button id="nav-backdrop" class="nav-backdrop hidden" type="button" aria-label="Close navigation"></button>
+      <aside id="sidebar" class="sidebar" aria-label="Admin navigation">
+        <div class="sidebar-header">
+          <div class="brand">
+            <span class="brand-kicker">Relayna</span>
+            <span class="brand-title">
+              <strong>Gateway Admin</strong>
+              <span class="version-indicator" aria-label="Current Relayna Gateway version">v0.1.18</span>
+            </span>
+          </div>
+          <button id="nav-close" class="icon-button nav-close" type="button" aria-label="Close navigation">
+            <i class="ti ti-x" aria-hidden="true"></i>
+          </button>
         </div>
         <nav class="nav-groups" aria-label="Admin sections">
           <section class="nav-group">
             <span>Monitor</span>
-            <button data-view="overview" class="nav active">Overview</button>
-            <button data-view="health" class="nav">Health</button>
-            <button data-view="usage" class="nav">Usage</button>
+            <button data-view="overview" class="nav active"><i class="ti ti-layout-dashboard" aria-hidden="true"></i><span>Overview</span></button>
+            <button data-view="health" class="nav"><i class="ti ti-heart-rate-monitor" aria-hidden="true"></i><span>Health</span></button>
+            <button data-view="usage" class="nav"><i class="ti ti-chart-line" aria-hidden="true"></i><span>Usage</span></button>
           </section>
           <section class="nav-group">
             <span>Discover</span>
-            <button data-view="providers" class="nav">Providers</button>
-            <button data-view="services" class="nav">Services</button>
-            <button data-view="routes" class="nav">Routes</button>
-            <button data-view="projects" class="nav">Projects</button>
+            <button data-view="providers" class="nav"><i class="ti ti-database" aria-hidden="true"></i><span>Providers</span></button>
+            <button data-view="services" class="nav"><i class="ti ti-cube" aria-hidden="true"></i><span>Services</span></button>
+            <button data-view="routes" class="nav"><i class="ti ti-route" aria-hidden="true"></i><span>Routes</span></button>
+            <button data-view="projects" class="nav"><i class="ti ti-folders" aria-hidden="true"></i><span>Projects</span></button>
           </section>
           <section class="nav-group">
             <span>Govern</span>
-            <button data-view="keys" class="nav">Keys</button>
-            <button data-view="guardrails" class="nav">Guardrails</button>
-            <button data-view="audit" class="nav">Audit</button>
-            <button data-view="settings" class="nav">Settings</button>
+            <button data-view="keys" class="nav"><i class="ti ti-key" aria-hidden="true"></i><span>Keys</span></button>
+            <button data-view="guardrails" class="nav"><i class="ti ti-shield-check" aria-hidden="true"></i><span>Guardrails</span></button>
+            <button data-view="audit" class="nav"><i class="ti ti-file-search" aria-hidden="true"></i><span>Audit</span></button>
+            <button data-view="settings" class="nav"><i class="ti ti-settings" aria-hidden="true"></i><span>Settings</span></button>
           </section>
         </nav>
         <div class="sidebar-actions">
-          <button id="rotate-token" class="danger">Rotate token</button>
-          <button id="sign-out">Sign out</button>
+          <button id="rotate-token" class="danger"><i class="ti ti-refresh" aria-hidden="true"></i><span>Rotate token</span></button>
+          <button id="sign-out"><i class="ti ti-logout" aria-hidden="true"></i><span>Sign out</span></button>
+          <div class="session-context" aria-label="Current environment">
+            <span class="environment-dot" aria-hidden="true"></span>
+            <span><strong>Local</strong><small>Operator session</small></span>
+          </div>
         </div>
       </aside>
 
       <section class="workspace">
-        <header class="toolbar">
+        <header class="global-toolbar">
+          <div class="global-start">
+            <button id="nav-toggle" class="icon-button" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">
+              <i class="ti ti-menu-2" aria-hidden="true"></i>
+            </button>
+            <div class="breadcrumbs" aria-label="Breadcrumb">
+              <span id="breadcrumb-domain">Monitor</span>
+              <i class="ti ti-chevron-right" aria-hidden="true"></i>
+              <strong id="breadcrumb-title">Overview</strong>
+            </div>
+          </div>
+          <button id="command-trigger" class="command-trigger" type="button" aria-haspopup="dialog">
+            <i class="ti ti-search" aria-hidden="true"></i>
+            <span>Search or run command…</span>
+            <kbd>⌘K</kbd>
+          </button>
+          <div class="global-end">
+            <span class="environment-chip"><span class="environment-dot" aria-hidden="true"></span>Local</span>
+            <span id="last-refreshed" class="last-refreshed">Not refreshed</span>
+            <button id="refresh" class="icon-button" type="button" aria-label="Refresh current view">
+              <i class="ti ti-refresh" aria-hidden="true"></i>
+            </button>
+          </div>
+        </header>
+        <header class="view-toolbar">
           <div>
             <span id="view-domain" class="eyebrow">Monitor</span>
             <h2 id="view-title">Overview</h2>
             <p id="view-summary" class="view-summary">Gateway posture, traffic, and service availability.</p>
           </div>
-          <button id="refresh">Refresh</button>
+          <div class="governed-change">
+            <button id="governed-change-trigger" class="primary" type="button" aria-expanded="false" aria-controls="governed-change-menu">
+              <i class="ti ti-plus" aria-hidden="true"></i>
+              <span>New governed change</span>
+              <i class="ti ti-chevron-down" aria-hidden="true"></i>
+            </button>
+            <div id="governed-change-menu" class="action-menu hidden" role="menu">
+              <button type="button" role="menuitem" data-governed-view="keys"><i class="ti ti-key" aria-hidden="true"></i><span><strong>Create key</strong><small>Issue a virtual key with policy</small></span></button>
+              <button type="button" role="menuitem" data-governed-view="services"><i class="ti ti-cube-plus" aria-hidden="true"></i><span><strong>Register service</strong><small>Add an upstream service</small></span></button>
+              <button type="button" role="menuitem" data-governed-view="providers"><i class="ti ti-database-plus" aria-hidden="true"></i><span><strong>Add provider</strong><small>Connect a model provider</small></span></button>
+            </div>
+          </div>
         </header>
-        <section id="content"></section>
+        <section id="content" tabindex="-1"></section>
       </section>
     </main>
 
     <template id="raw-token-template">
       <section class="modal-backdrop">
-        <div class="modal">
-          <h3>Token shown once</h3>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="raw-token-title">
+          <h3 id="raw-token-title">Token shown once</h3>
+          <p class="modal-copy">Copy and store this value now. It cannot be shown again.</p>
           <textarea readonly rows="4"></textarea>
-          <button data-close-modal>Close</button>
+          <div class="form-actions">
+            <button type="button" class="primary" data-copy-token><i class="ti ti-copy" aria-hidden="true"></i>Copy token</button>
+            <button type="button" data-close-modal>Close</button>
+          </div>
         </div>
       </section>
     </template>
