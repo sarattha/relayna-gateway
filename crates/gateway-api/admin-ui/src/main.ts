@@ -539,8 +539,8 @@ async function overview() {
         </div>
         <div class="posture-facts">
           ${overviewFact("Requests", summary.request_count, overviewWindowLabel())}
-          ${overviewFact("Failures", summary.failure_count, overviewWindowLabel())}
-          ${overviewFact("Cost", money(summary.estimated_cost_usd), overviewWindowLabel())}
+          ${overviewFact("Failures", summary.failure_count, overviewWindowLabel(), "bad")}
+          ${overviewFact("Cost", money(summary.estimated_cost_usd), overviewWindowLabel(), "good")}
           ${overviewFact("Active keys", activeKeys, `${projectsRows.length} project${projectsRows.length === 1 ? "" : "s"}`)}
         </div>
       </section>
@@ -610,8 +610,8 @@ function overviewWindowLabel() {
   return "Last 7 days";
 }
 
-function overviewFact(label, value, detail) {
-  return `<div class="posture-fact"><strong>${esc(value)}</strong><span>${esc(label)}</span><small>${esc(detail)}</small></div>`;
+function overviewFact(label, value, detail, tone = "") {
+  return `<div class="posture-fact ${tone}"><strong>${esc(value)}</strong><span>${esc(label)}</span><small>${esc(detail)}</small></div>`;
 }
 
 function overviewRisks(rows) {
@@ -699,9 +699,9 @@ function renderOverviewChart(rows) {
     data: {
       labels,
       datasets: [
-        { label: "Requests", data: values("request_count"), borderColor: "#205f59", backgroundColor: "#205f59", yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
-        { label: "Failures", data: values("failure_count"), borderColor: "#d84a3a", backgroundColor: "#d84a3a", yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
-        { label: "Latency (ms)", data: values("average_latency_ms"), borderColor: "#d98b00", backgroundColor: "#d98b00", yAxisID: "latency", tension: 0.32, pointRadius: 0, borderWidth: 2 },
+        { label: "Requests", data: values("request_count"), borderColor: "#087b60", backgroundColor: "#087b60", yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
+        { label: "Failures", data: values("failure_count"), borderColor: "#d9474f", backgroundColor: "#d9474f", yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
+        { label: "Latency (ms)", data: values("average_latency_ms"), borderColor: "#0ea5a0", backgroundColor: "#0ea5a0", yAxisID: "latency", tension: 0.32, pointRadius: 0, borderWidth: 2 },
       ],
     },
     options: {
@@ -711,12 +711,12 @@ function renderOverviewChart(rows) {
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { position: "top", align: "start", labels: { boxWidth: 18, boxHeight: 2, usePointStyle: false, color: "#536276", font: { size: 11, weight: 600 } } },
-        tooltip: { backgroundColor: "#121820", padding: 10, titleFont: { size: 12 }, bodyFont: { size: 12 } },
+        tooltip: { backgroundColor: "#062f36", padding: 10, titleFont: { size: 12 }, bodyFont: { size: 12 } },
       },
       scales: {
-        x: { grid: { display: false }, ticks: { color: "#66758a", maxTicksLimit: 7, font: { size: 10 } } },
-        y: { beginAtZero: true, grid: { color: "#e7ebef" }, ticks: { color: "#66758a", precision: 0, font: { size: 10 } } },
-        latency: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, ticks: { color: "#66758a", font: { size: 10 } } },
+        x: { grid: { display: false }, ticks: { color: "#58736e", maxTicksLimit: 7, font: { size: 10 } } },
+        y: { beginAtZero: true, grid: { color: "#dcebe7" }, ticks: { color: "#58736e", precision: 0, font: { size: 10 } } },
+        latency: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, ticks: { color: "#58736e", font: { size: 10 } } },
       },
     },
   });

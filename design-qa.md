@@ -1,67 +1,89 @@
-# Admin UI Redesign Design QA
+# Aurora Teal Admin UI Design QA
 
-## Comparison Target
+**Source visual truth**
 
-- Source visual truth: `/Users/jobz/.codex/generated_images/019f4930-71ff-7461-b08f-9ce6ca737d1d/exec-1c98d33f-60cf-4562-a1b6-a48c10aa2be3.png`
-- Normalized source: `docs/screenshots/admin-ui-redesign/source-overview-1440x1024.png`
-- Browser-rendered implementation: `docs/screenshots/admin-ui-redesign/01-overview-desktop.png`
-- Viewport: 1440 × 1024
-- State: authenticated Overview served by the real local gateway at `/admin-ui`, backed by local PostgreSQL and Redis, using live Admin API responses.
-- Full-view comparison: `docs/screenshots/admin-ui-redesign/qa-comparison-full.png`
-- Focused header/posture/chart comparison: `docs/screenshots/admin-ui-redesign/qa-comparison-header.png`
-- Focused chart/attention/operations comparison: `docs/screenshots/admin-ui-redesign/qa-comparison-operations.png`
+`/Users/jobz/.codex/generated_images/019f49ed-7044-7e32-98ba-b5cdfc4a90bf/exec-b6301782-0ede-4a67-bc54-31b75d8efd8a.png`
 
-## Findings
+**Implementation evidence**
 
-No actionable P0, P1, or P2 findings remain.
+- Desktop Overview: `output/playwright/aurora-teal/aurora-teal-overview-desktop.png`
+- Desktop governed-change menu: `output/playwright/aurora-teal/aurora-teal-governed-change-menu-desktop.png`
+- Mobile Overview: `output/playwright/aurora-teal/aurora-teal-overview-mobile.png`
+- Mobile navigation: `output/playwright/aurora-teal/aurora-teal-navigation-mobile.png`
+- Full-view comparison: `output/playwright/aurora-teal/aurora-teal-design-comparison.png`
+- Focused comparison: `output/playwright/aurora-teal/aurora-teal-focused-comparison.png`
 
-The implementation preserves the approved dark navigation rail, compact global toolbar, operational posture, governed-change center, traffic/failure/latency visualization, attention queue, and operations table. It also carries the same hierarchy, restrained surfaces, outline icon language, and teal/amber semantic palette into every existing Admin view.
+**Viewport and state**
 
-Intentional differences from the mock are evidence-backed rather than design drift:
+- Desktop: 1440 by 1024, authenticated Overview with realistic local QA data.
+- Mobile: 390 by 844, authenticated Overview with the navigation drawer closed and open.
+- Interaction state: the desktop governed-change menu was opened and visually checked.
 
-- Counts, status labels, time windows, and rows come from the real gateway APIs rather than the mock's illustrative values.
-- `Policy layers` replaces the mock-only `Pending review` concept because policy layers are a supported Admin API surface.
-- The operations table omits mock-only owner avatars and sparklines because the current APIs do not return owner or trend-series fields for those rows.
-- The implementation retains all released operator workflows and displays more explicit service/key diagnostics than the visual target.
+**Findings**
 
-## Required Fidelity Surfaces
+- No remaining P0, P1, or P2 findings.
+- The implementation preserves the production Admin UI layout, typography,
+  spacing, copy, icon family, and interaction model while mapping the selected
+  Aurora Teal identity onto the existing design system.
+- The implemented primary green is intentionally darker than the generated
+  mock's brightest emerald so white button and selected-navigation text retains
+  a 5.23:1 contrast ratio.
 
-- Fonts and typography: the system UI stack closely matches the source's compact sans-serif treatment; display, body, label, and table weights remain distinct and readable. No broken wrapping or truncation was observed at 1440 or 390 pixels.
-- Spacing and layout rhythm: the desktop metric strip, two-column overview, chart/attention band, and operations table now track the source composition. The mobile layout becomes a one-column workspace with a drawer and 2 × 2 metric grid without page overflow.
-- Colors and visual tokens: the navy sidebar, off-white workspace, teal controls, amber active state, subdued borders, and semantic health colors align with the source and reuse Admin UI 2.0 tokens.
-- Image quality and asset fidelity: the screen contains no product imagery. All visible interface icons use the maintained Tabler outline icon library; the chart is rendered by Chart.js. No handcrafted SVG, CSS art, emoji, or placeholder imagery substitutes are present.
-- Copy and content: navigation and action copy remains operator-specific, concise, and grounded in supported gateway concepts. Secret fields remain write-only and token material remains show-once.
+**Required fidelity surfaces**
 
-## Comparison History
+- Fonts and typography: passed. The existing Inter/system stack, sizes, weights,
+  hierarchy, wrapping, and dense operator-console treatment are unchanged. No
+  clipping or unintended wrapping appeared at either viewport.
+- Spacing and layout rhythm: passed. The 236px desktop sidebar, workspace grid,
+  panels, table density, mobile metric grid, and drawer behavior remain stable.
+- Colors and visual tokens: passed. Midnight teal is used for the shell,
+  accessible emerald for controls and healthy values, aqua for latency data,
+  coral for failures, sunflower for warnings, and pale mint for the workspace.
+  Measured contrast ratios include control/white 5.23:1, sidebar/white 14.31:1,
+  body text/workspace 13.27:1, muted text/workspace 4.85:1, failure/white 5.61:1,
+  and warning/warning-background 5.49:1.
+- Image quality and asset fidelity: passed. The target contains no custom raster
+  imagery. Existing Tabler webfont icons remain sharp and aligned; no placeholder
+  or generated assets were introduced into the product.
+- Copy and content: passed. Product copy and realistic QA data are unchanged.
+- Responsiveness and accessibility: passed. The 390px Overview has no horizontal
+  page overflow or clipped primary action, the mobile drawer remains usable, and
+  semantic status colors retain sufficient contrast.
 
-### Pass 1 — blocked
+**Primary interactions tested**
 
-- Earlier P2 finding: the implementation used a 2 × 2 desktop metric block while the source used one compact horizontal metric row, materially changing the overview's scanning rhythm.
-- Earlier P2 finding: the posture and chart bands were too tall, pushing the operations table farther below the fold than the source.
-- Fixes: changed the desktop posture facts to four columns, retained the 2 × 2 pattern only for mobile, and reduced change-center/chart vertical density.
-- Post-fix evidence: `docs/screenshots/admin-ui-redesign/qa-comparison-header.png`.
+- Operator sign-in.
+- Open and close the governed-change menu.
+- Resize from desktop to 390 by 844 mobile layout.
+- Open the mobile navigation drawer.
+- Final browser console check: zero application errors and zero warnings. An
+  initial missing `favicon.ico` request was unrelated to the UI and did not recur
+  in the final application check.
 
-### Pass 2 — blocked
+**Comparison history**
 
-- Earlier P2 finding: measured desktop regions still placed the operations table roughly 125 pixels lower than the normalized source because the view header and insight band remained oversized.
-- Fixes: tightened the view toolbar, action rows, descriptions, chart canvas, and attention rows while preserving readable mobile overrides.
-- Post-fix evidence: the final implementation places the overview top at approximately y=135–305 and operations at y=574, with all primary regions visible at 1440 × 1024.
+- Initial pass: P2 — the Failures and Cost overview metrics remained neutral,
+  while the selected mock used coral and teal semantic emphasis.
+- Fix: added explicit `bad` and `good` tones to those two overview facts and
+  mapped them to the existing status tokens.
+- Post-fix evidence: the focused comparison shows the implementation matching
+  the selected mock's semantic metric emphasis with no remaining P0/P1/P2 drift.
 
-### Pass 3 — passed
+**Open Questions**
 
-- The focused comparisons show the approved hierarchy, proportions, density, palette, typography, controls, and icons with no remaining P0/P1/P2 mismatch.
-- Residual P3: the live operations section begins modestly lower and is denser than the mock because it exposes six real rows and longer key-policy diagnostics. This is acceptable product content, not a broken layout.
+- None.
 
-## Interaction and Responsive Evidence
+**Implementation Checklist**
 
-- Tested login, sign-out in an isolated tab, all 11 navigation views, hash history, refresh, command search, governed-change shortcuts, overview range control presence, mobile drawer, table overflow containment, and destructive-confirmation cancel paths.
-- Dialogs expose `role="dialog"`, `aria-modal="true"`, safe initial focus, Escape close, focus trapping, and focus restoration.
-- At 390 × 844, document `scrollWidth` equals `clientWidth` (390 pixels); wide tables scroll inside `.table-wrap` instead of widening the page.
-- Browser console warnings/errors after the complete view pass: none.
-- Mobile evidence: `docs/screenshots/admin-ui-redesign/13-overview-mobile.png`, `14-navigation-drawer-mobile.png`, and `15-usage-mobile.png`.
+- [x] Shared Aurora Teal tokens applied.
+- [x] Legacy shell colors aligned to the new palette.
+- [x] Chart and overview metric semantics aligned.
+- [x] Generated static assets rebuilt.
+- [x] Admin UI tests passed.
+- [x] Desktop and mobile browser evidence captured.
 
-## Follow-up Polish
+**Follow-up Polish**
 
-- P3: if the backend later supplies short-window owner and trend data, add table sparklines and owner attribution without changing the released Admin API contract prematurely.
+- None required before review.
 
 final result: passed

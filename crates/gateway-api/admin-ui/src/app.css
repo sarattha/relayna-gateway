@@ -1036,7 +1036,7 @@ button .ti {
   z-index: 22;
   gap: 14px;
   padding: 18px 14px 16px;
-  background: #101925;
+  background: var(--rg-color-sidebar);
 }
 
 .sidebar-header {
@@ -1052,7 +1052,7 @@ button .ti {
 }
 
 .brand-kicker {
-  color: #e7b33c;
+  color: #2dd4ad;
 }
 
 .brand-title strong {
@@ -1081,7 +1081,7 @@ button .ti {
 
 .nav-group > span {
   margin-bottom: 4px;
-  color: #93a2b7;
+  color: #91bcb5;
   font-size: 10px;
 }
 
@@ -1105,8 +1105,9 @@ button .ti {
 }
 
 .sidebar button.active {
-  background: #e0ad35;
-  border-color: #e0ad35;
+  background: var(--rg-color-control);
+  border-color: var(--rg-color-control);
+  color: #fff;
   box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
 }
 
@@ -1117,7 +1118,7 @@ button .ti {
 }
 
 .sidebar-actions .danger {
-  color: #ffb3a7;
+  color: #ffaaa4;
 }
 
 .session-context {
@@ -1126,7 +1127,7 @@ button .ti {
   gap: 9px;
   margin-top: 8px;
   padding: 10px 11px 2px;
-  color: #dfe6ef;
+  color: #e1f3ef;
 }
 
 .session-context > span:last-child {
@@ -1136,7 +1137,7 @@ button .ti {
 }
 
 .session-context small {
-  color: #93a2b7;
+  color: #91bcb5;
   font-size: 10px;
 }
 
@@ -1146,7 +1147,7 @@ button .ti {
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--rg-status-good);
-  box-shadow: 0 0 0 3px rgb(24 113 95 / 12%);
+  box-shadow: 0 0 0 3px rgb(45 212 173 / 16%);
 }
 
 .nav-backdrop {
@@ -1415,7 +1416,7 @@ kbd {
   height: 42px;
   display: grid;
   place-items: center;
-  border: 1px solid #8dbdb5;
+  border: 1px solid #83c9b8;
   border-radius: 50%;
   background: var(--rg-status-good-bg);
   color: var(--rg-status-good);
@@ -1423,7 +1424,7 @@ kbd {
 }
 
 .posture-state.warn .posture-icon {
-  border-color: #e4c36b;
+  border-color: #e5bd5b;
   background: var(--rg-status-warn-bg);
   color: var(--rg-status-warn);
 }
@@ -1488,6 +1489,14 @@ kbd {
 
 .posture-fact strong {
   font-size: 22px;
+}
+
+.posture-fact.good strong {
+  color: var(--rg-status-good);
+}
+
+.posture-fact.bad strong {
+  color: var(--rg-status-bad);
 }
 
 .posture-fact span {
