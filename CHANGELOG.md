@@ -2,6 +2,39 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.19 - 2026-07-10
+
+### Added
+
+- Added a live Admin UI Overview that combines usage charts, gateway posture,
+  provider-health attention signals, recent operations, and governed-change
+  shortcuts from existing Admin APIs.
+- Added hash-backed deep links, command navigation, responsive drawer
+  navigation, and accessible modal focus, Escape, and restoration behavior.
+- Added Chart.js and Tabler Icons Webfont to the embedded Vite bundle, including
+  explicit immutable-cache responses for generated font assets.
+
+### Changed
+
+- Refreshed Admin UI 2.0 with the Aurora Teal palette, denser shared components,
+  progressive disclosure for long forms, and clearer pending/action feedback.
+- Workspace crate versions now share the `0.1.19` release version.
+- Deployment examples and release documentation now target the `0.1.19`
+  gateway image and `v0.1.19` release tag.
+
+### Fixed
+
+- Statusless provider-health rows with no failure signal no longer inflate the
+  Overview risk count.
+- Modal close operations now select the top matching dialog independently of
+  later notification sections in the page.
+
+### Security
+
+- The redesign preserves operator-token authorization, write-only and
+  show-once secret handling, destructive-action confirmation, and all existing
+  Admin API contracts.
+
 ## 0.1.18 - 2026-07-05
 
 ### Added

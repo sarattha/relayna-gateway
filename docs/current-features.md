@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.18` feature set.
+This page summarizes the `v0.1.19` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -8,11 +8,14 @@ customer, provider, token, or prompt data.
 
 ## Admin UI 2.0
 
-Admin UI 2.0 turns the embedded portal into a denser operator console for
-governing AI traffic. The UI is still served from `/admin-ui`, with the static
-asset contract preserved at `/admin-ui/app.js` and `/admin-ui/app.css`, but the
-source of truth is now the Vite and TypeScript package in
-`crates/gateway-api/admin-ui`.
+Admin UI 2.0 turns the embedded portal into a compact operator console for
+governing AI traffic. The `v0.1.19` redesign applies the Aurora Teal visual
+system and adds a live Overview with usage charts, gateway posture,
+provider-health attention signals, recent operations, and governed-change
+shortcuts backed by existing Admin APIs. The UI is still served from
+`/admin-ui`, with the static asset contract preserved at `/admin-ui/app.js` and
+`/admin-ui/app.css`, but the source of truth is the Vite and TypeScript package
+in `crates/gateway-api/admin-ui`.
 
 The navigation is grouped by the operator jobs it supports:
 
@@ -22,9 +25,11 @@ The navigation is grouped by the operator jobs it supports:
 
 ![Admin UI 2.0 shell](assets/screenshots/admin-ui-2/admin-ui-shell.png)
 
-The redesign adds reusable design-system tokens and components, compact panels,
-wide-table scrolling, responsive layouts, and floating message boxes for async
-action results. The Rust binary still embeds generated assets, so production
+The redesign adds reusable design-system tokens and components, command
+navigation, hash-backed deep links, accessible modal focus handling, compact
+panels, progressive disclosure for long forms, wide-table scrolling,
+responsive drawer navigation, and floating message boxes for async action
+results. The Rust binary still embeds generated assets, so production
 deployments do not need a separate frontend service.
 
 ## Operator Governance
@@ -135,7 +140,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.18` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.19` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -248,7 +253,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.18` release hardens CI and release workflows with strict
+The `v0.1.19` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

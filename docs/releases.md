@@ -1,12 +1,15 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.18` is the current release target.
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.19` is the
+current release target.
 
-Version `0.1.18` includes Admin UI 2.0, operator governance, policy
-governance, provider intelligence, observability analytics, supply-chain
-hardening, structured service pricing-rule controls, paginated usage analytics
-tables, LiteLLM
-`/v1/embeddings` passthrough, opt-in Entra ID and Apigee front-door
+Version `0.1.19` refreshes Admin UI 2.0 with the Aurora Teal visual system, a
+live operational Overview, command navigation, governed-change shortcuts,
+accessible dialogs, responsive navigation, and progressive disclosure for
+dense workflows. It also includes operator governance, policy governance,
+provider intelligence, observability analytics, supply-chain hardening,
+structured service pricing-rule controls, paginated usage analytics tables,
+LiteLLM `/v1/embeddings` passthrough, opt-in Entra ID and Apigee front-door
 authorization, LiteLLM wildcard passthrough, per-route canonical OpenAI mode
 selection, and Admin portal controls for passthrough path/method and sensitive
 endpoint exposure. It also covers direct LiteLLM bearer
@@ -25,7 +28,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.18
+   python3 scripts/validate-release-metadata.py v0.1.19
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -43,15 +46,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.18 .
+   docker build -t relayna-gateway:0.1.19 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.18 -m "Release v0.1.18"
-   git push origin v0.1.18
+   git tag -a v0.1.19 -m "Release v0.1.19"
+   git push origin v0.1.19
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -61,10 +64,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.18`, the workflow publishes:
+For `v0.1.19`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.18
+ghcr.io/sarattha/relayna-gateway:0.1.19
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

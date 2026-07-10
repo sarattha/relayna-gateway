@@ -43,6 +43,8 @@ and comparing desktop and mobile captures with the approved visual target.
 - [x] (2026-07-10 04:59Z) Addressed both unresolved PR review threads with
   regression coverage, reran the full verification stack, and prepared the
   fixes for review-thread resolution.
+- [x] (2026-07-10 05:35Z) Prepared the `v0.1.19` release metadata, changelog,
+  deployment examples, and operator documentation for the completed redesign.
 
 ## Surprises & Discoveries
 
@@ -130,6 +132,13 @@ and comparing desktop and mobile captures with the approved visual target.
   selection; neither requires a backend payload change or compatibility layer.
   Date/Author: 2026-07-10 / Codex.
 
+- Decision: Ship the redesign as patch release `v0.1.19` while retaining
+  `v0.1.18` as the documented compatibility baseline.
+  Rationale: the branch was created from the latest release and preserves the
+  released API, static asset, configuration, and durable-state contracts; the
+  new version identifies the additive operator-experience release.
+  Date/Author: 2026-07-10 / Codex.
+
 ## Outcomes & Retrospective
 
 The redesigned portal now exposes real operational posture, chart-backed usage
@@ -165,6 +174,11 @@ was rebuilt.
 The completed branch is published as ready-for-review pull request
 [#92](https://github.com/sarattha/relayna-gateway/pull/92), including the full
 desktop/mobile screenshot set, compatibility notes, and validation record.
+
+Release preparation advances active workspace, deployment, UI, and
+documentation targets to `0.1.19` / `v0.1.19`. The changelog records the
+redesign, review fixes, and unchanged authorization and secret boundaries;
+historical compatibility references continue to name the `v0.1.18` base.
 
 ## Context and Orientation
 
