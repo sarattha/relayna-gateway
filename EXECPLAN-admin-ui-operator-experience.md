@@ -40,6 +40,9 @@ and comparing desktop and mobile captures with the approved visual target.
   the final desktop, dialog, menu, and mobile screenshots.
 - [x] (2026-07-10 02:39Z) Published the reviewed branch as draft pull request
   [#92](https://github.com/sarattha/relayna-gateway/pull/92).
+- [x] (2026-07-10 04:59Z) Addressed both unresolved PR review threads with
+  regression coverage, reran the full verification stack, and prepared the
+  fixes for review-thread resolution.
 
 ## Surprises & Discoveries
 
@@ -72,6 +75,18 @@ and comparing desktop and mobile captures with the approved visual target.
   Evidence: the initial focused test failure for
   `guardrailOverrideControls`; source-level assertions now read `main.ts` while
   deployed endpoint-contract assertions continue to read `app.js`.
+
+- Observation: usage-backed provider-health rows have count fields but no
+  `status`, so treating every absent status as non-healthy inflated the Overview
+  risk count during clean traffic.
+  Evidence: `ProviderHealth` in `crates/gateway-core/src/observability.rs` and the
+  new statusless clean-row regression test in `tests/admin-ui.test.mjs`.
+
+- Observation: `:last-of-type` selects by element type among siblings rather
+  than by modal class, so a later notification section could make dialog close
+  operations miss the active modal backdrop.
+  Evidence: the new top-dialog regression test exercises multiple matching
+  backdrops without relying on surrounding section order.
 
 ## Decision Log
 
@@ -109,6 +124,12 @@ and comparing desktop and mobile captures with the approved visual target.
   and have focused route coverage.
   Date/Author: 2026-07-10 / Codex.
 
+- Decision: Keep both review fixes client-side and preserve all Admin API
+  contracts.
+  Rationale: the defects are in Overview classification and dialog DOM
+  selection; neither requires a backend payload change or compatibility layer.
+  Date/Author: 2026-07-10 / Codex.
+
 ## Outcomes & Retrospective
 
 The redesigned portal now exposes real operational posture, chart-backed usage
@@ -135,7 +156,13 @@ workspace tests, RustSec, cargo-deny, cargo-machete, nextest, Trivy, gitleaks,
 and Semgrep. The focused Admin UI build/tests and production-dependency audit
 also pass.
 
-The completed branch is published for review as draft pull request
+The ready-for-review follow-up fixes exclude statusless, zero-signal health rows
+from Overview risks and close the top matching modal backdrop independently of
+later notification sections. Both behaviors have source-executed regression
+tests, and the mandatory verification stack passes after the generated bundle
+was rebuilt.
+
+The completed branch is published as ready-for-review pull request
 [#92](https://github.com/sarattha/relayna-gateway/pull/92), including the full
 desktop/mobile screenshot set, compatibility notes, and validation record.
 

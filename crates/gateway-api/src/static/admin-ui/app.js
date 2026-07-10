@@ -14917,7 +14917,8 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {
   return close;
 }
 function closeTopDialog(value = false) {
-  const backdrop = document.querySelector(".modal-backdrop:last-of-type");
+  const backdrops = document.querySelectorAll(".modal-backdrop");
+  const backdrop = backdrops[backdrops.length - 1];
   if (typeof (backdrop == null ? void 0 : backdrop.closeDialog) === "function") backdrop.closeDialog(value);
   else backdrop == null ? void 0 : backdrop.remove();
 }
@@ -15240,7 +15241,10 @@ function overviewRisks(rows) {
       score += 1;
     }
     return { ...row, severity, issue, score, errorRate, timeoutRate, fallbackRate };
-  }).filter((row) => row.score > 0 || !["healthy", "ready", "ok"].includes(String(row.status).toLowerCase())).sort((a, b) => b.score - a.score);
+  }).filter((row) => {
+    const status = String(row.status || "").trim().toLowerCase();
+    return row.score > 0 || status.length > 0 && !["healthy", "ready", "ok"].includes(status);
+  }).sort((a, b) => b.score - a.score);
 }
 function overviewRiskRow(row) {
   const signal = row.issue.startsWith("Timeout") ? row.timeoutRate : row.issue.startsWith("Error") ? row.errorRate : row.fallbackRate;

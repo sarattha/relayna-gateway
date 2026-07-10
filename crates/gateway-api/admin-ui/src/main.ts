@@ -302,7 +302,8 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {} } =
 }
 
 function closeTopDialog(value = false) {
-  const backdrop = document.querySelector(".modal-backdrop:last-of-type");
+  const backdrops = document.querySelectorAll(".modal-backdrop");
+  const backdrop = backdrops[backdrops.length - 1];
   if (typeof backdrop?.closeDialog === "function") backdrop.closeDialog(value);
   else backdrop?.remove();
 }
@@ -646,7 +647,10 @@ function overviewRisks(rows) {
       }
       return { ...row, severity, issue, score, errorRate, timeoutRate, fallbackRate };
     })
-    .filter((row) => row.score > 0 || !["healthy", "ready", "ok"].includes(String(row.status).toLowerCase()))
+    .filter((row) => {
+      const status = String(row.status || "").trim().toLowerCase();
+      return row.score > 0 || (status.length > 0 && !["healthy", "ready", "ok"].includes(status));
+    })
     .sort((a, b) => b.score - a.score);
 }
 

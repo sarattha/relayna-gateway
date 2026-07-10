@@ -24,6 +24,19 @@ function test(name, fn) {
   }
 }
 
+function sourceFunction(name) {
+  const start = sourceJs.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `missing source function ${name}`);
+  const bodyStart = sourceJs.indexOf("{", start);
+  let depth = 0;
+  for (let index = bodyStart; index < sourceJs.length; index += 1) {
+    if (sourceJs[index] === "{") depth += 1;
+    if (sourceJs[index] === "}") depth -= 1;
+    if (depth === 0) return sourceJs.slice(start, index + 1);
+  }
+  throw new Error(`unterminated source function ${name}`);
+}
+
 test("admin portal shell exposes all release-critical views", () => {
   for (const view of ["overview", "projects", "keys", "guardrails", "audit", "providers", "routes", "services", "usage", "health", "settings"]) {
     assert.match(html, new RegExp(`data-view="${view}"`));
@@ -448,6 +461,34 @@ test("floating notifications auto-dismiss and still support manual close", () =>
   assert.match(js, /data-close-message/);
   assert.match(js, /mouseenter/);
   assert.match(js, /focusin/);
+});
+
+test("overview ignores clean provider health rows without a status field", () => {
+  const overviewRisks = Function(`return (${sourceFunction("overviewRisks")})`)();
+  const cleanRow = {
+    name: "clean-provider",
+    request_count: 10,
+    error_count: 0,
+    timeout_count: 0,
+    fallback_count: 0,
+  };
+  assert.deepEqual(overviewRisks([cleanRow]), []);
+  assert.equal(overviewRisks([{ ...cleanRow, error_count: 1 }]).length, 1);
+});
+
+test("top dialog selection is independent of later section elements", () => {
+  const calls = [];
+  const firstBackdrop = { closeDialog: () => calls.push("first") };
+  const topBackdrop = { closeDialog: (value) => calls.push(["top", value]) };
+  const document = {
+    querySelectorAll(selector) {
+      assert.equal(selector, ".modal-backdrop");
+      return [firstBackdrop, topBackdrop];
+    },
+  };
+  const closeTopDialog = Function("document", `return (${sourceFunction("closeTopDialog")})`)(document);
+  closeTopDialog(true);
+  assert.deepEqual(calls, [["top", true]]);
 });
 
 test("service configuration exposes health check endpoint fields", () => {
