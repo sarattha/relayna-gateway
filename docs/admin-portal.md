@@ -22,7 +22,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.19` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+The `v0.1.20` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
 operator work into Monitor, Discover, and Govern navigation domains. Monitor
 contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains
@@ -216,7 +216,8 @@ local service by entering:
 - `Credential`: write-only service credential when the upstream needs one.
 - `Methods`: the HTTP methods the gateway may forward.
 - `Timeout`, `Max body bytes`, `Cost mode`, and `Estimated cost`: operational
-  limits and usage accounting defaults.
+  limits and usage accounting defaults. Service timeouts accept `1..=600000`
+  milliseconds.
 - `Pricing rules`: optional JSON rules that override the service default cost
   for matching request bodies. Each rule uses `json_pointer`, which must be a
   JSON Pointer path starting with `/`, not a bare key name. For a top-level
@@ -268,6 +269,22 @@ when clients need OpenAI-compatible traffic. `/v1/messages`,
 clients need Claude or Claude Code traffic. Registered service routes should
 show the expected route pattern, allowed methods, upstream, and credential
 state.
+
+Each registered service row also shows its effective `Timeout ms`. Operators
+with service-update permission can change and save that value inline. Routes
+and Services both edit the same persisted `service_registrations.timeout_ms`
+field, so reloading either view shows the saved value. The accepted range is
+`1..=600000` milliseconds, and Studio re-import or sync preserves this
+Gateway-owned runtime override.
+
+When the configured upstream timeout is exhausted before response headers are
+committed, Gateway returns HTTP 504 with `Content-Type: application/json` and
+the stable `upstream_timeout` error envelope containing the request ID. If a
+stream has already committed headers, Gateway terminates the stream instead of
+trying to replace the committed response. Increasing a service timeout can
+accommodate an upstream operation that is expected to take longer, but it does
+not provide upstream backpressure and does not replace asynchronous task
+submission for work whose completion should outlive the client request.
 
 Each canonical OpenAI-compatible and Anthropic-compatible route also has a mode
 selector and direct-passthrough runtime limits:

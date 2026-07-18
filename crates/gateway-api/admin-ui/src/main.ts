@@ -1633,6 +1633,9 @@ async function routes() {
   document.querySelectorAll("[data-anthropic-route-mode-form]").forEach((form) => {
     form.addEventListener("submit", handleAsync(saveAnthropicRouteMode));
   });
+  document.querySelectorAll("[data-service-route-timeout-form]").forEach((form) => {
+    form.addEventListener("submit", handleAsync(saveServiceRouteTimeout));
+  });
 }
 
 function routeFamilyLogo(family) {
@@ -1681,17 +1684,25 @@ function routeConfigForm(row, dataAttrName) {
 
 function serviceRouteTable(rows) {
   return table(
-    ["Service", "Route", "State", "Methods", "Upstream", "Health check", "Credential"],
+    ["Service", "Route", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       `<code>${esc(row.route_pattern)}</code>`,
       serviceBadges(row),
       esc(listValue(row.allowed_methods, "none")),
       esc(row.upstream_base_url || "missing"),
+      serviceRouteTimeoutForm(row),
       esc(healthCheckLabel(row)),
       row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
     ]),
   );
+}
+
+function serviceRouteTimeoutForm(row) {
+  return `<form class="inline-form route-config-form" data-service-route-timeout-form data-service-name="${attr(row.name)}">
+    <label class="route-config-field">Timeout ms<input name="timeout_ms" type="number" min="1" max="600000" step="1" required value="${attr(row.timeout_ms)}" title="Timeout ms"></label>
+    <button type="submit">Save</button>
+  </form>`;
 }
 
 async function openaiRouteAction(event) {
@@ -1736,6 +1747,23 @@ async function saveAnthropicRouteMode(event) {
   await routes();
 }
 
+async function saveServiceRouteTimeout(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const serviceName = formElement.dataset.serviceName;
+  const form = new FormData(formElement);
+  const timeoutMs = Number(form.get("timeout_ms"));
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600000) {
+    throw new Error("Timeout must be a whole number between 1 and 600000 ms.");
+  }
+  await api(`/admin-ui/admin/services/${serviceName}`, {
+    method: "PATCH",
+    body: JSON.stringify({ timeout_ms: timeoutMs }),
+  });
+  setNotice(`Service ${serviceName} timeout updated.`, "success");
+  await routes();
+}
+
 function routeConfigPayload(form) {
   return {
     mode: form.get("mode"),
@@ -1767,7 +1795,7 @@ async function services() {
             <label>Health path<input name="health_check_path" placeholder="/health"></label>
             <label>Health method<select name="health_check_method"><option value="GET">GET</option><option value="HEAD">HEAD</option></select></label>
             <label>Credential<input name="credential" type="password" autocomplete="new-password"></label>
-            <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="60000"></label>
+            <label>Timeout ms<input name="timeout_ms" type="number" min="1" max="600000" step="1" value="60000"></label>
             <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="2097152"></label>
             <label>Fallback services<input name="fallback_services" placeholder="backup-a,backup-b"></label>
           `)}
@@ -1890,7 +1918,7 @@ function serviceEditForm(service) {
         <label>Health method<select name="health_check_method">${["GET", "HEAD"].map((value) => option(value, service.health_check_method || "GET")).join("")}</select></label>
         <label>Credential<input name="credential" type="password" autocomplete="new-password" placeholder="${service.credential_configured ? "configured" : "missing"}"></label>
         <label class="check"><input name="clear_credential" type="checkbox"> Clear credential</label>
-        <label>Timeout ms<input name="timeout_ms" type="number" min="1" value="${attr(service.timeout_ms)}"></label>
+        <label>Timeout ms<input name="timeout_ms" type="number" min="1" max="600000" step="1" value="${attr(service.timeout_ms)}"></label>
         <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
         <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       `)}
@@ -2025,7 +2053,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.19")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.20")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
