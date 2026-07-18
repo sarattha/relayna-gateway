@@ -26,7 +26,7 @@ debug trace.
 - [x] (2026-07-18 09:57Z) Added focused proxy failure classification, structured JSON response behavior, terminal status/debug evidence, and unit tests.
 - [x] (2026-07-18 10:00Z) Added the registered-service timeout form to Routes, reused the existing service PATCH API, extended UI and service tests, regenerated assets, and updated operator documentation.
 - [x] (2026-07-18 10:21Z) Passed focused checks, Computer Use and isolated real-environment validation, the mandatory verification stack, the release build, and the Admin UI test suite.
-- [ ] Commit, push, open a draft pull request, monitor CI, and address the first code-review feedback cycle.
+- [x] (2026-07-18 10:32Z) Committed and pushed the focused branch, opened ready-for-review PR #95, confirmed every GitHub check passed, and monitored the first Codex review cycle. The reviewer returned a clean thumbs-up with no review threads to fix, reply to, or resolve.
 
 ## Surprises & Discoveries
 
@@ -111,9 +111,11 @@ replacement response; its single usage row remained 200 and its debug trace
 recorded the timeout. An immediate upstream-originated 503 passed through with
 its original body and one 503 usage row.
 
-The mandatory workspace verification stack, release build, and Admin UI tests
-all passed. Pull request checks and the first review-feedback cycle remain
-before final handoff.
+The mandatory workspace verification stack, release build, Admin UI tests, and
+every GitHub pull request check passed. The repository's first automated Codex
+review completed with a thumbs-up and no review submissions or inline threads,
+so no feedback fix, reply, or resolution mutation was necessary. PR #95 is
+ready for human review.
 
 ## Context and Orientation
 
