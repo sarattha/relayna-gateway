@@ -938,6 +938,26 @@ mod tests {
     }
 
     #[test]
+    fn service_timeout_validation_accepts_documented_boundary() {
+        let valid = ServicePatchRequest {
+            timeout_ms: Some(600_000),
+            ..ServicePatchRequest::default()
+        };
+        valid.validate().expect("maximum timeout");
+
+        for timeout_ms in [0, 600_001] {
+            let invalid = ServicePatchRequest {
+                timeout_ms: Some(timeout_ms),
+                ..ServicePatchRequest::default()
+            };
+            assert_eq!(
+                invalid.validate().unwrap_err(),
+                GatewayError::InvalidServicePayload
+            );
+        }
+    }
+
+    #[test]
     fn patch_cost_validation_uses_effective_service_state() {
         let mut registration = service_registration(ServiceCostMode::None, Some(0.02));
         let patch = ServicePatchRequest {

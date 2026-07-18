@@ -257,6 +257,12 @@ test("routes view exposes canonical provider route modes", () => {
   assert.match(js, /\/admin-ui\/admin\/openai-routes\/\$\{routeId\}\/config/);
   assert.match(js, /async function saveAnthropicRouteMode\(event\)/);
   assert.match(js, /\/admin-ui\/admin\/anthropic-routes\/\$\{routeId\}\/config/);
+  assert.match(js, /data-service-route-timeout-form/);
+  assert.match(js, /function serviceRouteTimeoutForm\(row\)/);
+  assert.match(js, /async function saveServiceRouteTimeout\(event\)/);
+  assert.match(js, /\/admin-ui\/admin\/services\/\$\{serviceName\}/);
+  assert.match(js, /JSON\.stringify\(\{ timeout_ms: timeoutMs \}\)/);
+  assert.match(js, /Timeout must be a whole number between 1 and 600000 ms\./);
   assert.match(js, /function routeConfigPayload\(form\)/);
   assert.match(js, /max_request_body_bytes: nullableNumber\(form\.get\("max_request_body_bytes"\)\)/);
   assert.match(js, /max_response_body_bytes: nullableNumber\(form\.get\("max_response_body_bytes"\)\)/);

@@ -22,13 +22,13 @@ use gateway_core::{
     RouteMatch, ServiceCostMode, ServicePricingRule, ServiceRegistryLookup, ServiceRouteLookup,
     SharedGatewayAuthRuntime, UsageEvent, UsageRecorder, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
-use http::{header::HeaderName, Uri};
+use http::{header, header::HeaderName, Uri};
 use pingora_core::{
     upstreams::peer::HttpPeer, Error as PingoraError, ErrorSource, ErrorType,
     Result as PingoraResult,
 };
 use pingora_http::{RequestHeader, ResponseHeader};
-use pingora_proxy::{ProxyHttp, Session};
+use pingora_proxy::{FailToProxy, ProxyHttp, Session};
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
@@ -269,6 +269,8 @@ pub struct PingoraContext {
     public_origin: Option<String>,
     fallback_count: i32,
     terminal_usage_recorded: bool,
+    terminal_status_code: Option<u16>,
+    upstream_timeout: bool,
     service_upstream: Option<PingoraUpstreamConfig>,
     service_route_pattern: Option<String>,
     service_cost_mode: Option<ServiceCostMode>,
@@ -336,6 +338,8 @@ where
             public_origin: None,
             fallback_count: 0,
             terminal_usage_recorded: false,
+            terminal_status_code: None,
+            upstream_timeout: false,
             service_upstream: None,
             service_route_pattern: None,
             service_cost_mode: None,
@@ -1320,6 +1324,7 @@ where
         let status_code = session
             .response_written()
             .map(|response| response.status.as_u16())
+            .or(ctx.terminal_status_code)
             .unwrap_or_else(|| if error.is_some() { 502 } else { 500 });
         let usage_cost = resolved_usage_cost(ctx);
         let estimated_cost_usd = usage_cost.estimated_cost_usd;
@@ -1355,6 +1360,7 @@ where
         .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
         .with_trace_id(ctx.trace_id.clone())
         .with_fallback_count(ctx.fallback_count);
+        ctx.terminal_usage_recorded = true;
         let _ = self.store.insert_usage_event(&event).await;
         let _ = self
             .store
@@ -1443,6 +1449,55 @@ where
             error.set_retry(true);
         }
         error
+    }
+
+    async fn fail_to_proxy(
+        &self,
+        session: &mut Session,
+        error: &PingoraError,
+        ctx: &mut Self::CTX,
+    ) -> FailToProxy
+    where
+        Self::CTX: Send + Sync,
+    {
+        if is_upstream_timeout_error(error) {
+            ctx.upstream_timeout = true;
+            if session.response_written().is_none() {
+                let gateway_error = GatewayError::UpstreamTimeout;
+                ctx.terminal_status_code = Some(gateway_error.status_code().as_u16());
+                if let Err(write_error) =
+                    respond_error(session, gateway_error, &ctx.request_id).await
+                {
+                    tracing::error!(
+                        request_id = %ctx.request_id,
+                        error = %write_error,
+                        "failed to write upstream timeout response"
+                    );
+                }
+            }
+            return FailToProxy {
+                error_code: GatewayError::UpstreamTimeout.status_code().as_u16(),
+                can_reuse_downstream: false,
+            };
+        }
+
+        let error_code = default_proxy_failure_status(error);
+        if error_code > 0 {
+            session
+                .respond_error(error_code)
+                .await
+                .unwrap_or_else(|write_error| {
+                    tracing::error!(
+                        request_id = %ctx.request_id,
+                        error = %write_error,
+                        "failed to write proxy error response"
+                    );
+                });
+        }
+        FailToProxy {
+            error_code,
+            can_reuse_downstream: false,
+        }
     }
 }
 
@@ -2246,6 +2301,9 @@ fn debug_bundle_for_ctx(ctx: &PingoraContext, status_code: u16) -> gateway_core:
         selection_trace.push(format!("backend={:?}", matched.backend));
         selection_trace.push(format!("timeout_ms={}", matched.timeout_ms));
     }
+    if ctx.upstream_timeout {
+        selection_trace.push("terminal_error=upstream_timeout".to_owned());
+    }
     let fallback_history = if ctx.fallback_count > 0 {
         vec![gateway_core::FallbackAttempt {
             from_provider: Provider::OpenAiCompatible.as_str().to_owned(),
@@ -2341,6 +2399,31 @@ fn is_retry_safe_proxy_error(error: &PingoraError) -> bool {
     )
 }
 
+fn is_upstream_timeout_error(error: &PingoraError) -> bool {
+    error.esource() == &ErrorSource::Upstream
+        && matches!(
+            error.etype(),
+            ErrorType::ConnectTimedout
+                | ErrorType::TLSHandshakeTimedout
+                | ErrorType::ReadTimedout
+                | ErrorType::WriteTimedout
+        )
+}
+
+fn default_proxy_failure_status(error: &PingoraError) -> u16 {
+    match error.etype() {
+        ErrorType::HTTPStatus(code) => *code,
+        _ => match error.esource() {
+            ErrorSource::Upstream => 502,
+            ErrorSource::Downstream => match error.etype() {
+                ErrorType::WriteError | ErrorType::ReadError | ErrorType::ConnectionClosed => 0,
+                _ => 400,
+            },
+            ErrorSource::Internal | ErrorSource::Unset => 500,
+        },
+    }
+}
+
 #[cfg(test)]
 fn new_pingora_context_for_tests() -> PingoraContext {
     PingoraContext {
@@ -2368,6 +2451,8 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         public_origin: None,
         fallback_count: 0,
         terminal_usage_recorded: false,
+        terminal_status_code: None,
+        upstream_timeout: false,
         service_upstream: None,
         service_route_pattern: None,
         service_cost_mode: None,
@@ -2401,10 +2486,23 @@ async fn respond_error(
     error: GatewayError,
     request_id: &str,
 ) -> PingoraResult<()> {
-    let body = serde_json::to_vec(&error.body(request_id)).unwrap_or_else(|_| b"{}".to_vec());
+    let (response, body) = gateway_error_response(error, request_id)?;
     session
-        .respond_error_with_body(error.status_code().as_u16(), Bytes::from(body))
-        .await
+        .write_response_header(Box::new(response), false)
+        .await?;
+    session.write_response_body(Some(body), true).await
+}
+
+fn gateway_error_response(
+    error: GatewayError,
+    request_id: &str,
+) -> PingoraResult<(ResponseHeader, Bytes)> {
+    let body = serde_json::to_vec(&error.body(request_id)).unwrap_or_else(|_| b"{}".to_vec());
+    let mut response = ResponseHeader::build(error.status_code().as_u16(), Some(4))?;
+    response.insert_header(header::CONTENT_TYPE, "application/json")?;
+    response.insert_header(header::CONTENT_LENGTH, body.len().to_string())?;
+    response.insert_header(header::CACHE_CONTROL, "private, no-store")?;
+    Ok((response, Bytes::from(body)))
 }
 
 #[cfg(test)]
@@ -2417,6 +2515,80 @@ mod tests {
     };
     use std::sync::Mutex;
     use uuid::Uuid;
+
+    #[test]
+    fn gateway_timeout_response_uses_stable_json_envelope() {
+        let request_id = "req_timeout_123";
+        let (response, body) = gateway_error_response(GatewayError::UpstreamTimeout, request_id)
+            .expect("gateway error response");
+
+        assert_eq!(response.status.as_u16(), 504);
+        assert_eq!(
+            response
+                .headers
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json")
+        );
+        let content_length = body.len().to_string();
+        assert_eq!(
+            response
+                .headers
+                .get(header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok()),
+            Some(content_length.as_str())
+        );
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(value["error"]["code"], "upstream_timeout");
+        assert_eq!(value["error"]["message"], "Upstream provider timed out.");
+        assert_eq!(value["error"]["request_id"], request_id);
+    }
+
+    #[test]
+    fn only_upstream_timeout_types_receive_timeout_classification() {
+        for error_type in [
+            ErrorType::ConnectTimedout,
+            ErrorType::TLSHandshakeTimedout,
+            ErrorType::ReadTimedout,
+            ErrorType::WriteTimedout,
+        ] {
+            let error = PingoraError::new_up(error_type);
+            assert!(is_upstream_timeout_error(&error));
+        }
+
+        assert!(!is_upstream_timeout_error(&PingoraError::new_up(
+            ErrorType::ConnectRefused
+        )));
+        assert!(!is_upstream_timeout_error(&PingoraError::new_down(
+            ErrorType::ReadTimedout
+        )));
+        assert_eq!(
+            default_proxy_failure_status(&PingoraError::new_up(ErrorType::ConnectRefused)),
+            502
+        );
+        assert_eq!(
+            default_proxy_failure_status(&PingoraError::new_up(ErrorType::HTTPStatus(503))),
+            503
+        );
+    }
+
+    #[test]
+    fn debug_bundle_records_committed_stream_timeout_without_replacing_status() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.route = Some(Route::ChatCompletions);
+        ctx.route_match = Some(
+            Route::resolve_match(&http::Method::POST, "/v1/chat/completions").expect("route match"),
+        );
+        ctx.upstream_timeout = true;
+
+        let bundle = debug_bundle_for_ctx(&ctx, 200);
+
+        assert!(bundle
+            .selection_trace
+            .iter()
+            .any(|entry| entry == "terminal_error=upstream_timeout"));
+        assert!(bundle.fallback_history.is_empty());
+    }
 
     #[test]
     fn parses_https_litellm_base_url_for_pingora_peer() {
@@ -2910,6 +3082,11 @@ mod tests {
                 .service_key,
             "litellm-key"
         );
+        assert!(!proxy.activate_provider_fallback(&mut ctx));
+
+        let timeout = PingoraError::new_up(ErrorType::ReadTimedout);
+        assert!(is_retry_safe_proxy_error(&timeout));
+        assert!(is_upstream_timeout_error(&timeout));
         assert!(!proxy.activate_provider_fallback(&mut ctx));
     }
 

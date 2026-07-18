@@ -5221,6 +5221,9 @@ mod tests {
             if let Some(allowed_methods) = patch.allowed_methods {
                 service.allowed_methods = allowed_methods;
             }
+            if let Some(timeout_ms) = patch.timeout_ms {
+                service.timeout_ms = timeout_ms;
+            }
             if let Some(cost_mode) = patch.cost_mode {
                 service.cost_mode = cost_mode;
             }
@@ -8492,7 +8495,8 @@ mod tests {
                 "health_check_method":"HEAD",
                 "credential":"token",
                 "enabled":true,
-                "allowed_methods":["POST"]
+                "allowed_methods":["POST"],
+                "timeout_ms":123456
             }"#,
         )
         .await;
@@ -8526,6 +8530,7 @@ mod tests {
         assert_eq!(value["health_check_path"], "/healthz");
         assert_eq!(value["health_check_method"], "HEAD");
         assert_eq!(value["allowed_methods"][0], "POST");
+        assert_eq!(value["timeout_ms"], 123456);
         assert_eq!(value["enabled"], true);
         assert_eq!(value["sync_status"], "synced");
     }
