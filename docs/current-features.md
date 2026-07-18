@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.19` feature set.
+This page summarizes the `v0.1.20` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -9,10 +9,11 @@ customer, provider, token, or prompt data.
 ## Admin UI 2.0
 
 Admin UI 2.0 turns the embedded portal into a compact operator console for
-governing AI traffic. The `v0.1.19` redesign applies the Aurora Teal visual
-system and adds a live Overview with usage charts, gateway posture,
-provider-health attention signals, recent operations, and governed-change
-shortcuts backed by existing Admin APIs. The UI is still served from
+governing AI traffic. The Aurora Teal redesign introduced in `v0.1.19` remains
+the visual foundation in `v0.1.20`, including a live Overview with usage
+charts, gateway posture, provider-health attention signals, recent operations,
+and governed-change shortcuts backed by existing Admin APIs. The UI is still
+served from
 `/admin-ui`, with the static asset contract preserved at `/admin-ui/app.js` and
 `/admin-ui/app.css`, but the source of truth is the Vite and TypeScript package
 in `crates/gateway-api/admin-ui`.
@@ -98,6 +99,15 @@ Service health checks can target a service-specific path and method
 when the upstream root is not a valid health endpoint. The previous root probe
 remains the default for services without explicit health-check settings.
 
+Registered service rows in Routes now expose the persisted service timeout
+inline. Operators with `services:update` can save values from 1 through 600000
+milliseconds through the existing service PATCH API, and the same value is
+shown in Services and preserved across Studio re-imports. A timeout before
+response headers are committed returns the stable JSON `upstream_timeout`
+error with HTTP 504. A timeout after a stream commits leaves the original
+response status intact and records terminal timeout evidence in the request
+debug bundle.
+
 Service cost overrides now use structured pricing-rule rows instead of raw JSON
 textareas. Operators can configure a rule name, JSON Pointer selector, match
 value, cost mode, and optional estimated cost in the Services form. The stored
@@ -142,7 +152,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.19` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.20` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -255,7 +265,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.19` release retains CI and release workflow hardening with strict
+The `v0.1.20` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

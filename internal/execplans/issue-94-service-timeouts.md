@@ -27,6 +27,7 @@ debug trace.
 - [x] (2026-07-18 10:00Z) Added the registered-service timeout form to Routes, reused the existing service PATCH API, extended UI and service tests, regenerated assets, and updated operator documentation.
 - [x] (2026-07-18 10:21Z) Passed focused checks, Computer Use and isolated real-environment validation, the mandatory verification stack, the release build, and the Admin UI test suite.
 - [x] (2026-07-18 10:32Z) Committed and pushed the focused branch, opened ready-for-review PR #95, confirmed every GitHub check passed, and monitored the first Codex review cycle. The reviewer returned a clean thumbs-up with no review threads to fix, reply to, or resolve.
+- [x] (2026-07-18 11:14Z) Prepared patch release `0.1.20`: bumped all workspace crates, added release notes, updated current-release and deployment documentation, refreshed Admin UI version indicators and generated assets, and passed release metadata, Admin UI, strict docs, and mandatory verification checks.
 
 ## Surprises & Discoveries
 
@@ -91,6 +92,11 @@ debug trace.
   shared header builder keeps the wire contract consistent without duplicating
   timeout-specific response code.
   Date/Author: 2026-07-18 / Codex.
+- Decision: publish issue 94 as patch release `v0.1.20`.
+  Rationale: `v0.1.19` is the latest published tag, and the requested version
+  bump packages one focused timeout-control and error-contract change without
+  changing the existing minor-release API surface or requiring migration.
+  Date/Author: 2026-07-18 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -116,6 +122,12 @@ every GitHub pull request check passed. The repository's first automated Codex
 review completed with a thumbs-up and no review submissions or inline threads,
 so no feedback fix, reply, or resolution mutation was necessary. PR #95 is
 ready for human review.
+
+Release metadata now targets `0.1.20` across Cargo packages, the Admin UI,
+deployment manifests, README, and current operator/release documentation. The
+new changelog section records the structured 504 compatibility change, stream
+behavior, duplicate-usage fix, and secret-handling invariants. Historical
+`v0.1.19` changelog and compatibility-boundary references remain unchanged.
 
 ## Context and Orientation
 

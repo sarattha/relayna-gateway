@@ -1,21 +1,16 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.19` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.20` is the
 current release target.
 
-Version `0.1.19` refreshes Admin UI 2.0 with the Aurora Teal visual system, a
-live operational Overview, command navigation, governed-change shortcuts,
-accessible dialogs, responsive navigation, and progressive disclosure for
-dense workflows. It also includes operator governance, policy governance,
-provider intelligence, observability analytics, supply-chain hardening,
-structured service pricing-rule controls, paginated usage analytics tables,
-LiteLLM `/v1/embeddings` passthrough, opt-in Entra ID and Apigee front-door
-authorization, LiteLLM wildcard passthrough, per-route canonical OpenAI mode
-selection, and Admin portal controls for passthrough path/method and sensitive
-endpoint exposure. It also covers direct LiteLLM bearer
-delegation for canonical direct-mode routes, trusted-ingress dashboard/admin
-passthrough for explicitly exposed LiteLLM admin paths, and bearer-prefixed
-custom LiteLLM credential header values.
+Version `0.1.20` adds persisted registered-service timeout controls to the
+Admin UI Routes view and a structured HTTP 504 `upstream_timeout` response for
+terminal pre-response upstream timeouts. It preserves committed stream status,
+records timeout evidence in debug bundles, and prevents duplicate terminal
+usage rows. The release retains the Aurora Teal Admin UI 2.0 shell, operator
+and policy governance, provider intelligence, observability analytics,
+supply-chain hardening, LiteLLM passthrough and credential mapping, and opt-in
+Entra ID and Apigee front-door authorization.
 See
 [Current Feature Highlights](current-features.md),
 [Entra ID Auth](entra-id-auth.md), and
@@ -28,7 +23,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.19
+   python3 scripts/validate-release-metadata.py v0.1.20
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -46,15 +41,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.19 .
+   docker build -t relayna-gateway:0.1.20 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.19 -m "Release v0.1.19"
-   git push origin v0.1.19
+   git tag -a v0.1.20 -m "Release v0.1.20"
+   git push origin v0.1.20
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -64,10 +59,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.19`, the workflow publishes:
+For `v0.1.20`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.19
+ghcr.io/sarattha/relayna-gateway:0.1.20
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

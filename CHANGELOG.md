@@ -2,6 +2,38 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.20 - 2026-07-18
+
+### Added
+
+- Added inline registered-service timeout controls to the Admin UI Routes view.
+  Routes and Services now edit the same persisted `timeout_ms` value with the
+  existing `1..=600000` millisecond validation.
+- Added structured HTTP 504 `upstream_timeout` JSON responses when a configured
+  upstream timeout expires before response headers are committed.
+
+### Changed
+
+- Committed streams retain their original response status when a later
+  upstream timeout terminates the stream, while debug bundles record
+  `terminal_error=upstream_timeout` for diagnosis.
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.20` and `v0.1.20`.
+
+### Fixed
+
+- Terminal timeout failures now create exactly one usage event with status 504
+  instead of allowing Pingora's repeated completion callback to insert a
+  duplicate row.
+- Structured Gateway proxy errors now explicitly return
+  `Content-Type: application/json` with no-store caching semantics.
+
+### Security
+
+- Service credentials remain write-only and stripped before upstream calls;
+  timeout debug evidence contains bounded operational metadata without raw
+  request bodies, responses, virtual keys, or provider credentials.
+
 ## 0.1.19 - 2026-07-10
 
 ### Added
