@@ -107,13 +107,13 @@ pub use route_settings::{
 };
 pub use routing::{is_retry_safe_status, BackendType, Provider, Route, RouteMatch};
 pub use services::{
-    default_route_pattern, resolve_service_cost, route_pattern_wildcard_suffix,
-    service_wildcard_suffix, validate_service_name, AdminServiceStore, ResolvedServiceCost,
-    ServiceCostMode, ServiceCreateRequest, ServicePatchRequest, ServicePricingRule,
-    ServiceRegistration, ServiceRegistryLookup, ServiceResponse, ServiceRouteLookup, ServiceSource,
-    ServiceSyncStatus, ServiceSyncStatusResponse, StudioCatalogService,
-    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
-    StudioServicePricing,
+    default_route_pattern, resolve_service_cost, resolve_service_cost_from_value,
+    route_pattern_wildcard_suffix, service_preflight_estimated_cost, service_wildcard_suffix,
+    validate_service_name, AdminServiceStore, ResolvedServiceCost, ServiceCostMode,
+    ServiceCreateRequest, ServicePatchRequest, ServicePricingRule, ServiceRegistration,
+    ServiceRegistryLookup, ServiceResponse, ServiceRouteLookup, ServiceSource, ServiceSyncStatus,
+    ServiceSyncStatusResponse, StudioCatalogService, StudioServiceCatalogResponse,
+    StudioServiceImportPreview, StudioServiceImportRequest, StudioServicePricing,
 };
 pub use studio_settings::{
     normalize_base_url, normalize_secret, AdminStudioConnectionStore, EffectiveStudioConnection,

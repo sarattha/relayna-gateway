@@ -791,15 +791,18 @@ pub fn resolve_service_cost(
 ) -> ResolvedServiceCost {
     let value: Value = match serde_json::from_slice(body) {
         Ok(value) => value,
-        Err(_) => {
-            return ResolvedServiceCost {
-                cost_mode: default_cost_mode,
-                estimated_cost_usd: default_estimated_cost_usd,
-                pricing_rule_name: None,
-            };
-        }
+        Err(_) => return default_service_cost(default_cost_mode, default_estimated_cost_usd),
     };
 
+    resolve_service_cost_from_value(&value, default_cost_mode, default_estimated_cost_usd, rules)
+}
+
+pub fn resolve_service_cost_from_value(
+    value: &Value,
+    default_cost_mode: ServiceCostMode,
+    default_estimated_cost_usd: Option<f64>,
+    rules: &[ServicePricingRule],
+) -> ResolvedServiceCost {
     for rule in rules {
         let matched = value
             .pointer(&rule.json_pointer)
@@ -814,9 +817,33 @@ pub fn resolve_service_cost(
         }
     }
 
+    default_service_cost(default_cost_mode, default_estimated_cost_usd)
+}
+
+pub fn service_preflight_estimated_cost(
+    default_cost_mode: ServiceCostMode,
+    default_estimated_cost_usd: Option<f64>,
+    rules: &[ServicePricingRule],
+) -> Option<f64> {
+    let default = (default_cost_mode == ServiceCostMode::Fixed)
+        .then_some(default_estimated_cost_usd)
+        .flatten();
+    rules
+        .iter()
+        .filter(|rule| rule.cost_mode == ServiceCostMode::Fixed)
+        .filter_map(|rule| rule.estimated_cost_usd)
+        .fold(default, |highest, cost| {
+            Some(highest.map_or(cost, |current| current.max(cost)))
+        })
+}
+
+fn default_service_cost(
+    cost_mode: ServiceCostMode,
+    estimated_cost_usd: Option<f64>,
+) -> ResolvedServiceCost {
     ResolvedServiceCost {
-        cost_mode: default_cost_mode,
-        estimated_cost_usd: default_estimated_cost_usd,
+        cost_mode,
+        estimated_cost_usd,
         pricing_rule_name: None,
     }
 }
@@ -1158,6 +1185,57 @@ mod tests {
         assert_eq!(resolved.cost_mode, ServiceCostMode::Fixed);
         assert_eq!(resolved.estimated_cost_usd, Some(0.01));
         assert_eq!(resolved.pricing_rule_name, None);
+    }
+
+    #[test]
+    fn resolves_service_pricing_rule_from_preparsed_selector_value() {
+        let rules = vec![ServicePricingRule {
+            name: Some("docint".to_owned()),
+            json_pointer: "/engine".to_owned(),
+            equals: "docint".to_owned(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.5),
+        }];
+
+        let resolved = resolve_service_cost_from_value(
+            &serde_json::json!({"engine": "docint"}),
+            ServiceCostMode::Fixed,
+            Some(0.01),
+            &rules,
+        );
+
+        assert_eq!(resolved.cost_mode, ServiceCostMode::Fixed);
+        assert_eq!(resolved.estimated_cost_usd, Some(0.5));
+        assert_eq!(resolved.pricing_rule_name.as_deref(), Some("docint"));
+    }
+
+    #[test]
+    fn service_preflight_uses_highest_configured_fixed_cost() {
+        let rules = vec![
+            ServicePricingRule {
+                name: Some("docint".to_owned()),
+                json_pointer: "/engine".to_owned(),
+                equals: "docint".to_owned(),
+                cost_mode: ServiceCostMode::Fixed,
+                estimated_cost_usd: Some(0.5),
+            },
+            ServicePricingRule {
+                name: Some("provider-cost".to_owned()),
+                json_pointer: "/engine".to_owned(),
+                equals: "provider".to_owned(),
+                cost_mode: ServiceCostMode::Passthrough,
+                estimated_cost_usd: Some(2.0),
+            },
+        ];
+
+        assert_eq!(
+            service_preflight_estimated_cost(ServiceCostMode::Fixed, Some(0.01), &rules,),
+            Some(0.5)
+        );
+        assert_eq!(
+            service_preflight_estimated_cost(ServiceCostMode::Passthrough, None, &rules[1..],),
+            None
+        );
     }
 
     #[test]

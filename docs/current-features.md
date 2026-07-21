@@ -115,6 +115,12 @@ API payload still uses `pricing_rules` with `json_pointer` fields; a top-level
 request key such as `model` is selected as `/model`, while nested request data
 such as `payload.page_count` is selected as `/payload/page_count`.
 
+The same rules support `multipart/form-data` service requests. Non-file UTF-8
+form fields are exposed as top-level string selectors, so `/engine` matches an
+`engine=docint` form field while uploaded files remain excluded from pricing
+metadata. Preflight cost policy and budget reservation use the highest fixed
+service or rule estimate and final accounting reconciles to the matched rule.
+
 ![Service registration and governance workflow](assets/screenshots/admin-ui-2/aurora-teal-services.png)
 
 See [Provider Intelligence](provider-intelligence.md) for the deeper routing,

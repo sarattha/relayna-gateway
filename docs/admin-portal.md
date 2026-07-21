@@ -250,6 +250,20 @@ These examples match request bodies like `{"model":"doct-int"}` and
 pricing rule uses `/...` only because Gateway resolves the selector as a JSON
 Pointer.
 
+For `multipart/form-data` requests, Gateway exposes each non-file UTF-8 form
+field as a top-level string in the same selector document. A form field named
+`engine` with value `docint` therefore matches `json_pointer: "/engine"` and
+`equals: "docint"`. File parts are never selector values. Multipart pricing
+metadata is bounded to 128 fields, 256 bytes per field name, 16 KiB per field
+value, and 64 KiB in total; fields outside those bounds do not match rules.
+
+Gateway cannot know a JSON or multipart body selector before receiving the
+request body. For preflight policy and budget enforcement, it therefore uses
+the highest configured fixed estimate across the service default and its
+pricing rules, then reconciles the reservation to the actual matching rule.
+This fail-closed behavior means `max_cost_per_request` must permit the most
+expensive fixed variant that the key is allowed to submit.
+
 ![Service creation and import controls](assets/screenshots/admin-first-time-setup/05-service-create-or-import.png)
 
 What to check: the saved service should be enabled, have the intended route

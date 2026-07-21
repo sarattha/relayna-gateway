@@ -10,9 +10,10 @@ use gateway_core::{
     execution_events_from_records, extract_client_guardrails, extract_estimated_cost_usd,
     extract_generation_features, extract_model, extract_usage_tokens,
     guardrail_executor_for_definitions, is_retry_safe_status, redact_pii_text,
-    resolve_guardrail_plan, route_pattern_wildcard_suffix, service_wildcard_suffix,
-    strip_client_guardrails, validate_relayna_key_header_name, verify_apigee_trusted_identity,
-    ApigeeTrustedHeaderConfig, AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
+    resolve_guardrail_plan, resolve_service_cost_from_value, route_pattern_wildcard_suffix,
+    service_preflight_estimated_cost, service_wildcard_suffix, strip_client_guardrails,
+    validate_relayna_key_header_name, verify_apigee_trusted_identity, ApigeeTrustedHeaderConfig,
+    AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
     CredentialHeaderValueFormat, EntraAuthConfig, EntraIdentityContext, GatewayAuthRuntimeConfig,
     GatewayAuthRuntimeSnapshot, GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition,
     GuardrailExecutionEvent, GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy,
@@ -23,6 +24,7 @@ use gateway_core::{
     SharedGatewayAuthRuntime, UsageEvent, UsageRecorder, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use http::{header, header::HeaderName, Uri};
+use multra::{Constraints, Multipart, SizeLimit};
 use pingora_core::{
     upstreams::peer::HttpPeer, Error as PingoraError, ErrorSource, ErrorType,
     Result as PingoraResult,
@@ -35,6 +37,11 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+
+const MAX_MULTIPART_PRICING_FIELDS: usize = 128;
+const MAX_MULTIPART_PRICING_FIELD_NAME_BYTES: usize = 256;
+const MAX_MULTIPART_PRICING_FIELD_VALUE_BYTES: usize = 16 * 1024;
+const MAX_MULTIPART_PRICING_METADATA_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct PingoraLiteLlmConfig {
@@ -252,6 +259,7 @@ pub struct PingoraContext {
     key: Option<AuthenticatedKey>,
     entra_identity: Option<EntraIdentityContext>,
     relayna_key_header: String,
+    request_content_type: Option<String>,
     body_prefix: Vec<u8>,
     body_bytes_seen: usize,
     response_body_prefix: Vec<u8>,
@@ -321,6 +329,7 @@ where
             key: None,
             entra_identity: None,
             relayna_key_header: self.config.relayna_key_header().to_owned(),
+            request_content_type: None,
             body_prefix: Vec::new(),
             body_bytes_seen: 0,
             response_body_prefix: Vec::new(),
@@ -372,6 +381,8 @@ where
         Self::CTX: Send + Sync,
     {
         let req = session.req_header();
+        ctx.request_content_type =
+            header_value(req, header::CONTENT_TYPE.as_str()).map(ToOwned::to_owned);
         ctx.request_id = req
             .headers
             .get("x-request-id")
@@ -733,6 +744,7 @@ where
         let request_id = ctx.request_id.clone();
         let definitions = ctx.guardrail_definitions.clone();
         let mut policy = ctx.guardrail_policy.clone();
+        let mut pricing_selector = None;
         if end_of_stream {
             let raw_body = match rewriter.preview_with_chunk(body.as_ref()) {
                 Ok(raw_body) => raw_body,
@@ -742,6 +754,19 @@ where
                     return Ok(());
                 }
             };
+            if !ctx.service_pricing_rules.is_empty() {
+                let max_body_bytes = ctx
+                    .route_match
+                    .as_ref()
+                    .map(|matched| matched.max_body_bytes)
+                    .unwrap_or(raw_body.len());
+                pricing_selector = service_pricing_selector(
+                    &raw_body,
+                    ctx.request_content_type.as_deref(),
+                    max_body_bytes,
+                )
+                .await;
+            }
             let features = extract_generation_features(&raw_body);
             if let Some(key) = key.as_ref() {
                 match self
@@ -881,6 +906,7 @@ where
                 ctx.body_prefix
                     .extend_from_slice(&body[..body.len().min(65_536)]);
             }
+            resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
         }
         Ok(())
     }
@@ -924,7 +950,9 @@ where
             respond_error(session, error, &ctx.request_id).await?;
             return Ok(false);
         }
-        resolve_service_cost_for_ctx(ctx);
+        // Body selectors are unavailable at this lifecycle stage. Reserve a
+        // conservative fixed-cost ceiling and reconcile after body parsing.
+        prepare_service_cost_for_ctx(ctx);
         if let Some(updated) = ctx.route_match.clone() {
             matched = updated;
         }
@@ -2190,21 +2218,125 @@ struct ResolvedUsageCost {
     pricing_rule_name: Option<String>,
 }
 
-fn resolve_service_cost_for_ctx(ctx: &mut PingoraContext) {
-    if ctx.resolved_service_cost.is_some() {
-        return;
+async fn service_pricing_selector(
+    body: &[u8],
+    content_type: Option<&str>,
+    max_body_bytes: usize,
+) -> Option<serde_json::Value> {
+    let boundary = content_type.and_then(|value| multra::parse_boundary(value).ok());
+    let Some(boundary) = boundary else {
+        return serde_json::from_slice(body).ok();
+    };
+
+    let whole_stream_limit = u64::try_from(max_body_bytes).unwrap_or(u64::MAX);
+    let constraints = Constraints::new().size_limit(
+        SizeLimit::new()
+            .whole_stream(whole_stream_limit)
+            .per_field(whole_stream_limit),
+    );
+    // The request rewriter already owns this bounded body. Multra borrows it
+    // and drains file fields without copying them into selector metadata.
+    let mut multipart = Multipart::with_reader_and_constraints(body, boundary, constraints);
+    let mut selector = serde_json::Map::new();
+    let mut retained_bytes = 0_usize;
+    let mut retained_fields = 0_usize;
+
+    loop {
+        let mut field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(_) => return None,
+        };
+        let name = field
+            .name()
+            .filter(|name| name.len() <= MAX_MULTIPART_PRICING_FIELD_NAME_BYTES)
+            .map(ToOwned::to_owned);
+        let retain = field.file_name().is_none()
+            && name.is_some()
+            && retained_fields < MAX_MULTIPART_PRICING_FIELDS;
+        let mut value = Vec::new();
+        let mut oversized = false;
+
+        loop {
+            let chunk = match field.chunk().await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => break,
+                Err(_) => return None,
+            };
+            if !retain || oversized {
+                continue;
+            }
+            let field_len = value.len().saturating_add(chunk.len());
+            let total_len = retained_bytes.saturating_add(field_len);
+            if field_len > MAX_MULTIPART_PRICING_FIELD_VALUE_BYTES
+                || total_len > MAX_MULTIPART_PRICING_METADATA_BYTES
+            {
+                value.clear();
+                oversized = true;
+                continue;
+            }
+            value.extend_from_slice(&chunk);
+        }
+
+        if !retain || oversized {
+            continue;
+        }
+        retained_fields = retained_fields.saturating_add(1);
+        let Ok(value) = String::from_utf8(value) else {
+            continue;
+        };
+        retained_bytes = retained_bytes.saturating_add(value.len());
+        let Some(name) = name else {
+            continue;
+        };
+        selector.insert(name, value.into());
     }
+
+    Some(serde_json::Value::Object(selector))
+}
+
+fn prepare_service_cost_for_ctx(ctx: &mut PingoraContext) {
     let Some(matched) = ctx.route_match.as_mut() else {
         return;
     };
     if matched.provider != Provider::InternalService {
         return;
     }
-    let resolved = gateway_core::resolve_service_cost(
-        &ctx.body_prefix,
-        ctx.service_cost_mode.unwrap_or(ServiceCostMode::None),
+    let default_cost_mode = ctx.service_cost_mode.unwrap_or(ServiceCostMode::None);
+    matched.estimated_cost_usd = service_preflight_estimated_cost(
+        default_cost_mode,
         ctx.service_estimated_cost_usd,
         &ctx.service_pricing_rules,
+    );
+    ctx.resolved_service_cost = Some(ResolvedServiceCost {
+        cost_mode: default_cost_mode,
+        estimated_cost_usd: ctx.service_estimated_cost_usd,
+        pricing_rule_name: None,
+    });
+}
+
+fn resolve_service_cost_for_ctx(ctx: &mut PingoraContext, selector: Option<&serde_json::Value>) {
+    let Some(matched) = ctx.route_match.as_mut() else {
+        return;
+    };
+    if matched.provider != Provider::InternalService {
+        return;
+    }
+    let default_cost_mode = ctx.service_cost_mode.unwrap_or(ServiceCostMode::None);
+    let resolved = selector.map_or_else(
+        || ResolvedServiceCost {
+            cost_mode: default_cost_mode,
+            estimated_cost_usd: ctx.service_estimated_cost_usd,
+            pricing_rule_name: None,
+        },
+        |value| {
+            resolve_service_cost_from_value(
+                value,
+                default_cost_mode,
+                ctx.service_estimated_cost_usd,
+                &ctx.service_pricing_rules,
+            )
+        },
     );
     matched.estimated_cost_usd = match resolved.cost_mode {
         ServiceCostMode::Fixed => resolved.estimated_cost_usd,
@@ -2434,6 +2566,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         key: None,
         entra_identity: None,
         relayna_key_header: ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned(),
+        request_content_type: None,
         body_prefix: Vec::new(),
         body_bytes_seen: 0,
         response_body_prefix: Vec::new(),
@@ -2570,6 +2703,135 @@ mod tests {
             default_proxy_failure_status(&PingoraError::new_up(ErrorType::HTTPStatus(503))),
             503
         );
+    }
+
+    #[tokio::test]
+    async fn multipart_pricing_extracts_text_field_after_large_file_part() {
+        let boundary = "ocr-pricing-boundary";
+        let mut body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"document.pdf\"\r\nContent-Type: application/pdf\r\n\r\n"
+        )
+        .into_bytes();
+        body.extend(std::iter::repeat_n(b'x', 70_000));
+        body.extend_from_slice(
+            format!(
+                "\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"engine\"\r\n\r\ndocint\r\n--{boundary}--\r\n"
+            )
+            .as_bytes(),
+        );
+        let content_type = format!("multipart/form-data; boundary=\"{boundary}\"");
+
+        let selector = service_pricing_selector(&body, Some(&content_type), body.len())
+            .await
+            .expect("multipart selector");
+
+        assert_eq!(
+            selector.pointer("/engine").and_then(|value| value.as_str()),
+            Some("docint")
+        );
+        assert!(selector.pointer("/file").is_none());
+
+        let resolved = resolve_service_cost_from_value(
+            &selector,
+            ServiceCostMode::Fixed,
+            Some(0.01),
+            &[ServicePricingRule {
+                name: Some("docint".to_owned()),
+                json_pointer: "/engine".to_owned(),
+                equals: "docint".to_owned(),
+                cost_mode: ServiceCostMode::Fixed,
+                estimated_cost_usd: Some(0.5),
+            }],
+        );
+        assert_eq!(resolved.estimated_cost_usd, Some(0.5));
+        assert_eq!(resolved.pricing_rule_name.as_deref(), Some("docint"));
+    }
+
+    #[tokio::test]
+    async fn multipart_pricing_skips_oversized_text_and_continues() {
+        let boundary = "bounded-pricing";
+        let mut body =
+            format!("--{boundary}\r\nContent-Disposition: form-data; name=\"notes\"\r\n\r\n")
+                .into_bytes();
+        body.extend(std::iter::repeat_n(
+            b'n',
+            MAX_MULTIPART_PRICING_FIELD_VALUE_BYTES + 1,
+        ));
+        body.extend_from_slice(
+            format!(
+                "\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"engine\"\r\n\r\ninternal\r\n--{boundary}--\r\n"
+            )
+            .as_bytes(),
+        );
+        let content_type = format!("multipart/form-data; boundary={boundary}");
+
+        let selector = service_pricing_selector(&body, Some(&content_type), body.len())
+            .await
+            .expect("multipart selector");
+
+        assert!(selector.pointer("/notes").is_none());
+        assert_eq!(
+            selector.pointer("/engine").and_then(|value| value.as_str()),
+            Some("internal")
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_multipart_pricing_falls_back_without_selector() {
+        let selector = service_pricing_selector(
+            b"--expected\r\nContent-Disposition: form-data; name=\"engine\"\r\n\r\ndocint",
+            Some("multipart/form-data; boundary=expected"),
+            1024,
+        )
+        .await;
+
+        assert!(selector.is_none());
+    }
+
+    #[test]
+    fn service_pricing_preflight_reserves_ceiling_then_resolves_selector() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.route_match = Some(service_route_match_for_persisted_registration(
+            &http::Method::POST,
+            "/services/ocr/ocr",
+            "ocr",
+        ));
+        ctx.service_cost_mode = Some(ServiceCostMode::Fixed);
+        ctx.service_estimated_cost_usd = Some(0.01);
+        ctx.service_pricing_rules = vec![ServicePricingRule {
+            name: Some("docint".to_owned()),
+            json_pointer: "/engine".to_owned(),
+            equals: "docint".to_owned(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.5),
+        }];
+
+        prepare_service_cost_for_ctx(&mut ctx);
+
+        assert_eq!(
+            ctx.route_match
+                .as_ref()
+                .and_then(|matched| matched.estimated_cost_usd),
+            Some(0.5)
+        );
+        assert_eq!(
+            ctx.resolved_service_cost
+                .as_ref()
+                .and_then(|cost| cost.estimated_cost_usd),
+            Some(0.01)
+        );
+
+        resolve_service_cost_for_ctx(&mut ctx, Some(&serde_json::json!({"engine": "docint"})));
+
+        let resolved = ctx.resolved_service_cost.as_ref().expect("resolved cost");
+        assert_eq!(resolved.estimated_cost_usd, Some(0.5));
+        assert_eq!(resolved.pricing_rule_name.as_deref(), Some("docint"));
+        let usage = resolved_usage_cost(&ctx);
+        assert_eq!(
+            usage.cost_source.as_deref(),
+            Some("service_pricing_rule_fixed")
+        );
+        assert_eq!(usage.estimated_cost_usd, Some(0.5));
     }
 
     #[test]
