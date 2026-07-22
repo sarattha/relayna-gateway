@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.20` feature set.
+This page summarizes the `v0.1.21` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -10,7 +10,7 @@ customer, provider, token, or prompt data.
 
 Admin UI 2.0 turns the embedded portal into a compact operator console for
 governing AI traffic. The Aurora Teal redesign introduced in `v0.1.19` remains
-the visual foundation in `v0.1.20`, including a live Overview with usage
+the visual foundation in `v0.1.21`, including a live Overview with usage
 charts, gateway posture, provider-health attention signals, recent operations,
 and governed-change shortcuts backed by existing Admin APIs. The UI is still
 served from
@@ -32,6 +32,20 @@ panels, progressive disclosure for long forms, wide-table scrolling,
 responsive drawer navigation, and floating message boxes for async action
 results. The Rust binary still embeds generated assets, so production
 deployments do not need a separate frontend service.
+
+Registered services can preview and sync OpenAPI 3.x JSON from a same-origin
+relative path such as `/openapi.json`. The service editor displays the durable
+endpoint catalog and lets operators assign `none`, `fixed`, or `passthrough`
+billing per method/path operation. Relayna runtime, status, events, DLQ,
+failed-task, execution, and health endpoints default to `none`, while billable
+service endpoints inherit the service default and retain body selector
+overrides. Discovery is an audited control-plane workflow with no redirects,
+credential forwarding, external reference fetching, or request-path
+dependency.
+
+See [OpenAPI Service Import and Endpoint Pricing](openapi-service-pricing.md)
+for preview/sync API examples, cost precedence, multipart OCR selectors,
+budget ceilings, drift handling, and security requirements.
 
 ![Responsive Admin UI navigation drawer](assets/screenshots/admin-ui-2/aurora-teal-mobile-navigation.png)
 
@@ -115,6 +129,12 @@ API payload still uses `pricing_rules` with `json_pointer` fields; a top-level
 request key such as `model` is selected as `/model`, while nested request data
 such as `payload.page_count` is selected as `/payload/page_count`.
 
+The same rules support `multipart/form-data` service requests. Non-file UTF-8
+form fields are exposed as top-level string selectors, so `/engine` matches an
+`engine=docint` form field while uploaded files remain excluded from pricing
+metadata. Preflight cost policy and budget reservation use the highest fixed
+service or rule estimate and final accounting reconciles to the matched rule.
+
 ![Service registration and governance workflow](assets/screenshots/admin-ui-2/aurora-teal-services.png)
 
 See [Provider Intelligence](provider-intelligence.md) for the deeper routing,
@@ -152,7 +172,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.20` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.21` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -265,7 +285,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.20` release retains CI and release workflow hardening with strict
+The `v0.1.21` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

@@ -326,4 +326,27 @@ mod tests {
         assert!(!is_retry_safe_status(400));
         assert!(!is_retry_safe_status(401));
     }
+
+    #[test]
+    fn covers_remaining_legacy_service_routes_and_route_labels() {
+        for (path, expected) in [
+            ("/translation", Route::Translation),
+            ("/ocr", Route::Ocr),
+            ("/embeddings", Route::Embeddings),
+        ] {
+            assert_eq!(Route::resolve(&Method::POST, path), Ok(expected));
+        }
+        for (route, expected) in [
+            (
+                Route::AnthropicMessagesCountTokens,
+                "/v1/messages/count_tokens",
+            ),
+            (Route::AnthropicMessageBatch, "/v1/messages/batches/*"),
+            (Route::LiteLlmPassthrough, "/litellm/*"),
+            (Route::Ocr, "/ocr"),
+            (Route::Embeddings, "/embeddings"),
+        ] {
+            assert_eq!(route.as_str(), expected);
+        }
+    }
 }

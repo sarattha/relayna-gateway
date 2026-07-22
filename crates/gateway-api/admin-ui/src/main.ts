@@ -41,6 +41,7 @@ const state = {
   debugBundle: null,
   editingKeyId: null,
   editingServiceName: null,
+  openapiPreviews: {},
   editingGuardrailName: null,
   usagePagination: {
     eventsOffset: 0,
@@ -1823,6 +1824,7 @@ async function services() {
   document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
   document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
   bindPricingRuleEditors();
+  bindEndpointPricingEditors();
   document.querySelectorAll("[data-service-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(serviceAction));
   });
@@ -1901,6 +1903,117 @@ function pricingRuleFromRow(row) {
   return rule;
 }
 
+function openApiEndpointPricingEditor(service) {
+  const endpoints = service.openapi_endpoints || [];
+  const rules = service.endpoint_pricing_rules || [];
+  const endpointKey = (method, path) => `${String(method).toUpperCase()} ${path}`;
+  const endpointKeys = new Set(endpoints.map((endpoint) => endpointKey(endpoint.method, endpoint.path_template)));
+  const rows = rules.map((rule) => {
+    const endpoint = endpoints.find((candidate) => endpointKey(candidate.method, candidate.path_template) === endpointKey(rule.method, rule.path_template));
+    const stale = !endpointKeys.has(endpointKey(rule.method, rule.path_template));
+    const operationId = endpoint?.operation_id || rule.operation_id || "";
+    return `
+      <tr data-endpoint-pricing-row data-operation-id="${attr(operationId)}">
+        <td><code data-endpoint-field="method">${esc(rule.method)}</code></td>
+        <td><code data-endpoint-field="path_template">${esc(rule.path_template)}</code><div class="subtle">${esc(operationId)}</div></td>
+        <td>${endpoint?.relayna_default ? '<span class="badge good">Relayna default</span>' : stale ? '<span class="badge warn">stale</span>' : '<span class="badge">service</span>'}</td>
+        <td><select data-endpoint-field="cost_mode">${option("none", rule.cost_mode)}${option("fixed", rule.cost_mode)}${option("passthrough", rule.cost_mode)}</select></td>
+        <td><input data-endpoint-field="estimated_cost_usd" type="number" min="0" step="0.001" value="${attr(rule.estimated_cost_usd ?? "")}" aria-label="Estimated cost for ${attr(rule.method)} ${attr(rule.path_template)}"></td>
+      </tr>
+    `;
+  }).join("");
+  return `
+    <div class="field wide-field endpoint-pricing-editor" data-endpoint-pricing-editor data-service-name="${attr(service.name)}">
+      <span>OpenAPI endpoint pricing</span>
+      <input type="hidden" name="endpoint_pricing_rules" value="${attr(JSON.stringify(rules))}">
+      <div class="form-grid compact-grid">
+        <label>OpenAPI source path<input name="openapi_source_path" value="${attr(service.openapi_source_path || "/openapi.json")}" placeholder="/openapi.json"></label>
+        <div class="field"><span>Discovery status</span><div>${service.openapi_synced_at ? '<span class="badge good">synced</span>' : '<span class="badge warn">not synced</span>'} <span class="subtle">${service.openapi_synced_at ? esc(time(service.openapi_synced_at)) : ""}</span></div></div>
+      </div>
+      <div class="actions">
+        <button type="button" data-openapi-action="preview" data-service-name="${attr(service.name)}">Preview OpenAPI</button>
+      </div>
+      <div class="help">Discovery fetches JSON from the registered upstream origin only, does not forward service credentials, does not follow redirects, and never runs on the proxy request path.</div>
+      ${rows ? tableWrap(`<table><thead><tr><th>Method</th><th>Endpoint</th><th>Class</th><th>Cost mode</th><th>Estimated cost</th></tr></thead><tbody>${rows}</tbody></table>`) : emptyState("No discovered endpoints. Preview and sync /openapi.json to create endpoint pricing rules.")}
+    </div>
+  `;
+}
+
+function bindEndpointPricingEditors() {
+  document.querySelectorAll("[data-endpoint-pricing-editor]").forEach((editor) => {
+    const sync = () => syncEndpointPricingEditor(editor);
+    editor.addEventListener("input", sync);
+    editor.addEventListener("change", sync);
+  });
+  document.querySelectorAll("[data-openapi-action='preview']").forEach((button) => {
+    button.addEventListener("click", handleAsync(previewServiceOpenApi));
+  });
+}
+
+function syncEndpointPricingEditor(editor) {
+  const rules = Array.from(editor.querySelectorAll("[data-endpoint-pricing-row]")).map((row) => {
+    const text = (name) => String(row.querySelector(`[data-endpoint-field="${name}"]`)?.textContent || "").trim();
+    const value = (name) => String(row.querySelector(`[data-endpoint-field="${name}"]`)?.value || "").trim();
+    const estimatedCost = value("estimated_cost_usd");
+    const rule = {
+      method: text("method"),
+      path_template: text("path_template"),
+      operation_id: row.dataset.operationId || undefined,
+      cost_mode: value("cost_mode") || "none",
+      estimated_cost_usd: estimatedCost === "" ? null : Number(estimatedCost),
+    };
+    if (!rule.operation_id) delete rule.operation_id;
+    return rule;
+  });
+  editor.querySelector('input[name="endpoint_pricing_rules"]').value = JSON.stringify(rules);
+}
+
+async function previewServiceOpenApi(event) {
+  const serviceName = event.currentTarget.dataset.serviceName;
+  const form = document.querySelector("#service-edit-form");
+  const sourcePath = String(new FormData(form).get("openapi_source_path") || "/openapi.json").trim();
+  const preview = await api(`/admin-ui/admin/services/${serviceName}/openapi/preview`, {
+    method: "POST",
+    body: JSON.stringify({ source_path: sourcePath }),
+  });
+  state.openapiPreviews[serviceName] = preview;
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
+  backdrop.innerHTML = `
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+      <h3 id="${titleId}">OpenAPI preview · ${esc(serviceName)}</h3>
+      <p>${esc(preview.title || "OpenAPI")} ${esc(preview.version || "")} · ${preview.endpoints.length} operations · +${preview.added.length} / −${preview.removed.length}</p>
+      <div class="modal-scroll">${table(
+        ["Method", "Endpoint", "Operation", "Default billing"],
+        preview.endpoints.map((endpoint) => [
+          `<code>${esc(endpoint.method)}</code>`,
+          `<code>${esc(endpoint.path_template)}</code>`,
+          esc(endpoint.operation_id || endpoint.summary || ""),
+          endpoint.relayna_default ? '<span class="badge good">none</span>' : '<span class="badge warn">service default</span>',
+        ]),
+      )}</div>
+      <div class="notice warn"><strong>Review before sync.</strong><span>Existing endpoint prices are preserved. New Relayna endpoints default to none; other new endpoints inherit the service price.</span></div>
+      <div class="form-actions">
+        <button type="button" class="primary" data-openapi-sync>Sync endpoint pricing</button>
+        <button type="button" data-close-modal>Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = mountDialog(backdrop, { initialFocus: "[data-close-modal]" });
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => close());
+  backdrop.querySelector("[data-openapi-sync]").addEventListener("click", handleAsync(async () => {
+    await api(`/admin-ui/admin/services/${serviceName}/openapi/sync`, {
+      method: "POST",
+      body: JSON.stringify({ source_path: preview.source_path, expected_schema_hash: preview.schema_hash }),
+    });
+    close();
+    setNotice(`OpenAPI endpoint pricing synced for ${serviceName}.`, "success");
+    await services();
+  }));
+}
+
 function serviceEditForm(service) {
   return `
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
@@ -1927,6 +2040,7 @@ function serviceEditForm(service) {
         <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
         <div class="help wide-field">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
         ${pricingRulesEditor(service.pricing_rules || [])}
+        ${openApiEndpointPricingEditor(service)}
       `)}
       <div class="form-actions sticky-form-actions wide-field">
         <button type="submit" class="primary">Save service</button>
@@ -2053,7 +2167,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.20")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.21")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -3335,6 +3449,8 @@ function serviceBody(form, patch) {
     cost_mode: form.get("cost_mode"),
     estimated_cost_usd: nullableNumber(form.get("estimated_cost_usd")),
     pricing_rules: pricingRulesFromForm(form),
+    openapi_source_path: patch ? nullableString(form.get("openapi_source_path")) : undefined,
+    endpoint_pricing_rules: endpointPricingRulesFromForm(form),
     fallback_services: csv(form.get("fallback_services")),
   };
   if (!patch) {
@@ -3354,6 +3470,14 @@ function pricingRulesFromForm(form) {
   if (!value) return undefined;
   const parsed = JSON.parse(value);
   if (!Array.isArray(parsed)) throw new Error("pricing_rules must be a JSON array");
+  return parsed;
+}
+
+function endpointPricingRulesFromForm(form) {
+  const value = String(form.get("endpoint_pricing_rules") || "").trim();
+  if (!value) return undefined;
+  const parsed = JSON.parse(value);
+  if (!Array.isArray(parsed)) throw new Error("endpoint_pricing_rules must be a JSON array");
   return parsed;
 }
 

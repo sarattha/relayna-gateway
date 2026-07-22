@@ -100,7 +100,8 @@ PostgreSQL is the source of truth for durable state:
 - Policy fields for routes, models, providers, project and individual service
   links, streaming, tools, rate limits, and budgets.
 - Usage events consumed by Relayna Studio and operators.
-- Service registrations and Studio sync state.
+- Service registrations, Studio sync state, durable OpenAPI endpoint catalogs,
+  and per-endpoint pricing rules.
 - Global OpenAI route enablement and mode selection for `/v1/chat/completions`,
   `/v1/responses`, and `/v1/embeddings`.
 - LiteLLM wildcard passthrough settings for enablement, path/method

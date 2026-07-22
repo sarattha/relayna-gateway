@@ -867,4 +867,62 @@ mod tests {
             GatewayError::InvalidProviderConfigPayload
         );
     }
+
+    #[test]
+    fn route_identifiers_exposures_and_validation_cover_edge_cases() {
+        assert_eq!(openai_route_id(Route::Summary), None);
+        assert_eq!(openai_route_from_id("unknown"), None);
+        for route in [
+            Route::AnthropicMessages,
+            Route::AnthropicMessagesCountTokens,
+            Route::AnthropicMessageBatches,
+            Route::AnthropicMessageBatch,
+            Route::AnthropicMessageBatchResults,
+            Route::AnthropicMessageBatchCancel,
+            Route::AnthropicModels,
+        ] {
+            let id = anthropic_route_id(route).expect("Anthropic route id");
+            assert_eq!(anthropic_route_from_id(id), Some(route));
+        }
+        assert_eq!(anthropic_route_id(Route::Summary), None);
+        assert_eq!(anthropic_route_from_id("unknown"), None);
+
+        for exposure in [
+            LiteLlmSensitiveRouteExposure::Disabled,
+            LiteLlmSensitiveRouteExposure::OperatorOnly,
+            LiteLlmSensitiveRouteExposure::ExplicitlyExposed,
+            LiteLlmSensitiveRouteExposure::TrustedIngress,
+        ] {
+            assert_eq!(
+                parse_litellm_exposure(litellm_exposure_str(exposure)).unwrap(),
+                exposure
+            );
+        }
+        assert!(parse_litellm_exposure("unknown").is_err());
+        assert!(parse_openai_route_mode("unknown").is_err());
+
+        let patch = |allowed_paths, allowed_methods| LiteLlmPassthroughSettingsPatchRequest {
+            enabled: None,
+            allowed_paths,
+            allowed_methods,
+            ui_exposure: None,
+            admin_api_exposure: None,
+            timeout_ms: None,
+            max_request_body_bytes: None,
+            max_response_body_bytes: None,
+        };
+        let invalid_paths = patch(Some(Vec::new()), None);
+        assert!(invalid_paths.validate().is_err());
+        let invalid_paths = patch(Some(vec!["relative".to_owned()]), None);
+        assert!(invalid_paths.validate().is_err());
+        let invalid_methods = patch(None, Some(vec!["NOT A METHOD".to_owned()]));
+        assert!(invalid_methods.validate().is_err());
+
+        let mut settings = LiteLlmPassthroughSettings::default_with_updated_at(Utc::now());
+        assert!(!settings.allows(&Method::GET, "/v1/models"));
+        settings.enabled = true;
+        assert!(!settings.allows(&Method::DELETE, "/v1/models"));
+        settings.ui_exposure = LiteLlmSensitiveRouteExposure::TrustedIngress;
+        assert!(!settings.trusted_ingress_ui_path_allowed(&Method::GET, "/not-ui"));
+    }
 }

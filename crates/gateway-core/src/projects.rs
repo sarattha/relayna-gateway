@@ -93,3 +93,28 @@ pub fn validate_project_name(name: &str) -> GatewayResult<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_name_validation_rejects_blank_and_oversized_values() {
+        assert_eq!(
+            ProjectCreateRequest {
+                name: "  ".to_owned()
+            }
+            .validate(),
+            Err(GatewayError::InvalidProjectPayload)
+        );
+        assert_eq!(
+            ProjectPatchRequest {
+                name: Some("x".repeat(121)),
+                service_names: None,
+            }
+            .validate(),
+            Err(GatewayError::InvalidProjectPayload)
+        );
+        assert!(ProjectPatchRequest::default().validate().is_ok());
+    }
+}

@@ -47,8 +47,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.20/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.20/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.21/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.21/);
 });
 
 test("admin portal exposes responsive operator navigation and accessible workflows", () => {
@@ -329,6 +329,14 @@ test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /data-pricing-rule-action="add"/);
   assert.match(js, /data-pricing-rule-field="json_pointer"/);
   assert.match(js, /Use JSON Pointer selectors such as \/model or \/payload\/page_count/);
+  assert.match(js, /function openApiEndpointPricingEditor\(service\)/);
+  assert.match(js, /name="endpoint_pricing_rules"/);
+  assert.match(js, /openapi_source_path: patch \? nullableString/);
+  assert.match(js, /data-openapi-action="preview"/);
+  assert.match(js, /\/openapi\/preview/);
+  assert.match(js, /\/openapi\/sync/);
+  assert.match(js, /New Relayna endpoints default to none/);
+  assert.match(js, /does not forward service credentials/);
   assert.doesNotMatch(js, /<label>Pricing rules<textarea/);
   assert.match(css, /\.pricing-rule-row/);
   assert.match(css, /\.service-stack/);

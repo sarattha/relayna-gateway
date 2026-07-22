@@ -94,6 +94,12 @@ pub enum GatewayError {
     InvalidServicePayload,
     #[error("service upstream configuration is invalid")]
     InvalidServiceUpstream,
+    #[error("service OpenAPI document is unavailable")]
+    ServiceOpenApiUnavailable,
+    #[error("service OpenAPI document is invalid")]
+    InvalidServiceOpenApi,
+    #[error("service OpenAPI document changed after preview")]
+    ServiceOpenApiChanged,
     #[error("usage query is invalid")]
     InvalidUsageQuery,
     #[error("debug bundle was not found")]
@@ -166,9 +172,12 @@ impl GatewayError {
             Self::IncompleteService => StatusCode::CONFLICT,
             Self::InvalidServicePayload
             | Self::InvalidServiceUpstream
+            | Self::InvalidServiceOpenApi
             | Self::InvalidUsageQuery
             | Self::InvalidStudioConnectionPayload => StatusCode::BAD_REQUEST,
+            Self::ServiceOpenApiChanged => StatusCode::CONFLICT,
             Self::StudioUnavailable => StatusCode::BAD_GATEWAY,
+            Self::ServiceOpenApiUnavailable => StatusCode::BAD_GATEWAY,
             Self::UpstreamTimeout => StatusCode::GATEWAY_TIMEOUT,
             Self::UpstreamConnection | Self::StoreUnavailable => StatusCode::BAD_GATEWAY,
             Self::ControlStateUnavailable => StatusCode::SERVICE_UNAVAILABLE,
@@ -222,6 +231,9 @@ impl GatewayError {
             Self::IncompleteService => "incomplete_service",
             Self::InvalidServicePayload => "invalid_service_payload",
             Self::InvalidServiceUpstream => "invalid_service_upstream",
+            Self::ServiceOpenApiUnavailable => "service_openapi_unavailable",
+            Self::InvalidServiceOpenApi => "invalid_service_openapi",
+            Self::ServiceOpenApiChanged => "service_openapi_changed",
             Self::InvalidUsageQuery => "invalid_usage_query",
             Self::MissingDebugBundle => "debug_bundle_not_found",
             Self::StudioUnavailable => "studio_unavailable",
@@ -278,6 +290,11 @@ impl GatewayError {
             Self::IncompleteService => "Service registration is incomplete.",
             Self::InvalidServicePayload => "Service registration payload is invalid.",
             Self::InvalidServiceUpstream => "Service upstream configuration is invalid.",
+            Self::ServiceOpenApiUnavailable => "Service OpenAPI document is unavailable.",
+            Self::InvalidServiceOpenApi => "Service OpenAPI document is invalid.",
+            Self::ServiceOpenApiChanged => {
+                "Service OpenAPI document changed after preview; preview it again."
+            }
             Self::InvalidUsageQuery => "Usage query is invalid.",
             Self::MissingDebugBundle => {
                 "No debug bundle was captured for this request. Try a proxy request that records debug traces."

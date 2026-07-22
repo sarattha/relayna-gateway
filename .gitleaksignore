@@ -1,5 +1,7 @@
 # Historical fake fixtures and example tokens that predate the strict scanner.
 # New findings must be fixed or documented in docs/security-exceptions.md.
+3a302b675f3470a8710b9ad2633cc606c640fc6d:docs/openapi-service-pricing.md:relayna-live-token:55
+bf268d606604434e5b76c7830bc6ab906972ce72:docs/security-exceptions.md:relayna-live-token:31
 c73c2722f55512d31e0241bf4bd7b20ac355249f:crates/gateway-api/src/app.rs:relayna-live-token:3026
 6ce38c27f8b5c99e0af21bab9589922d62697069:crates/gateway-api/src/app.rs:relayna-live-token:3024
 6ce38c27f8b5c99e0af21bab9589922d62697069:crates/gateway-api/src/app.rs:relayna-live-token:3026

@@ -22,7 +22,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.20` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+The `v0.1.21` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
 operator work into Monitor, Discover, and Govern navigation domains. Monitor
 contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains
@@ -249,6 +249,53 @@ These examples match request bodies like `{"model":"doct-int"}` and
 `{"payload":{"page_count":"25"}}`. The request body keeps normal key names; the
 pricing rule uses `/...` only because Gateway resolves the selector as a JSON
 Pointer.
+
+For `multipart/form-data` requests, Gateway exposes each non-file UTF-8 form
+field as a top-level string in the same selector document. A form field named
+`engine` with value `docint` therefore matches `json_pointer: "/engine"` and
+`equals: "docint"`. File parts are never selector values. Multipart pricing
+metadata is bounded to 128 fields, 256 bytes per field name, 16 KiB per field
+value, and 64 KiB in total; fields outside those bounds do not match rules.
+
+Gateway cannot know a JSON or multipart body selector before receiving the
+request body. For preflight policy and budget enforcement, it therefore uses
+the highest configured fixed estimate across the service default and its
+pricing rules, then reconciles the reservation to the actual matching rule.
+This fail-closed behavior means `max_cost_per_request` must permit the most
+expensive fixed variant that the key is allowed to submit.
+
+For services that publish OpenAPI 3.x JSON, edit the service and use **Preview
+OpenAPI** with a relative source path such as `/openapi.json`. Preview is
+read-only. It lists added and removed method/path operations before the operator
+chooses **Sync endpoint pricing**. Sync persists a durable endpoint snapshot;
+Gateway never downloads OpenAPI while proxying a client request.
+
+Newly discovered Relayna runtime and operations endpoints default to cost mode
+`none`, including `/events/*`, `/status/*`, `/history`, `/dlq/*`,
+`/broker/dlq/*`, `/failed-tasks/*`, `/relayna/*`, `/executions/*`, and
+`/health`. Other endpoints inherit the service default. Existing explicit
+endpoint prices are preserved during later syncs, and operators can change any
+endpoint between `none`, `fixed`, and `passthrough` before saving the service.
+A matched `none` endpoint does not reserve the maximum price of unrelated body
+rules. For a billable endpoint such as `POST /ocr`, the endpoint price becomes
+the base and a body selector such as `engine=docint` may still override it.
+Because body selectors remain service-wide for compatibility, every billable
+endpoint conservatively reserves the service's highest fixed selector price at
+preflight; set `max_cost_per_request` high enough for that ceiling or move
+selectors to a more narrowly registered service.
+
+OpenAPI discovery is restricted to the registered upstream origin. The source
+must be a relative absolute path, redirects are disabled, service credentials
+are not forwarded, only bounded JSON documents are accepted, and external
+references are not fetched. The action requires `services:update` and sync is
+audited. Endpoint billing does not grant endpoint access: virtual-key service
+policy and the service method allowlist still apply, so operational DLQ and
+failed-task actions should only be enabled for appropriately governed keys.
+
+For the complete UI and Admin API workflow, cost precedence table, OCR
+`engine=docint` example, budget guidance, drift behavior, and discovery
+security limits, see
+[OpenAPI Service Import and Endpoint Pricing](openapi-service-pricing.md).
 
 ![Service creation and import controls](assets/screenshots/admin-first-time-setup/05-service-create-or-import.png)
 
