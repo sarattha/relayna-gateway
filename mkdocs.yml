@@ -28,6 +28,7 @@ nav:
   - Redis Keys: redis.md
   - Getting Started: getting-started.md
   - Admin Portal: admin-portal.md
+  - OpenAPI Service Pricing: openapi-service-pricing.md
   - Current Feature Highlights: current-features.md
   - LiteLLM Passthrough: litellm-passthrough.md
   - Entra ID Auth: entra-id-auth.md

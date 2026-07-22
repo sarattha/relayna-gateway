@@ -22,7 +22,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.20` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+The `v0.1.21` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
 operator work into Monitor, Discover, and Govern navigation domains. Monitor
 contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains
@@ -291,6 +291,11 @@ references are not fetched. The action requires `services:update` and sync is
 audited. Endpoint billing does not grant endpoint access: virtual-key service
 policy and the service method allowlist still apply, so operational DLQ and
 failed-task actions should only be enabled for appropriately governed keys.
+
+For the complete UI and Admin API workflow, cost precedence table, OCR
+`engine=docint` example, budget guidance, drift behavior, and discovery
+security limits, see
+[OpenAPI Service Import and Endpoint Pricing](openapi-service-pricing.md).
 
 ![Service creation and import controls](assets/screenshots/admin-first-time-setup/05-service-create-or-import.png)
 

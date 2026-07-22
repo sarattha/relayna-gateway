@@ -2,6 +2,52 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.21 - 2026-07-22
+
+### Added
+
+- Added authenticated OpenAPI 3.x endpoint discovery for registered services.
+  Operators can preview and explicitly sync a relative `/openapi.json` source,
+  review endpoint drift, and persist a durable method/path catalog without
+  adding OpenAPI fetches to the proxy request path.
+- Added per-endpoint service billing with `none`, `fixed`, and `passthrough`
+  cost modes. Relayna runtime, status, event, DLQ, failed-task, execution, and
+  health operations default to `none`, while operators can override every
+  discovered operation.
+- Added multipart request-body pricing selectors so non-file UTF-8 fields such
+  as `engine=docint` can select an existing JSON Pointer pricing rule such as
+  `/engine`, while uploaded files stay outside pricing metadata.
+- Added a dedicated OpenAPI service pricing reference covering Admin UI and API
+  workflows, cost precedence, budgets, drift, troubleshooting, and security.
+
+### Changed
+
+- Billable endpoint prices compose with existing service body selectors, so
+  OCR `POST /ocr` can retain its service base price while `engine=docint`
+  resolves to a fixed `$0.50` rule. An endpoint explicitly set to `none` skips
+  unrelated body-selector budget ceilings.
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.21` and `v0.1.21`.
+- Workspace line coverage is enforced at 95% through dependency-backed Admin
+  API, PostgreSQL, Redis, Pingora, startup, policy, and telemetry contracts.
+
+### Fixed
+
+- Multipart service requests no longer fall back to the default fixed price
+  when a bounded non-file form field matches a configured pricing selector.
+- Filtered guardrail execution queries now build valid PostgreSQL predicates
+  for all supported filter combinations.
+
+### Security
+
+- OpenAPI discovery is limited to a relative path on the registered upstream
+  origin, disables redirects, omits service credentials, accepts only bounded
+  JSON documents, ignores external references, requires `services:update`, and
+  audits successful syncs.
+- Endpoint billing does not grant endpoint access; virtual-key service policy,
+  registered allowed methods, rate limits, budgets, and credential stripping
+  remain enforced independently.
+
 ## 0.1.20 - 2026-07-18
 
 ### Added

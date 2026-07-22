@@ -4,17 +4,17 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
-Version `0.1.20` is the current release target. Release `0.1.20` adds persisted
-per-service timeout controls to the Admin UI Routes view and structured HTTP
-504 `upstream_timeout` responses for terminal pre-response upstream timeouts.
-It retains the Aurora Teal Admin UI 2.0 shell, live operational Overview,
-operator and policy governance, provider intelligence, richer usage analytics,
-supply-chain hardening, structured service pricing rules, LiteLLM passthrough
-and credential mapping, Microsoft Entra ID, and Apigee front-door provider
-traffic support.
-See `docs/current-features.md`, `docs/litellm-passthrough.md`,
-`docs/entra-id-auth.md`, and `docs/apigee-gateway-path.md` for the public
-feature highlights.
+Version `0.1.21` is the current release target. Release `0.1.21` adds secure
+OpenAPI 3.x endpoint discovery for registered services, durable per-endpoint
+`none`, `fixed`, and `passthrough` billing, and multipart request selectors so
+OCR `engine=docint` can resolve to its configured fixed price. It retains the
+Aurora Teal Admin UI 2.0 shell, live operational Overview, operator and policy
+governance, provider intelligence, richer usage analytics, supply-chain
+hardening, LiteLLM passthrough and credential mapping, Microsoft Entra ID, and
+Apigee front-door provider traffic support.
+See `docs/openapi-service-pricing.md`, `docs/current-features.md`,
+`docs/litellm-passthrough.md`, `docs/entra-id-auth.md`, and
+`docs/apigee-gateway-path.md` for the public feature highlights.
 
 ## What This Repository Contains
 
@@ -95,7 +95,7 @@ simulation, policy layers, provider health state, debug bundles, service import
 preview/activation/version/rollback, and paginated expanded usage analytics. These are
 documented in `docs/current-features.md`.
 
-Release `0.1.20` can run Relayna Gateway as the single ingress in front of
+Release `0.1.21` can run Relayna Gateway as the single ingress in front of
 LiteLLM. Canonical OpenAI-compatible and Anthropic-compatible Claude routes
 remain governed by Relayna policy by default, and operators can optionally
 switch each canonical route to direct LiteLLM passthrough while preserving
@@ -144,12 +144,27 @@ When Relayna Studio is running, verify the export path before importing:
 curl http://127.0.0.1:8000/studio/gateway/services
 ```
 
+## OpenAPI Service Pricing
+
+Registered services can preview and explicitly sync OpenAPI 3.x JSON from a
+same-origin relative source such as `/openapi.json`. The durable endpoint
+catalog supports `none`, `fixed`, and `passthrough` billing per method/path;
+Relayna operational endpoints default to `none`, and operators may override
+them. Billable endpoints still compose with JSON and multipart body selectors,
+so an OCR `/engine = docint` rule can charge `$0.50` without charging feed,
+status, event, or DLQ traffic.
+
+Discovery is authenticated, audited, redirect-free, credential-free, bounded,
+and never runs on the client request path. See
+[`docs/openapi-service-pricing.md`](docs/openapi-service-pricing.md) for the UI
+and API workflow, budget behavior, security requirements, and troubleshooting.
+
 ## Docker
 
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.1.20 .
+docker build -t relayna-gateway:0.1.21 .
 ```
 
 Run it:
@@ -163,7 +178,7 @@ docker run --rm \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
   -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.1.20
+  relayna-gateway:0.1.21
 ```
 
 `GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
@@ -173,7 +188,7 @@ Admin portal instead.
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.20`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.21`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Budgets, TPM, and Usage Exports
 
