@@ -1,6 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use gateway_core::{
-    BudgetDecision, BudgetStore, PolicyLookup, Provider, RateLimitDecision, RateLimitStore, Route,
+    BudgetDecision, BudgetStore, GuardrailPolicy, KeyPolicy, PolicyLookup, Provider,
+    RateLimitDecision, RateLimitStore, Route,
 };
 use gateway_store::{PostgresStore, RedisControlState};
 use redis::AsyncCommands;
@@ -30,6 +31,19 @@ async fn integration_env() -> Option<IntegrationEnv> {
     let store = PostgresStore::connect(&database_url)
         .await
         .expect("connect postgres");
+    sqlx::query(
+        r#"
+        INSERT INTO policy_layers (id, layer_kind, policy, guardrail_policy)
+        VALUES ($1, 'global', $2, $3)
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(sqlx::types::Json(KeyPolicy::neutral_layer(1)))
+    .bind(sqlx::types::Json(GuardrailPolicy::default()))
+    .execute(store.pool())
+    .await
+    .expect("seed neutral global policy layer");
     let redis = RedisControlState::new(&redis_url).expect("create redis control state");
     let redis_client = redis::Client::open(redis_url).expect("create redis client");
     Some(IntegrationEnv {
@@ -347,4 +361,81 @@ async fn tpm_counter_is_shared_and_returns_retry_hint() {
             retry_after_seconds: Some(_)
         }
     ));
+}
+
+#[tokio::test]
+async fn redis_control_state_covers_request_limits_and_budget_lifecycle() {
+    let Some(env) = integration_env().await else {
+        return;
+    };
+    let now = Utc::now();
+    let key_id = Uuid::new_v4();
+    assert!(matches!(
+        env.redis
+            .check_request_rate_limit(key_id, None, now)
+            .await
+            .expect("unlimited RPM"),
+        RateLimitDecision::Allowed { count: 0 }
+    ));
+    assert!(matches!(
+        env.redis
+            .check_request_rate_limit(key_id, Some(1), now)
+            .await
+            .expect("first RPM request"),
+        RateLimitDecision::Allowed { count: 1 }
+    ));
+    assert!(matches!(
+        env.redis
+            .check_request_rate_limit(key_id, Some(1), now)
+            .await
+            .expect("second RPM request"),
+        RateLimitDecision::Exceeded { .. }
+    ));
+    assert!(matches!(
+        env.redis
+            .check_token_rate_limit(key_id, None, 10, now)
+            .await
+            .expect("unlimited TPM"),
+        RateLimitDecision::Allowed { count: 0 }
+    ));
+    assert!(matches!(
+        env.redis
+            .check_token_rate_limit(key_id, Some(10), -1, now)
+            .await
+            .expect("zero TPM estimate"),
+        RateLimitDecision::Allowed { count: 0 }
+    ));
+    assert!(matches!(
+        env.redis
+            .check_budget(key_id, None, None, now)
+            .await
+            .expect("unlimited budget"),
+        BudgetDecision::Allowed(_)
+    ));
+    env.redis
+        .add_budget_spend(key_id, 0.0, now)
+        .await
+        .expect("ignore zero spend");
+    env.redis
+        .add_budget_spend(key_id, 0.25, now)
+        .await
+        .expect("add spend");
+    env.redis
+        .reserve_budget(key_id, "ignored", 0.0, now)
+        .await
+        .expect("ignore zero reservation");
+    env.redis
+        .reserve_budget(key_id, "release", 0.5, now)
+        .await
+        .expect("reserve budget");
+    env.redis
+        .release_budget_reservation(key_id, "release")
+        .await
+        .expect("release budget");
+    let decision = env
+        .redis
+        .check_budget(key_id, Some(1.0), Some(1.0), now)
+        .await
+        .expect("check accumulated budget");
+    assert!(matches!(decision, BudgetDecision::Allowed(_)));
 }

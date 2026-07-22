@@ -548,4 +548,106 @@ mod tests {
             CircuitBreakerState::Closed
         );
     }
+
+    #[test]
+    fn routing_contract_covers_all_strategies_rejections_and_circuit_transitions() {
+        let providers = [candidate("secondary", 20), candidate("primary", 10)];
+        for strategy in [
+            RoutingStrategy::HealthAware,
+            RoutingStrategy::BudgetAware,
+            RoutingStrategy::RegionAffinity,
+            RoutingStrategy::CapabilityAware,
+        ] {
+            assert_eq!(
+                select_provider(&request(strategy), &providers)
+                    .expect("strategy selection")
+                    .selected
+                    .name,
+                "primary"
+            );
+        }
+
+        let cases = [
+            {
+                let mut value = candidate("disabled", 1);
+                value.enabled = false;
+                value
+            },
+            {
+                let mut value = candidate("unhealthy", 1);
+                value.health_status = ProviderHealthStatus::Unhealthy;
+                value
+            },
+            {
+                let mut value = candidate("budget", 1);
+                value.remaining_budget_usd = Some(0.1);
+                value
+            },
+            {
+                let mut value = candidate("region", 1);
+                value.regions.clear();
+                value
+            },
+            {
+                let mut value = candidate("capability", 1);
+                value.capabilities.clear();
+                value
+            },
+        ];
+        let mut constrained = request(RoutingStrategy::RegionAffinity);
+        constrained.estimated_cost_usd = Some(0.5);
+        constrained.preferred_region = Some("us-east".to_owned());
+        constrained.required_capabilities = vec!["chat".to_owned()];
+        for rejected in cases {
+            let error = select_provider(&constrained, &[rejected]);
+            assert_eq!(error, Err(GatewayError::PolicyDenied));
+        }
+
+        let now = constrained.now;
+        let mut cooled = candidate("cooled", 1);
+        cooled.circuit_state = CircuitBreakerState::Open;
+        cooled.cooldown_until = Some(now - chrono::Duration::seconds(1));
+        assert!(select_provider(&constrained, &[cooled]).is_ok());
+
+        assert_eq!(
+            circuit_state_after_passive_result(CircuitBreakerState::Open, 4, false, 3),
+            CircuitBreakerState::Open
+        );
+        assert_eq!(
+            circuit_state_after_passive_result(CircuitBreakerState::HalfOpen, 0, false, 3),
+            CircuitBreakerState::Open
+        );
+        assert_eq!(
+            circuit_state_after_passive_result(CircuitBreakerState::Closed, 0, false, 3),
+            CircuitBreakerState::Closed
+        );
+
+        let no_timeout_retry = FallbackPolicy {
+            retry_timeouts: false,
+            ..FallbackPolicy::default()
+        };
+        assert!(!no_timeout_retry.allows_timeout_retry(0));
+
+        let mut missing_scores = candidate("missing", 1);
+        missing_scores.average_latency_ms = None;
+        missing_scores.estimated_cost_usd = Some(f64::NAN);
+        let mut scored = candidate("scored", 2);
+        scored.average_latency_ms = Some(10);
+        scored.estimated_cost_usd = Some(0.1);
+        assert_eq!(
+            select_provider(
+                &request(RoutingStrategy::LeastLatency),
+                &[missing_scores.clone(), scored.clone()]
+            )
+            .expect("missing latency selection")
+            .selected
+            .name,
+            "scored"
+        );
+        assert!(select_provider(
+            &request(RoutingStrategy::LeastCost),
+            &[missing_scores, scored]
+        )
+        .is_ok());
+    }
 }

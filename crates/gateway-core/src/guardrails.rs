@@ -1496,6 +1496,10 @@ fn default_json_object() -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
 
     struct ModifyRequestHandler(&'static str);
 
@@ -1996,5 +2000,136 @@ mod tests {
         assert_eq!(metadata["phone_count"], 1);
         assert_eq!(metadata["email_count"], 1);
         assert!(!metadata.to_string().contains("bob@example.com"));
+    }
+
+    fn http_guardrail_once(status: &str, body: &str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind HTTP guardrail");
+        let address = listener.local_addr().expect("HTTP guardrail address");
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept guardrail request");
+            let mut request = [0_u8; 8192];
+            let _ = stream.read(&mut request).expect("read guardrail request");
+            stream
+                .write_all(response.as_bytes())
+                .expect("write guardrail response");
+        });
+        format!("http://{address}/check")
+    }
+
+    fn http_guardrail_input(endpoint_url: String) -> GuardrailInput {
+        GuardrailInput {
+            mode: GuardrailMode::PreCall,
+            request: Some(json!({"input": "hello"})),
+            response: None,
+            context: GuardrailContext {
+                request_id: "coverage-request".to_owned(),
+                key_id: Some(uuid::Uuid::new_v4()),
+                team_id: Some(uuid::Uuid::new_v4()),
+                user_id: Some("user-secret".to_owned()),
+                project_id: Some(uuid::Uuid::new_v4()),
+                model: Some("coverage-model".to_owned()),
+                route: Some(Route::ChatCompletions),
+                provider: Some(Provider::LiteLlm),
+                ..GuardrailContext::default()
+            },
+            config: json!({
+                "provider_kind": "http",
+                "guardrail_name": "remote-check",
+                "endpoint_url": endpoint_url,
+                "bearer_token_secret": "provider-secret",
+                "timeout_ms": 50_000,
+                "provider_config": {"threshold": 0.5}
+            }),
+        }
+    }
+
+    #[test]
+    fn http_guardrail_executes_and_sanitizes_nested_provider_metadata() {
+        let endpoint = http_guardrail_once(
+            "200 OK",
+            r#"{"action":"modify","request":{"input":"checked"},"response":null,"reason":"changed","metadata":{"score":0.8,"access_token":"remove","nested":[{"password":"remove","safe":true}]}}"#,
+        );
+        let result = HttpGuardrailHandler
+            .execute(http_guardrail_input(endpoint))
+            .expect("HTTP guardrail result");
+
+        assert_eq!(result.action, GuardrailAction::Modify);
+        assert_eq!(result.request, Some(json!({"input": "checked"})));
+        assert_eq!(result.reason.as_deref(), Some("changed"));
+        assert_eq!(result.metadata["score"], 0.8);
+        assert!(result.metadata.get("access_token").is_none());
+        assert_eq!(result.metadata["nested"][0], json!({"safe": true}));
+    }
+
+    #[test]
+    fn http_guardrail_maps_transport_status_and_payload_failures() {
+        let unavailable = http_guardrail_once("503 Service Unavailable", "{}");
+        assert_eq!(
+            HttpGuardrailHandler
+                .execute(http_guardrail_input(unavailable))
+                .unwrap_err(),
+            GatewayError::GuardrailUnavailable
+        );
+
+        let malformed = http_guardrail_once("200 OK", "not-json");
+        assert_eq!(
+            HttpGuardrailHandler
+                .execute(http_guardrail_input(malformed))
+                .unwrap_err(),
+            GatewayError::InvalidGuardrailRequest
+        );
+
+        let mut missing_config = http_guardrail_input("http://127.0.0.1:9".to_owned());
+        missing_config.config = json!({"provider_kind": "builtin"});
+        assert_eq!(
+            HttpGuardrailHandler.execute(missing_config).unwrap_err(),
+            GatewayError::GuardrailUnavailable
+        );
+    }
+
+    #[test]
+    fn guardrail_public_helpers_cover_all_actions_phases_and_client_payload_shapes() {
+        for (raw, phase) in [
+            ("pre_call", GuardrailMode::PreCall),
+            ("during_call", GuardrailMode::DuringCall),
+            ("post_call", GuardrailMode::PostCall),
+        ] {
+            assert_eq!(raw.parse::<GuardrailMode>().unwrap(), phase);
+            assert_eq!(phase.to_string(), raw);
+        }
+        assert!("unknown".parse::<GuardrailMode>().is_err());
+        for (raw, action) in [
+            ("allow", GuardrailAction::Allow),
+            ("block", GuardrailAction::Block),
+            ("modify", GuardrailAction::Modify),
+            ("warn", GuardrailAction::Warn),
+        ] {
+            assert_eq!(raw.parse::<GuardrailAction>().unwrap(), action);
+            assert_eq!(action.as_str(), raw);
+        }
+        assert!("unknown".parse::<GuardrailAction>().is_err());
+
+        assert_eq!(GuardrailResult::allow().action, GuardrailAction::Allow);
+        assert_eq!(
+            GuardrailResult::warn("warning").reason.as_deref(),
+            Some("warning")
+        );
+        assert_eq!(
+            GuardrailResult::modify_response(json!({"ok": true})).response,
+            Some(json!({"ok": true}))
+        );
+
+        let mut request = json!({"guardrails": ["a", "b"], "input": "hello"});
+        assert_eq!(extract_client_guardrails(&request).unwrap(), ["a", "b"]);
+        strip_client_guardrails(&mut request);
+        assert!(request.get("guardrails").is_none());
+        assert!(extract_client_guardrails(&json!({"guardrails": "a"})).is_err());
+        assert!(extract_client_guardrails(&json!({"guardrails": [1]})).is_err());
+        assert_eq!(sanitize_metadata(json!(true)), json!(true));
+        assert_eq!(sanitize_metadata(json!([1, "safe"])), json!([1, "safe"]));
     }
 }

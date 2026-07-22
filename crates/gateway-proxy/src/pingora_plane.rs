@@ -2982,6 +2982,114 @@ mod tests {
     }
 
     #[test]
+    fn usage_cost_resolution_covers_fixed_passthrough_route_and_unpriced_sources() {
+        let mut empty = new_pingora_context_for_tests();
+        prepare_service_cost_for_ctx(&mut empty);
+        resolve_service_cost_for_ctx(&mut empty, None);
+        assert_eq!(resolved_usage_cost(&empty).estimated_cost_usd, None);
+
+        let mut non_service = new_pingora_context_for_tests();
+        non_service.route_match = Some(
+            Route::resolve_match(&http::Method::POST, "/v1/chat/completions").expect("chat route"),
+        );
+        non_service
+            .route_match
+            .as_mut()
+            .expect("chat route match")
+            .estimated_cost_usd = Some(0.01);
+        prepare_service_cost_for_ctx(&mut non_service);
+        resolve_service_cost_for_ctx(&mut non_service, None);
+        assert_eq!(
+            resolved_usage_cost(&non_service).cost_source.as_deref(),
+            Some("route_default")
+        );
+
+        let mut fixed = new_pingora_context_for_tests();
+        fixed.route_match = Some(service_route_match_for_persisted_registration(
+            &http::Method::POST,
+            "/services/ocr/run",
+            "ocr",
+        ));
+        fixed.service_cost_mode = Some(ServiceCostMode::Fixed);
+        fixed.service_estimated_cost_usd = Some(0.01);
+        prepare_service_cost_for_ctx(&mut fixed);
+        resolve_service_cost_for_ctx(&mut fixed, None);
+        assert_eq!(
+            resolved_usage_cost(&fixed).cost_source.as_deref(),
+            Some("service_default_fixed")
+        );
+
+        let mut passthrough = new_pingora_context_for_tests();
+        passthrough.resolved_service_cost = Some(ResolvedServiceCost {
+            cost_mode: ServiceCostMode::Passthrough,
+            estimated_cost_usd: None,
+            pricing_rule_name: Some("upstream-price".to_owned()),
+        });
+        passthrough.response_body_prefix = br#"{"usage":{"total_cost":0.42}}"#.to_vec();
+        let usage = resolved_usage_cost(&passthrough);
+        assert_eq!(usage.estimated_cost_usd, Some(0.42));
+        assert_eq!(
+            usage.cost_source.as_deref(),
+            Some("service_pricing_rule_passthrough")
+        );
+        passthrough
+            .resolved_service_cost
+            .as_mut()
+            .expect("service cost")
+            .pricing_rule_name = None;
+        assert_eq!(
+            resolved_usage_cost(&passthrough).cost_source.as_deref(),
+            Some("service_default_passthrough")
+        );
+        passthrough.response_body_prefix.clear();
+        assert_eq!(
+            resolved_usage_cost(&passthrough).cost_source.as_deref(),
+            Some("missing_upstream_cost")
+        );
+
+        let mut upstream = new_pingora_context_for_tests();
+        upstream.response_body_prefix = br#"{"usage":{"total_cost":0.05}}"#.to_vec();
+        assert_eq!(
+            resolved_usage_cost(&upstream).cost_source.as_deref(),
+            Some("upstream_passthrough")
+        );
+        upstream.litellm_passthrough = true;
+        assert_eq!(
+            resolved_usage_cost(&upstream).cost_source.as_deref(),
+            Some("none")
+        );
+    }
+
+    #[test]
+    fn trace_and_proxy_error_helpers_cover_invalid_and_non_upstream_inputs() {
+        assert_eq!(
+            trace_id_from_traceparent("00-ABCDEF0123456789ABCDEF0123456789-0123456789abcdef-01")
+                .as_deref(),
+            Some("abcdef0123456789abcdef0123456789")
+        );
+        assert_eq!(trace_id_from_traceparent("missing"), None);
+        assert_eq!(trace_id_from_traceparent("00-short-span-01"), None);
+
+        let downstream_closed = PingoraError::new_down(ErrorType::ConnectionClosed);
+        assert_eq!(default_proxy_failure_status(&downstream_closed), 0);
+        assert!(!is_retry_safe_proxy_error(&downstream_closed));
+        assert_eq!(
+            default_proxy_failure_status(&PingoraError::new_down(ErrorType::InvalidHTTPHeader)),
+            400
+        );
+        assert_eq!(
+            default_proxy_failure_status(&PingoraError::new(ErrorType::InternalError)),
+            500
+        );
+        assert!(is_retry_safe_proxy_error(&PingoraError::new_up(
+            ErrorType::WriteTimedout
+        )));
+        assert!(!is_retry_safe_proxy_error(&PingoraError::new_up(
+            ErrorType::ConnectRefused
+        )));
+    }
+
+    #[test]
     fn debug_bundle_records_committed_stream_timeout_without_replacing_status() {
         let mut ctx = new_pingora_context_for_tests();
         ctx.route = Some(Route::ChatCompletions);
@@ -4168,6 +4276,121 @@ mod tests {
         ) -> GatewayResult<RateLimitDecision> {
             Ok(RateLimitDecision::Allowed { count: 1 })
         }
+    }
+
+    #[tokio::test]
+    async fn in_memory_proxy_dependencies_cover_their_complete_trait_contracts() {
+        let store = MemoryUsageStore::default();
+        assert!(store
+            .list_provider_health_states()
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(store
+            .provider_health_check_targets()
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(store
+            .list_service_registry_snapshots()
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(store.service_registry_snapshot(1).await.unwrap().is_none());
+        assert!(store.get_debug_bundle("missing").await.unwrap().is_none());
+
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.request_id = "dependency-contract".to_owned();
+        let bundle = debug_bundle_for_ctx(&ctx, 500);
+        store.insert_debug_bundle(bundle).await.unwrap();
+        assert!(store
+            .get_debug_bundle("dependency-contract")
+            .await
+            .unwrap()
+            .is_some());
+
+        assert!(store
+            .openai_route_enabled(Route::ChatCompletions)
+            .await
+            .unwrap());
+        assert!(store.openai_route_enabled(Route::Summary).await.unwrap());
+        assert_eq!(
+            store
+                .openai_route_mode(Route::ChatCompletions)
+                .await
+                .unwrap(),
+            OpenAiRouteMode::ManagedByGateway
+        );
+        assert_eq!(
+            store.openai_route_mode(Route::Summary).await.unwrap(),
+            OpenAiRouteMode::ManagedByGateway
+        );
+        store.openai_route_limits(Route::Responses).await.unwrap();
+        assert!(store
+            .anthropic_route_enabled(Route::AnthropicMessages)
+            .await
+            .unwrap());
+        assert!(store.anthropic_route_enabled(Route::Summary).await.unwrap());
+        assert_eq!(
+            store
+                .anthropic_route_mode(Route::AnthropicMessages)
+                .await
+                .unwrap(),
+            OpenAiRouteMode::ManagedByGateway
+        );
+        assert_eq!(
+            store.anthropic_route_mode(Route::Summary).await.unwrap(),
+            OpenAiRouteMode::ManagedByGateway
+        );
+        store
+            .anthropic_route_limits(Route::AnthropicMessages)
+            .await
+            .unwrap();
+        store.litellm_passthrough_settings().await.unwrap();
+        assert!(store.active_litellm_config().await.unwrap().is_none());
+        assert!(store
+            .litellm_credential_mapping_for_context(Uuid::new_v4(), None)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(store.list_guardrail_definitions().await.unwrap().len(), 1);
+        store
+            .guardrail_policy_for_key(Uuid::new_v4())
+            .await
+            .unwrap();
+        store
+            .upsert_guardrail_policy_for_key(Uuid::new_v4(), &GuardrailPolicy::default())
+            .await
+            .unwrap();
+
+        let control = MemoryControlState::default();
+        let key_id = Uuid::new_v4();
+        let now = Utc::now();
+        control
+            .check_budget(key_id, Some(1.0), Some(10.0), now)
+            .await
+            .unwrap();
+        control.add_budget_spend(key_id, 0.1, now).await.unwrap();
+        control
+            .reserve_budget(key_id, "request", 0.1, now)
+            .await
+            .unwrap();
+        control
+            .reconcile_budget_reservation(key_id, "request", 0.2, now)
+            .await
+            .unwrap();
+        control
+            .release_budget_reservation(key_id, "request")
+            .await
+            .unwrap();
+        control
+            .check_request_rate_limit(key_id, Some(10), now)
+            .await
+            .unwrap();
+        control
+            .check_token_rate_limit(key_id, Some(100), 10, now)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

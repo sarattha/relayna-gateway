@@ -818,4 +818,72 @@ mod tests {
             GatewayError::ResponseBodyTooLarge
         );
     }
+
+    #[test]
+    fn policy_layers_and_request_limits_cover_empty_and_single_sided_cases() {
+        let empty = resolve_effective_policy(Vec::new()).expect("empty effective policy");
+        assert_eq!(empty.policy, KeyPolicy::default());
+        assert!(empty.applied_layers.is_empty());
+
+        for (kind, name) in [
+            (PolicyLayerKind::Global, "global"),
+            (PolicyLayerKind::Project, "project"),
+            (PolicyLayerKind::Team, "team"),
+            (PolicyLayerKind::Key, "key"),
+            (PolicyLayerKind::Route, "route"),
+            (PolicyLayerKind::Model, "model"),
+        ] {
+            assert_eq!(kind.as_str(), name);
+        }
+
+        let now = DateTime::parse_from_rfc3339("2026-05-23T12:00:00Z")
+            .expect("time")
+            .with_timezone(&Utc);
+        let policy = KeyPolicy {
+            max_input_tokens_per_request: Some(10),
+            max_output_tokens_per_request: Some(20),
+            max_cost_per_request: Some(0.25),
+            ..KeyPolicy::default()
+        };
+        assert_eq!(
+            evaluate_policy_limits(&policy, now, None, None, Some(11), None, None).unwrap_err(),
+            GatewayError::PolicyDenied
+        );
+        assert_eq!(
+            evaluate_policy_limits(&policy, now, None, None, None, Some(21), None).unwrap_err(),
+            GatewayError::PolicyDenied
+        );
+        assert_eq!(
+            evaluate_policy_limits(&policy, now, None, None, None, None, Some(0.3)).unwrap_err(),
+            GatewayError::PolicyDenied
+        );
+        evaluate_policy_limits(&policy, now, None, None, Some(10), Some(20), Some(0.25))
+            .expect("limits at boundary");
+
+        let effective = resolve_effective_policy(vec![
+            PolicyLayer {
+                kind: PolicyLayerKind::Global,
+                scope_id: None,
+                policy: KeyPolicy {
+                    rpm_limit: Some(10),
+                    max_request_body_bytes: Some(100),
+                    daily_budget_usd: Some(1.0),
+                    ..KeyPolicy::default()
+                },
+                guardrail_policy: GuardrailPolicy::default(),
+                policy_version: 1,
+            },
+            PolicyLayer {
+                kind: PolicyLayerKind::Key,
+                scope_id: Some("key".to_owned()),
+                policy: KeyPolicy::default(),
+                guardrail_policy: GuardrailPolicy::default(),
+                policy_version: 2,
+            },
+        ])
+        .expect("single-sided limits");
+        assert_eq!(effective.policy.rpm_limit, Some(10));
+        assert_eq!(effective.policy.max_request_body_bytes, Some(100));
+        assert_eq!(effective.policy.daily_budget_usd, Some(1.0));
+    }
 }

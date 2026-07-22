@@ -4409,14 +4409,15 @@ mod tests {
     use gateway_core::{
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
-        default_operator_roles, default_operator_scopes, LiteLlmPassthroughSettings,
-        OpenAiRouteConfigPatchRequest, OpenAiRouteMode, OpenAiRouteSetting, OperatorTokenResponse,
-        PatchValue, ProjectCreateRequest, ProjectPatchRequest, ProjectResponse,
-        ProviderConfigCreateRequest, ProviderConfigPatchRequest, ProviderConfigResponse,
-        ProviderHealth, Route, ServiceCostMode, ServiceResponse, ServiceSource, ServiceSyncStatus,
-        ServiceSyncStatusResponse, StoredGatewayAuthSettings, StoredStudioConnection,
-        StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow, UsagePage,
-        UsageServiceTimeseriesPoint, UsageStatus, UsageSummary, UsageTimeseriesPoint,
+        default_operator_roles, default_operator_scopes, AuthenticatedKey,
+        LiteLlmPassthroughSettings, OpenAiRouteConfigPatchRequest, OpenAiRouteMode,
+        OpenAiRouteSetting, OperatorTokenResponse, PatchValue, ProjectCreateRequest,
+        ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest,
+        ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealth, Route, ServiceCostMode,
+        ServiceResponse, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
+        StoredGatewayAuthSettings, StoredStudioConnection, StudioConnectionPatchRequest,
+        UsageBreakdown, UsageExportRow, UsagePage, UsageServiceTimeseriesPoint, UsageStatus,
+        UsageSummary, UsageTimeseriesPoint,
     };
     use std::{
         collections::BTreeMap,
@@ -9028,5 +9029,483 @@ mod tests {
             value["endpoint_pricing_rules"][0]["estimated_cost_usd"],
             0.02
         );
+    }
+
+    #[tokio::test]
+    async fn health_import_and_litellm_helpers_cover_failure_and_rewrite_edges() {
+        let client = reqwest::Client::new();
+        let missing = active_health_check(&client, "missing", None, None, "GET", None).await;
+        assert!(!missing.ok);
+        assert_eq!(missing.error_code.as_deref(), Some("missing_upstream_url"));
+        let invalid = active_health_check(
+            &client,
+            "invalid",
+            Some("not-a-url".to_owned()),
+            None,
+            "GET",
+            None,
+        )
+        .await;
+        assert_eq!(invalid.error_code.as_deref(), Some("invalid_upstream_url"));
+
+        let (base_url, captured) = spawn_litellm_server(
+            "503 Service Unavailable",
+            vec![("Content-Type", "application/json")],
+            r#"{"error":"unavailable"}"#,
+        );
+        let failed = active_health_check(
+            &client,
+            "provider",
+            Some(base_url),
+            Some("/health"),
+            "HEAD",
+            Some("health-secret"),
+        )
+        .await;
+        assert!(!failed.ok);
+        assert_eq!(failed.error_code.as_deref(), Some("http_503"));
+        let request = captured.recv().expect("captured health request");
+        assert!(request.request_line.starts_with("HEAD /health "));
+
+        let failed_state =
+            provider_health_state_from_check("provider".to_owned(), Provider::LiteLlm, failed);
+        assert_eq!(failed_state.status, ProviderHealthStatus::Unhealthy);
+        let healthy_state = provider_health_state_from_check(
+            "provider".to_owned(),
+            Provider::LiteLlm,
+            ActiveHealthCheck {
+                ok: true,
+                latency_ms: Some(1),
+                error_code: None,
+                checked_at: Utc::now(),
+            },
+        );
+        assert_eq!(healthy_state.status, ProviderHealthStatus::Healthy);
+
+        let invalid_import: StudioServiceImportRequest =
+            serde_json::from_value(serde_json::json!({
+                "studio_service_id": "invalid",
+                "name": "Invalid Name",
+                "upstream_base_url": "ftp://service.example",
+                "allowed_methods": []
+            }))
+            .expect("invalid import shape");
+        let issues = service_import_validation_issues(&invalid_import);
+        assert!(issues.iter().any(|issue| issue.field == "request"));
+        assert!(issues
+            .iter()
+            .any(|issue| issue.field == "upstream_base_url"));
+
+        assert!(litellm_ui_upstream_url("not-a-url", "ui", None).is_err());
+        assert_eq!(
+            litellm_ui_upstream_url("https://litellm.example", "/", None)
+                .unwrap()
+                .path(),
+            "/ui/"
+        );
+        assert_eq!(
+            litellm_ui_upstream_url("https://litellm.example", "", None)
+                .unwrap()
+                .path(),
+            "/ui"
+        );
+        assert_eq!(
+            litellm_ui_upstream_url("https://litellm.example", "v2/model/info", Some("x=1"))
+                .unwrap()
+                .path(),
+            "/v2/model/info"
+        );
+
+        let raw = LiteLlmUiUpstream {
+            base_url: "https://litellm.example".to_owned(),
+            credential: "secret".to_owned(),
+            credential_header_mode: CredentialHeaderMode::CustomHeader,
+            credential_header_name: Some("x-litellm-key".to_owned()),
+            credential_header_value_format: CredentialHeaderValueFormat::Raw,
+        };
+        assert_eq!(litellm_ui_custom_header_credential(&raw), "secret");
+        let bearer = LiteLlmUiUpstream {
+            credential_header_value_format: CredentialHeaderValueFormat::Bearer,
+            ..raw
+        };
+        assert_eq!(
+            litellm_ui_custom_header_credential(&bearer),
+            "Bearer secret"
+        );
+
+        assert_eq!(
+            rewrite_litellm_ui_location(
+                &HeaderValue::from_static("/ui/models"),
+                "https://litellm.example"
+            )
+            .as_deref(),
+            Some("/admin-ui/litellm-ui/models")
+        );
+        assert_eq!(
+            rewrite_litellm_ui_location(
+                &HeaderValue::from_static("https://other.example/ui/models?view=all"),
+                "https://litellm.example"
+            )
+            .as_deref(),
+            Some("/admin-ui/litellm-ui/models?view=all")
+        );
+        let rewritten = rewrite_litellm_ui_json_body(
+            br#"["/ui/models",{"nested":"https://litellm.example/ui/keys"},1]"#,
+            "https://litellm.example",
+        )
+        .expect("rewritten JSON");
+        let value: serde_json::Value = serde_json::from_slice(&rewritten).expect("JSON body");
+        assert_eq!(value[0], "/admin-ui/litellm-ui/models");
+        assert_eq!(value[1]["nested"], "/admin-ui/litellm-ui/keys");
+        assert_eq!(value[2], 1);
+    }
+
+    fn coverage_usage_row(
+        request_id: &str,
+        status: &str,
+        service_name: Option<&str>,
+        created_at: chrono::DateTime<Utc>,
+    ) -> UsageExportRow {
+        UsageExportRow {
+            request_id: request_id.to_owned(),
+            key_id: Uuid::new_v4(),
+            project_id: Some(Uuid::new_v4()),
+            route: "/v1/responses".to_owned(),
+            model: Some("coverage-model".to_owned()),
+            provider: "litellm".to_owned(),
+            status: status.to_owned(),
+            status_code: if status == "success" { 200 } else { 500 },
+            latency_ms: 20,
+            input_tokens: 2,
+            output_tokens: 3,
+            total_tokens: 5,
+            estimated_cost_usd: Some(0.01),
+            cost_source: Some("upstream_passthrough".to_owned()),
+            cost_mode: None,
+            pricing_rule_name: None,
+            service_name: service_name.map(ToOwned::to_owned),
+            task_id: Some("task".to_owned()),
+            run_id: Some("run".to_owned()),
+            trace_id: Some("trace".to_owned()),
+            fallback_count: i32::from(status != "success"),
+            guardrail_action_count: 0,
+            created_at,
+        }
+    }
+
+    #[test]
+    fn in_memory_usage_helpers_cover_filters_pagination_and_buckets() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-07-22T12:00:00Z")
+            .expect("coverage timestamp")
+            .with_timezone(&Utc);
+        let key = AuthenticatedKey {
+            key_id: Uuid::new_v4(),
+            project_id: Some(Uuid::new_v4()),
+            key_prefix: "rk_live_coverage".to_owned(),
+        };
+        let mut event = UsageEvent::new(
+            "usage-coverage",
+            &key,
+            Route::Responses,
+            Some("coverage-model".to_owned()),
+            200,
+            20,
+            now,
+        );
+        event.service_name = Some("ocr".to_owned());
+        event.task_id = Some("task".to_owned());
+        assert!(usage_event_matches_query(&event, &UsageQuery::default()));
+        for query in [
+            UsageQuery {
+                from: Some(now + chrono::Duration::seconds(1)),
+                ..UsageQuery::default()
+            },
+            UsageQuery {
+                to: Some(now),
+                ..UsageQuery::default()
+            },
+            UsageQuery {
+                project_id: Some(Uuid::new_v4()),
+                ..UsageQuery::default()
+            },
+            UsageQuery {
+                key_id: Some(Uuid::new_v4()),
+                ..UsageQuery::default()
+            },
+            UsageQuery {
+                route: Some("/v1/embeddings".to_owned()),
+                ..UsageQuery::default()
+            },
+            UsageQuery {
+                provider: Some("internal-service".to_owned()),
+                ..UsageQuery::default()
+            },
+            UsageQuery {
+                service: Some("translation".to_owned()),
+                ..UsageQuery::default()
+            },
+            UsageQuery {
+                task_id: Some("other".to_owned()),
+                ..UsageQuery::default()
+            },
+            UsageQuery {
+                model: Some("other".to_owned()),
+                ..UsageQuery::default()
+            },
+            UsageQuery {
+                status: Some("failure".to_owned()),
+                ..UsageQuery::default()
+            },
+        ] {
+            assert!(!usage_event_matches_query(&event, &query));
+        }
+
+        let rows = vec![
+            coverage_usage_row("one", "success", Some("ocr"), now),
+            coverage_usage_row("two", "failure", None, now + chrono::Duration::hours(2)),
+        ];
+        let empty = usage_summary_from_rows(&[]);
+        assert_eq!(empty.average_latency_ms, None);
+        assert_eq!(empty.fallback_rate, 0.0);
+        let summary = usage_summary_from_rows(&rows);
+        assert_eq!(summary.request_count, 2);
+        assert_eq!(summary.success_count, 1);
+        assert_eq!(summary.failure_count, 1);
+        assert_eq!(summary.average_latency_ms, Some(20.0));
+
+        let unbounded = paginate_usage_rows(rows.clone(), None, None);
+        assert_eq!(unbounded.rows.len(), 2);
+        assert!(!unbounded.page.has_more);
+        let bounded = paginate_usage_rows(rows.clone(), Some(1), Some(-10));
+        assert_eq!(bounded.rows.len(), 1);
+        assert!(bounded.page.has_more);
+        assert_eq!(usage_timeseries_from_rows(&rows, Some("day")).len(), 1);
+        assert_eq!(usage_timeseries_from_rows(&rows, Some("hour")).len(), 2);
+        let services = usage_service_timeseries_from_rows(&rows, Some("day"));
+        assert!(services.iter().any(|point| point.service_name == "ocr"));
+        assert!(services.iter().any(|point| point.service_name == "none"));
+    }
+
+    #[test]
+    fn policy_simulation_helpers_cover_complete_patch_and_warning_contracts() {
+        let routes = [
+            "/v1/chat/completions",
+            "/v1/responses",
+            "/v1/embeddings",
+            "/v1/messages",
+            "/v1/messages/count_tokens",
+            "/v1/messages/batches",
+            "/v1/messages/batches/*",
+            "/v1/messages/batches/*/results",
+            "/v1/messages/batches/*/cancel",
+            "/v1/models",
+            "/providers/openai/*",
+            "/summary",
+            "/translation",
+            "/ocr",
+            "/embeddings",
+            "/services/*",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        let patch = gateway_core::admin::KeyPolicyPatch {
+            deny: Some(true),
+            allowed_routes: Some(routes),
+            allowed_models: Some(vec!["model-a".to_owned()]),
+            allowed_providers: Some(vec![
+                "litellm".to_owned(),
+                "openai-compatible".to_owned(),
+                "internal-service".to_owned(),
+            ]),
+            allowed_services: Some(vec!["ocr".to_owned()]),
+            rpm_limit: Some(Some(10)),
+            tpm_limit: Some(Some(20)),
+            daily_budget_usd: Some(Some(1.0)),
+            monthly_budget_usd: Some(Some(2.0)),
+            allow_streaming: Some(false),
+            allow_tools: Some(false),
+            max_requests_per_day: Some(Some(30)),
+            max_tokens_per_day: Some(Some(40)),
+            max_cost_per_request: Some(Some(0.5)),
+            max_input_tokens_per_request: Some(Some(50)),
+            max_output_tokens_per_request: Some(Some(60)),
+            allowed_hours_utc: Some(vec![0, 23]),
+            unused_key_auto_disable_after_days: Some(Some(7)),
+            max_request_body_bytes: Some(Some(1_024)),
+            max_response_body_bytes: Some(Some(2_048)),
+            max_stream_duration_seconds: Some(Some(90)),
+            max_sse_event_bytes: Some(Some(4_096)),
+            max_tool_call_count: Some(Some(3)),
+            max_tool_schema_bytes: Some(Some(8_192)),
+        };
+        let policy = apply_simulation_policy_patch(KeyPolicy::default(), patch)
+            .expect("complete policy patch");
+        assert!(policy.deny);
+        assert_eq!(policy.allowed_routes.len(), 16);
+        assert_eq!(policy.allowed_providers.len(), 3);
+        assert_eq!(policy.max_tool_schema_bytes, Some(8_192));
+
+        let features = gateway_core::GenerationFeatures {
+            model: Some("model-b".to_owned()),
+            stream: false,
+            tools: false,
+            service_name: Some("translation".to_owned()),
+        };
+        let warnings = policy_simulation_warnings(
+            &policy,
+            Route::Responses,
+            Provider::InternalService,
+            &features,
+            2,
+        );
+        assert!(warnings.iter().any(|warning| warning.contains("inherited")));
+        assert!(warnings.iter().any(|warning| warning.contains("model-b")));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("translation")));
+
+        let restrictive = KeyPolicy {
+            allowed_routes: vec![Route::ChatCompletions],
+            allowed_providers: vec![Provider::LiteLlm],
+            ..KeyPolicy::default()
+        };
+        let restrictive_warnings = policy_simulation_warnings(
+            &restrictive,
+            Route::Responses,
+            Provider::InternalService,
+            &gateway_core::GenerationFeatures::default(),
+            1,
+        );
+        assert!(restrictive_warnings
+            .iter()
+            .any(|warning| warning.contains("route allowlist")));
+        assert!(restrictive_warnings
+            .iter()
+            .any(|warning| warning.contains("provider allowlist")));
+
+        let explicit_deny = policy_simulation_warnings(
+            &KeyPolicy {
+                deny: true,
+                ..KeyPolicy::default()
+            },
+            Route::Responses,
+            Provider::LiteLlm,
+            &gateway_core::GenerationFeatures::default(),
+            1,
+        );
+        assert_eq!(explicit_deny.len(), 1);
+
+        for invalid in [
+            gateway_core::admin::KeyPolicyPatch {
+                allowed_routes: Some(vec!["/invalid".to_owned()]),
+                ..Default::default()
+            },
+            gateway_core::admin::KeyPolicyPatch {
+                allowed_providers: Some(vec!["invalid".to_owned()]),
+                ..Default::default()
+            },
+            gateway_core::admin::KeyPolicyPatch {
+                allowed_hours_utc: Some(vec![24]),
+                ..Default::default()
+            },
+        ] {
+            assert_eq!(
+                apply_simulation_policy_patch(KeyPolicy::default(), invalid),
+                Err(GatewayError::PolicyDenied)
+            );
+        }
+        assert_eq!(
+            parse_simulation_provider("invalid"),
+            Err(GatewayError::PolicyDenied)
+        );
+    }
+
+    #[tokio::test]
+    async fn studio_catalog_and_public_router_constructors_use_configured_dependencies() {
+        let catalog_body = r#"[{"studio_service_id":"svc-ocr","name":"ocr"}]"#;
+        let (catalog_url, captured) = spawn_litellm_server(
+            "200 OK",
+            vec![("Content-Type", "application/json")],
+            catalog_body,
+        );
+        let catalog = StudioCatalogClient::new(&catalog_url, Some("studio-token".to_owned()));
+        let services = catalog.services().await.expect("array-shaped catalog");
+        assert_eq!(services.len(), 1);
+        assert_eq!(services[0].name, "ocr");
+        let request = captured.recv().expect("catalog request");
+        assert!(request
+            .request_line
+            .starts_with("GET /studio/gateway/services "));
+        assert!(request
+            .headers
+            .iter()
+            .any(|(name, value)| name.eq_ignore_ascii_case("authorization")
+                && value == "Bearer studio-token"));
+
+        let (wrapped_url, wrapped_captured) = spawn_litellm_server(
+            "200 OK",
+            vec![("Content-Type", "application/json")],
+            r#"{"services":[{"studio_service_id":"svc-summary","name":"summary"}]}"#,
+        );
+        assert_eq!(
+            StudioCatalogClient::new(wrapped_url, None)
+                .services()
+                .await
+                .expect("object-shaped catalog")
+                .len(),
+            1
+        );
+        wrapped_captured.recv().expect("wrapped catalog request");
+        let (failed_url, failed_captured) = spawn_litellm_server(
+            "503 Service Unavailable",
+            vec![("Content-Type", "application/json")],
+            r#"{"error":"unavailable"}"#,
+        );
+        assert_eq!(
+            StudioCatalogClient::new(failed_url, None).services().await,
+            Err(GatewayError::StudioUnavailable)
+        );
+        failed_captured.recv().expect("failed catalog request");
+
+        let (Ok(database_url), Ok(redis_url)) =
+            (std::env::var("DATABASE_URL"), std::env::var("REDIS_URL"))
+        else {
+            return;
+        };
+        let store = PostgresStore::connect(&database_url)
+            .await
+            .expect("coverage postgres");
+        let redis = RedisReadiness::new(&redis_url).expect("coverage redis");
+        let auth_env = GatewayAuthEnv::default();
+        let auth_runtime = SharedGatewayAuthRuntime::new(
+            EffectiveGatewayAuthSettings::from_sources(None, &auth_env)
+                .expect("default auth settings")
+                .runtime_config(),
+        )
+        .expect("default auth runtime");
+
+        drop(router(store.clone(), redis.clone()));
+        drop(router_with_studio(
+            store.clone(),
+            redis.clone(),
+            Some(StudioCatalogClient::new(&catalog_url, None)),
+        ));
+        drop(router_with_studio_and_auth(
+            store.clone(),
+            redis.clone(),
+            None,
+            auth_env.clone(),
+            auth_runtime.clone(),
+        ));
+        drop(router_with_studio_auth_and_litellm(
+            store,
+            redis,
+            Some(StudioCatalogClient::new(catalog_url, None)),
+            auth_env,
+            auth_runtime,
+            "http://litellm.local".to_owned(),
+            "service-key".to_owned(),
+        ));
     }
 }

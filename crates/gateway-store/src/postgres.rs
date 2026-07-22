@@ -6387,47 +6387,46 @@ fn append_guardrail_event_filters<'a>(
     builder: &mut QueryBuilder<'a, Postgres>,
     query: &'a GuardrailEventQuery,
 ) {
-    let mut separated = builder.separated(" AND ");
-    separated.push_unseparated(" WHERE true");
+    builder.push(" WHERE true");
     if let Some(from) = query.from {
-        separated.push("created_at >= ");
-        separated.push_bind_unseparated(from);
+        builder.push(" AND created_at >= ");
+        builder.push_bind(from);
     }
     if let Some(to) = query.to {
-        separated.push("created_at < ");
-        separated.push_bind_unseparated(to);
+        builder.push(" AND created_at < ");
+        builder.push_bind(to);
     }
     if let Some(project_id) = query.project_id {
-        separated.push("project_id = ");
-        separated.push_bind_unseparated(project_id);
+        builder.push(" AND project_id = ");
+        builder.push_bind(project_id);
     }
     if let Some(key_id) = query.key_id {
-        separated.push("key_id = ");
-        separated.push_bind_unseparated(key_id);
+        builder.push(" AND key_id = ");
+        builder.push_bind(key_id);
     }
     if let Some(route) = query.route.as_deref() {
-        separated.push("route = ");
-        separated.push_bind_unseparated(route);
+        builder.push(" AND route = ");
+        builder.push_bind(route);
     }
     if let Some(provider) = query.provider.as_deref() {
-        separated.push("provider = ");
-        separated.push_bind_unseparated(provider);
+        builder.push(" AND provider = ");
+        builder.push_bind(provider);
     }
     if let Some(model) = query.model.as_deref() {
-        separated.push("model = ");
-        separated.push_bind_unseparated(model);
+        builder.push(" AND model = ");
+        builder.push_bind(model);
     }
     if let Some(guardrail) = query.guardrail.as_deref() {
-        separated.push("guardrail_name = ");
-        separated.push_bind_unseparated(guardrail);
+        builder.push(" AND guardrail_name = ");
+        builder.push_bind(guardrail);
     }
     if let Some(mode) = query.mode.as_deref() {
-        separated.push("mode = ");
-        separated.push_bind_unseparated(mode);
+        builder.push(" AND mode = ");
+        builder.push_bind(mode);
     }
     if let Some(action) = query.action.as_deref() {
-        separated.push("action = ");
-        separated.push_bind_unseparated(action);
+        builder.push(" AND action = ");
+        builder.push_bind(action);
     }
 }
 
@@ -6672,6 +6671,9 @@ fn service_registry_snapshot_from_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Duration;
+    use gateway_core::PolicyLookup;
+    use http::Method;
     use sqlx::Execute;
 
     #[test]
@@ -6714,6 +6716,169 @@ mod tests {
         ));
         assert!(!sql.contains("u.project_id AND  ="));
         assert!(!sql.contains("u.route AND  ="));
+    }
+
+    #[test]
+    fn persistence_mappings_and_complete_filter_sets_cover_every_supported_value() {
+        assert_eq!(
+            key_owner_type_str(AdminKeyOwnerType::Individual),
+            "individual"
+        );
+        assert_eq!(
+            parse_key_owner_type("project").unwrap(),
+            AdminKeyOwnerType::Project
+        );
+        assert_eq!(
+            parse_key_owner_type("individual").unwrap(),
+            AdminKeyOwnerType::Individual
+        );
+        assert!(parse_key_owner_type("unknown").is_err());
+        for kind in [
+            PolicyLayerKind::Global,
+            PolicyLayerKind::Project,
+            PolicyLayerKind::Team,
+            PolicyLayerKind::Key,
+            PolicyLayerKind::Route,
+            PolicyLayerKind::Model,
+        ] {
+            assert_eq!(parse_policy_layer_kind(kind.as_str()).unwrap(), kind);
+        }
+        assert!(parse_policy_layer_kind("unknown").is_err());
+        assert_eq!(
+            normalize_policy_layer_scope(PolicyLayerKind::Global, Some("ignored".to_owned()))
+                .unwrap(),
+            None
+        );
+        assert!(normalize_policy_layer_scope(PolicyLayerKind::Team, None).is_err());
+        validate_key_owner(AdminKeyOwnerType::Individual, None).expect("individual owner");
+        assert!(validate_key_owner(AdminKeyOwnerType::Individual, Some(Uuid::new_v4())).is_err());
+
+        for mode in [
+            ServiceCostMode::Fixed,
+            ServiceCostMode::Passthrough,
+            ServiceCostMode::None,
+        ] {
+            assert_eq!(
+                parse_service_cost_mode(service_cost_mode_str(mode)).unwrap(),
+                mode
+            );
+        }
+        assert!(parse_service_cost_mode("unknown").is_err());
+        for source in [ServiceSource::Gateway, ServiceSource::Studio] {
+            assert_eq!(
+                parse_service_source(service_source_str(source)).unwrap(),
+                source
+            );
+        }
+        assert!(parse_service_source("unknown").is_err());
+        for status in [
+            ServiceSyncStatus::Local,
+            ServiceSyncStatus::Synced,
+            ServiceSyncStatus::Incomplete,
+            ServiceSyncStatus::Stale,
+            ServiceSyncStatus::Failed,
+        ] {
+            assert_eq!(
+                parse_service_sync_status(service_sync_status_str(status)).unwrap(),
+                status
+            );
+        }
+        assert!(parse_service_sync_status("unknown").is_err());
+        assert_eq!(
+            service_sync_status_for_runtime(
+                Some("http://service"),
+                Some("secret"),
+                ServiceSyncStatus::Stale
+            ),
+            ServiceSyncStatus::Stale
+        );
+        assert_eq!(
+            service_sync_status_for_runtime(None, Some("secret"), ServiceSyncStatus::Synced),
+            ServiceSyncStatus::Incomplete
+        );
+
+        let now = chrono::Utc::now();
+        let query = UsageQuery {
+            from: Some(now - Duration::hours(1)),
+            to: Some(now),
+            project_id: Some(Uuid::new_v4()),
+            key_id: Some(Uuid::new_v4()),
+            route: Some("/v1/responses".to_owned()),
+            provider: Some("litellm".to_owned()),
+            service: Some("ocr".to_owned()),
+            task_id: Some("task".to_owned()),
+            run_id: Some("run".to_owned()),
+            model: Some("model".to_owned()),
+            status: Some("success".to_owned()),
+            trace_id: Some("trace".to_owned()),
+            min_cost_usd: Some(-1.0),
+            ..UsageQuery::default()
+        };
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT * FROM usage_events");
+        append_usage_filters(&mut builder, &query);
+        let sql = builder.build().sql().to_owned();
+        for column in [
+            "created_at",
+            "project_id",
+            "key_id",
+            "route",
+            "provider",
+            "service_name",
+            "task_id",
+            "run_id",
+            "model",
+            "status",
+            "trace_id",
+            "estimated_cost",
+        ] {
+            assert!(sql.contains(column), "missing usage filter {column}: {sql}");
+        }
+
+        let guardrail_query = GuardrailEventQuery {
+            from: Some(now - Duration::hours(1)),
+            to: Some(now),
+            project_id: Some(Uuid::new_v4()),
+            key_id: Some(Uuid::new_v4()),
+            route: Some("/v1/responses".to_owned()),
+            provider: Some("litellm".to_owned()),
+            model: Some("model".to_owned()),
+            guardrail: Some("pii-redact".to_owned()),
+            mode: Some("pre_call".to_owned()),
+            action: Some("modify".to_owned()),
+            ..GuardrailEventQuery::default()
+        };
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT * FROM guardrail_events");
+        append_guardrail_event_filters(&mut builder, &guardrail_query);
+        let sql = builder.build().sql().to_owned();
+        for column in [
+            "created_at",
+            "project_id",
+            "key_id",
+            "route",
+            "provider",
+            "model",
+            "guardrail_name",
+            "mode",
+            "action",
+        ] {
+            assert!(
+                sql.contains(column),
+                "missing guardrail filter {column}: {sql}"
+            );
+        }
+
+        for status in [
+            ProviderHealthStatus::Healthy,
+            ProviderHealthStatus::Degraded,
+            ProviderHealthStatus::Unhealthy,
+            ProviderHealthStatus::Unknown,
+        ] {
+            assert_eq!(
+                parse_provider_health_status(provider_health_status_str(status)).unwrap(),
+                status
+            );
+        }
+        assert!(parse_provider_health_status("unknown-status").is_err());
     }
 
     #[test]
@@ -6777,5 +6942,842 @@ mod tests {
             names,
             vec!["brand", "custom", "debug", "pii-redact", "shared"]
         );
+    }
+
+    async fn dependency_backed_store() -> Option<PostgresStore> {
+        let database_url = std::env::var("DATABASE_URL").ok()?;
+        Some(
+            PostgresStore::connect(&database_url)
+                .await
+                .expect("connect dependency-backed test store"),
+        )
+    }
+
+    fn deserialize<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
+        serde_json::from_value(value).expect("deserialize test request")
+    }
+
+    #[tokio::test]
+    async fn dependency_backed_store_exercises_admin_and_runtime_contracts() {
+        let Some(store) = dependency_backed_store().await else {
+            eprintln!("skipping dependency-backed store coverage: DATABASE_URL is not set");
+            return;
+        };
+        let suffix = Uuid::new_v4().simple().to_string();
+        let now = chrono::Utc::now();
+
+        store.ready().await.expect("store ready");
+        let has_active_operator = store
+            .has_active_operator_token()
+            .await
+            .expect("active token query");
+        let actor_token_id = if has_active_operator {
+            sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM operator_tokens WHERE disabled = false AND revoked_at IS NULL LIMIT 1",
+            )
+            .fetch_one(store.pool())
+            .await
+            .expect("load active operator token")
+        } else {
+            let operator = OperatorTokenMaterial::generate().expect("operator material");
+            store
+                .bootstrap_operator_token(&operator)
+                .await
+                .expect("bootstrap operator token")
+                .expect("operator token created");
+            store
+                .verify_operator_token(&operator.raw_token, now)
+                .await
+                .expect("verify operator token");
+            let rotated = OperatorTokenMaterial::generate().expect("rotated material");
+            let rotated_response = store
+                .rotate_operator_token(&operator.raw_token, &rotated, now)
+                .await
+                .expect("rotate operator token");
+            store
+                .verify_operator_token(&rotated.raw_token, now)
+                .await
+                .expect("verify rotated token");
+            rotated_response.id
+        };
+
+        let project = store
+            .create_project(ProjectCreateRequest {
+                name: format!("coverage-{suffix}"),
+            })
+            .await
+            .expect("create project");
+        store.list_projects().await.expect("list projects");
+        store
+            .get_project(project.id)
+            .await
+            .expect("get project")
+            .expect("project exists");
+
+        let service_name = format!("coverage-{suffix}");
+        let service = store
+            .create_service(deserialize(serde_json::json!({
+                "name": service_name,
+                "project_id": project.id,
+                "route_pattern": format!("/services/{service_name}/*"),
+                "upstream_base_url": "http://coverage.internal:8080",
+                "health_check_path": "/health",
+                "health_check_method": "GET",
+                "allowed_methods": ["GET", "POST"],
+                "credential": "coverage-secret",
+                "cost_mode": "fixed",
+                "estimated_cost_usd": 0.1,
+                "pricing_rules": [{
+                    "name": "premium",
+                    "json_pointer": "/tier",
+                    "equals": "premium",
+                    "cost_mode": "fixed",
+                    "estimated_cost_usd": 0.3
+                }],
+                "openapi_source_path": "/openapi.json",
+                "openapi_endpoints": [{
+                    "method": "POST",
+                    "path_template": "/run",
+                    "operation_id": "run",
+                    "summary": "Run coverage request",
+                    "relayna_default": false
+                }],
+                "endpoint_pricing_rules": [{
+                    "method": "POST",
+                    "path_template": "/run",
+                    "operation_id": "run",
+                    "cost_mode": "fixed",
+                    "estimated_cost_usd": 0.1
+                }]
+            })))
+            .await
+            .expect("create service");
+        assert!(service.credential_configured);
+        store.list_services().await.expect("list services");
+        store
+            .get_service(&service_name)
+            .await
+            .expect("get service")
+            .expect("service exists");
+        store
+            .patch_service(
+                &service_name,
+                deserialize(serde_json::json!({
+                    "health_check_method": "HEAD",
+                    "timeout_ms": 30000,
+                    "max_body_bytes": 1048576,
+                    "credential": "updated-coverage-secret",
+                    "fallback_services": []
+                })),
+            )
+            .await
+            .expect("patch service")
+            .expect("service exists");
+        store
+            .set_service_enabled(&service_name, false)
+            .await
+            .expect("disable service");
+        store
+            .set_service_enabled(&service_name, true)
+            .await
+            .expect("enable service");
+        store
+            .service_sync_status(&service_name)
+            .await
+            .expect("service sync status");
+        store
+            .service_registration(&service_name)
+            .await
+            .expect("service registration");
+        store
+            .service_registration_for_route(&Method::POST, &format!("/services/{service_name}/run"))
+            .await
+            .expect("service route lookup");
+
+        store
+            .patch_project(
+                project.id,
+                ProjectPatchRequest {
+                    name: Some(format!("coverage-renamed-{suffix}")),
+                    service_names: Some(vec![service_name.clone()]),
+                },
+            )
+            .await
+            .expect("patch project");
+
+        let key_material = VirtualKeyMaterial::generate().expect("key material");
+        let key = store
+            .create_admin_key(
+                deserialize(serde_json::json!({
+                    "owner_type": "project",
+                    "project_id": project.id,
+                    "service_names": [service_name],
+                    "expires_at": null,
+                    "rotation_due_at": now + Duration::days(30),
+                    "policy": {
+                        "allowed_routes": ["/services/*"],
+                        "allowed_providers": ["internal-service"],
+                        "allowed_services": [service_name],
+                        "rpm_limit": 100,
+                        "tpm_limit": 10000,
+                        "daily_budget_usd": 10.0,
+                        "monthly_budget_usd": 100.0,
+                        "allow_streaming": true,
+                        "allow_tools": true,
+                        "max_requests_per_day": 1000,
+                        "max_tokens_per_day": 100000,
+                        "max_cost_per_request": 1.0,
+                        "max_input_tokens_per_request": 1000,
+                        "max_output_tokens_per_request": 1000,
+                        "allowed_hours_utc": [0, 12, 23],
+                        "unused_key_auto_disable_after_days": 90,
+                        "max_request_body_bytes": 1048576,
+                        "max_response_body_bytes": 2097152,
+                        "max_stream_duration_seconds": 300,
+                        "max_sse_event_bytes": 65536,
+                        "max_tool_call_count": 10,
+                        "max_tool_schema_bytes": 65536
+                    },
+                    "guardrail_policy": {}
+                })),
+                &key_material,
+            )
+            .await
+            .expect("create key");
+        store.list_admin_keys().await.expect("list keys");
+        store
+            .get_admin_key(key.id)
+            .await
+            .expect("get key")
+            .expect("key exists");
+        store
+            .find_by_prefix(&key_material.key_prefix)
+            .await
+            .expect("key lookup")
+            .expect("stored key exists");
+        store
+            .mark_key_used(key.id, now)
+            .await
+            .expect("mark key used");
+        store
+            .patch_admin_key(
+                key.id,
+                deserialize(serde_json::json!({
+                    "rotation_due_at": null,
+                    "disabled": false,
+                    "policy": {"rpm_limit": 50, "allow_tools": false},
+                    "guardrail_policy": {"mandatory_guardrails": ["pii-redact"]}
+                })),
+            )
+            .await
+            .expect("patch key");
+        store.disable_admin_key(key.id).await.expect("disable key");
+        store.enable_admin_key(key.id).await.expect("enable key");
+        store
+            .stored_policy_for_key(key.id)
+            .await
+            .expect("stored policy");
+        store
+            .policy_for_context(
+                key.id,
+                Some(project.id),
+                Some(format!("team-{suffix}")),
+                Some(Route::ServiceWildcard),
+                Some("model".to_owned()),
+            )
+            .await
+            .expect("context policy");
+        store
+            .effective_policy_for_context(
+                key.id,
+                Some(project.id),
+                None,
+                Some(Route::ServiceWildcard),
+                None,
+            )
+            .await
+            .expect("effective context policy");
+
+        let policy_layer = store
+            .upsert_policy_layer(deserialize(serde_json::json!({
+                "kind": "project",
+                "scope_id": project.id.to_string(),
+                "policy": {"rpm_limit": 40},
+                "guardrail_policy": {}
+            })))
+            .await
+            .expect("upsert policy layer");
+        store
+            .list_policy_layers()
+            .await
+            .expect("list policy layers");
+
+        let provider_kind = if store
+            .active_litellm_config()
+            .await
+            .expect("query existing LiteLLM config")
+            .is_some()
+        {
+            "internal-service"
+        } else {
+            "litellm"
+        };
+        let provider = store
+            .create_provider_config(deserialize(serde_json::json!({
+                "provider": provider_kind,
+                "name": format!("coverage-{suffix}"),
+                "base_url": "http://litellm.internal:4000",
+                "credential": "master-key",
+                "credential_header_mode": "custom_header",
+                "credential_header_name": "x-litellm-key",
+                "credential_header_value_format": "bearer"
+            })))
+            .await
+            .expect("create provider");
+        store.list_provider_configs().await.expect("list providers");
+        store
+            .get_provider_config(provider.id)
+            .await
+            .expect("get provider");
+        store
+            .patch_provider_config(
+                provider.id,
+                deserialize(serde_json::json!({
+                    "name": format!("coverage-updated-{suffix}"),
+                    "base_url": "http://litellm.internal:4001",
+                    "credential_header_value_format": "raw"
+                })),
+            )
+            .await
+            .expect("patch provider");
+        store
+            .set_provider_config_enabled(provider.id, false)
+            .await
+            .expect("disable provider");
+        store
+            .set_provider_config_enabled(provider.id, true)
+            .await
+            .expect("enable provider");
+        store
+            .active_litellm_config()
+            .await
+            .expect("active LiteLLM config");
+
+        let mapping = store
+            .upsert_litellm_credential_mapping(LiteLlmCredentialMappingUpsertRequest {
+                scope: LiteLlmCredentialMappingScope::Key,
+                target_id: key.id,
+                enabled: true,
+                credential: Some("virtual-litellm-key".to_owned()),
+            })
+            .await
+            .expect("upsert credential mapping");
+        store
+            .list_litellm_credential_mappings()
+            .await
+            .expect("list mappings");
+        store
+            .litellm_credential_mapping_for_context(key.id, Some(project.id))
+            .await
+            .expect("runtime mapping");
+        store
+            .set_litellm_credential_mapping_enabled(mapping.id, false)
+            .await
+            .expect("disable mapping");
+        store
+            .set_litellm_credential_mapping_enabled(mapping.id, true)
+            .await
+            .expect("enable mapping");
+
+        store
+            .list_openai_route_settings()
+            .await
+            .expect("list OpenAI routes");
+        store
+            .list_anthropic_route_settings()
+            .await
+            .expect("list Anthropic routes");
+        store
+            .set_openai_route_enabled("chat-completions", false)
+            .await
+            .expect("disable OpenAI route");
+        store
+            .set_openai_route_enabled("chat-completions", true)
+            .await
+            .expect("enable OpenAI route");
+        store
+            .set_openai_route_mode("responses", OpenAiRouteMode::DirectLiteLlmPassthrough)
+            .await
+            .expect("set OpenAI route mode");
+        store
+            .patch_openai_route_config(
+                "embeddings",
+                OpenAiRouteConfigPatchRequest {
+                    mode: Some(OpenAiRouteMode::ManagedByGateway),
+                    timeout_ms: Some(30_000),
+                    max_request_body_bytes: Some(500_000),
+                    max_response_body_bytes: Some(600_000),
+                },
+            )
+            .await
+            .expect("patch OpenAI route");
+        store
+            .set_anthropic_route_enabled("messages", false)
+            .await
+            .expect("disable Anthropic route");
+        store
+            .set_anthropic_route_enabled("messages", true)
+            .await
+            .expect("enable Anthropic route");
+        store
+            .set_anthropic_route_mode("messages", OpenAiRouteMode::ManagedByGateway)
+            .await
+            .expect("set Anthropic route mode");
+        store
+            .patch_anthropic_route_config(
+                "messages",
+                OpenAiRouteConfigPatchRequest {
+                    mode: None,
+                    timeout_ms: Some(31_000),
+                    max_request_body_bytes: Some(510_000),
+                    max_response_body_bytes: Some(610_000),
+                },
+            )
+            .await
+            .expect("patch Anthropic route");
+        store
+            .openai_route_enabled(Route::ChatCompletions)
+            .await
+            .expect("OpenAI enabled lookup");
+        store
+            .openai_route_mode(Route::Responses)
+            .await
+            .expect("OpenAI mode lookup");
+        store
+            .openai_route_limits(Route::LiteLlmEmbeddings)
+            .await
+            .expect("OpenAI limits lookup");
+        store
+            .anthropic_route_enabled(Route::AnthropicMessages)
+            .await
+            .expect("Anthropic enabled lookup");
+        store
+            .anthropic_route_mode(Route::AnthropicMessages)
+            .await
+            .expect("Anthropic mode lookup");
+        store
+            .anthropic_route_limits(Route::AnthropicMessages)
+            .await
+            .expect("Anthropic limits lookup");
+        store
+            .patch_litellm_passthrough_settings(deserialize(serde_json::json!({
+                "enabled": true,
+                "allowed_paths": ["/models"],
+                "allowed_methods": ["GET"],
+                "ui_exposure": "operator_only",
+                "admin_api_exposure": "disabled",
+                "timeout_ms": 30000,
+                "max_request_body_bytes": 100000,
+                "max_response_body_bytes": 200000
+            })))
+            .await
+            .expect("patch passthrough settings");
+        store
+            .get_litellm_passthrough_settings()
+            .await
+            .expect("get passthrough settings");
+        store
+            .litellm_passthrough_settings()
+            .await
+            .expect("runtime passthrough settings");
+
+        store
+            .patch_studio_connection_settings(StudioConnectionPatchRequest {
+                base_url: PatchValue::Set("https://studio.example/v1/".to_owned()),
+                token: PatchValue::Set("studio-secret".to_owned()),
+            })
+            .await
+            .expect("patch Studio connection");
+        store
+            .studio_connection_settings()
+            .await
+            .expect("get Studio connection");
+        store
+            .patch_gateway_auth_settings(deserialize(serde_json::json!({
+                "relayna_key_header": "x-relayna-key",
+                "entra_enabled": false,
+                "apigee_trusted_header_enabled": false
+            })))
+            .await
+            .expect("patch gateway auth settings");
+        store
+            .gateway_auth_settings()
+            .await
+            .expect("get gateway auth settings");
+
+        let guardrail_name = format!("coverage-{suffix}");
+        store
+            .create_http_guardrail(deserialize(serde_json::json!({
+                "name": guardrail_name,
+                "description": "coverage guardrail",
+                "endpoint_url": "https://guardrail.example/check",
+                "modes": ["pre_call", "post_call"],
+                "default_on": false,
+                "failure_policy": "fail_open",
+                "timeout_ms": 1000,
+                "bearer_token": "guardrail-secret",
+                "config_schema": {"type": "object"},
+                "runtime_config": {"mode": "coverage"},
+                "enabled": true
+            })))
+            .await
+            .expect("create guardrail");
+        store
+            .patch_admin_guardrail(
+                guardrail_name.clone(),
+                deserialize(serde_json::json!({
+                    "description": "updated coverage guardrail",
+                    "timeout_ms": 1500,
+                    "bearer_token": null,
+                    "enabled": true
+                })),
+            )
+            .await
+            .expect("patch guardrail");
+        store
+            .list_guardrail_definitions()
+            .await
+            .expect("runtime guardrails");
+        store
+            .list_admin_guardrail_definitions()
+            .await
+            .expect("admin guardrails");
+        store
+            .upsert_guardrail_policy_for_key(
+                key.id,
+                &GuardrailPolicy {
+                    mandatory_guardrails: vec![guardrail_name.clone()],
+                    ..GuardrailPolicy::default()
+                },
+            )
+            .await
+            .expect("upsert key guardrail policy");
+        store
+            .guardrail_policy_for_key(key.id)
+            .await
+            .expect("key guardrail policy");
+        store
+            .insert_guardrail_execution_event(&GuardrailExecutionEvent {
+                request_id: format!("guardrail-{suffix}"),
+                key_id: Some(key.id),
+                project_id: Some(project.id),
+                route: None,
+                model: Some("coverage-model".to_owned()),
+                provider: None,
+                guardrail_name: guardrail_name.clone(),
+                mode: GuardrailMode::PreCall,
+                action: gateway_core::GuardrailAction::Allow,
+                failure_policy: gateway_core::GuardrailFailurePolicy::FailOpen,
+                latency_ms: 12,
+                reason: Some("coverage".to_owned()),
+                metadata: serde_json::json!({"safe": true}),
+                created_at: now,
+            })
+            .await
+            .expect("insert guardrail event");
+        let guardrail_query = GuardrailEventQuery {
+            guardrail: Some(guardrail_name.clone()),
+            limit: Some(20),
+            ..GuardrailEventQuery::default()
+        };
+        let guardrail_row = sqlx::query(
+            r#"
+            SELECT request_id, key_id, project_id, route, model, provider, guardrail_name,
+                   mode, action, failure_policy, latency_ms, reason, metadata, created_at
+            FROM guardrail_execution_events
+            WHERE guardrail_name = $1
+            "#,
+        )
+        .bind(&guardrail_name)
+        .fetch_one(store.pool())
+        .await
+        .expect("load guardrail event row");
+        let _: String = guardrail_row.try_get("request_id").expect("request id");
+        let _: Option<Uuid> = guardrail_row.try_get("key_id").expect("key id");
+        let _: Option<Uuid> = guardrail_row.try_get("project_id").expect("project id");
+        let _: Option<String> = guardrail_row.try_get("route").expect("route");
+        let _: Option<String> = guardrail_row.try_get("model").expect("model");
+        let _: Option<String> = guardrail_row.try_get("provider").expect("provider");
+        let _: String = guardrail_row
+            .try_get("guardrail_name")
+            .expect("guardrail name");
+        let _: String = guardrail_row.try_get("mode").expect("mode");
+        let _: String = guardrail_row.try_get("action").expect("action");
+        let _: String = guardrail_row
+            .try_get("failure_policy")
+            .expect("failure policy");
+        let _: i64 = guardrail_row.try_get("latency_ms").expect("latency");
+        let _: Option<String> = guardrail_row.try_get("reason").expect("reason");
+        let _: Json<serde_json::Value> = guardrail_row.try_get("metadata").expect("metadata");
+        let _: chrono::DateTime<chrono::Utc> =
+            guardrail_row.try_get("created_at").expect("created at");
+        guardrail_execution_event_from_row(&guardrail_row).expect("map guardrail event row");
+        store
+            .guardrail_execution_events(guardrail_query.clone())
+            .await
+            .expect("guardrail events");
+        store
+            .guardrail_execution_summary(guardrail_query)
+            .await
+            .expect("guardrail summary");
+
+        let usage = UsageEvent {
+            request_id: format!("usage-{suffix}"),
+            key_id: key.id,
+            project_id: Some(project.id),
+            route: Route::ServiceWildcard,
+            model: Some("coverage-model".to_owned()),
+            provider: Provider::InternalService,
+            status: UsageStatus::Success,
+            status_code: 200,
+            latency_ms: 42,
+            input_tokens: Some(10),
+            output_tokens: Some(5),
+            total_tokens: Some(15),
+            estimated_cost_usd: Some(0.3),
+            cost_source: Some("service_fixed".to_owned()),
+            cost_mode: Some(ServiceCostMode::Fixed),
+            pricing_rule_name: Some("premium".to_owned()),
+            service_name: Some(service_name.clone()),
+            task_id: Some(format!("task-{suffix}")),
+            run_id: Some(format!("run-{suffix}")),
+            trace_id: Some(format!("trace-{suffix}")),
+            fallback_count: 1,
+            created_at: now,
+        };
+        store
+            .insert_usage_event(&usage)
+            .await
+            .expect("insert usage");
+        let usage_query = UsageQuery {
+            project_id: Some(project.id),
+            interval: Some("hour".to_owned()),
+            limit: Some(20),
+            timeseries_limit: Some(20),
+            service_timeseries_limit: Some(20),
+            breakdown_limit: Some(20),
+            sort_by: Some("cost".to_owned()),
+            sort_order: Some("desc".to_owned()),
+            ..UsageQuery::default()
+        };
+        store
+            .usage_summary(usage_query.clone())
+            .await
+            .expect("usage summary");
+        store
+            .usage_timeseries(usage_query.clone())
+            .await
+            .expect("usage timeseries");
+        for dimension in [
+            UsageBreakdownDimension::Key,
+            UsageBreakdownDimension::Project,
+            UsageBreakdownDimension::Model,
+            UsageBreakdownDimension::Provider,
+            UsageBreakdownDimension::Service,
+            UsageBreakdownDimension::Task,
+        ] {
+            store
+                .usage_breakdown(usage_query.clone(), dimension)
+                .await
+                .expect("usage breakdown");
+        }
+        store
+            .usage_export(usage_query.clone())
+            .await
+            .expect("usage export");
+        store
+            .usage_dashboard(usage_query.clone())
+            .await
+            .expect("usage dashboard");
+        store
+            .usage_events(usage_query.clone())
+            .await
+            .expect("usage events");
+        store
+            .usage_filter_values(UsageFilterValuesQuery {
+                field: "service".to_owned(),
+                q: Some("coverage".to_owned()),
+                usage: usage_query.clone(),
+            })
+            .await
+            .expect("usage filter values");
+        store
+            .provider_health(usage_query.clone())
+            .await
+            .expect("provider health");
+        store
+            .unused_keys(usage_query.clone())
+            .await
+            .expect("unused keys");
+        store.key_usage_summary(key.id).await.expect("key usage");
+        store
+            .project_usage_summary(project.id)
+            .await
+            .expect("project usage");
+        store
+            .budget_counter_seeds(now)
+            .await
+            .expect("budget counter seeds");
+
+        let health_state = ProviderHealthState {
+            name: service_name.clone(),
+            provider: Provider::InternalService,
+            status: ProviderHealthStatus::Degraded,
+            circuit_state: CircuitBreakerState::HalfOpen,
+            active_check_ok: Some(true),
+            passive_success_count: 3,
+            passive_failure_count: 1,
+            consecutive_failures: 1,
+            average_latency_ms: Some(44),
+            last_error_code: Some("timeout".to_owned()),
+            cooldown_until: Some(now + Duration::seconds(30)),
+            checked_at: Some(now),
+            updated_at: now,
+        };
+        store
+            .upsert_provider_health_state(health_state)
+            .await
+            .expect("upsert provider health state");
+        store
+            .list_provider_health_states()
+            .await
+            .expect("list provider health states");
+        store
+            .provider_health_check_targets()
+            .await
+            .expect("health check targets");
+
+        let debug_bundle = DebugBundle {
+            request_id: format!("debug-{suffix}"),
+            route: Some(Route::ServiceWildcard),
+            provider: Some(Provider::InternalService),
+            service_name: Some(service_name.clone()),
+            trace_id: Some(format!("trace-{suffix}")),
+            policy_trace: vec!["global".to_owned(), "key".to_owned()],
+            guardrail_trace: vec![guardrail_name.clone()],
+            selection_trace: vec![service_name.clone()],
+            fallback_history: vec![FallbackAttempt {
+                from_provider: "primary".to_owned(),
+                to_provider: "fallback".to_owned(),
+                reason: "timeout".to_owned(),
+                status_code: Some(504),
+                latency_ms: Some(1000),
+            }],
+            upstream_latency_ms: Some(42),
+            request_hash: Some("request-hash".to_owned()),
+            response_hash: Some("response-hash".to_owned()),
+            redaction_version: 1,
+            created_at: now,
+        };
+        store
+            .insert_debug_bundle(debug_bundle.clone())
+            .await
+            .expect("insert debug bundle");
+        store
+            .get_debug_bundle(&debug_bundle.request_id)
+            .await
+            .expect("get debug bundle");
+
+        let diff = ServiceImportDiff {
+            added: vec![service_name.clone()],
+            changed: Vec::new(),
+            removed: Vec::new(),
+            invalid: Vec::new(),
+        };
+        let snapshot = store
+            .insert_service_registry_snapshot(ServiceRegistrySnapshot {
+                version: 0,
+                source: format!("coverage-{suffix}"),
+                diff: diff.clone(),
+                services_json: serde_json::json!([]),
+                activated_at: None,
+                rolled_back_from_version: None,
+                created_at: now,
+            })
+            .await
+            .expect("insert registry snapshot");
+        store
+            .list_service_registry_snapshots()
+            .await
+            .expect("list registry snapshots");
+        store
+            .service_registry_snapshot(snapshot.version)
+            .await
+            .expect("get registry snapshot");
+        store
+            .activate_service_registry_import(
+                format!("activate-{suffix}"),
+                diff,
+                vec![deserialize(serde_json::json!({
+                    "studio_service_id": format!("studio-{suffix}"),
+                    "name": format!("studio-{suffix}"),
+                    "route_pattern": format!("/services/studio-{suffix}/*"),
+                    "upstream_base_url": "http://studio-service.internal:8080"
+                }))],
+                Some(snapshot.version),
+            )
+            .await
+            .expect("activate registry import");
+
+        store
+            .record_audit_event(AuditEventCreate {
+                actor_token_id,
+                action: "coverage.complete".to_owned(),
+                target_type: "coverage".to_owned(),
+                target_id: Some(suffix.clone()),
+                before: None,
+                after: Some(serde_json::json!({"covered": true})),
+                request_id: format!("request-{suffix}"),
+                ip: Some("127.0.0.1".to_owned()),
+                user_agent: Some("coverage-test".to_owned()),
+            })
+            .await
+            .expect("record audit event");
+        store
+            .list_audit_events(AuditEventQuery {
+                actor_token_id: Some(actor_token_id),
+                action: Some("coverage.complete".to_owned()),
+                target_type: Some("coverage".to_owned()),
+                target_id: Some(suffix.clone()),
+                limit: 20,
+            })
+            .await
+            .expect("list audit events");
+
+        store
+            .delete_policy_layer(policy_layer.id)
+            .await
+            .expect("delete policy layer");
+        store
+            .delete_litellm_credential_mapping(mapping.id)
+            .await
+            .expect("delete mapping");
+        store
+            .delete_admin_guardrail(guardrail_name)
+            .await
+            .expect("delete guardrail");
+        store.revoke_admin_key(key.id).await.expect("revoke key");
+        store
+            .delete_provider_config(provider.id)
+            .await
+            .expect("delete provider");
+        store
+            .delete_service(&service_name)
+            .await
+            .expect("delete service");
+        assert!(matches!(
+            store.delete_project(project.id).await,
+            Err(GatewayError::ProjectInUse)
+        ));
     }
 }

@@ -420,4 +420,33 @@ mod tests {
             GatewayError::MalformedAuthorization
         );
     }
+
+    #[test]
+    fn every_key_preset_applies_its_documented_policy_shape() {
+        let developer = KeyPreset::Developer.apply(crate::KeyPolicy::default());
+        assert!(developer.allow_streaming && developer.allow_tools);
+        assert_eq!(developer.rpm_limit, Some(60));
+
+        let worker = KeyPreset::ProductionWorker.apply(crate::KeyPolicy::default());
+        assert!(worker.allow_streaming && !worker.allow_tools);
+        assert_eq!(worker.rpm_limit, Some(600));
+
+        let read_only = KeyPreset::ReadOnlyService.apply(crate::KeyPolicy::default());
+        assert_eq!(
+            read_only.allowed_routes,
+            [crate::Route::Summary, crate::Route::Embeddings]
+        );
+        assert_eq!(
+            read_only.allowed_providers,
+            [crate::Provider::InternalService]
+        );
+
+        let partner = KeyPreset::ExternalPartner.apply(crate::KeyPolicy::default());
+        assert_eq!(partner.max_cost_per_request, Some(0.25));
+        assert!(!partner.allow_streaming && !partner.allow_tools);
+
+        let debugging = KeyPreset::TemporaryDebugging.apply(crate::KeyPolicy::default());
+        assert_eq!(debugging.unused_key_auto_disable_after_days, Some(7));
+        assert!(debugging.allow_streaming && !debugging.allow_tools);
+    }
 }

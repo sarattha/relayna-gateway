@@ -461,4 +461,63 @@ mod tests {
             GatewayError::InvalidProviderConfigPayload
         );
     }
+
+    #[test]
+    fn provider_kinds_scopes_and_payload_validation_cover_all_edges() {
+        for kind in [
+            ProviderConfigKind::LiteLlm,
+            ProviderConfigKind::InternalService,
+        ] {
+            assert_eq!(
+                parse_provider_config_kind(provider_config_kind_str(kind)).unwrap(),
+                kind
+            );
+        }
+        assert!(parse_provider_config_kind("unknown").is_err());
+        for scope in [
+            LiteLlmCredentialMappingScope::Key,
+            LiteLlmCredentialMappingScope::Project,
+        ] {
+            assert_eq!(
+                parse_credential_mapping_scope(credential_mapping_scope_str(scope)).unwrap(),
+                scope
+            );
+        }
+        assert!(parse_credential_mapping_scope("unknown").is_err());
+        assert!(parse_credential_header_mode("unknown").is_err());
+
+        let valid: ProviderConfigCreateRequest = serde_json::from_value(serde_json::json!({
+            "provider": "litellm",
+            "name": "coverage-provider",
+            "base_url": "https://provider.example",
+            "credential": "secret",
+            "credential_header_mode": "custom_header",
+            "credential_header_name": "x-provider-key"
+        }))
+        .expect("provider request");
+        valid.validate().expect("valid provider request");
+
+        for invalid in [
+            serde_json::json!({"provider":"litellm","name":"","base_url":"https://provider.example"}),
+            serde_json::json!({"provider":"litellm","name":"provider","base_url":"ftp://provider.example"}),
+            serde_json::json!({"provider":"litellm","name":"provider","base_url":"https://provider.example","credential":" "}),
+            serde_json::json!({"provider":"litellm","name":"provider","base_url":"https://provider.example","credential_header_mode":"custom_header"}),
+        ] {
+            let request: ProviderConfigCreateRequest =
+                serde_json::from_value(invalid).expect("deserialize invalid provider request");
+            assert!(request.validate().is_err());
+        }
+
+        let patch = ProviderConfigPatchRequest {
+            credential: Some(Some(" ".to_owned())),
+            ..ProviderConfigPatchRequest::default()
+        };
+        assert!(patch.validate().is_err());
+        let patch = ProviderConfigPatchRequest {
+            credential_header_mode: Some(CredentialHeaderMode::CustomHeader),
+            credential_header_name: Some(None),
+            ..ProviderConfigPatchRequest::default()
+        };
+        assert!(patch.validate().is_err());
+    }
 }

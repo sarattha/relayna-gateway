@@ -251,6 +251,42 @@ async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        io::{Read, Write},
+        net::{TcpListener as StdTcpListener, TcpStream},
+        time::Instant,
+    };
+
+    fn unused_local_address() -> String {
+        let listener = StdTcpListener::bind("127.0.0.1:0").expect("reserve local address");
+        listener.local_addr().expect("local address").to_string()
+    }
+
+    fn wait_for_http(address: &str, path: &str) -> String {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if let Ok(mut stream) = TcpStream::connect(address) {
+                stream
+                    .write_all(
+                        format!(
+                            "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+                        )
+                        .as_bytes(),
+                    )
+                    .expect("write HTTP request");
+                let mut response = String::new();
+                stream
+                    .read_to_string(&mut response)
+                    .expect("read HTTP response");
+                return response;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "gateway did not start at {address}"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
 
     #[test]
     fn bootstrap_material_uses_configured_admin_token() {
@@ -281,5 +317,53 @@ mod tests {
             }
             BootstrapOperatorToken::Configured(_) => panic!("expected generated token"),
         }
+    }
+
+    #[test]
+    fn gateway_entrypoint_boots_control_and_proxy_planes_with_live_dependencies() {
+        let database_url = match std::env::var("DATABASE_URL") {
+            Ok(value) => value,
+            Err(_) => {
+                eprintln!("skipping gateway entrypoint coverage: DATABASE_URL is not set");
+                return;
+            }
+        };
+        let redis_url = match std::env::var("REDIS_URL") {
+            Ok(value) => value,
+            Err(_) => {
+                eprintln!("skipping gateway entrypoint coverage: REDIS_URL is not set");
+                return;
+            }
+        };
+        let proxy_address = unused_local_address();
+        let control_address = unused_local_address();
+        for (name, value) in [
+            ("DATABASE_URL", database_url),
+            ("REDIS_URL", redis_url),
+            ("LITELLM_BASE_URL", "http://127.0.0.1:9".to_owned()),
+            ("LITELLM_SERVICE_KEY", "coverage-key".to_owned()),
+            ("GATEWAY_BIND_ADDR", proxy_address.clone()),
+            ("GATEWAY_CONTROL_BIND_ADDR", control_address.clone()),
+            ("LOG_LEVEL", "gateway_api=error".to_owned()),
+            ("DIRECT_OPENAI_BASE_URL", "http://127.0.0.1:9".to_owned()),
+            (
+                "DIRECT_OPENAI_SERVICE_KEY",
+                "coverage-openai-key".to_owned(),
+            ),
+            ("RELAYNA_WORKER_TOKEN", "coverage-worker".to_owned()),
+            ("RELAYNA_STUDIO_BASE_URL", "http://127.0.0.1:9".to_owned()),
+            ("RELAYNA_STUDIO_TOKEN", "coverage-studio".to_owned()),
+        ] {
+            std::env::set_var(name, value);
+        }
+        std::env::set_var("ENTRA_AUTH_ENABLED", "false");
+        std::env::set_var("APIGEE_TRUSTED_HEADER_ENABLED", "false");
+
+        std::thread::spawn(|| main().expect("gateway entrypoint"));
+
+        let control = wait_for_http(&control_address, "/admin-ui/readyz");
+        assert!(control.starts_with("HTTP/1.1 200"), "{control}");
+        let proxy = wait_for_http(&proxy_address, "/v1/models");
+        assert!(proxy.starts_with("HTTP/1.1 401"), "{proxy}");
     }
 }
