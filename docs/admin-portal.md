@@ -264,6 +264,34 @@ pricing rules, then reconciles the reservation to the actual matching rule.
 This fail-closed behavior means `max_cost_per_request` must permit the most
 expensive fixed variant that the key is allowed to submit.
 
+For services that publish OpenAPI 3.x JSON, edit the service and use **Preview
+OpenAPI** with a relative source path such as `/openapi.json`. Preview is
+read-only. It lists added and removed method/path operations before the operator
+chooses **Sync endpoint pricing**. Sync persists a durable endpoint snapshot;
+Gateway never downloads OpenAPI while proxying a client request.
+
+Newly discovered Relayna runtime and operations endpoints default to cost mode
+`none`, including `/events/*`, `/status/*`, `/history`, `/dlq/*`,
+`/broker/dlq/*`, `/failed-tasks/*`, `/relayna/*`, `/executions/*`, and
+`/health`. Other endpoints inherit the service default. Existing explicit
+endpoint prices are preserved during later syncs, and operators can change any
+endpoint between `none`, `fixed`, and `passthrough` before saving the service.
+A matched `none` endpoint does not reserve the maximum price of unrelated body
+rules. For a billable endpoint such as `POST /ocr`, the endpoint price becomes
+the base and a body selector such as `engine=docint` may still override it.
+Because body selectors remain service-wide for compatibility, every billable
+endpoint conservatively reserves the service's highest fixed selector price at
+preflight; set `max_cost_per_request` high enough for that ceiling or move
+selectors to a more narrowly registered service.
+
+OpenAPI discovery is restricted to the registered upstream origin. The source
+must be a relative absolute path, redirects are disabled, service credentials
+are not forwarded, only bounded JSON documents are accepted, and external
+references are not fetched. The action requires `services:update` and sync is
+audited. Endpoint billing does not grant endpoint access: virtual-key service
+policy and the service method allowlist still apply, so operational DLQ and
+failed-task actions should only be enabled for appropriately governed keys.
+
 ![Service creation and import controls](assets/screenshots/admin-first-time-setup/05-service-create-or-import.png)
 
 What to check: the saved service should be enabled, have the intended route

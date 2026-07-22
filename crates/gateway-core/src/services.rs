@@ -51,6 +51,11 @@ pub struct ServiceRegistration {
     pub cost_mode: ServiceCostMode,
     pub estimated_cost_usd: Option<f64>,
     pub pricing_rules: Vec<ServicePricingRule>,
+    pub openapi_source_path: Option<String>,
+    pub openapi_schema_hash: Option<String>,
+    pub openapi_synced_at: Option<DateTime<Utc>>,
+    pub openapi_endpoints: Vec<ServiceOpenApiEndpoint>,
+    pub endpoint_pricing_rules: Vec<ServiceEndpointPricingRule>,
     pub credential_secret: Option<String>,
     pub fallback_services: Vec<String>,
     pub source: ServiceSource,
@@ -93,6 +98,12 @@ pub struct ServiceCreateRequest {
     #[serde(default)]
     pub pricing_rules: Vec<ServicePricingRule>,
     #[serde(default)]
+    pub openapi_source_path: Option<String>,
+    #[serde(default)]
+    pub openapi_endpoints: Vec<ServiceOpenApiEndpoint>,
+    #[serde(default)]
+    pub endpoint_pricing_rules: Vec<ServiceEndpointPricingRule>,
+    #[serde(default)]
     pub fallback_services: Vec<String>,
 }
 
@@ -112,6 +123,11 @@ pub struct ServicePatchRequest {
     pub cost_mode: Option<ServiceCostMode>,
     pub estimated_cost_usd: Option<Option<f64>>,
     pub pricing_rules: Option<Vec<ServicePricingRule>>,
+    pub openapi_source_path: Option<Option<String>>,
+    pub openapi_schema_hash: Option<Option<String>>,
+    pub openapi_synced_at: Option<Option<DateTime<Utc>>>,
+    pub openapi_endpoints: Option<Vec<ServiceOpenApiEndpoint>>,
+    pub endpoint_pricing_rules: Option<Vec<ServiceEndpointPricingRule>>,
     pub fallback_services: Option<Vec<String>>,
     pub sync_status: Option<ServiceSyncStatus>,
 }
@@ -158,6 +174,53 @@ pub struct ServicePricingRule {
     pub cost_mode: ServiceCostMode,
     #[serde(default)]
     pub estimated_cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ServiceOpenApiEndpoint {
+    pub method: String,
+    pub path_template: String,
+    #[serde(default)]
+    pub operation_id: Option<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub relayna_default: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct ServiceEndpointPricingRule {
+    pub method: String,
+    pub path_template: String,
+    #[serde(default)]
+    pub operation_id: Option<String>,
+    pub cost_mode: ServiceCostMode,
+    #[serde(default)]
+    pub estimated_cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct ServiceOpenApiPreviewRequest {
+    #[serde(default = "default_openapi_source_path")]
+    pub source_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct ServiceOpenApiSyncRequest {
+    #[serde(default = "default_openapi_source_path")]
+    pub source_path: String,
+    pub expected_schema_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ServiceOpenApiPreview {
+    pub source_path: String,
+    pub schema_hash: String,
+    pub title: Option<String>,
+    pub version: Option<String>,
+    pub endpoints: Vec<ServiceOpenApiEndpoint>,
+    pub added: Vec<ServiceOpenApiEndpoint>,
+    pub removed: Vec<ServiceOpenApiEndpoint>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -235,6 +298,11 @@ pub struct ServiceResponse {
     pub cost_mode: ServiceCostMode,
     pub estimated_cost_usd: Option<f64>,
     pub pricing_rules: Vec<ServicePricingRule>,
+    pub openapi_source_path: Option<String>,
+    pub openapi_schema_hash: Option<String>,
+    pub openapi_synced_at: Option<DateTime<Utc>>,
+    pub openapi_endpoints: Vec<ServiceOpenApiEndpoint>,
+    pub endpoint_pricing_rules: Vec<ServiceEndpointPricingRule>,
     pub fallback_services: Vec<String>,
     pub source: ServiceSource,
     pub sync_status: ServiceSyncStatus,
@@ -401,6 +469,9 @@ impl ServiceCreateRequest {
         validate_runtime_limits(self.timeout_ms, self.max_body_bytes)?;
         validate_cost(self.cost_mode, self.estimated_cost_usd)?;
         validate_pricing_rules(&self.pricing_rules)?;
+        validate_optional_openapi_source_path(self.openapi_source_path.as_deref())?;
+        validate_openapi_endpoints(&self.openapi_endpoints)?;
+        validate_endpoint_pricing_rules(&self.endpoint_pricing_rules)?;
         validate_fallback_services(&self.fallback_services)?;
         validate_optional_secret(self.credential.as_deref())?;
         Ok(())
@@ -435,6 +506,15 @@ impl ServicePatchRequest {
         }
         if let Some(pricing_rules) = &self.pricing_rules {
             validate_pricing_rules(pricing_rules)?;
+        }
+        if let Some(source_path) = &self.openapi_source_path {
+            validate_optional_openapi_source_path(source_path.as_deref())?;
+        }
+        if let Some(endpoints) = &self.openapi_endpoints {
+            validate_openapi_endpoints(endpoints)?;
+        }
+        if let Some(rules) = &self.endpoint_pricing_rules {
+            validate_endpoint_pricing_rules(rules)?;
         }
         if let Some(fallback_services) = &self.fallback_services {
             validate_fallback_services(fallback_services)?;
@@ -571,6 +651,12 @@ impl ServiceRegistration {
         validate_pricing_rules(&self.pricing_rules)
     }
 
+    pub fn validate_openapi_configuration(&self) -> GatewayResult<()> {
+        validate_optional_openapi_source_path(self.openapi_source_path.as_deref())?;
+        validate_openapi_endpoints(&self.openapi_endpoints)?;
+        validate_endpoint_pricing_rules(&self.endpoint_pricing_rules)
+    }
+
     pub fn to_response(&self) -> ServiceResponse {
         ServiceResponse {
             name: self.name.clone(),
@@ -591,6 +677,11 @@ impl ServiceRegistration {
             cost_mode: self.cost_mode,
             estimated_cost_usd: self.estimated_cost_usd,
             pricing_rules: self.pricing_rules.clone(),
+            openapi_source_path: self.openapi_source_path.clone(),
+            openapi_schema_hash: self.openapi_schema_hash.clone(),
+            openapi_synced_at: self.openapi_synced_at,
+            openapi_endpoints: self.openapi_endpoints.clone(),
+            endpoint_pricing_rules: self.endpoint_pricing_rules.clone(),
             fallback_services: self.fallback_services.clone(),
             source: self.source,
             sync_status: self.sync_status,
@@ -642,6 +733,122 @@ pub fn default_route_pattern(name: &str) -> Option<String> {
         "embeddings" => Some("/embeddings".to_owned()),
         _ => None,
     }
+}
+
+pub fn default_openapi_source_path() -> String {
+    "/openapi.json".to_owned()
+}
+
+pub fn is_relayna_default_endpoint(path_template: &str) -> bool {
+    const EXACT: &[&str] = &["/health", "/history"];
+    const PREFIXES: &[&str] = &[
+        "/events",
+        "/status",
+        "/dlq",
+        "/broker/dlq",
+        "/failed-tasks",
+        "/relayna",
+        "/executions",
+    ];
+
+    EXACT.contains(&path_template)
+        || PREFIXES.iter().any(|prefix| {
+            path_template == *prefix
+                || path_template
+                    .strip_prefix(prefix)
+                    .is_some_and(|suffix| suffix.starts_with('/'))
+        })
+}
+
+pub fn endpoint_template_matches(path_template: &str, path: &str) -> bool {
+    let template_segments = path_template.trim_matches('/').split('/');
+    let path_segments = path.trim_matches('/').split('/');
+    let mut template_segments = template_segments.peekable();
+    let mut path_segments = path_segments.peekable();
+
+    loop {
+        match (template_segments.next(), path_segments.next()) {
+            (None, None) => return true,
+            (Some(template), Some(actual)) => {
+                if !(template.starts_with('{') && template.ends_with('}')) && template != actual {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+}
+
+pub fn resolve_endpoint_pricing_rule(
+    method: &Method,
+    path: &str,
+    rules: &[ServiceEndpointPricingRule],
+) -> Option<ResolvedServiceCost> {
+    rules
+        .iter()
+        .filter(|rule| rule.method.eq_ignore_ascii_case(method.as_str()))
+        .filter(|rule| endpoint_template_matches(&rule.path_template, path))
+        .max_by_key(|rule| endpoint_template_specificity(&rule.path_template))
+        .map(|rule| ResolvedServiceCost {
+            cost_mode: rule.cost_mode,
+            estimated_cost_usd: rule.estimated_cost_usd,
+            pricing_rule_name: Some(endpoint_pricing_rule_name(rule)),
+        })
+}
+
+pub fn merge_endpoint_pricing_rules(
+    endpoints: &[ServiceOpenApiEndpoint],
+    existing: &[ServiceEndpointPricingRule],
+    default_cost_mode: ServiceCostMode,
+    default_estimated_cost_usd: Option<f64>,
+) -> Vec<ServiceEndpointPricingRule> {
+    let mut merged = endpoints
+        .iter()
+        .map(|endpoint| {
+            existing
+                .iter()
+                .find(|rule| {
+                    rule.method.eq_ignore_ascii_case(&endpoint.method)
+                        && normalized_endpoint_template(&rule.path_template)
+                            == normalized_endpoint_template(&endpoint.path_template)
+                })
+                .cloned()
+                .map(|mut rule| {
+                    rule.path_template.clone_from(&endpoint.path_template);
+                    rule.operation_id.clone_from(&endpoint.operation_id);
+                    rule
+                })
+                .unwrap_or_else(|| ServiceEndpointPricingRule {
+                    method: endpoint.method.clone(),
+                    path_template: endpoint.path_template.clone(),
+                    operation_id: endpoint.operation_id.clone(),
+                    cost_mode: if endpoint.relayna_default {
+                        ServiceCostMode::None
+                    } else {
+                        default_cost_mode
+                    },
+                    estimated_cost_usd: if endpoint.relayna_default {
+                        None
+                    } else {
+                        default_estimated_cost_usd
+                    },
+                })
+        })
+        .collect::<Vec<_>>();
+
+    merged.extend(
+        existing
+            .iter()
+            .filter(|rule| {
+                !endpoints.iter().any(|endpoint| {
+                    endpoint.method.eq_ignore_ascii_case(&rule.method)
+                        && normalized_endpoint_template(&endpoint.path_template)
+                            == normalized_endpoint_template(&rule.path_template)
+                })
+            })
+            .cloned(),
+    );
+    merged
 }
 
 pub fn service_wildcard_suffix(path: &str, service_name: &str) -> Option<String> {
@@ -713,6 +920,153 @@ fn validate_optional_health_check_path(path: Option<&str>) -> GatewayResult<()> 
     } else {
         Err(GatewayError::InvalidServicePayload)
     }
+}
+
+pub fn validate_openapi_source_path(path: &str) -> GatewayResult<()> {
+    if path.len() <= 512
+        && path.starts_with('/')
+        && !path.starts_with("//")
+        && !path.contains("//")
+        && !path.contains(['?', '#', '\\'])
+        && !path.chars().any(char::is_control)
+    {
+        Ok(())
+    } else {
+        Err(GatewayError::InvalidServicePayload)
+    }
+}
+
+fn validate_optional_openapi_source_path(path: Option<&str>) -> GatewayResult<()> {
+    match path {
+        Some(path) => validate_openapi_source_path(path),
+        None => Ok(()),
+    }
+}
+
+fn validate_openapi_endpoint_path(path: &str) -> GatewayResult<()> {
+    if path.len() > 512 || !path.starts_with('/') || path.contains("//") {
+        return Err(GatewayError::InvalidServicePayload);
+    }
+    for segment in path.trim_matches('/').split('/') {
+        let contains_brace = segment.contains(['{', '}']);
+        if contains_brace
+            && !(segment.starts_with('{')
+                && segment.ends_with('}')
+                && segment.len() > 2
+                && !segment[1..segment.len() - 1].contains(['{', '}']))
+        {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+    }
+    Ok(())
+}
+
+fn validate_endpoint_method(method: &str) -> GatewayResult<()> {
+    let parsed =
+        Method::from_bytes(method.as_bytes()).map_err(|_| GatewayError::InvalidServicePayload)?;
+    if matches!(
+        parsed,
+        Method::GET
+            | Method::POST
+            | Method::PUT
+            | Method::PATCH
+            | Method::DELETE
+            | Method::HEAD
+            | Method::OPTIONS
+    ) {
+        Ok(())
+    } else {
+        Err(GatewayError::InvalidServicePayload)
+    }
+}
+
+pub fn validate_openapi_endpoints(endpoints: &[ServiceOpenApiEndpoint]) -> GatewayResult<()> {
+    if endpoints.len() > 500 {
+        return Err(GatewayError::InvalidServicePayload);
+    }
+    let mut identities = std::collections::BTreeSet::new();
+    for endpoint in endpoints {
+        validate_endpoint_method(&endpoint.method)?;
+        validate_openapi_endpoint_path(&endpoint.path_template)?;
+        if endpoint
+            .operation_id
+            .as_ref()
+            .is_some_and(|value| value.len() > 256)
+            || endpoint
+                .summary
+                .as_ref()
+                .is_some_and(|value| value.len() > 512)
+        {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+        let identity = (
+            endpoint.method.to_ascii_uppercase(),
+            normalized_endpoint_template(&endpoint.path_template),
+        );
+        if !identities.insert(identity) {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+    }
+    Ok(())
+}
+
+fn validate_endpoint_pricing_rules(rules: &[ServiceEndpointPricingRule]) -> GatewayResult<()> {
+    if rules.len() > 500 {
+        return Err(GatewayError::InvalidServicePayload);
+    }
+    let mut identities = std::collections::BTreeSet::new();
+    for rule in rules {
+        validate_endpoint_method(&rule.method)?;
+        validate_openapi_endpoint_path(&rule.path_template)?;
+        validate_cost(rule.cost_mode, rule.estimated_cost_usd)?;
+        if rule
+            .operation_id
+            .as_ref()
+            .is_some_and(|value| value.len() > 256)
+        {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+        let identity = (
+            rule.method.to_ascii_uppercase(),
+            normalized_endpoint_template(&rule.path_template),
+        );
+        if !identities.insert(identity) {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+    }
+    Ok(())
+}
+
+fn normalized_endpoint_template(path: &str) -> String {
+    path.split('/')
+        .map(|segment| {
+            if segment.starts_with('{') && segment.ends_with('}') {
+                "{}"
+            } else {
+                segment
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn endpoint_template_specificity(path: &str) -> (usize, usize) {
+    let static_segments = path
+        .trim_matches('/')
+        .split('/')
+        .filter(|segment| !(segment.starts_with('{') && segment.ends_with('}')))
+        .count();
+    (static_segments, path.len())
+}
+
+fn endpoint_pricing_rule_name(rule: &ServiceEndpointPricingRule) -> String {
+    rule.operation_id.clone().unwrap_or_else(|| {
+        format!(
+            "{} {}",
+            rule.method.to_ascii_uppercase(),
+            rule.path_template
+        )
+    })
 }
 
 fn validate_health_check_method(method: &str) -> GatewayResult<()> {
@@ -933,6 +1287,11 @@ mod tests {
             cost_mode: ServiceCostMode::Fixed,
             estimated_cost_usd: Some(0.01),
             pricing_rules: Vec::new(),
+            openapi_source_path: None,
+            openapi_schema_hash: None,
+            openapi_synced_at: None,
+            openapi_endpoints: Vec::new(),
+            endpoint_pricing_rules: Vec::new(),
             credential_secret: Some("secret-token".to_owned()),
             fallback_services: Vec::new(),
             source: ServiceSource::Gateway,
@@ -1283,6 +1642,137 @@ mod tests {
         assert_eq!(rules[1].equals, "es-MX");
     }
 
+    #[test]
+    fn classifies_relayna_default_endpoints_without_classifying_ocr() {
+        for path in [
+            "/events/feed",
+            "/status/{task_id}",
+            "/history",
+            "/dlq/messages",
+            "/broker/dlq/queues",
+            "/failed-tasks/{failure_id}/retry",
+            "/relayna/runtime/backpressure",
+            "/executions/{task_id}/graph",
+            "/health",
+        ] {
+            assert!(is_relayna_default_endpoint(path), "{path}");
+        }
+        assert!(!is_relayna_default_endpoint("/ocr"));
+    }
+
+    #[test]
+    fn endpoint_template_matching_is_segment_aware() {
+        assert!(endpoint_template_matches(
+            "/events/{task_id}",
+            "/events/task-123"
+        ));
+        assert!(!endpoint_template_matches(
+            "/events/{task_id}",
+            "/events/task-123/more"
+        ));
+        assert!(!endpoint_template_matches(
+            "/events/{task_id}",
+            "/event/task-123"
+        ));
+    }
+
+    #[test]
+    fn endpoint_pricing_prefers_the_most_specific_method_path() {
+        let rules = vec![
+            ServiceEndpointPricingRule {
+                method: "GET".to_owned(),
+                path_template: "/events/{task_id}".to_owned(),
+                operation_id: Some("task-events".to_owned()),
+                cost_mode: ServiceCostMode::None,
+                estimated_cost_usd: None,
+            },
+            ServiceEndpointPricingRule {
+                method: "GET".to_owned(),
+                path_template: "/events/feed".to_owned(),
+                operation_id: Some("feed".to_owned()),
+                cost_mode: ServiceCostMode::Fixed,
+                estimated_cost_usd: Some(0.02),
+            },
+        ];
+
+        let resolved = resolve_endpoint_pricing_rule(&Method::GET, "/events/feed", &rules)
+            .expect("endpoint pricing");
+        assert_eq!(resolved.cost_mode, ServiceCostMode::Fixed);
+        assert_eq!(resolved.estimated_cost_usd, Some(0.02));
+        assert_eq!(resolved.pricing_rule_name.as_deref(), Some("feed"));
+        assert!(resolve_endpoint_pricing_rule(&Method::POST, "/events/feed", &rules).is_none());
+    }
+
+    #[test]
+    fn merges_relayna_defaults_as_none_and_preserves_admin_prices() {
+        let endpoints = vec![
+            ServiceOpenApiEndpoint {
+                method: "POST".to_owned(),
+                path_template: "/ocr".to_owned(),
+                operation_id: Some("submit_ocr".to_owned()),
+                summary: None,
+                relayna_default: false,
+            },
+            ServiceOpenApiEndpoint {
+                method: "GET".to_owned(),
+                path_template: "/events/feed".to_owned(),
+                operation_id: Some("feed".to_owned()),
+                summary: None,
+                relayna_default: true,
+            },
+        ];
+        let existing = vec![ServiceEndpointPricingRule {
+            method: "GET".to_owned(),
+            path_template: "/events/feed".to_owned(),
+            operation_id: Some("old-feed".to_owned()),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.03),
+        }];
+
+        let merged =
+            merge_endpoint_pricing_rules(&endpoints, &existing, ServiceCostMode::Fixed, Some(0.01));
+        assert_eq!(merged[0].cost_mode, ServiceCostMode::Fixed);
+        assert_eq!(merged[0].estimated_cost_usd, Some(0.01));
+        assert_eq!(merged[1].cost_mode, ServiceCostMode::Fixed);
+        assert_eq!(merged[1].estimated_cost_usd, Some(0.03));
+        assert_eq!(merged[1].operation_id.as_deref(), Some("feed"));
+
+        let defaults =
+            merge_endpoint_pricing_rules(&endpoints, &[], ServiceCostMode::Fixed, Some(0.01));
+        assert_eq!(defaults[1].cost_mode, ServiceCostMode::None);
+        assert_eq!(defaults[1].estimated_cost_usd, None);
+    }
+
+    #[test]
+    fn validates_openapi_paths_and_rejects_ambiguous_templates() {
+        assert!(validate_openapi_source_path("/openapi.json").is_ok());
+        assert!(validate_openapi_source_path("https://evil.example/openapi.json").is_err());
+        assert!(validate_openapi_source_path("//evil.example/openapi.json").is_err());
+
+        let mut request = valid_create_request();
+        request.openapi_source_path = Some("/openapi.json".to_owned());
+        request.openapi_endpoints = vec![
+            ServiceOpenApiEndpoint {
+                method: "GET".to_owned(),
+                path_template: "/events/{task_id}".to_owned(),
+                operation_id: None,
+                summary: None,
+                relayna_default: true,
+            },
+            ServiceOpenApiEndpoint {
+                method: "GET".to_owned(),
+                path_template: "/events/{other_id}".to_owned(),
+                operation_id: None,
+                summary: None,
+                relayna_default: true,
+            },
+        ];
+        assert_eq!(
+            request.validate().unwrap_err(),
+            GatewayError::InvalidServicePayload
+        );
+    }
+
     fn valid_create_request() -> ServiceCreateRequest {
         ServiceCreateRequest {
             name: "summary".to_owned(),
@@ -1300,6 +1790,9 @@ mod tests {
             cost_mode: ServiceCostMode::None,
             estimated_cost_usd: None,
             pricing_rules: Vec::new(),
+            openapi_source_path: None,
+            openapi_endpoints: Vec::new(),
+            endpoint_pricing_rules: Vec::new(),
             fallback_services: Vec::new(),
         }
     }
@@ -1324,6 +1817,11 @@ mod tests {
             cost_mode,
             estimated_cost_usd,
             pricing_rules: Vec::new(),
+            openapi_source_path: None,
+            openapi_schema_hash: None,
+            openapi_synced_at: None,
+            openapi_endpoints: Vec::new(),
+            endpoint_pricing_rules: Vec::new(),
             credential_secret: Some("secret-token".to_owned()),
             fallback_services: Vec::new(),
             source: ServiceSource::Gateway,

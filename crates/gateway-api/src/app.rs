@@ -13,11 +13,12 @@ use gateway_core::CircuitBreakerState;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
     evaluate_policy, evaluate_policy_limits, extract_generation_features,
-    guardrail_executor_for_definitions, resolve_guardrail_plan, AdminAuditStore,
-    AdminGatewayAuthSettingsStore, AdminGuardrailDefinitionResponse, AdminKeyCreate, AdminKeyPatch,
-    AdminKeyResponse, AdminKeyStore, AdminOpenAiRouteStore, AdminPolicyLayerStore,
-    AdminPolicyLayerUpsert, AdminProjectStore, AdminProviderConfigStore, AdminServiceStore,
-    AdminStudioConnectionStore, AuditEvent, AuditEventCreate, AuditEventQuery,
+    guardrail_executor_for_definitions, is_relayna_default_endpoint, merge_endpoint_pricing_rules,
+    resolve_guardrail_plan, validate_openapi_endpoints, validate_openapi_source_path,
+    AdminAuditStore, AdminGatewayAuthSettingsStore, AdminGuardrailDefinitionResponse,
+    AdminKeyCreate, AdminKeyPatch, AdminKeyResponse, AdminKeyStore, AdminOpenAiRouteStore,
+    AdminPolicyLayerStore, AdminPolicyLayerUpsert, AdminProjectStore, AdminProviderConfigStore,
+    AdminServiceStore, AdminStudioConnectionStore, AuditEvent, AuditEventCreate, AuditEventQuery,
     CreatedAdminKeyResponse, CreatedOperatorTokenResponse, CredentialHeaderMode,
     CredentialHeaderValueFormat, EffectiveGatewayAuthSettings, EffectiveStudioConnection,
     GatewayAuthEnv, GatewayAuthSettingsPatchRequest, GatewayError, GatewayResult,
@@ -31,18 +32,20 @@ use gateway_core::{
     Provider, ProviderConfigCreateRequest, ProviderConfigLookup, ProviderConfigPatchRequest,
     ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore,
     Route, ServiceCreateRequest, ServiceImportDiff, ServiceImportValidationIssue,
-    ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse, SharedGatewayAuthRuntime,
-    StudioConnectionEnv, StudioConnectionPatchRequest, StudioConnectionTestResponse,
-    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
-    UsageBreakdownDimension, UsageEvent, UsageExport, UsageFilterValuesQuery, UsageQuery,
-    UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE,
-    SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE,
-    SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT,
-    SCOPE_USAGE_READ,
+    ServiceOpenApiEndpoint, ServiceOpenApiPreview, ServiceOpenApiPreviewRequest,
+    ServiceOpenApiSyncRequest, ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse,
+    SharedGatewayAuthRuntime, StudioConnectionEnv, StudioConnectionPatchRequest,
+    StudioConnectionTestResponse, StudioServiceCatalogResponse, StudioServiceImportPreview,
+    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageExport,
+    UsageFilterValuesQuery, UsageQuery, UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ,
+    SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE,
+    SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE,
+    SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::{sync::Arc, time::Duration};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -101,6 +104,8 @@ pub struct AppState {
 }
 
 const STUDIO_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
+const SERVICE_OPENAPI_TIMEOUT: Duration = Duration::from_secs(8);
+const SERVICE_OPENAPI_MAX_BYTES: usize = 1024 * 1024;
 const DEFAULT_LITELLM_BASE_URL: &str = "http://127.0.0.1:4000";
 const LITELLM_UI_HTML_REWRITE_LIMIT: usize = 2 * 1024 * 1024;
 const LITELLM_UI_PROXY_PREFIX: &str = "/admin-ui/litellm-ui";
@@ -497,6 +502,14 @@ pub fn router_with_state(state: AppState) -> Router {
         .route(
             "/admin-ui/admin/services/{service_name}/sync-status",
             get(service_sync_status),
+        )
+        .route(
+            "/admin-ui/admin/services/{service_name}/openapi/preview",
+            post(preview_service_openapi),
+        )
+        .route(
+            "/admin-ui/admin/services/{service_name}/openapi/sync",
+            post(sync_service_openapi),
         )
         .route(
             "/admin-ui/admin/projects/{project_id}/usage",
@@ -2324,6 +2337,240 @@ async fn get_service(
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => error_response(&headers, error),
     }
+}
+
+async fn preview_service_openapi(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_name): Path<String>,
+    Json(request): Json<ServiceOpenApiPreviewRequest>,
+) -> Response {
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_SERVICES_UPDATE).await {
+        return response;
+    }
+    let service = match state.store.get_service(&service_name).await {
+        Ok(Some(service)) => service,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(error) => return error_response(&headers, error),
+    };
+    match fetch_service_openapi(&service, &request.source_path).await {
+        Ok(preview) => Json(preview).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn sync_service_openapi(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_name): Path<String>,
+    Json(request): Json<ServiceOpenApiSyncRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_SERVICES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_service(&service_name).await {
+        Ok(Some(service)) => service,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(error) => return error_response(&headers, error),
+    };
+    let preview = match fetch_service_openapi(&before, &request.source_path).await {
+        Ok(preview) => preview,
+        Err(error) => return error_response(&headers, error),
+    };
+    if preview.schema_hash != request.expected_schema_hash {
+        return error_response(&headers, GatewayError::ServiceOpenApiChanged);
+    }
+
+    let endpoint_pricing_rules = merge_endpoint_pricing_rules(
+        &preview.endpoints,
+        &before.endpoint_pricing_rules,
+        before.cost_mode,
+        before.estimated_cost_usd,
+    );
+    let patch = ServicePatchRequest {
+        openapi_source_path: Some(Some(preview.source_path.clone())),
+        openapi_schema_hash: Some(Some(preview.schema_hash.clone())),
+        openapi_synced_at: Some(Some(Utc::now())),
+        openapi_endpoints: Some(preview.endpoints),
+        endpoint_pricing_rules: Some(endpoint_pricing_rules),
+        ..ServicePatchRequest::default()
+    };
+    match state.store.patch_service(&service_name, patch).await {
+        Ok(Some(service)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "services:openapi_sync",
+                "service",
+                Some(service.name.clone()),
+                audit_json(&before),
+                audit_json(&service),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(service).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn fetch_service_openapi(
+    service: &ServiceResponse,
+    source_path: &str,
+) -> GatewayResult<ServiceOpenApiPreview> {
+    validate_openapi_source_path(source_path)?;
+    let upstream = service
+        .upstream_base_url
+        .as_deref()
+        .ok_or(GatewayError::IncompleteService)?;
+    let mut url =
+        reqwest::Url::parse(upstream).map_err(|_| GatewayError::InvalidServiceUpstream)?;
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(GatewayError::InvalidServiceUpstream);
+    }
+    url.set_path(source_path);
+    url.set_query(None);
+    url.set_fragment(None);
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(SERVICE_OPENAPI_TIMEOUT)
+        .build()
+        .map_err(|_| GatewayError::ServiceOpenApiUnavailable)?;
+    let mut response = client
+        .get(url)
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|_| GatewayError::ServiceOpenApiUnavailable)?;
+    if !response.status().is_success() {
+        return Err(GatewayError::ServiceOpenApiUnavailable);
+    }
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !content_type.contains("json") {
+        return Err(GatewayError::InvalidServiceOpenApi);
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > SERVICE_OPENAPI_MAX_BYTES as u64)
+    {
+        return Err(GatewayError::InvalidServiceOpenApi);
+    }
+
+    let mut document = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| GatewayError::ServiceOpenApiUnavailable)?
+    {
+        if document.len().saturating_add(chunk.len()) > SERVICE_OPENAPI_MAX_BYTES {
+            return Err(GatewayError::InvalidServiceOpenApi);
+        }
+        document.extend_from_slice(&chunk);
+    }
+    parse_service_openapi(service, source_path, &document)
+}
+
+fn parse_service_openapi(
+    service: &ServiceResponse,
+    source_path: &str,
+    document: &[u8],
+) -> GatewayResult<ServiceOpenApiPreview> {
+    let value: Value =
+        serde_json::from_slice(document).map_err(|_| GatewayError::InvalidServiceOpenApi)?;
+    if !value
+        .get("openapi")
+        .and_then(Value::as_str)
+        .is_some_and(|version| version.starts_with("3."))
+    {
+        return Err(GatewayError::InvalidServiceOpenApi);
+    }
+    let paths = value
+        .get("paths")
+        .and_then(Value::as_object)
+        .ok_or(GatewayError::InvalidServiceOpenApi)?;
+    const METHODS: &[&str] = &["get", "post", "put", "patch", "delete", "head", "options"];
+    let mut endpoints = Vec::new();
+    for (path_template, path_item) in paths {
+        let Some(path_item) = path_item.as_object() else {
+            return Err(GatewayError::InvalidServiceOpenApi);
+        };
+        for method in METHODS {
+            let Some(operation) = path_item.get(*method) else {
+                continue;
+            };
+            let operation = operation
+                .as_object()
+                .ok_or(GatewayError::InvalidServiceOpenApi)?;
+            endpoints.push(ServiceOpenApiEndpoint {
+                method: method.to_ascii_uppercase(),
+                path_template: path_template.clone(),
+                operation_id: operation
+                    .get("operationId")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
+                summary: operation
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
+                relayna_default: is_relayna_default_endpoint(path_template),
+            });
+        }
+    }
+    endpoints.sort_by(|left, right| {
+        left.path_template
+            .cmp(&right.path_template)
+            .then(left.method.cmp(&right.method))
+    });
+    validate_openapi_endpoints(&endpoints).map_err(|_| GatewayError::InvalidServiceOpenApi)?;
+
+    let previous = &service.openapi_endpoints;
+    let added = endpoints
+        .iter()
+        .filter(|endpoint| !contains_openapi_endpoint(previous, endpoint))
+        .cloned()
+        .collect();
+    let removed = previous
+        .iter()
+        .filter(|endpoint| !contains_openapi_endpoint(&endpoints, endpoint))
+        .cloned()
+        .collect();
+    let schema_hash = format!("sha256:{:x}", Sha256::digest(document));
+    Ok(ServiceOpenApiPreview {
+        source_path: source_path.to_owned(),
+        schema_hash,
+        title: value
+            .pointer("/info/title")
+            .and_then(Value::as_str)
+            .map(|value| value.chars().take(256).collect()),
+        version: value
+            .pointer("/info/version")
+            .and_then(Value::as_str)
+            .map(|value| value.chars().take(64).collect()),
+        endpoints,
+        added,
+        removed,
+    })
+}
+
+fn contains_openapi_endpoint(
+    endpoints: &[ServiceOpenApiEndpoint],
+    target: &ServiceOpenApiEndpoint,
+) -> bool {
+    endpoints.iter().any(|endpoint| {
+        endpoint.method.eq_ignore_ascii_case(&target.method)
+            && endpoint.path_template == target.path_template
+    })
 }
 
 async fn patch_service(
@@ -5154,6 +5401,11 @@ mod tests {
                 cost_mode: request.cost_mode,
                 estimated_cost_usd: request.estimated_cost_usd,
                 pricing_rules: request.pricing_rules.clone(),
+                openapi_source_path: request.openapi_source_path.clone(),
+                openapi_schema_hash: None,
+                openapi_synced_at: None,
+                openapi_endpoints: request.openapi_endpoints.clone(),
+                endpoint_pricing_rules: request.endpoint_pricing_rules.clone(),
                 fallback_services: request.fallback_services.clone(),
                 source: if request.studio_service_id.is_some() {
                     ServiceSource::Studio
@@ -5232,6 +5484,21 @@ mod tests {
             }
             if let Some(pricing_rules) = patch.pricing_rules {
                 service.pricing_rules = pricing_rules;
+            }
+            if let Some(openapi_source_path) = patch.openapi_source_path {
+                service.openapi_source_path = openapi_source_path;
+            }
+            if let Some(openapi_schema_hash) = patch.openapi_schema_hash {
+                service.openapi_schema_hash = openapi_schema_hash;
+            }
+            if let Some(openapi_synced_at) = patch.openapi_synced_at {
+                service.openapi_synced_at = openapi_synced_at;
+            }
+            if let Some(openapi_endpoints) = patch.openapi_endpoints {
+                service.openapi_endpoints = openapi_endpoints;
+            }
+            if let Some(endpoint_pricing_rules) = patch.endpoint_pricing_rules {
+                service.endpoint_pricing_rules = endpoint_pricing_rules;
             }
             if let Some(credential) = patch.credential {
                 service.credential_configured = credential.is_some();
@@ -5328,6 +5595,11 @@ mod tests {
                     .as_ref()
                     .map(|pricing| pricing.pricing_rules.clone())
                     .unwrap_or_default(),
+                openapi_source_path: None,
+                openapi_schema_hash: None,
+                openapi_synced_at: None,
+                openapi_endpoints: Vec::new(),
+                endpoint_pricing_rules: Vec::new(),
                 fallback_services: Vec::new(),
                 source: ServiceSource::Studio,
                 sync_status: ServiceSyncStatus::Incomplete,
@@ -6281,6 +6553,122 @@ mod tests {
             stream.write_all(&response_body).expect("write body");
         });
         (format!("http://{addr}"), rx)
+    }
+
+    fn openapi_test_service(upstream_base_url: String) -> ServiceResponse {
+        let now = Utc::now();
+        ServiceResponse {
+            name: "ocr".to_owned(),
+            project_id: None,
+            studio_service_id: None,
+            route_pattern: "/services/ocr/*".to_owned(),
+            upstream_base_url: Some(upstream_base_url),
+            health_check_path: Some("/health".to_owned()),
+            health_check_method: "GET".to_owned(),
+            enabled: true,
+            allowed_methods: vec!["GET".to_owned(), "POST".to_owned()],
+            credential_configured: true,
+            timeout_ms: 60_000,
+            max_body_bytes: 100_000_000,
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.01),
+            pricing_rules: Vec::new(),
+            openapi_source_path: None,
+            openapi_schema_hash: None,
+            openapi_synced_at: None,
+            openapi_endpoints: Vec::new(),
+            endpoint_pricing_rules: Vec::new(),
+            fallback_services: Vec::new(),
+            source: ServiceSource::Gateway,
+            sync_status: ServiceSyncStatus::Local,
+            last_synced_at: None,
+            disabled_at: None,
+            created_at: now,
+            updated_at: now,
+            missing_runtime_fields: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn service_openapi_fetch_discovers_relayna_defaults_without_credentials() {
+        let document = serde_json::json!({
+            "openapi": "3.1.0",
+            "info": {"title": "OCR Service API", "version": "0.1.0"},
+            "paths": {
+                "/ocr": {"post": {"operationId": "submit_ocr", "summary": "Submit OCR"}},
+                "/events/{task_id}": {"get": {"operationId": "events"}},
+                "/relayna/health/workers": {"get": {"operationId": "workers"}},
+                "/health": {"get": {"operationId": "health"}}
+            }
+        })
+        .to_string();
+        let (base_url, captured) = spawn_litellm_server(
+            "200 OK",
+            vec![("content-type", "application/json")],
+            &document,
+        );
+        let preview = fetch_service_openapi(&openapi_test_service(base_url), "/openapi.json")
+            .await
+            .expect("OpenAPI preview");
+
+        assert_eq!(preview.title.as_deref(), Some("OCR Service API"));
+        assert_eq!(preview.endpoints.len(), 4);
+        assert!(
+            !preview
+                .endpoints
+                .iter()
+                .find(|endpoint| endpoint.path_template == "/ocr")
+                .expect("OCR endpoint")
+                .relayna_default
+        );
+        assert!(preview
+            .endpoints
+            .iter()
+            .filter(|endpoint| endpoint.path_template != "/ocr")
+            .all(|endpoint| endpoint.relayna_default));
+        let request = captured.recv().expect("captured request");
+        assert_eq!(request.request_line, "GET /openapi.json HTTP/1.1");
+        assert!(!request
+            .headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("authorization")));
+    }
+
+    #[tokio::test]
+    async fn service_openapi_fetch_does_not_follow_redirects() {
+        let (base_url, _captured) = spawn_litellm_server(
+            "302 Found",
+            vec![("location", "https://evil.example/openapi.json")],
+            "",
+        );
+        let error = fetch_service_openapi(&openapi_test_service(base_url), "/openapi.json")
+            .await
+            .unwrap_err();
+        assert_eq!(error, GatewayError::ServiceOpenApiUnavailable);
+    }
+
+    #[tokio::test]
+    async fn service_openapi_fetch_rejects_non_json_content() {
+        let (base_url, _captured) = spawn_litellm_server(
+            "200 OK",
+            vec![("content-type", "text/html")],
+            "<html>Swagger UI</html>",
+        );
+        let error = fetch_service_openapi(&openapi_test_service(base_url), "/docs")
+            .await
+            .unwrap_err();
+        assert_eq!(error, GatewayError::InvalidServiceOpenApi);
+    }
+
+    #[tokio::test]
+    async fn service_openapi_fetch_rejects_upstream_url_credentials() {
+        let error = fetch_service_openapi(
+            &openapi_test_service("http://operator:secret@127.0.0.1:9".to_owned()),
+            "/openapi.json",
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, GatewayError::InvalidServiceUpstream);
     }
 
     fn captured_header<'a>(request: &'a CapturedHttpRequest, name: &str) -> Option<&'a str> {
@@ -8580,5 +8968,65 @@ mod tests {
             .as_array()
             .unwrap()
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn admin_can_change_relayna_endpoint_price_from_none_to_fixed() {
+        let app = router_with_state(test_state(default_store()));
+        let response = admin_post(
+            app.clone(),
+            "/admin-ui/admin/services",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{
+                "name":"ocr",
+                "route_pattern":"/services/ocr/*",
+                "upstream_base_url":"http://ocr.internal:8000",
+                "credential":"token",
+                "allowed_methods":["GET","POST"],
+                "cost_mode":"fixed",
+                "estimated_cost_usd":0.01,
+                "openapi_source_path":"/openapi.json",
+                "openapi_endpoints":[{
+                    "method":"GET",
+                    "path_template":"/events/feed",
+                    "operation_id":"feed_events_feed_get",
+                    "relayna_default":true
+                }],
+                "endpoint_pricing_rules":[{
+                    "method":"GET",
+                    "path_template":"/events/feed",
+                    "operation_id":"feed_events_feed_get",
+                    "cost_mode":"none"
+                }]
+            }"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = admin_patch(
+            app,
+            "/admin-ui/admin/services/ocr",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{
+                "endpoint_pricing_rules":[{
+                    "method":"GET",
+                    "path_template":"/events/feed",
+                    "operation_id":"feed_events_feed_get",
+                    "cost_mode":"fixed",
+                    "estimated_cost_usd":0.02
+                }]
+            }"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["endpoint_pricing_rules"][0]["cost_mode"], "fixed");
+        assert_eq!(
+            value["endpoint_pricing_rules"][0]["estimated_cost_usd"],
+            0.02
+        );
     }
 }

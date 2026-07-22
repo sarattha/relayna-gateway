@@ -33,6 +33,16 @@ responsive drawer navigation, and floating message boxes for async action
 results. The Rust binary still embeds generated assets, so production
 deployments do not need a separate frontend service.
 
+Registered services can preview and sync OpenAPI 3.x JSON from a same-origin
+relative path such as `/openapi.json`. The service editor displays the durable
+endpoint catalog and lets operators assign `none`, `fixed`, or `passthrough`
+billing per method/path operation. Relayna runtime, status, events, DLQ,
+failed-task, execution, and health endpoints default to `none`, while billable
+service endpoints inherit the service default and retain body selector
+overrides. Discovery is an audited control-plane workflow with no redirects,
+credential forwarding, external reference fetching, or request-path
+dependency.
+
 ![Responsive Admin UI navigation drawer](assets/screenshots/admin-ui-2/aurora-teal-mobile-navigation.png)
 
 ## Operator Governance

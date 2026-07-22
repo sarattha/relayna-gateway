@@ -24,10 +24,10 @@ use gateway_core::{
     },
     resolve_effective_policy,
     services::{
-        AdminServiceStore, ServiceCostMode, ServiceCreateRequest, ServicePatchRequest,
-        ServicePricingRule, ServiceRegistration, ServiceRegistryLookup, ServiceResponse,
-        ServiceRouteLookup, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
-        StudioServiceImportRequest,
+        AdminServiceStore, ServiceCostMode, ServiceCreateRequest, ServiceEndpointPricingRule,
+        ServiceOpenApiEndpoint, ServicePatchRequest, ServicePricingRule, ServiceRegistration,
+        ServiceRegistryLookup, ServiceResponse, ServiceRouteLookup, ServiceSource,
+        ServiceSyncStatus, ServiceSyncStatusResponse, StudioServiceImportRequest,
     },
     studio_settings::{
         normalize_base_url, normalize_secret, AdminStudioConnectionStore, PatchValue,
@@ -3786,6 +3786,9 @@ impl AdminServiceStore for PostgresStore {
                 cost_mode,
                 estimated_cost_usd,
                 pricing_rules,
+                openapi_source_path,
+                openapi_endpoints,
+                endpoint_pricing_rules,
                 credential_secret,
                 fallback_services,
                 source,
@@ -3793,7 +3796,7 @@ impl AdminServiceStore for PostgresStore {
                 last_synced_at,
                 disabled_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END)
             "#,
         )
         .bind(&request.name)
@@ -3810,6 +3813,9 @@ impl AdminServiceStore for PostgresStore {
         .bind(service_cost_mode_str(request.cost_mode))
         .bind(request.estimated_cost_usd)
         .bind(Json(request.pricing_rules))
+        .bind(&request.openapi_source_path)
+        .bind(Json(request.openapi_endpoints))
+        .bind(Json(request.endpoint_pricing_rules))
         .bind(&request.credential)
         .bind(&request.fallback_services)
         .bind(if request.studio_service_id.is_some() { "studio" } else { "gateway" })
@@ -3911,6 +3917,22 @@ impl AdminServiceStore for PostgresStore {
             registration.pricing_rules = pricing_rules;
         }
         registration.validate_pricing_rules()?;
+        if let Some(openapi_source_path) = patch.openapi_source_path {
+            registration.openapi_source_path = openapi_source_path;
+        }
+        if let Some(openapi_schema_hash) = patch.openapi_schema_hash {
+            registration.openapi_schema_hash = openapi_schema_hash;
+        }
+        if let Some(openapi_synced_at) = patch.openapi_synced_at {
+            registration.openapi_synced_at = openapi_synced_at;
+        }
+        if let Some(openapi_endpoints) = patch.openapi_endpoints {
+            registration.openapi_endpoints = openapi_endpoints;
+        }
+        if let Some(endpoint_pricing_rules) = patch.endpoint_pricing_rules {
+            registration.endpoint_pricing_rules = endpoint_pricing_rules;
+        }
+        registration.validate_openapi_configuration()?;
         if let Some(fallback_services) = patch.fallback_services {
             registration.fallback_services = fallback_services;
         }
@@ -3943,10 +3965,15 @@ impl AdminServiceStore for PostgresStore {
                 cost_mode = $12,
                 estimated_cost_usd = $13,
                 pricing_rules = $14,
-                credential_secret = $15,
-                fallback_services = $16,
-                source = $17,
-                sync_status = $18,
+                openapi_source_path = $15,
+                openapi_schema_hash = $16,
+                openapi_synced_at = $17,
+                openapi_endpoints = $18,
+                endpoint_pricing_rules = $19,
+                credential_secret = $20,
+                fallback_services = $21,
+                source = $22,
+                sync_status = $23,
                 disabled_at = CASE WHEN $8 THEN NULL ELSE COALESCE(disabled_at, now()) END,
                 updated_at = now()
             WHERE name = $1
@@ -3966,6 +3993,11 @@ impl AdminServiceStore for PostgresStore {
         .bind(service_cost_mode_str(registration.cost_mode))
         .bind(registration.estimated_cost_usd)
         .bind(Json(registration.pricing_rules.clone()))
+        .bind(&registration.openapi_source_path)
+        .bind(&registration.openapi_schema_hash)
+        .bind(registration.openapi_synced_at)
+        .bind(Json(registration.openapi_endpoints.clone()))
+        .bind(Json(registration.endpoint_pricing_rules.clone()))
         .bind(&registration.credential_secret)
         .bind(&registration.fallback_services)
         .bind(service_source_str(registration.source))
@@ -5825,6 +5857,12 @@ fn service_registration_from_row(
     let pricing_rules = row
         .try_get::<Json<Vec<ServicePricingRule>>, _>("pricing_rules")?
         .0;
+    let openapi_endpoints = row
+        .try_get::<Json<Vec<ServiceOpenApiEndpoint>>, _>("openapi_endpoints")?
+        .0;
+    let endpoint_pricing_rules = row
+        .try_get::<Json<Vec<ServiceEndpointPricingRule>>, _>("endpoint_pricing_rules")?
+        .0;
     Ok(ServiceRegistration {
         name: row.try_get("name")?,
         project_id: row.try_get("project_id")?,
@@ -5840,6 +5878,11 @@ fn service_registration_from_row(
         cost_mode: parse_service_cost_mode(&cost_mode).map_err(sqlx::Error::Decode)?,
         estimated_cost_usd: row.try_get("estimated_cost_usd")?,
         pricing_rules,
+        openapi_source_path: row.try_get("openapi_source_path")?,
+        openapi_schema_hash: row.try_get("openapi_schema_hash")?,
+        openapi_synced_at: row.try_get("openapi_synced_at")?,
+        openapi_endpoints,
+        endpoint_pricing_rules,
         credential_secret: row.try_get("credential_secret")?,
         fallback_services: row.try_get("fallback_services")?,
         source: parse_service_source(&source).map_err(sqlx::Error::Decode)?,

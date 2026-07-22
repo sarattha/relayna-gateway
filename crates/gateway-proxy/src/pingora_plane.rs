@@ -10,10 +10,10 @@ use gateway_core::{
     execution_events_from_records, extract_client_guardrails, extract_estimated_cost_usd,
     extract_generation_features, extract_model, extract_usage_tokens,
     guardrail_executor_for_definitions, is_retry_safe_status, redact_pii_text,
-    resolve_guardrail_plan, resolve_service_cost_from_value, route_pattern_wildcard_suffix,
-    service_preflight_estimated_cost, service_wildcard_suffix, strip_client_guardrails,
-    validate_relayna_key_header_name, verify_apigee_trusted_identity, ApigeeTrustedHeaderConfig,
-    AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
+    resolve_endpoint_pricing_rule, resolve_guardrail_plan, resolve_service_cost_from_value,
+    route_pattern_wildcard_suffix, service_preflight_estimated_cost, service_wildcard_suffix,
+    strip_client_guardrails, validate_relayna_key_header_name, verify_apigee_trusted_identity,
+    ApigeeTrustedHeaderConfig, AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
     CredentialHeaderValueFormat, EntraAuthConfig, EntraIdentityContext, GatewayAuthRuntimeConfig,
     GatewayAuthRuntimeSnapshot, GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition,
     GuardrailExecutionEvent, GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy,
@@ -284,6 +284,7 @@ pub struct PingoraContext {
     service_cost_mode: Option<ServiceCostMode>,
     service_estimated_cost_usd: Option<f64>,
     service_pricing_rules: Vec<ServicePricingRule>,
+    resolved_endpoint_cost: Option<ResolvedServiceCost>,
     resolved_service_cost: Option<ResolvedServiceCost>,
     litellm_upstream: Option<PingoraUpstreamConfig>,
     litellm_passthrough: bool,
@@ -354,6 +355,7 @@ where
             service_cost_mode: None,
             service_estimated_cost_usd: None,
             service_pricing_rules: Vec::new(),
+            resolved_endpoint_cost: None,
             resolved_service_cost: None,
             litellm_upstream: None,
             litellm_passthrough: false,
@@ -425,10 +427,8 @@ where
                 registration.timeout_ms,
                 registration.max_body_bytes,
             )?;
+            configure_service_pricing_context(ctx, &registration, &req.method, req.uri.path());
             matched.estimated_cost_usd = registration.estimated_cost_usd;
-            ctx.service_cost_mode = Some(registration.cost_mode);
-            ctx.service_estimated_cost_usd = registration.estimated_cost_usd;
-            ctx.service_pricing_rules = registration.pricing_rules;
             ctx.service_route_pattern = Some(registration.route_pattern);
             ctx.service_upstream = Some(upstream);
             matched
@@ -648,10 +648,13 @@ where
                         registration.timeout_ms,
                         registration.max_body_bytes,
                     )?;
+                    configure_service_pricing_context(
+                        ctx,
+                        &registration,
+                        &req.method,
+                        req.uri.path(),
+                    );
                     matched.estimated_cost_usd = registration.estimated_cost_usd;
-                    ctx.service_cost_mode = Some(registration.cost_mode);
-                    ctx.service_estimated_cost_usd = registration.estimated_cost_usd;
-                    ctx.service_pricing_rules = registration.pricing_rules;
                     ctx.service_route_pattern = Some(registration.route_pattern);
                     ctx.service_upstream = Some(upstream);
                 }
@@ -2302,17 +2305,25 @@ fn prepare_service_cost_for_ctx(ctx: &mut PingoraContext) {
     if matched.provider != Provider::InternalService {
         return;
     }
-    let default_cost_mode = ctx.service_cost_mode.unwrap_or(ServiceCostMode::None);
+    let base = ctx
+        .resolved_endpoint_cost
+        .clone()
+        .unwrap_or(ResolvedServiceCost {
+            cost_mode: ctx.service_cost_mode.unwrap_or(ServiceCostMode::None),
+            estimated_cost_usd: ctx.service_estimated_cost_usd,
+            pricing_rule_name: None,
+        });
+    if ctx.resolved_endpoint_cost.is_some() && base.cost_mode == ServiceCostMode::None {
+        matched.estimated_cost_usd = None;
+        ctx.resolved_service_cost = Some(base);
+        return;
+    }
     matched.estimated_cost_usd = service_preflight_estimated_cost(
-        default_cost_mode,
-        ctx.service_estimated_cost_usd,
+        base.cost_mode,
+        base.estimated_cost_usd,
         &ctx.service_pricing_rules,
     );
-    ctx.resolved_service_cost = Some(ResolvedServiceCost {
-        cost_mode: default_cost_mode,
-        estimated_cost_usd: ctx.service_estimated_cost_usd,
-        pricing_rule_name: None,
-    });
+    ctx.resolved_service_cost = Some(base);
 }
 
 fn resolve_service_cost_for_ctx(ctx: &mut PingoraContext, selector: Option<&serde_json::Value>) {
@@ -2322,20 +2333,34 @@ fn resolve_service_cost_for_ctx(ctx: &mut PingoraContext, selector: Option<&serd
     if matched.provider != Provider::InternalService {
         return;
     }
-    let default_cost_mode = ctx.service_cost_mode.unwrap_or(ServiceCostMode::None);
-    let resolved = selector.map_or_else(
-        || ResolvedServiceCost {
-            cost_mode: default_cost_mode,
+    let base = ctx
+        .resolved_endpoint_cost
+        .clone()
+        .unwrap_or(ResolvedServiceCost {
+            cost_mode: ctx.service_cost_mode.unwrap_or(ServiceCostMode::None),
             estimated_cost_usd: ctx.service_estimated_cost_usd,
             pricing_rule_name: None,
-        },
+        });
+    if ctx.resolved_endpoint_cost.is_some() && base.cost_mode == ServiceCostMode::None {
+        matched.estimated_cost_usd = None;
+        ctx.resolved_service_cost = Some(base);
+        return;
+    }
+    let resolved = selector.map_or_else(
+        || base.clone(),
         |value| {
-            resolve_service_cost_from_value(
+            let mut resolved = resolve_service_cost_from_value(
                 value,
-                default_cost_mode,
-                ctx.service_estimated_cost_usd,
+                base.cost_mode,
+                base.estimated_cost_usd,
                 &ctx.service_pricing_rules,
-            )
+            );
+            if resolved.pricing_rule_name.is_none() {
+                resolved
+                    .pricing_rule_name
+                    .clone_from(&base.pricing_rule_name);
+            }
+            resolved
         },
     );
     matched.estimated_cost_usd = match resolved.cost_mode {
@@ -2343,6 +2368,21 @@ fn resolve_service_cost_for_ctx(ctx: &mut PingoraContext, selector: Option<&serd
         ServiceCostMode::Passthrough | ServiceCostMode::None => None,
     };
     ctx.resolved_service_cost = Some(resolved);
+}
+
+fn configure_service_pricing_context(
+    ctx: &mut PingoraContext,
+    registration: &gateway_core::ServiceRegistration,
+    method: &http::Method,
+    public_path: &str,
+) {
+    ctx.service_cost_mode = Some(registration.cost_mode);
+    ctx.service_estimated_cost_usd = registration.estimated_cost_usd;
+    ctx.service_pricing_rules = registration.pricing_rules.clone();
+    let endpoint_path = route_pattern_wildcard_suffix(public_path, &registration.route_pattern)
+        .unwrap_or_else(|| public_path.to_owned());
+    ctx.resolved_endpoint_cost =
+        resolve_endpoint_pricing_rule(method, &endpoint_path, &registration.endpoint_pricing_rules);
 }
 
 fn resolved_usage_cost(ctx: &PingoraContext) -> ResolvedUsageCost {
@@ -2591,6 +2631,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         service_cost_mode: None,
         service_estimated_cost_usd: None,
         service_pricing_rules: Vec::new(),
+        resolved_endpoint_cost: None,
         resolved_service_cost: None,
         litellm_upstream: None,
         litellm_passthrough: false,
@@ -2832,6 +2873,81 @@ mod tests {
             Some("service_pricing_rule_fixed")
         );
         assert_eq!(usage.estimated_cost_usd, Some(0.5));
+    }
+
+    #[test]
+    fn free_endpoint_skips_unrelated_body_price_and_budget_ceiling() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.route_match = Some(service_route_match_for_persisted_registration(
+            &http::Method::GET,
+            "/services/ocr/events/feed",
+            "ocr",
+        ));
+        ctx.service_cost_mode = Some(ServiceCostMode::Fixed);
+        ctx.service_estimated_cost_usd = Some(0.01);
+        ctx.service_pricing_rules = vec![ServicePricingRule {
+            name: Some("docint".to_owned()),
+            json_pointer: "/engine".to_owned(),
+            equals: "docint".to_owned(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.5),
+        }];
+        ctx.resolved_endpoint_cost = Some(ResolvedServiceCost {
+            cost_mode: ServiceCostMode::None,
+            estimated_cost_usd: None,
+            pricing_rule_name: Some("feed_events_feed_get".to_owned()),
+        });
+
+        prepare_service_cost_for_ctx(&mut ctx);
+        assert_eq!(
+            ctx.route_match
+                .as_ref()
+                .and_then(|matched| matched.estimated_cost_usd),
+            None
+        );
+        resolve_service_cost_for_ctx(&mut ctx, Some(&serde_json::json!({"engine": "docint"})));
+
+        let usage = resolved_usage_cost(&ctx);
+        assert_eq!(usage.estimated_cost_usd, None);
+        assert_eq!(usage.cost_source.as_deref(), Some("none"));
+        assert_eq!(
+            usage.pricing_rule_name.as_deref(),
+            Some("feed_events_feed_get")
+        );
+    }
+
+    #[test]
+    fn fixed_endpoint_reserves_body_ceiling_and_allows_body_override() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.route_match = Some(service_route_match_for_persisted_registration(
+            &http::Method::POST,
+            "/services/ocr/ocr",
+            "ocr",
+        ));
+        ctx.service_pricing_rules = vec![ServicePricingRule {
+            name: Some("docint".to_owned()),
+            json_pointer: "/engine".to_owned(),
+            equals: "docint".to_owned(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.5),
+        }];
+        ctx.resolved_endpoint_cost = Some(ResolvedServiceCost {
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.01),
+            pricing_rule_name: Some("submit_ocr_task_ocr_post".to_owned()),
+        });
+
+        prepare_service_cost_for_ctx(&mut ctx);
+        assert_eq!(
+            ctx.route_match
+                .as_ref()
+                .and_then(|matched| matched.estimated_cost_usd),
+            Some(0.5)
+        );
+        resolve_service_cost_for_ctx(&mut ctx, Some(&serde_json::json!({"engine": "docint"})));
+        let resolved = ctx.resolved_service_cost.as_ref().expect("resolved cost");
+        assert_eq!(resolved.estimated_cost_usd, Some(0.5));
+        assert_eq!(resolved.pricing_rule_name.as_deref(), Some("docint"));
     }
 
     #[test]
