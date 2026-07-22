@@ -40,8 +40,10 @@ the proxy request path.
   operator documentation.
 - [x] (2026-07-22 09:55+07) Ran focused tests, Admin UI tests, workspace coverage, the mandatory full verification stack,
   and a fresh Docker real-environment test against the deployed OCR contract.
-- [ ] Commit, push PR #96, request Codex review, monitor the first review
-  response, address actionable comments with replies, and resolve threads.
+- [x] (2026-07-22 10:10+07) Committed and pushed PR #96, requested and monitored
+  the first Codex review, addressed both actionable comments, and reran the
+  complete mandatory verification stack. Review replies and thread resolution
+  follow the review-fix push.
 
 ## Surprises & Discoveries
 
@@ -76,6 +78,11 @@ the proxy request path.
   `$0.001` per-request cap, denied it after the endpoint changed to `$0.02`
   while the OCR selector ceiling remained `$0.50`, and allowed it under a
   `$0.60` cap before recording the final `$0.02` cost.
+- Observation: A matched body selector can intentionally have no display name;
+  using an absent name to infer that no body rule matched incorrectly relabels
+  its usage with the endpoint operation ID.
+  Evidence: The first Codex review of PR #96 identified the ambiguity, and a
+  proxy regression test now distinguishes match presence from rule naming.
 
 ## Decision Log
 
@@ -128,6 +135,12 @@ A fresh Docker image and isolated PostgreSQL/Redis/OCR stack applied migration
 no cost, recorded multipart `docint` at `$0.50`, and recorded an operator-
 changed `/events/feed` price at `$0.02`. Chrome verified the real Admin portal
 at 1440×1000 and 390×844 with no console errors or page-level mobile overflow.
+
+The first Codex review produced two actionable findings. The proxy now keeps an
+anonymous matched body rule anonymous instead of inheriting the endpoint
+operation ID, and the Admin UI service PATCH now persists an edited OpenAPI
+source path. Both fixes have regression coverage, and the mandatory verification
+stack passed again after the changes.
 
 Remaining limitation: endpoint rules and body selectors are separate layers;
 body selectors remain service-wide for compatibility, so every billable

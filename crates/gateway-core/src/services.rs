@@ -1157,21 +1157,27 @@ pub fn resolve_service_cost_from_value(
     default_estimated_cost_usd: Option<f64>,
     rules: &[ServicePricingRule],
 ) -> ResolvedServiceCost {
-    for rule in rules {
-        let matched = value
-            .pointer(&rule.json_pointer)
-            .and_then(Value::as_str)
-            .is_some_and(|actual| actual == rule.equals);
-        if matched {
-            return ResolvedServiceCost {
-                cost_mode: rule.cost_mode,
-                estimated_cost_usd: rule.estimated_cost_usd,
-                pricing_rule_name: rule.name.clone(),
-            };
-        }
+    if let Some(rule) = matching_service_pricing_rule(value, rules) {
+        return ResolvedServiceCost {
+            cost_mode: rule.cost_mode,
+            estimated_cost_usd: rule.estimated_cost_usd,
+            pricing_rule_name: rule.name.clone(),
+        };
     }
 
     default_service_cost(default_cost_mode, default_estimated_cost_usd)
+}
+
+pub fn matching_service_pricing_rule<'a>(
+    value: &Value,
+    rules: &'a [ServicePricingRule],
+) -> Option<&'a ServicePricingRule> {
+    rules.iter().find(|rule| {
+        value
+            .pointer(&rule.json_pointer)
+            .and_then(Value::as_str)
+            .is_some_and(|actual| actual == rule.equals)
+    })
 }
 
 pub fn service_preflight_estimated_cost(

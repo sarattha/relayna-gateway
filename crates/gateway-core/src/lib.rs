@@ -108,16 +108,17 @@ pub use route_settings::{
 pub use routing::{is_retry_safe_status, BackendType, Provider, Route, RouteMatch};
 pub use services::{
     default_openapi_source_path, default_route_pattern, endpoint_template_matches,
-    is_relayna_default_endpoint, merge_endpoint_pricing_rules, resolve_endpoint_pricing_rule,
-    resolve_service_cost, resolve_service_cost_from_value, route_pattern_wildcard_suffix,
-    service_preflight_estimated_cost, service_wildcard_suffix, validate_openapi_endpoints,
-    validate_openapi_source_path, validate_service_name, AdminServiceStore, ResolvedServiceCost,
-    ServiceCostMode, ServiceCreateRequest, ServiceEndpointPricingRule, ServiceOpenApiEndpoint,
-    ServiceOpenApiPreview, ServiceOpenApiPreviewRequest, ServiceOpenApiSyncRequest,
-    ServicePatchRequest, ServicePricingRule, ServiceRegistration, ServiceRegistryLookup,
-    ServiceResponse, ServiceRouteLookup, ServiceSource, ServiceSyncStatus,
-    ServiceSyncStatusResponse, StudioCatalogService, StudioServiceCatalogResponse,
-    StudioServiceImportPreview, StudioServiceImportRequest, StudioServicePricing,
+    is_relayna_default_endpoint, matching_service_pricing_rule, merge_endpoint_pricing_rules,
+    resolve_endpoint_pricing_rule, resolve_service_cost, resolve_service_cost_from_value,
+    route_pattern_wildcard_suffix, service_preflight_estimated_cost, service_wildcard_suffix,
+    validate_openapi_endpoints, validate_openapi_source_path, validate_service_name,
+    AdminServiceStore, ResolvedServiceCost, ServiceCostMode, ServiceCreateRequest,
+    ServiceEndpointPricingRule, ServiceOpenApiEndpoint, ServiceOpenApiPreview,
+    ServiceOpenApiPreviewRequest, ServiceOpenApiSyncRequest, ServicePatchRequest,
+    ServicePricingRule, ServiceRegistration, ServiceRegistryLookup, ServiceResponse,
+    ServiceRouteLookup, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
+    StudioCatalogService, StudioServiceCatalogResponse, StudioServiceImportPreview,
+    StudioServiceImportRequest, StudioServicePricing,
 };
 pub use studio_settings::{
     normalize_base_url, normalize_secret, AdminStudioConnectionStore, EffectiveStudioConnection,

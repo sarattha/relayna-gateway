@@ -9,11 +9,12 @@ use gateway_core::{
     estimate_generation_tokens, evaluate_policy, evaluate_policy_limits,
     execution_events_from_records, extract_client_guardrails, extract_estimated_cost_usd,
     extract_generation_features, extract_model, extract_usage_tokens,
-    guardrail_executor_for_definitions, is_retry_safe_status, redact_pii_text,
-    resolve_endpoint_pricing_rule, resolve_guardrail_plan, resolve_service_cost_from_value,
-    route_pattern_wildcard_suffix, service_preflight_estimated_cost, service_wildcard_suffix,
-    strip_client_guardrails, validate_relayna_key_header_name, verify_apigee_trusted_identity,
-    ApigeeTrustedHeaderConfig, AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
+    guardrail_executor_for_definitions, is_retry_safe_status, matching_service_pricing_rule,
+    redact_pii_text, resolve_endpoint_pricing_rule, resolve_guardrail_plan,
+    resolve_service_cost_from_value, route_pattern_wildcard_suffix,
+    service_preflight_estimated_cost, service_wildcard_suffix, strip_client_guardrails,
+    validate_relayna_key_header_name, verify_apigee_trusted_identity, ApigeeTrustedHeaderConfig,
+    AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
     CredentialHeaderValueFormat, EntraAuthConfig, EntraIdentityContext, GatewayAuthRuntimeConfig,
     GatewayAuthRuntimeSnapshot, GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition,
     GuardrailExecutionEvent, GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy,
@@ -2349,13 +2350,15 @@ fn resolve_service_cost_for_ctx(ctx: &mut PingoraContext, selector: Option<&serd
     let resolved = selector.map_or_else(
         || base.clone(),
         |value| {
+            let body_rule_matched =
+                matching_service_pricing_rule(value, &ctx.service_pricing_rules).is_some();
             let mut resolved = resolve_service_cost_from_value(
                 value,
                 base.cost_mode,
                 base.estimated_cost_usd,
                 &ctx.service_pricing_rules,
             );
-            if resolved.pricing_rule_name.is_none() {
+            if !body_rule_matched {
                 resolved
                     .pricing_rule_name
                     .clone_from(&base.pricing_rule_name);
@@ -2948,6 +2951,34 @@ mod tests {
         let resolved = ctx.resolved_service_cost.as_ref().expect("resolved cost");
         assert_eq!(resolved.estimated_cost_usd, Some(0.5));
         assert_eq!(resolved.pricing_rule_name.as_deref(), Some("docint"));
+    }
+
+    #[test]
+    fn anonymous_body_rule_does_not_inherit_endpoint_operation_id() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.route_match = Some(service_route_match_for_persisted_registration(
+            &http::Method::POST,
+            "/services/ocr/ocr",
+            "ocr",
+        ));
+        ctx.service_pricing_rules = vec![ServicePricingRule {
+            name: None,
+            json_pointer: "/engine".to_owned(),
+            equals: "docint".to_owned(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.5),
+        }];
+        ctx.resolved_endpoint_cost = Some(ResolvedServiceCost {
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.01),
+            pricing_rule_name: Some("submit_ocr".to_owned()),
+        });
+
+        resolve_service_cost_for_ctx(&mut ctx, Some(&serde_json::json!({"engine": "docint"})));
+
+        let resolved = ctx.resolved_service_cost.as_ref().expect("resolved cost");
+        assert_eq!(resolved.estimated_cost_usd, Some(0.5));
+        assert_eq!(resolved.pricing_rule_name, None);
     }
 
     #[test]

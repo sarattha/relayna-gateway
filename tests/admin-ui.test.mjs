@@ -331,6 +331,7 @@ test("services expose route choices and cost mode guidance", () => {
   assert.match(js, /Use JSON Pointer selectors such as \/model or \/payload\/page_count/);
   assert.match(js, /function openApiEndpointPricingEditor\(service\)/);
   assert.match(js, /name="endpoint_pricing_rules"/);
+  assert.match(js, /openapi_source_path: patch \? nullableString/);
   assert.match(js, /data-openapi-action="preview"/);
   assert.match(js, /\/openapi\/preview/);
   assert.match(js, /\/openapi\/sync/);

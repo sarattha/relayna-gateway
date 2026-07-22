@@ -3449,6 +3449,7 @@ function serviceBody(form, patch) {
     cost_mode: form.get("cost_mode"),
     estimated_cost_usd: nullableNumber(form.get("estimated_cost_usd")),
     pricing_rules: pricingRulesFromForm(form),
+    openapi_source_path: patch ? nullableString(form.get("openapi_source_path")) : undefined,
     endpoint_pricing_rules: endpointPricingRulesFromForm(form),
     fallback_services: csv(form.get("fallback_services")),
   };
