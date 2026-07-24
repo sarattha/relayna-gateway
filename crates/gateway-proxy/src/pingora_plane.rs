@@ -1363,6 +1363,24 @@ where
             .post_guardrail_plan
             .as_ref()
             .is_some_and(|plan| !plan.entries.is_empty());
+        if has_post_guardrails && ctx.response_body_lease.is_none() {
+            let mut lease = match self.config.body_admission.try_acquire() {
+                Ok(lease) => lease,
+                Err(error) => {
+                    ctx.guardrail_error = Some(error);
+                    return Err(PingoraError::new(ErrorType::InternalError));
+                }
+            };
+            let reservation_bytes = response_buffer_reservation_bytes(
+                upstream_response,
+                self.config.body_admission.max_bytes(),
+            );
+            if let Err(error) = lease.try_reserve(reservation_bytes) {
+                ctx.guardrail_error = Some(error);
+                return Err(PingoraError::new(ErrorType::InternalError));
+            }
+            ctx.response_body_lease = Some(lease);
+        }
         let has_during_guardrails = ctx
             .during_guardrail_plan
             .as_ref()
@@ -1406,18 +1424,14 @@ where
         {
             let chunk_len = body.as_ref().map_or(0, Bytes::len);
             if chunk_len > 0 {
-                if ctx.response_body_lease.is_none() {
-                    match self.config.body_admission.try_acquire() {
-                        Ok(lease) => ctx.response_body_lease = Some(lease),
-                        Err(error) => {
-                            ctx.guardrail_error = Some(error);
-                            *body = Some(Bytes::new());
-                            return Err(PingoraError::new(ErrorType::InternalError));
-                        }
-                    }
-                }
+                let buffered_len = ctx
+                    .response_rewriter
+                    .as_ref()
+                    .map_or(0, BoundedBodyRewriter::buffered_len);
+                let required_bytes = buffered_len.saturating_add(chunk_len);
                 if let Some(lease) = ctx.response_body_lease.as_mut() {
-                    if let Err(error) = lease.try_reserve(chunk_len) {
+                    let additional_bytes = required_bytes.saturating_sub(lease.reserved_bytes());
+                    if let Err(error) = lease.try_reserve(additional_bytes) {
                         ctx.response_body_lease.take();
                         if let Some(rewriter) = ctx.response_rewriter.as_mut() {
                             drop(rewriter.take_buffer());
@@ -1634,6 +1648,25 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        if let Some(gateway_error) = ctx.guardrail_error.clone() {
+            let status_code = gateway_error.status_code().as_u16();
+            ctx.terminal_status_code = Some(status_code);
+            if session.response_written().is_none() {
+                if let Err(write_error) =
+                    respond_error(session, gateway_error, &ctx.request_id).await
+                {
+                    tracing::error!(
+                        request_id = %ctx.request_id,
+                        error = %write_error,
+                        "failed to write gateway body-processing error response"
+                    );
+                }
+            }
+            return FailToProxy {
+                error_code: status_code,
+                can_reuse_downstream: false,
+            };
+        }
         if is_upstream_timeout_error(error) {
             ctx.upstream_timeout = true;
             if session.response_written().is_none() {
@@ -2387,6 +2420,18 @@ fn is_json_content_type(content_type: &str) -> bool {
         let media_type = media_type.trim().to_ascii_lowercase();
         media_type == "application/json" || media_type.ends_with("+json")
     })
+}
+
+fn response_buffer_reservation_bytes(
+    upstream_response: &ResponseHeader,
+    unknown_length_reservation: usize,
+) -> usize {
+    upstream_response
+        .headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(unknown_length_reservation)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -3679,6 +3724,18 @@ mod tests {
             config.with_body_admission_limits(1, 0).unwrap_err(),
             GatewayError::InvalidConfiguration
         );
+    }
+
+    #[test]
+    fn response_buffer_reservation_uses_content_length_or_full_unknown_budget() {
+        let mut known = ResponseHeader::build(200, Some(1)).expect("known response");
+        known
+            .insert_header(header::CONTENT_LENGTH, "128")
+            .expect("content length");
+        let unknown = ResponseHeader::build(200, None).expect("unknown response");
+
+        assert_eq!(response_buffer_reservation_bytes(&known, 512), 128);
+        assert_eq!(response_buffer_reservation_bytes(&unknown, 512), 512);
     }
 
     #[test]

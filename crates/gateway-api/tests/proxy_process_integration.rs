@@ -30,6 +30,10 @@ async fn mock_upstream() -> (String, JoinHandle<()>) {
     let address = listener.local_addr().expect("mock upstream address");
     let app = Router::new()
         .route("/stream", post(|body: Bytes| async move { body }))
+        .route(
+            "/large-response",
+            post(|| async { Json(json!({"payload": "x".repeat(2048)})) }),
+        )
         .fallback(any(|| async {
             (
                 StatusCode::OK,
@@ -390,6 +394,19 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     .await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     let error: Value = response.json().await.expect("overload response body");
+    assert_eq!(error["error"]["code"], "gateway_overloaded");
+    assert_eq!(error["error"]["retry_after_seconds"], 1);
+
+    let response = send_json(
+        &client,
+        &proxy_url,
+        &format!("/services/{service_name}/large-response"),
+        Some(&material.raw_key),
+        json!({"payload": "small"}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let error: Value = response.json().await.expect("response overload body");
     assert_eq!(error["error"]["code"], "gateway_overloaded");
     assert_eq!(error["error"]["retry_after_seconds"], 1);
 

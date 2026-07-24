@@ -41,6 +41,12 @@ through bounded Prometheus metrics and overload rejections.
   dependencies through Computer Use in Docker Desktop.
 - [ ] Commit, push, open the pull request, monitor the first automated/human
   review, address actionable feedback, reply, and resolve handled threads.
+- [x] (2026-07-24 17:04Z) Received the first Codex review on PR #97 and
+  reproduced its response-side overload-contract concern.
+- [x] (2026-07-24 17:11Z) Verified the response-admission review fix with
+  focused proxy checks, the live dependency-backed process regression, and the
+  complete mandatory verification stack.
+- [ ] Push, reply to, and resolve the response-admission review fix.
 
 ## Surprises & Discoveries
 
@@ -68,6 +74,11 @@ through bounded Prometheus metrics and overload rejections.
   Evidence:
   `crates/gateway-api/tests/proxy_process_integration.rs`, run against the live
   `relayna-coverage-postgres` and `relayna-coverage-redis` containers.
+- Observation: response-body admission originally began on the first upstream
+  body chunk, after Pingora had committed upstream response headers. A failure
+  could therefore become a generic proxy error or truncated success response
+  instead of the stable overload envelope.
+  Evidence: Codex review thread `PRRT_kwDOSX_7Cc6TndT2` on PR #97.
 
 ## Decision Log
 
@@ -100,6 +111,15 @@ through bounded Prometheus metrics and overload rejections.
   Rationale: generation JSON and body-priced or guarded service requests still
   need complete input before a correct policy decision; opaque uploads with no
   body-dependent work can be forwarded safely without process-wide retention.
+  Date/Author: 2026-07-24 / Codex.
+- Decision: pre-admit post-call response buffering in Pingora's asynchronous
+  response-header filter, reserving the declared content length or the full
+  configured byte budget when length is unknown.
+  Rationale: admission can fail before downstream headers are committed, so
+  `fail_to_proxy` can emit the same stable `503 gateway_overloaded` envelope as
+  request-side contention. Reserving the full budget for unknown-length guarded
+  responses favors bounded memory and response-contract correctness over
+  concurrency in that exceptional mode.
   Date/Author: 2026-07-24 / Codex.
 
 ## Outcomes & Retrospective
@@ -239,6 +259,10 @@ Focused validation completed:
 - `.codex/skills/code-change-verification/scripts/run.sh` passed formatting,
   Clippy, workspace tests, cargo-audit, cargo-deny, cargo-machete, nextest (281
   tests), Trivy, Gitleaks, and Semgrep.
+- After the first review fix, the same full verification stack passed again
+  with 282 nextest tests, and the real-environment process regression proved a
+  large guarded upstream response returns `503 gateway_overloaded` before
+  downstream headers are committed.
 
 Record full verification output, PR URL, check state, and review-thread
 dispositions here as work proceeds.
