@@ -2,6 +2,47 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.22 - 2026-07-25
+
+### Added
+
+- Added process-wide admission control for requests and responses that retain
+  complete bodies in memory. Operators can bound both simultaneous buffered
+  work and aggregate serialized body bytes with
+  `GATEWAY_MAX_BUFFERED_REQUESTS` and
+  `GATEWAY_MAX_INFLIGHT_BUFFER_BYTES`.
+- Added bounded Prometheus gauges and rejection counters for buffered body
+  admission, plus a stable retryable `503 gateway_overloaded` response when
+  process capacity is exhausted.
+- Added a streaming-safe request path for registered non-JSON services whose
+  pricing and effective pre-call guardrails do not require the complete body.
+
+### Changed
+
+- Managed JSON metadata is analyzed without repeatedly materializing ignored
+  payload fields, and unchanged buffered request bodies are moved into Pingora
+  without an additional full-body copy.
+- Body-admission defaults allow eight simultaneously buffered requests and
+  512 MiB (`536870912` bytes) of aggregate buffered request and response data.
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.22` and `v0.1.22`.
+
+### Fixed
+
+- Response-side admission now occurs before downstream headers are committed,
+  preserving the structured overload response instead of returning a truncated
+  upstream success or generic proxy failure.
+- Admission leases release request and byte reservations on completion,
+  rejection, error, and request-context drop.
+
+### Security
+
+- Process-wide body limits reduce the risk that concurrent large managed
+  requests exhaust pod memory while preserving route-level payload limits,
+  credential stripping, policy enforcement, and usage accounting.
+- Streaming-safe service uploads remain restricted to routes that require no
+  body-dependent pricing or pre-call guardrail inspection.
+
 ## 0.1.21 - 2026-07-22
 
 ### Added

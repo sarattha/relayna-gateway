@@ -53,6 +53,10 @@ through bounded Prometheus metrics and overload rejections.
 - [x] (2026-07-24 17:26Z) Changed the branch-local aggregate buffered-byte
   default from 256 MiB to the operator-requested 512 MiB across runtime,
   deployment, tests, and docs.
+- [x] (2026-07-24 17:36Z) Prepared patch release `0.1.22` by updating package
+  metadata, release notes, Admin UI indicators, deployment examples, and
+  current-version documentation; regenerated assets and passed release
+  validation.
 
 ## Surprises & Discoveries
 
@@ -85,6 +89,9 @@ through bounded Prometheus metrics and overload rejections.
   could therefore become a generic proxy error or truncated success response
   instead of the stable overload envelope.
   Evidence: Codex review thread `PRRT_kwDOSX_7Cc6TndT2` on PR #97.
+- Observation: `mkdocs` is not installed globally in the workspace shell.
+  Evidence: the direct strict build returned command-not-found; the established
+  `uvx --from mkdocs-material mkdocs build --strict` fallback passed.
 
 ## Decision Log
 
@@ -133,6 +140,11 @@ through bounded Prometheus metrics and overload rejections.
   so a compatibility alias or migration would add no value. Explicit operator
   overrides remain unchanged.
   Date/Author: 2026-07-25 / Codex.
+- Decision: publish this additive feature set as patch release `0.1.22`.
+  Rationale: `v0.1.21` is the latest release and the branch preserves existing
+  successful request contracts while adding bounded admission, streaming-safe
+  handling, metrics, configuration, and an overload response.
+  Date/Author: 2026-07-25 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -154,6 +166,11 @@ fixed, verified, replied to, and resolved.
 The shipped configuration examples and runtime fallback now default to eight
 simultaneously buffered requests and 512 MiB of aggregate buffered body
 reservations. Explicit environment overrides keep their existing semantics.
+
+Release metadata now consistently targets `0.1.22` across the workspace
+packages, lockfile, embedded Admin UI, Kubernetes image, README, changelog, and
+current release/deployment documentation. Historical version evidence remains
+unchanged.
 
 ## Context and Orientation
 
@@ -214,6 +231,13 @@ streaming, oversized and overloaded error shapes, metrics, and cancellation or
 drop cleanup. Extend process integration coverage where the existing harness
 can prove byte-identical upstream forwarding and overload behavior.
 
+For release packaging, bump the shared workspace and lockfile versions to
+`0.1.22`, add a dated changelog section, update current-release references in
+the README, public docs, Kubernetes manifest, Admin UI source, and release
+tests, then regenerate the checked-in Admin UI assets. Historical changelog
+sections, migration notes, and completed ExecPlans retain their original
+version evidence.
+
 ## Concrete Steps
 
 From `/Users/jobz/Works/relayna-gateway`:
@@ -222,6 +246,11 @@ From `/Users/jobz/Works/relayna-gateway`:
     cargo test -p gateway-proxy
     cargo test -p gateway-telemetry
     cargo test -p gateway-api
+    cargo check --workspace --all-features
+    npm run build:admin-ui
+    npm test
+    python3 scripts/validate-release-metadata.py v0.1.22
+    mkdocs build --strict
     bash .codex/skills/code-change-verification/scripts/run.sh
 
 Build and run the real local stack using the repository's existing environment
@@ -285,6 +314,11 @@ Focused validation completed:
   `cargo test -p gateway-api --test config_contract --all-features` passed,
   followed by the complete verification stack with 283 nextest tests and clean
   Trivy, Gitleaks, and Semgrep scans.
+- Release validation passed with
+  `python3 scripts/validate-release-metadata.py v0.1.22`, the production Admin
+  UI build and both Node suites, strict MkDocs through `uvx`, Cargo workspace
+  checking, and the complete verification stack. Nextest reported 283 passed
+  tests; Trivy, Gitleaks, and Semgrep reported no blocking findings.
 
 Record full verification output, PR URL, check state, and review-thread
 dispositions here as work proceeds.
