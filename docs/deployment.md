@@ -2,10 +2,11 @@
 
 Relayna Gateway ships as one binary and one Docker image. The image serves both the core proxy and the admin portal because the admin UI is embedded in the `gateway-api` binary.
 
-Version `0.1.21` keeps that deployment shape and adds secure registered-service
-OpenAPI discovery, endpoint billing, and multipart pricing selectors. It
-retains persisted service timeout controls, structured terminal timeout
-responses, the Aurora Teal Admin UI,
+Version `0.1.22` keeps that deployment shape and adds process-wide buffered-body
+admission, lightweight managed JSON analysis, and streaming-safe non-JSON
+service uploads. It retains OpenAPI discovery and endpoint billing, persisted
+service timeout controls, structured terminal timeout responses, the Aurora
+Teal Admin UI,
 bearer-prefixed custom LiteLLM
 credential header values, LiteLLM wildcard passthrough, per-route canonical
 OpenAI mode selection, direct LiteLLM bearer delegation, trusted-ingress
@@ -23,7 +24,7 @@ See
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.21 .
+docker build -t relayna-gateway:0.1.22 .
 ```
 
 Run it with required dependencies:
@@ -40,11 +41,19 @@ docker run --rm \
   -e RELAYNA_STUDIO_BASE_URL="http://host.docker.internal:8000" \
   -e GATEWAY_BIND_ADDR="0.0.0.0:8080" \
   -e GATEWAY_CONTROL_BIND_ADDR="0.0.0.0:8081" \
+  -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
+  -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.21
+  relayna-gateway:0.1.22
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
+
+The body-admission defaults reserve no memory at startup. They cap concurrent
+managed body buffering at eight requests and 512 MiB of aggregate serialized
+body data. Keep this byte budget below the container memory limit to leave
+headroom for JSON parsing, guardrails, connection pools, and normal runtime
+state.
 
 `GATEWAY_ADMIN_TOKEN` is optional. Set it only for the first startup against a
 fresh database when you want to seed a known `op_live_...` operator token. Omit
@@ -92,13 +101,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.21
+   ghcr.io/sarattha/relayna-gateway:0.1.22
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.21"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.22"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -106,7 +115,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.21
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.22
    ```
 
 3. Store secrets through your cluster secret manager:

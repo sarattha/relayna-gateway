@@ -1,8 +1,10 @@
 use gateway_telemetry::{
-    gateway_request_span, init, is_sensitive_field, phase_span, prometheus, record_auth_failure,
-    record_budget_rejection, record_circuit_transition, record_estimated_cost_usd,
-    record_first_token_latency_ms, record_guardrail_execution, record_policy_denial,
-    record_provider_fallback, record_provider_fallback_with_dimensions, record_provider_selection,
+    buffered_bytes_added, buffered_bytes_removed, buffered_request_finished,
+    buffered_request_started, gateway_request_span, init, is_sensitive_field, phase_span,
+    prometheus, record_auth_failure, record_body_admission_rejection, record_budget_rejection,
+    record_circuit_transition, record_estimated_cost_usd, record_first_token_latency_ms,
+    record_guardrail_execution, record_policy_denial, record_provider_fallback,
+    record_provider_fallback_with_dimensions, record_provider_selection,
     record_rate_limit_rejection, record_request, record_request_with_dimensions, record_tokens,
     record_upstream_duration_ms, request_finished, request_started, set_circuit_state,
     stream_finished, stream_started,
@@ -54,6 +56,11 @@ fn metrics_contract_records_every_counter_histogram_and_dimension() {
         31,
         true,
     );
+    buffered_request_started();
+    buffered_bytes_added(4096);
+    record_body_admission_rejection("bytes");
+    buffered_bytes_removed(4096);
+    buffered_request_finished();
     request_finished();
 
     let request_span = gateway_request_span("request", None, None, None);
@@ -68,6 +75,10 @@ fn metrics_contract_records_every_counter_histogram_and_dimension() {
         "gateway_provider_fallbacks_by_provider_total",
         "gateway_circuit_breaker_state",
         "gateway_guardrail_failures_total",
+        "gateway_buffered_requests",
+        "gateway_buffered_body_bytes",
+        "gateway_body_admission_rejections_total",
+        "kind=\"body_admission\"",
         "status_class=\"1xx\"",
         "status_class=\"2xx\"",
         "status_class=\"3xx\"",

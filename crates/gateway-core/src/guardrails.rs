@@ -808,7 +808,11 @@ pub fn strip_client_guardrails(value: &mut Value) {
 }
 
 pub fn extract_client_guardrails(value: &Value) -> GatewayResult<Vec<String>> {
-    let Some(guardrails) = value.get("guardrails") else {
+    extract_client_guardrails_value(value.get("guardrails"))
+}
+
+pub fn extract_client_guardrails_value(guardrails: Option<&Value>) -> GatewayResult<Vec<String>> {
+    let Some(guardrails) = guardrails else {
         return Ok(Vec::new());
     };
     let Some(items) = guardrails.as_array() else {

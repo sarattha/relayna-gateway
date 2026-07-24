@@ -1,7 +1,7 @@
 use crate::{GatewayError, GatewayResult, GuardrailPolicy, Provider, Route};
 use async_trait::async_trait;
 use chrono::{DateTime, Timelike, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{de::IgnoredAny, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use uuid::Uuid;
@@ -106,6 +106,23 @@ pub struct GenerationFeatures {
     pub stream: bool,
     pub tools: bool,
     pub service_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GenerationRequestAnalysis {
+    pub features: GenerationFeatures,
+    pub client_guardrails: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GenerationRequestProbe {
+    model: Option<String>,
+    #[serde(default)]
+    stream: bool,
+    tools: Option<Vec<IgnoredAny>>,
+    service: Option<String>,
+    service_name: Option<String>,
+    guardrails: Option<Value>,
 }
 
 #[async_trait]
@@ -539,36 +556,27 @@ fn exceeds_i32(value: Option<i32>, limit: Option<i32>) -> bool {
 }
 
 pub fn extract_generation_features(body: &[u8]) -> GenerationFeatures {
-    let Ok(value) = serde_json::from_slice::<Value>(body) else {
-        return GenerationFeatures::default();
-    };
+    analyze_generation_request(body)
+        .map(|analysis| analysis.features)
+        .unwrap_or_default()
+}
 
-    let model = value
-        .get("model")
-        .and_then(Value::as_str)
+pub fn analyze_generation_request(body: &[u8]) -> Option<GenerationRequestAnalysis> {
+    let probe = serde_json::from_slice::<GenerationRequestProbe>(body).ok()?;
+    let model = probe.model.filter(|value| !value.is_empty());
+    let service_name = probe
+        .service
         .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned);
-    let stream = value
-        .get("stream")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let tools = value
-        .get("tools")
-        .and_then(Value::as_array)
-        .is_some_and(|tools| !tools.is_empty());
-    let service_name = value
-        .get("service")
-        .or_else(|| value.get("service_name"))
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned);
-
-    GenerationFeatures {
-        model,
-        stream,
-        tools,
-        service_name,
-    }
+        .or_else(|| probe.service_name.filter(|value| !value.is_empty()));
+    Some(GenerationRequestAnalysis {
+        features: GenerationFeatures {
+            model,
+            stream: probe.stream,
+            tools: probe.tools.is_some_and(|tools| !tools.is_empty()),
+            service_name,
+        },
+        client_guardrails: probe.guardrails,
+    })
 }
 
 #[cfg(test)]
@@ -589,6 +597,24 @@ mod tests {
             &features,
         )
         .expect("allowed");
+    }
+
+    #[test]
+    fn request_analysis_ignores_large_payload_fields_and_keeps_control_metadata() {
+        let body = format!(
+            r#"{{"model":"gpt-test","messages":[{{"content":"{}"}}],"stream":true,"tools":[{{"type":"function"}}],"guardrails":["pii-redact"]}}"#,
+            "x".repeat(1024 * 1024)
+        );
+
+        let analysis = analyze_generation_request(body.as_bytes()).expect("analysis");
+
+        assert_eq!(analysis.features.model.as_deref(), Some("gpt-test"));
+        assert!(analysis.features.stream);
+        assert!(analysis.features.tools);
+        assert_eq!(
+            analysis.client_guardrails,
+            Some(serde_json::json!(["pii-redact"]))
+        );
     }
 
     #[test]

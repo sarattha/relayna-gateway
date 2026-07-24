@@ -86,7 +86,12 @@ fn main() -> anyhow::Result<()> {
         .with_worker_token(config.relayna_worker_token.clone())
         .with_entra_auth(effective_auth.entra_auth.clone())
         .with_apigee_trusted_header(effective_auth.apigee_trusted_header.clone())
-        .with_auth_runtime(shared_auth.clone());
+        .with_auth_runtime(shared_auth.clone())
+        .with_body_admission_limits(
+            config.gateway_max_buffered_requests,
+            config.gateway_max_inflight_buffer_bytes,
+        )
+        .context("configure body admission limits")?;
 
     let studio = config.relayna_studio_base_url.clone().map(|base_url| {
         app::StudioCatalogClient::new(base_url, config.relayna_studio_token.clone())

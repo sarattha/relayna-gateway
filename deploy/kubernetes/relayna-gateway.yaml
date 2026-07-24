@@ -5,6 +5,8 @@ metadata:
 data:
   GATEWAY_BIND_ADDR: "0.0.0.0:8080"
   GATEWAY_CONTROL_BIND_ADDR: "0.0.0.0:8081"
+  GATEWAY_MAX_BUFFERED_REQUESTS: "8"
+  GATEWAY_MAX_INFLIGHT_BUFFER_BYTES: "536870912"
   LOG_LEVEL: "gateway_api=info,gateway_proxy=info"
   # Entra and Apigee modes are opt-in. Keep disabled unless this gateway is
   # behind Microsoft Entra ID or an Apigee front door.
@@ -70,7 +72,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/sarattha/relayna-gateway:0.1.21
+          image: ghcr.io/sarattha/relayna-gateway:0.1.22
           imagePullPolicy: IfNotPresent
           ports:
             - name: proxy

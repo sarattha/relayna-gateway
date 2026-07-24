@@ -25,6 +25,9 @@ static TOKENS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static ESTIMATED_COST_MICRO_USD_TOTAL: AtomicU64 = AtomicU64::new(0);
 static ACTIVE_REQUESTS: AtomicI64 = AtomicI64::new(0);
 static ACTIVE_STREAMS: AtomicI64 = AtomicI64::new(0);
+static BUFFERED_REQUESTS: AtomicI64 = AtomicI64::new(0);
+static BUFFERED_BODY_BYTES: AtomicU64 = AtomicU64::new(0);
+static BODY_ADMISSION_REJECTIONS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static STREAM_ABORTS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FIRST_TOKEN_LATENCY_MS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FIRST_TOKEN_LATENCY_SAMPLES: AtomicU64 = AtomicU64::new(0);
@@ -137,6 +140,27 @@ pub fn request_started() {
 
 pub fn request_finished() {
     ACTIVE_REQUESTS.fetch_sub(1, Ordering::Relaxed);
+}
+
+pub fn buffered_request_started() {
+    BUFFERED_REQUESTS.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn buffered_request_finished() {
+    BUFFERED_REQUESTS.fetch_sub(1, Ordering::Relaxed);
+}
+
+pub fn buffered_bytes_added(bytes: usize) {
+    BUFFERED_BODY_BYTES.fetch_add(u64::try_from(bytes).unwrap_or(u64::MAX), Ordering::Relaxed);
+}
+
+pub fn buffered_bytes_removed(bytes: usize) {
+    BUFFERED_BODY_BYTES.fetch_sub(u64::try_from(bytes).unwrap_or(u64::MAX), Ordering::Relaxed);
+}
+
+pub fn record_body_admission_rejection(reason: &str) {
+    BODY_ADMISSION_REJECTIONS_TOTAL.fetch_add(1, Ordering::Relaxed);
+    increment_denial_metric("body_admission", "all", reason);
 }
 
 pub fn record_upstream_duration_ms(route: &str, provider: &str, stream: bool, latency_ms: u64) {
@@ -306,6 +330,12 @@ gateway_estimated_cost_total {:.6}
 gateway_active_requests {}
 # TYPE gateway_active_streams gauge
 gateway_active_streams {}
+# TYPE gateway_buffered_requests gauge
+gateway_buffered_requests {}
+# TYPE gateway_buffered_body_bytes gauge
+gateway_buffered_body_bytes {}
+# TYPE gateway_body_admission_rejections_total counter
+gateway_body_admission_rejections_total {}
 # TYPE gateway_stream_aborts_total counter
 gateway_stream_aborts_total {}
 # TYPE gateway_first_token_latency_ms counter
@@ -329,6 +359,9 @@ gateway_circuit_transitions_total {}
         cost,
         ACTIVE_REQUESTS.load(Ordering::Relaxed),
         ACTIVE_STREAMS.load(Ordering::Relaxed),
+        BUFFERED_REQUESTS.load(Ordering::Relaxed),
+        BUFFERED_BODY_BYTES.load(Ordering::Relaxed),
+        BODY_ADMISSION_REJECTIONS_TOTAL.load(Ordering::Relaxed),
         STREAM_ABORTS_TOTAL.load(Ordering::Relaxed),
         FIRST_TOKEN_LATENCY_MS_TOTAL.load(Ordering::Relaxed),
         FIRST_TOKEN_LATENCY_SAMPLES.load(Ordering::Relaxed),
@@ -597,6 +630,9 @@ mod tests {
         assert!(metrics.contains("gateway_requests_total"));
         assert!(metrics.contains("gateway_active_streams"));
         assert!(metrics.contains("gateway_active_requests"));
+        assert!(metrics.contains("gateway_buffered_requests"));
+        assert!(metrics.contains("gateway_buffered_body_bytes"));
+        assert!(metrics.contains("gateway_body_admission_rejections_total"));
         assert!(metrics.contains("gateway_first_token_latency_ms"));
         assert!(metrics.contains("gateway_request_duration_ms"));
         assert!(metrics.contains("gateway_upstream_duration_ms"));

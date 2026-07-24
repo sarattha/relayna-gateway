@@ -34,7 +34,7 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
 - [OpenAPI Service Pricing](openapi-service-pricing.md) explains registered
   service discovery, endpoint billing, multipart selectors, and budget rules.
-- [Current Feature Highlights](current-features.md) summarizes the `v0.1.21`
+- [Current Feature Highlights](current-features.md) summarizes the `v0.1.22`
   feature set, including Admin UI screenshots.
 - [LiteLLM Passthrough](litellm-passthrough.md) covers wildcard passthrough,
   canonical route modes, credential translation, `/ui` exposure, and browser

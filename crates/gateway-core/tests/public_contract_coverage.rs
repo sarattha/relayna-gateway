@@ -24,6 +24,7 @@ fn every_public_gateway_error_has_a_complete_http_contract() {
         GatewayError::DisabledRoute,
         GatewayError::RequestBodyTooLarge,
         GatewayError::ResponseBodyTooLarge,
+        GatewayError::GatewayOverloaded,
         GatewayError::UpstreamTimeout,
         GatewayError::UpstreamConnection,
         GatewayError::PolicyDenied,
@@ -94,5 +95,15 @@ fn rate_limit_retry_hint_is_optional_and_preserved() {
         .error
         .retry_after_seconds,
         Some(13)
+    );
+    let overloaded = GatewayError::GatewayOverloaded;
+    assert_eq!(
+        overloaded.status_code(),
+        http::StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(overloaded.code(), "gateway_overloaded");
+    assert_eq!(
+        overloaded.body("request").error.retry_after_seconds,
+        Some(1)
     );
 }

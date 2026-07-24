@@ -1,4 +1,9 @@
-use axum::{http::StatusCode, routing::any, Json, Router};
+use axum::{
+    body::Bytes,
+    http::StatusCode,
+    routing::{any, post},
+    Json, Router,
+};
 use gateway_api::app;
 use gateway_core::{
     admin::KeyPolicyPatch, AdminKeyCreate, AdminKeyOwnerType, AdminKeyStore, AdminProjectStore,
@@ -23,18 +28,24 @@ async fn mock_upstream() -> (String, JoinHandle<()>) {
         .await
         .expect("bind mock upstream");
     let address = listener.local_addr().expect("mock upstream address");
-    let app = Router::new().fallback(any(|| async {
-        (
-            StatusCode::OK,
-            Json(json!({
-                "id": "mock-response",
-                "model": "coverage-model",
-                "choices": [],
-                "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
-                "usage_metadata": {"total_cost": 0.001}
-            })),
+    let app = Router::new()
+        .route("/stream", post(|body: Bytes| async move { body }))
+        .route(
+            "/large-response",
+            post(|| async { Json(json!({"payload": "x".repeat(2048)})) }),
         )
-    }));
+        .fallback(any(|| async {
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "id": "mock-response",
+                    "model": "coverage-model",
+                    "choices": [],
+                    "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+                    "usage_metadata": {"total_cost": 0.001}
+                })),
+            )
+        }));
     let task = tokio::spawn(async move {
         axum::serve(listener, app)
             .await
@@ -177,6 +188,47 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
         .await
         .expect("create proxy key");
 
+    let stream_service_name = format!("proxy-stream-{suffix}");
+    store
+        .create_service(
+            serde_json::from_value::<ServiceCreateRequest>(json!({
+                "name": stream_service_name,
+                "project_id": project.id,
+                "route_pattern": format!("/services/{stream_service_name}/*"),
+                "upstream_base_url": upstream_url,
+                "credential": "stream-service-secret",
+                "allowed_methods": ["POST"],
+                "cost_mode": "fixed",
+                "estimated_cost_usd": 0.01,
+                "pricing_rules": []
+            }))
+            .expect("streaming service request"),
+        )
+        .await
+        .expect("create streaming proxy service");
+    let stream_material = VirtualKeyMaterial::generate().expect("stream virtual key");
+    store
+        .create_admin_key(
+            AdminKeyCreate {
+                owner_type: AdminKeyOwnerType::Project,
+                project_id: Some(project.id),
+                service_names: vec![stream_service_name.clone()],
+                preset: None,
+                expires_at: None,
+                rotation_due_at: None,
+                policy: KeyPolicyPatch {
+                    allowed_routes: Some(vec!["/services/*".to_owned()]),
+                    allowed_providers: Some(vec!["internal-service".to_owned()]),
+                    allowed_services: Some(vec![stream_service_name.clone()]),
+                    ..KeyPolicyPatch::default()
+                },
+                guardrail_policy: GuardrailPolicy::default(),
+            },
+            &stream_material,
+        )
+        .await
+        .expect("create streaming proxy key");
+
     let redis = RedisReadiness::new(&redis_url).expect("redis readiness");
     let redis_control = RedisControlState::new(&redis_url).expect("redis control state");
     let control_listener = TcpListener::bind("127.0.0.1:0")
@@ -200,7 +252,9 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
             PingoraUpstreamConfig::from_base_url(&upstream_url, "openai-secret")
                 .expect("direct OpenAI config"),
         ))
-        .with_worker_token(Some("worker-secret".to_owned()));
+        .with_worker_token(Some("worker-secret".to_owned()))
+        .with_body_admission_limits(2, 512)
+        .expect("body admission limits");
     let proxy = RelaynaPingoraProxy::new(Arc::new(store), Arc::new(redis_control), proxy_config);
     std::thread::spawn(move || {
         let mut pingora = Server::new(None).expect("create Pingora server");
@@ -311,6 +365,50 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let _ = response.bytes().await.expect("consume streaming response");
+
+    let opaque_body = vec![0x5a; 4096];
+    let response = client
+        .post(format!("{proxy_url}/services/{stream_service_name}/stream"))
+        .bearer_auth(&stream_material.raw_key)
+        .header("content-type", "application/octet-stream")
+        .body(opaque_body.clone())
+        .send()
+        .await
+        .expect("streaming-safe service response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.bytes().await.expect("streamed response body"),
+        opaque_body
+    );
+
+    let response = send_json(
+        &client,
+        &proxy_url,
+        "/v1/chat/completions",
+        Some(&material.raw_key),
+        json!({
+            "model": "coverage-model",
+            "messages": [{"role": "user", "content": "x".repeat(2048)}]
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let error: Value = response.json().await.expect("overload response body");
+    assert_eq!(error["error"]["code"], "gateway_overloaded");
+    assert_eq!(error["error"]["retry_after_seconds"], 1);
+
+    let response = send_json(
+        &client,
+        &proxy_url,
+        &format!("/services/{service_name}/large-response"),
+        Some(&material.raw_key),
+        json!({"payload": "small"}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let error: Value = response.json().await.expect("response overload body");
+    assert_eq!(error["error"]["code"], "gateway_overloaded");
+    assert_eq!(error["error"]["retry_after_seconds"], 1);
 
     control_task.abort();
     upstream_task.abort();

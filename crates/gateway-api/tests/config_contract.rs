@@ -32,6 +32,8 @@ const VARIABLES: &[&str] = &[
     "APIGEE_TRUSTED_HEADER_SECRET",
     "GATEWAY_BIND_ADDR",
     "GATEWAY_CONTROL_BIND_ADDR",
+    "GATEWAY_MAX_BUFFERED_REQUESTS",
+    "GATEWAY_MAX_INFLIGHT_BUFFER_BYTES",
     "LOG_LEVEL",
 ];
 
@@ -86,6 +88,8 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         ("ENTRA_CLOCK_SKEW_SECONDS", "30"),
         ("APIGEE_TRUSTED_HEADER_ENABLED", "1"),
         ("APIGEE_TRUSTED_HEADER_SECRET", "apigee-secret"),
+        ("GATEWAY_MAX_BUFFERED_REQUESTS", "12"),
+        ("GATEWAY_MAX_INFLIGHT_BUFFER_BYTES", "134217728"),
     ] {
         std::env::set_var(name, value);
     }
@@ -102,6 +106,8 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         2
     );
     assert!(config.apigee_trusted_header.is_some());
+    assert_eq!(config.gateway_max_buffered_requests, 12);
+    assert_eq!(config.gateway_max_inflight_buffer_bytes, 134_217_728);
     let auth_env = config.gateway_auth_env();
     assert_eq!(auth_env.relayna_key_header, "x-relayna-key");
     assert!(auth_env.entra_auth.is_some());
@@ -121,7 +127,22 @@ fn defaults_and_invalid_optional_values_are_handled_deterministically() {
     assert_eq!(config.guardrail_pii_mapping_ttl_seconds, 3600);
     assert!(config.entra_auth.is_none());
     assert!(config.apigee_trusted_header.is_none());
+    assert_eq!(
+        config.gateway_max_buffered_requests,
+        gateway_proxy::DEFAULT_MAX_BUFFERED_REQUESTS
+    );
+    assert_eq!(
+        config.gateway_max_inflight_buffer_bytes,
+        gateway_proxy::DEFAULT_MAX_INFLIGHT_BUFFER_BYTES
+    );
+    assert_eq!(config.gateway_max_inflight_buffer_bytes, 536_870_912);
 
+    std::env::set_var("GATEWAY_MAX_BUFFERED_REQUESTS", "0");
+    assert!(Config::from_env().is_err());
+    std::env::remove_var("GATEWAY_MAX_BUFFERED_REQUESTS");
+    std::env::set_var("GATEWAY_MAX_INFLIGHT_BUFFER_BYTES", "invalid");
+    assert!(Config::from_env().is_err());
+    std::env::remove_var("GATEWAY_MAX_INFLIGHT_BUFFER_BYTES");
     std::env::set_var("ENTRA_AUTH_ENABLED", "sometimes");
     assert!(Config::from_env().is_err());
     std::env::set_var("ENTRA_AUTH_ENABLED", "false");

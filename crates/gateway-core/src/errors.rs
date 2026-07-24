@@ -48,6 +48,8 @@ pub enum GatewayError {
     RequestBodyTooLarge,
     #[error("response body too large")]
     ResponseBodyTooLarge,
+    #[error("gateway body processing capacity is exhausted")]
+    GatewayOverloaded,
     #[error("upstream timed out")]
     UpstreamTimeout,
     #[error("upstream connection failed")]
@@ -151,6 +153,7 @@ impl GatewayError {
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
             Self::DisabledRoute => StatusCode::FORBIDDEN,
             Self::RequestBodyTooLarge | Self::ResponseBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::GatewayOverloaded => StatusCode::SERVICE_UNAVAILABLE,
             Self::PolicyDenied => StatusCode::FORBIDDEN,
             Self::RateLimitExceeded { .. } | Self::TokenRateLimitExceeded { .. } => {
                 StatusCode::TOO_MANY_REQUESTS
@@ -208,6 +211,7 @@ impl GatewayError {
             Self::DisabledRoute => "disabled_route",
             Self::RequestBodyTooLarge => "request_body_too_large",
             Self::ResponseBodyTooLarge => "response_body_too_large",
+            Self::GatewayOverloaded => "gateway_overloaded",
             Self::UpstreamTimeout => "upstream_timeout",
             Self::UpstreamConnection => "upstream_connection",
             Self::PolicyDenied => "policy_denied",
@@ -269,6 +273,9 @@ impl GatewayError {
             Self::DisabledRoute => "Route is disabled by gateway policy.",
             Self::RequestBodyTooLarge => "Request body exceeds the route limit.",
             Self::ResponseBodyTooLarge => "Response body exceeds the policy limit.",
+            Self::GatewayOverloaded => {
+                "Gateway body processing capacity is temporarily exhausted."
+            }
             Self::PolicyDenied => "Request is denied by key policy.",
             Self::RateLimitExceeded { .. } => "Rate limit exceeded.",
             Self::TokenRateLimitExceeded { .. } => "Token rate limit exceeded.",
@@ -322,6 +329,7 @@ impl GatewayError {
                     | Self::TokenRateLimitExceeded {
                         retry_after_seconds,
                     } => *retry_after_seconds,
+                    Self::GatewayOverloaded => Some(1),
                     _ => None,
                 },
             },
