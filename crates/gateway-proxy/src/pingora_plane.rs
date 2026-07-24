@@ -1,13 +1,18 @@
 use crate::body_rewrite::{
     prepare_rewritten_request_headers, prepare_rewritten_response_headers, BoundedBodyRewriter,
 };
+use crate::{
+    BodyAdmissionController, BodyAdmissionLease, DEFAULT_MAX_BUFFERED_REQUESTS,
+    DEFAULT_MAX_INFLIGHT_BUFFER_BYTES,
+};
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::Utc;
 use gateway_core::{
+    analyze_generation_request,
     auth::{Authenticator, VirtualKeyLookup},
     estimate_generation_tokens, evaluate_policy, evaluate_policy_limits,
-    execution_events_from_records, extract_client_guardrails, extract_estimated_cost_usd,
+    execution_events_from_records, extract_client_guardrails_value, extract_estimated_cost_usd,
     extract_generation_features, extract_model, extract_usage_tokens,
     guardrail_executor_for_definitions, is_retry_safe_status, matching_service_pricing_rule,
     redact_pii_text, resolve_endpoint_pricing_rule, resolve_guardrail_plan,
@@ -52,6 +57,7 @@ pub struct PingoraLiteLlmConfig {
     pub entra_auth: Option<EntraAuthConfig>,
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
     pub relayna_key_header: String,
+    body_admission: BodyAdmissionController,
     auth_runtime: Option<SharedGatewayAuthRuntime>,
 }
 
@@ -79,6 +85,10 @@ impl PingoraLiteLlmConfig {
             entra_auth: None,
             apigee_trusted_header: None,
             relayna_key_header: ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned(),
+            body_admission: BodyAdmissionController::new(
+                DEFAULT_MAX_BUFFERED_REQUESTS,
+                DEFAULT_MAX_INFLIGHT_BUFFER_BYTES,
+            )?,
             auth_runtime: None,
         })
     }
@@ -122,6 +132,16 @@ impl PingoraLiteLlmConfig {
     pub fn with_auth_runtime(mut self, auth_runtime: SharedGatewayAuthRuntime) -> Self {
         self.auth_runtime = Some(auth_runtime);
         self
+    }
+
+    pub fn with_body_admission_limits(
+        mut self,
+        max_buffered_requests: usize,
+        max_inflight_buffer_bytes: usize,
+    ) -> GatewayResult<Self> {
+        self.body_admission =
+            BodyAdmissionController::new(max_buffered_requests, max_inflight_buffer_bytes)?;
+        Ok(self)
     }
 
     fn relayna_key_header(&self) -> &str {
@@ -268,6 +288,8 @@ pub struct PingoraContext {
     policy: Option<KeyPolicy>,
     request_rewriter: Option<BoundedBodyRewriter>,
     response_rewriter: Option<BoundedBodyRewriter>,
+    request_body_lease: Option<BodyAdmissionLease>,
+    response_body_lease: Option<BodyAdmissionLease>,
     is_streaming: bool,
     first_chunk_recorded: bool,
     budget_reserved: bool,
@@ -339,6 +361,8 @@ where
             policy: None,
             request_rewriter: None,
             response_rewriter: None,
+            request_body_lease: None,
+            response_body_lease: None,
             is_streaming: false,
             first_chunk_recorded: false,
             budget_reserved: false,
@@ -721,6 +745,10 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        if ctx.guardrail_error.is_some() {
+            *body = Some(Bytes::new());
+            return Ok(());
+        }
         if let Some(chunk) = body.as_ref() {
             ctx.body_bytes_seen = ctx.body_bytes_seen.saturating_add(chunk.len());
             if ctx.body_prefix.len() < 65_536 {
@@ -730,18 +758,74 @@ where
             }
             if let Some(matched) = &ctx.route_match {
                 if ctx.body_bytes_seen > matched.max_body_bytes {
-                    respond_error(session, GatewayError::RequestBodyTooLarge, &ctx.request_id)
-                        .await?;
+                    let error = GatewayError::RequestBodyTooLarge;
+                    ctx.guardrail_error = Some(error.clone());
+                    *body = Some(Bytes::new());
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(());
+                }
+            }
+            if let Some(policy) = &ctx.policy {
+                if let Err(error) = evaluate_policy_limits(
+                    policy,
+                    Utc::now(),
+                    i64::try_from(ctx.body_bytes_seen).ok(),
+                    None,
+                    None,
+                    None,
+                    None,
+                ) {
+                    ctx.guardrail_error = Some(error.clone());
+                    *body = Some(Bytes::new());
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(());
                 }
             }
         }
-        if ctx.litellm_passthrough {
+        if ctx.litellm_passthrough || managed_service_request_can_stream(ctx) {
             return Ok(());
         }
         let Some(rewriter) = ctx.request_rewriter.as_mut() else {
             return Ok(());
         };
 
+        let chunk_len = body.as_ref().map_or(0, Bytes::len);
+        if chunk_len > 0 {
+            if ctx.request_body_lease.is_none() {
+                match self.config.body_admission.try_acquire() {
+                    Ok(lease) => ctx.request_body_lease = Some(lease),
+                    Err(error) => {
+                        ctx.guardrail_error = Some(error.clone());
+                        *body = Some(Bytes::new());
+                        respond_error(session, error, &ctx.request_id).await?;
+                        return Ok(());
+                    }
+                }
+            }
+            if let Some(lease) = ctx.request_body_lease.as_mut() {
+                if let Err(error) = lease.try_reserve(chunk_len) {
+                    ctx.request_body_lease.take();
+                    drop(rewriter.take_buffer());
+                    ctx.guardrail_error = Some(error.clone());
+                    *body = Some(Bytes::new());
+                    respond_error(session, error, &ctx.request_id).await?;
+                    return Ok(());
+                }
+            }
+        }
+        if let Err(error) = rewriter.append_chunk(body.as_ref()) {
+            ctx.request_body_lease.take();
+            drop(rewriter.take_buffer());
+            ctx.guardrail_error = Some(error);
+            *body = Some(Bytes::new());
+            return Ok(());
+        }
+        *body = Some(Bytes::new());
+        if !end_of_stream {
+            return Ok(());
+        }
+
+        let raw_body = rewriter.take_buffer();
         let key = ctx.key.clone();
         let route = ctx.route;
         let route_match = ctx.route_match.clone();
@@ -749,110 +833,137 @@ where
         let definitions = ctx.guardrail_definitions.clone();
         let mut policy = ctx.guardrail_policy.clone();
         let mut pricing_selector = None;
-        if end_of_stream {
-            let raw_body = match rewriter.preview_with_chunk(body.as_ref()) {
-                Ok(raw_body) => raw_body,
+        if !ctx.service_pricing_rules.is_empty() {
+            let max_body_bytes = ctx
+                .route_match
+                .as_ref()
+                .map(|matched| matched.max_body_bytes)
+                .unwrap_or(raw_body.len());
+            pricing_selector = service_pricing_selector(
+                &raw_body,
+                ctx.request_content_type.as_deref(),
+                max_body_bytes,
+            )
+            .await;
+        }
+        let analysis = analyze_generation_request(&raw_body);
+        let features = analysis
+            .as_ref()
+            .map(|analysis| analysis.features.clone())
+            .unwrap_or_default();
+        if let Some(key) = key.as_ref() {
+            match self
+                .store
+                .effective_policy_for_context(
+                    key.key_id,
+                    key.project_id,
+                    None,
+                    route,
+                    features.model.clone(),
+                )
+                .await
+            {
+                Ok(effective) => {
+                    policy = effective.guardrail_policy;
+                    ctx.guardrail_policy = policy.clone();
+                }
                 Err(error) => {
                     ctx.guardrail_error = Some(error);
-                    *body = Some(Bytes::new());
                     return Ok(());
-                }
-            };
-            if !ctx.service_pricing_rules.is_empty() {
-                let max_body_bytes = ctx
-                    .route_match
-                    .as_ref()
-                    .map(|matched| matched.max_body_bytes)
-                    .unwrap_or(raw_body.len());
-                pricing_selector = service_pricing_selector(
-                    &raw_body,
-                    ctx.request_content_type.as_deref(),
-                    max_body_bytes,
-                )
-                .await;
-            }
-            let features = extract_generation_features(&raw_body);
-            if let Some(key) = key.as_ref() {
-                match self
-                    .store
-                    .effective_policy_for_context(
-                        key.key_id,
-                        key.project_id,
-                        None,
-                        route,
-                        features.model.clone(),
-                    )
-                    .await
-                {
-                    Ok(effective) => {
-                        policy = effective.guardrail_policy;
-                        ctx.guardrail_policy = policy.clone();
-                    }
-                    Err(error) => {
-                        ctx.guardrail_error = Some(error);
-                        *body = Some(Bytes::new());
-                        return Ok(());
-                    }
                 }
             }
         }
+        let client_requested = match extract_client_guardrails_value(
+            analysis
+                .as_ref()
+                .and_then(|analysis| analysis.client_guardrails.as_ref()),
+        ) {
+            Ok(client_requested) => client_requested,
+            Err(error) => {
+                ctx.guardrail_error = Some(error);
+                return Ok(());
+            }
+        };
         let mut guardrail_context = ctx.guardrail_context.clone();
-        let mut pre_plan = None;
-        let mut post_plan = None;
-        let mut during_plan = None;
         let mut guardrail_events = Vec::new();
-        let mut guardrail_error = None;
-
-        let result = rewriter.filter_chunk(body, end_of_stream, |raw_body| {
-            if !end_of_stream {
-                return Ok(raw_body.to_vec());
+        let plan = match resolve_guardrail_plan(GuardrailPlanRequest {
+            mode: GuardrailMode::PreCall,
+            definitions: definitions.clone(),
+            policies: GuardrailPolicySet {
+                key_policy: policy.clone(),
+                ..GuardrailPolicySet::default()
+            },
+            client_requested_guardrails: client_requested.clone(),
+        }) {
+            Ok(plan) => plan,
+            Err(error) => {
+                ctx.guardrail_error = Some(error);
+                return Ok(());
             }
-            let mut request_json = match serde_json::from_slice::<serde_json::Value>(raw_body) {
-                Ok(value) => value,
-                Err(_) => return Ok(raw_body.to_vec()),
-            };
-            let client_requested = extract_client_guardrails(&request_json)?;
-            let features = extract_generation_features(raw_body);
-            let plan = resolve_guardrail_plan(GuardrailPlanRequest {
-                mode: GuardrailMode::PreCall,
+        };
+        let post_call_plan = match resolve_guardrail_plan(GuardrailPlanRequest {
+            mode: GuardrailMode::PostCall,
+            definitions: definitions.clone(),
+            policies: GuardrailPolicySet {
+                key_policy: policy.clone(),
+                ..GuardrailPolicySet::default()
+            },
+            client_requested_guardrails: client_requested.clone(),
+        }) {
+            Ok(plan) => plan,
+            Err(error) => {
+                ctx.guardrail_error = Some(error);
+                return Ok(());
+            }
+        };
+        let response_plan = if features.stream {
+            match resolve_guardrail_plan(GuardrailPlanRequest {
+                mode: GuardrailMode::DuringCall,
                 definitions: definitions.clone(),
                 policies: GuardrailPolicySet {
-                    key_policy: policy.clone(),
+                    key_policy: policy,
                     ..GuardrailPolicySet::default()
                 },
-                client_requested_guardrails: client_requested.clone(),
-            })?;
-            let post_call_plan = resolve_guardrail_plan(GuardrailPlanRequest {
-                mode: GuardrailMode::PostCall,
-                definitions: definitions.clone(),
-                policies: GuardrailPolicySet {
-                    key_policy: policy.clone(),
-                    ..GuardrailPolicySet::default()
-                },
-                client_requested_guardrails: client_requested.clone(),
-            })?;
-            let response_plan = if features.stream {
-                let during_call_plan = resolve_guardrail_plan(GuardrailPlanRequest {
-                    mode: GuardrailMode::DuringCall,
-                    definitions: definitions.clone(),
-                    policies: GuardrailPolicySet {
-                        key_policy: policy,
-                        ..GuardrailPolicySet::default()
-                    },
-                    client_requested_guardrails: client_requested,
-                })?;
-                if !guardrail_plan_names_match(&post_call_plan, &during_call_plan) {
-                    guardrail_error = Some(GatewayError::GuardrailUnavailable);
-                    return Ok(Vec::new());
+                client_requested_guardrails: client_requested,
+            }) {
+                Ok(during_call_plan) => {
+                    if !guardrail_plan_names_match(&post_call_plan, &during_call_plan) {
+                        ctx.guardrail_error = Some(GatewayError::GuardrailUnavailable);
+                        return Ok(());
+                    }
+                    during_call_plan
                 }
-                during_call_plan
-            } else {
-                post_call_plan
-            };
-            if plan.entries.is_empty() && response_plan.entries.is_empty() {
-                return Ok(raw_body.to_vec());
+                Err(error) => {
+                    ctx.guardrail_error = Some(error);
+                    return Ok(());
+                }
             }
-            strip_client_guardrails(&mut request_json);
+        } else {
+            post_call_plan
+        };
+
+        if plan.entries.is_empty() && response_plan.entries.is_empty() {
+            *body = Some(Bytes::from(raw_body));
+            if let Some(body) = body.as_ref() {
+                ctx.rewritten_request_len = Some(body.len());
+                ctx.body_prefix.clear();
+                ctx.body_prefix
+                    .extend_from_slice(&body[..body.len().min(65_536)]);
+            }
+            resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
+            return Ok(());
+        }
+
+        let mut request_json = match serde_json::from_slice::<serde_json::Value>(&raw_body) {
+            Ok(value) => value,
+            Err(_) => {
+                *body = Some(Bytes::from(raw_body));
+                resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
+                return Ok(());
+            }
+        };
+        strip_client_guardrails(&mut request_json);
+        let result = (|| {
             let key = key.as_ref().ok_or(GatewayError::MissingAuthorization)?;
             let mut context = guardrail_context
                 .take()
@@ -862,7 +973,7 @@ where
                     project_id: key.project_id,
                     route,
                     provider: route_match.as_ref().map(|matched| matched.provider),
-                    model: extract_model(raw_body),
+                    model: features.model.clone(),
                     ..GuardrailContext::default()
                 });
             let executor = guardrail_executor_for_definitions(&definitions);
@@ -879,39 +990,34 @@ where
                 &execution.records,
                 Utc::now(),
             ));
-            pre_plan = Some(plan);
-            if features.stream {
-                during_plan = Some(response_plan);
-            } else {
-                post_plan = Some(response_plan);
-            }
             guardrail_context = Some(context);
             serde_json::to_vec(&execution.request.unwrap_or(serde_json::Value::Null))
                 .map_err(|_| GatewayError::InvalidGuardrailRequest)
-        });
+        })();
 
-        if let Err(error) = result {
-            ctx.guardrail_error = Some(error);
-            *body = Some(Bytes::new());
-            return Ok(());
-        }
-        if end_of_stream {
-            if let Some(error) = guardrail_error {
+        match result {
+            Ok(rewritten) => *body = Some(Bytes::from(rewritten)),
+            Err(error) => {
                 ctx.guardrail_error = Some(error);
+                *body = Some(Bytes::new());
+                return Ok(());
             }
-            ctx.pre_guardrail_plan = pre_plan;
-            ctx.post_guardrail_plan = post_plan;
-            ctx.during_guardrail_plan = during_plan;
-            ctx.guardrail_context = guardrail_context;
-            ctx.guardrail_events.extend(guardrail_events);
-            if let Some(body) = body.as_ref() {
-                ctx.rewritten_request_len = Some(body.len());
-                ctx.body_prefix.clear();
-                ctx.body_prefix
-                    .extend_from_slice(&body[..body.len().min(65_536)]);
-            }
-            resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
         }
+        ctx.pre_guardrail_plan = Some(plan);
+        if features.stream {
+            ctx.during_guardrail_plan = Some(response_plan);
+        } else {
+            ctx.post_guardrail_plan = Some(response_plan);
+        }
+        ctx.guardrail_context = guardrail_context;
+        ctx.guardrail_events.extend(guardrail_events);
+        if let Some(body) = body.as_ref() {
+            ctx.rewritten_request_len = Some(body.len());
+            ctx.body_prefix.clear();
+            ctx.body_prefix
+                .extend_from_slice(&body[..body.len().min(65_536)]);
+        }
+        resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
         Ok(())
     }
 
@@ -978,9 +1084,9 @@ where
             features.service_name = matched.service_name.clone();
         }
         ctx.is_streaming = features.stream;
-        let policy = match self
+        let effective_policy = match self
             .store
-            .policy_for_context(
+            .effective_policy_for_context(
                 key.key_id,
                 key.project_id,
                 None,
@@ -997,6 +1103,8 @@ where
                 return Ok(false);
             }
         };
+        let policy = effective_policy.policy;
+        ctx.guardrail_policy = effective_policy.guardrail_policy;
 
         if let Err(error) = evaluate_policy(&policy, route, matched.provider, &features) {
             gateway_telemetry::record_policy_denial(route.as_str(), error.code());
@@ -1225,6 +1333,10 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        // Receipt of upstream response headers proves the complete request body
+        // has left the request-side buffer, so its process admission can be
+        // released before any post-call response buffering begins.
+        ctx.request_body_lease.take();
         let status_code = upstream_response.status.as_u16();
         if is_retry_safe_status(status_code) && self.activate_provider_fallback(ctx) {
             let mut error = PingoraError::new_up(ErrorType::HTTPStatus(status_code));
@@ -1286,6 +1398,36 @@ where
             .is_some_and(|plan| !plan.entries.is_empty())
         {
             apply_streaming_guardrails(body, end_of_stream, ctx);
+        }
+        if ctx
+            .post_guardrail_plan
+            .as_ref()
+            .is_some_and(|plan| !plan.entries.is_empty())
+        {
+            let chunk_len = body.as_ref().map_or(0, Bytes::len);
+            if chunk_len > 0 {
+                if ctx.response_body_lease.is_none() {
+                    match self.config.body_admission.try_acquire() {
+                        Ok(lease) => ctx.response_body_lease = Some(lease),
+                        Err(error) => {
+                            ctx.guardrail_error = Some(error);
+                            *body = Some(Bytes::new());
+                            return Err(PingoraError::new(ErrorType::InternalError));
+                        }
+                    }
+                }
+                if let Some(lease) = ctx.response_body_lease.as_mut() {
+                    if let Err(error) = lease.try_reserve(chunk_len) {
+                        ctx.response_body_lease.take();
+                        if let Some(rewriter) = ctx.response_rewriter.as_mut() {
+                            drop(rewriter.take_buffer());
+                        }
+                        ctx.guardrail_error = Some(error);
+                        *body = Some(Bytes::new());
+                        return Err(PingoraError::new(ErrorType::InternalError));
+                    }
+                }
+            }
         }
         if let Err(error) = apply_post_call_guardrails(body, end_of_stream, ctx) {
             ctx.guardrail_error = Some(error);
@@ -2214,6 +2356,39 @@ fn provider_for_usage(ctx: &PingoraContext) -> Provider {
         .unwrap_or(Provider::LiteLlm)
 }
 
+fn managed_service_request_can_stream(ctx: &PingoraContext) -> bool {
+    let is_service = ctx
+        .route_match
+        .as_ref()
+        .and_then(|matched| matched.service_name.as_ref())
+        .is_some();
+    let is_non_json = ctx
+        .request_content_type
+        .as_deref()
+        .is_some_and(|content_type| !is_json_content_type(content_type));
+    if !is_service || !is_non_json || ctx.policy.is_none() || !ctx.service_pricing_rules.is_empty()
+    {
+        return false;
+    }
+    resolve_guardrail_plan(GuardrailPlanRequest {
+        mode: GuardrailMode::PreCall,
+        definitions: ctx.guardrail_definitions.clone(),
+        policies: GuardrailPolicySet {
+            key_policy: ctx.guardrail_policy.clone(),
+            ..GuardrailPolicySet::default()
+        },
+        client_requested_guardrails: Vec::new(),
+    })
+    .is_ok_and(|plan| plan.entries.is_empty())
+}
+
+fn is_json_content_type(content_type: &str) -> bool {
+    content_type.split(';').next().is_some_and(|media_type| {
+        let media_type = media_type.trim().to_ascii_lowercase();
+        media_type == "application/json" || media_type.ends_with("+json")
+    })
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct ResolvedUsageCost {
     estimated_cost_usd: Option<f64>,
@@ -2617,6 +2792,8 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         policy: None,
         request_rewriter: None,
         response_rewriter: None,
+        request_body_lease: None,
+        response_body_lease: None,
         is_streaming: false,
         first_chunk_recorded: false,
         budget_reserved: false,
@@ -3451,6 +3628,57 @@ mod tests {
         assert_eq!(matched.timeout_ms, 45_000);
         assert_eq!(matched.max_body_bytes, 64 * 1024);
         assert_eq!(matched.max_response_body_bytes, usize::MAX);
+    }
+
+    #[test]
+    fn managed_service_streams_only_when_body_work_is_not_required() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.route_match = Some(RouteMatch::service(Route::ServiceWildcard, "documents"));
+        ctx.policy = Some(KeyPolicy::default());
+        ctx.request_content_type = Some("multipart/form-data; boundary=documents".to_owned());
+        ctx.guardrail_definitions
+            .push(gateway_core::pii_redact_definition());
+
+        assert!(managed_service_request_can_stream(&ctx));
+
+        ctx.service_pricing_rules.push(ServicePricingRule {
+            name: Some("priced".to_owned()),
+            json_pointer: "/tier".to_owned(),
+            equals: "premium".to_owned(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(1.0),
+        });
+        assert!(!managed_service_request_can_stream(&ctx));
+
+        ctx.service_pricing_rules.clear();
+        ctx.guardrail_policy.mandatory_guardrails =
+            vec![gateway_core::PII_REDACT_GUARDRAIL.to_owned()];
+        assert!(!managed_service_request_can_stream(&ctx));
+
+        ctx.guardrail_policy.mandatory_guardrails.clear();
+        ctx.request_content_type = Some("application/json".to_owned());
+        assert!(!managed_service_request_can_stream(&ctx));
+
+        ctx.request_content_type = Some("application/octet-stream".to_owned());
+        ctx.policy = None;
+        assert!(!managed_service_request_can_stream(&ctx));
+    }
+
+    #[test]
+    fn proxy_config_rejects_zero_body_admission_limits() {
+        let config = PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+            .expect("base config");
+        assert_eq!(
+            config
+                .clone()
+                .with_body_admission_limits(0, 1024)
+                .unwrap_err(),
+            GatewayError::InvalidConfiguration
+        );
+        assert_eq!(
+            config.with_body_admission_limits(1, 0).unwrap_err(),
+            GatewayError::InvalidConfiguration
+        );
     }
 
     #[test]

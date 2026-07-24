@@ -2,6 +2,7 @@ use gateway_core::{
     validate_relayna_key_header_name, ApigeeTrustedHeaderConfig, EntraAuthConfig, GatewayAuthEnv,
     GatewayError, GatewayResult, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
+use gateway_proxy::{DEFAULT_MAX_BUFFERED_REQUESTS, DEFAULT_MAX_INFLIGHT_BUFFER_BYTES};
 use std::{env, net::SocketAddr};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +24,8 @@ pub struct Config {
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
     pub gateway_bind_addr: SocketAddr,
     pub gateway_control_bind_addr: SocketAddr,
+    pub gateway_max_buffered_requests: usize,
+    pub gateway_max_inflight_buffer_bytes: usize,
     pub log_level: String,
 }
 
@@ -86,6 +89,14 @@ impl Config {
         let gateway_control_bind_addr = required("GATEWAY_CONTROL_BIND_ADDR")?
             .parse()
             .map_err(|_| GatewayError::InvalidConfiguration)?;
+        let gateway_max_buffered_requests = optional_positive_usize(
+            "GATEWAY_MAX_BUFFERED_REQUESTS",
+            DEFAULT_MAX_BUFFERED_REQUESTS,
+        )?;
+        let gateway_max_inflight_buffer_bytes = optional_positive_usize(
+            "GATEWAY_MAX_INFLIGHT_BUFFER_BYTES",
+            DEFAULT_MAX_INFLIGHT_BUFFER_BYTES,
+        )?;
         let log_level = required("LOG_LEVEL")?;
 
         Ok(Self {
@@ -106,6 +117,8 @@ impl Config {
             apigee_trusted_header,
             gateway_bind_addr,
             gateway_control_bind_addr,
+            gateway_max_buffered_requests,
+            gateway_max_inflight_buffer_bytes,
             log_level,
         })
     }
@@ -171,6 +184,17 @@ fn optional_u64(name: &str) -> Option<u64> {
 
 fn optional_i64(name: &str) -> Option<i64> {
     optional(name).and_then(|value| value.parse::<i64>().ok())
+}
+
+fn optional_positive_usize(name: &str, default: usize) -> GatewayResult<usize> {
+    match optional(name) {
+        Some(value) => value
+            .parse::<usize>()
+            .ok()
+            .filter(|value| *value > 0)
+            .ok_or(GatewayError::InvalidConfiguration),
+        None => Ok(default),
+    }
 }
 
 #[cfg(test)]

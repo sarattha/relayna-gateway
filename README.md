@@ -56,6 +56,9 @@ export RELAYNA_STUDIO_BASE_URL="http://127.0.0.1:8000"
 # export GUARDRAIL_MAPPING_ENCRYPTION_KEY="<base64-32-byte-key>"
 export GATEWAY_BIND_ADDR="127.0.0.1:8080"
 export GATEWAY_CONTROL_BIND_ADDR="127.0.0.1:8081"
+# Optional process-wide managed-body admission limits:
+# export GATEWAY_MAX_BUFFERED_REQUESTS="8"
+# export GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="268435456"
 export LOG_LEVEL="gateway_api=info,gateway_proxy=info"
 # Optional Entra front-door auth. Disabled by default.
 # export ENTRA_AUTH_ENABLED="true"

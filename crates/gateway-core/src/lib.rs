@@ -39,16 +39,16 @@ pub use entra::{
 pub use errors::{GatewayError, GatewayResult};
 pub use guardrails::{
     builtin_guardrail_executor, execution_events_from_records, extract_client_guardrails,
-    guardrail_executor_for_definitions, pii_redact_definition, redact_pii_text,
-    resolve_guardrail_plan, strip_client_guardrails, AdminGuardrailDefinitionResponse,
-    GuardrailAction, GuardrailAdminCreateRequest, GuardrailAdminPatchRequest, GuardrailContext,
-    GuardrailDefinition, GuardrailDefinitionResponse, GuardrailEventQuery, GuardrailExecution,
-    GuardrailExecutionEvent, GuardrailExecutionRecord, GuardrailExecutionSummary,
-    GuardrailFailurePolicy, GuardrailHandler, GuardrailInput, GuardrailMode,
-    GuardrailObservabilityStore, GuardrailPlan, GuardrailPlanEntry, GuardrailPlanRequest,
-    GuardrailPolicy, GuardrailPolicyPatch, GuardrailPolicySet, GuardrailProviderKind,
-    GuardrailResult, GuardrailStore, GuardrailTestRequest, GuardrailTestResponse,
-    InMemoryGuardrailExecutor, PII_REDACT_GUARDRAIL,
+    extract_client_guardrails_value, guardrail_executor_for_definitions, pii_redact_definition,
+    redact_pii_text, resolve_guardrail_plan, strip_client_guardrails,
+    AdminGuardrailDefinitionResponse, GuardrailAction, GuardrailAdminCreateRequest,
+    GuardrailAdminPatchRequest, GuardrailContext, GuardrailDefinition, GuardrailDefinitionResponse,
+    GuardrailEventQuery, GuardrailExecution, GuardrailExecutionEvent, GuardrailExecutionRecord,
+    GuardrailExecutionSummary, GuardrailFailurePolicy, GuardrailHandler, GuardrailInput,
+    GuardrailMode, GuardrailObservabilityStore, GuardrailPlan, GuardrailPlanEntry,
+    GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicyPatch, GuardrailPolicySet,
+    GuardrailProviderKind, GuardrailResult, GuardrailStore, GuardrailTestRequest,
+    GuardrailTestResponse, InMemoryGuardrailExecutor, PII_REDACT_GUARDRAIL,
 };
 pub use observability::{
     ProviderHealth, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageDashboard,
@@ -66,8 +66,9 @@ pub use operators::{
     SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
 pub use policies::{
-    evaluate_policy, evaluate_policy_limits, extract_generation_features, resolve_effective_policy,
-    EffectivePolicy, GenerationFeatures, KeyPolicy, PolicyLayer, PolicyLayerKind, PolicyLayerTrace,
+    analyze_generation_request, evaluate_policy, evaluate_policy_limits,
+    extract_generation_features, resolve_effective_policy, EffectivePolicy, GenerationFeatures,
+    GenerationRequestAnalysis, KeyPolicy, PolicyLayer, PolicyLayerKind, PolicyLayerTrace,
     PolicyLookup,
 };
 pub use projects::{

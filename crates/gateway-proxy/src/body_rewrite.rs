@@ -26,6 +26,21 @@ impl BoundedBodyRewriter {
         self.buffer.len()
     }
 
+    pub fn append_chunk(&mut self, body: Option<&Bytes>) -> GatewayResult<()> {
+        if let Some(chunk) = body {
+            let next_len = self.buffer.len().saturating_add(chunk.len());
+            if next_len > self.max_bytes {
+                return Err(GatewayError::RequestBodyTooLarge);
+            }
+            self.buffer.extend_from_slice(chunk);
+        }
+        Ok(())
+    }
+
+    pub fn take_buffer(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.buffer)
+    }
+
     pub fn preview_with_chunk(&self, body: Option<&Bytes>) -> GatewayResult<Vec<u8>> {
         let chunk_len = body.map(Bytes::len).unwrap_or(0);
         let next_len = self.buffer.len().saturating_add(chunk_len);
@@ -49,13 +64,7 @@ impl BoundedBodyRewriter {
     where
         F: FnOnce(&[u8]) -> GatewayResult<Vec<u8>>,
     {
-        if let Some(chunk) = body.as_ref() {
-            let next_len = self.buffer.len().saturating_add(chunk.len());
-            if next_len > self.max_bytes {
-                return Err(GatewayError::RequestBodyTooLarge);
-            }
-            self.buffer.extend_from_slice(chunk);
-        }
+        self.append_chunk(body.as_ref())?;
 
         if end_of_stream {
             let rewritten = rewrite(&self.buffer)?;
@@ -135,6 +144,19 @@ mod tests {
 
         assert_eq!(preview, br#"{"model":"gpt-4.1"}"#);
         assert_eq!(rewriter.buffered_len(), 8);
+    }
+
+    #[test]
+    fn takes_the_owned_buffer_without_retaining_body_capacity() {
+        let mut rewriter = BoundedBodyRewriter::new(32);
+        rewriter
+            .append_chunk(Some(&Bytes::from_static(b"unchanged")))
+            .expect("append");
+
+        let body = rewriter.take_buffer();
+
+        assert_eq!(body, b"unchanged");
+        assert_eq!(rewriter.buffered_len(), 0);
     }
 
     #[test]

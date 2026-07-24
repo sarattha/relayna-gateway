@@ -23,6 +23,16 @@ Optional variables:
 | `RELAYNA_WORKER_TOKEN` | Optional shared token for Relayna worker integration. |
 | `RELAYNA_STUDIO_BASE_URL` | Optional Relayna Studio backend base URL for Admin portal service import. |
 | `RELAYNA_STUDIO_TOKEN` | Optional bearer token used when Gateway fetches the Studio service catalog. |
+| `GATEWAY_MAX_BUFFERED_REQUESTS` | Maximum concurrent managed requests or post-call responses that may retain complete bodies in memory. Defaults to `8`. |
+| `GATEWAY_MAX_INFLIGHT_BUFFER_BYTES` | Maximum aggregate serialized body bytes retained by buffered proxy requests and responses. Defaults to `268435456` (256 MiB). |
+
+Body admission limits are process-wide and complement per-route request limits.
+When a valid request cannot acquire process body capacity, Gateway returns
+`503 gateway_overloaded` with a short retry hint. Route-size violations remain
+`413 request_body_too_large`. Fixed or unpriced registered-service requests
+with no active body guardrails stream without consuming the buffered-body
+budget. Size the byte limit well below the pod memory limit because JSON object
+trees and guardrails require additional working memory.
 
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are fallback settings.
 Operators can set, replace, test, or clear the Studio connection in Admin portal
@@ -190,8 +200,9 @@ scrape_configs:
 
 Grafana panels should prefer request rate, p95 request/upstream duration,
 first-token latency, denials by kind, guardrail block count, fallback rate,
-active streams, and circuit state. Use `route` and `provider` filters only from
-the bounded label sets emitted by the gateway.
+active streams, buffered request/byte gauges, body-admission rejections, and
+circuit state. Use `route` and `provider` filters only from the bounded label
+sets emitted by the gateway.
 
 ## Tracing
 
