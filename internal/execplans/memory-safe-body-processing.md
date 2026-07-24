@@ -39,14 +39,17 @@ through bounded Prometheus metrics and overload rejections.
 - [x] (2026-07-24 16:49Z) Validated the process regression against the live
   local PostgreSQL and Redis environment and visibly confirmed those
   dependencies through Computer Use in Docker Desktop.
-- [ ] Commit, push, open the pull request, monitor the first automated/human
-  review, address actionable feedback, reply, and resolve handled threads.
+- [x] (2026-07-24 17:12Z) Committed and pushed the implementation, opened PR
+  #97, monitored its first Codex review, fixed its actionable P2 finding,
+  replied with verification evidence, and resolved the handled thread.
 - [x] (2026-07-24 17:04Z) Received the first Codex review on PR #97 and
   reproduced its response-side overload-contract concern.
 - [x] (2026-07-24 17:11Z) Verified the response-admission review fix with
   focused proxy checks, the live dependency-backed process regression, and the
   complete mandatory verification stack.
-- [ ] Push, reply to, and resolve the response-admission review fix.
+- [x] (2026-07-24 17:12Z) Pushed commit `33e0ec9`, replied to the review with
+  the fix and test evidence, and resolved thread
+  `PRRT_kwDOSX_7Cc6TndT2`.
 
 ## Surprises & Discoveries
 
@@ -135,8 +138,9 @@ the complete body.
 
 The dependency-backed process regression proved both sides of the body-mode
 decision under an intentionally tiny 512-byte aggregate budget. Full
-verification, security scans, and measured coverage passed. The remaining work
-is delivery: commit, push, PR creation, and disposition of the first review.
+verification, security scans, and measured coverage passed. PR #97 is open;
+its first automated review produced one P2 response-contract finding, which was
+fixed, verified, replied to, and resolved.
 
 ## Context and Orientation
 
@@ -266,6 +270,17 @@ Focused validation completed:
 
 Record full verification output, PR URL, check state, and review-thread
 dispositions here as work proceeds.
+
+Delivery artifacts:
+
+- Pull request: `https://github.com/sarattha/relayna-gateway/pull/97`.
+- Initial CI: Rust, docs, security, admin portal, and repository metadata
+  checks passed.
+- First review: Codex review of `fa0ddd2`, with one actionable P2 thread.
+- Review fix: `33e0ec9`; response admission moved before downstream header
+  commitment, with a live process regression for the stable overload envelope.
+- Thread disposition: replied with implementation and verification evidence,
+  then resolved `PRRT_kwDOSX_7Cc6TndT2`.
 
 ## Interfaces and Dependencies
 
