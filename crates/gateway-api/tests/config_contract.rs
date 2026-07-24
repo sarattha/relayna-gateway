@@ -135,6 +135,7 @@ fn defaults_and_invalid_optional_values_are_handled_deterministically() {
         config.gateway_max_inflight_buffer_bytes,
         gateway_proxy::DEFAULT_MAX_INFLIGHT_BUFFER_BYTES
     );
+    assert_eq!(config.gateway_max_inflight_buffer_bytes, 536_870_912);
 
     std::env::set_var("GATEWAY_MAX_BUFFERED_REQUESTS", "0");
     assert!(Config::from_env().is_err());

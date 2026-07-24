@@ -24,7 +24,7 @@ Optional variables:
 | `RELAYNA_STUDIO_BASE_URL` | Optional Relayna Studio backend base URL for Admin portal service import. |
 | `RELAYNA_STUDIO_TOKEN` | Optional bearer token used when Gateway fetches the Studio service catalog. |
 | `GATEWAY_MAX_BUFFERED_REQUESTS` | Maximum concurrent managed requests or post-call responses that may retain complete bodies in memory. Defaults to `8`. |
-| `GATEWAY_MAX_INFLIGHT_BUFFER_BYTES` | Maximum aggregate serialized body bytes retained by buffered proxy requests and responses. Defaults to `268435456` (256 MiB). |
+| `GATEWAY_MAX_INFLIGHT_BUFFER_BYTES` | Maximum aggregate serialized body bytes retained by buffered proxy requests and responses. Defaults to `536870912` (512 MiB). |
 
 Body admission limits are process-wide and complement per-route request limits.
 When a valid request cannot acquire process body capacity, Gateway returns

@@ -6,7 +6,7 @@ data:
   GATEWAY_BIND_ADDR: "0.0.0.0:8080"
   GATEWAY_CONTROL_BIND_ADDR: "0.0.0.0:8081"
   GATEWAY_MAX_BUFFERED_REQUESTS: "8"
-  GATEWAY_MAX_INFLIGHT_BUFFER_BYTES: "268435456"
+  GATEWAY_MAX_INFLIGHT_BUFFER_BYTES: "536870912"
   LOG_LEVEL: "gateway_api=info,gateway_proxy=info"
   # Entra and Apigee modes are opt-in. Keep disabled unless this gateway is
   # behind Microsoft Entra ID or an Apigee front door.

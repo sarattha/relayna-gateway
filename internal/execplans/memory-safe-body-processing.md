@@ -50,6 +50,9 @@ through bounded Prometheus metrics and overload rejections.
 - [x] (2026-07-24 17:12Z) Pushed commit `33e0ec9`, replied to the review with
   the fix and test evidence, and resolved thread
   `PRRT_kwDOSX_7Cc6TndT2`.
+- [x] (2026-07-24 17:26Z) Changed the branch-local aggregate buffered-byte
+  default from 256 MiB to the operator-requested 512 MiB across runtime,
+  deployment, tests, and docs.
 
 ## Surprises & Discoveries
 
@@ -124,6 +127,12 @@ through bounded Prometheus metrics and overload rejections.
   responses favors bounded memory and response-contract correctness over
   concurrency in that exceptional mode.
   Date/Author: 2026-07-24 / Codex.
+- Decision: replace the unreleased branch-local aggregate byte default directly
+  with 512 MiB.
+  Rationale: the configuration was introduced after v0.1.21 and has not shipped,
+  so a compatibility alias or migration would add no value. Explicit operator
+  overrides remain unchanged.
+  Date/Author: 2026-07-25 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -141,6 +150,10 @@ decision under an intentionally tiny 512-byte aggregate budget. Full
 verification, security scans, and measured coverage passed. PR #97 is open;
 its first automated review produced one P2 response-contract finding, which was
 fixed, verified, replied to, and resolved.
+
+The shipped configuration examples and runtime fallback now default to eight
+simultaneously buffered requests and 512 MiB of aggregate buffered body
+reservations. Explicit environment overrides keep their existing semantics.
 
 ## Context and Orientation
 
@@ -267,6 +280,11 @@ Focused validation completed:
   with 282 nextest tests, and the real-environment process regression proved a
   large guarded upstream response returns `503 gateway_overloaded` before
   downstream headers are committed.
+- After changing the branch-local aggregate byte default to 512 MiB,
+  `cargo test -p gateway-proxy body_admission --all-features` and
+  `cargo test -p gateway-api --test config_contract --all-features` passed,
+  followed by the complete verification stack with 283 nextest tests and clean
+  Trivy, Gitleaks, and Semgrep scans.
 
 Record full verification output, PR URL, check state, and review-thread
 dispositions here as work proceeds.

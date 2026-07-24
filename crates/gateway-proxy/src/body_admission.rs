@@ -5,7 +5,7 @@ use std::sync::{
 };
 
 pub const DEFAULT_MAX_BUFFERED_REQUESTS: usize = 8;
-pub const DEFAULT_MAX_INFLIGHT_BUFFER_BYTES: usize = 256 * 1024 * 1024;
+pub const DEFAULT_MAX_INFLIGHT_BUFFER_BYTES: usize = 512 * 1024 * 1024;
 
 #[derive(Debug)]
 struct BodyAdmissionState {
@@ -136,6 +136,14 @@ fn increment_bounded(counter: &AtomicUsize, amount: usize, maximum: usize) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn defaults_match_the_documented_memory_budget() {
+        let controller = BodyAdmissionController::default();
+
+        assert_eq!(controller.max_requests(), 8);
+        assert_eq!(controller.max_bytes(), 536_870_912);
+    }
 
     #[test]
     fn bounds_concurrent_buffered_requests_and_releases_on_drop() {

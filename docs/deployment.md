@@ -41,7 +41,7 @@ docker run --rm \
   -e GATEWAY_BIND_ADDR="0.0.0.0:8080" \
   -e GATEWAY_CONTROL_BIND_ADDR="0.0.0.0:8081" \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
-  -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="268435456" \
+  -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
   relayna-gateway:0.1.21
 ```
@@ -49,7 +49,7 @@ docker run --rm \
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
 
 The body-admission defaults reserve no memory at startup. They cap concurrent
-managed body buffering at eight requests and 256 MiB of aggregate serialized
+managed body buffering at eight requests and 512 MiB of aggregate serialized
 body data. Keep this byte budget below the container memory limit to leave
 headroom for JSON parsing, guardrails, connection pools, and normal runtime
 state.
