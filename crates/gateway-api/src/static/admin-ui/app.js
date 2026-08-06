@@ -17030,6 +17030,7 @@ async function usage() {
         <label>Service<select name="service"><option value="">All</option>${serviceOptions()}</select></label>
         <label>Provider<select name="provider"><option value="">All</option><option value="litellm">litellm</option><option value="openai-compatible">openai-compatible</option><option value="internal-service">internal-service</option></select></label>
         <label>Status<select name="status"><option value="">All</option><option value="success">Success</option><option value="failure">Failure</option></select></label>
+        <label>Status code<input name="status_code" type="number" min="100" max="599" placeholder="500"></label>
         <label>Time range<select name="time_preset">
           <option value="">All time</option>
           <option value="last_1h">Last 1h</option>
@@ -17048,6 +17049,8 @@ async function usage() {
         `, true)}
         ${formSection("Advanced filters", "Narrow by route, model, execution identifiers, cost, and presentation.", `
         <label>Route<input name="route" list="usage-route-options" placeholder="/v1/chat/completions"></label>
+        <label>Method<select name="method"><option value="">All</option><option value="GET">GET</option><option value="POST">POST</option><option value="PUT">PUT</option><option value="PATCH">PATCH</option><option value="DELETE">DELETE</option></select></label>
+        <label>Endpoint<input name="endpoint" list="usage-endpoint-options" placeholder="/jobs/{job_id}"></label>
         <label>Model<input name="model" list="usage-model-options" placeholder="exact model"></label>
         <label>Task<input name="task_id" placeholder="exact task ID"></label>
         <label>Run<input name="run_id" placeholder="exact run ID"></label>
@@ -17064,6 +17067,7 @@ async function usage() {
         <div class="help wide-field">Text filters are exact-match. Use suggestions where available.</div>
       </form>
       <datalist id="usage-route-options"></datalist>
+      <datalist id="usage-endpoint-options"></datalist>
       <datalist id="usage-model-options"></datalist>
     </section>
     <section class="panel">
@@ -17105,14 +17109,15 @@ async function loadUsage(event) {
   query.set("timeseries_offset", String(state.usagePagination.timeseriesOffset));
   query.set("service_timeseries_limit", String(pageSize));
   query.set("service_timeseries_offset", String(state.usagePagination.serviceTimeseriesOffset));
-  const [dashboard, events, routeOptions, modelOptions] = await Promise.all([
+  const [dashboard, events, routeOptions, endpointOptions, modelOptions] = await Promise.all([
     api(`/admin-ui/admin/usage/dashboard?${query}`),
     api(`/admin-ui/admin/usage/events?${query}`),
     api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=route`),
+    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=endpoint`),
     api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=model`)
   ]);
   const summary = dashboard.summary;
-  updateUsageDatalists(routeOptions.values, modelOptions.values);
+  updateUsageDatalists(routeOptions.values, endpointOptions.values, modelOptions.values);
   const results = document.querySelector("#usage-results");
   if (!results) return;
   results.innerHTML = `
@@ -17128,6 +17133,7 @@ async function loadUsage(event) {
     <h4>Projects</h4>${usageBreakdownTable(dashboard.breakdowns.projects, projectName)}
     <h4>Keys</h4>${usageBreakdownTable(dashboard.breakdowns.keys, keyName)}
     <h4>Services</h4>${usageBreakdownTable(dashboard.breakdowns.services)}
+    <h4>Endpoints</h4>${usageBreakdownTable(dashboard.breakdowns.endpoints || [])}
     <h4>Providers</h4>${usageBreakdownTable(dashboard.breakdowns.providers)}
     <h4>Models</h4>${usageBreakdownTable(dashboard.breakdowns.models)}
     <h4>Tasks</h4>${usageBreakdownTable(dashboard.breakdowns.tasks)}
@@ -17177,7 +17183,7 @@ function usagePaginationKey(section) {
 function usageQueryFromForm(formElement = document.querySelector("#usage-form")) {
   const form = formElement ? new FormData(formElement) : new FormData();
   const query = new URLSearchParams();
-  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status", "min_cost_usd", "breakdown_limit", "sort_by", "limit"]) {
+  for (const key of ["project_id", "key_id", "service", "route", "method", "endpoint", "provider", "model", "task_id", "run_id", "trace_id", "status", "status_code", "min_cost_usd", "breakdown_limit", "sort_by", "limit"]) {
     const value = form.get(key);
     if (value) query.set(key, value);
   }
@@ -17191,7 +17197,7 @@ function usageQueryFromForm(formElement = document.querySelector("#usage-form"))
 function usageFilterValuesQueryFromForm(formElement = document.querySelector("#usage-form")) {
   const form = formElement ? new FormData(formElement) : new FormData();
   const query = new URLSearchParams();
-  for (const key of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status"]) {
+  for (const key of ["project_id", "key_id", "service", "route", "method", "endpoint", "provider", "model", "task_id", "run_id", "trace_id", "status", "status_code"]) {
     const value = form.get(key);
     if (value) query.set(key, value);
   }
@@ -17200,11 +17206,13 @@ function usageFilterValuesQueryFromForm(formElement = document.querySelector("#u
   if (range.to) query.set("to", range.to);
   return query;
 }
-function updateUsageDatalists(routes2 = [], models = []) {
+function updateUsageDatalists(routes2 = [], endpoints = [], models = []) {
   const routeDefaults2 = ["/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/messages", "/summary", "/translation", "/ocr", "/embeddings", "/services/*", "/providers/openai/*"];
   const routeList = document.querySelector("#usage-route-options");
+  const endpointList = document.querySelector("#usage-endpoint-options");
   const modelList = document.querySelector("#usage-model-options");
   if (routeList) routeList.innerHTML = [.../* @__PURE__ */ new Set([...routeDefaults2, ...routes2])].map((value) => `<option value="${attr(value)}"></option>`).join("");
+  if (endpointList) endpointList.innerHTML = [...new Set(endpoints)].map((value) => `<option value="${attr(value)}"></option>`).join("");
   if (modelList) modelList.innerHTML = [...new Set(models)].map((value) => `<option value="${attr(value)}"></option>`).join("");
 }
 function usageDateRange(form) {
@@ -17346,15 +17354,17 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
 }
 function usageEventsTable(rows) {
   return table(
-    ["Created", "Request", "Route", "Service", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
+    ["Created", "Request", "Route", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
     rows.map((row) => [
       time(row.created_at),
       `<code>${esc(row.request_id)}</code>`,
       esc(row.route),
       esc(row.service_name || ""),
+      esc(row.http_method || ""),
+      `<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
       esc(row.model || ""),
       esc(row.provider),
-      badge(row.status === "success" ? "good" : "bad", row.status),
+      `${badge(row.status === "success" ? "good" : "bad", row.status)} <code>${esc(row.status_code)}</code>`,
       `${esc(row.latency_ms)} ms`,
       esc(row.total_tokens),
       money(row.estimated_cost_usd),

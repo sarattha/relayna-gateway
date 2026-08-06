@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: relayna_gateway
+      POSTGRES_PASSWORD: relayna_gateway
+      POSTGRES_DB: relayna_gateway
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relayna_gateway -d relayna_gateway"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mock-service:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["node", "server.mjs"]
+    environment:
+      SERVICE_CREDENTIAL: svc_endpoint_monitor_secret
+    volumes:
+      - ./mock-service:/app:ro
+    ports:
+      - "19282:4000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  gateway:
+    image: ${RELAYNA_GATEWAY_IMAGE:?set RELAYNA_GATEWAY_IMAGE to the freshly built local image}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock-service:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://relayna_gateway:relayna_gateway@postgres:5432/relayna_gateway
+      REDIS_URL: redis://redis:6379
+      LITELLM_BASE_URL: http://mock-service:4000
+      LITELLM_SERVICE_KEY: sk_endpoint_monitor_unused
+      GATEWAY_ADMIN_TOKEN: ${GATEWAY_ADMIN_TOKEN:?set by run.sh}
+      GATEWAY_BIND_ADDR: 0.0.0.0:8080
+      GATEWAY_CONTROL_BIND_ADDR: 0.0.0.0:8081
+      LOG_LEVEL: gateway_api=info,gateway_proxy=info
+    ports:
+      - "19280:8080"
+      - "19281:8081"

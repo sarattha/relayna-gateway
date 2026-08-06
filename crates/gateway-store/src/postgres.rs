@@ -911,13 +911,16 @@ impl PostgresStore {
                 cost_mode,
                 pricing_rule_name,
                 service_name,
+                http_method,
+                endpoint_path,
+                endpoint_template,
                 task_id,
                 run_id,
                 trace_id,
                 fallback_count,
                 created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
             "#,
         )
         .bind(&event.request_id)
@@ -937,6 +940,9 @@ impl PostgresStore {
         .bind(event.cost_mode.map(service_cost_mode_str))
         .bind(&event.pricing_rule_name)
         .bind(&event.service_name)
+        .bind(&event.http_method)
+        .bind(&event.endpoint_path)
+        .bind(&event.endpoint_template)
         .bind(&event.task_id)
         .bind(&event.run_id)
         .bind(&event.trace_id)
@@ -4168,13 +4174,19 @@ impl UsageQueryStore for PostgresStore {
         query: UsageQuery,
         dimension: UsageBreakdownDimension,
     ) -> GatewayResult<Vec<UsageBreakdown>> {
-        let column = match dimension {
-            UsageBreakdownDimension::Key => "key_id::text",
-            UsageBreakdownDimension::Project => "COALESCE(project_id::text, 'individual')",
-            UsageBreakdownDimension::Model => "COALESCE(model, 'unknown')",
-            UsageBreakdownDimension::Provider => "provider",
-            UsageBreakdownDimension::Service => "COALESCE(service_name, 'none')",
-            UsageBreakdownDimension::Task => "COALESCE(task_id, 'none')",
+        let (column, endpoint_only) = match dimension {
+            UsageBreakdownDimension::Key => ("key_id::text", false),
+            UsageBreakdownDimension::Project => {
+                ("COALESCE(project_id::text, 'individual')", false)
+            }
+            UsageBreakdownDimension::Model => ("COALESCE(model, 'unknown')", false),
+            UsageBreakdownDimension::Provider => ("provider", false),
+            UsageBreakdownDimension::Service => ("COALESCE(service_name, 'none')", false),
+            UsageBreakdownDimension::Endpoint => (
+                "CONCAT(COALESCE(http_method, 'UNKNOWN'), ' ', COALESCE(endpoint_template, endpoint_path))",
+                true,
+            ),
+            UsageBreakdownDimension::Task => ("COALESCE(task_id, 'none')", false),
         };
         let mut builder = QueryBuilder::<Postgres>::new("SELECT ");
         builder.push(column);
@@ -4193,6 +4205,9 @@ impl UsageQueryStore for PostgresStore {
             "#,
         );
         append_usage_filters(&mut builder, &query);
+        if endpoint_only {
+            builder.push(" AND endpoint_path IS NOT NULL");
+        }
         builder.push(" GROUP BY name ORDER BY ");
         builder.push(usage_breakdown_sort_column(query.sort_by.as_deref()));
         builder.push(if usage_sort_desc(query.sort_order.as_deref()) {
@@ -4271,6 +4286,9 @@ impl UsageQueryStore for PostgresStore {
                 u.cost_mode,
                 u.pricing_rule_name,
                 u.service_name,
+                u.http_method,
+                u.endpoint_path,
+                u.endpoint_template,
                 u.task_id,
                 u.run_id,
                 u.trace_id,
@@ -4317,6 +4335,9 @@ impl UsageQueryStore for PostgresStore {
                     cost_mode: row.try_get("cost_mode")?,
                     pricing_rule_name: row.try_get("pricing_rule_name")?,
                     service_name: row.try_get("service_name")?,
+                    http_method: row.try_get("http_method")?,
+                    endpoint_path: row.try_get("endpoint_path")?,
+                    endpoint_template: row.try_get("endpoint_template")?,
                     task_id: row.try_get("task_id")?,
                     run_id: row.try_get("run_id")?,
                     trace_id: row.try_get("trace_id")?,
@@ -4345,6 +4366,9 @@ impl UsageQueryStore for PostgresStore {
                     .await?,
                 services: self
                     .usage_breakdown(query.clone(), UsageBreakdownDimension::Service)
+                    .await?,
+                endpoints: self
+                    .usage_breakdown(query.clone(), UsageBreakdownDimension::Endpoint)
                     .await?,
                 providers: self
                     .usage_breakdown(query.clone(), UsageBreakdownDimension::Provider)
@@ -4387,6 +4411,9 @@ impl UsageQueryStore for PostgresStore {
                 u.cost_mode,
                 u.pricing_rule_name,
                 u.service_name,
+                u.http_method,
+                u.endpoint_path,
+                u.endpoint_template,
                 u.task_id,
                 u.run_id,
                 u.trace_id,
@@ -6057,6 +6084,18 @@ fn append_usage_filters_with_alias<'a>(
         separated.push(format!("{} = ", column("service_name")));
         separated.push_bind_unseparated(service);
     }
+    if let Some(method) = query.method.as_deref() {
+        separated.push(format!("{} = ", column("http_method")));
+        separated.push_bind_unseparated(method.to_ascii_uppercase());
+    }
+    if let Some(endpoint) = query.endpoint.as_deref() {
+        separated.push(format!(
+            "COALESCE({}, {}) = ",
+            column("endpoint_template"),
+            column("endpoint_path")
+        ));
+        separated.push_bind_unseparated(endpoint);
+    }
     if let Some(task_id) = query.task_id.as_deref() {
         separated.push(format!("{} = ", column("task_id")));
         separated.push_bind_unseparated(task_id);
@@ -6072,6 +6111,10 @@ fn append_usage_filters_with_alias<'a>(
     if let Some(status) = query.status.as_deref() {
         separated.push(format!("{} = ", column("status")));
         separated.push_bind_unseparated(status);
+    }
+    if let Some(status_code) = query.status_code {
+        separated.push(format!("{} = ", column("status_code")));
+        separated.push_bind_unseparated(status_code);
     }
     if let Some(trace_id) = query.trace_id.as_deref() {
         separated.push(format!("{} = ", column("trace_id")));
@@ -6112,6 +6155,9 @@ async fn usage_export_rows_from_query(
                 cost_mode: row.try_get("cost_mode")?,
                 pricing_rule_name: row.try_get("pricing_rule_name")?,
                 service_name: row.try_get("service_name")?,
+                http_method: row.try_get("http_method")?,
+                endpoint_path: row.try_get("endpoint_path")?,
+                endpoint_template: row.try_get("endpoint_template")?,
                 task_id: row.try_get("task_id")?,
                 run_id: row.try_get("run_id")?,
                 trace_id: row.try_get("trace_id")?,
@@ -6496,6 +6542,7 @@ fn usage_filter_value_column(field: &str) -> Option<&'static str> {
         "route" => Some("route"),
         "provider" => Some("provider"),
         "service" => Some("service_name"),
+        "endpoint" => Some("COALESCE(endpoint_template, endpoint_path)"),
         "model" => Some("model"),
         "task_id" => Some("task_id"),
         "run_id" => Some("run_id"),
@@ -7549,6 +7596,9 @@ mod tests {
             cost_mode: Some(ServiceCostMode::Fixed),
             pricing_rule_name: Some("premium".to_owned()),
             service_name: Some(service_name.clone()),
+            http_method: Some("POST".to_owned()),
+            endpoint_path: Some("/jobs/coverage-123".to_owned()),
+            endpoint_template: Some("/jobs/{job_id}".to_owned()),
             task_id: Some(format!("task-{suffix}")),
             run_id: Some(format!("run-{suffix}")),
             trace_id: Some(format!("trace-{suffix}")),
@@ -7584,6 +7634,7 @@ mod tests {
             UsageBreakdownDimension::Model,
             UsageBreakdownDimension::Provider,
             UsageBreakdownDimension::Service,
+            UsageBreakdownDimension::Endpoint,
             UsageBreakdownDimension::Task,
         ] {
             store
@@ -7591,10 +7642,39 @@ mod tests {
                 .await
                 .expect("usage breakdown");
         }
-        store
+        let usage_export = store
             .usage_export(usage_query.clone())
             .await
             .expect("usage export");
+        assert_eq!(usage_export.rows[0].http_method.as_deref(), Some("POST"));
+        assert_eq!(
+            usage_export.rows[0].endpoint_path.as_deref(),
+            Some("/jobs/coverage-123")
+        );
+        assert_eq!(
+            usage_export.rows[0].endpoint_template.as_deref(),
+            Some("/jobs/{job_id}")
+        );
+        let endpoint_query = UsageQuery {
+            project_id: Some(project.id),
+            method: Some("post".to_owned()),
+            endpoint: Some("/jobs/{job_id}".to_owned()),
+            status_code: Some(200),
+            ..UsageQuery::default()
+        };
+        assert_eq!(
+            store
+                .usage_summary(endpoint_query.clone())
+                .await
+                .expect("endpoint usage summary")
+                .request_count,
+            1
+        );
+        let endpoint_breakdown = store
+            .usage_breakdown(endpoint_query, UsageBreakdownDimension::Endpoint)
+            .await
+            .expect("endpoint breakdown");
+        assert_eq!(endpoint_breakdown[0].name, "POST /jobs/{job_id}");
         store
             .usage_dashboard(usage_query.clone())
             .await
@@ -7611,6 +7691,15 @@ mod tests {
             })
             .await
             .expect("usage filter values");
+        let endpoint_values = store
+            .usage_filter_values(UsageFilterValuesQuery {
+                field: "endpoint".to_owned(),
+                q: Some("/jobs".to_owned()),
+                usage: usage_query.clone(),
+            })
+            .await
+            .expect("endpoint filter values");
+        assert_eq!(endpoint_values.values, ["/jobs/{job_id}"]);
         store
             .provider_health(usage_query.clone())
             .await

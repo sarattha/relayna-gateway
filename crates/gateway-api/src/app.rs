@@ -3031,7 +3031,7 @@ async fn task_usage(
 }
 
 fn usage_export_csv_body(export: &UsageExport) -> String {
-    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,task_id,run_id,trace_id,fallback_count,guardrail_action_count,created_at,cost_source,cost_mode,pricing_rule_name\n".to_owned();
+    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,task_id,run_id,trace_id,fallback_count,guardrail_action_count,created_at,cost_source,cost_mode,pricing_rule_name,http_method,endpoint_path,endpoint_template\n".to_owned();
     for row in &export.rows {
         let fields = [
             row.request_id.clone(),
@@ -3061,6 +3061,9 @@ fn usage_export_csv_body(export: &UsageExport) -> String {
             row.cost_source.clone().unwrap_or_default(),
             row.cost_mode.clone().unwrap_or_default(),
             row.pricing_rule_name.clone().unwrap_or_default(),
+            row.http_method.clone().unwrap_or_default(),
+            row.endpoint_path.clone().unwrap_or_default(),
+            row.endpoint_template.clone().unwrap_or_default(),
         ];
         csv.push_str(
             &fields
@@ -5717,10 +5720,43 @@ mod tests {
 
         async fn usage_breakdown(
             &self,
-            _query: UsageQuery,
-            _dimension: UsageBreakdownDimension,
+            mut query: UsageQuery,
+            dimension: UsageBreakdownDimension,
         ) -> GatewayResult<Vec<UsageBreakdown>> {
-            Ok(Vec::new())
+            if dimension != UsageBreakdownDimension::Endpoint {
+                return Ok(Vec::new());
+            }
+            let limit = query.breakdown_limit.unwrap_or(20).clamp(1, 500) as usize;
+            query.limit = Some(10_000);
+            query.offset = Some(0);
+            let mut grouped = BTreeMap::<String, Vec<UsageExportRow>>::new();
+            for row in self.usage_export(query).await?.rows {
+                let Some(path) = row
+                    .endpoint_template
+                    .as_deref()
+                    .or(row.endpoint_path.as_deref())
+                else {
+                    continue;
+                };
+                let name = format!("{} {path}", row.http_method.as_deref().unwrap_or("UNKNOWN"));
+                grouped.entry(name).or_default().push(row);
+            }
+            let mut breakdowns = grouped
+                .into_iter()
+                .map(|(name, rows)| UsageBreakdown {
+                    name,
+                    summary: usage_summary_from_rows(&rows),
+                })
+                .collect::<Vec<_>>();
+            breakdowns.sort_by(|left, right| {
+                right
+                    .summary
+                    .request_count
+                    .cmp(&left.summary.request_count)
+                    .then_with(|| left.name.cmp(&right.name))
+            });
+            breakdowns.truncate(limit);
+            Ok(breakdowns)
         }
 
         async fn usage_export(&self, query: UsageQuery) -> GatewayResult<UsageExport> {
@@ -5754,6 +5790,9 @@ mod tests {
                         .and_then(|value| value.as_str().map(ToOwned::to_owned)),
                     pricing_rule_name: event.pricing_rule_name.clone(),
                     service_name: event.service_name.clone(),
+                    http_method: event.http_method.clone(),
+                    endpoint_path: event.endpoint_path.clone(),
+                    endpoint_template: event.endpoint_template.clone(),
                     task_id: event.task_id.clone(),
                     run_id: event.run_id.clone(),
                     trace_id: event.trace_id.clone(),
@@ -5799,6 +5838,9 @@ mod tests {
                     services: self
                         .usage_breakdown(query.clone(), UsageBreakdownDimension::Service)
                         .await?,
+                    endpoints: self
+                        .usage_breakdown(query.clone(), UsageBreakdownDimension::Endpoint)
+                        .await?,
                     providers: self
                         .usage_breakdown(query.clone(), UsageBreakdownDimension::Provider)
                         .await?,
@@ -5843,7 +5885,7 @@ mod tests {
         ) -> GatewayResult<gateway_core::UsageFilterValues> {
             if !matches!(
                 query.field.as_str(),
-                "route" | "provider" | "service" | "model" | "task_id" | "run_id"
+                "route" | "provider" | "service" | "endpoint" | "model" | "task_id" | "run_id"
             ) {
                 return Err(GatewayError::InvalidUsageQuery);
             }
@@ -5857,6 +5899,7 @@ mod tests {
                     "route" => Some(row.route),
                     "provider" => Some(row.provider),
                     "service" => row.service_name,
+                    "endpoint" => row.endpoint_template.or(row.endpoint_path),
                     "model" => row.model,
                     "task_id" => row.task_id,
                     "run_id" => row.run_id,
@@ -6008,6 +6051,20 @@ mod tests {
         {
             return false;
         }
+        if query.method.as_deref().is_some_and(|method| {
+            event.http_method.as_deref() != Some(method.to_ascii_uppercase().as_str())
+        }) {
+            return false;
+        }
+        if query.endpoint.as_deref().is_some_and(|endpoint| {
+            event
+                .endpoint_template
+                .as_deref()
+                .or(event.endpoint_path.as_deref())
+                != Some(endpoint)
+        }) {
+            return false;
+        }
         if query
             .task_id
             .as_deref()
@@ -6029,6 +6086,12 @@ mod tests {
             };
             event_status != status
         }) {
+            return false;
+        }
+        if query
+            .status_code
+            .is_some_and(|status_code| i32::from(event.status_code) != status_code)
+        {
             return false;
         }
         true
@@ -7964,6 +8027,9 @@ mod tests {
                 cost_mode: Some(gateway_core::ServiceCostMode::Passthrough),
                 pricing_rule_name: None,
                 service_name: None,
+                http_method: None,
+                endpoint_path: None,
+                endpoint_template: None,
                 task_id: Some("task-1".to_owned()),
                 run_id: Some("run-1".to_owned()),
                 trace_id: Some("4bf92f3577b34da6a3ce929d0e0e4736".to_owned()),
@@ -7974,9 +8040,9 @@ mod tests {
                 request_id: "=req-failure".to_owned(),
                 key_id,
                 project_id: Some(project_id),
-                route: Route::ChatCompletions,
+                route: Route::ServiceWildcard,
                 model: Some("gpt-test".to_owned()),
-                provider: gateway_core::Provider::LiteLlm,
+                provider: gateway_core::Provider::InternalService,
                 status: UsageStatus::Failure,
                 status_code: 502,
                 latency_ms: 50,
@@ -7987,7 +8053,10 @@ mod tests {
                 cost_source: None,
                 cost_mode: None,
                 pricing_rule_name: None,
-                service_name: None,
+                service_name: Some("jobs-service".to_owned()),
+                http_method: Some("POST".to_owned()),
+                endpoint_path: Some("/jobs/failed-1".to_owned()),
+                endpoint_template: Some("/jobs/{job_id}".to_owned()),
                 task_id: Some("task-1".to_owned()),
                 run_id: Some("run-2".to_owned()),
                 trace_id: None,
@@ -8013,6 +8082,42 @@ mod tests {
         assert_eq!(value["rows"][0]["request_id"], "req-success");
 
         let response = admin_get(
+            app.clone(),
+            "/admin-ui/admin/usage/events?method=post&endpoint=%2Fjobs%2F%7Bjob_id%7D&status_code=502",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["rows"][0]["http_method"], "POST");
+        assert_eq!(value["rows"][0]["endpoint_path"], "/jobs/failed-1");
+        assert_eq!(value["rows"][0]["endpoint_template"], "/jobs/{job_id}");
+        assert_eq!(value["rows"][0]["status_code"], 502);
+
+        let response = admin_get(
+            app.clone(),
+            "/admin-ui/admin/usage/dashboard?status=failure&sort_by=failures",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(
+            value["breakdowns"]["endpoints"][0]["name"],
+            "POST /jobs/{job_id}"
+        );
+        assert_eq!(
+            value["breakdowns"]["endpoints"][0]["summary"]["failure_count"],
+            1
+        );
+
+        let response = admin_get(
             app,
             "/admin-ui/admin/usage/export.csv?status=failure",
             Some(TEST_OPERATOR_TOKEN),
@@ -8024,7 +8129,13 @@ mod tests {
             .expect("body");
         let csv = String::from_utf8(body.to_vec()).expect("csv");
         assert!(csv.starts_with("request_id,key_id,project_id"));
+        assert!(csv
+            .lines()
+            .next()
+            .expect("header")
+            .ends_with("pricing_rule_name,http_method,endpoint_path,endpoint_template"));
         assert!(csv.contains("'=req-failure"));
+        assert!(csv.contains("POST,/jobs/failed-1,/jobs/{job_id}"));
         assert!(!csv.contains("req-success"));
     }
 
@@ -8055,6 +8166,9 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
                 service_name: Some("summarizer".to_owned()),
+                http_method: Some("POST".to_owned()),
+                endpoint_path: Some("/summaries/summary-1".to_owned()),
+                endpoint_template: Some("/summaries/{summary_id}".to_owned()),
                 task_id: None,
                 run_id: None,
                 trace_id: Some("trace-fixed".to_owned()),
@@ -8079,6 +8193,9 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: Some("legal-es".to_owned()),
                 service_name: Some("translation".to_owned()),
+                http_method: Some("POST".to_owned()),
+                endpoint_path: Some("/translations/translation-1".to_owned()),
+                endpoint_template: Some("/translations/{translation_id}".to_owned()),
                 task_id: None,
                 run_id: None,
                 trace_id: Some("trace-rule".to_owned()),
@@ -8153,6 +8270,9 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
                 service_name: Some("summarizer".to_owned()),
+                http_method: Some("POST".to_owned()),
+                endpoint_path: Some("/summaries/summary-1".to_owned()),
+                endpoint_template: Some("/summaries/{summary_id}".to_owned()),
                 task_id: None,
                 run_id: None,
                 trace_id: Some("trace-fixed".to_owned()),
@@ -8177,6 +8297,9 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: Some("legal-es".to_owned()),
                 service_name: Some("translation".to_owned()),
+                http_method: Some("POST".to_owned()),
+                endpoint_path: Some("/translations/translation-1".to_owned()),
+                endpoint_template: Some("/translations/{translation_id}".to_owned()),
                 task_id: None,
                 run_id: None,
                 trace_id: Some("trace-rule".to_owned()),
@@ -8201,6 +8324,9 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
                 service_name: Some("summarizer".to_owned()),
+                http_method: Some("POST".to_owned()),
+                endpoint_path: Some("/summaries/summary-2".to_owned()),
+                endpoint_template: Some("/summaries/{summary_id}".to_owned()),
                 task_id: None,
                 run_id: None,
                 trace_id: Some("trace-next".to_owned()),
@@ -9184,6 +9310,9 @@ mod tests {
             cost_mode: None,
             pricing_rule_name: None,
             service_name: service_name.map(ToOwned::to_owned),
+            http_method: None,
+            endpoint_path: None,
+            endpoint_template: None,
             task_id: Some("task".to_owned()),
             run_id: Some("run".to_owned()),
             trace_id: Some("trace".to_owned()),

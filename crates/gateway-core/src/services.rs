@@ -779,6 +779,18 @@ pub fn endpoint_template_matches(path_template: &str, path: &str) -> bool {
     }
 }
 
+pub fn matching_openapi_endpoint<'a>(
+    method: &Method,
+    path: &str,
+    endpoints: &'a [ServiceOpenApiEndpoint],
+) -> Option<&'a ServiceOpenApiEndpoint> {
+    endpoints
+        .iter()
+        .filter(|endpoint| endpoint.method.eq_ignore_ascii_case(method.as_str()))
+        .filter(|endpoint| endpoint_template_matches(&endpoint.path_template, path))
+        .max_by_key(|endpoint| endpoint_template_specificity(&endpoint.path_template))
+}
+
 pub fn resolve_endpoint_pricing_rule(
     method: &Method,
     path: &str,
@@ -1680,6 +1692,42 @@ mod tests {
             "/events/{task_id}",
             "/event/task-123"
         ));
+    }
+
+    #[test]
+    fn openapi_endpoint_matching_respects_method_and_specificity() {
+        let endpoints = vec![
+            ServiceOpenApiEndpoint {
+                method: "POST".to_owned(),
+                path_template: "/jobs/{job_id}".to_owned(),
+                operation_id: Some("update_job".to_owned()),
+                summary: None,
+                relayna_default: false,
+            },
+            ServiceOpenApiEndpoint {
+                method: "POST".to_owned(),
+                path_template: "/jobs/special".to_owned(),
+                operation_id: Some("update_special_job".to_owned()),
+                summary: None,
+                relayna_default: false,
+            },
+            ServiceOpenApiEndpoint {
+                method: "GET".to_owned(),
+                path_template: "/jobs/{job_id}".to_owned(),
+                operation_id: Some("get_job".to_owned()),
+                summary: None,
+                relayna_default: false,
+            },
+        ];
+
+        let matched = matching_openapi_endpoint(&Method::POST, "/jobs/special", &endpoints)
+            .expect("specific endpoint");
+        assert_eq!(matched.operation_id.as_deref(), Some("update_special_job"));
+
+        let matched = matching_openapi_endpoint(&Method::GET, "/jobs/123", &endpoints)
+            .expect("method-specific endpoint");
+        assert_eq!(matched.operation_id.as_deref(), Some("get_job"));
+        assert!(matching_openapi_endpoint(&Method::DELETE, "/jobs/123", &endpoints).is_none());
     }
 
     #[test]
