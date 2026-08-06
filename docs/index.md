@@ -28,13 +28,14 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 ## Documentation Map
 
 - [Architecture](architecture.md) explains the request path, crate ownership, data stores, and trust boundaries.
-- [Database](database.md) documents the PostgreSQL schema, required records, keys, and operational data.
+- [Database](database.md) documents the PostgreSQL schema, required records,
+  endpoint-level usage metadata, keys, and operational data.
 - [Redis Keys](redis.md) documents rate-limit, budget, and reservation keys used in Redis.
 - [Getting Started](getting-started.md) covers local PostgreSQL, Redis, LiteLLM, and gateway startup.
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
 - [OpenAPI Service Pricing](openapi-service-pricing.md) explains registered
   service discovery, endpoint billing, multipart selectors, and budget rules.
-- [Current Feature Highlights](current-features.md) summarizes the `v0.1.22`
+- [Current Feature Highlights](current-features.md) summarizes the `v0.1.23`
   feature set, including Admin UI screenshots.
 - [LiteLLM Passthrough](litellm-passthrough.md) covers wildcard passthrough,
   canonical route modes, credential translation, `/ui` exposure, and browser

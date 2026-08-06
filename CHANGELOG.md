@@ -2,6 +2,41 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.23 - 2026-08-06
+
+### Added
+
+- Added endpoint-level usage metadata for authenticated registered-service
+  traffic: uppercase HTTP method, query-free upstream-relative concrete path,
+  and the most-specific matching synced OpenAPI template.
+- Added exact `method`, `endpoint`, and numeric `status_code` usage filters,
+  endpoint filter discovery, `METHOD /path` endpoint breakdowns, and matching
+  JSON/CSV export fields.
+- Added Admin Usage controls and request tables for filtering and inspecting
+  successful and failed service endpoints, including concrete fallback paths
+  for operations outside the synced OpenAPI catalog.
+
+### Changed
+
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.23` and `v0.1.23`.
+- Endpoint matching is independent of pricing, so free and unpriced OpenAPI
+  operations remain observable.
+
+### Fixed
+
+- Numeric status-code filters now deserialize consistently when embedded in
+  flattened filter-value discovery queries.
+- The endpoint lookup index uses a bounded digest of the effective endpoint
+  while queries retain full-value equality verification.
+
+### Security
+
+- Endpoint usage metadata excludes query strings, credentials, bodies, and
+  prompt data. Prometheus metrics remain free of endpoint labels.
+- The migration is additive and idempotent; historical usage rows remain
+  readable with nullable endpoint metadata and are not heuristically backfilled.
+
 ## 0.1.22 - 2026-07-25
 
 ### Added

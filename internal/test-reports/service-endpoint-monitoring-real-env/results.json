@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-08-06T16:48:50.647Z",
+  "generated_at": "2026-08-06T17:08:04.473Z",
   "ok": true,
-  "image": "relayna-gateway:endpoint-monitoring-test",
+  "image": "relayna-gateway:0.1.23",
   "environment": {
     "proxy": "http://127.0.0.1:19280",
     "control": "http://127.0.0.1:19281",

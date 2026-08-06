@@ -1,10 +1,10 @@
 # Service Endpoint Monitoring Real-Environment Report
 
-Generated: 2026-08-06T16:48:50.647Z
+Generated: 2026-08-06T17:08:04.473Z
 
 Overall result: **PASS**
 
-Image: `relayna-gateway:endpoint-monitoring-test`
+Image: `relayna-gateway:0.1.23`
 
 | Check | Result |
 | --- | --- |
@@ -18,20 +18,21 @@ Image: `relayna-gateway:endpoint-monitoring-test`
 
 ## Computer Use Evidence
 
-**PASS** — Google Chrome was used against the rebuilt local image to:
+**PASS** — Google Chrome was used against the exact final
+`relayna-gateway:0.1.23` image to confirm:
 
-- sign in to the isolated Admin portal;
-- filter Usage to failed requests;
-- confirm endpoint rows for `POST /jobs/{job_id}` and
-  `POST /unlisted/fail-500`;
-- confirm recent rows display method, effective endpoint, and numeric status
-  codes `503` and `500`;
-- inspect the same view at a narrow responsive width.
+- the embedded Admin shell reports `v0.1.23`;
+- the Usage view renders endpoint request/success/failure breakdowns;
+- `POST /jobs/{job_id}` groups the successful and 503 calls under the synced
+  OpenAPI template;
+- `POST /unlisted/fail-500` remains visible through the concrete-path fallback;
+- recent rows display method, effective endpoint, and numeric 200/500/503
+  statuses.
 
-The numeric `status_code=503` path found during visual verification was fixed
-and rechecked against the rebuilt image: dashboard, event, route-suggestion,
-and endpoint-suggestion requests all returned HTTP 200. A focused API
-regression test also covers the flattened filter-values query.
+Earlier in the same isolated workflow, Computer Use also verified the failure
+filter and responsive narrow-width presentation. That pass exposed the
+flattened numeric `status_code` deserialization edge case; after the fix, the
+rebuilt final image passed the API regression test and all harness assertions.
 
 Local screenshot evidence (intentionally ignored by Git):
 

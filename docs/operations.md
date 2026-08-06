@@ -163,6 +163,14 @@ and audit-event review to the control plane. See
 [Current Feature Highlights](current-features.md) for a feature-oriented
 overview with Admin UI screenshots.
 
+For registered-service failures, filter Usage by `method`, effective `endpoint`,
+numeric `status_code`, or the existing `status=failure`. The effective endpoint
+is the most-specific synced OpenAPI template with a query-free concrete-path
+fallback. This captures both Gateway-produced and upstream statuses of 400 or
+greater; it does not identify failure origin. Endpoint detail remains in
+PostgreSQL-backed usage APIs and is intentionally not added to Prometheus
+labels.
+
 Prometheus metrics are intentionally low-cardinality. Metric labels are bounded
 to route, provider, status class, decision kind, denial reason, circuit state,
 guardrail name, guardrail mode, guardrail action, failure policy, and stream
@@ -280,7 +288,9 @@ Before deploying a new release:
 3. Run CI, including Rust checks, security scans, admin UI tests, and docs
    build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.22`.
+   For `0.1.23`, verify historical `usage_events` rows retain nullable endpoint
+   fields and new service traffic populates method/path/template metadata.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.23`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
 
 ## Supply Chain and Runtime Hardening
