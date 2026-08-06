@@ -6090,10 +6090,16 @@ fn append_usage_filters_with_alias<'a>(
     }
     if let Some(endpoint) = query.endpoint.as_deref() {
         separated.push(format!(
-            "COALESCE({}, {}) = ",
+            "md5(COALESCE({}, {})) = md5(",
             column("endpoint_template"),
             column("endpoint_path")
         ));
+        separated.push_bind_unseparated(endpoint);
+        separated.push_unseparated(") AND COALESCE(");
+        separated.push_unseparated(column("endpoint_template"));
+        separated.push_unseparated(", ");
+        separated.push_unseparated(column("endpoint_path"));
+        separated.push_unseparated(") = ");
         separated.push_bind_unseparated(endpoint);
     }
     if let Some(task_id) = query.task_id.as_deref() {
@@ -6763,6 +6769,22 @@ mod tests {
         ));
         assert!(!sql.contains("u.project_id AND  ="));
         assert!(!sql.contains("u.route AND  ="));
+    }
+
+    #[test]
+    fn endpoint_filter_uses_bounded_hash_and_exact_verification() {
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT * FROM usage_events u");
+        let query = UsageQuery {
+            endpoint: Some("/jobs/{job_id}".to_owned()),
+            ..UsageQuery::default()
+        };
+        append_usage_filters_with_alias(&mut builder, &query, "u");
+
+        let sql = builder.build().sql().to_owned();
+
+        assert!(sql.contains(
+            "md5(COALESCE(u.endpoint_template, u.endpoint_path)) = md5($1) AND COALESCE(u.endpoint_template, u.endpoint_path) = $2"
+        ));
     }
 
     #[test]

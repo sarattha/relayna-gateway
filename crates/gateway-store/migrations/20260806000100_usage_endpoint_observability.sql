@@ -7,7 +7,7 @@ CREATE INDEX IF NOT EXISTS usage_events_service_endpoint_status_created_at_idx
 ON usage_events (
     service_name,
     http_method,
-    (COALESCE(endpoint_template, endpoint_path)),
+    (md5(COALESCE(endpoint_template, endpoint_path))),
     status_code,
     created_at DESC
 )
