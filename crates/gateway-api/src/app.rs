@@ -8118,6 +8118,19 @@ mod tests {
         );
 
         let response = admin_get(
+            app.clone(),
+            "/admin-ui/admin/usage/filter-values?field=endpoint&status=failure&status_code=502",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(value["values"], serde_json::json!(["/jobs/{job_id}"]));
+
+        let response = admin_get(
             app,
             "/admin-ui/admin/usage/export.csv?status=failure",
             Some(TEST_OPERATOR_TOKEN),

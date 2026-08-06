@@ -20,8 +20,8 @@ services without a synced catalog.
 - [x] (2026-08-06 16:10Z) Added endpoint usage metadata, migration, query surfaces, and focused tests.
 - [x] (2026-08-06 16:10Z) Added Admin Usage filters, endpoint breakdown, recent-row detail, generated assets, and the isolated real-environment harness.
 - [x] (2026-08-06 16:13Z) Ran focused core, proxy, API, and Admin UI tests plus the complete mandatory verification stack; all passed.
-- [ ] Publish the ready PR and address the first Codex review.
-- [ ] Build and verify the isolated real environment with Computer Use.
+- [x] (2026-08-06 16:32Z) Published PR #98, requested the first Codex review, fixed its bounded-index finding in `1f0417d`, replied with verification evidence, and resolved the thread.
+- [x] (2026-08-06 16:53Z) Built and verified the isolated Docker environment, then inspected failure filters, endpoint breakdowns, recent rows, and narrow-width behavior with Computer Use.
 - [ ] Prepare `0.1.23`, run release checks, and finalize the PR.
 
 ## Surprises & Discoveries
@@ -36,6 +36,17 @@ services without a synced catalog.
   provider dependencies.
   Evidence: `internal/test-reports/litellm-real-passthrough/run.sh` tests only
   LiteLLM route modes while the new harness targets ports `19280..19282`.
+- Observation: The isolated database's fallback global policy does not allow
+  registered-service traffic, so the harness must configure an explicit global
+  service policy before its virtual key can exercise the proxy.
+  Evidence: authenticated requests were denied until the harness created the
+  `/services/*`, `internal-service`, and service-name allow-list layer.
+- Observation: Computer Use exposed a serde edge case in filter-value discovery:
+  a flattened numeric `status_code=503` arrived as a string and returned 400,
+  although the dashboard and event endpoints accepted it.
+  Evidence: the rebuilt image returns 200 for dashboard, events, route values,
+  and endpoint values with the same numeric status-code filter; a regression
+  assertion covers endpoint filter-value discovery.
 
 ## Decision Log
 
@@ -55,10 +66,18 @@ services without a synced catalog.
   Rationale: The user selected all authenticated routed failures; endpoint
   labels would create avoidable metric-cardinality risk.
   Date/Author: 2026-08-06 / Codex.
+- Decision: Index the MD5 digest of the effective endpoint and retain the full
+  endpoint equality predicate in queries.
+  Rationale: the first Codex review correctly identified PostgreSQL B-tree row
+  size risk for unbounded fallback paths; the digest bounds index keys while
+  exact equality makes hash collisions harmless.
+  Date/Author: 2026-08-06 / Codex.
 
 ## Outcomes & Retrospective
 
-Pending implementation and verification.
+Implementation, focused tests, mandatory verification, first-review remediation,
+and isolated real-environment verification are complete. Release preparation and
+the final release/PR check pass remain.
 
 ## Context and Orientation
 

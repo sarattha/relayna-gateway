@@ -67,7 +67,7 @@ const service = await admin("/admin-ui/admin/services", {
     openapi_source_path: "/openapi.json",
   }),
 });
-requireStatus(service, 201, "create service");
+requireStatus(service, 200, "create service");
 
 const preview = await admin(`/admin-ui/admin/services/${serviceName}/openapi/preview`, {
   method: "POST",
@@ -76,9 +76,28 @@ const preview = await admin(`/admin-ui/admin/services/${serviceName}/openapi/pre
 requireStatus(preview, 200, "preview OpenAPI");
 const sync = await admin(`/admin-ui/admin/services/${serviceName}/openapi/sync`, {
   method: "POST",
-  body: JSON.stringify({ source_path: "/openapi.json", schema_hash: preview.body.schema_hash }),
+  body: JSON.stringify({
+    source_path: "/openapi.json",
+    expected_schema_hash: preview.body.schema_hash,
+  }),
 });
 requireStatus(sync, 200, "sync OpenAPI");
+
+const globalPolicy = await admin("/admin-ui/admin/policy-layers", {
+  method: "POST",
+  body: JSON.stringify({
+    kind: "global",
+    scope_id: null,
+    policy: {
+      allowed_routes: ["/services/*"],
+      allowed_providers: ["internal-service"],
+      allowed_services: [serviceName],
+      allow_streaming: false,
+      allow_tools: false,
+    },
+  }),
+});
+requireStatus(globalPolicy, 200, "configure global service policy");
 
 const key = await admin("/admin-ui/admin/keys", {
   method: "POST",
@@ -96,7 +115,7 @@ const key = await admin("/admin-ui/admin/keys", {
     },
   }),
 });
-requireStatus(key, 201, "create virtual key");
+requireStatus(key, 200, "create virtual key");
 const relaynaKey = key.body.raw_key;
 
 async function serviceCall(path) {

@@ -1,7 +1,7 @@
 use crate::GatewayResult;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
@@ -19,6 +19,7 @@ pub struct UsageQuery {
     pub run_id: Option<String>,
     pub model: Option<String>,
     pub status: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_i32")]
     pub status_code: Option<i32>,
     pub trace_id: Option<String>,
     pub min_cost_usd: Option<f64>,
@@ -33,6 +34,24 @@ pub struct UsageQuery {
     pub breakdown_offset: Option<i64>,
     pub sort_by: Option<String>,
     pub sort_order: Option<String>,
+}
+
+fn deserialize_optional_i32<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum IntegerOrString {
+        Integer(i32),
+        String(String),
+    }
+
+    match Option::<IntegerOrString>::deserialize(deserializer)? {
+        Some(IntegerOrString::Integer(value)) => Ok(Some(value)),
+        Some(IntegerOrString::String(value)) => value.parse().map(Some).map_err(D::Error::custom),
+        None => Ok(None),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
