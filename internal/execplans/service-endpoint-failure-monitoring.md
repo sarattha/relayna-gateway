@@ -23,7 +23,7 @@ services without a synced catalog.
 - [x] (2026-08-06 16:32Z) Published PR #98, requested the first Codex review, fixed its bounded-index finding in `1f0417d`, replied with verification evidence, and resolved the thread.
 - [x] (2026-08-06 16:53Z) Built and verified the isolated Docker environment, then inspected failure filters, endpoint breakdowns, recent rows, and narrow-width behavior with Computer Use.
 - [x] (2026-08-06 17:10Z) Prepared `0.1.23`, regenerated Admin assets, validated release metadata and docs, reran mandatory verification, built/scanned the release image, and repeated the isolated harness plus Computer Use smoke check.
-- [ ] Push release preparation and confirm final PR checks and review-thread state.
+- [x] (2026-08-07 00:17Z) Pushed release preparation, reran the three outage-cancelled workflows after GitHub Actions recovered, confirmed every final-head check passed, and verified zero unresolved review threads.
 
 ## Surprises & Discoveries
 
@@ -54,6 +54,12 @@ services without a synced catalog.
   critical findings on the exact `0.1.23` image.
   Evidence: both Debian 12 and the current Debian 13 slim base reported the
   same unfixed advisory family, while the CI-equivalent final-image scan passed.
+- Observation: GitHub Actions entered a critical outage during the final PR
+  pass and cancelled three final-head workflow runs without executing their
+  affected jobs.
+  Evidence: the cancelled jobs contained zero steps; after GitHub reported
+  Actions operational, rerunning the same workflow attempts passed every CI,
+  documentation, metadata, Admin UI, Rust, and security check.
 
 ## Decision Log
 
@@ -87,7 +93,9 @@ storage, query/export APIs, and the Admin UI. The first Codex finding is fixed
 and resolved; focused, mandatory, release, documentation, security, isolated
 Docker, and Computer Use checks pass. The final release image is
 `relayna-gateway:0.1.23` (`sha256:a736b7b19ab9ddbfc498426bf4b586f156a9a96bed87cc3b5eff1a19b6bd98c3`).
-Only the post-push PR check confirmation remains.
+The ready PR has passing final-head checks and no unresolved Codex review
+threads. It remains intentionally unmerged, untagged, unpublished, and
+undeployed.
 
 ## Context and Orientation
 
