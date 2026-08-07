@@ -14,9 +14,9 @@ use gateway_core::{
     estimate_generation_tokens, evaluate_policy, evaluate_policy_limits,
     execution_events_from_records, extract_client_guardrails_value, extract_estimated_cost_usd,
     extract_generation_features, extract_model, extract_usage_tokens,
-    guardrail_executor_for_definitions, is_retry_safe_status, matching_service_pricing_rule,
-    redact_pii_text, resolve_endpoint_pricing_rule, resolve_guardrail_plan,
-    resolve_service_cost_from_value, route_pattern_wildcard_suffix,
+    guardrail_executor_for_definitions, is_retry_safe_status, matching_openapi_endpoint,
+    matching_service_pricing_rule, redact_pii_text, resolve_endpoint_pricing_rule,
+    resolve_guardrail_plan, resolve_service_cost_from_value, route_pattern_wildcard_suffix,
     service_preflight_estimated_cost, service_wildcard_suffix, strip_client_guardrails,
     validate_relayna_key_header_name, verify_apigee_trusted_identity, ApigeeTrustedHeaderConfig,
     AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
@@ -304,6 +304,9 @@ pub struct PingoraContext {
     upstream_timeout: bool,
     service_upstream: Option<PingoraUpstreamConfig>,
     service_route_pattern: Option<String>,
+    http_method: Option<String>,
+    endpoint_path: Option<String>,
+    endpoint_template: Option<String>,
     service_cost_mode: Option<ServiceCostMode>,
     service_estimated_cost_usd: Option<f64>,
     service_pricing_rules: Vec<ServicePricingRule>,
@@ -377,6 +380,9 @@ where
             upstream_timeout: false,
             service_upstream: None,
             service_route_pattern: None,
+            http_method: None,
+            endpoint_path: None,
+            endpoint_template: None,
             service_cost_mode: None,
             service_estimated_cost_usd: None,
             service_pricing_rules: Vec::new(),
@@ -1545,6 +1551,11 @@ where
                 .as_ref()
                 .and_then(|matched| matched.service_name.clone()),
         )
+        .with_endpoint_context(
+            ctx.http_method.clone(),
+            ctx.endpoint_path.clone(),
+            ctx.endpoint_template.clone(),
+        )
         .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
         .with_trace_id(ctx.trace_id.clone())
         .with_fallback_count(ctx.fallback_count);
@@ -1925,6 +1936,11 @@ where
             ctx.route_match
                 .as_ref()
                 .and_then(|matched| matched.service_name.clone()),
+        )
+        .with_endpoint_context(
+            ctx.http_method.clone(),
+            ctx.endpoint_path.clone(),
+            ctx.endpoint_template.clone(),
         )
         .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
         .with_trace_id(ctx.trace_id.clone())
@@ -2604,6 +2620,11 @@ fn configure_service_pricing_context(
     ctx.service_pricing_rules = registration.pricing_rules.clone();
     let endpoint_path = route_pattern_wildcard_suffix(public_path, &registration.route_pattern)
         .unwrap_or_else(|| public_path.to_owned());
+    ctx.http_method = Some(method.as_str().to_ascii_uppercase());
+    ctx.endpoint_path = Some(endpoint_path.clone());
+    ctx.endpoint_template =
+        matching_openapi_endpoint(method, &endpoint_path, &registration.openapi_endpoints)
+            .map(|endpoint| endpoint.path_template.clone());
     ctx.resolved_endpoint_cost =
         resolve_endpoint_pricing_rule(method, &endpoint_path, &registration.endpoint_pricing_rules);
 }
@@ -2853,6 +2874,9 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         upstream_timeout: false,
         service_upstream: None,
         service_route_pattern: None,
+        http_method: None,
+        endpoint_path: None,
+        endpoint_template: None,
         service_cost_mode: None,
         service_estimated_cost_usd: None,
         service_pricing_rules: Vec::new(),
@@ -3098,6 +3122,66 @@ mod tests {
             Some("service_pricing_rule_fixed")
         );
         assert_eq!(usage.estimated_cost_usd, Some(0.5));
+    }
+
+    #[test]
+    fn service_endpoint_context_uses_template_with_concrete_fallback() {
+        let now = Utc::now();
+        let registration = gateway_core::ServiceRegistration {
+            name: "jobs".to_owned(),
+            project_id: None,
+            studio_service_id: None,
+            route_pattern: "/services/jobs/*".to_owned(),
+            upstream_base_url: Some("http://jobs.example".to_owned()),
+            health_check_path: None,
+            health_check_method: "GET".to_owned(),
+            enabled: true,
+            allowed_methods: vec!["POST".to_owned()],
+            timeout_ms: 60_000,
+            max_body_bytes: 1_024,
+            cost_mode: ServiceCostMode::None,
+            estimated_cost_usd: None,
+            pricing_rules: Vec::new(),
+            openapi_source_path: Some("/openapi.json".to_owned()),
+            openapi_schema_hash: Some("schema".to_owned()),
+            openapi_synced_at: Some(now),
+            openapi_endpoints: vec![gateway_core::ServiceOpenApiEndpoint {
+                method: "POST".to_owned(),
+                path_template: "/jobs/{job_id}".to_owned(),
+                operation_id: Some("submit_job".to_owned()),
+                summary: None,
+                relayna_default: false,
+            }],
+            endpoint_pricing_rules: Vec::new(),
+            credential_secret: None,
+            fallback_services: Vec::new(),
+            source: gateway_core::ServiceSource::Gateway,
+            sync_status: gateway_core::ServiceSyncStatus::Synced,
+            last_synced_at: Some(now),
+            disabled_at: None,
+            created_at: now,
+            updated_at: now,
+        };
+        let mut ctx = new_pingora_context_for_tests();
+
+        configure_service_pricing_context(
+            &mut ctx,
+            &registration,
+            &http::Method::POST,
+            "/services/jobs/jobs/123",
+        );
+        assert_eq!(ctx.http_method.as_deref(), Some("POST"));
+        assert_eq!(ctx.endpoint_path.as_deref(), Some("/jobs/123"));
+        assert_eq!(ctx.endpoint_template.as_deref(), Some("/jobs/{job_id}"));
+
+        configure_service_pricing_context(
+            &mut ctx,
+            &registration,
+            &http::Method::POST,
+            "/services/jobs/unlisted/123",
+        );
+        assert_eq!(ctx.endpoint_path.as_deref(), Some("/unlisted/123"));
+        assert_eq!(ctx.endpoint_template, None);
     }
 
     #[test]

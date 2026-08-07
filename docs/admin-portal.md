@@ -22,7 +22,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.22` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+The `v0.1.23` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
 operator work into Monitor, Discover, and Govern navigation domains. Monitor
 contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains
@@ -478,11 +478,12 @@ First-time setup is complete when:
   `DELETE`. Health path and method fields let operators point active checks at
   a service-specific endpoint when the upstream root is not a valid health
   target.
-- Usage filters usage by project, virtual key, service, route, provider, model,
-  task ID, run ID, trace ID, status, and minimum cost, then shows cost, errors,
-  fallback rate, guardrail blocks, project/key/service/provider/model/task
-  breakdowns, timeseries rows, unused keys, task drilldowns, and JSON/CSV
-  exportable row-level usage data.
+- Usage filters usage by project, virtual key, service, route, provider, HTTP
+  method, effective endpoint, numeric status code, model, task ID, run ID,
+  trace ID, status, and minimum cost. It shows endpoint request/success/failure
+  breakdowns grouped as `METHOD /path`, plus method, effective endpoint, and
+  numeric status in recent rows alongside the existing cost, error, fallback,
+  guardrail, timeseries, unused-key, task-drilldown, and export views.
 - Guardrails shows the gateway guardrail catalog, recent sanitized execution
   events, and execution summaries. Key create/edit forms can set mandatory,
   optional, and forbidden guardrails.
@@ -661,7 +662,8 @@ curl -sS \
 
 Supported filters match the usage dashboard query model: `from`, `to`,
 `project_id`, `key_id`, `route`, `provider`, `service`, `task_id`, `run_id`,
-`model`, `status`, `trace_id`, and `min_cost_usd`. Export rows are ordered by
+`method`, `endpoint`, `status_code`, `model`, `status`, `trace_id`, and
+`min_cost_usd`. Export rows are ordered by
 creation time and request ID. `limit` defaults to `1000`, is clamped to
 `10000`, and `offset` can be used for pagination.
 
@@ -670,8 +672,10 @@ fields directly and neutralize spreadsheet formula prefixes before escaping
 cells. Summary responses include request, success, failure, token, cost,
 latency, fallback, denial, guardrail block, expensive request, and fallback-rate
 fields. Row responses include request, key, project, route, model, provider,
-status, latency, token, cost, service, task ID, run ID, trace ID, fallback,
-guardrail action count, and creation timestamp fields.
+status, latency, token, cost, service, HTTP method, concrete endpoint path,
+matched endpoint template, task ID, run ID, trace ID, fallback, guardrail action
+count, and creation timestamp fields. The three endpoint columns are appended
+to CSV output so existing column positions remain stable.
 
 Unused keys are available at:
 

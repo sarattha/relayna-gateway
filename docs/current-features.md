@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.22` feature set.
+This page summarizes the `v0.1.23` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -10,7 +10,7 @@ customer, provider, token, or prompt data.
 
 Admin UI 2.0 turns the embedded portal into a compact operator console for
 governing AI traffic. The Aurora Teal redesign introduced in `v0.1.19` remains
-the visual foundation in `v0.1.22`, including a live Overview with usage
+the visual foundation in `v0.1.23`, including a live Overview with usage
 charts, gateway posture, provider-health attention signals, recent operations,
 and governed-change shortcuts backed by existing Admin APIs. The UI is still
 served from
@@ -172,7 +172,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.22` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.23` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -263,7 +263,7 @@ passthrough against a real `litellm/litellm` container.
 
 ## Memory-Safe Body Processing
 
-Release `0.1.22` bounds complete request and response buffering with one
+Release `0.1.23` bounds complete request and response buffering with one
 process-wide admission controller. By default, at most eight managed requests
 or post-call responses may retain complete bodies, and their aggregate
 serialized reservations may not exceed 512 MiB. Operators can tune these
@@ -287,18 +287,27 @@ requests and bytes plus admission rejections without high-cardinality labels.
 ## Observability Analytics
 
 Usage analytics now expose richer filters, breakdowns, timeseries rows, unused
-key detection, task drilldowns, and JSON/CSV export paths. Recent requests,
+key detection, task drilldowns, and JSON/CSV export paths. Registered-service
+requests record uppercase HTTP method, query-free concrete path, and the
+most-specific synced OpenAPI template independently of pricing. The endpoint
+breakdown groups rows as `METHOD /path`, using the template when matched and
+the concrete path otherwise; historical rows without endpoint metadata and
+non-service traffic are excluded. Recent requests,
 Timeseries, and Service timeseries each page independently so operators can
 inspect large usage logs without rendering every row at once. Filters include
-time range, project, key, route, provider, service, task ID, run ID, model,
-status, trace ID, and minimum cost.
+time range, project, key, route, provider, service, HTTP method, effective
+endpoint, numeric status code, task ID, run ID, model, status, trace ID, and
+minimum cost.
 
 ![Usage analytics filters and exports](assets/screenshots/admin-ui-2/aurora-teal-usage.png)
 
+Every authenticated routed status of 400 or greater counts as an endpoint
+failure regardless of whether Gateway enforcement or the upstream produced it.
 Usage events and debug bundles can store W3C trace IDs so operators can move
 from Studio analytics to gateway logs or provider traces without exposing raw
-keys or prompts. CSV exports neutralize spreadsheet formula prefixes before
-escaping cells.
+keys or prompts. Endpoint metadata never contains query strings, credentials,
+bodies, or prompt data. CSV exports neutralize spreadsheet formula prefixes
+before escaping cells.
 
 Prometheus output also gained bounded operational labels and metrics for
 request dimensions, upstream latency, first-token latency, denials, provider
@@ -308,7 +317,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.22` release retains CI and release workflow hardening with strict
+The `v0.1.23` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

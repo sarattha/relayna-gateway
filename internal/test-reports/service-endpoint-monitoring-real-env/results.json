@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-08-06T17:08:04.473Z",
+  "ok": true,
+  "image": "relayna-gateway:0.1.23",
+  "environment": {
+    "proxy": "http://127.0.0.1:19280",
+    "control": "http://127.0.0.1:19281",
+    "service": "http://127.0.0.1:19282"
+  },
+  "requests": {
+    "success": 200,
+    "templated_failure": 503,
+    "fallback_failure": 500
+  },
+  "checks": {
+    "templated_success_recorded": true,
+    "templated_failure_recorded": true,
+    "fallback_failure_recorded": true,
+    "endpoint_breakdown_aggregates_template": true,
+    "endpoint_breakdown_uses_path_fallback": true,
+    "exact_filters_find_failure": true,
+    "csv_appends_endpoint_columns": true
+  }
+}

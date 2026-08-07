@@ -47,8 +47,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.22/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.22/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.23/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.23/);
 });
 
 test("admin portal exposes responsive operator navigation and accessible workflows", () => {
@@ -358,7 +358,7 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /api\("\/admin-ui\/admin\/projects"\)/);
   assert.match(js, /api\("\/admin-ui\/admin\/keys"\)/);
   assert.match(js, /api\("\/admin-ui\/admin\/services"\)/);
-  for (const field of ["project_id", "key_id", "service", "route", "provider", "model", "task_id", "run_id", "trace_id", "status", "time_preset", "from", "to", "interval", "min_cost_usd", "breakdown_limit", "sort_by", "limit"]) {
+  for (const field of ["project_id", "key_id", "service", "route", "method", "endpoint", "provider", "model", "task_id", "run_id", "trace_id", "status", "status_code", "time_preset", "from", "to", "interval", "min_cost_usd", "breakdown_limit", "sort_by", "limit"]) {
     assert.match(js, new RegExp(`name="${field}"`));
   }
   for (const preset of ["last_1h", "last_6h", "last_24h", "last_7d", "last_30d", "today", "yesterday", "this_week", "this_month", "custom"]) {
@@ -373,6 +373,7 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /function usageFilterValuesQueryFromForm\(formElement = document\.querySelector\("#usage-form"\)\)/);
   assert.match(js, /const filterQuery = usageFilterValuesQueryFromForm\(/);
   assert.match(js, /\/admin-ui\/admin\/usage\/filter-values\?\$\{filterQuery\}&field=route/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/filter-values\?\$\{filterQuery\}&field=endpoint/);
   assert.match(js, /\/admin-ui\/admin\/usage\/dashboard/);
   assert.match(js, /\/admin-ui\/admin\/usage\/events/);
   assert.match(js, /\/admin-ui\/admin\/usage\/filter-values/);
@@ -383,6 +384,9 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /async function usageExportAction\(event\)/);
   assert.match(js, /GATEWAY_OPERATOR_TOKEN/);
   assert.match(js, /data-debug-request/);
+  assert.match(js, /dashboard\.breakdowns\.endpoints \|\| \[\]/);
+  assert.match(js, /row\.endpoint_template \|\| row\.endpoint_path/);
+  assert.match(js, /esc\(row\.status_code\)/);
   assert.match(js, /async function loadTaskUsage\(event\)/);
   assert.match(js, /function usageTimeseriesTable\(rows\)/);
   assert.match(js, /Service timeseries/);
