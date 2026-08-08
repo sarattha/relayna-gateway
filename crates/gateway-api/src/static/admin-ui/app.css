@@ -2331,6 +2331,11 @@ tbody tr:hover td {
   margin-bottom: 0;
 }
 
+.login-access-sign-out {
+  width: 100%;
+  margin-top: 14px;
+}
+
 @media (max-width: 980px) {
   .login-shell {
     grid-template-columns: 1fr 1fr;

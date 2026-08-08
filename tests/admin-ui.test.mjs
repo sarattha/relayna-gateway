@@ -60,6 +60,7 @@ test("portal uses Entra BFF sessions and preserves explicit break-glass access",
   assert.match(microsoftSignInSvg, /width="215" height="41" viewBox="0 0 215 41"/);
   assert.match(microsoftSignInSvg, /fill="#f25022"[\s\S]*fill="#00a4ef"[\s\S]*fill="#7fba00"[\s\S]*fill="#ffb900"/);
   assert.match(html, /class="break-glass-login"/);
+  assert.match(html, /id="access-state-sign-out"[^>]*>Sign out and switch account/);
   assert.match(html, /Governed access\.[\s\S]*Operational clarity\./);
   assert.match(html, /Your identity tokens stay server-side/);
   assert.match(css, /\.login-primary img[\s\S]*width: 215px[\s\S]*height: auto/);
@@ -72,6 +73,10 @@ test("portal uses Entra BFF sessions and preserves explicit break-glass access",
   assert.match(js, /\/admin-ui\/auth\/logout/);
   assert.match(sourceJs, /logoutUrl = result\?\.logout_url \?\? null/);
   assert.match(sourceJs, /if \(logoutUrl\) location\.assign\(logoutUrl\)/);
+  assert.match(sourceJs, /#access-state-sign-out"\)\.addEventListener\("click", signOut\)/);
+  const accessState = sourceFunction("renderAccessState");
+  assert.match(accessState, /\.break-glass-login"\)\.classList\.remove\("hidden"\)/);
+  assert.match(accessState, /#access-state-sign-out"\)\.classList\.remove\("hidden"\)/);
   assert.match(js, /"x-csrf-token": state\.session\.csrf_token/);
   assert.match(js, /session\.member\.status !== "active"/);
   assert.doesNotMatch(js, /sessionStorage\.setItem\([^,]+,\s*.*id_token/);

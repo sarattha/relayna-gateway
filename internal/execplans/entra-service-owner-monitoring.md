@@ -86,8 +86,13 @@ break-glass authentication path.
 - [x] (2026-08-09) Addressed the second Codex review's proxy-cookie and expired
   portal-session findings; the full verification stack and 95.26% coverage gate
   pass on an isolated database.
-- [ ] (2026-08-09) Push the second-review fixes, reply to and resolve both
-  threads, and obtain the final Codex re-review result.
+- [x] (2026-08-09) Pushed the second-review fixes, replied to and resolved both
+  threads, and received the next Codex review.
+- [x] (2026-08-09) Kept break-glass access and CSRF-protected sign-out available
+  to pending and blocked members, verified both controls with Computer and the
+  development OIDC pending persona, and passed the full verification stack.
+- [x] (2026-08-09) Stopped requesting additional Codex reviews after addressing
+  the third-review finding, as requested by the user.
 
 ## Surprises & Discoveries
 
@@ -190,6 +195,10 @@ break-glass authentication path.
   cookies could reach request-plane upstreams and that expired portal sessions
   were not pruned during normal use.
   Evidence: PR #99 review of commit `93ff6d9d9f`.
+- Observation: The third Codex review found that pending and blocked members
+  were shown an informational access state after the UI hid both the emergency
+  operator form and the only sign-out control.
+  Evidence: PR #99 review of commit `ca63a86b29`.
 
 ## Decision Log
 
@@ -265,6 +274,12 @@ break-glass authentication path.
   New session creation is the smallest normal-use cleanup point and mirrors the
   reviewed OIDC transaction cleanup without a schema or scheduler change.
   Date/Author: 2026-08-09 / Codex.
+- Decision: Keep the emergency operator form visible for pending and blocked
+  sessions and expose the existing CSRF-protected logout flow in the access card.
+  Rationale: Bootstrap administrators need recovery access in the same browser,
+  while blocked or pending users must be able to terminate Entra SSO and switch
+  accounts without clearing cookies manually.
+  Date/Author: 2026-08-09 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -295,11 +310,20 @@ remains available below the designed security guidance. The final mandatory
 verification stack passed with the documented neutral global test policy; no
 runtime policy behavior was changed as part of this visual follow-up.
 
-The second Codex review's security findings are fixed locally: Pingora removes
+The second Codex review's security findings are fixed in commit `ca63a86`:
+Pingora removes
 all downstream cookies before forwarding request-plane traffic, and each portal
 session insert transactionally prunes expired sessions. Focused regressions,
 the complete mandatory stack, all 299 nextest cases, and the 95.26% all-features
 line-coverage gate pass on a disposable database.
+
+The follow-up review found one access-state recovery gap. Pending and blocked
+members now retain the emergency operator form and receive a dedicated "Sign
+out and switch account" action wired to the existing CSRF-protected logout.
+Computer verified the pending-persona form, provider logout, and return to the
+signed-out portal against the rebuilt local image. All Admin UI tests, the Vite
+production build, and the complete mandatory repository stack pass; no further
+Codex review was requested per the user's stopping instruction.
 
 ## Context and Orientation
 

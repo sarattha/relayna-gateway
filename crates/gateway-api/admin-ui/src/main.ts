@@ -480,7 +480,7 @@ document.querySelector("#login-form").addEventListener("submit", async (event) =
   }
 });
 
-document.querySelector("#sign-out").addEventListener("click", async () => {
+async function signOut() {
   let logoutUrl = null;
   if (!token() && state.session) {
     try {
@@ -491,7 +491,10 @@ document.querySelector("#sign-out").addEventListener("click", async () => {
   sessionStorage.removeItem(tokenKey);
   if (logoutUrl) location.assign(logoutUrl);
   else location.reload();
-});
+}
+
+document.querySelector("#sign-out").addEventListener("click", signOut);
+document.querySelector("#access-state-sign-out").addEventListener("click", signOut);
 
 document.querySelector("#workspace-select").addEventListener("change", (event) => {
   state.workspace = event.target.value;
@@ -4128,7 +4131,8 @@ async function initializePortal() {
 
 function renderAccessState(member) {
   document.querySelector("#entra-sign-in").classList.add("hidden");
-  document.querySelector(".break-glass-login").classList.add("hidden");
+  document.querySelector(".break-glass-login").classList.remove("hidden");
+  document.querySelector("#access-state-sign-out").classList.remove("hidden");
   document.querySelector("#login-title").textContent = member.status === "blocked" ? "Access blocked" : "Approval pending";
   document.querySelector(".login-copy").textContent = member.status === "blocked"
     ? "An administrator has blocked this portal membership. Contact the gateway operations team."
