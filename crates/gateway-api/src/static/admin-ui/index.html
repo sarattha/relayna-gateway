@@ -10,24 +10,49 @@
   <body>
     <a class="skip-link" href="#content">Skip to main content</a>
     <div id="login" class="login-shell">
-      <section class="login-panel" aria-labelledby="login-title">
-        <div class="login-mark">Relayna</div>
-        <h1 id="login-title">Gateway portal</h1>
-        <p class="login-copy">Administrators and registered service owners use one governed portal for services, usage, and failures.</p>
-        <a id="entra-sign-in" class="button primary login-primary" href="/admin-ui/auth/login">Sign in with Microsoft Entra</a>
-        <p id="oidc-unavailable" class="subtle hidden">Microsoft Entra sign-in is not configured for this gateway.</p>
-        <details class="break-glass-login">
-          <summary>Emergency operator access</summary>
-          <form id="login-form">
-            <p class="help">Use the break-glass operator token only when Entra sign-in is unavailable.</p>
-            <label>
-              Operator token
-              <input id="operator-token" type="password" autocomplete="current-password" />
-            </label>
-            <button type="submit">Use operator token</button>
-          </form>
-        </details>
-        <p id="login-error" class="error-text"></p>
+      <section class="login-brand-panel" aria-label="Relayna Gateway overview">
+        <div class="login-brand-lockup">
+          <span class="login-brand-icon" aria-hidden="true"><i class="ti ti-route-alt-left"></i></span>
+          <span><strong>Relayna</strong><small>Gateway</small></span>
+        </div>
+        <div class="login-brand-message">
+          <span class="login-brand-eyebrow">Internal AI gateway</span>
+          <h1>Governed access.<br />Operational clarity.</h1>
+          <p>One secure control plane for AI service traffic, usage, incidents, and service ownership.</p>
+          <ul class="login-capabilities" aria-label="Gateway capabilities">
+            <li><i class="ti ti-shield-check" aria-hidden="true"></i>Entra identity</li>
+            <li><i class="ti ti-chart-histogram" aria-hidden="true"></i>Usage visibility</li>
+            <li><i class="ti ti-key" aria-hidden="true"></i>Key governance</li>
+            <li><i class="ti ti-lock-access" aria-hidden="true"></i>Scoped access</li>
+          </ul>
+        </div>
+        <small class="login-copyright">Relayna Gateway · Internal use only</small>
+      </section>
+      <section class="login-access-panel" aria-labelledby="login-title">
+        <div class="login-access-card">
+          <span class="login-access-eyebrow">Organization access</span>
+          <h1 id="login-title">Welcome back</h1>
+          <p class="login-copy">Sign in with your organization account. Relayna will resolve your administrator role and service memberships after Entra verifies your identity.</p>
+          <a id="entra-sign-in" class="login-primary" href="/admin-ui/auth/login"><i class="ti ti-brand-windows" aria-hidden="true"></i><span>Sign in with Microsoft Entra ID</span></a>
+          <p id="oidc-unavailable" class="subtle hidden">Microsoft Entra sign-in is not configured for this gateway.</p>
+          <div class="login-session-divider"><span>Secure browser session</span></div>
+          <div class="login-security-note">
+            <i class="ti ti-shield-lock" aria-hidden="true"></i>
+            <span><strong>Your Entra tokens stay server-side</strong><small>The browser receives an HttpOnly session cookie. Gateway permissions come from Relayna roles and service memberships.</small></span>
+          </div>
+          <details class="break-glass-login">
+            <summary>Emergency operator access</summary>
+            <form id="login-form">
+              <p class="help">Use the break-glass operator token only when Entra sign-in is unavailable.</p>
+              <label>
+                Operator token
+                <input id="operator-token" type="password" autocomplete="current-password" />
+              </label>
+              <button type="submit">Use operator token</button>
+            </form>
+          </details>
+          <p id="login-error" class="error-text"></p>
+        </div>
       </section>
     </div>
 

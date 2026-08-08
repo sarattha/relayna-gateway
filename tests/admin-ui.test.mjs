@@ -55,6 +55,10 @@ test("portal uses Entra BFF sessions and preserves explicit break-glass access",
   assert.match(sourceJs, /const state = \{\s*view: "overview",/);
   assert.match(html, /id="entra-sign-in"[\s\S]*Sign in with Microsoft Entra/);
   assert.match(html, /class="break-glass-login"/);
+  assert.match(html, /Governed access\.[\s\S]*Operational clarity\./);
+  assert.match(html, /Your Entra tokens stay server-side/);
+  assert.match(css, /\.login-shell[\s\S]*grid-template-columns: minmax\(430px, 56fr\) minmax\(420px, 44fr\)/);
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.login-shell \{[\s\S]*display: block/);
   assert.match(js, /\/admin-ui\/auth\/config/);
   assert.match(js, /\/admin-ui\/auth\/session/);
   assert.match(js, /\/admin-ui\/auth\/logout/);

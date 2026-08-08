@@ -63,6 +63,10 @@ break-glass authentication path.
   review threads.
 - [x] (2026-08-08) Confirmed the final GitHub Docs and CI workflows pass after
   hardening the development OIDC readiness ceiling for parallel test load.
+- [x] (2026-08-08) Matched the signed-out Entra page to the selected split-screen
+  desktop and stacked mobile design, preserved break-glass access, rebuilt the
+  local image, and passed side-by-side Chrome design QA at 1280 x 720 and
+  390 x 844.
 
 ## Surprises & Discoveries
 
@@ -138,6 +142,22 @@ break-glass authentication path.
   and makes the failure threshold appropriate for shared CI runners.
   Evidence: PR #99 security job `59048666615`; the mandatory local stack then
   passed all 299 nextest cases under parallel load.
+- Observation: The first screenshot comparison placed the sign-in column 30 to
+  34 pixels above the approved reference because the preserved break-glass
+  disclosure increased the centered card height. Applying a responsive visual
+  offset restored reference alignment while keeping the recovery control in the
+  normal document and tab order.
+  Evidence: `output/chrome/login-design/login-desktop-comparison.png` and
+  `output/chrome/login-design/login-mobile-comparison.png`.
+- Observation: A completely empty verification database exposes a released
+  policy-layer fallback that narrows key-specific routes to chat and responses;
+  the long-standing proxy fixture therefore denies its explicitly allowed
+  embeddings request until a neutral global layer is configured. This visual
+  follow-up does not change that shipped authorization behavior. The mandatory
+  stack passed against an isolated database with the supported neutral global
+  layer, and all disposable verification state was removed afterward.
+  Evidence: the initial isolated run returned `policy_denied` for
+  `/v1/embeddings`; the configured rerun passed all 299 nextest cases.
 
 ## Decision Log
 
@@ -220,6 +240,13 @@ PR #99 is available at https://github.com/sarattha/relayna-gateway/pull/99. Its
 first Codex review identified five actionable findings; all five are fixed,
 covered, replied to, and resolved. GitHub Docs run 238 and CI run 473 both pass
 on the reviewed, hardened implementation.
+
+The signed-out Entra entry point now also matches the selected product design
+at desktop and mobile sizes. The primary Entra action reaches the local
+multi-persona identity provider, and the collapsed emergency operator flow
+remains available below the designed security guidance. The final mandatory
+verification stack passed with the documented neutral global test policy; no
+runtime policy behavior was changed as part of this visual follow-up.
 
 ## Context and Orientation
 
