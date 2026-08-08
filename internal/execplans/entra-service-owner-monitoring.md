@@ -67,6 +67,12 @@ break-glass authentication path.
   desktop and stacked mobile design, preserved break-glass access, rebuilt the
   local image, and passed side-by-side Chrome design QA at 1280 x 720 and
   390 x 844.
+- [x] (2026-08-08) Scoped the command palette to the active Admin or service-owner
+  workspace and made long Admin command lists use readable, non-collapsing,
+  scrollable rows.
+- [x] (2026-08-09) Rebuilt the local image and used Computer with the development
+  OIDC personas to confirm the service-owner palette exposes only owner views
+  and the Admin palette exposes only Admin views with clean scrolling.
 
 ## Surprises & Discoveries
 
@@ -108,6 +114,13 @@ break-glass authentication path.
   view first and resolving the hash after state construction fixed the blank
   portal; a source contract now guards the initialization order.
   Evidence: `tests/admin-ui.test.mjs` and the development OIDC desktop journey.
+- Observation: The command palette bypassed the role-filtered navigation model
+  by iterating the global view catalog directly, and its implicit grid rows
+  collapsed under the modal height limit. Filtering the catalog by active
+  workspace and assigning minimum row sizing fixes both the information leak
+  and the overlapping text without changing server-side authorization.
+  Evidence: `showCommandPalette()` in `crates/gateway-api/admin-ui/src/main.ts`
+  and the command palette contract in `tests/admin-ui.test.mjs`.
 - Observation: The two PostgreSQL-backed gateway integration binaries mutate
   shared control-plane fixtures and can race when `cargo nextest` starts them
   concurrently. Holding one PostgreSQL advisory lock for each complete workflow

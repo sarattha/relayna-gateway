@@ -17,6 +17,7 @@ import {
 
 const tokenKey = "relayna_gateway_operator_token";
 const viewIds = new Set(Object.keys(viewMeta));
+const ownerViewIds = new Set(["my-services", "service-dashboard"]);
 const state = {
   view: "overview",
   keys: [],
@@ -342,8 +343,15 @@ function hasOwnerAccess() {
 }
 
 function viewAllowed(view) {
-  if (["my-services", "service-dashboard"].includes(view)) return hasOwnerAccess();
+  if (ownerViewIds.has(view)) return hasOwnerAccess();
   return isAdmin();
+}
+
+function commandViewsForWorkspace() {
+  return Object.entries(viewMeta).filter(([view]) => {
+    if (state.workspace === "owner") return ownerViewIds.has(view) && hasOwnerAccess();
+    return !ownerViewIds.has(view) && isAdmin();
+  });
 }
 
 function configurePortalShell() {
@@ -419,15 +427,16 @@ function showCommandPalette() {
   const backdrop = document.createElement("section");
   backdrop.className = "modal-backdrop";
   const titleId = `dialog-title-${++dialogCounter}`;
-  const commands = Object.entries(viewMeta)
+  const commands = commandViewsForWorkspace()
     .map(([view, meta]) => `<button type="button" class="command-item" data-command-view="${attr(view)}">
       <span><strong>${esc(meta.title)}</strong><small>${esc(meta.domain)} · ${esc(meta.summary)}</small></span>
       <kbd>↵</kbd>
     </button>`)
     .join("");
+  const workspaceLabel = state.workspace === "owner" ? "Service owner" : "Admin";
   backdrop.innerHTML = `
     <div class="modal command-palette" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
-      <h3 id="${titleId}">Go to Admin view</h3>
+      <h3 id="${titleId}">Go to ${workspaceLabel} view</h3>
       <label class="command-search"><span class="sr-only">Filter views</span><input type="search" placeholder="Search views…" autocomplete="off" data-command-search></label>
       <div class="command-list" role="list">${commands}</div>
       <div class="command-footer"><span>Enter to open</span><span>Esc to close</span></div>

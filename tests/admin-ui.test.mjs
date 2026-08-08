@@ -128,6 +128,17 @@ test("admin portal exposes responsive operator navigation and accessible workflo
   assert.match(css, /@media \(max-width: 920px\)/);
 });
 
+test("command palette respects the active workspace and keeps rows readable", () => {
+  assert.match(js, /const ownerViewIds = new Set\(\["my-services", "service-dashboard"\]\)/);
+  assert.match(js, /function commandViewsForWorkspace\(\)/);
+  assert.match(js, /const commands = commandViewsForWorkspace\(\)/);
+  assert.match(js, /state\.workspace === "owner"/);
+  assert.match(css, /\.command-palette\s*\{[^}]*overflow:\s*hidden/s);
+  assert.match(css, /\.command-list\s*\{[^}]*grid-auto-rows:\s*minmax\(48px, auto\)/s);
+  assert.match(css, /\.command-item\s*\{[^}]*white-space:\s*normal/s);
+  assert.match(css, /\.command-item > span\s*\{[^}]*min-width:\s*0/s);
+});
+
 test("admin portal calls the expected gateway admin APIs", () => {
   for (const endpoint of [
     "/admin-ui/admin/usage/dashboard",

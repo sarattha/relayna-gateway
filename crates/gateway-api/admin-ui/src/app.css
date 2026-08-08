@@ -1792,6 +1792,7 @@ tbody tr:hover td {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   align-self: start;
   margin-top: min(14vh, 120px);
+  overflow: hidden;
 }
 
 .command-search input {
@@ -1804,11 +1805,16 @@ tbody tr:hover td {
   max-height: min(58vh, 520px);
   overflow-y: auto;
   display: grid;
+  grid-auto-rows: minmax(48px, auto);
+  align-content: start;
   gap: 3px;
+  padding-right: 4px;
+  overscroll-behavior: contain;
 }
 
 .command-item {
   width: 100%;
+  min-height: 48px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -1816,17 +1822,26 @@ tbody tr:hover td {
   padding: 9px 10px;
   border-color: transparent;
   text-align: left;
+  white-space: normal;
 }
 
 .command-item > span {
+  min-width: 0;
   display: grid;
   gap: 2px;
 }
 
+.command-item strong {
+  display: block;
+  line-height: 1.25;
+}
+
 .command-item small {
+  display: block;
   overflow: hidden;
   color: var(--rg-color-muted);
   font-size: 11px;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
