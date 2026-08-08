@@ -10,17 +10,50 @@
   <body>
     <a class="skip-link" href="#content">Skip to main content</a>
     <div id="login" class="login-shell">
-      <form id="login-form" class="login-panel">
-        <div class="login-mark">Relayna</div>
-        <h1>Gateway Admin</h1>
-        <p class="login-copy">Operate AI traffic, policy, services, and usage from one governed control plane.</p>
-        <label>
-          Operator token
-          <input id="operator-token" type="password" autocomplete="current-password" />
-        </label>
-        <button class="primary" type="submit">Sign in</button>
-        <p id="login-error" class="error-text"></p>
-      </form>
+      <section class="login-brand-panel" aria-label="Relayna Gateway overview">
+        <div class="login-brand-lockup">
+          <span class="login-brand-icon" aria-hidden="true"><i class="ti ti-route-alt-left"></i></span>
+          <span><strong>Relayna</strong><small>Gateway</small></span>
+        </div>
+        <div class="login-brand-message">
+          <span class="login-brand-eyebrow">Internal AI gateway</span>
+          <h1>Governed access.<br />Operational clarity.</h1>
+          <p>One secure control plane for AI service traffic, usage, incidents, and service ownership.</p>
+          <ul class="login-capabilities" aria-label="Gateway capabilities">
+            <li><i class="ti ti-shield-check" aria-hidden="true"></i>Entra identity</li>
+            <li><i class="ti ti-chart-histogram" aria-hidden="true"></i>Usage visibility</li>
+            <li><i class="ti ti-key" aria-hidden="true"></i>Key governance</li>
+            <li><i class="ti ti-lock-access" aria-hidden="true"></i>Scoped access</li>
+          </ul>
+        </div>
+        <small class="login-copyright">Relayna Gateway · Internal use only</small>
+      </section>
+      <section class="login-access-panel" aria-labelledby="login-title">
+        <div class="login-access-card">
+          <span class="login-access-eyebrow">Organization access</span>
+          <h1 id="login-title">Welcome back</h1>
+          <p class="login-copy">Sign in with your organization account. Relayna will resolve your administrator role and service memberships after Entra verifies your identity.</p>
+          <a id="entra-sign-in" class="login-primary" href="/admin-ui/auth/login"><i class="ti ti-brand-windows" aria-hidden="true"></i><span>Sign in with Microsoft Entra ID</span></a>
+          <p id="oidc-unavailable" class="subtle hidden">Microsoft Entra sign-in is not configured for this gateway.</p>
+          <div class="login-session-divider"><span>Secure browser session</span></div>
+          <div class="login-security-note">
+            <i class="ti ti-shield-lock" aria-hidden="true"></i>
+            <span><strong>Your Entra tokens stay server-side</strong><small>The browser receives an HttpOnly session cookie. Gateway permissions come from Relayna roles and service memberships.</small></span>
+          </div>
+          <details class="break-glass-login">
+            <summary>Emergency operator access</summary>
+            <form id="login-form">
+              <p class="help">Use the break-glass operator token only when Entra sign-in is unavailable.</p>
+              <label>
+                Operator token
+                <input id="operator-token" type="password" autocomplete="current-password" />
+              </label>
+              <button type="submit">Use operator token</button>
+            </form>
+          </details>
+          <p id="login-error" class="error-text"></p>
+        </div>
+      </section>
     </div>
 
     <main id="app" class="app-shell hidden">
@@ -38,34 +71,41 @@
             <i class="ti ti-x" aria-hidden="true"></i>
           </button>
         </div>
-        <nav class="nav-groups" aria-label="Admin sections">
-          <section class="nav-group">
+        <nav class="nav-groups" aria-label="Portal sections">
+          <section class="nav-group" data-admin-nav>
             <span>Monitor</span>
             <button data-view="overview" class="nav active"><i class="ti ti-layout-dashboard" aria-hidden="true"></i><span>Overview</span></button>
             <button data-view="health" class="nav"><i class="ti ti-heart-rate-monitor" aria-hidden="true"></i><span>Health</span></button>
             <button data-view="usage" class="nav"><i class="ti ti-chart-line" aria-hidden="true"></i><span>Usage</span></button>
           </section>
-          <section class="nav-group">
+          <section class="nav-group" data-admin-nav>
             <span>Discover</span>
             <button data-view="providers" class="nav"><i class="ti ti-database" aria-hidden="true"></i><span>Providers</span></button>
             <button data-view="services" class="nav"><i class="ti ti-cube" aria-hidden="true"></i><span>Services</span></button>
             <button data-view="routes" class="nav"><i class="ti ti-route" aria-hidden="true"></i><span>Routes</span></button>
             <button data-view="projects" class="nav"><i class="ti ti-folders" aria-hidden="true"></i><span>Projects</span></button>
           </section>
-          <section class="nav-group">
+          <section class="nav-group" data-admin-nav>
             <span>Govern</span>
             <button data-view="keys" class="nav"><i class="ti ti-key" aria-hidden="true"></i><span>Keys</span></button>
             <button data-view="guardrails" class="nav"><i class="ti ti-shield-check" aria-hidden="true"></i><span>Guardrails</span></button>
             <button data-view="audit" class="nav"><i class="ti ti-file-search" aria-hidden="true"></i><span>Audit</span></button>
             <button data-view="settings" class="nav"><i class="ti ti-settings" aria-hidden="true"></i><span>Settings</span></button>
+            <button data-view="members" class="nav"><i class="ti ti-users" aria-hidden="true"></i><span>Members</span></button>
+            <button data-view="managed-identities" class="nav"><i class="ti ti-id-badge-2" aria-hidden="true"></i><span>Managed identities</span></button>
+          </section>
+          <section class="nav-group" data-owner-nav>
+            <span>Service owner</span>
+            <button data-view="my-services" class="nav"><i class="ti ti-cubes" aria-hidden="true"></i><span>My services</span></button>
+            <button data-view="service-dashboard" class="nav"><i class="ti ti-chart-histogram" aria-hidden="true"></i><span>Service dashboard</span></button>
           </section>
         </nav>
         <div class="sidebar-actions">
-          <button id="rotate-token" class="danger"><i class="ti ti-refresh" aria-hidden="true"></i><span>Rotate token</span></button>
+          <button id="rotate-token" class="danger" data-break-glass-only><i class="ti ti-refresh" aria-hidden="true"></i><span>Rotate token</span></button>
           <button id="sign-out"><i class="ti ti-logout" aria-hidden="true"></i><span>Sign out</span></button>
           <div class="session-context" aria-label="Current environment">
             <span class="environment-dot" aria-hidden="true"></span>
-            <span><strong>Local</strong><small>Operator session</small></span>
+            <span><strong id="session-name">Local</strong><small id="session-role">Portal session</small></span>
           </div>
         </div>
       </aside>
@@ -88,6 +128,7 @@
             <kbd>⌘K</kbd>
           </button>
           <div class="global-end">
+            <label id="workspace-control" class="workspace-control hidden"><span class="sr-only">Workspace</span><select id="workspace-select"><option value="admin">Admin</option><option value="owner">Service owner</option></select></label>
             <span class="environment-chip"><span class="environment-dot" aria-hidden="true"></span>Local</span>
             <span id="last-refreshed" class="last-refreshed">Not refreshed</span>
             <button id="refresh" class="icon-button" type="button" aria-label="Refresh current view">

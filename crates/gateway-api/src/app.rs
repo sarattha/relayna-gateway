@@ -1,18 +1,23 @@
+use crate::portal::{
+    constant_time_eq, pkce_challenge, random_opaque_token, safe_return_to, token_hash,
+    PortalOidcRuntime,
+};
 use async_trait::async_trait;
 use axum::{
     body::Body,
     extract::{OriginalUri, Path, Query, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
     routing::{any, delete, get, patch, post},
     Json, Router,
 };
 use bytes::Bytes;
-use chrono::Utc;
+use chrono::{Duration as ChronoDuration, Utc};
 use gateway_core::CircuitBreakerState;
+use gateway_core::EntraJwtVerifier;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
-    evaluate_policy, evaluate_policy_limits, extract_generation_features,
+    default_operator_scopes, evaluate_policy, evaluate_policy_limits, extract_generation_features,
     guardrail_executor_for_definitions, is_relayna_default_endpoint, merge_endpoint_pricing_rules,
     resolve_guardrail_plan, validate_openapi_endpoints, validate_openapi_source_path,
     AdminAuditStore, AdminGatewayAuthSettingsStore, AdminGuardrailDefinitionResponse,
@@ -27,20 +32,23 @@ use gateway_core::{
     GuardrailObservabilityStore, GuardrailPlanRequest, GuardrailPolicySet, GuardrailStore,
     GuardrailTestRequest, GuardrailTestResponse, KeyPolicy, LiteLlmCredentialMappingResponse,
     LiteLlmCredentialMappingUpsertRequest, LiteLlmPassthroughSettingsPatchRequest,
-    OpenAiRouteConfigPatchRequest, OpenAiRouteMode, OperatorAuthorization, OperatorTokenMaterial,
-    OperatorTokenStore, PolicyLookup, ProjectCreateRequest, ProjectPatchRequest, ProjectResponse,
+    ManagedIdentityCreateRequest, ManagedIdentityPatchRequest, MemberPatchRequest, MemberStatus,
+    NewPortalSession, OidcLoginTransaction, OpenAiRouteConfigPatchRequest, OpenAiRouteMode,
+    OperatorAuthorization, OperatorTokenMaterial, OperatorTokenStore, PolicyLookup,
+    PortalAccessStore, PortalMember, ProjectCreateRequest, ProjectPatchRequest, ProjectResponse,
     Provider, ProviderConfigCreateRequest, ProviderConfigLookup, ProviderConfigPatchRequest,
     ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore,
     Route, ServiceCreateRequest, ServiceImportDiff, ServiceImportValidationIssue,
-    ServiceOpenApiEndpoint, ServiceOpenApiPreview, ServiceOpenApiPreviewRequest,
-    ServiceOpenApiSyncRequest, ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse,
-    SharedGatewayAuthRuntime, StudioConnectionEnv, StudioConnectionPatchRequest,
-    StudioConnectionTestResponse, StudioServiceCatalogResponse, StudioServiceImportPreview,
-    StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent, UsageExport,
-    UsageFilterValuesQuery, UsageQuery, UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ,
-    SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE,
-    SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE,
-    SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
+    ServiceMemberRole, ServiceMembership, ServiceMembershipUpsertRequest, ServiceOpenApiEndpoint,
+    ServiceOpenApiPreview, ServiceOpenApiPreviewRequest, ServiceOpenApiSyncRequest,
+    ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse, SharedGatewayAuthRuntime,
+    StudioConnectionEnv, StudioConnectionPatchRequest, StudioConnectionTestResponse,
+    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
+    UsageBreakdownDimension, UsageEvent, UsageExport, UsageFilterValuesQuery, UsageQuery,
+    UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE,
+    SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE,
+    SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT,
+    SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::{Deserialize, Serialize};
@@ -71,6 +79,7 @@ pub trait GatewayData:
     + OperatorTokenStore
     + AdminAuditStore
     + UsageQueryStore
+    + PortalAccessStore
     + Send
     + Sync
 {
@@ -101,6 +110,8 @@ pub struct AppState {
     litellm_base_url: String,
     litellm_service_key: String,
     litellm_ui_client: reqwest::Client,
+    portal_oidc: Option<Arc<PortalOidcRuntime>>,
+    owner_entra_verifier: Option<Arc<EntraJwtVerifier>>,
 }
 
 const STUDIO_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
@@ -111,6 +122,9 @@ const LITELLM_UI_HTML_REWRITE_LIMIT: usize = 2 * 1024 * 1024;
 const LITELLM_UI_PROXY_PREFIX: &str = "/admin-ui/litellm-ui";
 const LITELLM_UI_OPERATOR_COOKIE: &str = "relayna_litellm_ui_operator";
 const LITELLM_UI_OPERATOR_COOKIE_MAX_AGE_SECONDS: u64 = 60 * 60;
+const PORTAL_SESSION_COOKIE: &str = "relayna_portal_session";
+const PORTAL_CSRF_COOKIE: &str = "relayna_portal_csrf";
+const PORTAL_LOGIN_COOKIE: &str = "relayna_portal_login";
 const LITELLM_UI_ROOT_PROXY_PREFIXES: &[&str] = &[
     "v1/agents",
     "v2/",
@@ -211,6 +225,8 @@ pub fn router(store: PostgresStore, redis: RedisReadiness) -> Router {
         litellm_base_url: DEFAULT_LITELLM_BASE_URL.to_owned(),
         litellm_service_key: String::new(),
         litellm_ui_client: litellm_ui_client(),
+        portal_oidc: None,
+        owner_entra_verifier: None,
     })
 }
 
@@ -241,6 +257,8 @@ pub fn router_with_studio(
         litellm_base_url: DEFAULT_LITELLM_BASE_URL.to_owned(),
         litellm_service_key: String::new(),
         litellm_ui_client: litellm_ui_client(),
+        portal_oidc: None,
+        owner_entra_verifier: None,
     })
 }
 
@@ -271,6 +289,31 @@ pub fn router_with_studio_auth_and_litellm(
     litellm_base_url: String,
     litellm_service_key: String,
 ) -> Router {
+    router_with_identity(
+        store,
+        redis,
+        studio,
+        auth_env,
+        auth_runtime,
+        litellm_base_url,
+        litellm_service_key,
+        None,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn router_with_identity(
+    store: PostgresStore,
+    redis: RedisReadiness,
+    studio: Option<StudioCatalogClient>,
+    auth_env: GatewayAuthEnv,
+    auth_runtime: SharedGatewayAuthRuntime,
+    litellm_base_url: String,
+    litellm_service_key: String,
+    portal_oidc: Option<Arc<PortalOidcRuntime>>,
+    owner_entra_verifier: Option<Arc<EntraJwtVerifier>>,
+) -> Router {
     let studio_env = studio
         .map(|studio| StudioConnectionEnv {
             base_url: Some(studio.base_url),
@@ -286,6 +329,8 @@ pub fn router_with_studio_auth_and_litellm(
         litellm_base_url,
         litellm_service_key,
         litellm_ui_client: litellm_ui_client(),
+        portal_oidc,
+        owner_entra_verifier,
     })
 }
 
@@ -293,6 +338,59 @@ pub fn router_with_state(state: AppState) -> Router {
     Router::new()
         .route("/admin-ui/healthz", get(healthz))
         .route("/admin-ui/readyz", get(readyz))
+        .route("/admin-ui/auth/config", get(portal_auth_config))
+        .route("/admin-ui/auth/login", get(portal_auth_login))
+        .route("/admin-ui/auth/callback", get(portal_auth_callback))
+        .route("/admin-ui/auth/session", get(portal_auth_session))
+        .route("/admin-ui/auth/logout", post(portal_auth_logout))
+        .route("/admin-ui/admin/members", get(admin_members))
+        .route(
+            "/admin-ui/admin/members/{member_id}",
+            patch(admin_patch_member),
+        )
+        .route(
+            "/admin-ui/admin/members/{member_id}/services/{service_name}",
+            axum::routing::put(admin_upsert_service_membership)
+                .delete(admin_delete_service_membership),
+        )
+        .route(
+            "/admin-ui/admin/managed-identities",
+            get(admin_managed_identities).post(admin_create_managed_identity),
+        )
+        .route(
+            "/admin-ui/admin/managed-identities/{identity_id}",
+            patch(admin_patch_managed_identity).delete(admin_delete_managed_identity),
+        )
+        .route("/owner/v1/services", get(owner_services))
+        .route("/owner/v1/services/{service_name}", get(owner_service))
+        .route(
+            "/owner/v1/services/{service_name}/dashboard",
+            get(owner_service_dashboard),
+        )
+        .route(
+            "/owner/v1/services/{service_name}/events",
+            get(owner_service_events),
+        )
+        .route(
+            "/owner/v1/services/{service_name}/errors",
+            get(owner_service_errors),
+        )
+        .route(
+            "/owner/v1/services/{service_name}/logs",
+            get(owner_service_logs),
+        )
+        .route(
+            "/owner/v1/services/{service_name}/endpoints",
+            get(owner_service_endpoints),
+        )
+        .route(
+            "/owner/v1/services/{service_name}/export.json",
+            get(owner_service_export_json),
+        )
+        .route(
+            "/owner/v1/services/{service_name}/export.csv",
+            get(owner_service_export_csv),
+        )
         .route("/admin-ui/litellm-ui", any(litellm_ui_proxy_root))
         .route("/admin-ui/litellm-ui/", any(litellm_ui_proxy_root))
         .route(
@@ -592,6 +690,721 @@ async fn readyz(State(state): State<AppState>) -> Response {
             }),
         )
             .into_response(),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct PortalAuthConfigBody {
+    enabled: bool,
+    login_url: &'static str,
+    break_glass_available: bool,
+}
+
+async fn portal_auth_config(State(state): State<AppState>) -> Json<PortalAuthConfigBody> {
+    Json(PortalAuthConfigBody {
+        enabled: state.portal_oidc.is_some(),
+        login_url: "/admin-ui/auth/login",
+        break_glass_available: true,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct PortalLoginQuery {
+    return_to: Option<String>,
+}
+
+async fn portal_auth_login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PortalLoginQuery>,
+) -> Response {
+    let Some(oidc) = state.portal_oidc.as_ref() else {
+        return error_response(&headers, GatewayError::OidcUnavailable);
+    };
+    let raw_state = random_opaque_token();
+    let raw_binding = random_opaque_token();
+    let nonce = random_opaque_token();
+    let verifier = random_opaque_token();
+    let authorization_url = match oidc
+        .authorization_url(&raw_state, &nonce, &pkce_challenge(&verifier))
+        .await
+    {
+        Ok(url) => url,
+        Err(error) => return error_response(&headers, error),
+    };
+    let transaction = OidcLoginTransaction {
+        state_hash: token_hash(&raw_state),
+        binding_hash: token_hash(&raw_binding),
+        nonce: nonce.clone(),
+        pkce_verifier: verifier.clone(),
+        return_to: safe_return_to(query.return_to.as_deref()),
+        expires_at: Utc::now() + ChronoDuration::seconds(oidc.config.login_ttl_seconds),
+    };
+    if let Err(error) = state.store.create_oidc_login_transaction(transaction).await {
+        return error_response(&headers, error);
+    }
+    let mut response = Redirect::temporary(&authorization_url).into_response();
+    append_portal_login_cookie(
+        response.headers_mut(),
+        &raw_binding,
+        oidc.config.login_ttl_seconds,
+        oidc.config.cookie_secure,
+    );
+    response
+}
+
+#[derive(Debug, Deserialize)]
+struct PortalCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+}
+
+async fn portal_auth_callback(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PortalCallbackQuery>,
+) -> Response {
+    let Some(oidc) = state.portal_oidc.as_ref() else {
+        return error_response(&headers, GatewayError::OidcUnavailable);
+    };
+    if query.error.is_some() {
+        return error_response(&headers, GatewayError::InvalidOidcTransaction);
+    }
+    let (Some(code), Some(raw_state)) = (query.code.as_deref(), query.state.as_deref()) else {
+        return error_response(&headers, GatewayError::InvalidOidcTransaction);
+    };
+    let Some(raw_binding) = cookie_value(&headers, PORTAL_LOGIN_COOKIE) else {
+        return error_response(&headers, GatewayError::InvalidOidcTransaction);
+    };
+    let transaction = match state
+        .store
+        .consume_oidc_login_transaction(
+            &token_hash(raw_state),
+            &token_hash(raw_binding),
+            Utc::now(),
+        )
+        .await
+    {
+        Ok(Some(transaction)) => transaction,
+        Ok(None) => return error_response(&headers, GatewayError::InvalidOidcTransaction),
+        Err(error) => return error_response(&headers, error),
+    };
+    let identity = match oidc
+        .exchange_code(code, &transaction.pkce_verifier, Utc::now())
+        .await
+    {
+        Ok(identity) => identity,
+        Err(error) => return error_response(&headers, error),
+    };
+    if identity.nonce.as_deref() != Some(transaction.nonce.as_str()) {
+        return error_response(&headers, GatewayError::InvalidOidcTransaction);
+    }
+    let Some(object_id) = identity
+        .object_id
+        .as_deref()
+        .or(identity.subject.as_deref())
+    else {
+        return error_response(&headers, GatewayError::InvalidEntraToken);
+    };
+    let member = match state
+        .store
+        .upsert_oidc_member(
+            &identity.tenant_id,
+            object_id,
+            identity.email.as_deref(),
+            identity.display_name.as_deref(),
+            Utc::now(),
+        )
+        .await
+    {
+        Ok(member) => member,
+        Err(error) => return error_response(&headers, error),
+    };
+    let raw_session = random_opaque_token();
+    let raw_csrf = random_opaque_token();
+    if let Err(error) = state
+        .store
+        .create_portal_session(NewPortalSession {
+            session_hash: token_hash(&raw_session),
+            member_id: member.id,
+            csrf_hash: token_hash(&raw_csrf),
+            expires_at: Utc::now() + ChronoDuration::seconds(oidc.config.session_ttl_seconds),
+        })
+        .await
+    {
+        return error_response(&headers, error);
+    }
+    let mut response = Redirect::to(&transaction.return_to).into_response();
+    append_portal_cookies(
+        response.headers_mut(),
+        &raw_session,
+        &raw_csrf,
+        oidc.config.session_ttl_seconds,
+        oidc.config.cookie_secure,
+    );
+    clear_portal_login_cookie(response.headers_mut(), oidc.config.cookie_secure);
+    response
+}
+
+#[derive(Debug, Serialize)]
+struct PortalSessionBody {
+    authenticated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    member: Option<PortalMember>,
+    service_memberships: Vec<ServiceMembership>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    csrf_token: Option<String>,
+}
+
+async fn portal_auth_session(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let Some(raw_session) = cookie_value(&headers, PORTAL_SESSION_COOKIE) else {
+        return Json(PortalSessionBody {
+            authenticated: false,
+            member: None,
+            service_memberships: Vec::new(),
+            csrf_token: None,
+        })
+        .into_response();
+    };
+    let Some(raw_csrf) = cookie_value(&headers, PORTAL_CSRF_COOKIE) else {
+        return error_response(&headers, GatewayError::InvalidPortalSession);
+    };
+    let session = match state
+        .store
+        .resolve_portal_session(&token_hash(raw_session), Utc::now())
+        .await
+    {
+        Ok(Some(session)) if constant_time_eq(&session.csrf_hash, &token_hash(raw_csrf)) => session,
+        Ok(_) => return error_response(&headers, GatewayError::InvalidPortalSession),
+        Err(error) => return error_response(&headers, error),
+    };
+    match state
+        .store
+        .list_service_memberships(session.member.id)
+        .await
+    {
+        Ok(service_memberships) => Json(PortalSessionBody {
+            authenticated: true,
+            member: Some(session.member),
+            service_memberships,
+            csrf_token: Some(raw_csrf.to_owned()),
+        })
+        .into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn portal_auth_logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let session = match require_portal_session(&state, &headers, true).await {
+        Ok(session) => session,
+        Err(response) => return response,
+    };
+    if let Err(error) = state
+        .store
+        .delete_portal_session(&session.session_hash)
+        .await
+    {
+        return error_response(&headers, error);
+    }
+    let (secure, logout_url) = match state.portal_oidc.as_ref() {
+        Some(oidc) => (oidc.config.cookie_secure, oidc.end_session_url().await.ok()),
+        None => (true, None),
+    };
+    let mut response = Json(serde_json::json!({ "logout_url": logout_url })).into_response();
+    clear_portal_cookies(response.headers_mut(), secure);
+    clear_portal_login_cookie(response.headers_mut(), secure);
+    response
+}
+
+#[derive(Debug, Serialize)]
+struct MemberAccessBody {
+    member: PortalMember,
+    service_memberships: Vec<ServiceMembership>,
+}
+
+async fn admin_members(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        return response;
+    }
+    let members = match state.store.list_members().await {
+        Ok(members) => members,
+        Err(error) => return error_response(&headers, error),
+    };
+    let mut response = Vec::with_capacity(members.len());
+    for member in members {
+        let service_memberships = match state.store.list_service_memberships(member.id).await {
+            Ok(memberships) => memberships,
+            Err(error) => return error_response(&headers, error),
+        };
+        response.push(MemberAccessBody {
+            member,
+            service_memberships,
+        });
+    }
+    Json(response).into_response()
+}
+
+async fn admin_patch_member(
+    State(state): State<AppState>,
+    Path(member_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Json(patch): Json<MemberPatchRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let before = match state.store.get_member(member_id).await {
+        Ok(before) => before,
+        Err(error) => return error_response(&headers, error),
+    };
+    match state.store.patch_member(member_id, patch).await {
+        Ok(Some(member)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "members:update",
+                "portal_member",
+                Some(member_id.to_string()),
+                before.as_ref().and_then(audit_json),
+                audit_json(&member),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(member).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ServiceMembershipRoleBody {
+    role: ServiceMemberRole,
+}
+
+async fn admin_upsert_service_membership(
+    State(state): State<AppState>,
+    Path((member_id, service_name)): Path<(uuid::Uuid, String)>,
+    headers: HeaderMap,
+    Json(body): Json<ServiceMembershipRoleBody>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state
+        .store
+        .upsert_service_membership(
+            member_id,
+            ServiceMembershipUpsertRequest {
+                service_name: service_name.clone(),
+                role: body.role,
+            },
+        )
+        .await
+    {
+        Ok(membership) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "memberships:upsert",
+                "service_membership",
+                Some(format!("{member_id}:{service_name}")),
+                None,
+                audit_json(&membership),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(membership).into_response()
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_delete_service_membership(
+    State(state): State<AppState>,
+    Path((member_id, service_name)): Path<(uuid::Uuid, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state
+        .store
+        .delete_service_membership(member_id, &service_name)
+        .await
+    {
+        Ok(true) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "memberships:delete",
+                "service_membership",
+                Some(format!("{member_id}:{service_name}")),
+                None,
+                None,
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_managed_identities(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        return response;
+    }
+    match state.store.list_managed_identities().await {
+        Ok(identities) => Json(identities).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_create_managed_identity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ManagedIdentityCreateRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state.store.create_managed_identity(request).await {
+        Ok(identity) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "managed_identities:create",
+                "managed_identity_binding",
+                Some(identity.id.to_string()),
+                None,
+                audit_json(&identity),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            (StatusCode::CREATED, Json(identity)).into_response()
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_patch_managed_identity(
+    State(state): State<AppState>,
+    Path(identity_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Json(patch): Json<ManagedIdentityPatchRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state.store.patch_managed_identity(identity_id, patch).await {
+        Ok(Some(identity)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "managed_identities:update",
+                "managed_identity_binding",
+                Some(identity_id.to_string()),
+                None,
+                audit_json(&identity),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(identity).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_delete_managed_identity(
+    State(state): State<AppState>,
+    Path(identity_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state.store.delete_managed_identity(identity_id).await {
+        Ok(true) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "managed_identities:delete",
+                "managed_identity_binding",
+                Some(identity_id.to_string()),
+                None,
+                None,
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OwnerServiceBody {
+    service: ServiceResponse,
+    role: ServiceMemberRole,
+}
+
+async fn owner_services(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let session = match require_active_portal_session(&state, &headers).await {
+        Ok(session) => session,
+        Err(response) => return response,
+    };
+    let memberships = match state
+        .store
+        .list_service_memberships(session.member.id)
+        .await
+    {
+        Ok(memberships) => memberships,
+        Err(error) => return error_response(&headers, error),
+    };
+    let mut services = Vec::new();
+    for membership in memberships {
+        match state.store.get_service(&membership.service_name).await {
+            Ok(Some(service)) if service.enabled => services.push(OwnerServiceBody {
+                service,
+                role: membership.role,
+            }),
+            Ok(_) => {}
+            Err(error) => {
+                return error_response(&headers, error);
+            }
+        }
+    }
+    Json(services).into_response()
+}
+
+async fn owner_service(
+    State(state): State<AppState>,
+    Path(service_name): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let role = match require_owner_service_access(&state, &headers, &service_name).await {
+        Ok(role) => role,
+        Err(response) => return response,
+    };
+    match state.store.get_service(&service_name).await {
+        Ok(Some(service)) if service.enabled => {
+            Json(OwnerServiceBody { service, role }).into_response()
+        }
+        Ok(_) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OwnerDashboardBody {
+    service_name: String,
+    role: ServiceMemberRole,
+    summary: gateway_core::UsageSummary,
+    timeseries: Vec<gateway_core::UsageTimeseriesPoint>,
+    endpoints: Vec<gateway_core::UsageBreakdown>,
+    providers: Vec<gateway_core::UsageBreakdown>,
+    models: Vec<gateway_core::UsageBreakdown>,
+}
+
+async fn owner_service_dashboard(
+    State(state): State<AppState>,
+    Path(service_name): Path<String>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    let role = match require_owner_service_access(&state, &headers, &service_name).await {
+        Ok(role) => role,
+        Err(response) => return response,
+    };
+    query.service = Some(service_name.clone());
+    let summary = match state.store.usage_summary(query.clone()).await {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let timeseries = match state.store.usage_timeseries(query.clone()).await {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let endpoints = match state
+        .store
+        .usage_breakdown(query.clone(), UsageBreakdownDimension::Endpoint)
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let providers = match state
+        .store
+        .usage_breakdown(query.clone(), UsageBreakdownDimension::Provider)
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let models = match state
+        .store
+        .usage_breakdown(query, UsageBreakdownDimension::Model)
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    Json(OwnerDashboardBody {
+        service_name,
+        role,
+        summary,
+        timeseries,
+        endpoints,
+        providers,
+        models,
+    })
+    .into_response()
+}
+
+async fn owner_service_events(
+    State(state): State<AppState>,
+    Path(service_name): Path<String>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    if let Err(response) = require_owner_service_access(&state, &headers, &service_name).await {
+        return response;
+    }
+    query.service = Some(service_name);
+    match state.store.usage_events(query).await {
+        Ok(events) => Json(events).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn owner_service_errors(
+    State(state): State<AppState>,
+    Path(service_name): Path<String>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    if let Err(response) = require_owner_service_access(&state, &headers, &service_name).await {
+        return response;
+    }
+    query.service = Some(service_name);
+    query.status = Some("failure".to_owned());
+    match state.store.usage_events(query).await {
+        Ok(events) => Json(events).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn owner_service_logs(
+    state: State<AppState>,
+    path: Path<String>,
+    headers: HeaderMap,
+    query: Query<UsageQuery>,
+) -> Response {
+    owner_service_events(state, path, headers, query).await
+}
+
+async fn owner_service_endpoints(
+    State(state): State<AppState>,
+    Path(service_name): Path<String>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    if let Err(response) = require_owner_service_access(&state, &headers, &service_name).await {
+        return response;
+    }
+    query.service = Some(service_name);
+    match state
+        .store
+        .usage_breakdown(query, UsageBreakdownDimension::Endpoint)
+        .await
+    {
+        Ok(endpoints) => Json(endpoints).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn owner_service_export_json(
+    State(state): State<AppState>,
+    Path(service_name): Path<String>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    if let Err(response) = require_owner_service_access(&state, &headers, &service_name).await {
+        return response;
+    }
+    query.service = Some(service_name.clone());
+    match state.store.usage_export(query).await {
+        Ok(export) => {
+            let mut response = Json(export).into_response();
+            response.headers_mut().insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&format!(
+                    "attachment; filename=\"relayna-{service_name}-usage.json\""
+                ))
+                .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
+            );
+            response
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn owner_service_export_csv(
+    State(state): State<AppState>,
+    Path(service_name): Path<String>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    if let Err(response) = require_owner_service_access(&state, &headers, &service_name).await {
+        return response;
+    }
+    query.service = Some(service_name.clone());
+    match state.store.usage_export(query).await {
+        Ok(export) => {
+            let mut response = usage_export_csv_body(&export).into_response();
+            response.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/csv; charset=utf-8"),
+            );
+            response.headers_mut().insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&format!(
+                    "attachment; filename=\"relayna-{service_name}-usage.csv\""
+                ))
+                .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
+            );
+            response
+        }
+        Err(error) => error_response(&headers, error),
     }
 }
 
@@ -3328,7 +4141,8 @@ async fn record_admin_audit(
     state
         .store
         .record_audit_event(AuditEventCreate {
-            actor_token_id: actor.token_id,
+            actor_token_id: actor.member_id.is_none().then_some(actor.token_id),
+            actor_member_id: actor.member_id,
             action: action.into(),
             target_type: target_type.into(),
             target_id,
@@ -3695,6 +4509,182 @@ async fn effective_studio_client(state: &AppState) -> GatewayResult<StudioCatalo
     Ok(StudioCatalogClient::new(base_url, connection.token))
 }
 
+async fn require_portal_session(
+    state: &AppState,
+    headers: &HeaderMap,
+    require_csrf: bool,
+) -> Result<gateway_core::StoredPortalSession, Response> {
+    let Some(raw_session) = cookie_value(headers, PORTAL_SESSION_COOKIE) else {
+        return Err(error_response(headers, GatewayError::InvalidPortalSession));
+    };
+    let session = match state
+        .store
+        .resolve_portal_session(&token_hash(raw_session), Utc::now())
+        .await
+    {
+        Ok(Some(session)) => session,
+        Ok(None) => return Err(error_response(headers, GatewayError::InvalidPortalSession)),
+        Err(error) => return Err(error_response(headers, error)),
+    };
+    if require_csrf {
+        let csrf = headers
+            .get("x-csrf-token")
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| !value.is_empty());
+        if csrf.is_none_or(|csrf| !constant_time_eq(&session.csrf_hash, &token_hash(csrf))) {
+            return Err(error_response(headers, GatewayError::InvalidCsrfToken));
+        }
+    }
+    Ok(session)
+}
+
+async fn require_active_portal_session(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<gateway_core::StoredPortalSession, Response> {
+    let session = require_portal_session(state, headers, false).await?;
+    match session.member.status {
+        MemberStatus::Active => Ok(session),
+        MemberStatus::Pending => Err(error_response(headers, GatewayError::PendingPortalMember)),
+        MemberStatus::Blocked => Err(error_response(headers, GatewayError::BlockedPortalMember)),
+    }
+}
+
+async fn require_owner_service_access(
+    state: &AppState,
+    headers: &HeaderMap,
+    service_name: &str,
+) -> Result<ServiceMemberRole, Response> {
+    if cookie_value(headers, PORTAL_SESSION_COOKIE).is_some() {
+        let session = require_active_portal_session(state, headers).await?;
+        return match state
+            .store
+            .member_service_role(session.member.id, service_name)
+            .await
+        {
+            Ok(Some(role)) => Ok(role),
+            Ok(None) => Err(error_response(
+                headers,
+                GatewayError::InsufficientPortalAccess,
+            )),
+            Err(error) => Err(error_response(headers, error)),
+        };
+    }
+
+    let Some(verifier) = state.owner_entra_verifier.as_ref() else {
+        return Err(error_response(
+            headers,
+            GatewayError::MissingEntraAuthorization,
+        ));
+    };
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+    let identity = match verifier
+        .verify_authorization(authorization, Utc::now())
+        .await
+    {
+        Ok(identity) => identity,
+        Err(error) => return Err(error_response(headers, error)),
+    };
+    let Some(client_id) = identity
+        .app_id
+        .as_deref()
+        .or(identity.authorized_party.as_deref())
+    else {
+        return Err(error_response(headers, GatewayError::InvalidEntraToken));
+    };
+    match state
+        .store
+        .workload_service_binding(
+            &identity.tenant_id,
+            client_id,
+            identity.object_id.as_deref(),
+            service_name,
+            &identity.roles,
+        )
+        .await
+    {
+        Ok(Some(_)) => Ok(ServiceMemberRole::Viewer),
+        Ok(None) => Err(error_response(
+            headers,
+            GatewayError::InsufficientPortalAccess,
+        )),
+        Err(error) => Err(error_response(headers, error)),
+    }
+}
+
+fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers
+        .get(header::COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|cookies| {
+            cookies.split(';').find_map(|cookie| {
+                let (cookie_name, value) = cookie.trim().split_once('=')?;
+                (cookie_name == name && !value.is_empty()).then_some(value)
+            })
+        })
+}
+
+fn append_portal_cookies(
+    headers: &mut HeaderMap,
+    raw_session: &str,
+    raw_csrf: &str,
+    max_age_seconds: i64,
+    secure: bool,
+) {
+    let secure = if secure { "; Secure" } else { "" };
+    let session = format!(
+        "{PORTAL_SESSION_COOKIE}={raw_session}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age_seconds}{secure}"
+    );
+    let csrf = format!(
+        "{PORTAL_CSRF_COOKIE}={raw_csrf}; SameSite=Lax; Path=/; Max-Age={max_age_seconds}{secure}"
+    );
+    if let Ok(value) = HeaderValue::from_str(&session) {
+        headers.append(header::SET_COOKIE, value);
+    }
+    if let Ok(value) = HeaderValue::from_str(&csrf) {
+        headers.append(header::SET_COOKIE, value);
+    }
+}
+
+fn append_portal_login_cookie(
+    headers: &mut HeaderMap,
+    raw_binding: &str,
+    max_age_seconds: i64,
+    secure: bool,
+) {
+    let secure = if secure { "; Secure" } else { "" };
+    let cookie = format!(
+        "{PORTAL_LOGIN_COOKIE}={raw_binding}; HttpOnly; SameSite=Lax; Path=/admin-ui/auth; Max-Age={max_age_seconds}{secure}"
+    );
+    if let Ok(value) = HeaderValue::from_str(&cookie) {
+        headers.append(header::SET_COOKIE, value);
+    }
+}
+
+fn clear_portal_login_cookie(headers: &mut HeaderMap, secure: bool) {
+    let secure = if secure { "; Secure" } else { "" };
+    let cookie = format!(
+        "{PORTAL_LOGIN_COOKIE}=; HttpOnly; SameSite=Lax; Path=/admin-ui/auth; Max-Age=0{secure}"
+    );
+    if let Ok(value) = HeaderValue::from_str(&cookie) {
+        headers.append(header::SET_COOKIE, value);
+    }
+}
+
+fn clear_portal_cookies(headers: &mut HeaderMap, secure: bool) {
+    let secure = if secure { "; Secure" } else { "" };
+    for cookie in [
+        format!("{PORTAL_SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{secure}"),
+        format!("{PORTAL_CSRF_COOKIE}=; SameSite=Lax; Path=/; Max-Age=0{secure}"),
+    ] {
+        if let Ok(value) = HeaderValue::from_str(&cookie) {
+            headers.append(header::SET_COOKIE, value);
+        }
+    }
+}
+
 async fn require_admin_scope(
     state: &AppState,
     headers: &HeaderMap,
@@ -3708,25 +4698,51 @@ async fn require_admin_scopes(
     headers: &HeaderMap,
     required_scopes: &[&str],
 ) -> Result<OperatorAuthorization, Response> {
-    let token = match bearer_token(headers) {
-        Ok(token) => token,
-        Err(error) => return Err(error_response(headers, error)),
-    };
-
-    match state.store.verify_operator_token(token, Utc::now()).await {
-        Ok(authorization)
-            if required_scopes
-                .iter()
-                .all(|required_scope| authorization.has_scope(required_scope)) =>
-        {
+    if headers.contains_key(header::AUTHORIZATION) {
+        let token = bearer_token(headers).map_err(|error| error_response(headers, error))?;
+        return match state.store.verify_operator_token(token, Utc::now()).await {
             Ok(authorization)
-        }
-        Ok(_) => Err(error_response(
-            headers,
-            GatewayError::InsufficientOperatorScope,
-        )),
-        Err(error) => Err(error_response(headers, error)),
+                if required_scopes
+                    .iter()
+                    .all(|required_scope| authorization.has_scope(required_scope)) =>
+            {
+                Ok(authorization)
+            }
+            Ok(_) => Err(error_response(
+                headers,
+                GatewayError::InsufficientOperatorScope,
+            )),
+            Err(error) => Err(error_response(headers, error)),
+        };
     }
+
+    let session = require_portal_session(state, headers, true).await?;
+    match session.member.status {
+        MemberStatus::Pending => {
+            return Err(error_response(headers, GatewayError::PendingPortalMember));
+        }
+        MemberStatus::Blocked => {
+            return Err(error_response(headers, GatewayError::BlockedPortalMember));
+        }
+        MemberStatus::Active => {}
+    }
+    if !session.member.is_admin() {
+        return Err(error_response(
+            headers,
+            GatewayError::InsufficientPortalAccess,
+        ));
+    }
+    Ok(OperatorAuthorization {
+        token_id: session.member.id,
+        member_id: Some(session.member.id),
+        token_prefix: session
+            .member
+            .email
+            .clone()
+            .unwrap_or_else(|| "entra-member".to_owned()),
+        roles: session.member.roles,
+        scopes: default_operator_scopes(),
+    })
 }
 
 async fn require_litellm_ui_operator_scope(
@@ -4412,7 +5428,7 @@ mod tests {
     use gateway_core::{
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
-        default_operator_roles, default_operator_scopes, AuthenticatedKey,
+        default_operator_roles, default_operator_scopes, AuthenticatedKey, EntraAuthConfig,
         LiteLlmPassthroughSettings, OpenAiRouteConfigPatchRequest, OpenAiRouteMode,
         OpenAiRouteSetting, OperatorTokenResponse, PatchValue, ProjectCreateRequest,
         ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest,
@@ -4426,6 +5442,7 @@ mod tests {
         collections::BTreeMap,
         io::{Read, Write},
         net::TcpListener,
+        process::{Child, Command, Stdio},
         sync::{mpsc, Mutex},
         thread,
     };
@@ -4445,6 +5462,11 @@ mod tests {
         studio_connection: Arc<Mutex<Option<StoredStudioConnection>>>,
         gateway_auth_settings: Arc<Mutex<Option<StoredGatewayAuthSettings>>>,
         litellm_passthrough_settings: Arc<Mutex<LiteLlmPassthroughSettings>>,
+        portal_members: Arc<Mutex<Vec<PortalMember>>>,
+        service_memberships: Arc<Mutex<Vec<ServiceMembership>>>,
+        managed_identities: Arc<Mutex<Vec<gateway_core::ManagedIdentityBinding>>>,
+        oidc_transactions: Arc<Mutex<Vec<OidcLoginTransaction>>>,
+        portal_sessions: Arc<Mutex<Vec<NewPortalSession>>>,
         postgres_ready: bool,
     }
 
@@ -4475,6 +5497,343 @@ mod tests {
     }
 
     #[async_trait]
+    impl PortalAccessStore for MemoryStore {
+        async fn upsert_oidc_member(
+            &self,
+            tenant_id: &str,
+            object_id: &str,
+            email: Option<&str>,
+            display_name: Option<&str>,
+            now: chrono::DateTime<Utc>,
+        ) -> GatewayResult<PortalMember> {
+            let mut members = self.portal_members.lock().expect("lock poisoned");
+            if let Some(member) = members
+                .iter_mut()
+                .find(|member| member.tenant_id == tenant_id && member.object_id == object_id)
+            {
+                if email.is_some() {
+                    member.email = email.map(ToOwned::to_owned);
+                }
+                if display_name.is_some() {
+                    member.display_name = display_name.map(ToOwned::to_owned);
+                }
+                member.last_sign_in_at = Some(now);
+                member.updated_at = now;
+                return Ok(member.clone());
+            }
+            let member = PortalMember {
+                id: Uuid::new_v4(),
+                tenant_id: tenant_id.to_owned(),
+                object_id: object_id.to_owned(),
+                email: email.map(ToOwned::to_owned),
+                display_name: display_name.map(ToOwned::to_owned),
+                status: MemberStatus::Pending,
+                roles: Vec::new(),
+                last_sign_in_at: Some(now),
+                created_at: now,
+                updated_at: now,
+            };
+            members.push(member.clone());
+            Ok(member)
+        }
+
+        async fn list_members(&self) -> GatewayResult<Vec<PortalMember>> {
+            Ok(self.portal_members.lock().expect("lock poisoned").clone())
+        }
+
+        async fn get_member(&self, member_id: Uuid) -> GatewayResult<Option<PortalMember>> {
+            Ok(self
+                .portal_members
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|member| member.id == member_id)
+                .cloned())
+        }
+
+        async fn patch_member(
+            &self,
+            member_id: Uuid,
+            patch: MemberPatchRequest,
+        ) -> GatewayResult<Option<PortalMember>> {
+            let mut members = self.portal_members.lock().expect("lock poisoned");
+            let Some(member) = members.iter_mut().find(|member| member.id == member_id) else {
+                return Ok(None);
+            };
+            if let Some(status) = patch.status {
+                member.status = status;
+            }
+            if let Some(admin) = patch.admin {
+                member
+                    .roles
+                    .retain(|role| role != gateway_core::PORTAL_ROLE_ADMIN);
+                if admin {
+                    member
+                        .roles
+                        .push(gateway_core::PORTAL_ROLE_ADMIN.to_owned());
+                }
+            }
+            member.updated_at = Utc::now();
+            Ok(Some(member.clone()))
+        }
+
+        async fn list_service_memberships(
+            &self,
+            member_id: Uuid,
+        ) -> GatewayResult<Vec<ServiceMembership>> {
+            Ok(self
+                .service_memberships
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .filter(|membership| membership.member_id == member_id)
+                .cloned()
+                .collect())
+        }
+
+        async fn upsert_service_membership(
+            &self,
+            member_id: Uuid,
+            request: ServiceMembershipUpsertRequest,
+        ) -> GatewayResult<ServiceMembership> {
+            if self.get_member(member_id).await?.is_none()
+                || !self
+                    .services
+                    .lock()
+                    .expect("lock poisoned")
+                    .iter()
+                    .any(|service| service.name == request.service_name)
+            {
+                return Err(GatewayError::InvalidAccessPayload);
+            }
+            let now = Utc::now();
+            let mut memberships = self.service_memberships.lock().expect("lock poisoned");
+            if let Some(membership) = memberships.iter_mut().find(|membership| {
+                membership.member_id == member_id && membership.service_name == request.service_name
+            }) {
+                membership.role = request.role;
+                membership.updated_at = now;
+                return Ok(membership.clone());
+            }
+            let membership = ServiceMembership {
+                member_id,
+                service_name: request.service_name,
+                role: request.role,
+                created_at: now,
+                updated_at: now,
+            };
+            memberships.push(membership.clone());
+            Ok(membership)
+        }
+
+        async fn delete_service_membership(
+            &self,
+            member_id: Uuid,
+            service_name: &str,
+        ) -> GatewayResult<bool> {
+            let mut memberships = self.service_memberships.lock().expect("lock poisoned");
+            let before = memberships.len();
+            memberships.retain(|membership| {
+                membership.member_id != member_id || membership.service_name != service_name
+            });
+            Ok(memberships.len() != before)
+        }
+
+        async fn list_managed_identities(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::ManagedIdentityBinding>> {
+            Ok(self
+                .managed_identities
+                .lock()
+                .expect("lock poisoned")
+                .clone())
+        }
+
+        async fn create_managed_identity(
+            &self,
+            request: ManagedIdentityCreateRequest,
+        ) -> GatewayResult<gateway_core::ManagedIdentityBinding> {
+            let now = Utc::now();
+            let identity = gateway_core::ManagedIdentityBinding {
+                id: Uuid::new_v4(),
+                tenant_id: request.tenant_id,
+                client_id: request.client_id,
+                object_id: request.object_id,
+                display_name: request.display_name,
+                service_name: request.service_name,
+                required_role: request.required_role,
+                enabled: request.enabled,
+                created_at: now,
+                updated_at: now,
+            };
+            self.managed_identities
+                .lock()
+                .expect("lock poisoned")
+                .push(identity.clone());
+            Ok(identity)
+        }
+
+        async fn patch_managed_identity(
+            &self,
+            identity_id: Uuid,
+            patch: ManagedIdentityPatchRequest,
+        ) -> GatewayResult<Option<gateway_core::ManagedIdentityBinding>> {
+            let mut identities = self.managed_identities.lock().expect("lock poisoned");
+            let Some(identity) = identities
+                .iter_mut()
+                .find(|identity| identity.id == identity_id)
+            else {
+                return Ok(None);
+            };
+            if let Some(value) = patch.display_name {
+                identity.display_name = value;
+            }
+            if let Some(value) = patch.object_id {
+                identity.object_id = value;
+            }
+            if let Some(value) = patch.service_name {
+                identity.service_name = value;
+            }
+            if let Some(value) = patch.required_role {
+                identity.required_role = value;
+            }
+            if let Some(value) = patch.enabled {
+                identity.enabled = value;
+            }
+            identity.updated_at = Utc::now();
+            Ok(Some(identity.clone()))
+        }
+
+        async fn delete_managed_identity(&self, identity_id: Uuid) -> GatewayResult<bool> {
+            let mut identities = self.managed_identities.lock().expect("lock poisoned");
+            let before = identities.len();
+            identities.retain(|identity| identity.id != identity_id);
+            Ok(identities.len() != before)
+        }
+
+        async fn create_oidc_login_transaction(
+            &self,
+            transaction: OidcLoginTransaction,
+        ) -> GatewayResult<()> {
+            let mut transactions = self.oidc_transactions.lock().expect("lock poisoned");
+            transactions.retain(|stored| stored.expires_at > Utc::now());
+            transactions.push(transaction);
+            Ok(())
+        }
+
+        async fn consume_oidc_login_transaction(
+            &self,
+            state_hash: &str,
+            binding_hash: &str,
+            now: chrono::DateTime<Utc>,
+        ) -> GatewayResult<Option<OidcLoginTransaction>> {
+            let mut transactions = self.oidc_transactions.lock().expect("lock poisoned");
+            let Some(position) = transactions.iter().position(|transaction| {
+                transaction.state_hash == state_hash
+                    && transaction.binding_hash == binding_hash
+                    && transaction.expires_at > now
+            }) else {
+                return Ok(None);
+            };
+            Ok(Some(transactions.remove(position)))
+        }
+
+        async fn create_portal_session(&self, session: NewPortalSession) -> GatewayResult<()> {
+            self.portal_sessions
+                .lock()
+                .expect("lock poisoned")
+                .push(session);
+            Ok(())
+        }
+
+        async fn resolve_portal_session(
+            &self,
+            session_hash: &str,
+            now: chrono::DateTime<Utc>,
+        ) -> GatewayResult<Option<gateway_core::StoredPortalSession>> {
+            let session = self
+                .portal_sessions
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|session| session.session_hash == session_hash && session.expires_at > now)
+                .cloned();
+            let Some(session) = session else {
+                return Ok(None);
+            };
+            let Some(member) = self.get_member(session.member_id).await? else {
+                return Ok(None);
+            };
+            Ok(Some(gateway_core::StoredPortalSession {
+                session_hash: session.session_hash,
+                member,
+                csrf_hash: session.csrf_hash,
+                expires_at: session.expires_at,
+                last_seen_at: now,
+            }))
+        }
+
+        async fn delete_portal_session(&self, session_hash: &str) -> GatewayResult<bool> {
+            let mut sessions = self.portal_sessions.lock().expect("lock poisoned");
+            let before = sessions.len();
+            sessions.retain(|session| session.session_hash != session_hash);
+            Ok(sessions.len() != before)
+        }
+
+        async fn member_service_role(
+            &self,
+            member_id: Uuid,
+            service_name: &str,
+        ) -> GatewayResult<Option<ServiceMemberRole>> {
+            let active = self
+                .get_member(member_id)
+                .await?
+                .is_some_and(|member| member.status == MemberStatus::Active);
+            if !active {
+                return Ok(None);
+            }
+            Ok(self
+                .service_memberships
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|membership| {
+                    membership.member_id == member_id && membership.service_name == service_name
+                })
+                .map(|membership| membership.role))
+        }
+
+        async fn workload_service_binding(
+            &self,
+            tenant_id: &str,
+            client_id: &str,
+            object_id: Option<&str>,
+            service_name: &str,
+            token_roles: &[String],
+        ) -> GatewayResult<Option<gateway_core::ManagedIdentityBinding>> {
+            Ok(self
+                .managed_identities
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|identity| {
+                    identity.enabled
+                        && identity.tenant_id == tenant_id
+                        && identity.client_id == client_id
+                        && identity.service_name == service_name
+                        && identity
+                            .object_id
+                            .as_deref()
+                            .is_none_or(|value| Some(value) == object_id)
+                        && token_roles
+                            .iter()
+                            .any(|role| role == &identity.required_role)
+                })
+                .cloned())
+        }
+    }
+
+    #[async_trait]
     impl ProviderConfigLookup for MemoryStore {
         async fn active_litellm_config(
             &self,
@@ -4497,6 +5856,7 @@ mod tests {
             let audit_event = AuditEvent {
                 id: Uuid::new_v4(),
                 actor_token_id: event.actor_token_id,
+                actor_member_id: event.actor_member_id,
                 action: event.action,
                 target_type: event.target_type,
                 target_id: event.target_id,
@@ -4522,7 +5882,10 @@ mod tests {
             events.retain(|event| {
                 query
                     .actor_token_id
-                    .is_none_or(|actor_token_id| event.actor_token_id == actor_token_id)
+                    .is_none_or(|actor_token_id| event.actor_token_id == Some(actor_token_id))
+                    && query.actor_member_id.is_none_or(|actor_member_id| {
+                        event.actor_member_id == Some(actor_member_id)
+                    })
                     && query
                         .action
                         .as_ref()
@@ -5440,6 +6803,9 @@ mod tests {
         }
 
         async fn get_service(&self, name: &str) -> GatewayResult<Option<ServiceResponse>> {
+            if name == "store-error" {
+                return Err(GatewayError::StoreUnavailable);
+            }
             Ok(self
                 .services
                 .lock()
@@ -5673,6 +7039,7 @@ mod tests {
                 };
                 Ok(OperatorAuthorization {
                     token_id: Uuid::nil(),
+                    member_id: None,
                     token_prefix: raw_token.chars().take(16).collect(),
                     roles: default_operator_roles(),
                     scopes,
@@ -6353,6 +7720,8 @@ mod tests {
             litellm_base_url: DEFAULT_LITELLM_BASE_URL.to_owned(),
             litellm_service_key: "test-litellm-service-key".to_owned(),
             litellm_ui_client: litellm_ui_client(),
+            portal_oidc: None,
+            owner_entra_verifier: None,
         }
     }
 
@@ -6374,6 +7743,8 @@ mod tests {
             litellm_base_url: DEFAULT_LITELLM_BASE_URL.to_owned(),
             litellm_service_key: "test-litellm-service-key".to_owned(),
             litellm_ui_client: litellm_ui_client(),
+            portal_oidc: None,
+            owner_entra_verifier: None,
         }
     }
 
@@ -6392,6 +7763,11 @@ mod tests {
             litellm_passthrough_settings: Arc::new(Mutex::new(
                 LiteLlmPassthroughSettings::default_with_updated_at(Utc::now()),
             )),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
         }
     }
@@ -6516,6 +7892,128 @@ mod tests {
         app.oneshot(builder.body(axum::body::Body::empty()).expect("request"))
             .await
             .expect("response")
+    }
+
+    async fn portal_request(
+        app: Router,
+        method: axum::http::Method,
+        route: &str,
+        raw_session: &str,
+        raw_csrf: &str,
+        csrf_header: Option<&str>,
+        body: &str,
+    ) -> Response {
+        let mut builder = axum::http::Request::builder()
+            .method(method)
+            .uri(route)
+            .header("x-request-id", "req_portal_test")
+            .header(
+                "cookie",
+                format!("{PORTAL_SESSION_COOKIE}={raw_session}; {PORTAL_CSRF_COOKIE}={raw_csrf}"),
+            );
+        if !body.is_empty() {
+            builder = builder.header("content-type", "application/json");
+        }
+        if let Some(csrf) = csrf_header {
+            builder = builder.header("x-csrf-token", csrf);
+        }
+        app.oneshot(
+            builder
+                .body(axum::body::Body::from(body.to_owned()))
+                .expect("request"),
+        )
+        .await
+        .expect("response")
+    }
+
+    fn active_portal_member(admin: bool) -> PortalMember {
+        let now = Utc::now();
+        PortalMember {
+            id: Uuid::new_v4(),
+            tenant_id: "tenant-test".to_owned(),
+            object_id: Uuid::new_v4().to_string(),
+            email: Some("owner@relayna.test".to_owned()),
+            display_name: Some("Relayna Owner".to_owned()),
+            status: MemberStatus::Active,
+            roles: if admin {
+                vec![gateway_core::PORTAL_ROLE_ADMIN.to_owned()]
+            } else {
+                Vec::new()
+            },
+            last_sign_in_at: Some(now),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn seed_portal_session(store: &MemoryStore, member: PortalMember) -> (String, String) {
+        let raw_session = random_opaque_token();
+        let raw_csrf = random_opaque_token();
+        store
+            .portal_members
+            .lock()
+            .expect("lock poisoned")
+            .push(member.clone());
+        store
+            .portal_sessions
+            .lock()
+            .expect("lock poisoned")
+            .push(NewPortalSession {
+                session_hash: token_hash(&raw_session),
+                member_id: member.id,
+                csrf_hash: token_hash(&raw_csrf),
+                expires_at: Utc::now() + ChronoDuration::hours(1),
+            });
+        (raw_session, raw_csrf)
+    }
+
+    struct DevOidcProcess(Child);
+
+    impl Drop for DevOidcProcess {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    async fn start_development_oidc() -> (DevOidcProcess, String) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("reserve OIDC port");
+        let port = listener.local_addr().expect("OIDC address").port();
+        drop(listener);
+        let issuer = format!("http://127.0.0.1:{port}");
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../scripts/entra/development-oidc.mjs");
+        let child = Command::new("node")
+            .arg(script)
+            .env("RELAYNA_DEV_OIDC_PORT", port.to_string())
+            .env("RELAYNA_DEV_OIDC_ISSUER", &issuer)
+            .env(
+                "RELAYNA_DEV_OIDC_BROWSER_REDIRECT_URI",
+                "http://127.0.0.1:18381/admin-ui/auth/callback",
+            )
+            .env(
+                "RELAYNA_DEV_OIDC_BROWSER_POST_LOGOUT_REDIRECT_URI",
+                "http://127.0.0.1:18381/admin-ui",
+            )
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("start development OIDC");
+        let client = reqwest::Client::new();
+        for _ in 0..200 {
+            if client
+                .get(format!("{issuer}/health"))
+                .send()
+                .await
+                .is_ok_and(|response| response.status().is_success())
+            {
+                return (DevOidcProcess(child), issuer);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let mut child = child;
+        let _ = child.kill();
+        panic!("development OIDC did not become ready");
     }
 
     async fn response_json(response: Response) -> serde_json::Value {
@@ -6754,6 +8252,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -6766,6 +8269,774 @@ mod tests {
         let response = request(app, "/admin-ui/healthz").await;
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn portal_session_reports_pending_member_without_granting_admin_access() {
+        let store = default_store();
+        let mut member = active_portal_member(false);
+        member.status = MemberStatus::Pending;
+        let (raw_session, raw_csrf) = seed_portal_session(&store, member);
+        let app = router_with_state(test_state(store));
+
+        let session = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/admin-ui/auth/session",
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(session.status(), StatusCode::OK);
+        let value = response_json(session).await;
+        assert_eq!(value["authenticated"], true);
+        assert_eq!(value["member"]["status"], "pending");
+
+        let denied = portal_request(
+            app,
+            axum::http::Method::GET,
+            "/admin-ui/admin/members",
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            "",
+        )
+        .await;
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response_json(denied).await["error"]["code"],
+            "pending_portal_member"
+        );
+    }
+
+    #[tokio::test]
+    async fn portal_admin_requires_session_bound_csrf_and_can_manage_members() {
+        let store = default_store();
+        let admin = active_portal_member(true);
+        let (raw_session, raw_csrf) = seed_portal_session(&store, admin);
+        let pending = PortalAccessStore::upsert_oidc_member(
+            &store,
+            "tenant-test",
+            "pending-object",
+            Some("pending@relayna.test"),
+            Some("Pending Owner"),
+            Utc::now(),
+        )
+        .await
+        .expect("pending member");
+        let app = router_with_state(test_state(store));
+
+        let bad_csrf = portal_request(
+            app.clone(),
+            axum::http::Method::PATCH,
+            &format!("/admin-ui/admin/members/{}", pending.id),
+            &raw_session,
+            &raw_csrf,
+            Some("wrong-csrf"),
+            r#"{"status":"active"}"#,
+        )
+        .await;
+        assert_eq!(bad_csrf.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response_json(bad_csrf).await["error"]["code"],
+            "invalid_csrf_token"
+        );
+
+        let approved = portal_request(
+            app,
+            axum::http::Method::PATCH,
+            &format!("/admin-ui/admin/members/{}", pending.id),
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            r#"{"status":"active"}"#,
+        )
+        .await;
+        assert_eq!(approved.status(), StatusCode::OK);
+        assert_eq!(response_json(approved).await["status"], "active");
+    }
+
+    #[tokio::test]
+    async fn owner_api_enforces_exact_service_membership_server_side() {
+        let store = default_store();
+        let owner = active_portal_member(false);
+        let owner_id = owner.id;
+        let (raw_session, raw_csrf) = seed_portal_session(&store, owner);
+        let mut ocr = openapi_test_service("http://ocr.internal".to_owned());
+        ocr.name = "ocr".to_owned();
+        let mut orders = openapi_test_service("http://orders.internal".to_owned());
+        orders.name = "orders".to_owned();
+        orders.route_pattern = "/services/orders/*".to_owned();
+        store
+            .services
+            .lock()
+            .expect("lock poisoned")
+            .extend([ocr, orders]);
+        store
+            .service_memberships
+            .lock()
+            .expect("lock poisoned")
+            .push(ServiceMembership {
+                member_id: owner_id,
+                service_name: "orders".to_owned(),
+                role: ServiceMemberRole::Owner,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
+        let app = router_with_state(test_state(store));
+
+        let allowed = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/owner/v1/services/orders/dashboard?service=ocr",
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(allowed.status(), StatusCode::OK);
+        assert_eq!(response_json(allowed).await["service_name"], "orders");
+
+        let denied = portal_request(
+            app,
+            axum::http::Method::GET,
+            "/owner/v1/services/ocr/dashboard",
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response_json(denied).await["error"]["code"],
+            "insufficient_portal_access"
+        );
+    }
+
+    #[tokio::test]
+    async fn owner_service_list_propagates_service_store_failures() {
+        let store = default_store();
+        let owner = active_portal_member(false);
+        let owner_id = owner.id;
+        let (raw_session, raw_csrf) = seed_portal_session(&store, owner);
+        store
+            .service_memberships
+            .lock()
+            .expect("lock poisoned")
+            .push(ServiceMembership {
+                member_id: owner_id,
+                service_name: "store-error".to_owned(),
+                role: ServiceMemberRole::Viewer,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
+        let response = portal_request(
+            router_with_state(test_state(store)),
+            axum::http::Method::GET,
+            "/owner/v1/services",
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            response_json(response).await["error"]["code"],
+            "store_unavailable"
+        );
+    }
+
+    #[tokio::test]
+    async fn portal_management_and_owner_monitoring_workflows_cover_all_public_routes() {
+        let store = default_store();
+        let admin = active_portal_member(true);
+        let admin_id = admin.id;
+        let (raw_session, raw_csrf) = seed_portal_session(&store, admin);
+        let owner = active_portal_member(false);
+        let owner_id = owner.id;
+        store
+            .portal_members
+            .lock()
+            .expect("lock poisoned")
+            .push(owner);
+        let mut service = openapi_test_service("http://orders.internal".to_owned());
+        service.name = "orders".to_owned();
+        service.route_pattern = "/services/orders/*".to_owned();
+        store.services.lock().expect("lock poisoned").push(service);
+        store.events.lock().expect("lock poisoned").extend([
+            UsageEvent {
+                request_id: "req-orders-ok".to_owned(),
+                key_id: Uuid::new_v4(),
+                project_id: Some(Uuid::new_v4()),
+                route: Route::ServiceWildcard,
+                model: None,
+                provider: gateway_core::Provider::InternalService,
+                status: UsageStatus::Success,
+                status_code: 200,
+                latency_ms: 12,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: Some(0.01),
+                cost_source: Some("fixed".to_owned()),
+                cost_mode: Some(ServiceCostMode::Fixed),
+                pricing_rule_name: None,
+                service_name: Some("orders".to_owned()),
+                http_method: Some("GET".to_owned()),
+                endpoint_path: Some("/orders/42".to_owned()),
+                endpoint_template: Some("/orders/{id}".to_owned()),
+                task_id: None,
+                run_id: None,
+                trace_id: None,
+                fallback_count: 0,
+                created_at: Utc::now(),
+            },
+            UsageEvent {
+                request_id: "req-orders-failed".to_owned(),
+                key_id: Uuid::new_v4(),
+                project_id: None,
+                route: Route::ServiceWildcard,
+                model: None,
+                provider: gateway_core::Provider::InternalService,
+                status: UsageStatus::Failure,
+                status_code: 502,
+                latency_ms: 20,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: None,
+                cost_source: None,
+                cost_mode: None,
+                pricing_rule_name: None,
+                service_name: Some("orders".to_owned()),
+                http_method: Some("POST".to_owned()),
+                endpoint_path: Some("/orders".to_owned()),
+                endpoint_template: Some("/orders".to_owned()),
+                task_id: None,
+                run_id: None,
+                trace_id: None,
+                fallback_count: 0,
+                created_at: Utc::now(),
+            },
+        ]);
+        let app = router_with_state(test_state(store.clone()));
+
+        let auth_config = request(app.clone(), "/admin-ui/auth/config").await;
+        assert_eq!(auth_config.status(), StatusCode::OK);
+        assert_eq!(response_json(auth_config).await["enabled"], false);
+        let anonymous_session = request(app.clone(), "/admin-ui/auth/session").await;
+        assert_eq!(anonymous_session.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(anonymous_session).await["authenticated"],
+            false
+        );
+        let login = request(app.clone(), "/admin-ui/auth/login").await;
+        assert_eq!(login.status(), StatusCode::BAD_GATEWAY);
+
+        let membership_uri = format!("/admin-ui/admin/members/{owner_id}/services/orders");
+        let assigned = portal_request(
+            app.clone(),
+            axum::http::Method::PUT,
+            &membership_uri,
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            r#"{"role":"owner"}"#,
+        )
+        .await;
+        assert_eq!(assigned.status(), StatusCode::OK);
+        assert_eq!(response_json(assigned).await["role"], "owner");
+
+        let members = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/admin-ui/admin/members",
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            "",
+        )
+        .await;
+        assert_eq!(members.status(), StatusCode::OK);
+        assert_eq!(response_json(members).await.as_array().unwrap().len(), 2);
+
+        let created = portal_request(
+            app.clone(),
+            axum::http::Method::POST,
+            "/admin-ui/admin/managed-identities",
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            r#"{"tenant_id":"tenant-test","client_id":"orders-client","object_id":"orders-object","display_name":"Orders monitor","service_name":"orders","required_role":"gateway.monitor.read","enabled":true}"#,
+        )
+        .await;
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let identity_id = response_json(created).await["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let identities = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/admin-ui/admin/managed-identities",
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            "",
+        )
+        .await;
+        assert_eq!(response_json(identities).await.as_array().unwrap().len(), 1);
+        let patched = portal_request(
+            app.clone(),
+            axum::http::Method::PATCH,
+            &format!("/admin-ui/admin/managed-identities/{identity_id}"),
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            r#"{"display_name":"Orders read-only","enabled":false}"#,
+        )
+        .await;
+        assert_eq!(patched.status(), StatusCode::OK);
+        assert_eq!(response_json(patched).await["enabled"], false);
+
+        let (owner_session, owner_csrf) = {
+            let owner = store
+                .portal_members
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|member| member.id == owner_id)
+                .cloned()
+                .unwrap();
+            seed_portal_session(&store, owner)
+        };
+        for route in [
+            "/owner/v1/services",
+            "/owner/v1/services/orders",
+            "/owner/v1/services/orders/dashboard",
+            "/owner/v1/services/orders/events",
+            "/owner/v1/services/orders/errors",
+            "/owner/v1/services/orders/logs",
+            "/owner/v1/services/orders/endpoints",
+            "/owner/v1/services/orders/export.json",
+            "/owner/v1/services/orders/export.csv",
+        ] {
+            let response = portal_request(
+                app.clone(),
+                axum::http::Method::GET,
+                route,
+                &owner_session,
+                &owner_csrf,
+                None,
+                "",
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK, "route {route}");
+        }
+
+        let deleted_identity = portal_request(
+            app.clone(),
+            axum::http::Method::DELETE,
+            &format!("/admin-ui/admin/managed-identities/{identity_id}"),
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            "",
+        )
+        .await;
+        assert_eq!(deleted_identity.status(), StatusCode::NO_CONTENT);
+        let deleted_membership = portal_request(
+            app.clone(),
+            axum::http::Method::DELETE,
+            &membership_uri,
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            "",
+        )
+        .await;
+        assert_eq!(deleted_membership.status(), StatusCode::NO_CONTENT);
+
+        let logout = portal_request(
+            app,
+            axum::http::Method::POST,
+            "/admin-ui/auth/logout",
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            "",
+        )
+        .await;
+        assert_eq!(logout.status(), StatusCode::OK);
+        assert!(response_json(logout).await["logout_url"].is_null());
+        assert!(store
+            .audit_events
+            .lock()
+            .expect("lock poisoned")
+            .iter()
+            .any(|event| event.actor_member_id == Some(admin_id)));
+    }
+
+    #[tokio::test]
+    async fn portal_security_edges_reject_invalid_state_sessions_and_revoked_access() {
+        let store = default_store();
+        let admin = active_portal_member(true);
+        let (raw_session, raw_csrf) = seed_portal_session(&store, admin);
+        let mut state = test_state(store.clone());
+        state.portal_oidc = Some(Arc::new(
+            PortalOidcRuntime::new(crate::portal::PortalOidcConfig {
+                tenant_id: "tenant-test".into(),
+                client_id: "browser-client".into(),
+                client_secret: "fixture-value".into(),
+                issuer: "http://127.0.0.1:9".into(),
+                discovery_url: "http://127.0.0.1:9/.well-known/openid-configuration".into(),
+                redirect_uri: "http://127.0.0.1:18381/admin-ui/auth/callback".into(),
+                post_logout_redirect_uri: "http://127.0.0.1:18381/admin-ui".into(),
+                session_ttl_seconds: 3600,
+                login_ttl_seconds: 300,
+                cookie_secure: true,
+            })
+            .expect("portal runtime"),
+        ));
+        let app = router_with_state(state);
+
+        let provider_error =
+            request(app.clone(), "/admin-ui/auth/callback?error=access_denied").await;
+        assert_eq!(provider_error.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response_json(provider_error).await["error"]["code"],
+            "invalid_oidc_transaction"
+        );
+        let missing_code = request(app.clone(), "/admin-ui/auth/callback?state=missing").await;
+        assert_eq!(missing_code.status(), StatusCode::UNAUTHORIZED);
+        let unknown_state = request(
+            app.clone(),
+            "/admin-ui/auth/callback?code=unused&state=unknown",
+        )
+        .await;
+        assert_eq!(unknown_state.status(), StatusCode::UNAUTHORIZED);
+
+        let login = request(
+            app.clone(),
+            "/admin-ui/auth/login?return_to=https%3A%2F%2Fevil.example",
+        )
+        .await;
+        assert_eq!(login.status(), StatusCode::BAD_GATEWAY);
+        assert!(store
+            .oidc_transactions
+            .lock()
+            .expect("lock poisoned")
+            .is_empty());
+
+        let no_csrf_cookie = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/admin-ui/auth/session")
+                    .header(
+                        header::COOKIE,
+                        format!("{PORTAL_SESSION_COOKIE}={raw_session}"),
+                    )
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(no_csrf_cookie.status(), StatusCode::UNAUTHORIZED);
+        let wrong_csrf_cookie = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/admin-ui/auth/session",
+            &raw_session,
+            "wrong-cookie",
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(wrong_csrf_cookie.status(), StatusCode::UNAUTHORIZED);
+
+        let unknown_id = Uuid::new_v4();
+        let missing_member = portal_request(
+            app.clone(),
+            axum::http::Method::PATCH,
+            &format!("/admin-ui/admin/members/{unknown_id}"),
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            r#"{"status":"active"}"#,
+        )
+        .await;
+        assert_eq!(missing_member.status(), StatusCode::NOT_FOUND);
+        let missing_identity = portal_request(
+            app.clone(),
+            axum::http::Method::PATCH,
+            &format!("/admin-ui/admin/managed-identities/{unknown_id}"),
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            r#"{"enabled":false}"#,
+        )
+        .await;
+        assert_eq!(missing_identity.status(), StatusCode::NOT_FOUND);
+        let missing_identity_delete = portal_request(
+            app.clone(),
+            axum::http::Method::DELETE,
+            &format!("/admin-ui/admin/managed-identities/{unknown_id}"),
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            "",
+        )
+        .await;
+        assert_eq!(missing_identity_delete.status(), StatusCode::NOT_FOUND);
+        let missing_membership = portal_request(
+            app.clone(),
+            axum::http::Method::DELETE,
+            &format!("/admin-ui/admin/members/{unknown_id}/services/missing"),
+            &raw_session,
+            &raw_csrf,
+            Some(&raw_csrf),
+            "",
+        )
+        .await;
+        assert_eq!(missing_membership.status(), StatusCode::NOT_FOUND);
+
+        let mut blocked = active_portal_member(false);
+        blocked.status = MemberStatus::Blocked;
+        let (blocked_session, blocked_csrf) = seed_portal_session(&store, blocked);
+        let blocked_response = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/owner/v1/services",
+            &blocked_session,
+            &blocked_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(blocked_response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response_json(blocked_response).await["error"]["code"],
+            "blocked_portal_member"
+        );
+
+        let anonymous_owner = request(app, "/owner/v1/services/orders").await;
+        assert_eq!(anonymous_owner.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response_json(anonymous_owner).await["error"]["code"],
+            "missing_entra_authorization"
+        );
+    }
+
+    #[tokio::test]
+    async fn development_oidc_drives_browser_and_workload_authentication_end_to_end() {
+        let (_oidc, issuer) = start_development_oidc().await;
+        let store = default_store();
+        let mut service = openapi_test_service("http://orders.internal".to_owned());
+        service.name = "orders".to_owned();
+        service.route_pattern = "/services/orders/*".to_owned();
+        store.services.lock().expect("lock poisoned").push(service);
+        store
+            .managed_identities
+            .lock()
+            .expect("lock poisoned")
+            .push(gateway_core::ManagedIdentityBinding {
+                id: Uuid::new_v4(),
+                tenant_id: "00000000-0000-0000-0000-000000000001".into(),
+                client_id: "00000000-0000-0000-0000-000000000101".into(),
+                object_id: Some("00000000-0000-0000-0000-000000000102".into()),
+                display_name: "Development workload".into(),
+                service_name: "orders".into(),
+                required_role: gateway_core::OWNER_WORKLOAD_ROLE.into(),
+                enabled: true,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
+        let portal_config = crate::portal::PortalOidcConfig {
+            tenant_id: "00000000-0000-0000-0000-000000000001".into(),
+            client_id: "relayna-gateway-local".into(),
+            client_secret: "relayna-development-browser-secret".into(),
+            issuer: issuer.clone(),
+            discovery_url: format!("{issuer}/.well-known/openid-configuration"),
+            redirect_uri: "http://127.0.0.1:18381/admin-ui/auth/callback".into(),
+            post_logout_redirect_uri: "http://127.0.0.1:18381/admin-ui".into(),
+            session_ttl_seconds: 3600,
+            login_ttl_seconds: 300,
+            cookie_secure: false,
+        };
+        let mut state = test_state(store.clone());
+        state.portal_oidc = Some(Arc::new(
+            PortalOidcRuntime::new(portal_config).expect("portal OIDC runtime"),
+        ));
+        state.owner_entra_verifier = Some(Arc::new(
+            EntraJwtVerifier::new(EntraAuthConfig {
+                tenant_id: "00000000-0000-0000-0000-000000000001".into(),
+                audience: "api://relayna-gateway-owner".into(),
+                issuer: issuer.clone(),
+                oidc_discovery_url: format!("{issuer}/.well-known/openid-configuration"),
+                required_scope: None,
+                required_role: Some(gateway_core::OWNER_WORKLOAD_ROLE.into()),
+                allowed_groups: Vec::new(),
+                accepted_algorithms: vec!["RS256".into()],
+                relayna_key_header: gateway_core::ENTRA_DEFAULT_RELAYNA_KEY_HEADER.into(),
+                jwks_cache_ttl_seconds: 300,
+                clock_skew_seconds: 60,
+            })
+            .expect("owner Entra verifier"),
+        ));
+        let app = router_with_state(state);
+
+        let login = request(
+            app.clone(),
+            "/admin-ui/auth/login?return_to=%2Fadmin-ui%2F%23%2Fmy-services",
+        )
+        .await;
+        assert_eq!(login.status(), StatusCode::TEMPORARY_REDIRECT);
+        let login_cookie = login
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|value| value.to_str().unwrap())
+            .find(|value| value.starts_with(&format!("{PORTAL_LOGIN_COOKIE}=")))
+            .expect("browser-bound login cookie")
+            .to_owned();
+        assert!(login_cookie.contains("HttpOnly"));
+        assert!(login_cookie.contains("SameSite=Lax"));
+        assert!(login_cookie.contains("Path=/admin-ui/auth"));
+        let login_cookie_pair = login_cookie.split(';').next().unwrap().to_owned();
+        let mut authorize = url::Url::parse(
+            login
+                .headers()
+                .get(header::LOCATION)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        )
+        .unwrap();
+        authorize
+            .query_pairs_mut()
+            .append_pair("mock_user", "service_owner");
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let authorization = client.get(authorize).send().await.unwrap();
+        assert_eq!(authorization.status(), reqwest::StatusCode::FOUND);
+        let callback = url::Url::parse(
+            authorization
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        )
+        .unwrap();
+        let callback_route = format!(
+            "{}?{}",
+            callback.path(),
+            callback.query().expect("callback query")
+        );
+        let unbound_callback = request(app.clone(), &callback_route).await;
+        assert_eq!(unbound_callback.status(), StatusCode::UNAUTHORIZED);
+        let callback_response = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(&callback_route)
+                    .header(header::COOKIE, &login_cookie_pair)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(callback_response.status(), StatusCode::SEE_OTHER);
+        let cookie_header = callback_response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|value| value.to_str().unwrap().split(';').next().unwrap())
+            .filter(|value| !value.ends_with('='))
+            .collect::<Vec<_>>()
+            .join("; ");
+        let session = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/admin-ui/auth/session")
+                    .header(header::COOKIE, &cookie_header)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(session.status(), StatusCode::OK);
+        let session = response_json(session).await;
+        assert_eq!(session["authenticated"], true);
+        assert_eq!(session["member"]["status"], "pending");
+        assert_eq!(session["member"]["email"], "orders.owner@relayna.dev");
+        let csrf_token = session["csrf_token"].as_str().unwrap();
+        let logout = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(axum::http::Method::POST)
+                    .uri("/admin-ui/auth/logout")
+                    .header(header::COOKIE, &cookie_header)
+                    .header("x-csrf-token", csrf_token)
+                    .body(axum::body::Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(logout.status(), StatusCode::OK);
+        let logout_url = response_json(logout).await["logout_url"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let provider_logout = client.get(logout_url).send().await.unwrap();
+        assert_eq!(provider_logout.status(), reqwest::StatusCode::FOUND);
+        assert_eq!(
+            provider_logout
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .unwrap(),
+            "http://127.0.0.1:18381/admin-ui"
+        );
+
+        let workload_token = client
+            .post(format!("{issuer}/token"))
+            .form(&[
+                ("grant_type", "client_credentials"),
+                ("client_id", "00000000-0000-0000-0000-000000000101"),
+                ("client_secret", "relayna-development-workload-secret"),
+                ("scope", "api://relayna-gateway-owner/.default"),
+            ])
+            .send()
+            .await
+            .unwrap()
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["access_token"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let workload_response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/owner/v1/services/orders")
+                    .header(header::AUTHORIZATION, format!("Bearer {workload_token}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(workload_response.status(), StatusCode::OK);
+        assert_eq!(response_json(workload_response).await["role"], "viewer");
     }
 
     #[tokio::test]
@@ -7059,6 +9330,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7261,6 +9537,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: false,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7286,6 +9567,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7317,6 +9603,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7578,6 +9869,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7617,6 +9913,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7686,6 +9987,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_POLICY_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7718,6 +10024,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7754,6 +10065,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7791,6 +10107,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7834,6 +10155,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7927,6 +10253,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -7985,6 +10316,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -8385,6 +10721,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -8440,6 +10781,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -8653,6 +10999,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -8874,6 +11225,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -8940,6 +11296,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -8989,6 +11350,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),
@@ -9074,6 +11440,11 @@ mod tests {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_OPERATOR_TOKEN.to_owned()])),
             events: Arc::new(Mutex::new(Vec::new())),
             audit_events: Arc::new(Mutex::new(Vec::new())),
+            portal_members: Arc::new(Mutex::new(Vec::new())),
+            service_memberships: Arc::new(Mutex::new(Vec::new())),
+            managed_identities: Arc::new(Mutex::new(Vec::new())),
+            oidc_transactions: Arc::new(Mutex::new(Vec::new())),
+            portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
             studio_connection: Arc::new(Mutex::new(None)),
             gateway_auth_settings: Arc::new(Mutex::new(None)),

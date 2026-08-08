@@ -9,7 +9,11 @@ export type ViewId =
   | "keys"
   | "guardrails"
   | "audit"
-  | "settings";
+  | "settings"
+  | "members"
+  | "managed-identities"
+  | "my-services"
+  | "service-dashboard";
 
 export type ViewMeta = {
   title: string;
@@ -72,6 +76,26 @@ export const viewMeta: Record<ViewId, ViewMeta> = {
     title: "Settings",
     domain: "Govern",
     summary: "Studio connection settings, integration token controls, and release posture references.",
+  },
+  members: {
+    title: "Members",
+    domain: "Govern",
+    summary: "Approve portal members and assign exact Owner or Viewer service access.",
+  },
+  "managed-identities": {
+    title: "Managed identities",
+    domain: "Govern",
+    summary: "Bind audience- and app-role-authorized workloads to exact registered services.",
+  },
+  "my-services": {
+    title: "My services",
+    domain: "Discover",
+    summary: "Registered services for which you have Owner or Viewer access.",
+  },
+  "service-dashboard": {
+    title: "Service dashboard",
+    domain: "Monitor",
+    summary: "Scoped usage, errors, request logs, endpoints, providers, and models for one service.",
   },
 };
 

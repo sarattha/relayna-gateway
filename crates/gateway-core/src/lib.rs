@@ -1,3 +1,4 @@
+pub mod access;
 pub mod admin;
 pub mod auth;
 pub mod auth_settings;
@@ -18,6 +19,12 @@ pub mod services;
 pub mod studio_settings;
 pub mod usage;
 
+pub use access::{
+    ManagedIdentityBinding, ManagedIdentityCreateRequest, ManagedIdentityPatchRequest,
+    MemberPatchRequest, MemberStatus, NewPortalSession, OidcLoginTransaction, OwnerServiceSummary,
+    PortalAccessStore, PortalMember, PortalSessionResponse, ServiceMemberRole, ServiceMembership,
+    ServiceMembershipUpsertRequest, StoredPortalSession, OWNER_WORKLOAD_ROLE, PORTAL_ROLE_ADMIN,
+};
 pub use admin::{
     AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,
     AdminKeyUsageSummary, AdminPolicyLayerResponse, AdminPolicyLayerStore, AdminPolicyLayerUpsert,
