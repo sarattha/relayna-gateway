@@ -61,8 +61,8 @@ break-glass authentication path.
   verification and coverage gates on a fresh database.
 - [x] (2026-08-08) Pushed the review-fix commit, replied to and resolved all five
   review threads.
-- [ ] Confirm the final CI run after hardening the development OIDC readiness
-  ceiling for parallel GitHub test load.
+- [x] (2026-08-08) Confirmed the final GitHub Docs and CI workflows pass after
+  hardening the development OIDC readiness ceiling for parallel test load.
 
 ## Surprises & Discoveries
 
@@ -218,8 +218,8 @@ real-browser journey verified the service-owner experience at 390 x 844.
 
 PR #99 is available at https://github.com/sarattha/relayna-gateway/pull/99. Its
 first Codex review identified five actionable findings; all five are fixed,
-covered, replied to, and resolved. The final updated CI result remains to be
-recorded before this plan is closed.
+covered, replied to, and resolved. GitHub Docs run 238 and CI run 473 both pass
+on the reviewed, hardened implementation.
 
 ## Context and Orientation
 
