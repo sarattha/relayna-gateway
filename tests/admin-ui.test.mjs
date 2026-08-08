@@ -48,8 +48,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.23/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.23/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.24/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.24/);
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {

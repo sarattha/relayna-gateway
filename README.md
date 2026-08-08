@@ -4,16 +4,17 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
-Version `0.1.23` is the current release target. Release `0.1.23` adds
-endpoint-level failure monitoring for registered services across stored usage,
-Admin APIs, JSON/CSV exports, and the Admin Usage view. Requests record the
-uppercase method, query-free concrete service path, and most-specific synced
-OpenAPI template when one matches; templates are resolved independently of
-pricing. It retains buffered-body admission, OpenAPI endpoint billing, the
-Aurora Teal Admin UI 2.0 shell, operator and policy governance, provider
+Version `0.1.24` is the current release target. Release `0.1.24` adds Microsoft
+Entra sign-in for administrators and registered service owners, exact service
+memberships, scoped owner dashboards and APIs, and managed-identity bindings
+for workload monitoring. Existing operator tokens remain available as
+break-glass access, and all browser pages remain under `/admin-ui`. It retains
+endpoint-level failure monitoring, buffered-body admission, OpenAPI endpoint
+billing, the Aurora Teal Admin UI 2.0 shell, policy governance, provider
 intelligence, supply-chain hardening, LiteLLM passthrough and credential
-mapping, Microsoft Entra ID, and Apigee front-door provider traffic support.
-See `docs/openapi-service-pricing.md`, `docs/current-features.md`,
+mapping, Entra front-door authorization, and Apigee provider-traffic support.
+See `docs/operations/entra-portal-and-owner-monitoring.md`,
+`docs/openapi-service-pricing.md`, `docs/current-features.md`,
 `docs/litellm-passthrough.md`, `docs/entra-id-auth.md`, and
 `docs/apigee-gateway-path.md` for the public feature highlights.
 
@@ -99,7 +100,7 @@ simulation, policy layers, provider health state, debug bundles, service import
 preview/activation/version/rollback, and paginated expanded usage analytics. These are
 documented in `docs/current-features.md`.
 
-Release `0.1.23` can run Relayna Gateway as the single ingress in front of
+Release `0.1.24` can run Relayna Gateway as the single ingress in front of
 LiteLLM. Canonical OpenAI-compatible and Anthropic-compatible Claude routes
 remain governed by Relayna policy by default, and operators can optionally
 switch each canonical route to direct LiteLLM passthrough while preserving
@@ -173,7 +174,7 @@ of 400 or greater remains a failure, whether returned by Gateway or upstream.
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.1.23 .
+docker build -t relayna-gateway:0.1.24 .
 ```
 
 Run it:
@@ -187,7 +188,7 @@ docker run --rm \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
   -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.1.23
+  relayna-gateway:0.1.24
 ```
 
 `GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
@@ -197,7 +198,7 @@ Admin portal instead.
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.23`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.24`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Budgets, TPM, and Usage Exports
 

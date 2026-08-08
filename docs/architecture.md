@@ -12,10 +12,13 @@ flowchart LR
   redis["Redis"]
   litellm["LiteLLM or OpenAI-compatible upstream"]
   admin["Embedded admin portal"]
+  entra["Microsoft Entra ID"]
 
   client --> proxy
   client --> control
   admin --> control
+  admin --> entra
+  entra --> control
   proxy --> core
   control --> core
   core --> store
@@ -65,6 +68,8 @@ The control listener exposes:
 - `/admin-ui/readyz` for PostgreSQL and Redis readiness.
 - `/admin-ui/metrics` for Prometheus scraping.
 - `/admin-ui/admin/*` APIs for operator actions.
+- `/admin-ui/auth/*` for the browser OIDC BFF protocol and portal session.
+- `/owner/v1/services/{service-name}/*` for exact service-scoped monitoring.
 - `/admin-ui` for the embedded operator portal.
 
 Version `0.1.0` extends this control plane with scoped
@@ -73,7 +78,18 @@ provider health state, debug bundles, service import versioning and rollback,
 and expanded usage analytics. The public feature overview is in
 [Current Feature Highlights](current-features.md).
 
-Admin APIs require an operator token. On the first startup, the gateway bootstraps one operator token and stores only its hash. `GATEWAY_ADMIN_TOKEN` can seed that first token in a fresh database; otherwise the gateway generates and prints one raw token once. After an active token exists, env changes are ignored and rotation through the Admin portal is the supported change path.
+Admin APIs accept an active Entra administrator session or an operator token.
+On the first startup, the gateway bootstraps one operator token and stores only
+its hash. `GATEWAY_ADMIN_TOKEN` can seed that first token in a fresh database;
+otherwise the gateway generates and prints one raw token once. Use that token
+as break-glass access to approve the first Entra administrator. After an active
+token exists, env changes are ignored and rotation through the Admin portal is
+the supported change path.
+
+Service-owner APIs resolve the signed-in portal member or workload identity and
+inject the exact authorized service into every store query. Browser OIDC tokens
+never reach JavaScript, while managed identities must match tenant, audience,
+application role, and an enabled service binding.
 
 Usage export endpoints are part of the admin surface:
 
@@ -107,6 +123,8 @@ PostgreSQL is the source of truth for durable state:
 - LiteLLM wildcard passthrough settings for enablement, path/method
   allowlists, `/ui` exposure, and LiteLLM admin API exposure.
 - Operator token hashes, roles, scopes, and append-only admin audit events.
+- Portal members, exact service memberships, one-time OIDC transactions,
+  opaque browser sessions, and managed-identity service bindings.
 - Provider health state, request debug bundles, and service import snapshots.
 
 Registered service routes support wildcard paths under `/services/<service-name>/*`. The route resolver can match `GET` for service wildcard traffic, but forwarding still requires the service registration to include `GET` in its allowed method set. OpenAI-compatible routes, direct provider routes, and legacy named service routes remain `POST` routes.

@@ -93,6 +93,9 @@ break-glass authentication path.
   development OIDC pending persona, and passed the full verification stack.
 - [x] (2026-08-09) Stopped requesting additional Codex reviews after addressing
   the third-review finding, as requested by the user.
+- [x] (2026-08-09) Prepared release `0.1.24`: bumped workspace and embedded UI
+  versions, added changelog notes, updated deployment and operator documentation,
+  validated release metadata and strict docs, and reran the mandatory stack.
 
 ## Surprises & Discoveries
 
@@ -201,6 +204,15 @@ break-glass authentication path.
   Evidence: PR #99 review of commit `ca63a86b29`.
 
 ## Decision Log
+
+- Decision: Publish the completed Entra service-owner monitoring work as patch
+  release `0.1.24`.
+  Rationale: The repository has consistently delivered additive pre-1.0
+  features as patch releases. `v0.1.23` remains the released compatibility
+  boundary; the new schema, routes, and browser authentication mode are
+  additive, while existing operator tokens and request-plane contracts remain
+  supported.
+  Date/Author: 2026-08-09 / Codex.
 
 - Decision: Serve the Microsoft sign-in SVG as one additive static asset under
   `/admin-ui/microsoft-sign-in.svg`, preserving the released `/admin-ui`,
@@ -324,6 +336,15 @@ Computer verified the pending-persona form, provider logout, and return to the
 signed-out portal against the rebuilt local image. All Admin UI tests, the Vite
 production build, and the complete mandatory repository stack pass; no further
 Codex review was requested per the user's stopping instruction.
+
+Release preparation now targets `0.1.24` across workspace packages, embedded
+Admin UI indicators, the Kubernetes image, changelog, README, and public docs.
+The release notes explicitly document human OIDC, service membership, managed
+identity, recovery, proxy-cookie, and server-side authorization boundaries.
+`validate-release-metadata.py v0.1.24`, the Vite production build, all Admin UI
+tests, strict MkDocs, the all-features workspace build, and the complete
+mandatory verification stack pass, including all 299 nextest cases and clean
+Trivy, Gitleaks, and Semgrep results.
 
 ## Context and Orientation
 

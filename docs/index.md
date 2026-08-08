@@ -11,7 +11,8 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - Control listener for health, readiness, metrics, and admin APIs under
   `/admin-ui/*`.
 - PostgreSQL-backed projects, virtual keys, route policies, service links,
-  usage records, services, and operator tokens.
+  usage records, services, operator tokens, portal members, browser sessions,
+  and managed-identity bindings.
 - Redis-backed request rate-limit, token rate-limit, budget, and reservation
   state, with budget counters rehydrated from PostgreSQL usage records.
 - Embedded Admin UI 2.0 for Monitor, Discover, and Govern workflows across
@@ -35,8 +36,11 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
 - [OpenAPI Service Pricing](openapi-service-pricing.md) explains registered
   service discovery, endpoint billing, multipart selectors, and budget rules.
-- [Current Feature Highlights](current-features.md) summarizes the `v0.1.23`
+- [Current Feature Highlights](current-features.md) summarizes the `v0.1.24`
   feature set, including Admin UI screenshots.
+- [Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md)
+  covers browser OIDC, member approval, service assignments, managed
+  identities, and local development personas.
 - [LiteLLM Passthrough](litellm-passthrough.md) covers wildcard passthrough,
   canonical route modes, credential translation, `/ui` exposure, and browser
   access constraints.

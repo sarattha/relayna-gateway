@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.23` feature set.
+This page summarizes the `v0.1.24` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -10,7 +10,7 @@ customer, provider, token, or prompt data.
 
 Admin UI 2.0 turns the embedded portal into a compact operator console for
 governing AI traffic. The Aurora Teal redesign introduced in `v0.1.19` remains
-the visual foundation in `v0.1.23`, including a live Overview with usage
+the visual foundation in `v0.1.24`, including a live Overview with usage
 charts, gateway posture, provider-health attention signals, recent operations,
 and governed-change shortcuts backed by existing Admin APIs. The UI is still
 served from
@@ -18,11 +18,32 @@ served from
 `/admin-ui/app.css`, but the source of truth is the Vite and TypeScript package
 in `crates/gateway-api/admin-ui`.
 
-The navigation is grouped by the operator jobs it supports:
+Administrator navigation is grouped by the operator jobs it supports:
 
 - Monitor: overview, health, usage, debug bundles, and operational status.
 - Discover: providers, services, routes, and projects.
 - Govern: keys, guardrails, audit, and settings.
+
+## Entra Portal and Service Ownership
+
+Administrators and registered service owners can sign in with Microsoft Entra
+through a confidential-client OIDC BFF flow. Entra identity tokens stay on the
+server; the browser receives an opaque HttpOnly session and uses a
+session-bound CSRF token for mutations. First-time users remain pending until
+an administrator approves them.
+
+Administrators can assign exact Owner or Viewer access from **Members** and can
+register managed identities for workload monitoring. Service owners see only
+**My services** and **Service dashboard**, with scoped usage, failures,
+sanitized request logs, endpoint breakdowns, and exports for their assigned
+services. Server-side membership and workload-binding checks enforce the same
+boundary for `/owner/v1/services/{service_name}/*` APIs.
+
+Existing operator tokens remain available under **Emergency operator access**
+for first-administrator bootstrap and recovery. Pending or blocked members can
+also sign out and switch accounts without clearing browser cookies manually.
+See [Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md)
+for deployment configuration and local personas.
 
 ![Aurora Teal operational Overview](assets/screenshots/admin-ui-2/aurora-teal-overview.png)
 
@@ -172,7 +193,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.23` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.24` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -263,7 +284,7 @@ passthrough against a real `litellm/litellm` container.
 
 ## Memory-Safe Body Processing
 
-Release `0.1.23` bounds complete request and response buffering with one
+Release `0.1.24` bounds complete request and response buffering with one
 process-wide admission controller. By default, at most eight managed requests
 or post-call responses may retain complete bodies, and their aggregate
 serialized reservations may not exceed 512 MiB. Operators can tune these
@@ -317,7 +338,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.23` release retains CI and release workflow hardening with strict
+The `v0.1.24` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

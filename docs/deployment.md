@@ -2,10 +2,11 @@
 
 Relayna Gateway ships as one binary and one Docker image. The image serves both the core proxy and the admin portal because the admin UI is embedded in the `gateway-api` binary.
 
-Version `0.1.23` keeps that deployment shape and adds endpoint-level failure
-monitoring for registered-service usage. Its additive migration stores nullable
-HTTP method, concrete path, and synced OpenAPI template metadata and leaves
-historical rows unchanged. It retains buffered-body admission, OpenAPI
+Version `0.1.24` keeps that deployment shape and adds Entra-authenticated human
+portal sessions, service memberships, scoped owner monitoring, and exact
+managed-identity service bindings. Its additive migration leaves existing
+operator-token access and registered-service traffic unchanged. It retains
+endpoint-level failure monitoring, buffered-body admission, OpenAPI
 discovery and endpoint billing, persisted service timeout controls, structured
 terminal timeout responses, the Aurora Teal Admin UI,
 bearer-prefixed custom LiteLLM
@@ -16,6 +17,7 @@ Apigee gateway patterns. Admin UI 2.0 remains compiled into the same static
 asset contract on the gateway binary.
 See
 [Current Feature Highlights](current-features.md),
+[Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md),
 [OpenAPI Service Pricing](openapi-service-pricing.md),
 [Entra ID Auth](entra-id-auth.md), and
 [Apigee Gateway Path](apigee-gateway-path.md) for the public feature delta.
@@ -25,7 +27,7 @@ See
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.23 .
+docker build -t relayna-gateway:0.1.24 .
 ```
 
 Run it with required dependencies:
@@ -45,16 +47,16 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.23
+  relayna-gateway:0.1.24
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
 
-On first `0.1.23` startup, the idempotent PostgreSQL migration adds nullable
-`http_method`, `endpoint_path`, and `endpoint_template` columns to
-`usage_events` plus a partial bounded-digest lookup index. No endpoint backfill
-is attempted because historical `/services/*` rows do not contain a reliable
-concrete operation.
+On first `0.1.24` startup, the idempotent PostgreSQL migration adds portal
+members, exact service memberships, managed-identity bindings, OIDC login
+transactions, and opaque portal sessions. Existing operator tokens remain the
+break-glass bootstrap path and existing service registrations are not granted
+to members automatically.
 
 The body-admission defaults reserve no memory at startup. They cap concurrent
 managed body buffering at eight requests and 512 MiB of aggregate serialized
@@ -108,13 +110,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.23
+   ghcr.io/sarattha/relayna-gateway:0.1.24
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.23"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.24"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -122,7 +124,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.23
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.24
    ```
 
 3. Store secrets through your cluster secret manager:
