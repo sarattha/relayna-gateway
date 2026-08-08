@@ -453,6 +453,16 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
         .unwrap()
         .is_none());
 
+    let expired_session = NewPortalSession {
+        session_hash: format!("expired-session-{suffix}"),
+        member_id: member.id,
+        csrf_hash: format!("expired-csrf-{suffix}"),
+        expires_at: now - Duration::minutes(1),
+    };
+    env.store
+        .create_portal_session(expired_session.clone())
+        .await
+        .expect("create expired portal session");
     let session = NewPortalSession {
         session_hash: format!("session-{suffix}"),
         member_id: member.id,
@@ -463,6 +473,16 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
         .create_portal_session(session.clone())
         .await
         .expect("create portal session");
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM portal_sessions WHERE session_hash = $1"
+        )
+        .bind(&expired_session.session_hash)
+        .fetch_one(env.store.pool())
+        .await
+        .expect("count expired portal session"),
+        0
+    );
     let stored = env
         .store
         .resolve_portal_session(&session.session_hash, now)

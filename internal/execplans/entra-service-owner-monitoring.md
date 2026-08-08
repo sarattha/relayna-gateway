@@ -83,6 +83,11 @@ break-glass authentication path.
 - [x] (2026-08-09) Prevented the single service-owner navigation group from
   stretching across the sidebar so both owner destinations keep the standard
   compact navigation-row height.
+- [x] (2026-08-09) Addressed the second Codex review's proxy-cookie and expired
+  portal-session findings; the full verification stack and 95.26% coverage gate
+  pass on an isolated database.
+- [ ] (2026-08-09) Push the second-review fixes, reply to and resolve both
+  threads, and obtain the final Codex re-review result.
 
 ## Surprises & Discoveries
 
@@ -181,6 +186,10 @@ break-glass authentication path.
   layer, and all disposable verification state was removed afterward.
   Evidence: the initial isolated run returned `policy_denied` for
   `/v1/embeddings`; the configured rerun passed all 299 nextest cases.
+- Observation: The second Codex review found that the browser portal's root-path
+  cookies could reach request-plane upstreams and that expired portal sessions
+  were not pruned during normal use.
+  Evidence: PR #99 review of commit `93ff6d9d9f`.
 
 ## Decision Log
 
@@ -248,6 +257,14 @@ break-glass authentication path.
   Rationale: The local Relayna session must be revoked first, but shared
   machines also need Entra SSO termination and reliable account switching.
   Date/Author: 2026-08-08 / Codex.
+- Decision: Remove the complete downstream `Cookie` header at the Pingora
+  upstream boundary and transactionally prune expired portal sessions before
+  each new session insert.
+  Rationale: Request-plane upstreams have no Relayna browser-cookie contract,
+  so fail-closed stripping protects both released and branch-local proxy paths.
+  New session creation is the smallest normal-use cleanup point and mirrors the
+  reviewed OIDC transaction cleanup without a schema or scheduler change.
+  Date/Author: 2026-08-09 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -277,6 +294,12 @@ multi-persona identity provider, and the collapsed emergency operator flow
 remains available below the designed security guidance. The final mandatory
 verification stack passed with the documented neutral global test policy; no
 runtime policy behavior was changed as part of this visual follow-up.
+
+The second Codex review's security findings are fixed locally: Pingora removes
+all downstream cookies before forwarding request-plane traffic, and each portal
+session insert transactionally prunes expired sessions. Focused regressions,
+the complete mandatory stack, all 299 nextest cases, and the 95.26% all-features
+line-coverage gate pass on a disposable database.
 
 ## Context and Orientation
 

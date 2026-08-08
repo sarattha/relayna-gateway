@@ -7091,6 +7091,15 @@ impl PortalAccessStore for PostgresStore {
     }
 
     async fn create_portal_session(&self, session: NewPortalSession) -> GatewayResult<()> {
+        let mut database_transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        sqlx::query("DELETE FROM portal_sessions WHERE expires_at <= now()")
+            .execute(&mut *database_transaction)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         sqlx::query(
             r#"
             INSERT INTO portal_sessions (session_hash, member_id, csrf_hash, expires_at)
@@ -7101,10 +7110,13 @@ impl PortalAccessStore for PostgresStore {
         .bind(session.member_id)
         .bind(session.csrf_hash)
         .bind(session.expires_at)
-        .execute(&self.pool)
+        .execute(&mut *database_transaction)
         .await
-        .map(|_| ())
-        .map_err(|_| GatewayError::StoreUnavailable)
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        database_transaction
+            .commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)
     }
 
     async fn resolve_portal_session(
