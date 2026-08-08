@@ -64,6 +64,7 @@ test("portal uses Entra BFF sessions and preserves explicit break-glass access",
   assert.match(html, /Your identity tokens stay server-side/);
   assert.match(css, /\.login-primary img[\s\S]*width: 215px[\s\S]*height: auto/);
   assert.match(css, /\.login-primary \{[\s\S]*width: 100%[\s\S]*justify-content: center/);
+  assert.match(css, /\.nav-groups \{[\s\S]*align-content: start/);
   assert.match(css, /\.login-shell[\s\S]*grid-template-columns: minmax\(430px, 56fr\) minmax\(420px, 44fr\)/);
   assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.login-shell \{[\s\S]*display: block/);
   assert.match(js, /\/admin-ui\/auth\/config/);

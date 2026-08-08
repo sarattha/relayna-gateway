@@ -80,6 +80,9 @@ break-glass authentication path.
   access column without resizing or modifying the artwork, then used Computer
   to verify the balanced desktop layout and navigation to the development OIDC
   persona chooser.
+- [x] (2026-08-09) Prevented the single service-owner navigation group from
+  stretching across the sidebar so both owner destinations keep the standard
+  compact navigation-row height.
 
 ## Surprises & Discoveries
 

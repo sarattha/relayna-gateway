@@ -326,6 +326,7 @@ td code {
   flex: 1 1 auto;
   overflow-y: auto;
   display: grid;
+  align-content: start;
   gap: var(--rg-space-4);
   min-height: 0;
   padding-right: 2px;
