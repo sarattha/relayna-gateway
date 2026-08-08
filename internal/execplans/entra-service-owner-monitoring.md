@@ -73,6 +73,13 @@ break-glass authentication path.
 - [x] (2026-08-09) Rebuilt the local image and used Computer with the development
   OIDC personas to confirm the service-owner palette exposes only owner views
   and the Admin palette exposes only Admin views with clean scrolling.
+- [x] (2026-08-09) Replaced the custom Entra login CTA with Microsoft's official
+  215 x 41 light-theme SVG lockup and aligned signed-out terminology with the
+  Microsoft guidance for work or school accounts.
+- [x] (2026-08-09) Centered the official Microsoft sign-in lockup within the
+  access column without resizing or modifying the artwork, then used Computer
+  to verify the balanced desktop layout and navigation to the development OIDC
+  persona chooser.
 
 ## Surprises & Discoveries
 
@@ -173,6 +180,13 @@ break-glass authentication path.
   `/v1/embeddings`; the configured rerun passed all 299 nextest cases.
 
 ## Decision Log
+
+- Decision: Serve the Microsoft sign-in SVG as one additive static asset under
+  `/admin-ui/microsoft-sign-in.svg`, preserving the released `/admin-ui`,
+  `/admin-ui/app.js`, and `/admin-ui/app.css` paths and response behavior.
+  Rationale: `v0.1.23` is the compatibility boundary; adding a fixed UI asset
+  to the existing Admin UI catch-all does not require a shim or migration and
+  keeps the official Microsoft artwork unmodified and independently cacheable.
 
 - Decision: Keep the portal at `/admin-ui` and retain hash-based browser routes.
   Keep owner APIs outside the Admin API namespace at

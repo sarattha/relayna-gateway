@@ -2234,34 +2234,28 @@ tbody tr:hover td {
 }
 
 .login-primary {
-  display: flex;
   width: 100%;
-  min-height: 56px;
-  align-items: center;
+  display: flex;
   justify-content: center;
-  gap: 10px;
   margin-top: 29px;
-  padding: 13px 16px;
-  border: 1px solid #326aa5;
-  border-radius: 7px;
-  background: #326aa5;
-  color: #ffffff;
-  font-weight: 800;
+  line-height: 0;
   text-decoration: none;
 }
 
-.login-primary:hover {
-  border-color: #285b90;
-  background: #285b90;
+.login-primary img {
+  display: block;
+  width: 215px;
+  max-width: 100%;
+  height: auto;
 }
 
 .login-primary:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgb(50 106 165 / 28%);
 }
 
-.login-primary i {
-  font-size: 21px;
+.login-primary:focus-visible img {
+  outline: 3px solid rgb(50 106 165 / 45%);
+  outline-offset: 3px;
 }
 
 .login-session-divider {

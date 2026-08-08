@@ -4198,6 +4198,10 @@ async fn admin_ui_asset(Path(path): Path<String>) -> Response {
             "application/javascript; charset=utf-8",
             include_str!("static/admin-ui/app.js"),
         ),
+        "microsoft-sign-in.svg" => static_response(
+            "image/svg+xml",
+            include_str!("static/admin-ui/microsoft-sign-in.svg"),
+        ),
         "admin-ui-tabler-icons.woff2" => static_binary_response(
             "font/woff2",
             include_bytes!("static/admin-ui/admin-ui-tabler-icons.woff2"),
@@ -10749,6 +10753,13 @@ mod tests {
 
         let response = request(app.clone(), "/admin-ui/app.css").await;
         assert_eq!(response.status(), StatusCode::OK);
+
+        let response = request(app.clone(), "/admin-ui/microsoft-sign-in.svg").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE),
+            Some(&HeaderValue::from_static("image/svg+xml"))
+        );
 
         for (path, content_type) in [
             ("admin-ui-tabler-icons.woff2", "font/woff2"),

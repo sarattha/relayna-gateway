@@ -18,7 +18,7 @@
           <h1>Governed access.<br />Operational clarity.</h1>
           <p>One secure control plane for AI service traffic, usage, incidents, and service ownership.</p>
           <ul class="login-capabilities" aria-label="Gateway capabilities">
-            <li><i class="ti ti-shield-check" aria-hidden="true"></i>Entra identity</li>
+            <li><i class="ti ti-shield-check" aria-hidden="true"></i>Work account sign-in</li>
             <li><i class="ti ti-chart-histogram" aria-hidden="true"></i>Usage visibility</li>
             <li><i class="ti ti-key" aria-hidden="true"></i>Key governance</li>
             <li><i class="ti ti-lock-access" aria-hidden="true"></i>Scoped access</li>
@@ -30,18 +30,18 @@
         <div class="login-access-card">
           <span class="login-access-eyebrow">Organization access</span>
           <h1 id="login-title">Welcome back</h1>
-          <p class="login-copy">Sign in with your organization account. Relayna will resolve your administrator role and service memberships after Entra verifies your identity.</p>
-          <a id="entra-sign-in" class="login-primary" href="/admin-ui/auth/login"><i class="ti ti-brand-windows" aria-hidden="true"></i><span>Sign in with Microsoft Entra ID</span></a>
-          <p id="oidc-unavailable" class="subtle hidden">Microsoft Entra sign-in is not configured for this gateway.</p>
+          <p class="login-copy">Sign in with your work or school account. Relayna will resolve your administrator role and service memberships after Microsoft verifies your identity.</p>
+          <a id="entra-sign-in" class="login-primary" href="/admin-ui/auth/login"><img src="/admin-ui/microsoft-sign-in.svg" width="215" height="41" alt="Sign in with Microsoft" /></a>
+          <p id="oidc-unavailable" class="subtle hidden">Microsoft sign-in is not configured for this gateway.</p>
           <div class="login-session-divider"><span>Secure browser session</span></div>
           <div class="login-security-note">
             <i class="ti ti-shield-lock" aria-hidden="true"></i>
-            <span><strong>Your Entra tokens stay server-side</strong><small>The browser receives an HttpOnly session cookie. Gateway permissions come from Relayna roles and service memberships.</small></span>
+            <span><strong>Your identity tokens stay server-side</strong><small>The browser receives an HttpOnly session cookie. Gateway permissions come from Relayna roles and service memberships.</small></span>
           </div>
           <details class="break-glass-login">
             <summary>Emergency operator access</summary>
             <form id="login-form">
-              <p class="help">Use the break-glass operator token only when Entra sign-in is unavailable.</p>
+              <p class="help">Use the break-glass operator token only when Microsoft sign-in is unavailable.</p>
               <label>
                 Operator token
                 <input id="operator-token" type="password" autocomplete="current-password" />

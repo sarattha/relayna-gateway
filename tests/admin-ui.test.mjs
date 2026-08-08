@@ -13,6 +13,7 @@ const sourceJs = readFileSync(join(sourceDir, "main.ts"), "utf8");
 // naming. The deployed bundle remains part of endpoint-contract coverage below.
 const js = `${sourceJs}\n${deployedJs}`;
 const css = readFileSync(join(uiDir, "app.css"), "utf8");
+const microsoftSignInSvg = readFileSync(join(uiDir, "microsoft-sign-in.svg"), "utf8");
 
 function test(name, fn) {
   try {
@@ -53,10 +54,16 @@ test("admin portal shell exposes all release-critical views", () => {
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
   assert.match(sourceJs, /const state = \{\s*view: "overview",/);
-  assert.match(html, /id="entra-sign-in"[\s\S]*Sign in with Microsoft Entra/);
+  assert.match(html, /id="entra-sign-in"[\s\S]*src="\/admin-ui\/microsoft-sign-in\.svg"[\s\S]*alt="Sign in with Microsoft"/);
+  assert.match(html, /Sign in with your work or school account/);
+  assert.doesNotMatch(html, /Sign in with Microsoft Entra ID/);
+  assert.match(microsoftSignInSvg, /width="215" height="41" viewBox="0 0 215 41"/);
+  assert.match(microsoftSignInSvg, /fill="#f25022"[\s\S]*fill="#00a4ef"[\s\S]*fill="#7fba00"[\s\S]*fill="#ffb900"/);
   assert.match(html, /class="break-glass-login"/);
   assert.match(html, /Governed access\.[\s\S]*Operational clarity\./);
-  assert.match(html, /Your Entra tokens stay server-side/);
+  assert.match(html, /Your identity tokens stay server-side/);
+  assert.match(css, /\.login-primary img[\s\S]*width: 215px[\s\S]*height: auto/);
+  assert.match(css, /\.login-primary \{[\s\S]*width: 100%[\s\S]*justify-content: center/);
   assert.match(css, /\.login-shell[\s\S]*grid-template-columns: minmax\(430px, 56fr\) minmax\(420px, 44fr\)/);
   assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.login-shell \{[\s\S]*display: block/);
   assert.match(js, /\/admin-ui\/auth\/config/);
