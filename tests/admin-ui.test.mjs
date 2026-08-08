@@ -51,6 +51,47 @@ test("admin portal shell exposes all release-critical views", () => {
   assert.match(js, /Release target[\s\S]*v0\.1\.23/);
 });
 
+test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
+  assert.match(sourceJs, /const state = \{\s*view: "overview",/);
+  assert.match(html, /id="entra-sign-in"[\s\S]*Sign in with Microsoft Entra/);
+  assert.match(html, /class="break-glass-login"/);
+  assert.match(js, /\/admin-ui\/auth\/config/);
+  assert.match(js, /\/admin-ui\/auth\/session/);
+  assert.match(js, /\/admin-ui\/auth\/logout/);
+  assert.match(js, /"x-csrf-token": state\.session\.csrf_token/);
+  assert.match(js, /session\.member\.status !== "active"/);
+  assert.doesNotMatch(js, /sessionStorage\.setItem\([^,]+,\s*.*id_token/);
+});
+
+test("admin members and managed identities expose exact service bindings", () => {
+  for (const view of ["members", "managed-identities"]) {
+    assert.match(html, new RegExp(`data-view="${view}"`));
+  }
+  assert.match(js, /async function members\(\)/);
+  assert.match(js, /\/admin-ui\/admin\/members/);
+  assert.match(js, /data-membership-form/);
+  assert.match(js, /option\("viewer", "viewer"\)/);
+  assert.match(js, /option\("owner", ""\)/);
+  assert.match(js, /async function managedIdentities\(\)/);
+  assert.match(js, /\/admin-ui\/admin\/managed-identities/);
+  assert.match(js, /gateway\.monitor\.read/);
+});
+
+test("service-owner workspace uses scoped owner APIs and responsive dashboards", () => {
+  for (const view of ["my-services", "service-dashboard"]) {
+    assert.match(html, new RegExp(`data-view="${view}"`));
+  }
+  assert.match(html, /id="workspace-select"/);
+  assert.match(js, /async function myServices\(\)/);
+  assert.match(js, /api\("\/owner\/v1\/services"\)/);
+  assert.match(js, /async function serviceDashboard\(\)/);
+  assert.match(js, /\/owner\/v1\/services\/\$\{encodeURIComponent\(serviceName\)\}\/dashboard/);
+  assert.match(js, /\/errors\?\$\{query\}/);
+  assert.match(css, /\.owner-dashboard-grid/);
+  assert.match(css, /\.owner-service-grid/);
+  assert.match(css, /@media \(max-width: 700px\)[\s\S]*\.owner-dashboard-grid/);
+});
+
 test("admin portal exposes responsive operator navigation and accessible workflows", () => {
   for (const marker of [
     'class="skip-link"',

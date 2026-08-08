@@ -158,6 +158,15 @@ async fn postgres_admin_api_workflow_covers_registered_control_plane() {
     let Some(store) = integration_store().await else {
         return;
     };
+    let mut database_lock = store
+        .pool()
+        .acquire()
+        .await
+        .expect("acquire integration lock");
+    sqlx::query("SELECT pg_advisory_lock(82120260808)")
+        .execute(&mut *database_lock)
+        .await
+        .expect("serialize shared control-plane integration state");
     let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| REDIS_TEST_URL.to_owned());
     let token = install_known_operator_token(&store).await;
     let suffix = Uuid::new_v4().simple().to_string();

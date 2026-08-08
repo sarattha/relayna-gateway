@@ -1,6 +1,12 @@
 use async_trait::async_trait;
 use chrono::Datelike;
 use gateway_core::{
+    access::{
+        ManagedIdentityBinding, ManagedIdentityCreateRequest, ManagedIdentityPatchRequest,
+        MemberPatchRequest, MemberStatus, NewPortalSession, OidcLoginTransaction,
+        PortalAccessStore, PortalMember, ServiceMemberRole, ServiceMembership,
+        ServiceMembershipUpsertRequest, StoredPortalSession, PORTAL_ROLE_ADMIN,
+    },
     admin::{
         AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse,
         AdminPolicyLayerResponse, AdminPolicyLayerUpsert, AdminPolicyResponse,
@@ -2504,6 +2510,7 @@ impl AdminAuditStore for PostgresStore {
             r#"
             INSERT INTO audit_events (
                 actor_token_id,
+                actor_member_id,
                 action,
                 target_type,
                 target_id,
@@ -2513,10 +2520,11 @@ impl AdminAuditStore for PostgresStore {
                 ip,
                 user_agent
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING
                 id,
                 actor_token_id,
+                actor_member_id,
                 action,
                 target_type,
                 target_id,
@@ -2529,6 +2537,7 @@ impl AdminAuditStore for PostgresStore {
             "#,
         )
         .bind(event.actor_token_id)
+        .bind(event.actor_member_id)
         .bind(event.action)
         .bind(event.target_type)
         .bind(event.target_id)
@@ -2550,6 +2559,7 @@ impl AdminAuditStore for PostgresStore {
             SELECT
                 id,
                 actor_token_id,
+                actor_member_id,
                 action,
                 target_type,
                 target_id,
@@ -2561,14 +2571,16 @@ impl AdminAuditStore for PostgresStore {
                 created_at
             FROM audit_events
             WHERE ($1::uuid IS NULL OR actor_token_id = $1)
-              AND ($2::text IS NULL OR action = $2)
-              AND ($3::text IS NULL OR target_type = $3)
-              AND ($4::text IS NULL OR target_id = $4)
+              AND ($2::uuid IS NULL OR actor_member_id = $2)
+              AND ($3::text IS NULL OR action = $3)
+              AND ($4::text IS NULL OR target_type = $4)
+              AND ($5::text IS NULL OR target_id = $5)
             ORDER BY created_at DESC
-            LIMIT $5
+            LIMIT $6
             "#,
         )
         .bind(query.actor_token_id)
+        .bind(query.actor_member_id)
         .bind(query.action)
         .bind(query.target_type)
         .bind(query.target_id)
@@ -5863,6 +5875,7 @@ fn audit_event_from_row(row: sqlx::postgres::PgRow) -> Result<AuditEvent, sqlx::
     Ok(AuditEvent {
         id: row.try_get("id")?,
         actor_token_id: row.try_get("actor_token_id")?,
+        actor_member_id: row.try_get("actor_member_id")?,
         action: row.try_get("action")?,
         target_type: row.try_get("target_type")?,
         target_id: row.try_get("target_id")?,
@@ -6719,6 +6732,558 @@ fn service_registry_snapshot_from_row(
             .try_get("created_at")
             .map_err(|_| GatewayError::StoreUnavailable)?,
     })
+}
+
+#[async_trait]
+impl PortalAccessStore for PostgresStore {
+    async fn upsert_oidc_member(
+        &self,
+        tenant_id: &str,
+        object_id: &str,
+        email: Option<&str>,
+        display_name: Option<&str>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> GatewayResult<PortalMember> {
+        if tenant_id.trim().is_empty() || object_id.trim().is_empty() {
+            return Err(GatewayError::InvalidAccessPayload);
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO portal_members (
+                tenant_id, object_id, email, display_name, last_sign_in_at
+            )
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (tenant_id, object_id) DO UPDATE SET
+                email = COALESCE(EXCLUDED.email, portal_members.email),
+                display_name = COALESCE(EXCLUDED.display_name, portal_members.display_name),
+                last_sign_in_at = EXCLUDED.last_sign_in_at,
+                updated_at = now()
+            RETURNING *
+            "#,
+        )
+        .bind(tenant_id.trim())
+        .bind(object_id.trim())
+        .bind(email.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(
+            display_name
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(now)
+        .fetch_one(&self.pool)
+        .await
+        .and_then(|row| portal_member_from_row(&row))
+        .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn list_members(&self) -> GatewayResult<Vec<PortalMember>> {
+        sqlx::query("SELECT * FROM portal_members ORDER BY created_at DESC, id")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .iter()
+            .map(portal_member_from_row)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn get_member(&self, member_id: Uuid) -> GatewayResult<Option<PortalMember>> {
+        sqlx::query("SELECT * FROM portal_members WHERE id = $1")
+            .bind(member_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .map(|row| portal_member_from_row(&row))
+            .transpose()
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn patch_member(
+        &self,
+        member_id: Uuid,
+        patch: MemberPatchRequest,
+    ) -> GatewayResult<Option<PortalMember>> {
+        let status = patch.status.map(MemberStatus::as_str);
+        sqlx::query(
+            r#"
+            UPDATE portal_members
+            SET status = COALESCE($2, status),
+                roles = CASE
+                    WHEN $3::boolean IS NULL THEN roles
+                    WHEN $3 THEN array_append(array_remove(roles, $4), $4)
+                    ELSE array_remove(roles, $4)
+                END,
+                updated_at = now()
+            WHERE id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(member_id)
+        .bind(status)
+        .bind(patch.admin)
+        .bind(PORTAL_ROLE_ADMIN)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|row| portal_member_from_row(&row))
+        .transpose()
+        .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn list_service_memberships(
+        &self,
+        member_id: Uuid,
+    ) -> GatewayResult<Vec<ServiceMembership>> {
+        sqlx::query("SELECT * FROM service_memberships WHERE member_id = $1 ORDER BY service_name")
+            .bind(member_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .iter()
+            .map(service_membership_from_row)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn upsert_service_membership(
+        &self,
+        member_id: Uuid,
+        request: ServiceMembershipUpsertRequest,
+    ) -> GatewayResult<ServiceMembership> {
+        if request.service_name.trim().is_empty() {
+            return Err(GatewayError::InvalidAccessPayload);
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO service_memberships (member_id, service_name, role)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (member_id, service_name) DO UPDATE SET
+                role = EXCLUDED.role,
+                updated_at = now()
+            RETURNING *
+            "#,
+        )
+        .bind(member_id)
+        .bind(request.service_name.trim())
+        .bind(request.role.as_str())
+        .fetch_one(&self.pool)
+        .await
+        .and_then(|row| service_membership_from_row(&row))
+        .map_err(|error| {
+            if is_foreign_key_violation(&error) {
+                GatewayError::InvalidAccessPayload
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })
+    }
+
+    async fn delete_service_membership(
+        &self,
+        member_id: Uuid,
+        service_name: &str,
+    ) -> GatewayResult<bool> {
+        sqlx::query("DELETE FROM service_memberships WHERE member_id = $1 AND service_name = $2")
+            .bind(member_id)
+            .bind(service_name)
+            .execute(&self.pool)
+            .await
+            .map(|result| result.rows_affected() > 0)
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn list_managed_identities(&self) -> GatewayResult<Vec<ManagedIdentityBinding>> {
+        sqlx::query("SELECT * FROM managed_identity_bindings ORDER BY display_name, id")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .iter()
+            .map(managed_identity_from_row)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn create_managed_identity(
+        &self,
+        request: ManagedIdentityCreateRequest,
+    ) -> GatewayResult<ManagedIdentityBinding> {
+        validate_managed_identity_fields(
+            &request.tenant_id,
+            &request.client_id,
+            &request.display_name,
+            &request.service_name,
+            &request.required_role,
+        )?;
+        sqlx::query(
+            r#"
+            INSERT INTO managed_identity_bindings (
+                tenant_id, client_id, object_id, display_name, service_name,
+                required_role, enabled
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING *
+            "#,
+        )
+        .bind(request.tenant_id.trim())
+        .bind(request.client_id.trim())
+        .bind(
+            request
+                .object_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(request.display_name.trim())
+        .bind(request.service_name.trim())
+        .bind(request.required_role.trim())
+        .bind(request.enabled)
+        .fetch_one(&self.pool)
+        .await
+        .and_then(|row| managed_identity_from_row(&row))
+        .map_err(|error| {
+            if is_unique_violation_on(&error, "managed_identity_binding_unique")
+                || is_foreign_key_violation(&error)
+            {
+                GatewayError::InvalidAccessPayload
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })
+    }
+
+    async fn patch_managed_identity(
+        &self,
+        identity_id: Uuid,
+        patch: ManagedIdentityPatchRequest,
+    ) -> GatewayResult<Option<ManagedIdentityBinding>> {
+        if patch
+            .display_name
+            .as_deref()
+            .is_some_and(|value| value.trim().is_empty())
+            || patch
+                .service_name
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+            || patch
+                .required_role
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+        {
+            return Err(GatewayError::InvalidAccessPayload);
+        }
+        let object_id_present = patch.object_id.is_some();
+        let object_id = patch.object_id.flatten();
+        sqlx::query(
+            r#"
+            UPDATE managed_identity_bindings
+            SET display_name = COALESCE($2, display_name),
+                object_id = CASE WHEN $3 THEN $4 ELSE object_id END,
+                service_name = COALESCE($5, service_name),
+                required_role = COALESCE($6, required_role),
+                enabled = COALESCE($7, enabled),
+                updated_at = now()
+            WHERE id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(identity_id)
+        .bind(patch.display_name.map(|value| value.trim().to_owned()))
+        .bind(object_id_present)
+        .bind(
+            object_id
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(patch.service_name.map(|value| value.trim().to_owned()))
+        .bind(patch.required_role.map(|value| value.trim().to_owned()))
+        .bind(patch.enabled)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            if is_foreign_key_violation(&error) {
+                GatewayError::InvalidAccessPayload
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })?
+        .map(|row| managed_identity_from_row(&row))
+        .transpose()
+        .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn delete_managed_identity(&self, identity_id: Uuid) -> GatewayResult<bool> {
+        sqlx::query("DELETE FROM managed_identity_bindings WHERE id = $1")
+            .bind(identity_id)
+            .execute(&self.pool)
+            .await
+            .map(|result| result.rows_affected() > 0)
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn create_oidc_login_transaction(
+        &self,
+        transaction: OidcLoginTransaction,
+    ) -> GatewayResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO oidc_login_transactions (
+                state_hash, nonce, pkce_verifier, return_to, expires_at
+            ) VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(transaction.state_hash)
+        .bind(transaction.nonce)
+        .bind(transaction.pkce_verifier)
+        .bind(transaction.return_to)
+        .bind(transaction.expires_at)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn consume_oidc_login_transaction(
+        &self,
+        state_hash: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> GatewayResult<Option<OidcLoginTransaction>> {
+        sqlx::query(
+            r#"
+            DELETE FROM oidc_login_transactions
+            WHERE state_hash = $1 AND expires_at > $2
+            RETURNING state_hash, nonce, pkce_verifier, return_to, expires_at
+            "#,
+        )
+        .bind(state_hash)
+        .bind(now)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|row| {
+            Ok(OidcLoginTransaction {
+                state_hash: row.try_get("state_hash")?,
+                nonce: row.try_get("nonce")?,
+                pkce_verifier: row.try_get("pkce_verifier")?,
+                return_to: row.try_get("return_to")?,
+                expires_at: row.try_get("expires_at")?,
+            })
+        })
+        .transpose()
+        .map_err(|_: sqlx::Error| GatewayError::StoreUnavailable)
+    }
+
+    async fn create_portal_session(&self, session: NewPortalSession) -> GatewayResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO portal_sessions (session_hash, member_id, csrf_hash, expires_at)
+            VALUES ($1, $2, $3, $4)
+            "#,
+        )
+        .bind(session.session_hash)
+        .bind(session.member_id)
+        .bind(session.csrf_hash)
+        .bind(session.expires_at)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn resolve_portal_session(
+        &self,
+        session_hash: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> GatewayResult<Option<StoredPortalSession>> {
+        let row = sqlx::query(
+            r#"
+            UPDATE portal_sessions s
+            SET last_seen_at = $2
+            FROM portal_members m
+            WHERE s.session_hash = $1
+              AND s.expires_at > $2
+              AND m.id = s.member_id
+            RETURNING
+                s.session_hash,
+                s.csrf_hash,
+                s.expires_at,
+                s.last_seen_at,
+                m.id,
+                m.tenant_id,
+                m.object_id,
+                m.email,
+                m.display_name,
+                m.status,
+                m.roles,
+                m.last_sign_in_at,
+                m.created_at,
+                m.updated_at
+            "#,
+        )
+        .bind(session_hash)
+        .bind(now)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        row.map(|row| {
+            Ok(StoredPortalSession {
+                session_hash: row.try_get("session_hash")?,
+                csrf_hash: row.try_get("csrf_hash")?,
+                expires_at: row.try_get("expires_at")?,
+                last_seen_at: row.try_get("last_seen_at")?,
+                member: portal_member_from_row(&row)?,
+            })
+        })
+        .transpose()
+        .map_err(|_: sqlx::Error| GatewayError::StoreUnavailable)
+    }
+
+    async fn delete_portal_session(&self, session_hash: &str) -> GatewayResult<bool> {
+        sqlx::query("DELETE FROM portal_sessions WHERE session_hash = $1")
+            .bind(session_hash)
+            .execute(&self.pool)
+            .await
+            .map(|result| result.rows_affected() > 0)
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn member_service_role(
+        &self,
+        member_id: Uuid,
+        service_name: &str,
+    ) -> GatewayResult<Option<ServiceMemberRole>> {
+        sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT sm.role
+            FROM service_memberships sm
+            INNER JOIN portal_members m ON m.id = sm.member_id
+            INNER JOIN service_registrations s ON s.name = sm.service_name
+            WHERE sm.member_id = $1
+              AND sm.service_name = $2
+              AND m.status = 'active'
+              AND s.enabled = true
+            "#,
+        )
+        .bind(member_id)
+        .bind(service_name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|role| ServiceMemberRole::parse(&role))
+        .transpose()
+    }
+
+    async fn workload_service_binding(
+        &self,
+        tenant_id: &str,
+        client_id: &str,
+        object_id: Option<&str>,
+        service_name: &str,
+        token_roles: &[String],
+    ) -> GatewayResult<Option<ManagedIdentityBinding>> {
+        let row = sqlx::query(
+            r#"
+            SELECT b.*
+            FROM managed_identity_bindings b
+            INNER JOIN service_registrations s ON s.name = b.service_name
+            WHERE b.tenant_id = $1
+              AND b.client_id = $2
+              AND b.service_name = $3
+              AND b.enabled = true
+              AND s.enabled = true
+              AND (b.object_id IS NULL OR b.object_id = $4)
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(client_id)
+        .bind(service_name)
+        .bind(object_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        let binding = row
+            .map(|row| managed_identity_from_row(&row))
+            .transpose()
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(binding.filter(|binding| {
+            token_roles
+                .iter()
+                .any(|role| role == &binding.required_role)
+        }))
+    }
+}
+
+fn portal_member_from_row(row: &sqlx::postgres::PgRow) -> Result<PortalMember, sqlx::Error> {
+    let status: String = row.try_get("status")?;
+    Ok(PortalMember {
+        id: row.try_get("id")?,
+        tenant_id: row.try_get("tenant_id")?,
+        object_id: row.try_get("object_id")?,
+        email: row.try_get("email")?,
+        display_name: row.try_get("display_name")?,
+        status: MemberStatus::parse(&status).map_err(|_| sqlx::Error::ColumnDecode {
+            index: "status".into(),
+            source: "invalid portal member status".into(),
+        })?,
+        roles: row.try_get("roles")?,
+        last_sign_in_at: row.try_get("last_sign_in_at")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn service_membership_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<ServiceMembership, sqlx::Error> {
+    let role: String = row.try_get("role")?;
+    Ok(ServiceMembership {
+        member_id: row.try_get("member_id")?,
+        service_name: row.try_get("service_name")?,
+        role: ServiceMemberRole::parse(&role).map_err(|_| sqlx::Error::ColumnDecode {
+            index: "role".into(),
+            source: "invalid service member role".into(),
+        })?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn managed_identity_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<ManagedIdentityBinding, sqlx::Error> {
+    Ok(ManagedIdentityBinding {
+        id: row.try_get("id")?,
+        tenant_id: row.try_get("tenant_id")?,
+        client_id: row.try_get("client_id")?,
+        object_id: row.try_get("object_id")?,
+        display_name: row.try_get("display_name")?,
+        service_name: row.try_get("service_name")?,
+        required_role: row.try_get("required_role")?,
+        enabled: row.try_get("enabled")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn validate_managed_identity_fields(
+    tenant_id: &str,
+    client_id: &str,
+    display_name: &str,
+    service_name: &str,
+    required_role: &str,
+) -> GatewayResult<()> {
+    if [
+        tenant_id,
+        client_id,
+        display_name,
+        service_name,
+        required_role,
+    ]
+    .iter()
+    .any(|value| value.trim().is_empty())
+    {
+        return Err(GatewayError::InvalidAccessPayload);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -7842,7 +8407,8 @@ mod tests {
 
         store
             .record_audit_event(AuditEventCreate {
-                actor_token_id,
+                actor_token_id: Some(actor_token_id),
+                actor_member_id: None,
                 action: "coverage.complete".to_owned(),
                 target_type: "coverage".to_owned(),
                 target_id: Some(suffix.clone()),
@@ -7857,6 +8423,7 @@ mod tests {
         store
             .list_audit_events(AuditEventQuery {
                 actor_token_id: Some(actor_token_id),
+                actor_member_id: None,
                 action: Some("coverage.complete".to_owned()),
                 target_type: Some("coverage".to_owned()),
                 target_id: Some(suffix.clone()),

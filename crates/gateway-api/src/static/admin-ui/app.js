@@ -5600,8 +5600,8 @@ class DateAdapterBase {
   *   }
   * })
   */
-  static override(members) {
-    Object.assign(DateAdapterBase.prototype, members);
+  static override(members2) {
+    Object.assign(DateAdapterBase.prototype, members2);
   }
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   init() {
@@ -14555,6 +14555,26 @@ const viewMeta = {
     title: "Settings",
     domain: "Govern",
     summary: "Studio connection settings, integration token controls, and release posture references."
+  },
+  members: {
+    title: "Members",
+    domain: "Govern",
+    summary: "Approve portal members and assign exact Owner or Viewer service access."
+  },
+  "managed-identities": {
+    title: "Managed identities",
+    domain: "Govern",
+    summary: "Bind audience- and app-role-authorized workloads to exact registered services."
+  },
+  "my-services": {
+    title: "My services",
+    domain: "Discover",
+    summary: "Registered services for which you have Owner or Viewer access."
+  },
+  "service-dashboard": {
+    title: "Service dashboard",
+    domain: "Monitor",
+    summary: "Scoped usage, errors, request logs, endpoints, providers, and models for one service."
   }
 };
 function metaForView(view) {
@@ -14642,7 +14662,7 @@ function applyViewChrome(view) {
 const tokenKey = "relayna_gateway_operator_token";
 const viewIds = new Set(Object.keys(viewMeta));
 const state = {
-  view: viewFromHash(),
+  view: "overview",
   keys: [],
   projects: [],
   providers: [],
@@ -14672,7 +14692,14 @@ const state = {
     timeseriesOffset: 0,
     serviceTimeseriesOffset: 0
   },
-  overviewWindow: "7d"
+  overviewWindow: "7d",
+  session: null,
+  authConfig: null,
+  workspace: "admin",
+  ownerServices: [],
+  selectedOwnerService: null,
+  members: [],
+  managedIdentities: []
 };
 const login = document.querySelector("#login");
 const app = document.querySelector("#app");
@@ -14760,21 +14787,23 @@ function setPending(root, pending, controls = null) {
   return targets;
 }
 async function api(path, options = {}) {
-  var _a2, _b, _c;
+  var _a2, _b, _c, _d;
+  const headers = {
+    "content-type": "application/json",
+    ...token() ? { authorization: `Bearer ${token()}` } : {},
+    ...!token() && ((_a2 = state.session) == null ? void 0 : _a2.csrf_token) ? { "x-csrf-token": state.session.csrf_token } : {},
+    ...options.headers || {}
+  };
   const response = await fetchWithTimeout(path, {
     ...options,
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${token()}`,
-      ...options.headers || {}
-    }
+    headers
   });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     try {
       const body = await response.json();
-      const code = (_a2 = body.error) == null ? void 0 : _a2.code;
-      const detail = ((_b = body.error) == null ? void 0 : _b.message) || ((_c = body.error) == null ? void 0 : _c.detail);
+      const code = (_b = body.error) == null ? void 0 : _b.code;
+      const detail = ((_c = body.error) == null ? void 0 : _c.message) || ((_d = body.error) == null ? void 0 : _d.detail);
       message = [code, detail].filter(Boolean).join(": ") || message;
     } catch (_) {
     }
@@ -14926,16 +14955,46 @@ function closeTopDialog(value = false) {
 function signedIn() {
   login.classList.add("hidden");
   app.classList.remove("hidden");
+  configurePortalShell();
   state.view = viewFromHash();
   syncNavigation();
   refresh();
 }
 function viewFromHash() {
   const value = location.hash.replace(/^#\/?/, "");
-  return (viewIds == null ? void 0 : viewIds.has(value)) ? value : "overview";
+  if ((viewIds == null ? void 0 : viewIds.has(value)) && viewAllowed(value)) return value;
+  return state.workspace === "owner" ? "my-services" : "overview";
+}
+function isAdmin() {
+  var _a2, _b, _c;
+  return Boolean(token() || ((_c = (_b = (_a2 = state.session) == null ? void 0 : _a2.member) == null ? void 0 : _b.roles) == null ? void 0 : _c.includes("admin")));
+}
+function hasOwnerAccess() {
+  var _a2, _b;
+  return Boolean((_b = (_a2 = state.session) == null ? void 0 : _a2.service_memberships) == null ? void 0 : _b.length);
+}
+function viewAllowed(view) {
+  if (["my-services", "service-dashboard"].includes(view)) return hasOwnerAccess();
+  return isAdmin();
+}
+function configurePortalShell() {
+  var _a2, _b, _c;
+  const admin = isAdmin();
+  const owner = hasOwnerAccess();
+  document.querySelectorAll("[data-admin-nav]").forEach((item) => item.classList.toggle("hidden", !admin || state.workspace !== "admin"));
+  document.querySelectorAll("[data-owner-nav]").forEach((item) => item.classList.toggle("hidden", !owner || state.workspace !== "owner"));
+  (_a2 = document.querySelector("[data-break-glass-only]")) == null ? void 0 : _a2.classList.toggle("hidden", !token());
+  (_b = document.querySelector("#governed-change-trigger")) == null ? void 0 : _b.classList.toggle("hidden", !admin || state.workspace !== "admin");
+  const workspaceControl = document.querySelector("#workspace-control");
+  workspaceControl == null ? void 0 : workspaceControl.classList.toggle("hidden", !(admin && owner));
+  const workspaceSelect = document.querySelector("#workspace-select");
+  if (workspaceSelect) workspaceSelect.value = state.workspace;
+  const member = (_c = state.session) == null ? void 0 : _c.member;
+  document.querySelector("#session-name").textContent = (member == null ? void 0 : member.display_name) || (member == null ? void 0 : member.email) || (token() ? "Break-glass operator" : "Portal member");
+  document.querySelector("#session-role").textContent = token() ? "Operator token" : admin ? "Admin member" : "Service member";
 }
 function navigateToView(view, { replace = false, focus = true } = {}) {
-  if (!viewIds.has(view)) return;
+  if (!viewIds.has(view) || !viewAllowed(view)) return;
   const nextHash = `#/${view}`;
   const changed = location.hash !== nextHash;
   if (replace) history.replaceState(null, "", nextHash);
@@ -15029,15 +15088,28 @@ document.querySelector("#login-form").addEventListener("submit", async (event) =
   sessionStorage.setItem(tokenKey, value);
   try {
     await api("/admin-ui/admin/usage/summary");
+    state.session = null;
+    state.workspace = "admin";
     signedIn();
   } catch (error) {
     sessionStorage.removeItem(tokenKey);
     document.querySelector("#login-error").textContent = error.message;
   }
 });
-document.querySelector("#sign-out").addEventListener("click", () => {
+document.querySelector("#sign-out").addEventListener("click", async () => {
+  if (!token() && state.session) {
+    try {
+      await api("/admin-ui/auth/logout", { method: "POST", body: "{}" });
+    } catch (_) {
+    }
+  }
   sessionStorage.removeItem(tokenKey);
   location.reload();
+});
+document.querySelector("#workspace-select").addEventListener("change", (event) => {
+  state.workspace = event.target.value;
+  configurePortalShell();
+  navigateToView(state.workspace === "owner" ? "my-services" : "overview");
 });
 document.querySelector("#refresh").addEventListener("click", refresh);
 document.querySelector("#nav-toggle").addEventListener("click", openNavigation);
@@ -15072,7 +15144,7 @@ document.querySelectorAll(".nav").forEach((button) => {
   button.addEventListener("click", () => navigateToView(button.dataset.view));
 });
 window.addEventListener("hashchange", () => {
-  if (!token()) return;
+  if (!token() && !state.session) return;
   state.view = viewFromHash();
   syncNavigation();
   closeNavigation();
@@ -15100,6 +15172,10 @@ async function refresh({ focus = false } = {}) {
     if (state.view === "usage") await usage();
     if (state.view === "health") await health();
     if (state.view === "settings") await settings();
+    if (state.view === "members") await members();
+    if (state.view === "managed-identities") await managedIdentities();
+    if (state.view === "my-services") await myServices();
+    if (state.view === "service-dashboard") await serviceDashboard();
     document.querySelector("#last-refreshed").textContent = `Updated ${(/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     if (focus) content.focus({ preventScroll: true });
   } catch (error) {
@@ -15825,6 +15901,7 @@ async function audit() {
     <label>Target type<input name="target_type" placeholder="key, policy_layer, provider"></label>
     <label>Target ID<input name="target_id"></label>
     <label>Operator token ID<input name="actor_token_id"></label>
+    <label>Member ID<input name="actor_member_id"></label>
     <label>Limit<input name="limit" type="number" min="1" max="500" value="100"></label>
     <div class="form-actions"><button class="primary">Apply</button></div>
   `;
@@ -15836,7 +15913,7 @@ async function loadAuditEvents(event) {
   event == null ? void 0 : event.preventDefault();
   const form = event ? new FormData(event.target) : new FormData();
   const query = new URLSearchParams();
-  for (const key of ["action", "target_type", "target_id", "actor_token_id", "limit"]) {
+  for (const key of ["action", "target_type", "target_id", "actor_token_id", "actor_member_id", "limit"]) {
     const value = form.get(key);
     if (value) query.set(key, value);
   }
@@ -15849,7 +15926,7 @@ function auditEventTable(rows) {
     ["Time", "Actor", "Action", "Target", "Request", "IP", "User agent", "Snapshots"],
     rows.map((row) => [
       time(row.created_at),
-      `<code>${esc(row.actor_token_id || "system")}</code>`,
+      `<code>${esc(row.actor_member_id ? `member:${row.actor_member_id}` : row.actor_token_id ? `token:${row.actor_token_id}` : "system")}</code>`,
       badge(row.action),
       `<strong>${esc(row.target_type)}</strong><div class="subtle"><code>${esc(row.target_id || "")}</code></div>`,
       `<code>${esc(row.request_id || "")}</code>`,
@@ -18151,6 +18228,209 @@ function serviceRouteOptions() {
   const routes2 = [.../* @__PURE__ */ new Set([...builtIns, ...state.services.map((service) => service.route_pattern)])];
   return routes2.map((route) => `<option value="${attr(route)}"></option>`).join("");
 }
+async function members() {
+  [state.members, state.services] = await Promise.all([
+    api("/admin-ui/admin/members"),
+    api("/admin-ui/admin/services")
+  ]);
+  content.innerHTML = `
+    <section class="panel">
+      <div class="panel-heading"><div><h3>Portal members</h3><p>Entra proves identity. Relayna approval and exact service membership grant access.</p></div><span class="badge">${state.members.length} members</span></div>
+      <div class="member-grid">${state.members.map(memberAccessCard).join("") || emptyState("No one has signed in through Entra yet.")}</div>
+    </section>`;
+  content.querySelectorAll("[data-member-status]").forEach((button) => button.addEventListener("click", handleAsync(updateMemberStatus)));
+  content.querySelectorAll("[data-member-admin]").forEach((button) => button.addEventListener("click", handleAsync(updateMemberAdmin)));
+  content.querySelectorAll("[data-membership-form]").forEach((form) => form.addEventListener("submit", handleAsync(saveServiceMembership)));
+  content.querySelectorAll("[data-membership-delete]").forEach((button) => button.addEventListener("click", handleAsync(deleteServiceMembership)));
+}
+function memberAccessCard(item) {
+  var _a2, _b;
+  const member = item.member;
+  const admin = (_a2 = member.roles) == null ? void 0 : _a2.includes("admin");
+  return `<article class="member-card">
+    <div class="member-card-heading">
+      <div><h4>${esc(member.display_name || member.email || member.object_id)}</h4><p>${esc(member.email || member.object_id)}</p></div>
+      ${badge(member.status, member.status === "active" ? "good" : member.status === "blocked" ? "bad" : "warn")}
+    </div>
+    <div class="member-meta"><span>${admin ? "Admin" : "Member"}</span><span>Last sign-in ${time(member.last_sign_in_at)}</span></div>
+    <div class="actions">
+      <button data-member-status="active" data-member-id="${attr(member.id)}">Approve</button>
+      <button data-member-status="blocked" data-member-id="${attr(member.id)}" class="danger">Block</button>
+      <button data-member-admin="${admin ? "false" : "true"}" data-member-id="${attr(member.id)}">${admin ? "Remove admin" : "Make admin"}</button>
+    </div>
+    <h5>Service access</h5>
+    ${((_b = item.service_memberships) == null ? void 0 : _b.length) ? table(["Service", "Role", ""], item.service_memberships.map((membership) => [
+    esc(membership.service_name),
+    badge(membership.role),
+    `<button class="danger" data-membership-delete data-member-id="${attr(member.id)}" data-service-name="${attr(membership.service_name)}">Remove</button>`
+  ])) : '<p class="subtle">No service access assigned.</p>'}
+    <form data-membership-form data-member-id="${attr(member.id)}" class="inline-form membership-form">
+      <label>Service<select name="service_name" required><option value="">Select service</option>${state.services.map((service) => option(service.name, "")).join("")}</select></label>
+      <label>Role<select name="role">${option("viewer", "viewer")}${option("owner", "")}</select></label>
+      <button type="submit">Assign</button>
+    </form>
+  </article>`;
+}
+async function updateMemberStatus(event) {
+  await api(`/admin-ui/admin/members/${event.currentTarget.dataset.memberId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: event.currentTarget.dataset.memberStatus })
+  });
+  setNotice("Member status updated.", "success");
+  await members();
+}
+async function updateMemberAdmin(event) {
+  await api(`/admin-ui/admin/members/${event.currentTarget.dataset.memberId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ admin: event.currentTarget.dataset.memberAdmin === "true" })
+  });
+  setNotice("Member role updated.", "success");
+  await members();
+}
+async function saveServiceMembership(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const serviceName = form.get("service_name");
+  await api(`/admin-ui/admin/members/${event.currentTarget.dataset.memberId}/services/${encodeURIComponent(serviceName)}`, {
+    method: "PUT",
+    body: JSON.stringify({ role: form.get("role") })
+  });
+  setNotice("Service access assigned.", "success");
+  await members();
+}
+async function deleteServiceMembership(event) {
+  const { memberId, serviceName } = event.currentTarget.dataset;
+  if (!await confirmAction("Remove service access", `This member will immediately lose access to ${serviceName}.`)) return;
+  await api(`/admin-ui/admin/members/${memberId}/services/${encodeURIComponent(serviceName)}`, { method: "DELETE" });
+  setNotice("Service access removed.", "success");
+  await members();
+}
+async function managedIdentities() {
+  [state.managedIdentities, state.services] = await Promise.all([
+    api("/admin-ui/admin/managed-identities"),
+    api("/admin-ui/admin/services")
+  ]);
+  content.innerHTML = `
+    <section class="panel">
+      <div class="panel-heading"><div><h3>Register managed identity</h3><p>A token must have the monitoring audience, required app role, and this exact service binding.</p></div></div>
+      <form id="managed-identity-form" class="form-grid">
+        <label>Display name<input name="display_name" required placeholder="orders-api workload"></label>
+        <label>Tenant ID<input name="tenant_id" required></label>
+        <label>Client ID<input name="client_id" required></label>
+        <label>Object ID <span class="subtle">optional exact match</span><input name="object_id"></label>
+        <label>Service<select name="service_name" required><option value="">Select service</option>${state.services.map((service) => option(service.name, "")).join("")}</select></label>
+        <label>Required app role<input name="required_role" value="gateway.monitor.read" required></label>
+        <div class="form-actions wide-field"><button class="primary">Register identity</button></div>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Service bindings</h3><span class="badge">${state.managedIdentities.length}</span></div>
+      ${managedIdentityTable(state.managedIdentities)}
+    </section>`;
+  document.querySelector("#managed-identity-form").addEventListener("submit", handleAsync(createManagedIdentity));
+  content.querySelectorAll("[data-managed-toggle]").forEach((button) => button.addEventListener("click", handleAsync(toggleManagedIdentity)));
+  content.querySelectorAll("[data-managed-delete]").forEach((button) => button.addEventListener("click", handleAsync(deleteManagedIdentity)));
+}
+function managedIdentityTable(rows) {
+  if (!rows.length) return emptyState("No managed identities registered.");
+  return table(["Identity", "Tenant / client", "Service", "Role", "Status", "Actions"], rows.map((row) => [
+    `<strong>${esc(row.display_name)}</strong>${row.object_id ? `<div class="subtle"><code>${esc(row.object_id)}</code></div>` : ""}`,
+    `<code>${esc(row.tenant_id)}</code><div class="subtle"><code>${esc(row.client_id)}</code></div>`,
+    esc(row.service_name),
+    `<code>${esc(row.required_role)}</code>`,
+    badge(row.enabled ? "enabled" : "disabled", row.enabled ? "good" : "bad"),
+    `<div class="actions"><button data-managed-toggle data-identity-id="${attr(row.id)}" data-enabled="${row.enabled ? "false" : "true"}">${row.enabled ? "Disable" : "Enable"}</button><button class="danger" data-managed-delete data-identity-id="${attr(row.id)}">Delete</button></div>`
+  ]));
+}
+async function createManagedIdentity(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  await api("/admin-ui/admin/managed-identities", {
+    method: "POST",
+    body: JSON.stringify({
+      display_name: form.get("display_name"),
+      tenant_id: form.get("tenant_id"),
+      client_id: form.get("client_id"),
+      object_id: nullableText(form.get("object_id")),
+      service_name: form.get("service_name"),
+      required_role: form.get("required_role"),
+      enabled: true
+    })
+  });
+  setNotice("Managed identity registered.", "success");
+  await managedIdentities();
+}
+async function toggleManagedIdentity(event) {
+  await api(`/admin-ui/admin/managed-identities/${event.currentTarget.dataset.identityId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled: event.currentTarget.dataset.enabled === "true" })
+  });
+  await managedIdentities();
+}
+async function deleteManagedIdentity(event) {
+  if (!await confirmAction("Delete managed identity binding", "The workload immediately loses monitoring API access.")) return;
+  await api(`/admin-ui/admin/managed-identities/${event.currentTarget.dataset.identityId}`, { method: "DELETE" });
+  await managedIdentities();
+}
+async function myServices() {
+  state.ownerServices = await api("/owner/v1/services");
+  if (!state.selectedOwnerService && state.ownerServices.length) state.selectedOwnerService = state.ownerServices[0].service.name;
+  content.innerHTML = `<section class="panel">
+    <div class="panel-heading"><div><h3>My registered services</h3><p>Only Relayna assignments shown here are available through the dashboard and owner API.</p></div><span class="badge">${state.ownerServices.length}</span></div>
+    <div class="owner-service-grid">${state.ownerServices.map(ownerServiceCard).join("") || emptyState("No service access has been assigned to this member.")}</div>
+  </section>`;
+  content.querySelectorAll("[data-open-owner-service]").forEach((button) => button.addEventListener("click", () => {
+    state.selectedOwnerService = button.dataset.openOwnerService;
+    navigateToView("service-dashboard");
+  }));
+}
+function ownerServiceCard(item) {
+  var _a2;
+  const service = item.service;
+  return `<article class="owner-service-card">
+    <div><span class="eyebrow">${esc(item.role)}</span><h3>${esc(service.name)}</h3><p><code>${esc(service.route_pattern)}</code></p></div>
+    <div class="member-meta"><span>${service.enabled ? "Active" : "Disabled"}</span><span>${esc(((_a2 = service.allowed_methods) == null ? void 0 : _a2.join(", ")) || "")}</span></div>
+    <button class="primary" data-open-owner-service="${attr(service.name)}">Open dashboard</button>
+  </article>`;
+}
+async function serviceDashboard() {
+  var _a2, _b;
+  if (!state.ownerServices.length) state.ownerServices = await api("/owner/v1/services");
+  if (!state.selectedOwnerService) state.selectedOwnerService = (_b = (_a2 = state.ownerServices[0]) == null ? void 0 : _a2.service) == null ? void 0 : _b.name;
+  if (!state.selectedOwnerService) {
+    content.innerHTML = panel("Service dashboard", emptyState("No service access has been assigned."));
+    return;
+  }
+  const serviceName = state.selectedOwnerService;
+  const from2 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1e3).toISOString();
+  const query = new URLSearchParams({ from: from2, interval: "day", limit: "50" });
+  const [dashboard, errors] = await Promise.all([
+    api(`/owner/v1/services/${encodeURIComponent(serviceName)}/dashboard?${query}`),
+    api(`/owner/v1/services/${encodeURIComponent(serviceName)}/errors?${query}`)
+  ]);
+  content.innerHTML = `
+    <section class="owner-dashboard-toolbar">
+      <label>Service<select id="owner-service-select">${state.ownerServices.map((item) => option(item.service.name, serviceName)).join("")}</select></label>
+      <span class="badge">${esc(dashboard.role)}</span>
+      <code>GET /owner/v1/services/${esc(serviceName)}/dashboard</code>
+    </section>
+    <section class="metric-strip">
+      ${metricTile("Requests", dashboard.summary.request_count)}
+      ${metricTile("Failures", dashboard.summary.failure_count)}
+      ${metricTile("Average latency", dashboard.summary.average_latency_ms == null ? "n/a" : `${Number(dashboard.summary.average_latency_ms).toFixed(0)} ms`)}
+      ${metricTile("Estimated cost", money(dashboard.summary.estimated_cost_usd))}
+    </section>
+    <section class="owner-dashboard-grid">
+      ${panel("Endpoint usage", usageBreakdownTable(dashboard.endpoints || []))}
+      ${panel("Provider usage", usageBreakdownTable(dashboard.providers || []))}
+    </section>
+    ${panel("Errors and failed request logs", usageEventsTable(errors.rows || []))}
+    ${panel("Usage over time", usageTimeseriesTable(dashboard.timeseries || []))}`;
+  document.querySelector("#owner-service-select").addEventListener("change", (event) => {
+    state.selectedOwnerService = event.target.value;
+    serviceDashboard().catch((error) => setNotice(error.message));
+  });
+}
 function blankToUndefined(value) {
   return value === null || String(value).trim() === "" ? void 0 : String(value).trim();
 }
@@ -18200,6 +18480,41 @@ function esc(value) {
 function attr(value) {
   return esc(value);
 }
-if (token()) {
-  signedIn();
+async function initializePortal() {
+  var _a2;
+  if (token()) {
+    state.workspace = "admin";
+    signedIn();
+    return;
+  }
+  try {
+    state.authConfig = await json("/admin-ui/auth/config");
+    const signIn = document.querySelector("#entra-sign-in");
+    if (state.authConfig.enabled) {
+      const returnTo = `${location.pathname}${location.hash || "#/my-services"}`;
+      signIn.href = `/admin-ui/auth/login?return_to=${encodeURIComponent(returnTo)}`;
+    } else {
+      signIn.classList.add("hidden");
+      document.querySelector("#oidc-unavailable").classList.remove("hidden");
+    }
+    const session = await json("/admin-ui/auth/session");
+    if (!session.authenticated) return;
+    state.session = session;
+    if (session.member.status !== "active") {
+      renderAccessState(session.member);
+      return;
+    }
+    state.workspace = ((_a2 = session.member.roles) == null ? void 0 : _a2.includes("admin")) ? "admin" : "owner";
+    signedIn();
+  } catch (error) {
+    document.querySelector("#login-error").textContent = error.message;
+  }
 }
+function renderAccessState(member) {
+  document.querySelector("#entra-sign-in").classList.add("hidden");
+  document.querySelector(".break-glass-login").classList.add("hidden");
+  document.querySelector("#login-title").textContent = member.status === "blocked" ? "Access blocked" : "Approval pending";
+  document.querySelector(".login-copy").textContent = member.status === "blocked" ? "An administrator has blocked this portal membership. Contact the gateway operations team." : "Your Microsoft identity is verified. A gateway administrator must approve your membership and assign service access.";
+  document.querySelector("#login-error").textContent = member.email || member.object_id;
+}
+initializePortal();

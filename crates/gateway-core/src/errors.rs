@@ -40,6 +40,22 @@ pub enum GatewayError {
     DisabledOperatorToken,
     #[error("operator token lacks required scope")]
     InsufficientOperatorScope,
+    #[error("portal session is invalid or expired")]
+    InvalidPortalSession,
+    #[error("portal member is awaiting approval")]
+    PendingPortalMember,
+    #[error("portal member is blocked")]
+    BlockedPortalMember,
+    #[error("portal member lacks required access")]
+    InsufficientPortalAccess,
+    #[error("portal access payload is invalid")]
+    InvalidAccessPayload,
+    #[error("OIDC login transaction is invalid or expired")]
+    InvalidOidcTransaction,
+    #[error("OIDC provider is unavailable")]
+    OidcUnavailable,
+    #[error("CSRF validation failed")]
+    InvalidCsrfToken,
     #[error("unsupported route")]
     UnsupportedRoute,
     #[error("route is disabled")]
@@ -150,6 +166,13 @@ impl GatewayError {
             Self::InsufficientEntraAuthorization => StatusCode::FORBIDDEN,
             Self::InvalidOperatorToken | Self::DisabledOperatorToken => StatusCode::UNAUTHORIZED,
             Self::InsufficientOperatorScope => StatusCode::FORBIDDEN,
+            Self::InvalidPortalSession | Self::InvalidOidcTransaction => StatusCode::UNAUTHORIZED,
+            Self::PendingPortalMember
+            | Self::BlockedPortalMember
+            | Self::InsufficientPortalAccess
+            | Self::InvalidCsrfToken => StatusCode::FORBIDDEN,
+            Self::InvalidAccessPayload => StatusCode::BAD_REQUEST,
+            Self::OidcUnavailable => StatusCode::BAD_GATEWAY,
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
             Self::DisabledRoute => StatusCode::FORBIDDEN,
             Self::RequestBodyTooLarge | Self::ResponseBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
@@ -207,6 +230,14 @@ impl GatewayError {
             Self::InvalidOperatorToken => "invalid_operator_token",
             Self::DisabledOperatorToken => "disabled_operator_token",
             Self::InsufficientOperatorScope => "insufficient_operator_scope",
+            Self::InvalidPortalSession => "invalid_portal_session",
+            Self::PendingPortalMember => "pending_portal_member",
+            Self::BlockedPortalMember => "blocked_portal_member",
+            Self::InsufficientPortalAccess => "insufficient_portal_access",
+            Self::InvalidAccessPayload => "invalid_access_payload",
+            Self::InvalidOidcTransaction => "invalid_oidc_transaction",
+            Self::OidcUnavailable => "oidc_unavailable",
+            Self::InvalidCsrfToken => "invalid_csrf_token",
             Self::UnsupportedRoute => "unsupported_route",
             Self::DisabledRoute => "disabled_route",
             Self::RequestBodyTooLarge => "request_body_too_large",
@@ -269,6 +300,14 @@ impl GatewayError {
             Self::InvalidOperatorToken => "Operator token is invalid.",
             Self::DisabledOperatorToken => "Operator token is disabled.",
             Self::InsufficientOperatorScope => "Operator token lacks the required scope.",
+            Self::InvalidPortalSession => "Portal session is invalid or expired.",
+            Self::PendingPortalMember => "Portal access is awaiting administrator approval.",
+            Self::BlockedPortalMember => "Portal access is blocked.",
+            Self::InsufficientPortalAccess => "Portal member lacks access to this resource.",
+            Self::InvalidAccessPayload => "Portal access payload is invalid.",
+            Self::InvalidOidcTransaction => "OIDC login transaction is invalid or expired.",
+            Self::OidcUnavailable => "OIDC provider is unavailable.",
+            Self::InvalidCsrfToken => "CSRF validation failed.",
             Self::UnsupportedRoute => "Route is not supported by this gateway.",
             Self::DisabledRoute => "Route is disabled by gateway policy.",
             Self::RequestBodyTooLarge => "Request body exceeds the route limit.",

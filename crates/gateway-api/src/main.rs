@@ -1,8 +1,9 @@
 use anyhow::Context;
+use gateway_api::portal::PortalOidcRuntime;
 use gateway_api::{app, config::Config};
 use gateway_core::{
-    AdminGatewayAuthSettingsStore, EffectiveGatewayAuthSettings, OperatorTokenMaterial,
-    OperatorTokenStore, SharedGatewayAuthRuntime,
+    AdminGatewayAuthSettingsStore, EffectiveGatewayAuthSettings, EntraJwtVerifier,
+    OperatorTokenMaterial, OperatorTokenStore, SharedGatewayAuthRuntime,
 };
 use gateway_proxy::{PingoraLiteLlmConfig, PingoraUpstreamConfig, RelaynaPingoraProxy};
 use gateway_store::{PostgresStore, RedisControlState, RedisReadiness};
@@ -96,7 +97,21 @@ fn main() -> anyhow::Result<()> {
     let studio = config.relayna_studio_base_url.clone().map(|base_url| {
         app::StudioCatalogClient::new(base_url, config.relayna_studio_token.clone())
     });
-    let app = app::router_with_studio_auth_and_litellm(
+    let portal_oidc = config
+        .portal_oidc
+        .clone()
+        .map(PortalOidcRuntime::new)
+        .transpose()
+        .context("create portal OIDC runtime")?
+        .map(Arc::new);
+    let owner_entra_verifier = config
+        .owner_entra_auth
+        .clone()
+        .map(EntraJwtVerifier::new)
+        .transpose()
+        .context("create owner Entra verifier")?
+        .map(Arc::new);
+    let app = app::router_with_identity(
         store.clone(),
         redis,
         studio,
@@ -104,6 +119,8 @@ fn main() -> anyhow::Result<()> {
         shared_auth,
         config.litellm_base_url.clone(),
         config.litellm_service_key.clone(),
+        portal_oidc,
+        owner_entra_verifier,
     );
     let control_bind_addr = config.gateway_control_bind_addr;
     let reconciler_store = store.clone();

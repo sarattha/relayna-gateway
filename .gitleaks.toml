@@ -36,4 +36,7 @@ regexes = [
     '''op_live_testoperator[0-9]+''',
     '''op_live_usageoperator[0-9]+''',
     '''op_live_policyoperator[0-9]+''',
+    '''op_live_entra_real_env_review_token_1234567890''',
+    '''rk_live_invalid_review_key''',
+    '''rk_live_legacy_client_key''',
 ]

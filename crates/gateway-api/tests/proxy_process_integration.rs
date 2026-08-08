@@ -102,6 +102,15 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     let store = PostgresStore::connect(&database_url)
         .await
         .expect("connect test store");
+    let mut database_lock = store
+        .pool()
+        .acquire()
+        .await
+        .expect("acquire integration lock");
+    sqlx::query("SELECT pg_advisory_lock(82120260808)")
+        .execute(&mut *database_lock)
+        .await
+        .expect("serialize shared control-plane integration state");
     let (upstream_url, upstream_task) = mock_upstream().await;
     sqlx::query(
         r#"

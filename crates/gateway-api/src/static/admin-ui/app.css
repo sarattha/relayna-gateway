@@ -2126,6 +2126,130 @@ tbody tr:hover td {
   }
 }
 
+.login-primary {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  text-decoration: none;
+  margin-block: 8px 16px;
+}
+
+.break-glass-login {
+  border-top: 1px solid var(--rg-color-border);
+  padding-top: 16px;
+}
+
+.break-glass-login summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.break-glass-login form {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.workspace-control select {
+  min-width: 132px;
+}
+
+.member-grid,
+.owner-service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+}
+
+.member-card,
+.owner-service-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--rg-color-border);
+  border-radius: var(--rg-radius-lg);
+  background: var(--rg-color-surface-muted);
+  padding: 18px;
+  min-width: 0;
+}
+
+.member-card-heading,
+.member-meta,
+.owner-dashboard-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.member-card-heading h4,
+.owner-service-card h3 {
+  margin: 0;
+}
+
+.member-card-heading p,
+.owner-service-card p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.member-meta {
+  color: var(--rg-color-muted);
+  font-size: 0.82rem;
+  flex-wrap: wrap;
+}
+
+.membership-form {
+  align-items: end;
+}
+
+.owner-dashboard-toolbar {
+  flex-wrap: wrap;
+  border: 1px solid var(--rg-color-border);
+  border-radius: var(--rg-radius-lg);
+  background: var(--rg-color-surface);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.owner-dashboard-toolbar code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.owner-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 700px) {
+  .workspace-control {
+    order: -1;
+  }
+
+  .workspace-control select {
+    min-width: 0;
+    max-width: 130px;
+  }
+
+  .member-card-heading,
+  .owner-dashboard-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .membership-form,
+  .owner-dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .member-card .table-wrap {
+    margin-inline: -10px;
+    width: calc(100% + 20px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

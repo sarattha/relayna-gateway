@@ -1,7 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 use gateway_core::{
-    BudgetDecision, BudgetStore, GuardrailPolicy, KeyPolicy, PolicyLookup, Provider,
-    RateLimitDecision, RateLimitStore, Route,
+    BudgetDecision, BudgetStore, GuardrailPolicy, KeyPolicy, ManagedIdentityCreateRequest,
+    ManagedIdentityPatchRequest, MemberPatchRequest, MemberStatus, NewPortalSession,
+    OidcLoginTransaction, PolicyLookup, PortalAccessStore, Provider, RateLimitDecision,
+    RateLimitStore, Route, ServiceMemberRole, ServiceMembershipUpsertRequest, OWNER_WORKLOAD_ROLE,
 };
 use gateway_store::{PostgresStore, RedisControlState};
 use redis::AsyncCommands;
@@ -181,6 +183,252 @@ async fn seed_from_postgres(store: &PostgresStore, redis: &RedisControlState, no
             .await
             .expect("seed redis");
     }
+}
+
+#[tokio::test]
+async fn portal_access_state_is_durable_scoped_and_revocable() {
+    let Some(env) = integration_env().await else {
+        return;
+    };
+    let now = Utc::now();
+    let suffix = Uuid::new_v4().simple().to_string();
+    let service_name = format!("owner-{suffix}");
+    sqlx::query(
+        r#"
+        INSERT INTO service_registrations (name, route_pattern, enabled)
+        VALUES ($1, $2, true)
+        "#,
+    )
+    .bind(&service_name)
+    .bind(format!("/services/{service_name}/*"))
+    .execute(env.store.pool())
+    .await
+    .expect("insert owner service");
+
+    let member = env
+        .store
+        .upsert_oidc_member(
+            "tenant-integration",
+            &format!("object-{suffix}"),
+            Some("owner@example.test"),
+            Some("Owner Test"),
+            now,
+        )
+        .await
+        .expect("upsert pending member");
+    assert_eq!(member.status, MemberStatus::Pending);
+    assert_eq!(
+        env.store.get_member(member.id).await.unwrap(),
+        Some(member.clone())
+    );
+    assert!(env
+        .store
+        .list_members()
+        .await
+        .unwrap()
+        .iter()
+        .any(|candidate| candidate.id == member.id));
+
+    let member = env
+        .store
+        .patch_member(
+            member.id,
+            MemberPatchRequest {
+                status: Some(MemberStatus::Active),
+                admin: Some(true),
+            },
+        )
+        .await
+        .expect("activate member")
+        .expect("member exists");
+    assert!(member.is_admin());
+    assert!(env
+        .store
+        .patch_member(
+            Uuid::new_v4(),
+            MemberPatchRequest {
+                status: None,
+                admin: None,
+            },
+        )
+        .await
+        .unwrap()
+        .is_none());
+
+    let membership = env
+        .store
+        .upsert_service_membership(
+            member.id,
+            ServiceMembershipUpsertRequest {
+                service_name: service_name.clone(),
+                role: ServiceMemberRole::Owner,
+            },
+        )
+        .await
+        .expect("assign service");
+    assert_eq!(membership.role, ServiceMemberRole::Owner);
+    assert_eq!(
+        env.store
+            .member_service_role(member.id, &service_name)
+            .await
+            .unwrap(),
+        Some(ServiceMemberRole::Owner)
+    );
+    assert_eq!(
+        env.store.list_service_memberships(member.id).await.unwrap(),
+        vec![membership]
+    );
+
+    let binding = env
+        .store
+        .create_managed_identity(ManagedIdentityCreateRequest {
+            tenant_id: "tenant-integration".into(),
+            client_id: format!("client-{suffix}"),
+            object_id: Some(format!("workload-{suffix}")),
+            display_name: "Owner workload".into(),
+            service_name: service_name.clone(),
+            required_role: OWNER_WORKLOAD_ROLE.into(),
+            enabled: true,
+        })
+        .await
+        .expect("create workload binding");
+    assert!(env
+        .store
+        .list_managed_identities()
+        .await
+        .unwrap()
+        .iter()
+        .any(|candidate| candidate.id == binding.id));
+    assert!(env
+        .store
+        .workload_service_binding(
+            &binding.tenant_id,
+            &binding.client_id,
+            binding.object_id.as_deref(),
+            &service_name,
+            &[OWNER_WORKLOAD_ROLE.into()],
+        )
+        .await
+        .unwrap()
+        .is_some());
+    assert!(env
+        .store
+        .workload_service_binding(
+            &binding.tenant_id,
+            &binding.client_id,
+            Some("different-object"),
+            &service_name,
+            &[OWNER_WORKLOAD_ROLE.into()],
+        )
+        .await
+        .unwrap()
+        .is_none());
+    assert!(env
+        .store
+        .workload_service_binding(
+            &binding.tenant_id,
+            &binding.client_id,
+            binding.object_id.as_deref(),
+            &service_name,
+            &["wrong.role".into()],
+        )
+        .await
+        .unwrap()
+        .is_none());
+
+    let binding = env
+        .store
+        .patch_managed_identity(
+            binding.id,
+            ManagedIdentityPatchRequest {
+                display_name: Some("Renamed workload".into()),
+                enabled: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("patch workload binding")
+        .expect("binding exists");
+    assert_eq!(binding.display_name, "Renamed workload");
+    assert!(!binding.enabled);
+
+    let transaction = OidcLoginTransaction {
+        state_hash: format!("state-{suffix}"),
+        nonce: format!("nonce-{suffix}"),
+        pkce_verifier: format!("verifier-{suffix}"),
+        return_to: "/admin-ui/#/my-services".into(),
+        expires_at: now + Duration::minutes(5),
+    };
+    env.store
+        .create_oidc_login_transaction(transaction.clone())
+        .await
+        .expect("create OIDC transaction");
+    assert_eq!(
+        env.store
+            .consume_oidc_login_transaction(&transaction.state_hash, now)
+            .await
+            .unwrap(),
+        Some(transaction.clone())
+    );
+    assert!(env
+        .store
+        .consume_oidc_login_transaction(&transaction.state_hash, now)
+        .await
+        .unwrap()
+        .is_none());
+
+    let session = NewPortalSession {
+        session_hash: format!("session-{suffix}"),
+        member_id: member.id,
+        csrf_hash: format!("csrf-{suffix}"),
+        expires_at: now + Duration::hours(1),
+    };
+    env.store
+        .create_portal_session(session.clone())
+        .await
+        .expect("create portal session");
+    let stored = env
+        .store
+        .resolve_portal_session(&session.session_hash, now)
+        .await
+        .expect("resolve portal session")
+        .expect("session exists");
+    assert_eq!(stored.member.id, member.id);
+    assert_eq!(stored.csrf_hash, session.csrf_hash);
+    assert!(env
+        .store
+        .delete_portal_session(&session.session_hash)
+        .await
+        .unwrap());
+    assert!(env
+        .store
+        .resolve_portal_session(&session.session_hash, now)
+        .await
+        .unwrap()
+        .is_none());
+
+    assert!(env.store.delete_managed_identity(binding.id).await.unwrap());
+    assert!(env
+        .store
+        .delete_service_membership(member.id, &service_name)
+        .await
+        .unwrap());
+    assert!(env
+        .store
+        .member_service_role(member.id, &service_name)
+        .await
+        .unwrap()
+        .is_none());
+    sqlx::query("DELETE FROM portal_members WHERE id = $1")
+        .bind(member.id)
+        .execute(env.store.pool())
+        .await
+        .expect("delete test member");
+    sqlx::query("DELETE FROM service_registrations WHERE name = $1")
+        .bind(service_name)
+        .execute(env.store.pool())
+        .await
+        .expect("delete test service");
 }
 
 #[tokio::test]
