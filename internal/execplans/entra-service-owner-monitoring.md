@@ -42,11 +42,11 @@ break-glass authentication path.
 - [x] (2026-08-08) Expanded Admin UI navigation, Entra login/pending-access states, workspace
   switcher, member management, managed identities, and owner dashboards.
 - [x] (2026-08-08) Added the local development OIDC fixture and documented test identities.
-- [x] (2026-08-08) Added regression tests and retained 95.19% all-features Rust workspace
+- [x] (2026-08-08) Added regression tests and retained 95.25% all-features Rust workspace
   line coverage without production-source exclusions.
 - [x] (2026-08-08) Regenerated checked-in Admin UI assets and passed all Node UI contract tests.
 - [x] (2026-08-08) Passed the mandatory repository verification stack:
-  formatting, Clippy, workspace tests, audit, deny, machete, 298 nextest tests,
+  formatting, Clippy, workspace tests, audit, deny, machete, 299 nextest tests,
   Trivy, Gitleaks, and Semgrep.
 - [x] (2026-08-08) Ran Computer-driven desktop end-to-end journeys against the
   local development OIDC flow for every new view and recorded the evidence.
@@ -54,13 +54,15 @@ break-glass authentication path.
   journey covering OIDC, responsive navigation, services, metrics, and errors;
   the final dashboard had no console errors. Computer could not repeat this
   viewport after macOS auto-locked, so the fallback is identified explicitly.
-- [ ] Commit, push, open the PR for review, and monitor through the first Codex
+- [x] (2026-08-08) Commit, push, open the PR for review, and monitor through the first Codex
   review; address actionable findings before handoff.
 - [x] (2026-08-08) Opened PR #99 and received the first Codex review.
 - [x] (2026-08-08) Addressed all five first-review findings and reran the full
   verification and coverage gates on a fresh database.
-- [ ] Push the review-fix commit, reply to and resolve all five review threads,
-  and confirm the updated CI run.
+- [x] (2026-08-08) Pushed the review-fix commit, replied to and resolved all five
+  review threads.
+- [ ] Confirm the final CI run after hardening the development OIDC readiness
+  ceiling for parallel GitHub test load.
 
 ## Surprises & Discoveries
 
@@ -129,6 +131,13 @@ break-glass authentication path.
   OIDC transactions, unbound browser login state, local-only logout, incorrect
   managed-identity conflict mapping, and swallowed owner service lookup errors.
   Evidence: PR #99 review `4888905195`.
+- Observation: The post-review GitHub run passed the Rust job but the security
+  job's parallel nextest run allowed only one second for the development OIDC
+  child process to become ready. The same test passed outside that load. A
+  ten-second bounded readiness ceiling still returns immediately on success
+  and makes the failure threshold appropriate for shared CI runners.
+  Evidence: PR #99 security job `59048666615`; the mandatory local stack then
+  passed all 299 nextest cases under parallel load.
 
 ## Decision Log
 
@@ -208,9 +217,9 @@ desktop view and found the initialization-order defect that was fixed; a second
 real-browser journey verified the service-owner experience at 390 x 844.
 
 PR #99 is available at https://github.com/sarattha/relayna-gateway/pull/99. Its
-first Codex review identified five actionable findings; all five are fixed and
-covered. Thread resolution and the updated CI result remain to be recorded
-before this plan is closed.
+first Codex review identified five actionable findings; all five are fixed,
+covered, replied to, and resolved. The final updated CI result remains to be
+recorded before this plan is closed.
 
 ## Context and Orientation
 

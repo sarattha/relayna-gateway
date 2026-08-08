@@ -8000,7 +8000,7 @@ mod tests {
             .spawn()
             .expect("start development OIDC");
         let client = reqwest::Client::new();
-        for _ in 0..50 {
+        for _ in 0..200 {
             if client
                 .get(format!("{issuer}/health"))
                 .send()
@@ -8009,7 +8009,7 @@ mod tests {
             {
                 return (DevOidcProcess(child), issuer);
             }
-            tokio::time::sleep(Duration::from_millis(20)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
         let mut child = child;
         let _ = child.kill();
