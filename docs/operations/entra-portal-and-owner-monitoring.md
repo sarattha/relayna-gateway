@@ -39,8 +39,12 @@ PORTAL_SESSION_COOKIE_SECURE=true
 ```
 
 The callback validates single-use state, nonce, PKCE S256, signature, issuer,
-tenant, audience, not-before, and expiry. Cookie-authenticated Admin mutations
-also require the session-bound `x-csrf-token` value.
+tenant, audience, not-before, and expiry. A short-lived HttpOnly login cookie
+binds the transaction to the browser that initiated sign-in, and expired or
+abandoned transactions are pruned as new logins are created. Cookie-authenticated
+Admin mutations also require the session-bound `x-csrf-token` value. Sign-out
+revokes the Relayna session and then navigates through Entra's discovered
+end-session endpoint before returning to `PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI`.
 
 ## Workload monitoring configuration
 

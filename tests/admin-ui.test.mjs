@@ -58,6 +58,8 @@ test("portal uses Entra BFF sessions and preserves explicit break-glass access",
   assert.match(js, /\/admin-ui\/auth\/config/);
   assert.match(js, /\/admin-ui\/auth\/session/);
   assert.match(js, /\/admin-ui\/auth\/logout/);
+  assert.match(sourceJs, /logoutUrl = result\?\.logout_url \?\? null/);
+  assert.match(sourceJs, /if \(logoutUrl\) location\.assign\(logoutUrl\)/);
   assert.match(js, /"x-csrf-token": state\.session\.csrf_token/);
   assert.match(js, /session\.member\.status !== "active"/);
   assert.doesNotMatch(js, /sessionStorage\.setItem\([^,]+,\s*.*id_token/);

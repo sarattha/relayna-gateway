@@ -472,13 +472,16 @@ document.querySelector("#login-form").addEventListener("submit", async (event) =
 });
 
 document.querySelector("#sign-out").addEventListener("click", async () => {
+  let logoutUrl = null;
   if (!token() && state.session) {
     try {
-      await api("/admin-ui/auth/logout", { method: "POST", body: "{}" });
+      const result = await api("/admin-ui/auth/logout", { method: "POST", body: "{}" });
+      logoutUrl = result?.logout_url ?? null;
     } catch (_) {}
   }
   sessionStorage.removeItem(tokenKey);
-  location.reload();
+  if (logoutUrl) location.assign(logoutUrl);
+  else location.reload();
 });
 
 document.querySelector("#workspace-select").addEventListener("change", (event) => {

@@ -158,6 +158,7 @@ fn default_enabled() -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OidcLoginTransaction {
     pub state_hash: String,
+    pub binding_hash: String,
     pub nonce: String,
     pub pkce_verifier: String,
     pub return_to: String,
@@ -250,6 +251,7 @@ pub trait PortalAccessStore: Send + Sync {
     async fn consume_oidc_login_transaction(
         &self,
         state_hash: &str,
+        binding_hash: &str,
         now: DateTime<Utc>,
     ) -> GatewayResult<Option<OidcLoginTransaction>>;
     async fn create_portal_session(&self, session: NewPortalSession) -> GatewayResult<()>;
@@ -355,10 +357,11 @@ where
     async fn consume_oidc_login_transaction(
         &self,
         state_hash: &str,
+        binding_hash: &str,
         now: DateTime<Utc>,
     ) -> GatewayResult<Option<OidcLoginTransaction>> {
         (**self)
-            .consume_oidc_login_transaction(state_hash, now)
+            .consume_oidc_login_transaction(state_hash, binding_hash, now)
             .await
     }
     async fn create_portal_session(&self, session: NewPortalSession) -> GatewayResult<()> {

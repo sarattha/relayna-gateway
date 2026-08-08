@@ -56,6 +56,11 @@ break-glass authentication path.
   viewport after macOS auto-locked, so the fallback is identified explicitly.
 - [ ] Commit, push, open the PR for review, and monitor through the first Codex
   review; address actionable findings before handoff.
+- [x] (2026-08-08) Opened PR #99 and received the first Codex review.
+- [x] (2026-08-08) Addressed all five first-review findings and reran the full
+  verification and coverage gates on a fresh database.
+- [ ] Push the review-fix commit, reply to and resolve all five review threads,
+  and confirm the updated CI run.
 
 ## Surprises & Discoveries
 
@@ -120,6 +125,10 @@ break-glass authentication path.
   test-fixture allowlist restored a clean scan without relaxing the general
   live-token rule.
   Evidence: `.gitleaks.toml`; Gitleaks scanned 202 commits with no leaks.
+- Observation: The first Codex review found five valid gaps: unpruned abandoned
+  OIDC transactions, unbound browser login state, local-only logout, incorrect
+  managed-identity conflict mapping, and swallowed owner service lookup errors.
+  Evidence: PR #99 review `4888905195`.
 
 ## Decision Log
 
@@ -168,6 +177,18 @@ break-glass authentication path.
   Rationale: The race is in shared test fixtures, not production behavior, and
   the narrow lock preserves nextest speed and deterministic coverage.
   Date/Author: 2026-08-08 / Codex.
+- Decision: Bind each OIDC transaction to a hashed, short-lived HttpOnly login
+  cookie, create the transaction only after discovery succeeds, and prune
+  expired rows transactionally before inserting a new login.
+  Rationale: State, nonce, and PKCE protect the protocol, while the browser
+  binding prevents login CSRF/session swapping and pruning bounds abandoned
+  durable state.
+  Date/Author: 2026-08-08 / Codex.
+- Decision: Return the provider's discovered end-session URL from the
+  CSRF-protected local logout and have the browser navigate to it.
+  Rationale: The local Relayna session must be revoked first, but shared
+  machines also need Entra SSO termination and reliable account switching.
+  Date/Author: 2026-08-08 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -179,14 +200,17 @@ creates member, membership, managed-identity, OIDC transaction, and session
 state while preserving operator-token recovery and existing browser/API
 contracts.
 
-The current tree passes the 95% gate at 95.19% line coverage (24,580 lines,
-1,183 missed), all Node Admin UI contracts, the production Vite build, and the
-full mandatory repository verification stack. Computer verified every new
+The post-review tree passes the 95% gate at 95.25% line coverage (24,733 lines,
+1,174 missed), all Node Admin UI contracts, the production Vite build, and the
+full mandatory repository verification stack, including 299 nextest tests on a
+fresh database. Computer verified every new
 desktop view and found the initialization-order defect that was fixed; a second
 real-browser journey verified the service-owner experience at 390 x 844.
 
-PR URL and first Codex review outcome remain to be recorded before this plan is
-closed.
+PR #99 is available at https://github.com/sarattha/relayna-gateway/pull/99. Its
+first Codex review identified five actionable findings; all five are fixed and
+covered. Thread resolution and the updated CI result remain to be recorded
+before this plan is closed.
 
 ## Context and Orientation
 

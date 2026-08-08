@@ -1,9 +1,10 @@
 use chrono::{DateTime, Duration, Utc};
 use gateway_core::{
-    BudgetDecision, BudgetStore, GuardrailPolicy, KeyPolicy, ManagedIdentityCreateRequest,
-    ManagedIdentityPatchRequest, MemberPatchRequest, MemberStatus, NewPortalSession,
-    OidcLoginTransaction, PolicyLookup, PortalAccessStore, Provider, RateLimitDecision,
-    RateLimitStore, Route, ServiceMemberRole, ServiceMembershipUpsertRequest, OWNER_WORKLOAD_ROLE,
+    BudgetDecision, BudgetStore, GatewayError, GuardrailPolicy, KeyPolicy,
+    ManagedIdentityCreateRequest, ManagedIdentityPatchRequest, MemberPatchRequest, MemberStatus,
+    NewPortalSession, OidcLoginTransaction, PolicyLookup, PortalAccessStore, Provider,
+    RateLimitDecision, RateLimitStore, Route, ServiceMemberRole, ServiceMembershipUpsertRequest,
+    OWNER_WORKLOAD_ROLE,
 };
 use gateway_store::{PostgresStore, RedisControlState};
 use redis::AsyncCommands;
@@ -336,6 +337,47 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
         .unwrap()
         .is_none());
 
+    let conflict_service_name = format!("owner-conflict-{suffix}");
+    sqlx::query(
+        "INSERT INTO service_registrations (name, route_pattern, enabled) VALUES ($1, $2, true)",
+    )
+    .bind(&conflict_service_name)
+    .bind(format!("/services/{conflict_service_name}/*"))
+    .execute(env.store.pool())
+    .await
+    .expect("insert conflicting owner service");
+    let conflicting_binding = env
+        .store
+        .create_managed_identity(ManagedIdentityCreateRequest {
+            tenant_id: binding.tenant_id.clone(),
+            client_id: binding.client_id.clone(),
+            object_id: binding.object_id.clone(),
+            display_name: "Conflicting workload".into(),
+            service_name: conflict_service_name.clone(),
+            required_role: OWNER_WORKLOAD_ROLE.into(),
+            enabled: true,
+        })
+        .await
+        .expect("create conflicting workload binding");
+    assert_eq!(
+        env.store
+            .patch_managed_identity(
+                binding.id,
+                ManagedIdentityPatchRequest {
+                    service_name: Some(conflict_service_name),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err(),
+        GatewayError::InvalidAccessPayload
+    );
+    assert!(env
+        .store
+        .delete_managed_identity(conflicting_binding.id)
+        .await
+        .expect("delete conflicting workload binding"));
+
     let binding = env
         .store
         .patch_managed_identity(
@@ -352,8 +394,21 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
     assert_eq!(binding.display_name, "Renamed workload");
     assert!(!binding.enabled);
 
+    let expired_transaction = OidcLoginTransaction {
+        state_hash: format!("expired-state-{suffix}"),
+        binding_hash: format!("expired-binding-{suffix}"),
+        nonce: format!("expired-nonce-{suffix}"),
+        pkce_verifier: format!("expired-verifier-{suffix}"),
+        return_to: "/admin-ui".into(),
+        expires_at: now - Duration::minutes(1),
+    };
+    env.store
+        .create_oidc_login_transaction(expired_transaction.clone())
+        .await
+        .expect("create expired OIDC transaction");
     let transaction = OidcLoginTransaction {
         state_hash: format!("state-{suffix}"),
+        binding_hash: format!("binding-{suffix}"),
         nonce: format!("nonce-{suffix}"),
         pkce_verifier: format!("verifier-{suffix}"),
         return_to: "/admin-ui/#/my-services".into(),
@@ -364,15 +419,36 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
         .await
         .expect("create OIDC transaction");
     assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM oidc_login_transactions WHERE state_hash = $1",
+        )
+        .bind(&expired_transaction.state_hash)
+        .fetch_one(env.store.pool())
+        .await
+        .expect("count expired OIDC transaction"),
+        0
+    );
+    assert_eq!(
         env.store
-            .consume_oidc_login_transaction(&transaction.state_hash, now)
+            .consume_oidc_login_transaction(&transaction.state_hash, "wrong-binding", now)
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        env.store
+            .consume_oidc_login_transaction(
+                &transaction.state_hash,
+                &transaction.binding_hash,
+                now,
+            )
             .await
             .unwrap(),
         Some(transaction.clone())
     );
     assert!(env
         .store
-        .consume_oidc_login_transaction(&transaction.state_hash, now)
+        .consume_oidc_login_transaction(&transaction.state_hash, &transaction.binding_hash, now,)
         .await
         .unwrap()
         .is_none());

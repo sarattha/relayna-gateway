@@ -57,13 +57,17 @@ CREATE INDEX IF NOT EXISTS managed_identity_bindings_service_enabled_idx
 
 CREATE TABLE IF NOT EXISTS oidc_login_transactions (
     state_hash text PRIMARY KEY,
+    binding_hash text NOT NULL,
     nonce text NOT NULL,
     pkce_verifier text NOT NULL,
     return_to text NOT NULL DEFAULT '/admin-ui',
     expires_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT oidc_login_transaction_nonempty CHECK (
-        btrim(state_hash) <> '' AND btrim(nonce) <> '' AND btrim(pkce_verifier) <> ''
+        btrim(state_hash) <> ''
+        AND btrim(binding_hash) <> ''
+        AND btrim(nonce) <> ''
+        AND btrim(pkce_verifier) <> ''
     ),
     CONSTRAINT oidc_login_return_to_check CHECK (return_to LIKE '/admin-ui%')
 );

@@ -13,6 +13,7 @@ const tenantId = "00000000-0000-0000-0000-000000000001";
 const browserClientId = "relayna-gateway-local";
 const browserClientSecret = "relayna-development-browser-secret";
 const browserRedirectUri = process.env.RELAYNA_DEV_OIDC_BROWSER_REDIRECT_URI ?? "http://127.0.0.1:18381/admin-ui/auth/callback";
+const browserPostLogoutRedirectUri = process.env.RELAYNA_DEV_OIDC_BROWSER_POST_LOGOUT_REDIRECT_URI ?? "http://127.0.0.1:18381/admin-ui";
 const ownerAudience = "api://relayna-gateway-owner";
 const workloadClientId = "00000000-0000-0000-0000-000000000101";
 const workloadObjectId = "00000000-0000-0000-0000-000000000102";
@@ -129,6 +130,7 @@ const server = http.createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", issuer);
   if (url.pathname === "/.well-known/openid-configuration") return json(response, 200, {
     issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`,
+    end_session_endpoint: `${issuer}/logout`,
     jwks_uri: `${issuer}/.well-known/jwks.json`, response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "client_credentials"],
     subject_types_supported: ["public"], id_token_signing_alg_values_supported: ["RS256"],
@@ -136,6 +138,12 @@ const server = http.createServer(async (request, response) => {
   });
   if (url.pathname === "/.well-known/jwks.json") return json(response, 200, { keys: [{ ...publicJwk, kid, use: "sig", alg: "RS256" }] });
   if (url.pathname === "/health") return json(response, 200, { status: "ok", service: "relayna-development-oidc" });
+  if (url.pathname === "/logout" && request.method === "GET") {
+    const target = url.searchParams.get("post_logout_redirect_uri");
+    if (target !== browserPostLogoutRedirectUri) return json(response, 400, { error: "invalid_request" });
+    response.writeHead(302, { location: target, "cache-control": "no-store" });
+    return response.end();
+  }
   if (url.pathname === "/authorize" && request.method === "GET") {
     const valid = url.searchParams.get("client_id") === browserClientId
       && url.searchParams.get("redirect_uri") === browserRedirectUri

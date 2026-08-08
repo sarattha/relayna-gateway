@@ -124,6 +124,7 @@ const LITELLM_UI_OPERATOR_COOKIE: &str = "relayna_litellm_ui_operator";
 const LITELLM_UI_OPERATOR_COOKIE_MAX_AGE_SECONDS: u64 = 60 * 60;
 const PORTAL_SESSION_COOKIE: &str = "relayna_portal_session";
 const PORTAL_CSRF_COOKIE: &str = "relayna_portal_csrf";
+const PORTAL_LOGIN_COOKIE: &str = "relayna_portal_login";
 const LITELLM_UI_ROOT_PROXY_PREFIXES: &[&str] = &[
     "v1/agents",
     "v2/",
@@ -721,10 +722,19 @@ async fn portal_auth_login(
         return error_response(&headers, GatewayError::OidcUnavailable);
     };
     let raw_state = random_opaque_token();
+    let raw_binding = random_opaque_token();
     let nonce = random_opaque_token();
     let verifier = random_opaque_token();
+    let authorization_url = match oidc
+        .authorization_url(&raw_state, &nonce, &pkce_challenge(&verifier))
+        .await
+    {
+        Ok(url) => url,
+        Err(error) => return error_response(&headers, error),
+    };
     let transaction = OidcLoginTransaction {
         state_hash: token_hash(&raw_state),
+        binding_hash: token_hash(&raw_binding),
         nonce: nonce.clone(),
         pkce_verifier: verifier.clone(),
         return_to: safe_return_to(query.return_to.as_deref()),
@@ -733,13 +743,14 @@ async fn portal_auth_login(
     if let Err(error) = state.store.create_oidc_login_transaction(transaction).await {
         return error_response(&headers, error);
     }
-    match oidc
-        .authorization_url(&raw_state, &nonce, &pkce_challenge(&verifier))
-        .await
-    {
-        Ok(url) => Redirect::temporary(&url).into_response(),
-        Err(error) => error_response(&headers, error),
-    }
+    let mut response = Redirect::temporary(&authorization_url).into_response();
+    append_portal_login_cookie(
+        response.headers_mut(),
+        &raw_binding,
+        oidc.config.login_ttl_seconds,
+        oidc.config.cookie_secure,
+    );
+    response
 }
 
 #[derive(Debug, Deserialize)]
@@ -763,9 +774,16 @@ async fn portal_auth_callback(
     let (Some(code), Some(raw_state)) = (query.code.as_deref(), query.state.as_deref()) else {
         return error_response(&headers, GatewayError::InvalidOidcTransaction);
     };
+    let Some(raw_binding) = cookie_value(&headers, PORTAL_LOGIN_COOKIE) else {
+        return error_response(&headers, GatewayError::InvalidOidcTransaction);
+    };
     let transaction = match state
         .store
-        .consume_oidc_login_transaction(&token_hash(raw_state), Utc::now())
+        .consume_oidc_login_transaction(
+            &token_hash(raw_state),
+            &token_hash(raw_binding),
+            Utc::now(),
+        )
         .await
     {
         Ok(Some(transaction)) => transaction,
@@ -825,6 +843,7 @@ async fn portal_auth_callback(
         oidc.config.session_ttl_seconds,
         oidc.config.cookie_secure,
     );
+    clear_portal_login_cookie(response.headers_mut(), oidc.config.cookie_secure);
     response
 }
 
@@ -888,12 +907,13 @@ async fn portal_auth_logout(State(state): State<AppState>, headers: HeaderMap) -
     {
         return error_response(&headers, error);
     }
-    let secure = state
-        .portal_oidc
-        .as_ref()
-        .is_none_or(|oidc| oidc.config.cookie_secure);
-    let mut response = StatusCode::NO_CONTENT.into_response();
+    let (secure, logout_url) = match state.portal_oidc.as_ref() {
+        Some(oidc) => (oidc.config.cookie_secure, oidc.end_session_url().await.ok()),
+        None => (true, None),
+    };
+    let mut response = Json(serde_json::json!({ "logout_url": logout_url })).into_response();
     clear_portal_cookies(response.headers_mut(), secure);
+    clear_portal_login_cookie(response.headers_mut(), secure);
     response
 }
 
@@ -1172,12 +1192,14 @@ async fn owner_services(State(state): State<AppState>, headers: HeaderMap) -> Re
     };
     let mut services = Vec::new();
     for membership in memberships {
-        if let Ok(Some(service)) = state.store.get_service(&membership.service_name).await {
-            if service.enabled {
-                services.push(OwnerServiceBody {
-                    service,
-                    role: membership.role,
-                });
+        match state.store.get_service(&membership.service_name).await {
+            Ok(Some(service)) if service.enabled => services.push(OwnerServiceBody {
+                service,
+                role: membership.role,
+            }),
+            Ok(_) => {}
+            Err(error) => {
+                return error_response(&headers, error);
             }
         }
     }
@@ -4626,6 +4648,31 @@ fn append_portal_cookies(
     }
 }
 
+fn append_portal_login_cookie(
+    headers: &mut HeaderMap,
+    raw_binding: &str,
+    max_age_seconds: i64,
+    secure: bool,
+) {
+    let secure = if secure { "; Secure" } else { "" };
+    let cookie = format!(
+        "{PORTAL_LOGIN_COOKIE}={raw_binding}; HttpOnly; SameSite=Lax; Path=/admin-ui/auth; Max-Age={max_age_seconds}{secure}"
+    );
+    if let Ok(value) = HeaderValue::from_str(&cookie) {
+        headers.append(header::SET_COOKIE, value);
+    }
+}
+
+fn clear_portal_login_cookie(headers: &mut HeaderMap, secure: bool) {
+    let secure = if secure { "; Secure" } else { "" };
+    let cookie = format!(
+        "{PORTAL_LOGIN_COOKIE}=; HttpOnly; SameSite=Lax; Path=/admin-ui/auth; Max-Age=0{secure}"
+    );
+    if let Ok(value) = HeaderValue::from_str(&cookie) {
+        headers.append(header::SET_COOKIE, value);
+    }
+}
+
 fn clear_portal_cookies(headers: &mut HeaderMap, secure: bool) {
     let secure = if secure { "; Secure" } else { "" };
     for cookie in [
@@ -5668,21 +5715,23 @@ mod tests {
             &self,
             transaction: OidcLoginTransaction,
         ) -> GatewayResult<()> {
-            self.oidc_transactions
-                .lock()
-                .expect("lock poisoned")
-                .push(transaction);
+            let mut transactions = self.oidc_transactions.lock().expect("lock poisoned");
+            transactions.retain(|stored| stored.expires_at > Utc::now());
+            transactions.push(transaction);
             Ok(())
         }
 
         async fn consume_oidc_login_transaction(
             &self,
             state_hash: &str,
+            binding_hash: &str,
             now: chrono::DateTime<Utc>,
         ) -> GatewayResult<Option<OidcLoginTransaction>> {
             let mut transactions = self.oidc_transactions.lock().expect("lock poisoned");
             let Some(position) = transactions.iter().position(|transaction| {
-                transaction.state_hash == state_hash && transaction.expires_at > now
+                transaction.state_hash == state_hash
+                    && transaction.binding_hash == binding_hash
+                    && transaction.expires_at > now
             }) else {
                 return Ok(None);
             };
@@ -6754,6 +6803,9 @@ mod tests {
         }
 
         async fn get_service(&self, name: &str) -> GatewayResult<Option<ServiceResponse>> {
+            if name == "store-error" {
+                return Err(GatewayError::StoreUnavailable);
+            }
             Ok(self
                 .services
                 .lock()
@@ -7939,6 +7991,10 @@ mod tests {
                 "RELAYNA_DEV_OIDC_BROWSER_REDIRECT_URI",
                 "http://127.0.0.1:18381/admin-ui/auth/callback",
             )
+            .env(
+                "RELAYNA_DEV_OIDC_BROWSER_POST_LOGOUT_REDIRECT_URI",
+                "http://127.0.0.1:18381/admin-ui",
+            )
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -8362,6 +8418,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn owner_service_list_propagates_service_store_failures() {
+        let store = default_store();
+        let owner = active_portal_member(false);
+        let owner_id = owner.id;
+        let (raw_session, raw_csrf) = seed_portal_session(&store, owner);
+        store
+            .service_memberships
+            .lock()
+            .expect("lock poisoned")
+            .push(ServiceMembership {
+                member_id: owner_id,
+                service_name: "store-error".to_owned(),
+                role: ServiceMemberRole::Viewer,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
+        let response = portal_request(
+            router_with_state(test_state(store)),
+            axum::http::Method::GET,
+            "/owner/v1/services",
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            response_json(response).await["error"]["code"],
+            "store_unavailable"
+        );
+    }
+
+    #[tokio::test]
     async fn portal_management_and_owner_monitoring_workflows_cover_all_public_routes() {
         let store = default_store();
         let admin = active_portal_member(true);
@@ -8582,8 +8672,8 @@ mod tests {
             "",
         )
         .await;
-        assert_eq!(logout.status(), StatusCode::NO_CONTENT);
-        assert!(logout.headers().get_all(header::SET_COOKIE).iter().count() >= 2);
+        assert_eq!(logout.status(), StatusCode::OK);
+        assert!(response_json(logout).await["logout_url"].is_null());
         assert!(store
             .audit_events
             .lock()
@@ -8637,14 +8727,11 @@ mod tests {
         )
         .await;
         assert_eq!(login.status(), StatusCode::BAD_GATEWAY);
-        let stored_transaction = store
+        assert!(store
             .oidc_transactions
             .lock()
             .expect("lock poisoned")
-            .last()
-            .cloned()
-            .expect("OIDC transaction stored before discovery");
-        assert_eq!(stored_transaction.return_to, "/admin-ui");
+            .is_empty());
 
         let no_csrf_cookie = app
             .clone()
@@ -8810,6 +8897,18 @@ mod tests {
         )
         .await;
         assert_eq!(login.status(), StatusCode::TEMPORARY_REDIRECT);
+        let login_cookie = login
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|value| value.to_str().unwrap())
+            .find(|value| value.starts_with(&format!("{PORTAL_LOGIN_COOKIE}=")))
+            .expect("browser-bound login cookie")
+            .to_owned();
+        assert!(login_cookie.contains("HttpOnly"));
+        assert!(login_cookie.contains("SameSite=Lax"));
+        assert!(login_cookie.contains("Path=/admin-ui/auth"));
+        let login_cookie_pair = login_cookie.split(';').next().unwrap().to_owned();
         let mut authorize = url::Url::parse(
             login
                 .headers()
@@ -8842,13 +8941,26 @@ mod tests {
             callback.path(),
             callback.query().expect("callback query")
         );
-        let callback_response = request(app.clone(), &callback_route).await;
+        let unbound_callback = request(app.clone(), &callback_route).await;
+        assert_eq!(unbound_callback.status(), StatusCode::UNAUTHORIZED);
+        let callback_response = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(&callback_route)
+                    .header(header::COOKIE, &login_cookie_pair)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(callback_response.status(), StatusCode::SEE_OTHER);
         let cookie_header = callback_response
             .headers()
             .get_all(header::SET_COOKIE)
             .iter()
             .map(|value| value.to_str().unwrap().split(';').next().unwrap())
+            .filter(|value| !value.ends_with('='))
             .collect::<Vec<_>>()
             .join("; ");
         let session = app
@@ -8856,7 +8968,7 @@ mod tests {
             .oneshot(
                 axum::http::Request::builder()
                     .uri("/admin-ui/auth/session")
-                    .header(header::COOKIE, cookie_header)
+                    .header(header::COOKIE, &cookie_header)
                     .body(axum::body::Body::empty())
                     .unwrap(),
             )
@@ -8867,6 +8979,34 @@ mod tests {
         assert_eq!(session["authenticated"], true);
         assert_eq!(session["member"]["status"], "pending");
         assert_eq!(session["member"]["email"], "orders.owner@relayna.dev");
+        let csrf_token = session["csrf_token"].as_str().unwrap();
+        let logout = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(axum::http::Method::POST)
+                    .uri("/admin-ui/auth/logout")
+                    .header(header::COOKIE, &cookie_header)
+                    .header("x-csrf-token", csrf_token)
+                    .body(axum::body::Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(logout.status(), StatusCode::OK);
+        let logout_url = response_json(logout).await["logout_url"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let provider_logout = client.get(logout_url).send().await.unwrap();
+        assert_eq!(provider_logout.status(), reqwest::StatusCode::FOUND);
+        assert_eq!(
+            provider_logout
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .unwrap(),
+            "http://127.0.0.1:18381/admin-ui"
+        );
 
         let workload_token = client
             .post(format!("{issuer}/token"))

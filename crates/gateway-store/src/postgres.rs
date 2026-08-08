@@ -7000,7 +7000,9 @@ impl PortalAccessStore for PostgresStore {
         .fetch_optional(&self.pool)
         .await
         .map_err(|error| {
-            if is_foreign_key_violation(&error) {
+            if is_unique_violation_on(&error, "managed_identity_binding_unique")
+                || is_foreign_key_violation(&error)
+            {
                 GatewayError::InvalidAccessPayload
             } else {
                 GatewayError::StoreUnavailable
@@ -7024,37 +7026,52 @@ impl PortalAccessStore for PostgresStore {
         &self,
         transaction: OidcLoginTransaction,
     ) -> GatewayResult<()> {
+        let mut database_transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        sqlx::query("DELETE FROM oidc_login_transactions WHERE expires_at <= now()")
+            .execute(&mut *database_transaction)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         sqlx::query(
             r#"
             INSERT INTO oidc_login_transactions (
-                state_hash, nonce, pkce_verifier, return_to, expires_at
-            ) VALUES ($1, $2, $3, $4, $5)
+                state_hash, binding_hash, nonce, pkce_verifier, return_to, expires_at
+            ) VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(transaction.state_hash)
+        .bind(transaction.binding_hash)
         .bind(transaction.nonce)
         .bind(transaction.pkce_verifier)
         .bind(transaction.return_to)
         .bind(transaction.expires_at)
-        .execute(&self.pool)
+        .execute(&mut *database_transaction)
         .await
-        .map(|_| ())
-        .map_err(|_| GatewayError::StoreUnavailable)
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        database_transaction
+            .commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)
     }
 
     async fn consume_oidc_login_transaction(
         &self,
         state_hash: &str,
+        binding_hash: &str,
         now: chrono::DateTime<chrono::Utc>,
     ) -> GatewayResult<Option<OidcLoginTransaction>> {
         sqlx::query(
             r#"
             DELETE FROM oidc_login_transactions
-            WHERE state_hash = $1 AND expires_at > $2
-            RETURNING state_hash, nonce, pkce_verifier, return_to, expires_at
+            WHERE state_hash = $1 AND binding_hash = $2 AND expires_at > $3
+            RETURNING state_hash, binding_hash, nonce, pkce_verifier, return_to, expires_at
             "#,
         )
         .bind(state_hash)
+        .bind(binding_hash)
         .bind(now)
         .fetch_optional(&self.pool)
         .await
@@ -7062,6 +7079,7 @@ impl PortalAccessStore for PostgresStore {
         .map(|row| {
             Ok(OidcLoginTransaction {
                 state_hash: row.try_get("state_hash")?,
+                binding_hash: row.try_get("binding_hash")?,
                 nonce: row.try_get("nonce")?,
                 pkce_verifier: row.try_get("pkce_verifier")?,
                 return_to: row.try_get("return_to")?,

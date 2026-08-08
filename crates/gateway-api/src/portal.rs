@@ -143,6 +143,25 @@ impl PortalOidcRuntime {
         self.verifier.verify_token(&response.id_token, now).await
     }
 
+    pub async fn end_session_url(&self) -> GatewayResult<String> {
+        let metadata = self.metadata().await?;
+        if metadata.issuer != self.config.issuer {
+            return Err(GatewayError::OidcUnavailable);
+        }
+        let mut url = Url::parse(
+            metadata
+                .end_session_endpoint
+                .as_deref()
+                .ok_or(GatewayError::OidcUnavailable)?,
+        )
+        .map_err(|_| GatewayError::OidcUnavailable)?;
+        url.query_pairs_mut().append_pair(
+            "post_logout_redirect_uri",
+            &self.config.post_logout_redirect_uri,
+        );
+        Ok(url.into())
+    }
+
     async fn metadata(&self) -> GatewayResult<OidcMetadata> {
         self.client
             .get(&self.config.discovery_url)
@@ -162,6 +181,7 @@ struct OidcMetadata {
     issuer: String,
     authorization_endpoint: String,
     token_endpoint: String,
+    end_session_endpoint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,7 +234,7 @@ mod tests {
         thread,
     };
 
-    fn mock_metadata_server(issuer_override: Option<&str>) -> String {
+    fn mock_metadata_server(issuer_override: Option<&str>, request_count: usize) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock metadata server");
         let address = listener.local_addr().expect("mock metadata address");
         let base_url = format!("http://{address}");
@@ -222,19 +242,22 @@ mod tests {
         let body = serde_json::json!({
             "issuer": issuer,
             "authorization_endpoint": format!("{base_url}/authorize"),
-            "token_endpoint": format!("{base_url}/token")
+            "token_endpoint": format!("{base_url}/token"),
+            "end_session_endpoint": format!("{base_url}/logout")
         })
         .to_string();
         thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept metadata request");
-            let mut request = [0_u8; 4096];
-            let _ = stream.read(&mut request).expect("read metadata request");
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                body.len()
-            )
-            .expect("write metadata response");
+            for _ in 0..request_count {
+                let (mut stream, _) = listener.accept().expect("accept metadata request");
+                let mut request = [0_u8; 4096];
+                let _ = stream.read(&mut request).expect("read metadata request");
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .expect("write metadata response");
+            }
         });
         base_url
     }
@@ -314,7 +337,7 @@ mod tests {
             GatewayError::InvalidConfiguration
         );
 
-        let authorization_base = mock_metadata_server(None);
+        let authorization_base = mock_metadata_server(None, 2);
         let runtime =
             PortalOidcRuntime::new(test_config(&authorization_base)).expect("OIDC runtime");
         let url = runtime
@@ -339,8 +362,14 @@ mod tests {
                 .map(|value| value.as_ref()),
             Some("S256")
         );
+        assert_eq!(
+            runtime.end_session_url().await.expect("end-session URL"),
+            format!(
+                "{authorization_base}/logout?post_logout_redirect_uri=http%3A%2F%2F127.0.0.1%3A18381%2Fadmin-ui"
+            )
+        );
 
-        let failing_base = mock_metadata_server(Some("http://different-issuer.example"));
+        let failing_base = mock_metadata_server(Some("http://different-issuer.example"), 1);
         let mismatched = PortalOidcRuntime::new(test_config(&failing_base)).unwrap();
         assert_eq!(
             mismatched
