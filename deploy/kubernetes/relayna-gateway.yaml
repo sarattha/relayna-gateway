@@ -78,8 +78,8 @@ type: Opaque
 stringData:
   # DevOps replaces this example Secret from the approved secret provider.
   # Register only the public certificate in Entra; never register the private key.
-  portal-private-key.pem: "replace-with-pkcs8-or-pkcs1-rsa-private-key-pem"
-  portal-certificate.pem: "replace-with-x509-public-certificate-pem"
+  portal-private-key.pem: ""
+  portal-certificate.pem: ""
 ---
 apiVersion: apps/v1
 kind: Deployment
