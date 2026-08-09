@@ -32,7 +32,7 @@ events so the chart can mark the first time each version transition was observed
 - [x] (2026-08-09 20:30Z) Validated desktop and 390px mobile behavior with Computer,
   including chart markers/tooltips, keyboard filters, pagination, missing-debug
   details, focus containment, Escape close, and explicit focus restoration.
-- [x] (2026-08-09 13:50Z) Published PR #103, addressed all three findings from
+- [x] (2026-08-09 13:50Z) Published PR #103, addressed all four findings from
   the first Codex review, reran the mandatory verification stack, and resolved
   every review thread with test evidence.
 
@@ -67,12 +67,15 @@ events so the chart can mark the first time each version transition was observed
   Evidence: Computer initially reported the page root after Escape; explicitly
   preserving `event.currentTarget` before the request restored focus to the
   exact `View details` button on the repeat test.
-- Observation: the first Codex review identified three boundedness and
-  concurrency edges not exposed by the original demo dataset: unlimited
+- Observation: the first Codex review identified four boundedness,
+  concurrency, and compatibility edges not exposed by the original demo
+  dataset: unlimited
   version-transition rows, stale async dashboard renders, and a selected status
-  code disappearing from the selector while remaining active in the query.
+  code disappearing from the selector while remaining active in the query, plus
+  a new CSV field inserted before released positional columns.
   Evidence: PR #103 review threads `PRRT_kwDOSX_7Cc6XnugR`,
-  `PRRT_kwDOSX_7Cc6XnugW`, and `PRRT_kwDOSX_7Cc6XnugX`.
+  `PRRT_kwDOSX_7Cc6XnugW`, `PRRT_kwDOSX_7Cc6XnugX`, and
+  `PRRT_kwDOSX_7Cc6XnxR4`.
 
 ## Decision Log
 
@@ -108,6 +111,10 @@ events so the chart can mark the first time each version transition was observed
   Rationale: superseded requests must not overwrite current controls, and a
   still-applied exact filter must never be hidden from the operator.
   Date/Author: 2026-08-09 / Codex.
+- Decision: append `service_version` as the final CSV column.
+  Rationale: existing positional consumers retain every released column index
+  while the new optional data remains available additively.
+  Date/Author: 2026-08-09 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -120,9 +127,10 @@ owner API. Computer QA passed on desktop and a 390px responsive viewport. The
 only verification exception is the repository-wide Trivy wrapper traversing an
 unrelated untracked `design-prototypes/` directory; the same high/critical scan
 passes when that user directory is excluded. The first Codex review on
-https://github.com/sarattha/relayna-gateway/pull/103 raised three valid P2
-findings. All three were fixed with a database-level 256-marker cap, stale-load
-generation guards, and visible retention of the active exact status filter;
+https://github.com/sarattha/relayna-gateway/pull/103 raised four valid P2
+findings. All four were fixed with a database-level 256-marker cap, stale-load
+generation guards, visible retention of the active exact status filter, and an
+append-only CSV column;
 focused tests and the complete verification stack pass after those changes.
 
 ## Context and Orientation

@@ -3888,7 +3888,7 @@ async fn task_usage(
 }
 
 fn usage_export_csv_body(export: &UsageExport) -> String {
-    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,service_version,task_id,run_id,trace_id,fallback_count,guardrail_action_count,created_at,cost_source,cost_mode,pricing_rule_name,http_method,endpoint_path,endpoint_template\n".to_owned();
+    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,task_id,run_id,trace_id,fallback_count,guardrail_action_count,created_at,cost_source,cost_mode,pricing_rule_name,http_method,endpoint_path,endpoint_template,service_version\n".to_owned();
     for row in &export.rows {
         let fields = [
             row.request_id.clone(),
@@ -3909,7 +3909,6 @@ fn usage_export_csv_body(export: &UsageExport) -> String {
                 .map(|value| value.to_string())
                 .unwrap_or_default(),
             row.service_name.clone().unwrap_or_default(),
-            row.service_version.clone().unwrap_or_default(),
             row.task_id.clone().unwrap_or_default(),
             row.run_id.clone().unwrap_or_default(),
             row.trace_id.clone().unwrap_or_default(),
@@ -3922,6 +3921,7 @@ fn usage_export_csv_body(export: &UsageExport) -> String {
             row.http_method.clone().unwrap_or_default(),
             row.endpoint_path.clone().unwrap_or_default(),
             row.endpoint_template.clone().unwrap_or_default(),
+            row.service_version.clone().unwrap_or_default(),
         ];
         csv.push_str(
             &fields
@@ -10772,7 +10772,7 @@ mod tests {
                 cost_mode: None,
                 pricing_rule_name: None,
                 service_name: Some("jobs-service".to_owned()),
-                service_version: None,
+                service_version: Some("jobs-2026.08.09".to_owned()),
                 http_method: Some("POST".to_owned()),
                 endpoint_path: Some("/jobs/failed-1".to_owned()),
                 endpoint_template: Some("/jobs/{job_id}".to_owned()),
@@ -10861,13 +10861,16 @@ mod tests {
             .expect("body");
         let csv = String::from_utf8(body.to_vec()).expect("csv");
         assert!(csv.starts_with("request_id,key_id,project_id"));
-        assert!(csv
-            .lines()
-            .next()
-            .expect("header")
-            .ends_with("pricing_rule_name,http_method,endpoint_path,endpoint_template"));
+        assert!(csv.lines().next().expect("header").ends_with(
+            "pricing_rule_name,http_method,endpoint_path,endpoint_template,service_version"
+        ));
         assert!(csv.contains("'=req-failure"));
         assert!(csv.contains("POST,/jobs/failed-1,/jobs/{job_id}"));
+        assert!(csv
+            .lines()
+            .nth(1)
+            .expect("failure row")
+            .ends_with("POST,/jobs/failed-1,/jobs/{job_id},jobs-2026.08.09"));
         assert!(!csv.contains("req-success"));
     }
 
