@@ -18,10 +18,25 @@ data:
   APIGEE_TRUSTED_HEADER_ENABLED: "false"
   # Human portal OIDC and workload owner APIs are independent opt-in modes.
   PORTAL_OIDC_ENABLED: "false"
+  PORTAL_OIDC_TENANT_ID: ""
+  PORTAL_OIDC_CLIENT_ID: ""
+  PORTAL_OIDC_PRIVATE_KEY_PATH: "/var/run/secrets/relayna-portal-oidc/portal-private-key.pem"
+  PORTAL_OIDC_CERTIFICATE_PATH: "/var/run/secrets/relayna-portal-oidc/portal-certificate.pem"
+  PORTAL_OIDC_ISSUER: ""
+  PORTAL_OIDC_DISCOVERY_URL: ""
+  PORTAL_OIDC_REDIRECT_URI: ""
+  PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI: ""
+  # Initial bootstrap only. Remove after every named administrator has signed in
+  # and the persisted active Admin roles have been verified.
+  PORTAL_ADMIN_EMAILS: ""
   PORTAL_SESSION_TTL_SECONDS: "28800"
   PORTAL_LOGIN_TTL_SECONDS: "600"
   PORTAL_SESSION_COOKIE_SECURE: "true"
   OWNER_ENTRA_AUTH_ENABLED: "false"
+  OWNER_ENTRA_TENANT_ID: ""
+  OWNER_ENTRA_AUDIENCE: ""
+  OWNER_ENTRA_ISSUER: ""
+  OWNER_ENTRA_OIDC_DISCOVERY_URL: ""
   OWNER_ENTRA_ACCEPTED_ALGORITHMS: "RS256"
   OWNER_ENTRA_JWKS_CACHE_TTL_SECONDS: "300"
   OWNER_ENTRA_CLOCK_SKEW_SECONDS: "60"
@@ -52,21 +67,19 @@ stringData:
   ENTRA_REQUIRED_SCOPE: ""
   ENTRA_REQUIRED_ROLE: ""
   ENTRA_ALLOWED_GROUPS: ""
-  # Required only when PORTAL_OIDC_ENABLED=true.
-  PORTAL_OIDC_TENANT_ID: ""
-  PORTAL_OIDC_CLIENT_ID: ""
-  PORTAL_OIDC_CLIENT_SECRET: ""
-  PORTAL_OIDC_ISSUER: ""
-  PORTAL_OIDC_DISCOVERY_URL: ""
-  PORTAL_OIDC_REDIRECT_URI: ""
-  PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI: ""
-  # Required only when OWNER_ENTRA_AUTH_ENABLED=true.
-  OWNER_ENTRA_TENANT_ID: ""
-  OWNER_ENTRA_AUDIENCE: ""
-  OWNER_ENTRA_ISSUER: ""
-  OWNER_ENTRA_OIDC_DISCOVERY_URL: ""
   # Required only when APIGEE_TRUSTED_HEADER_ENABLED=true.
   APIGEE_TRUSTED_HEADER_SECRET: ""
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: relayna-gateway-portal-oidc
+type: Opaque
+stringData:
+  # DevOps replaces this example Secret from the approved secret provider.
+  # Register only the public certificate in Entra; never register the private key.
+  portal-private-key.pem: "replace-with-pkcs8-or-pkcs1-rsa-private-key-pem"
+  portal-certificate.pem: "replace-with-x509-public-certificate-pem"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -106,6 +119,10 @@ spec:
                 name: relayna-gateway-config
             - secretRef:
                 name: relayna-gateway-secrets
+          volumeMounts:
+            - name: portal-oidc-certificate
+              mountPath: /var/run/secrets/relayna-portal-oidc
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /admin-ui/readyz
@@ -131,6 +148,16 @@ spec:
             capabilities:
               drop:
                 - ALL
+      volumes:
+        - name: portal-oidc-certificate
+          secret:
+            secretName: relayna-gateway-portal-oidc
+            defaultMode: 0440
+            items:
+              - key: portal-private-key.pem
+                path: portal-private-key.pem
+              - key: portal-certificate.pem
+                path: portal-certificate.pem
 ---
 apiVersion: v1
 kind: Service
@@ -243,6 +270,13 @@ spec:
                 name: relayna-gateway-control
                 port:
                   name: control
+          - path: /owner/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: relayna-gateway-control
+                port:
+                  name: control
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -264,6 +298,8 @@ spec:
         - protocol: TCP
           port: 8080
     - from:
+        # Label the namespace that runs the nginx-internal controller with
+        # relayna.io/control-plane-access=true before applying this policy.
         - namespaceSelector:
             matchLabels:
               relayna.io/control-plane-access: "true"

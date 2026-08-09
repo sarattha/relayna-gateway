@@ -33,7 +33,9 @@ const VARIABLES: &[&str] = &[
     "PORTAL_OIDC_ENABLED",
     "PORTAL_OIDC_TENANT_ID",
     "PORTAL_OIDC_CLIENT_ID",
-    "PORTAL_OIDC_CLIENT_SECRET",
+    "PORTAL_OIDC_PRIVATE_KEY_PATH",
+    "PORTAL_OIDC_CERTIFICATE_PATH",
+    "PORTAL_ADMIN_EMAILS",
     "PORTAL_OIDC_ISSUER",
     "PORTAL_OIDC_DISCOVERY_URL",
     "PORTAL_OIDC_REDIRECT_URI",
@@ -110,7 +112,18 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         ("PORTAL_OIDC_ENABLED", "true"),
         ("PORTAL_OIDC_TENANT_ID", "portal-tenant"),
         ("PORTAL_OIDC_CLIENT_ID", "portal-client"),
-        ("PORTAL_OIDC_CLIENT_SECRET", "portal-secret"),
+        (
+            "PORTAL_OIDC_PRIVATE_KEY_PATH",
+            "/run/secrets/portal-private.pem",
+        ),
+        (
+            "PORTAL_OIDC_CERTIFICATE_PATH",
+            "/run/secrets/portal-certificate.pem",
+        ),
+        (
+            "PORTAL_ADMIN_EMAILS",
+            " First.Admin@example.test,SECOND.ADMIN@example.test ",
+        ),
         ("PORTAL_OIDC_ISSUER", "https://portal-issuer.example"),
         (
             "PORTAL_OIDC_DISCOVERY_URL",
@@ -160,6 +173,15 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
     assert_eq!(portal.session_ttl_seconds, 14_400);
     assert_eq!(portal.login_ttl_seconds, 300);
     assert!(portal.cookie_secure);
+    assert_eq!(
+        portal.admin_emails,
+        vec![
+            "first.admin@example.test".to_owned(),
+            "second.admin@example.test".to_owned()
+        ]
+    );
+    assert!(portal.is_admin_email(Some("FIRST.ADMIN@example.test")));
+    assert!(!portal.is_admin_email(Some("member@example.test")));
     let owner = config
         .owner_entra_auth
         .as_ref()

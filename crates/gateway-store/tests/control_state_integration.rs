@@ -213,6 +213,7 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
             &format!("object-{suffix}"),
             Some("owner@example.test"),
             Some("Owner Test"),
+            false,
             now,
         )
         .await
@@ -229,6 +230,48 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
         .unwrap()
         .iter()
         .any(|candidate| candidate.id == member.id));
+
+    let bootstrap_member = env
+        .store
+        .upsert_oidc_member(
+            "tenant-integration",
+            &format!("bootstrap-object-{suffix}"),
+            Some("first.admin@example.test"),
+            Some("First Administrator"),
+            true,
+            now,
+        )
+        .await
+        .expect("bootstrap first administrator");
+    assert_eq!(bootstrap_member.status, MemberStatus::Active);
+    assert!(bootstrap_member.is_admin());
+    let blocked_bootstrap_member = env
+        .store
+        .patch_member(
+            bootstrap_member.id,
+            MemberPatchRequest {
+                status: Some(MemberStatus::Blocked),
+                admin: Some(false),
+            },
+        )
+        .await
+        .expect("block bootstrap administrator")
+        .expect("bootstrap administrator exists");
+    assert!(!blocked_bootstrap_member.is_admin());
+    let signed_in_blocked_member = env
+        .store
+        .upsert_oidc_member(
+            "tenant-integration",
+            &format!("bootstrap-object-{suffix}"),
+            Some("FIRST.ADMIN@example.test"),
+            Some("First Administrator"),
+            true,
+            now,
+        )
+        .await
+        .expect("sign in blocked bootstrap administrator");
+    assert_eq!(signed_in_blocked_member.status, MemberStatus::Blocked);
+    assert!(!signed_in_blocked_member.is_admin());
 
     let member = env
         .store

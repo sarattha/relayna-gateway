@@ -90,7 +90,12 @@ impl Config {
             let config = PortalOidcConfig {
                 tenant_id: required("PORTAL_OIDC_TENANT_ID")?,
                 client_id: required("PORTAL_OIDC_CLIENT_ID")?,
-                client_secret: required("PORTAL_OIDC_CLIENT_SECRET")?,
+                private_key_path: required("PORTAL_OIDC_PRIVATE_KEY_PATH")?,
+                certificate_path: required("PORTAL_OIDC_CERTIFICATE_PATH")?,
+                admin_emails: optional_csv("PORTAL_ADMIN_EMAILS")
+                    .into_iter()
+                    .map(|email| email.to_lowercase())
+                    .collect(),
                 issuer: required("PORTAL_OIDC_ISSUER")?,
                 discovery_url: required("PORTAL_OIDC_DISCOVERY_URL")?,
                 redirect_uri: required("PORTAL_OIDC_REDIRECT_URI")?,

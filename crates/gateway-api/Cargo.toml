@@ -17,6 +17,8 @@ gateway-proxy = { path = "../gateway-proxy" }
 gateway-store = { path = "../gateway-store" }
 gateway-telemetry = { path = "../gateway-telemetry" }
 http.workspace = true
+jsonwebtoken.workspace = true
+pem.workspace = true
 pingora-core.workspace = true
 pingora-proxy.workspace = true
 reqwest.workspace = true

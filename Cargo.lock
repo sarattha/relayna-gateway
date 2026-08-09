@@ -946,6 +946,8 @@ dependencies = [
  "gateway-store",
  "gateway-telemetry",
  "http",
+ "jsonwebtoken",
+ "pem",
  "pingora-core",
  "pingora-proxy",
  "reqwest",

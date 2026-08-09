@@ -6742,6 +6742,7 @@ impl PortalAccessStore for PostgresStore {
         object_id: &str,
         email: Option<&str>,
         display_name: Option<&str>,
+        bootstrap_admin: bool,
         now: chrono::DateTime<chrono::Utc>,
     ) -> GatewayResult<PortalMember> {
         if tenant_id.trim().is_empty() || object_id.trim().is_empty() {
@@ -6750,12 +6751,29 @@ impl PortalAccessStore for PostgresStore {
         sqlx::query(
             r#"
             INSERT INTO portal_members (
-                tenant_id, object_id, email, display_name, last_sign_in_at
+                tenant_id, object_id, email, display_name, status, roles, last_sign_in_at
             )
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                CASE WHEN $5 THEN 'active' ELSE 'pending' END,
+                CASE WHEN $5 THEN ARRAY[$6]::text[] ELSE ARRAY[]::text[] END,
+                $7
+            )
             ON CONFLICT (tenant_id, object_id) DO UPDATE SET
                 email = COALESCE(EXCLUDED.email, portal_members.email),
                 display_name = COALESCE(EXCLUDED.display_name, portal_members.display_name),
+                status = CASE
+                    WHEN $5 AND portal_members.status = 'pending' THEN 'active'
+                    ELSE portal_members.status
+                END,
+                roles = CASE
+                    WHEN $5 AND portal_members.status = 'pending'
+                        THEN array_append(array_remove(portal_members.roles, $6), $6)
+                    ELSE portal_members.roles
+                END,
                 last_sign_in_at = EXCLUDED.last_sign_in_at,
                 updated_at = now()
             RETURNING *
@@ -6769,6 +6787,8 @@ impl PortalAccessStore for PostgresStore {
                 .map(str::trim)
                 .filter(|value| !value.is_empty()),
         )
+        .bind(bootstrap_admin)
+        .bind(PORTAL_ROLE_ADMIN)
         .bind(now)
         .fetch_one(&self.pool)
         .await

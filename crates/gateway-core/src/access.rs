@@ -206,6 +206,7 @@ pub trait PortalAccessStore: Send + Sync {
         object_id: &str,
         email: Option<&str>,
         display_name: Option<&str>,
+        bootstrap_admin: bool,
         now: DateTime<Utc>,
     ) -> GatewayResult<PortalMember>;
 
@@ -288,10 +289,18 @@ where
         object_id: &str,
         email: Option<&str>,
         display_name: Option<&str>,
+        bootstrap_admin: bool,
         now: DateTime<Utc>,
     ) -> GatewayResult<PortalMember> {
         (**self)
-            .upsert_oidc_member(tenant_id, object_id, email, display_name, now)
+            .upsert_oidc_member(
+                tenant_id,
+                object_id,
+                email,
+                display_name,
+                bootstrap_admin,
+                now,
+            )
             .await
     }
     async fn list_members(&self) -> GatewayResult<Vec<PortalMember>> {
