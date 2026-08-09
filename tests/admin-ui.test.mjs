@@ -48,8 +48,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.24/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.24/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.25/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.25/);
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
@@ -105,9 +105,31 @@ test("service-owner workspace uses scoped owner APIs and responsive dashboards",
   assert.match(js, /api\("\/owner\/v1\/services"\)/);
   assert.match(js, /async function serviceDashboard\(\)/);
   assert.match(js, /\/owner\/v1\/services\/\$\{encodeURIComponent\(serviceName\)\}\/dashboard/);
-  assert.match(js, /\/errors\?\$\{query\}/);
+  assert.match(js, /\/owner\/v1\/services\/\$\{encodeURIComponent\(serviceName\)\}\/events\?\$\{eventsQuery\}/);
+  assert.match(js, /id="owner-incident-chart" role="img"/);
+  assert.match(js, /function renderOwnerIncidentChart\(rows, markers\)/);
+  assert.match(js, /Error rate \(%\)/);
+  assert.match(js, /P95 latency \(ms\)/);
+  assert.match(js, /Version \$\{version\} first observed by Gateway/);
+  for (const control of ["owner-range-select", "owner-outcome-select", "owner-status-select"]) {
+    assert.match(js, new RegExp(`id="${control}"`));
+  }
+  for (const range of ["6h", "24h", "7d"]) assert.match(js, new RegExp(`option\\("${range}"`));
+  assert.match(js, /data-owner-page="previous"/);
+  assert.match(js, /data-owner-page="next"/);
+  assert.match(js, /data-owner-request/);
+  assert.match(js, />View details<\/button>/);
+  assert.match(js, /async function openOwnerRequestDetails\(event\)/);
+  assert.match(js, /\/requests\/\$\{encodeURIComponent\(requestId\)\}/);
+  assert.match(js, /restoreFocus: trigger/);
+  assert.match(js, /owner-request-drawer/);
+  assert.match(js, /no proxy debug bundle was captured/);
+  assert.match(js, /badge\(row\.status, row\.status === "success" \? "good" : "bad"\)/);
   assert.match(css, /\.owner-dashboard-grid/);
   assert.match(css, /\.owner-service-grid/);
+  assert.match(css, /\.owner-incident-chart-wrap/);
+  assert.match(css, /\.owner-request-filters/);
+  assert.match(css, /\.owner-request-drawer/);
   assert.match(css, /@media \(max-width: 700px\)[\s\S]*\.owner-dashboard-grid/);
 });
 

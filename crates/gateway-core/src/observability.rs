@@ -13,6 +13,7 @@ pub struct UsageQuery {
     pub route: Option<String>,
     pub provider: Option<String>,
     pub service: Option<String>,
+    pub request_id: Option<String>,
     pub method: Option<String>,
     pub endpoint: Option<String>,
     pub task_id: Option<String>,
@@ -65,6 +66,7 @@ pub struct UsageSummary {
     pub estimated_cost_usd: Option<f64>,
     pub total_latency_ms: i64,
     pub average_latency_ms: Option<f64>,
+    pub p95_latency_ms: Option<f64>,
     pub fallback_count: i64,
     pub policy_denial_count: i64,
     pub rate_limit_denial_count: i64,
@@ -112,6 +114,7 @@ pub struct UsageExportRow {
     pub cost_mode: Option<String>,
     pub pricing_rule_name: Option<String>,
     pub service_name: Option<String>,
+    pub service_version: Option<String>,
     pub http_method: Option<String>,
     pub endpoint_path: Option<String>,
     pub endpoint_template: Option<String>,
@@ -157,6 +160,12 @@ pub struct UsageEventsPage {
     pub limit: i64,
     pub offset: i64,
     pub has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct UsageVersionTransition {
+    pub service_version: String,
+    pub first_observed_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -218,6 +227,17 @@ pub trait UsageQueryStore: Send + Sync {
 
     async fn usage_events(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage>;
 
+    async fn usage_status_codes(&self, _query: UsageQuery) -> GatewayResult<Vec<i32>> {
+        Ok(Vec::new())
+    }
+
+    async fn usage_version_transitions(
+        &self,
+        _query: UsageQuery,
+    ) -> GatewayResult<Vec<UsageVersionTransition>> {
+        Ok(Vec::new())
+    }
+
     async fn usage_filter_values(
         &self,
         query: UsageFilterValuesQuery,
@@ -273,6 +293,17 @@ where
 
     async fn usage_events(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage> {
         (**self).usage_events(query).await
+    }
+
+    async fn usage_status_codes(&self, query: UsageQuery) -> GatewayResult<Vec<i32>> {
+        (**self).usage_status_codes(query).await
+    }
+
+    async fn usage_version_transitions(
+        &self,
+        query: UsageQuery,
+    ) -> GatewayResult<Vec<UsageVersionTransition>> {
+        (**self).usage_version_transitions(query).await
     }
 
     async fn usage_filter_values(

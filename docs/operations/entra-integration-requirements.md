@@ -1,6 +1,6 @@
 # Entra integration requirements
 
-This is the production handoff for Relayna Gateway `v0.1.24` and later. It uses
+This is the production handoff for Relayna Gateway `v0.1.25` and later. It uses
 the local Arcweft implementation as the reference for certificate-backed OIDC:
 PS256 `private_key_jwt`, `x5t#S256`, exact token-endpoint audience, five-minute
 assertions, and overlap certificate rotation.
@@ -52,7 +52,7 @@ API role, while Relayna's exact binding limits which service can be read.
 | --- | --- | --- | --- | --- |
 | Owner API | `gateway.monitor.read` | Applications | Every managed identity that may call `/owner/v1` | Token must also match an enabled exact service binding. |
 
-No other Entra application role is required by the `v0.1.24` portal/owner
+No other Entra application role is required by the `v0.1.25` portal/owner
 integration. `Admin`, `Owner`, and `Viewer` are Relayna roles, not Entra app
 roles.
 

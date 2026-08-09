@@ -31,6 +31,7 @@ pub struct UsageEvent {
     pub cost_mode: Option<ServiceCostMode>,
     pub pricing_rule_name: Option<String>,
     pub service_name: Option<String>,
+    pub service_version: Option<String>,
     pub http_method: Option<String>,
     pub endpoint_path: Option<String>,
     pub endpoint_template: Option<String>,
@@ -80,6 +81,7 @@ impl UsageEvent {
             cost_mode: None,
             pricing_rule_name: None,
             service_name: None,
+            service_version: None,
             http_method: None,
             endpoint_path: None,
             endpoint_template: None,
@@ -130,6 +132,11 @@ impl UsageEvent {
 
     pub fn with_service_name(mut self, service_name: Option<String>) -> Self {
         self.service_name = service_name;
+        self
+    }
+
+    pub fn with_service_version(mut self, service_version: Option<String>) -> Self {
+        self.service_version = service_version;
         self
     }
 

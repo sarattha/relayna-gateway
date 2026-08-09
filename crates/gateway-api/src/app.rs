@@ -380,6 +380,10 @@ pub fn router_with_state(state: AppState) -> Router {
             get(owner_service_logs),
         )
         .route(
+            "/owner/v1/services/{service_name}/requests/{request_id}",
+            get(owner_service_request_details),
+        )
+        .route(
             "/owner/v1/services/{service_name}/endpoints",
             get(owner_service_endpoints),
         )
@@ -1220,6 +1224,8 @@ struct OwnerDashboardBody {
     endpoints: Vec<gateway_core::UsageBreakdown>,
     providers: Vec<gateway_core::UsageBreakdown>,
     models: Vec<gateway_core::UsageBreakdown>,
+    status_codes: Vec<i32>,
+    version_markers: Vec<gateway_core::UsageVersionTransition>,
 }
 
 async fn owner_service_dashboard(
@@ -1259,9 +1265,17 @@ async fn owner_service_dashboard(
     };
     let models = match state
         .store
-        .usage_breakdown(query, UsageBreakdownDimension::Model)
+        .usage_breakdown(query.clone(), UsageBreakdownDimension::Model)
         .await
     {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let status_codes = match state.store.usage_status_codes(query.clone()).await {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let version_markers = match state.store.usage_version_transitions(query).await {
         Ok(value) => value,
         Err(error) => return error_response(&headers, error),
     };
@@ -1273,6 +1287,8 @@ async fn owner_service_dashboard(
         endpoints,
         providers,
         models,
+        status_codes,
+        version_markers,
     })
     .into_response()
 }
@@ -1317,6 +1333,47 @@ async fn owner_service_logs(
     query: Query<UsageQuery>,
 ) -> Response {
     owner_service_events(state, path, headers, query).await
+}
+
+#[derive(Debug, Serialize)]
+struct OwnerRequestDetailsBody {
+    request: gateway_core::UsageExportRow,
+    debug_bundle: Option<gateway_core::DebugBundle>,
+}
+
+async fn owner_service_request_details(
+    State(state): State<AppState>,
+    Path((service_name, request_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = require_owner_service_access(&state, &headers, &service_name).await {
+        return response;
+    }
+    let query = UsageQuery {
+        service: Some(service_name.clone()),
+        request_id: Some(request_id.clone()),
+        limit: Some(1),
+        ..UsageQuery::default()
+    };
+    let request = match state.store.usage_events(query).await {
+        Ok(events) => match events.rows.into_iter().next() {
+            Some(request) => request,
+            None => return error_response(&headers, GatewayError::MissingUsageEvent),
+        },
+        Err(error) => return error_response(&headers, error),
+    };
+    let debug_bundle = match state.store.get_debug_bundle(&request_id).await {
+        Ok(Some(bundle)) if bundle.service_name.as_deref() == Some(service_name.as_str()) => {
+            Some(bundle)
+        }
+        Ok(_) => None,
+        Err(error) => return error_response(&headers, error),
+    };
+    Json(OwnerRequestDetailsBody {
+        request,
+        debug_bundle,
+    })
+    .into_response()
 }
 
 async fn owner_service_endpoints(
@@ -3831,7 +3888,7 @@ async fn task_usage(
 }
 
 fn usage_export_csv_body(export: &UsageExport) -> String {
-    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,task_id,run_id,trace_id,fallback_count,guardrail_action_count,created_at,cost_source,cost_mode,pricing_rule_name,http_method,endpoint_path,endpoint_template\n".to_owned();
+    let mut csv = "request_id,key_id,project_id,route,model,provider,status,status_code,latency_ms,input_tokens,output_tokens,total_tokens,estimated_cost_usd,service_name,service_version,task_id,run_id,trace_id,fallback_count,guardrail_action_count,created_at,cost_source,cost_mode,pricing_rule_name,http_method,endpoint_path,endpoint_template\n".to_owned();
     for row in &export.rows {
         let fields = [
             row.request_id.clone(),
@@ -3852,6 +3909,7 @@ fn usage_export_csv_body(export: &UsageExport) -> String {
                 .map(|value| value.to_string())
                 .unwrap_or_default(),
             row.service_name.clone().unwrap_or_default(),
+            row.service_version.clone().unwrap_or_default(),
             row.task_id.clone().unwrap_or_default(),
             row.run_id.clone().unwrap_or_default(),
             row.trace_id.clone().unwrap_or_default(),
@@ -7159,6 +7217,7 @@ mod tests {
                         .and_then(|value| value.as_str().map(ToOwned::to_owned)),
                     pricing_rule_name: event.pricing_rule_name.clone(),
                     service_name: event.service_name.clone(),
+                    service_version: event.service_version.clone(),
                     http_method: event.http_method.clone(),
                     endpoint_path: event.endpoint_path.clone(),
                     endpoint_template: event.endpoint_template.clone(),
@@ -7248,6 +7307,32 @@ mod tests {
             })
         }
 
+        async fn usage_status_codes(&self, mut query: UsageQuery) -> GatewayResult<Vec<i32>> {
+            query.limit = Some(10_000);
+            query.offset = Some(0);
+            let mut values = self
+                .usage_export(query)
+                .await?
+                .rows
+                .into_iter()
+                .map(|row| row.status_code)
+                .collect::<Vec<_>>();
+            values.sort_unstable();
+            values.dedup();
+            Ok(values)
+        }
+
+        async fn usage_version_transitions(
+            &self,
+            mut query: UsageQuery,
+        ) -> GatewayResult<Vec<gateway_core::UsageVersionTransition>> {
+            query.limit = Some(10_000);
+            query.offset = Some(0);
+            Ok(usage_version_transitions_from_rows(
+                self.usage_export(query).await?.rows,
+            ))
+        }
+
         async fn usage_filter_values(
             &self,
             query: UsageFilterValuesQuery,
@@ -7323,9 +7408,33 @@ mod tests {
 
         async fn get_debug_bundle(
             &self,
-            _request_id: &str,
+            request_id: &str,
         ) -> GatewayResult<Option<gateway_core::DebugBundle>> {
-            Ok(None)
+            if !request_id.ends_with("-debug") {
+                return Ok(None);
+            }
+            Ok(self
+                .events
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|event| event.request_id == request_id)
+                .map(|event| gateway_core::DebugBundle {
+                    request_id: event.request_id.clone(),
+                    route: Some(event.route),
+                    provider: Some(event.provider),
+                    service_name: event.service_name.clone(),
+                    trace_id: event.trace_id.clone(),
+                    policy_trace: Vec::new(),
+                    guardrail_trace: Vec::new(),
+                    selection_trace: Vec::new(),
+                    fallback_history: Vec::new(),
+                    upstream_latency_ms: Some(event.latency_ms),
+                    request_hash: None,
+                    response_hash: None,
+                    redaction_version: 1,
+                    created_at: event.created_at,
+                }))
         }
 
         async fn insert_debug_bundle(
@@ -7420,6 +7529,13 @@ mod tests {
         {
             return false;
         }
+        if query
+            .request_id
+            .as_deref()
+            .is_some_and(|request_id| event.request_id != request_id)
+        {
+            return false;
+        }
         if query.method.as_deref().is_some_and(|method| {
             event.http_method.as_deref() != Some(method.to_ascii_uppercase().as_str())
         }) {
@@ -7468,6 +7584,17 @@ mod tests {
 
     fn usage_summary_from_rows(rows: &[UsageExportRow]) -> UsageSummary {
         let total_latency_ms = rows.iter().map(|row| row.latency_ms).sum();
+        let mut latencies = rows.iter().map(|row| row.latency_ms).collect::<Vec<_>>();
+        latencies.sort_unstable();
+        let p95_latency_ms = if latencies.is_empty() {
+            None
+        } else {
+            let rank = (latencies.len() - 1) as f64 * 0.95;
+            let lower = rank.floor() as usize;
+            let upper = rank.ceil() as usize;
+            let fraction = rank - lower as f64;
+            Some(latencies[lower] as f64 * (1.0 - fraction) + latencies[upper] as f64 * fraction)
+        };
         UsageSummary {
             request_count: i64::try_from(rows.len()).unwrap_or(i64::MAX),
             success_count: i64::try_from(rows.iter().filter(|row| row.status == "success").count())
@@ -7488,6 +7615,7 @@ mod tests {
             } else {
                 Some(total_latency_ms as f64 / rows.len() as f64)
             },
+            p95_latency_ms,
             fallback_count: rows.iter().map(|row| i64::from(row.fallback_count)).sum(),
             fallback_rate: if rows.is_empty() {
                 0.0
@@ -7499,6 +7627,32 @@ mod tests {
             },
             ..UsageSummary::default()
         }
+    }
+
+    fn usage_version_transitions_from_rows(
+        mut rows: Vec<UsageExportRow>,
+    ) -> Vec<gateway_core::UsageVersionTransition> {
+        rows.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| left.request_id.cmp(&right.request_id))
+        });
+        let mut previous = None::<String>;
+        let mut transitions = Vec::new();
+        for row in rows {
+            let Some(service_version) = row.service_version else {
+                continue;
+            };
+            if previous.as_deref() == Some(service_version.as_str()) {
+                continue;
+            }
+            previous = Some(service_version.clone());
+            transitions.push(gateway_core::UsageVersionTransition {
+                service_version,
+                first_observed_at: row.created_at,
+            });
+        }
+        transitions
     }
 
     struct UsageRowsPage<T> {
@@ -8572,6 +8726,7 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
                 service_name: Some("orders".to_owned()),
+                service_version: Some("2026.08.09".to_owned()),
                 http_method: Some("GET".to_owned()),
                 endpoint_path: Some("/orders/42".to_owned()),
                 endpoint_template: Some("/orders/{id}".to_owned()),
@@ -8582,7 +8737,7 @@ mod tests {
                 created_at: Utc::now(),
             },
             UsageEvent {
-                request_id: "req-orders-failed".to_owned(),
+                request_id: "req-orders-failed-debug".to_owned(),
                 key_id: Uuid::new_v4(),
                 project_id: None,
                 route: Route::ServiceWildcard,
@@ -8599,9 +8754,38 @@ mod tests {
                 cost_mode: None,
                 pricing_rule_name: None,
                 service_name: Some("orders".to_owned()),
+                service_version: Some("2026.08.10".to_owned()),
                 http_method: Some("POST".to_owned()),
                 endpoint_path: Some("/orders".to_owned()),
                 endpoint_template: Some("/orders".to_owned()),
+                task_id: None,
+                run_id: None,
+                trace_id: None,
+                fallback_count: 0,
+                created_at: Utc::now(),
+            },
+            UsageEvent {
+                request_id: "req-payments-cross-service".to_owned(),
+                key_id: Uuid::new_v4(),
+                project_id: None,
+                route: Route::ServiceWildcard,
+                model: None,
+                provider: gateway_core::Provider::InternalService,
+                status: UsageStatus::Success,
+                status_code: 204,
+                latency_ms: 8,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                estimated_cost_usd: None,
+                cost_source: None,
+                cost_mode: None,
+                pricing_rule_name: None,
+                service_name: Some("payments".to_owned()),
+                service_version: Some("payments-1".to_owned()),
+                http_method: Some("POST".to_owned()),
+                endpoint_path: Some("/payments".to_owned()),
+                endpoint_template: Some("/payments".to_owned()),
                 task_id: None,
                 run_id: None,
                 trace_id: None,
@@ -8722,6 +8906,106 @@ mod tests {
             )
             .await;
             assert_eq!(response.status(), StatusCode::OK, "route {route}");
+        }
+
+        let dashboard = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/owner/v1/services/orders/dashboard?interval=hour",
+            &owner_session,
+            &owner_csrf,
+            None,
+            "",
+        )
+        .await;
+        let dashboard = response_json(dashboard).await;
+        assert_eq!(dashboard["status_codes"], serde_json::json!([200, 502]));
+        assert_eq!(
+            dashboard["version_markers"]
+                .as_array()
+                .expect("version markers")
+                .iter()
+                .map(|marker| marker["service_version"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["2026.08.09", "2026.08.10"]
+        );
+        assert_eq!(
+            dashboard["timeseries"][0]["summary"]["p95_latency_ms"],
+            19.6
+        );
+
+        let filtered = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/owner/v1/services/orders/events?status=success&status_code=200&limit=1&offset=0",
+            &owner_session,
+            &owner_csrf,
+            None,
+            "",
+        )
+        .await;
+        let filtered = response_json(filtered).await;
+        assert_eq!(filtered["rows"][0]["request_id"], "req-orders-ok");
+        assert_eq!(filtered["has_more"], false);
+
+        let first_page = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/owner/v1/services/orders/events?limit=1&offset=0",
+            &owner_session,
+            &owner_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(response_json(first_page).await["has_more"], true);
+
+        let details_without_debug = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/owner/v1/services/orders/requests/req-orders-ok",
+            &owner_session,
+            &owner_csrf,
+            None,
+            "",
+        )
+        .await;
+        let details_without_debug = response_json(details_without_debug).await;
+        assert_eq!(details_without_debug["request"]["service_name"], "orders");
+        assert!(details_without_debug["debug_bundle"].is_null());
+
+        let details_with_debug = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/owner/v1/services/orders/requests/req-orders-failed-debug",
+            &owner_session,
+            &owner_csrf,
+            None,
+            "",
+        )
+        .await;
+        let details_with_debug = response_json(details_with_debug).await;
+        assert_eq!(
+            details_with_debug["debug_bundle"]["request_id"],
+            "req-orders-failed-debug"
+        );
+
+        for request_id in ["missing", "req-payments-cross-service"] {
+            let response = portal_request(
+                app.clone(),
+                axum::http::Method::GET,
+                &format!("/owner/v1/services/orders/requests/{request_id}"),
+                &owner_session,
+                &owner_csrf,
+                None,
+                "",
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            assert_eq!(
+                response_json(response).await["error"]["code"],
+                "request_not_found"
+            );
         }
 
         let deleted_identity = portal_request(
@@ -10456,6 +10740,7 @@ mod tests {
                 cost_mode: Some(gateway_core::ServiceCostMode::Passthrough),
                 pricing_rule_name: None,
                 service_name: None,
+                service_version: None,
                 http_method: None,
                 endpoint_path: None,
                 endpoint_template: None,
@@ -10483,6 +10768,7 @@ mod tests {
                 cost_mode: None,
                 pricing_rule_name: None,
                 service_name: Some("jobs-service".to_owned()),
+                service_version: None,
                 http_method: Some("POST".to_owned()),
                 endpoint_path: Some("/jobs/failed-1".to_owned()),
                 endpoint_template: Some("/jobs/{job_id}".to_owned()),
@@ -10608,6 +10894,7 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
                 service_name: Some("summarizer".to_owned()),
+                service_version: None,
                 http_method: Some("POST".to_owned()),
                 endpoint_path: Some("/summaries/summary-1".to_owned()),
                 endpoint_template: Some("/summaries/{summary_id}".to_owned()),
@@ -10635,6 +10922,7 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: Some("legal-es".to_owned()),
                 service_name: Some("translation".to_owned()),
+                service_version: None,
                 http_method: Some("POST".to_owned()),
                 endpoint_path: Some("/translations/translation-1".to_owned()),
                 endpoint_template: Some("/translations/{translation_id}".to_owned()),
@@ -10712,6 +11000,7 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
                 service_name: Some("summarizer".to_owned()),
+                service_version: None,
                 http_method: Some("POST".to_owned()),
                 endpoint_path: Some("/summaries/summary-1".to_owned()),
                 endpoint_template: Some("/summaries/{summary_id}".to_owned()),
@@ -10739,6 +11028,7 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: Some("legal-es".to_owned()),
                 service_name: Some("translation".to_owned()),
+                service_version: None,
                 http_method: Some("POST".to_owned()),
                 endpoint_path: Some("/translations/translation-1".to_owned()),
                 endpoint_template: Some("/translations/{translation_id}".to_owned()),
@@ -10766,6 +11056,7 @@ mod tests {
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
                 service_name: Some("summarizer".to_owned()),
+                service_version: None,
                 http_method: Some("POST".to_owned()),
                 endpoint_path: Some("/summaries/summary-2".to_owned()),
                 endpoint_template: Some("/summaries/{summary_id}".to_owned()),
@@ -11794,6 +12085,7 @@ mod tests {
             cost_mode: None,
             pricing_rule_name: None,
             service_name: service_name.map(ToOwned::to_owned),
+            service_version: None,
             http_method: None,
             endpoint_path: None,
             endpoint_template: None,
@@ -11858,6 +12150,10 @@ mod tests {
                 ..UsageQuery::default()
             },
             UsageQuery {
+                request_id: Some("other-request".to_owned()),
+                ..UsageQuery::default()
+            },
+            UsageQuery {
                 task_id: Some("other".to_owned()),
                 ..UsageQuery::default()
             },
@@ -11885,6 +12181,35 @@ mod tests {
         assert_eq!(summary.success_count, 1);
         assert_eq!(summary.failure_count, 1);
         assert_eq!(summary.average_latency_ms, Some(20.0));
+        assert_eq!(summary.p95_latency_ms, Some(20.0));
+
+        let mut percentile_rows = (0..4)
+            .map(|index| {
+                let mut row = coverage_usage_row(
+                    &format!("p95-{index}"),
+                    "success",
+                    Some("ocr"),
+                    now + chrono::Duration::minutes(index),
+                );
+                row.latency_ms = (index + 1) * 10;
+                row
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            usage_summary_from_rows(&percentile_rows).p95_latency_ms,
+            Some(38.5)
+        );
+        for (row, version) in percentile_rows.iter_mut().zip(["v1", "v1", "v2", "v1"]) {
+            row.service_version = Some(version.to_owned());
+        }
+        let transitions = usage_version_transitions_from_rows(percentile_rows);
+        assert_eq!(
+            transitions
+                .iter()
+                .map(|marker| marker.service_version.as_str())
+                .collect::<Vec<_>>(),
+            ["v1", "v2", "v1"]
+        );
 
         let unbounded = paginate_usage_rows(rows.clone(), None, None);
         assert_eq!(unbounded.rows.len(), 2);

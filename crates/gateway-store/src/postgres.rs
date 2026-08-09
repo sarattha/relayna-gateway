@@ -57,7 +57,7 @@ use gateway_core::{
     UsageDashboardBreakdowns, UsageEvent, UsageEventsPage, UsageExport, UsageExportRow,
     UsageFilterValues, UsageFilterValuesQuery, UsagePage, UsageQuery, UsageQueryStore,
     UsageRecorder, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary, UsageTimeseriesPoint,
-    VirtualKeyMaterial,
+    UsageVersionTransition, VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -919,6 +919,7 @@ impl PostgresStore {
                 cost_mode,
                 pricing_rule_name,
                 service_name,
+                service_version,
                 http_method,
                 endpoint_path,
                 endpoint_template,
@@ -928,7 +929,7 @@ impl PostgresStore {
                 fallback_count,
                 created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
             "#,
         )
         .bind(&event.request_id)
@@ -948,6 +949,7 @@ impl PostgresStore {
         .bind(event.cost_mode.map(service_cost_mode_str))
         .bind(&event.pricing_rule_name)
         .bind(&event.service_name)
+        .bind(&event.service_version)
         .bind(&event.http_method)
         .bind(&event.endpoint_path)
         .bind(&event.endpoint_template)
@@ -4159,13 +4161,25 @@ impl UsageQueryStore for PostgresStore {
                 COALESCE(SUM(total_tokens), 0)::bigint,
                 COALESCE(SUM(estimated_cost), 0)::double precision,
                 COALESCE(SUM(latency_ms), 0)::bigint,
+                percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::double precision,
                 COALESCE(SUM(fallback_count), 0)::bigint
             FROM usage_events
             "#,
         );
         append_usage_filters(&mut builder, &query);
         let mut summary = builder
-            .build_query_as::<(i64, i64, i64, i64, i64, i64, Option<f64>, i64, i64)>()
+            .build_query_as::<(
+                i64,
+                i64,
+                i64,
+                i64,
+                i64,
+                i64,
+                Option<f64>,
+                i64,
+                Option<f64>,
+                i64,
+            )>()
             .fetch_one(&self.pool)
             .await
             .map(summary_from_row)
@@ -4214,6 +4228,7 @@ impl UsageQueryStore for PostgresStore {
                 COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
                 COALESCE(SUM(estimated_cost), 0)::double precision AS estimated_cost_usd,
                 COALESCE(SUM(latency_ms), 0)::bigint AS total_latency_ms,
+                percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::double precision AS p95_latency_ms,
                 COALESCE(SUM(fallback_count), 0)::bigint AS fallback_count
             FROM usage_events
             "#,
@@ -4235,7 +4250,19 @@ impl UsageQueryStore for PostgresStore {
         builder.push_bind(query.breakdown_offset.unwrap_or_default().max(0));
 
         builder
-            .build_query_as::<(String, i64, i64, i64, i64, i64, i64, Option<f64>, i64, i64)>()
+            .build_query_as::<(
+                String,
+                i64,
+                i64,
+                i64,
+                i64,
+                i64,
+                i64,
+                Option<f64>,
+                i64,
+                Option<f64>,
+                i64,
+            )>()
             .fetch_all(&self.pool)
             .await
             .map(|rows| {
@@ -4251,6 +4278,7 @@ impl UsageQueryStore for PostgresStore {
                             total_tokens,
                             estimated_cost_usd,
                             total_latency_ms,
+                            p95_latency_ms,
                             fallback_count,
                         )| UsageBreakdown {
                             name,
@@ -4267,6 +4295,7 @@ impl UsageQueryStore for PostgresStore {
                                     request_count,
                                     total_latency_ms,
                                 ),
+                                p95_latency_ms,
                                 fallback_count,
                                 fallback_rate: fallback_rate(request_count, fallback_count),
                                 ..UsageSummary::default()
@@ -4300,6 +4329,7 @@ impl UsageQueryStore for PostgresStore {
                 u.cost_mode,
                 u.pricing_rule_name,
                 u.service_name,
+                u.service_version,
                 u.http_method,
                 u.endpoint_path,
                 u.endpoint_template,
@@ -4349,6 +4379,7 @@ impl UsageQueryStore for PostgresStore {
                     cost_mode: row.try_get("cost_mode")?,
                     pricing_rule_name: row.try_get("pricing_rule_name")?,
                     service_name: row.try_get("service_name")?,
+                    service_version: row.try_get("service_version")?,
                     http_method: row.try_get("http_method")?,
                     endpoint_path: row.try_get("endpoint_path")?,
                     endpoint_template: row.try_get("endpoint_template")?,
@@ -4425,6 +4456,7 @@ impl UsageQueryStore for PostgresStore {
                 u.cost_mode,
                 u.pricing_rule_name,
                 u.service_name,
+                u.service_version,
                 u.http_method,
                 u.endpoint_path,
                 u.endpoint_template,
@@ -4464,6 +4496,61 @@ impl UsageQueryStore for PostgresStore {
             offset,
             has_more,
         })
+    }
+
+    async fn usage_status_codes(&self, query: UsageQuery) -> GatewayResult<Vec<i32>> {
+        let mut builder =
+            QueryBuilder::<Postgres>::new("SELECT DISTINCT status_code FROM usage_events");
+        append_usage_filters(&mut builder, &query);
+        builder.push(" ORDER BY status_code ASC");
+        builder
+            .build_query_scalar::<i32>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn usage_version_transitions(
+        &self,
+        query: UsageQuery,
+    ) -> GatewayResult<Vec<UsageVersionTransition>> {
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r#"
+            WITH scoped AS (
+                SELECT
+                    service_version,
+                    created_at,
+                    request_id,
+                    lag(service_version) OVER (ORDER BY created_at ASC, request_id ASC) AS previous_version
+                FROM usage_events
+            "#,
+        );
+        append_usage_filters(&mut builder, &query);
+        builder.push(
+            r#"
+                AND service_version IS NOT NULL
+            )
+            SELECT service_version, created_at AS first_observed_at
+            FROM scoped
+            WHERE previous_version IS NULL OR previous_version IS DISTINCT FROM service_version
+            ORDER BY first_observed_at ASC, request_id ASC
+            "#,
+        );
+        builder
+            .build_query_as::<(String, chrono::DateTime<chrono::Utc>)>()
+            .fetch_all(&self.pool)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(
+                        |(service_version, first_observed_at)| UsageVersionTransition {
+                            service_version,
+                            first_observed_at,
+                        },
+                    )
+                    .collect()
+            })
+            .map_err(|_| GatewayError::StoreUnavailable)
     }
 
     async fn usage_filter_values(
@@ -6099,6 +6186,10 @@ fn append_usage_filters_with_alias<'a>(
         separated.push(format!("{} = ", column("service_name")));
         separated.push_bind_unseparated(service);
     }
+    if let Some(request_id) = query.request_id.as_deref() {
+        separated.push(format!("{} = ", column("request_id")));
+        separated.push_bind_unseparated(request_id);
+    }
     if let Some(method) = query.method.as_deref() {
         separated.push(format!("{} = ", column("http_method")));
         separated.push_bind_unseparated(method.to_ascii_uppercase());
@@ -6176,6 +6267,7 @@ async fn usage_export_rows_from_query(
                 cost_mode: row.try_get("cost_mode")?,
                 pricing_rule_name: row.try_get("pricing_rule_name")?,
                 service_name: row.try_get("service_name")?,
+                service_version: row.try_get("service_version")?,
                 http_method: row.try_get("http_method")?,
                 endpoint_path: row.try_get("endpoint_path")?,
                 endpoint_template: row.try_get("endpoint_template")?,
@@ -6219,6 +6311,7 @@ async fn usage_timeseries_page(
             COALESCE(SUM(total_tokens), 0)::bigint,
             COALESCE(SUM(estimated_cost), 0)::double precision,
             COALESCE(SUM(latency_ms), 0)::bigint,
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::double precision,
             COALESCE(SUM(fallback_count), 0)::bigint
         FROM usage_events
         "#,
@@ -6243,6 +6336,7 @@ async fn usage_timeseries_page(
             i64,
             Option<f64>,
             i64,
+            Option<f64>,
             i64,
         )>()
         .fetch_all(pool)
@@ -6260,6 +6354,7 @@ async fn usage_timeseries_page(
                         total_tokens,
                         estimated_cost_usd,
                         total_latency_ms,
+                        p95_latency_ms,
                         fallback_count,
                     )| UsageTimeseriesPoint {
                         bucket,
@@ -6273,6 +6368,7 @@ async fn usage_timeseries_page(
                             estimated_cost_usd,
                             total_latency_ms,
                             average_latency_ms: average_latency_ms(request_count, total_latency_ms),
+                            p95_latency_ms,
                             fallback_count,
                             fallback_rate: fallback_rate(request_count, fallback_count),
                             ..UsageSummary::default()
@@ -6318,6 +6414,7 @@ async fn usage_service_timeseries(
             COALESCE(SUM(total_tokens), 0)::bigint,
             COALESCE(SUM(estimated_cost), 0)::double precision,
             COALESCE(SUM(latency_ms), 0)::bigint,
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::double precision,
             COALESCE(SUM(fallback_count), 0)::bigint
         FROM usage_events
         "#,
@@ -6343,6 +6440,7 @@ async fn usage_service_timeseries(
             i64,
             Option<f64>,
             i64,
+            Option<f64>,
             i64,
         )>()
         .fetch_all(pool)
@@ -6361,6 +6459,7 @@ async fn usage_service_timeseries(
                         total_tokens,
                         estimated_cost_usd,
                         total_latency_ms,
+                        p95_latency_ms,
                         fallback_count,
                     )| UsageServiceTimeseriesPoint {
                         bucket,
@@ -6375,6 +6474,7 @@ async fn usage_service_timeseries(
                             estimated_cost_usd,
                             total_latency_ms,
                             average_latency_ms: average_latency_ms(request_count, total_latency_ms),
+                            p95_latency_ms,
                             fallback_count,
                             fallback_rate: fallback_rate(request_count, fallback_count),
                             ..UsageSummary::default()
@@ -6497,6 +6597,19 @@ fn append_guardrail_event_filters<'a>(
     }
 }
 
+type UsageSummaryRow = (
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+    Option<f64>,
+    i64,
+    Option<f64>,
+    i64,
+);
+
 fn summary_from_row(
     (
         request_count,
@@ -6507,8 +6620,9 @@ fn summary_from_row(
         total_tokens,
         estimated_cost_usd,
         total_latency_ms,
+        p95_latency_ms,
         fallback_count,
-    ): (i64, i64, i64, i64, i64, i64, Option<f64>, i64, i64),
+    ): UsageSummaryRow,
 ) -> UsageSummary {
     UsageSummary {
         request_count,
@@ -6520,6 +6634,7 @@ fn summary_from_row(
         estimated_cost_usd,
         total_latency_ms,
         average_latency_ms: average_latency_ms(request_count, total_latency_ms),
+        p95_latency_ms,
         fallback_count,
         fallback_rate: fallback_rate(request_count, fallback_count),
         ..UsageSummary::default()
@@ -7339,7 +7454,7 @@ mod tests {
 
     #[test]
     fn summary_from_row_preserves_zero_cost_aggregate() {
-        let summary = summary_from_row((0, 0, 0, 0, 0, 0, Some(0.0), 0, 0));
+        let summary = summary_from_row((0, 0, 0, 0, 0, 0, Some(0.0), 0, None, 0));
 
         assert_eq!(summary.estimated_cost_usd, Some(0.0));
     }
@@ -8226,6 +8341,7 @@ mod tests {
             cost_mode: Some(ServiceCostMode::Fixed),
             pricing_rule_name: Some("premium".to_owned()),
             service_name: Some(service_name.clone()),
+            service_version: Some("2026.08.09".to_owned()),
             http_method: Some("POST".to_owned()),
             endpoint_path: Some("/jobs/coverage-123".to_owned()),
             endpoint_template: Some("/jobs/{job_id}".to_owned()),
@@ -8250,10 +8366,11 @@ mod tests {
             sort_order: Some("desc".to_owned()),
             ..UsageQuery::default()
         };
-        store
+        let usage_summary = store
             .usage_summary(usage_query.clone())
             .await
             .expect("usage summary");
+        assert_eq!(usage_summary.p95_latency_ms, Some(42.0));
         store
             .usage_timeseries(usage_query.clone())
             .await
@@ -8285,6 +8402,10 @@ mod tests {
             usage_export.rows[0].endpoint_template.as_deref(),
             Some("/jobs/{job_id}")
         );
+        assert_eq!(
+            usage_export.rows[0].service_version.as_deref(),
+            Some("2026.08.09")
+        );
         let endpoint_query = UsageQuery {
             project_id: Some(project.id),
             method: Some("post".to_owned()),
@@ -8313,6 +8434,23 @@ mod tests {
             .usage_events(usage_query.clone())
             .await
             .expect("usage events");
+        assert_eq!(
+            store
+                .usage_status_codes(usage_query.clone())
+                .await
+                .expect("usage status codes"),
+            [200]
+        );
+        assert_eq!(
+            store
+                .usage_version_transitions(usage_query.clone())
+                .await
+                .expect("usage version transitions"),
+            [UsageVersionTransition {
+                service_version: "2026.08.09".to_owned(),
+                first_observed_at: now,
+            }]
+        );
         store
             .usage_filter_values(UsageFilterValuesQuery {
                 field: "service".to_owned(),

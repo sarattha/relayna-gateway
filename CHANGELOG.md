@@ -2,6 +2,46 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.25 - 2026-08-09
+
+### Added
+
+- Added a responsive service-owner incident chart that plots error rate and P95
+  latency while marking validated `X-Relayna-Service-Version` transitions at
+  the time Gateway first observes them.
+- Added All, Success, and Failure request outcomes; exact status-code filters;
+  6-hour, 24-hour, and 7-day ranges; and offset pagination to the service-owner
+  request log.
+- Added an exact-service request-details API and accessible details drawer that
+  return sanitized usage metadata with an optional matching redacted debug
+  bundle.
+
+### Changed
+
+- Usage events now persist an optional bounded service version, and usage
+  summaries and time-series buckets include P95 latency.
+- Service-owner request actions now say **View details** and remain useful when
+  demo or historical usage rows do not have a debug bundle.
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.25` and `v0.1.25`.
+
+### Fixed
+
+- Fixed the service-owner dashboard's missing incident visualization and
+  failure-only request list.
+- Fixed reversed request status badges so `success` and `failure` are visible
+  labels while `good` and `bad` remain visual tones only.
+- Fixed owner request actions that were rendered without click handlers and
+  incorrectly depended on the administrator-only debug route.
+
+### Security
+
+- Owner request details require exact service membership, return identical 404
+  responses for absent and cross-service request IDs, and exclude request
+  bodies, prompts, credentials, raw headers, and unredacted provider errors.
+- Invalid or oversized service-version headers are ignored without failing or
+  altering proxied responses, including streaming responses.
+
 ## 0.1.24 - 2026-08-09
 
 ### Added

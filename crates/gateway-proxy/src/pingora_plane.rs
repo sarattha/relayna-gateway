@@ -304,6 +304,7 @@ pub struct PingoraContext {
     upstream_timeout: bool,
     service_upstream: Option<PingoraUpstreamConfig>,
     service_route_pattern: Option<String>,
+    service_version: Option<String>,
     http_method: Option<String>,
     endpoint_path: Option<String>,
     endpoint_template: Option<String>,
@@ -380,6 +381,7 @@ where
             upstream_timeout: false,
             service_upstream: None,
             service_route_pattern: None,
+            service_version: None,
             http_method: None,
             endpoint_path: None,
             endpoint_template: None,
@@ -1349,6 +1351,7 @@ where
             error.set_retry(true);
             return Err(error);
         }
+        capture_service_version(upstream_response, ctx);
         Ok(())
     }
 
@@ -1551,6 +1554,7 @@ where
                 .as_ref()
                 .and_then(|matched| matched.service_name.clone()),
         )
+        .with_service_version(ctx.service_version.clone())
         .with_endpoint_context(
             ctx.http_method.clone(),
             ctx.endpoint_path.clone(),
@@ -1937,6 +1941,7 @@ where
                 .as_ref()
                 .and_then(|matched| matched.service_name.clone()),
         )
+        .with_service_version(ctx.service_version.clone())
         .with_endpoint_context(
             ctx.http_method.clone(),
             ctx.endpoint_path.clone(),
@@ -2451,6 +2456,36 @@ fn response_buffer_reservation_bytes(
         .unwrap_or(unknown_length_reservation)
 }
 
+fn validated_service_version(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    if bytes.is_empty()
+        || bytes.len() > 64
+        || !bytes[0].is_ascii_alphanumeric()
+        || bytes[1..]
+            .iter()
+            .any(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'.' | b'_' | b'+' | b'-'))
+    {
+        return None;
+    }
+    Some(value.to_owned())
+}
+
+fn capture_service_version(upstream_response: &ResponseHeader, ctx: &mut PingoraContext) {
+    if ctx
+        .route_match
+        .as_ref()
+        .and_then(|matched| matched.service_name.as_ref())
+        .is_none()
+    {
+        return;
+    }
+    ctx.service_version = upstream_response
+        .headers
+        .get("x-relayna-service-version")
+        .and_then(|value| value.to_str().ok())
+        .and_then(validated_service_version);
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct ResolvedUsageCost {
     estimated_cost_usd: Option<f64>,
@@ -2875,6 +2910,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         upstream_timeout: false,
         service_upstream: None,
         service_route_pattern: None,
+        service_version: None,
         http_method: None,
         endpoint_path: None,
         endpoint_template: None,
@@ -4882,5 +4918,69 @@ mod tests {
         let encoded = serde_json::to_string(&bundle).expect("json");
         assert!(!encoded.contains("secret prompt"));
         assert!(!encoded.contains("secret answer"));
+    }
+
+    #[test]
+    fn service_version_capture_is_bounded_non_destructive_and_stream_safe() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.route_match = Some(service_route_match_for_persisted_registration(
+            &http::Method::GET,
+            "/services/orders/42",
+            "orders",
+        ));
+        ctx.is_streaming = true;
+        let mut response = ResponseHeader::build(200, Some(3)).expect("response");
+        response
+            .insert_header("x-relayna-service-version", "orders-2026.08+7")
+            .expect("version header");
+        response
+            .insert_header("authorization", "Bearer upstream-secret")
+            .expect("credential header");
+
+        capture_service_version(&response, &mut ctx);
+
+        assert_eq!(ctx.service_version.as_deref(), Some("orders-2026.08+7"));
+        assert!(ctx.is_streaming);
+        assert_eq!(
+            response
+                .headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer upstream-secret")
+        );
+        assert_eq!(response.status.as_u16(), 200);
+    }
+
+    #[test]
+    fn malformed_service_versions_are_ignored_without_touching_the_response() {
+        for invalid in [
+            "",
+            " leading-space",
+            "contains/slash",
+            "Bearer secret",
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abc",
+        ] {
+            let mut ctx = new_pingora_context_for_tests();
+            ctx.route_match = Some(service_route_match_for_persisted_registration(
+                &http::Method::GET,
+                "/services/orders/42",
+                "orders",
+            ));
+            let mut response = ResponseHeader::build(200, Some(1)).expect("response");
+            response
+                .insert_header("x-relayna-service-version", invalid)
+                .expect("invalid version remains a valid HTTP header");
+
+            capture_service_version(&response, &mut ctx);
+
+            assert_eq!(ctx.service_version, None, "invalid value {invalid:?}");
+            assert_eq!(
+                response
+                    .headers
+                    .get("x-relayna-service-version")
+                    .and_then(|value| value.to_str().ok()),
+                Some(invalid)
+            );
+        }
     }
 }

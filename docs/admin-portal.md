@@ -22,7 +22,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.24` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+The `v0.1.25` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
 operator work into Monitor, Discover, and Govern navigation domains. Monitor
 contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains
@@ -33,6 +33,12 @@ to common workflows, while responsive drawer navigation and accessible dialogs
 preserve the same capabilities on narrower screens. The source package owns
 design-system tokens, view metadata, templates, and reusable components, while
 the generated asset paths stay stable for deployed gateways.
+
+The service-owner workspace includes an incident chart for error rate and P95
+latency, bounded upstream service-version observations, all-request outcome and
+status-code filters, offset pagination, and an accessible request-details
+drawer. Owner details remain exact-service scoped and contain only sanitized
+usage metadata plus an optional redacted debug bundle.
 
 ![Aurora Teal operational Overview](assets/screenshots/admin-ui-2/aurora-teal-overview.png)
 

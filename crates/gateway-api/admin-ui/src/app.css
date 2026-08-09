@@ -2431,6 +2431,67 @@ tbody tr:hover td {
   gap: 16px;
 }
 
+.owner-incident-panel,
+.owner-request-panel {
+  margin-top: 16px;
+}
+
+.owner-incident-chart-wrap {
+  position: relative;
+  min-height: 300px;
+  height: min(38vh, 390px);
+}
+
+.owner-request-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.owner-request-pager {
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.owner-request-backdrop {
+  place-items: stretch end;
+  padding: 0;
+}
+
+.owner-request-drawer {
+  width: min(600px, 100vw);
+  height: 100vh;
+  max-height: 100vh;
+  border-radius: 0;
+  border-block: 0;
+  border-right: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
+}
+
+.owner-request-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.owner-request-heading h3 {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.owner-request-content,
+.owner-debug-section {
+  display: grid;
+  gap: 14px;
+}
+
+.owner-debug-section h4 {
+  margin: 0;
+}
+
 @media (max-width: 700px) {
   .workspace-control {
     order: -1;
@@ -2451,6 +2512,15 @@ tbody tr:hover td {
   .owner-dashboard-grid {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .owner-request-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .owner-incident-chart-wrap {
+    min-height: 260px;
+    height: 42vh;
   }
 
   .member-card .table-wrap {
