@@ -114,6 +114,7 @@ function tokenClaims(overrides = {}) {
     oid: "pentest-user-object",
     azp: "pentest-client",
     scp: requiredScope,
+    roles: ["gateway.invoke"],
     groups: [allowedGroup],
     ...overrides,
   };

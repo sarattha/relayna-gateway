@@ -103,6 +103,7 @@ function tokenClaims(overrides = {}) {
     oid: "review-user-object",
     azp: "review-client",
     scp: requiredScope,
+    roles: ["gateway.invoke"],
     groups: [allowedGroup],
     ...overrides,
   };

@@ -148,7 +148,7 @@ services:
       LOG_LEVEL: gateway_api=info,gateway_proxy=info
       ENTRA_AUTH_ENABLED: "true"
       ENTRA_TENANT_ID: relayna-pentest-tenant
-      ENTRA_AUDIENCE: api://relayna-gateway-pentest
+      ENTRA_APPLICATION_ID: api://relayna-gateway-pentest
       ENTRA_ISSUER: http://mock-provider:4000/oauth
       ENTRA_OIDC_DISCOVERY_URL: http://mock-provider:4000/oauth/.well-known/openid-configuration
       ENTRA_REQUIRED_SCOPE: gateway.invoke
@@ -184,7 +184,7 @@ services:
       LOG_LEVEL: gateway_api=info,gateway_proxy=info
       ENTRA_AUTH_ENABLED: "false"
       ENTRA_TENANT_ID: relayna-pentest-tenant
-      ENTRA_AUDIENCE: api://relayna-gateway-pentest
+      ENTRA_APPLICATION_ID: api://relayna-gateway-pentest
       ENTRA_ISSUER: http://mock-provider:4000/oauth
       ENTRA_OIDC_DISCOVERY_URL: http://mock-provider:4000/oauth/.well-known/openid-configuration
       ENTRA_REQUIRED_SCOPE: gateway.invoke

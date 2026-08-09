@@ -12,6 +12,23 @@ const scriptDirectory = fileURLToPath(new URL(".", import.meta.url));
 const generator = join(scriptDirectory, "generate-development-portal-certificate.sh");
 const issuerScript = join(scriptDirectory, "development-oidc.mjs");
 const deploymentManifest = fileURLToPath(new URL("../../deploy/kubernetes/relayna-gateway.yaml", import.meta.url));
+const checkedInHarnesses = [
+  [
+    "../../internal/test-reports/entra-front-door-real-env/docker-compose.yml",
+    "../../internal/test-reports/entra-front-door-real-env/mock-app/server.mjs",
+  ],
+  [
+    "../../internal/test-reports/front-door-penetration/docker-compose.yml",
+    "../../internal/test-reports/front-door-penetration/mock-provider/server.mjs",
+  ],
+  [
+    "../../internal/test-reports/litellm-real-passthrough/docker-compose.yml",
+    "../../internal/test-reports/litellm-real-passthrough/mock-provider/server.mjs",
+  ],
+].map(([compose, issuer]) => [
+  fileURLToPath(new URL(compose, import.meta.url)),
+  fileURLToPath(new URL(issuer, import.meta.url)),
+]);
 const redirectUri = "http://127.0.0.1:18381/admin-ui/auth/callback";
 let directory;
 let privateKey;
@@ -233,4 +250,16 @@ test("raw Kubernetes manifest preserves the Entra certificate and owner routing 
     'relayna.io/control-plane-access: "true"',
   ]) assert.match(manifest, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.doesNotMatch(manifest, /PORTAL_OIDC_CLIENT_SECRET|PORTAL_OIDC_CLIENT_ID|OWNER_ENTRA_AUDIENCE|ENTRA_AUDIENCE/);
+});
+
+test("checked-in Entra harnesses use the shared application and invoke-role contract", async () => {
+  for (const [composePath, issuerPath] of checkedInHarnesses) {
+    const [compose, mockIssuer] = await Promise.all([
+      readFile(composePath, "utf8"),
+      readFile(issuerPath, "utf8"),
+    ]);
+    assert.match(compose, /ENTRA_APPLICATION_ID:/);
+    assert.doesNotMatch(compose, /ENTRA_AUDIENCE:/);
+    assert.match(mockIssuer, /roles: \["gateway\.invoke"\]/);
+  }
 });
