@@ -1,6 +1,7 @@
 // Development-only Entra-shaped OIDC issuer adapted from Arcweft's local
 // confidential-flow fixture. It deliberately refuses production environments.
-import { createHash, createPublicKey, createSign, generateKeyPairSync, randomUUID, timingSafeEqual } from "node:crypto";
+import { constants, createHash, createPublicKey, createSign, generateKeyPairSync, randomUUID, timingSafeEqual, verify, X509Certificate } from "node:crypto";
+import { readFileSync } from "node:fs";
 import http from "node:http";
 
 const environment = String(process.env.RELAYNA_ENV ?? process.env.NODE_ENV ?? "development").toLowerCase();
@@ -11,7 +12,10 @@ const port = Number(process.env.RELAYNA_DEV_OIDC_PORT ?? 18090);
 const issuer = process.env.RELAYNA_DEV_OIDC_ISSUER ?? `http://127.0.0.1:${port}`;
 const tenantId = "00000000-0000-0000-0000-000000000001";
 const browserClientId = "relayna-gateway-local";
-const browserClientSecret = "relayna-development-browser-secret";
+const browserCertificatePath = process.env.RELAYNA_DEV_OIDC_BROWSER_CERTIFICATE_PATH;
+if (!browserCertificatePath) throw new Error("RELAYNA_DEV_OIDC_BROWSER_CERTIFICATE_PATH is required.");
+const browserCertificate = new X509Certificate(readFileSync(browserCertificatePath));
+const browserCertificateThumbprint = createHash("sha256").update(browserCertificate.raw).digest("base64url");
 const browserRedirectUri = process.env.RELAYNA_DEV_OIDC_BROWSER_REDIRECT_URI ?? "http://127.0.0.1:18381/admin-ui/auth/callback";
 const browserPostLogoutRedirectUri = process.env.RELAYNA_DEV_OIDC_BROWSER_POST_LOGOUT_REDIRECT_URI ?? "http://127.0.0.1:18381/admin-ui";
 const ownerAudience = "api://relayna-gateway-owner";
@@ -47,6 +51,7 @@ const privateKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKe
 const publicJwk = createPublicKey(privateKey).export({ format: "jwk" });
 const kid = `relayna-dev-${createHash("sha256").update(JSON.stringify(publicJwk)).digest("hex").slice(0, 16)}`;
 const codes = new Map();
+const assertionJtis = new Map();
 
 function base64url(value) {
   return Buffer.from(typeof value === "string" ? value : JSON.stringify(value)).toString("base64url");
@@ -64,6 +69,48 @@ function secureEqual(left, right) {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function decodeJsonSegment(value) {
+  return JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+}
+
+function validatePrivateKeyJwt(body) {
+  const assertion = body.get("client_assertion") ?? "";
+  if (body.get("client_assertion_type") !== "urn:ietf:params:oauth:client-assertion-type:jwt-bearer") return false;
+  try {
+    const [headerValue, payloadValue, signatureValue, extra] = assertion.split(".");
+    if (!headerValue || !payloadValue || !signatureValue || extra) return false;
+    const header = decodeJsonSegment(headerValue);
+    const payload = decodeJsonSegment(payloadValue);
+    const now = Math.floor(Date.now() / 1000);
+    if (
+      header.alg !== "PS256" || header.typ !== "JWT"
+      || header["x5t#S256"] !== browserCertificateThumbprint
+      || payload.iss !== browserClientId || payload.sub !== browserClientId
+      || payload.aud !== `${issuer}/token`
+      || typeof payload.jti !== "string" || !payload.jti
+      || typeof payload.iat !== "number" || typeof payload.nbf !== "number" || typeof payload.exp !== "number"
+      || payload.iat > now + 30 || payload.nbf > now + 30 || payload.exp <= now
+      || payload.exp - payload.iat > 600 || assertionJtis.has(payload.jti)
+    ) return false;
+    const valid = verify(
+      "sha256",
+      Buffer.from(`${headerValue}.${payloadValue}`),
+      {
+        key: browserCertificate.publicKey,
+        padding: constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: constants.RSA_PSS_SALTLEN_DIGEST,
+      },
+      Buffer.from(signatureValue, "base64url"),
+    );
+    if (!valid) return false;
+    assertionJtis.set(payload.jti, payload.exp);
+    for (const [jti, expiresAt] of assertionJtis) if (expiresAt <= now) assertionJtis.delete(jti);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function json(response, status, body) {
@@ -134,7 +181,7 @@ const server = http.createServer(async (request, response) => {
     jwks_uri: `${issuer}/.well-known/jwks.json`, response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "client_credentials"],
     subject_types_supported: ["public"], id_token_signing_alg_values_supported: ["RS256"],
-    token_endpoint_auth_methods_supported: ["client_secret_post"], code_challenge_methods_supported: ["S256"],
+    token_endpoint_auth_methods_supported: ["private_key_jwt", "client_secret_post"], code_challenge_methods_supported: ["S256"],
   });
   if (url.pathname === "/.well-known/jwks.json") return json(response, 200, { keys: [{ ...publicJwk, kid, use: "sig", alg: "RS256" }] });
   if (url.pathname === "/health") return json(response, 200, { status: "ok", service: "relayna-development-oidc" });
@@ -177,7 +224,7 @@ const server = http.createServer(async (request, response) => {
     const verifierChallenge = createHash("sha256").update(body.get("code_verifier") ?? "").digest("base64url");
     const valid = body.get("grant_type") === "authorization_code"
       && body.get("client_id") === browserClientId
-      && secureEqual(body.get("client_secret") ?? "", browserClientSecret)
+      && validatePrivateKeyJwt(body)
       && body.get("redirect_uri") === browserRedirectUri
       && code && code.expiresAt > Date.now() && code.redirectUri === browserRedirectUri
       && secureEqual(verifierChallenge, code.challenge ?? "");

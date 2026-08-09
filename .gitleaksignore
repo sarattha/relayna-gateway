@@ -43,3 +43,7 @@ d9d1920e2ebab47b23c27e71b6f7aa5da86275f3:internal/test-reports/litellm-real-pass
 d9d1920e2ebab47b23c27e71b6f7aa5da86275f3:internal/test-reports/litellm-real-passthrough/docker-compose.yml:relayna-live-token:89
 6512b61b19a31ba112bb94886b4e7d4286a3dd9f:internal/test-reports/litellm-real-passthrough/docker-compose.yml:relayna-live-token:31
 6512b61b19a31ba112bb94886b4e7d4286a3dd9f:internal/test-reports/litellm-real-passthrough/docker-compose.yml:relayna-live-token:89
+
+# PR #102 briefly used a prose-only private-key placeholder in the example
+# Secret before replacing it with an empty value. No PEM or usable key existed.
+3f125e025eceda2aba3ba3b1a8d52d55bc233c6e:deploy/kubernetes/relayna-gateway.yaml:generic-api-key:81

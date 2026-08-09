@@ -30,7 +30,11 @@ Administrators and registered service owners can sign in with Microsoft Entra
 through a confidential-client OIDC BFF flow. Entra identity tokens stay on the
 server; the browser receives an opaque HttpOnly session and uses a
 session-bound CSRF token for mutations. First-time users remain pending until
-an administrator approves them.
+an administrator approves them. On first deployment, the ConfigMap may
+bootstrap administrators only when the verified tenant, immutable Entra object
+ID, and email match configured allowlists. The confidential client signs PS256
+`private_key_jwt` assertions with a mounted certificate instead of using a
+client secret.
 
 Administrators can assign exact Owner or Viewer access from **Members** and can
 register managed identities for workload monitoring. Service owners see only
@@ -43,7 +47,9 @@ Existing operator tokens remain available under **Emergency operator access**
 for first-administrator bootstrap and recovery. Pending or blocked members can
 also sign out and switch accounts without clearing browser cookies manually.
 See [Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md)
-for deployment configuration and local personas.
+for deployment configuration and local personas, and
+[Entra Integration Requirements](operations/entra-integration-requirements.md)
+for the DevOps application, role, identity, and certificate handoff.
 
 ![Aurora Teal operational Overview](assets/screenshots/admin-ui-2/aurora-teal-overview.png)
 

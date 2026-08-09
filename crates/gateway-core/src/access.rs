@@ -1,11 +1,111 @@
-use crate::{GatewayError, GatewayResult};
+use crate::{EntraIdentityContext, GatewayError, GatewayResult};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use uuid::Uuid;
 
 pub const PORTAL_ROLE_ADMIN: &str = "admin";
 pub const OWNER_WORKLOAD_ROLE: &str = "gateway.monitor.read";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortalAdminBootstrapPolicy {
+    tenant_id: String,
+    emails: BTreeSet<String>,
+    object_ids: BTreeSet<String>,
+}
+
+impl PortalAdminBootstrapPolicy {
+    pub fn new(
+        tenant_id: impl Into<String>,
+        emails: impl IntoIterator<Item = String>,
+        object_ids: impl IntoIterator<Item = String>,
+    ) -> GatewayResult<Self> {
+        let tenant_id = tenant_id.into().trim().to_lowercase();
+        let emails = emails
+            .into_iter()
+            .map(|value| value.trim().to_lowercase())
+            .filter(|value| !value.is_empty())
+            .collect::<BTreeSet<_>>();
+        let object_ids = object_ids
+            .into_iter()
+            .map(|value| value.trim().to_lowercase())
+            .filter(|value| !value.is_empty())
+            .collect::<BTreeSet<_>>();
+        if tenant_id.is_empty() || emails.is_empty() != object_ids.is_empty() {
+            return Err(GatewayError::InvalidConfiguration);
+        }
+        Ok(Self {
+            tenant_id,
+            emails,
+            object_ids,
+        })
+    }
+
+    pub fn authorizes(&self, identity: &EntraIdentityContext) -> bool {
+        identity
+            .tenant_id
+            .trim()
+            .eq_ignore_ascii_case(&self.tenant_id)
+            && identity
+                .object_id
+                .as_deref()
+                .map(str::trim)
+                .map(str::to_lowercase)
+                .is_some_and(|object_id| self.object_ids.contains(&object_id))
+            && identity
+                .email
+                .as_deref()
+                .map(str::trim)
+                .map(str::to_lowercase)
+                .is_some_and(|email| self.emails.contains(&email))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortalMemberLogin {
+    pub tenant_id: String,
+    pub object_id: String,
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    pub bootstrap_admin: bool,
+}
+
+impl PortalMemberLogin {
+    pub fn from_identity(
+        identity: &EntraIdentityContext,
+        bootstrap_policy: &PortalAdminBootstrapPolicy,
+    ) -> GatewayResult<Self> {
+        let tenant_id = identity.tenant_id.trim();
+        let object_id = identity
+            .object_id
+            .as_deref()
+            .or(identity.subject.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or(GatewayError::InvalidEntraToken)?;
+        if tenant_id.is_empty() {
+            return Err(GatewayError::InvalidEntraToken);
+        }
+        Ok(Self {
+            tenant_id: tenant_id.to_owned(),
+            object_id: object_id.to_owned(),
+            email: identity
+                .email
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned),
+            display_name: identity
+                .display_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned),
+            bootstrap_admin: bootstrap_policy.authorizes(identity),
+        })
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -202,10 +302,8 @@ pub struct OwnerServiceSummary {
 pub trait PortalAccessStore: Send + Sync {
     async fn upsert_oidc_member(
         &self,
-        tenant_id: &str,
-        object_id: &str,
-        email: Option<&str>,
-        display_name: Option<&str>,
+        identity: &EntraIdentityContext,
+        bootstrap_policy: &PortalAdminBootstrapPolicy,
         now: DateTime<Utc>,
     ) -> GatewayResult<PortalMember>;
 
@@ -284,14 +382,12 @@ where
 {
     async fn upsert_oidc_member(
         &self,
-        tenant_id: &str,
-        object_id: &str,
-        email: Option<&str>,
-        display_name: Option<&str>,
+        identity: &EntraIdentityContext,
+        bootstrap_policy: &PortalAdminBootstrapPolicy,
         now: DateTime<Utc>,
     ) -> GatewayResult<PortalMember> {
         (**self)
-            .upsert_oidc_member(tenant_id, object_id, email, display_name, now)
+            .upsert_oidc_member(identity, bootstrap_policy, now)
             .await
     }
     async fn list_members(&self) -> GatewayResult<Vec<PortalMember>> {
@@ -439,5 +535,56 @@ mod tests {
         assert!(!member.is_admin());
         member.status = MemberStatus::Active;
         assert!(member.is_admin());
+    }
+
+    #[test]
+    fn bootstrap_admin_requires_the_configured_tenant_object_and_email() {
+        let policy = PortalAdminBootstrapPolicy::new(
+            "tenant-1",
+            ["FIRST.ADMIN@example.test".to_owned()],
+            ["object-1".to_owned()],
+        )
+        .expect("bootstrap policy");
+        let identity = EntraIdentityContext {
+            tenant_id: "tenant-1".into(),
+            subject: Some("subject-1".into()),
+            object_id: Some("object-1".into()),
+            app_id: None,
+            authorized_party: None,
+            email: Some("first.admin@example.test".into()),
+            display_name: Some("First Administrator".into()),
+            nonce: None,
+            scopes: Vec::new(),
+            roles: Vec::new(),
+            groups: Vec::new(),
+            token_version: "2.0".into(),
+            source: crate::EntraIdentitySource::Jwt,
+        };
+        assert!(policy.authorizes(&identity));
+        assert!(
+            PortalMemberLogin::from_identity(&identity, &policy)
+                .expect("member login")
+                .bootstrap_admin
+        );
+
+        let mut reassigned_email = identity.clone();
+        reassigned_email.object_id = Some("replacement-object".into());
+        assert!(!policy.authorizes(&reassigned_email));
+        let mut wrong_tenant = identity.clone();
+        wrong_tenant.tenant_id = "tenant-2".into();
+        assert!(!policy.authorizes(&wrong_tenant));
+        let mut wrong_email = identity;
+        wrong_email.email = Some("different@example.test".into());
+        assert!(!policy.authorizes(&wrong_email));
+
+        assert_eq!(
+            PortalAdminBootstrapPolicy::new(
+                "tenant-1",
+                ["first.admin@example.test".into()],
+                Vec::<String>::new(),
+            )
+            .unwrap_err(),
+            GatewayError::InvalidConfiguration
+        );
     }
 }

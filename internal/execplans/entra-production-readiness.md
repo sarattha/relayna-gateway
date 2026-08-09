@@ -1,0 +1,259 @@
+# Entra Production Readiness for v0.1.24
+
+This ExecPlan is a living document. The sections Progress, Surprises &
+Discoveries, Decision Log, and Outcomes & Retrospective must stay up to date as
+work proceeds. Maintain this document in accordance with `PLANS.md`.
+
+## Purpose / Big Picture
+
+Relayna Gateway 0.1.24 must authenticate its confidential browser client with
+Microsoft Entra by using a certificate-signed `private_key_jwt`, expose the
+service-owner monitoring API through the production Kubernetes control-plane
+path, and give operators a read-only way to verify the checked-in ConfigMap,
+Secrets, mounted certificate material, routing, and live workload. Browser
+tokens remain server-side, existing `/admin-ui` routes remain stable, and exact
+Relayna service bindings continue to constrain every managed-identity token.
+
+The DevOps team owns Helm generation, Entra tenant application provisioning,
+managed-identity creation, AKS workload-identity federation, app-role
+assignment, and production secret synchronization. This plan documents the
+inputs and contracts that work must satisfy but does not automate those
+DevOps-owned operations.
+
+## Progress
+
+- [x] (2026-08-09 06:07Z) Created branch `agent/entra-production-ready`, read
+  repository guidance and mandatory skills, and inspected the local Arcweft
+  confidential-BFF, certificate, development OIDC, and verification patterns.
+- [x] (2026-08-09 06:07Z) Established `v0.1.23` as the released compatibility
+  boundary and received an explicit v0.1.24 production-freeze exception.
+- [x] (2026-08-09 06:25Z) Replaced portal client-secret authentication with PS256
+  `private_key_jwt`, mounted private-key/public-certificate paths, and focused
+  tests, including the local development issuer.
+- [x] (2026-08-09 06:25Z) Added development certificate generation plus live
+  expiry and key/certificate matching checks; rotation and rollback guidance
+  remains in the post-review documentation milestone.
+- [x] (2026-08-09 06:25Z) Routed `/owner/v1` through the private control Ingress
+  and made the NetworkPolicy admit the selected internal ingress controller on
+  port 8081.
+- [x] (2026-08-09 06:25Z) Added read-only verification for the raw Kubernetes
+  ConfigMap, Secrets, Deployment, Ingress, NetworkPolicy, certificate pair, and
+  running workload.
+- [x] (2026-08-09 07:06Z) Passed focused Rust and Node checks and the mandatory
+  Rust, dependency, secret, and static-analysis stack for tracked PR scope.
+- [x] (2026-08-09 07:02Z) Built the image, exercised the raw manifest on an
+  isolated Docker Desktop kind cluster, and used Computer to test signed-out,
+  administrator, pending, blocked, owner, managed-identity, logout, and scoped
+  `/owner/v1` paths.
+- [x] (2026-08-09 07:20Z) Committed and pushed the scoped patch, opened ready
+  PR #102, and received the first Codex review.
+- [x] (2026-08-09 07:32Z) Fixed all three actionable first-review threads,
+  replied with commit and test evidence, and resolved them on PR #102.
+- [x] (2026-08-09 07:47Z) Finalized the 0.1.24 changelog, release and deployment
+  documentation, certificate rotation/rollback guide, and DevOps Entra
+  requirements report.
+- [x] (2026-08-09 07:47Z) Rebuilt the reviewed release image in Docker Desktop,
+  loaded it into the isolated kind cluster, passed every raw production-path
+  deployment check, and reconfirmed managed-identity authorization returns 200
+  for `orders` and 403 for an unassigned service.
+
+## Surprises & Discoveries
+
+- Observation: PR #99 already added `PORTAL_OIDC_*` and `OWNER_ENTRA_*` to the
+  raw Kubernetes manifest, so issue #100's deployment checklist is partly
+  stale.
+  Evidence: `deploy/kubernetes/relayna-gateway.yaml` on `main`.
+- Observation: the control Ingress exposes only `/admin-ui`, although owner
+  APIs are served from the same Axum control listener under `/owner/v1`.
+  Evidence: `deploy/kubernetes/relayna-gateway.yaml` and
+  `crates/gateway-api/src/app.rs`.
+- Observation: Arcweft signs five-minute client assertions with PS256, exact
+  token-endpoint audience, issuer and subject equal to client ID, unique JTI,
+  and an `x5t#S256` certificate thumbprint.
+  Evidence: local Arcweft `frontend/lib/bff/crypto.ts` and
+  `frontend/lib/bff/oidc.ts`.
+- Observation: a user-owned `.gitignore` change was present before this branch
+  and is excluded from this work.
+  Evidence: initial `git status -sb` and `.gitignore` diff.
+- Observation: the GitHub CLI token is currently invalid. The connected GitHub
+  app can create and inspect the PR, but thread-aware review resolution will
+  require refreshed CLI authentication if the token remains invalid.
+  Evidence: initial `gh auth status`.
+- Observation: the mandatory verifier's Trivy command scans the user-owned,
+  git-ignored `design-prototypes/` directory and found four unrelated frontend
+  advisories there; the tracked PR scope reports zero HIGH/CRITICAL findings
+  when that directory is excluded.
+  Evidence: verification transcript and `git check-ignore design-prototypes`.
+- Observation: Docker Desktop already exposed local ports 18090 and 18381 for
+  unrelated Relayna/Arcweft work. An isolated kind-only OIDC sidecar and ports
+  28090/28381 prevented stale UI state from contaminating the browser test.
+  Evidence: `lsof`, kind port-forward output, and Computer UI state showing
+  v0.1.24 with an empty PostgreSQL database.
+- Observation: first-administrator bootstrap is durable. After the configured
+  email signed in, emptying `PORTAL_ADMIN_EMAILS` and restarting both replicas
+  still returned the persisted active Admin member.
+  Evidence: Computer UI sign-in before and after the kind rollout.
+- Observation: the first Codex review correctly identified that email is a
+  mutable Entra claim and that syntactically valid certificate bytes did not
+  prove the certificate belonged to the configured private key.
+  Evidence: PR #102 review threads and the added gateway-core and portal tests.
+- Observation: using the RustCrypto `rsa` crate solely to compare key material
+  introduced `RUSTSEC-2023-0071` on a production private-key path.
+  Evidence: the mandatory `cargo deny check` failure after the first review
+  fix; the replacement OpenSSL parser passes the dependency policy.
+
+## Decision Log
+
+- Decision: use direct replacement rather than support both client secrets and
+  certificates.
+  Rationale: `v0.1.23` is the latest release tag; portal OIDC configuration is
+  unreleased branch-local behavior intended for v0.1.24. One fail-closed
+  certificate path is simpler and avoids shipping a production secret mode.
+  Date/Author: 2026-08-09 / Codex.
+- Decision: mount the private key and public certificate from a dedicated
+  Kubernetes Secret rather than inject PEM material through `envFrom`.
+  Rationale: the existing application Secret is loaded into environment
+  variables. A dedicated read-only volume follows Arcweft's production pattern
+  and keeps key bytes out of environment variables and ConfigMaps.
+  Date/Author: 2026-08-09 / Codex.
+- Decision: keep Helm, Entra provisioning, and AKS workload-identity automation
+  out of this patch.
+  Rationale: the user assigned those responsibilities to DevOps and requested
+  only the raw ConfigMap/Secret contract plus a requirements report.
+  Date/Author: 2026-08-09 / Codex.
+- Decision: accept the user-authorized production-freeze exception for the
+  scoped v0.1.24 readiness patch.
+  Rationale: the requested authentication and network fixes must land before
+  production-ready Entra support can be claimed for v0.1.24.
+  Date/Author: 2026-08-09 / Codex.
+- Decision: require the configured tenant, immutable Entra object ID, and email
+  to match before the first sign-in can bootstrap an administrator, and make
+  gateway-core own that policy decision.
+  Rationale: object ID prevents a reassigned or renamed email claim from
+  granting administrative access, while keeping the ConfigMap-driven Arcweft
+  bootstrap pattern requested for first deployment.
+  Date/Author: 2026-08-09 / Codex.
+- Decision: parse the mounted X.509 certificate and compare its RSA public key
+  to the mounted private key during startup.
+  Rationale: thumbprint computation alone accepted unrelated certificates and
+  deferred a deterministic configuration failure until Entra token exchange.
+  Date/Author: 2026-08-09 / Codex.
+- Decision: use the maintained OpenSSL binding for startup-only RSA/X.509
+  parsing and public-key comparison.
+  Rationale: it preserves fail-closed certificate validation without directly
+  exposing the unpatched RustCrypto RSA implementation to production key
+  material.
+  Date/Author: 2026-08-09 / Codex.
+
+## Outcomes & Retrospective
+
+Relayna Gateway now follows Arcweft's certificate-backed confidential-client
+pattern, rejects invalid or mismatched certificate material at startup, and
+binds first-administrator bootstrap to verified tenant, immutable object ID,
+and email in gateway-core. The raw Kubernetes contract routes both private
+control prefixes and includes read-only deployment verification without adding
+Helm, tenant, or workload-identity automation.
+
+The full Rust workspace suite, Clippy, release metadata, strict docs build,
+Node Entra tests, rebuilt Docker image, kind rollout, production-path verifier,
+managed-identity allow/deny checks, and all browser role journeys passed. The
+first Codex review's three threads were answered and resolved. The mandatory
+security wrapper remains affected only by the pre-existing ignored
+`design-prototypes/` advisories documented above; tracked PR scope is clean.
+
+## Context and Orientation
+
+`crates/gateway-api/src/portal.rs` owns the confidential OIDC token exchange.
+`crates/gateway-api/src/config.rs` maps environment variables into the runtime.
+`scripts/entra/development-oidc.mjs` is the production-refusing local identity
+provider used for browser and workload journeys. The raw production deployment
+contract is `deploy/kubernetes/relayna-gateway.yaml`; its control Service serves
+both `/admin-ui` and `/owner/v1` on port 8081.
+
+`private_key_jwt` is OAuth client authentication in which Relayna signs a
+short-lived JWT with the private half of a certificate registered on the Entra
+Web application. The assertion is sent only to the discovered token endpoint.
+The public certificate is not secret; the private key is mounted read-only from
+a DevOps-managed Kubernetes Secret.
+
+## Compatibility Boundary
+
+Compatibility boundary: latest release tag `v0.1.23`. Portal OIDC certificate
+configuration and `/owner/v1` were introduced after that tag, so the secret
+configuration can be replaced directly and the missing Kubernetes route can be
+added without a compatibility shim. Existing released `/admin-ui`, request
+plane, virtual-key, database, Redis, streaming, and usage-event contracts remain
+unchanged.
+
+## Plan of Work
+
+Update the portal runtime to load a PKCS#8 or PKCS#1 RSA private key and matching
+X.509 certificate paths at startup, create a five-minute PS256 assertion bound
+to the discovered token endpoint, and send the standard client assertion form
+fields. Update the local development issuer to validate the same protected
+header, claims, signature, lifetime, and single-use JTI behavior.
+
+Add a development certificate generator and a read-only deployment verifier.
+Update the Kubernetes ConfigMap with file paths, add a dedicated certificate
+Secret and read-only volume, add `/owner/v1` to the control Ingress, and align
+the NetworkPolicy with the internal ingress namespace. Update operator docs for
+initial install, overlap rotation, rollback, diagnosis, and the exact DevOps
+application/role/managed-identity requirements.
+
+## Concrete Steps
+
+Run focused tests while iterating, then from the repository root run:
+
+    cargo test -p gateway-api portal --all-features
+    node --test scripts/entra/entra-integration.test.mjs
+    bash .codex/skills/code-change-verification/scripts/run.sh
+    python3 scripts/validate-release-metadata.py v0.1.24
+
+Build the image, create or reuse a local kind cluster backed by Docker Desktop,
+apply the raw manifest and supporting local PostgreSQL/Redis/LiteLLM fixtures,
+run the deployment verifier, and exercise portal login, pending, administrator,
+owner, denied, logout, and scoped `/owner/v1` journeys through Computer.
+
+## Validation and Acceptance
+
+The portal token request must contain `client_assertion_type` and a PS256
+`client_assertion`, contain no client secret, use the exact discovered token
+endpoint as audience, and carry the public certificate's SHA-256 thumbprint.
+Missing/unreadable/invalid certificate material must fail startup. The local
+issuer must reject wrong algorithms, thumbprints, audiences, expired/replayed
+assertions, and invalid signatures.
+
+The raw manifest must mount certificate material read-only, expose both
+`/admin-ui` and `/owner/v1` through the control Ingress, and admit the internal
+ingress controller to port 8081. The verifier and kind journey must prove the
+ConfigMap, Secret, volume, route, NetworkPolicy, rollout, certificate pair,
+health, browser roles, and exact owner-service denial behavior.
+
+## Idempotence and Recovery
+
+Certificate generation writes only to an explicit or ignored development
+directory and refuses to overwrite existing material. Verification is
+read-only. Kubernetes resources are declarative and safe to reapply. Rotation
+keeps both old and new public certificates registered during rollout; rollback
+restores the previous Secret version while the old certificate remains valid.
+No tenant object, managed identity, role assignment, database row, or Git tag is
+created by the operational verifier.
+
+## Artifacts and Notes
+
+The final DevOps report will list the confidential Web application, owner API
+resource/audience, exact application role, required managed identities and
+Relayna bindings, redirect/logout URIs, issuer/discovery values, certificate
+Secret keys and mount paths, verification commands, and rotation/rollback
+ownership.
+
+## Interfaces and Dependencies
+
+The final runtime interface uses `PORTAL_OIDC_PRIVATE_KEY_PATH` and
+`PORTAL_OIDC_CERTIFICATE_PATH` instead of `PORTAL_OIDC_CLIENT_SECRET`.
+`PORTAL_ADMIN_EMAILS` and `PORTAL_ADMIN_OBJECT_IDS` must either both be empty
+or both be populated; the first administrator must match the configured
+tenant, immutable object ID, and email.
+`OWNER_ENTRA_*` remains unchanged. The standard assertion type is
+`urn:ietf:params:oauth:client-assertion-type:jwt-bearer`; PS256 and
+`x5t#S256` match Arcweft and Entra's confidential-client posture.

@@ -1,50 +1,101 @@
 # Entra portal and service-owner monitoring
 
-Relayna Gateway serves all human browser views from `/admin-ui`. Microsoft
-Entra ID proves human identity through a confidential OIDC BFF flow; the browser
-receives an opaque HttpOnly session cookie, not an Entra token. Relayna's
-`portal_members` and `service_memberships` records decide whether that identity
-is pending, active, blocked, an administrator, an Owner, or a Viewer.
+Relayna Gateway serves human browser views from `/admin-ui`. Microsoft Entra ID
+proves human identity through a confidential OIDC BFF flow; the browser receives
+an opaque HttpOnly session cookie, not an Entra token. Relayna's persisted
+memberships decide whether the identity is pending, active, blocked, an
+administrator, an Owner, or a Viewer.
 
-Existing operator tokens remain available as break-glass credentials. Use one
-to approve the first Entra administrator from **Members**, then use Entra for
-normal administration.
+Release `0.1.24` authenticates the confidential client with a certificate-signed
+PS256 `private_key_jwt`. It does not accept a portal client secret. The raw
+ConfigMap and Secrets in `deploy/kubernetes/relayna-gateway.yaml` are the
+deployment contract; Helm rendering, tenant provisioning, managed-identity
+creation, and AKS workload-identity federation remain DevOps-owned.
+
+See [Entra Integration Requirements](entra-integration-requirements.md) for the
+complete application, role, managed-identity, certificate, and issuer handoff.
 
 ## Routes
 
 - Browser portal: `/admin-ui`
 - BFF protocol: `/admin-ui/auth/*`
-- Existing administrator APIs: `/admin-ui/admin/*`
+- Administrator APIs: `/admin-ui/admin/*`
 - Service-owner API: `/owner/v1/services/{service_name}/*`
 - Gateway request plane: `/v1/*` and `/services/*`
 
-Owner endpoints include service details, dashboard aggregates, sanitized usage
-events/request logs, failures, and endpoint breakdowns. The server always
-overwrites the usage query's service filter with the service in the route.
+The private control Ingress must route both `/admin-ui` and `/owner/v1` to the
+control Service on port 8081. Owner endpoints include service details,
+dashboard aggregates, sanitized usage events and request logs, failures,
+endpoint breakdowns, and exports. The server overwrites the usage query's
+service filter with the service named in the route.
 
 ## Human OIDC configuration
+
+Put non-secret values in `relayna-gateway-config`:
 
 ```text
 PORTAL_OIDC_ENABLED=true
 PORTAL_OIDC_TENANT_ID=<tenant UUID>
-PORTAL_OIDC_CLIENT_ID=<confidential browser application ID>
-PORTAL_OIDC_CLIENT_SECRET=<secret reference>
+PORTAL_OIDC_CLIENT_ID=<confidential Web application client ID>
+PORTAL_OIDC_PRIVATE_KEY_PATH=/var/run/secrets/relayna-portal-oidc/portal-private-key.pem
+PORTAL_OIDC_CERTIFICATE_PATH=/var/run/secrets/relayna-portal-oidc/portal-certificate.pem
 PORTAL_OIDC_ISSUER=https://login.microsoftonline.com/<tenant>/v2.0
 PORTAL_OIDC_DISCOVERY_URL=https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration
 PORTAL_OIDC_REDIRECT_URI=https://gateway.example/admin-ui/auth/callback
 PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI=https://gateway.example/admin-ui
+PORTAL_ADMIN_EMAILS=admin@example.com
+PORTAL_ADMIN_OBJECT_IDS=<immutable Entra user object ID>
 PORTAL_SESSION_TTL_SECONDS=28800
 PORTAL_LOGIN_TTL_SECONDS=600
 PORTAL_SESSION_COOKIE_SECURE=true
 ```
 
+`PORTAL_ADMIN_EMAILS` implements the requested first-deployment ConfigMap
+bootstrap pattern. For safety, `PORTAL_ADMIN_OBJECT_IDS` must be configured with
+it. Gateway grants the initial Admin role only when the verified token's tenant,
+immutable `oid`, and normalized email all appear in the configured allowlists.
+If one list is populated and the other is empty, startup fails. After each
+intended administrator has signed in and the persisted active Admin role is
+verified, remove both settings and roll the Deployment. Existing persisted
+roles remain active.
+
 The callback validates single-use state, nonce, PKCE S256, signature, issuer,
 tenant, audience, not-before, and expiry. A short-lived HttpOnly login cookie
-binds the transaction to the browser that initiated sign-in, and expired or
-abandoned transactions are pruned as new logins are created. Cookie-authenticated
-Admin mutations also require the session-bound `x-csrf-token` value. Sign-out
-revokes the Relayna session and then navigates through Entra's discovered
-end-session endpoint before returning to `PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI`.
+binds the transaction to the initiating browser. Cookie-authenticated Admin
+mutations require the session-bound `x-csrf-token`. Sign-out revokes the Relayna
+session and then uses Entra's discovered end-session endpoint.
+
+## Certificate Secret and lifecycle
+
+DevOps must create `relayna-gateway-portal-oidc` with these exact keys:
+
+```text
+portal-private-key.pem       PKCS#8 or PKCS#1 RSA private key
+portal-certificate.pem       matching X.509 public certificate
+```
+
+The Deployment mounts the Secret read-only at
+`/var/run/secrets/relayna-portal-oidc`. Register only the public certificate on
+the portal Web application. Gateway parses the certificate, verifies that its
+RSA public key matches the private key, computes `x5t#S256`, and fails startup
+on missing, invalid, or mismatched material. Client assertions use PS256, the
+client ID as issuer and subject, the exact discovered token endpoint as
+audience, a unique JTI, and a five-minute lifetime.
+
+Rotate without downtime:
+
+1. Generate a new RSA key and certificate in the approved key-management path.
+2. Add the new public certificate to the Entra Web application while the old
+   certificate remains registered.
+3. Update both Secret keys as one version and roll the Gateway Deployment.
+4. Run `scripts/entra/verify-deployment.sh`, sign in, sign out, and sign in
+   again through `/admin-ui`.
+5. Keep the old Entra certificate and recoverable previous Secret version for
+   the rollback window, then remove them after the new rollout is stable.
+
+Rollback by restoring both files from the previous Secret version and rolling
+the Deployment while the previous public certificate is still registered in
+Entra. Never mix a private key from one version with a certificate from another.
 
 ## Workload monitoring configuration
 
@@ -54,42 +105,54 @@ OWNER_ENTRA_TENANT_ID=<tenant UUID>
 OWNER_ENTRA_AUDIENCE=api://relayna-gateway-owner
 OWNER_ENTRA_ISSUER=https://login.microsoftonline.com/<tenant>/v2.0
 OWNER_ENTRA_OIDC_DISCOVERY_URL=https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration
+OWNER_ENTRA_ACCEPTED_ALGORITHMS=RS256
 ```
 
-Register each managed identity in the portal with its tenant, client ID,
-optional exact object ID, service, and required application role. The default
-role is `gateway.monitor.read`. A valid tenant-wide token without an enabled
-exact Relayna binding cannot read a service.
+Register each managed identity in Relayna with its tenant ID, client ID,
+immutable object ID, exact service, and `gateway.monitor.read` application
+role. A tenant-wide token or Entra app-role assignment without an enabled exact
+Relayna binding cannot read any service.
+
+## Raw Kubernetes verification
+
+This verification intentionally targets the current raw manifest, not a Helm
+layout:
+
+```bash
+kubectl apply --dry-run=client -f deploy/kubernetes/relayna-gateway.yaml
+scripts/entra/verify-deployment.sh \
+  --namespace <gateway-namespace> \
+  --control-ingress-namespace <internal-ingress-namespace> \
+  --certificate-file <approved-public-certificate.pem>
+```
+
+The verifier is read-only. It checks ConfigMap settings, first-admin bootstrap
+consistency, Secret mounts, certificate validity and key matching, seven-day
+expiry headroom, `/admin-ui` and `/owner/v1` routing, NetworkPolicy admission,
+and Deployment availability.
 
 ## Local development issuer
 
-The local issuer is adapted from Arcweft's development OIDC fixture and refuses
-production environments. Start it with:
+The local issuer is adapted from Arcweft's certificate-authenticated fixture
+and refuses production environments. Generate development-only material, then
+start it:
 
 ```bash
-node scripts/entra/development-oidc.mjs
+scripts/entra/generate-development-portal-certificate.sh
+RELAYNA_DEV_OIDC_BROWSER_CERTIFICATE_PATH=target/development-oidc/portal-certificate.pem \
+  node scripts/entra/development-oidc.mjs
 ```
 
-Configure the gateway control listener on `127.0.0.1:18381` and use:
-
-```text
-PORTAL_OIDC_TENANT_ID=00000000-0000-0000-0000-000000000001
-PORTAL_OIDC_CLIENT_ID=relayna-gateway-local
-PORTAL_OIDC_CLIENT_SECRET=relayna-development-browser-secret
-PORTAL_OIDC_ISSUER=http://127.0.0.1:18090
-PORTAL_OIDC_DISCOVERY_URL=http://127.0.0.1:18090/.well-known/openid-configuration
-PORTAL_OIDC_REDIRECT_URI=http://127.0.0.1:18381/admin-ui/auth/callback
-PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI=http://127.0.0.1:18381/admin-ui
-PORTAL_SESSION_COOKIE_SECURE=false
-OWNER_ENTRA_TENANT_ID=00000000-0000-0000-0000-000000000001
-OWNER_ENTRA_AUDIENCE=api://relayna-gateway-owner
-OWNER_ENTRA_ISSUER=http://127.0.0.1:18090
-OWNER_ENTRA_OIDC_DISCOVERY_URL=http://127.0.0.1:18090/.well-known/openid-configuration
-```
-
+Set Gateway's `PORTAL_OIDC_PRIVATE_KEY_PATH` and
+`PORTAL_OIDC_CERTIFICATE_PATH` to the generated files, and use issuer/discovery
+URLs rooted at `http://127.0.0.1:18090`. Use client ID
+`relayna-gateway-local`, redirect URI
+`http://127.0.0.1:18381/admin-ui/auth/callback`, logout return
+`http://127.0.0.1:18381/admin-ui`, and `PORTAL_SESSION_COOKIE_SECURE=false`.
+Use the generated private-key and certificate paths instead of a client secret.
 The account chooser provides pending, administrator, and service-owner-shaped
-identities. They still begin pending; use break-glass access to approve and
-assign them. The workload fixture uses client ID
+identities. The development administrator object ID is
+`00000000-0000-0000-0000-000000000002`. The workload fixture uses client ID
 `00000000-0000-0000-0000-000000000101`, object ID
 `00000000-0000-0000-0000-000000000102`, and the development-only secret printed
-in the source file. Never deploy this issuer or its fixed credentials.
+in the source. Never deploy the fixture, its keys, or its credentials.

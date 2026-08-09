@@ -800,22 +800,9 @@ async fn portal_auth_callback(
     if identity.nonce.as_deref() != Some(transaction.nonce.as_str()) {
         return error_response(&headers, GatewayError::InvalidOidcTransaction);
     }
-    let Some(object_id) = identity
-        .object_id
-        .as_deref()
-        .or(identity.subject.as_deref())
-    else {
-        return error_response(&headers, GatewayError::InvalidEntraToken);
-    };
     let member = match state
         .store
-        .upsert_oidc_member(
-            &identity.tenant_id,
-            object_id,
-            identity.email.as_deref(),
-            identity.display_name.as_deref(),
-            Utc::now(),
-        )
+        .upsert_oidc_member(&identity, &oidc.admin_bootstrap_policy, Utc::now())
         .await
     {
         Ok(member) => member,
@@ -5433,19 +5420,20 @@ mod tests {
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
         default_operator_roles, default_operator_scopes, AuthenticatedKey, EntraAuthConfig,
-        LiteLlmPassthroughSettings, OpenAiRouteConfigPatchRequest, OpenAiRouteMode,
-        OpenAiRouteSetting, OperatorTokenResponse, PatchValue, ProjectCreateRequest,
-        ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest,
-        ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealth, Route, ServiceCostMode,
-        ServiceResponse, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
-        StoredGatewayAuthSettings, StoredStudioConnection, StudioConnectionPatchRequest,
-        UsageBreakdown, UsageExportRow, UsagePage, UsageServiceTimeseriesPoint, UsageStatus,
-        UsageSummary, UsageTimeseriesPoint,
+        EntraIdentityContext, LiteLlmPassthroughSettings, OpenAiRouteConfigPatchRequest,
+        OpenAiRouteMode, OpenAiRouteSetting, OperatorTokenResponse, PatchValue,
+        PortalAdminBootstrapPolicy, PortalMemberLogin, ProjectCreateRequest, ProjectPatchRequest,
+        ProjectResponse, ProviderConfigCreateRequest, ProviderConfigPatchRequest,
+        ProviderConfigResponse, ProviderHealth, Route, ServiceCostMode, ServiceResponse,
+        ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse, StoredGatewayAuthSettings,
+        StoredStudioConnection, StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow,
+        UsagePage, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary, UsageTimeseriesPoint,
     };
     use std::{
         collections::BTreeMap,
         io::{Read, Write},
         net::TcpListener,
+        path::PathBuf,
         process::{Child, Command, Stdio},
         sync::{mpsc, Mutex},
         thread,
@@ -5504,35 +5492,45 @@ mod tests {
     impl PortalAccessStore for MemoryStore {
         async fn upsert_oidc_member(
             &self,
-            tenant_id: &str,
-            object_id: &str,
-            email: Option<&str>,
-            display_name: Option<&str>,
+            identity: &EntraIdentityContext,
+            bootstrap_policy: &PortalAdminBootstrapPolicy,
             now: chrono::DateTime<Utc>,
         ) -> GatewayResult<PortalMember> {
+            let login = PortalMemberLogin::from_identity(identity, bootstrap_policy)?;
             let mut members = self.portal_members.lock().expect("lock poisoned");
-            if let Some(member) = members
-                .iter_mut()
-                .find(|member| member.tenant_id == tenant_id && member.object_id == object_id)
-            {
-                if email.is_some() {
-                    member.email = email.map(ToOwned::to_owned);
+            if let Some(member) = members.iter_mut().find(|member| {
+                member.tenant_id == login.tenant_id && member.object_id == login.object_id
+            }) {
+                if login.email.is_some() {
+                    member.email = login.email.clone();
                 }
-                if display_name.is_some() {
-                    member.display_name = display_name.map(ToOwned::to_owned);
+                if login.display_name.is_some() {
+                    member.display_name = login.display_name.clone();
                 }
                 member.last_sign_in_at = Some(now);
                 member.updated_at = now;
+                if login.bootstrap_admin && member.status == MemberStatus::Pending {
+                    member.status = MemberStatus::Active;
+                    member.roles = vec![gateway_core::PORTAL_ROLE_ADMIN.to_owned()];
+                }
                 return Ok(member.clone());
             }
             let member = PortalMember {
                 id: Uuid::new_v4(),
-                tenant_id: tenant_id.to_owned(),
-                object_id: object_id.to_owned(),
-                email: email.map(ToOwned::to_owned),
-                display_name: display_name.map(ToOwned::to_owned),
-                status: MemberStatus::Pending,
-                roles: Vec::new(),
+                tenant_id: login.tenant_id,
+                object_id: login.object_id,
+                email: login.email,
+                display_name: login.display_name,
+                status: if login.bootstrap_admin {
+                    MemberStatus::Active
+                } else {
+                    MemberStatus::Pending
+                },
+                roles: if login.bootstrap_admin {
+                    vec![gateway_core::PORTAL_ROLE_ADMIN.to_owned()]
+                } else {
+                    Vec::new()
+                },
                 last_sign_in_at: Some(now),
                 created_at: now,
                 updated_at: now,
@@ -7950,6 +7948,29 @@ mod tests {
         }
     }
 
+    fn test_entra_identity(
+        tenant_id: &str,
+        object_id: &str,
+        email: &str,
+        display_name: &str,
+    ) -> EntraIdentityContext {
+        EntraIdentityContext {
+            tenant_id: tenant_id.to_owned(),
+            subject: Some(object_id.to_owned()),
+            object_id: Some(object_id.to_owned()),
+            app_id: None,
+            authorized_party: None,
+            email: Some(email.to_owned()),
+            display_name: Some(display_name.to_owned()),
+            nonce: None,
+            scopes: Vec::new(),
+            roles: Vec::new(),
+            groups: Vec::new(),
+            token_version: "2.0".into(),
+            source: gateway_core::EntraIdentitySource::Jwt,
+        }
+    }
+
     fn seed_portal_session(store: &MemoryStore, member: PortalMember) -> (String, String) {
         let raw_session = random_opaque_token();
         let raw_csrf = random_opaque_token();
@@ -7971,12 +7992,57 @@ mod tests {
         (raw_session, raw_csrf)
     }
 
-    struct DevOidcProcess(Child);
+    struct TestPortalCertificate {
+        directory: PathBuf,
+        private_key_path: String,
+        certificate_path: String,
+    }
+
+    impl Drop for TestPortalCertificate {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.directory);
+        }
+    }
+
+    fn test_portal_certificate() -> TestPortalCertificate {
+        let directory = std::env::temp_dir().join(format!(
+            "relayna-app-portal-certificate-test-{}",
+            Uuid::new_v4().simple()
+        ));
+        let generator = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../scripts/entra/generate-development-portal-certificate.sh");
+        let status = Command::new("bash")
+            .arg(generator)
+            .args(["--output-dir"])
+            .arg(&directory)
+            .args(["--days", "1"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("generate development portal certificate");
+        assert!(status.success(), "generate development portal certificate");
+        TestPortalCertificate {
+            private_key_path: directory
+                .join("portal-private-key.pem")
+                .to_string_lossy()
+                .into_owned(),
+            certificate_path: directory
+                .join("portal-certificate.pem")
+                .to_string_lossy()
+                .into_owned(),
+            directory,
+        }
+    }
+
+    struct DevOidcProcess {
+        child: Child,
+        certificate: TestPortalCertificate,
+    }
 
     impl Drop for DevOidcProcess {
         fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
+            let _ = self.child.kill();
+            let _ = self.child.wait();
         }
     }
 
@@ -7987,10 +8053,15 @@ mod tests {
         let issuer = format!("http://127.0.0.1:{port}");
         let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../scripts/entra/development-oidc.mjs");
+        let certificate = test_portal_certificate();
         let child = Command::new("node")
             .arg(script)
             .env("RELAYNA_DEV_OIDC_PORT", port.to_string())
             .env("RELAYNA_DEV_OIDC_ISSUER", &issuer)
+            .env(
+                "RELAYNA_DEV_OIDC_BROWSER_CERTIFICATE_PATH",
+                &certificate.certificate_path,
+            )
             .env(
                 "RELAYNA_DEV_OIDC_BROWSER_REDIRECT_URI",
                 "http://127.0.0.1:18381/admin-ui/auth/callback",
@@ -8011,7 +8082,7 @@ mod tests {
                 .await
                 .is_ok_and(|response| response.status().is_success())
             {
-                return (DevOidcProcess(child), issuer);
+                return (DevOidcProcess { child, certificate }, issuer);
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -8320,12 +8391,22 @@ mod tests {
         let store = default_store();
         let admin = active_portal_member(true);
         let (raw_session, raw_csrf) = seed_portal_session(&store, admin);
-        let pending = PortalAccessStore::upsert_oidc_member(
-            &store,
+        let pending_identity = test_entra_identity(
             "tenant-test",
             "pending-object",
-            Some("pending@relayna.test"),
-            Some("Pending Owner"),
+            "pending@relayna.test",
+            "Pending Owner",
+        );
+        let bootstrap_policy = PortalAdminBootstrapPolicy::new(
+            "tenant-test",
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+        )
+        .expect("empty bootstrap policy");
+        let pending = PortalAccessStore::upsert_oidc_member(
+            &store,
+            &pending_identity,
+            &bootstrap_policy,
             Utc::now(),
         )
         .await
@@ -8692,11 +8773,15 @@ mod tests {
         let admin = active_portal_member(true);
         let (raw_session, raw_csrf) = seed_portal_session(&store, admin);
         let mut state = test_state(store.clone());
+        let certificate = test_portal_certificate();
         state.portal_oidc = Some(Arc::new(
             PortalOidcRuntime::new(crate::portal::PortalOidcConfig {
                 tenant_id: "tenant-test".into(),
                 client_id: "browser-client".into(),
-                client_secret: "fixture-value".into(),
+                private_key_path: certificate.private_key_path.clone(),
+                certificate_path: certificate.certificate_path.clone(),
+                admin_emails: Vec::new(),
+                admin_object_ids: Vec::new(),
                 issuer: "http://127.0.0.1:9".into(),
                 discovery_url: "http://127.0.0.1:9/.well-known/openid-configuration".into(),
                 redirect_uri: "http://127.0.0.1:18381/admin-ui/auth/callback".into(),
@@ -8839,7 +8924,7 @@ mod tests {
 
     #[tokio::test]
     async fn development_oidc_drives_browser_and_workload_authentication_end_to_end() {
-        let (_oidc, issuer) = start_development_oidc().await;
+        let (oidc, issuer) = start_development_oidc().await;
         let store = default_store();
         let mut service = openapi_test_service("http://orders.internal".to_owned());
         service.name = "orders".to_owned();
@@ -8864,7 +8949,10 @@ mod tests {
         let portal_config = crate::portal::PortalOidcConfig {
             tenant_id: "00000000-0000-0000-0000-000000000001".into(),
             client_id: "relayna-gateway-local".into(),
-            client_secret: "relayna-development-browser-secret".into(),
+            private_key_path: oidc.certificate.private_key_path.clone(),
+            certificate_path: oidc.certificate.certificate_path.clone(),
+            admin_emails: vec!["gateway.admin@relayna.dev".into()],
+            admin_object_ids: vec!["00000000-0000-0000-0000-000000000002".into()],
             issuer: issuer.clone(),
             discovery_url: format!("{issuer}/.well-known/openid-configuration"),
             redirect_uri: "http://127.0.0.1:18381/admin-ui/auth/callback".into(),
@@ -8924,7 +9012,7 @@ mod tests {
         .unwrap();
         authorize
             .query_pairs_mut()
-            .append_pair("mock_user", "service_owner");
+            .append_pair("mock_user", "gateway_admin");
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -8981,8 +9069,9 @@ mod tests {
         assert_eq!(session.status(), StatusCode::OK);
         let session = response_json(session).await;
         assert_eq!(session["authenticated"], true);
-        assert_eq!(session["member"]["status"], "pending");
-        assert_eq!(session["member"]["email"], "orders.owner@relayna.dev");
+        assert_eq!(session["member"]["status"], "active");
+        assert_eq!(session["member"]["email"], "gateway.admin@relayna.dev");
+        assert_eq!(session["member"]["roles"], serde_json::json!(["admin"]));
         let csrf_token = session["csrf_token"].as_str().unwrap();
         let logout = app
             .clone()

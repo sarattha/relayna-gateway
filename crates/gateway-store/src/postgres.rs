@@ -4,8 +4,9 @@ use gateway_core::{
     access::{
         ManagedIdentityBinding, ManagedIdentityCreateRequest, ManagedIdentityPatchRequest,
         MemberPatchRequest, MemberStatus, NewPortalSession, OidcLoginTransaction,
-        PortalAccessStore, PortalMember, ServiceMemberRole, ServiceMembership,
-        ServiceMembershipUpsertRequest, StoredPortalSession, PORTAL_ROLE_ADMIN,
+        PortalAccessStore, PortalAdminBootstrapPolicy, PortalMember, PortalMemberLogin,
+        ServiceMemberRole, ServiceMembership, ServiceMembershipUpsertRequest, StoredPortalSession,
+        PORTAL_ROLE_ADMIN,
     },
     admin::{
         AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse,
@@ -42,20 +43,21 @@ use gateway_core::{
     verify_stored_operator_token, AdminAuditStore, AdminGuardrailDefinitionResponse, AdminKeyStore,
     AdminKeyUsageSummary, AdminOpenAiRouteStore, AdminPolicyLayerStore, AdminProjectStore,
     AuditEvent, AuditEventCreate, AuditEventQuery, CircuitBreakerState, DebugBundle,
-    FallbackAttempt, GatewayError, GatewayResult, GuardrailAdminCreateRequest,
-    GuardrailAdminPatchRequest, GuardrailDefinition, GuardrailEventQuery, GuardrailExecutionEvent,
-    GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPolicy,
-    GuardrailProviderKind, GuardrailStore, KeyPolicy, LiteLlmPassthroughSettings,
-    LiteLlmPassthroughSettingsPatchRequest, LiteLlmRouteLimits, OpenAiRouteConfigPatchRequest,
-    OpenAiRouteMode, OpenAiRouteSetting, OpenAiRouteSettingsLookup, OperatorAuthorization,
-    OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore, PolicyLayer, PolicyLayerKind,
-    ProjectUsageSummary, Provider, ProviderHealth, ProviderHealthCheckTarget, ProviderHealthState,
-    ProviderHealthStatus, ProviderIntelligenceStore, Route, ServiceImportDiff,
-    ServiceRegistrySnapshot, StoredOperatorToken, UnusedKey, UsageBreakdown,
-    UsageBreakdownDimension, UsageDashboard, UsageDashboardBreakdowns, UsageEvent, UsageEventsPage,
-    UsageExport, UsageExportRow, UsageFilterValues, UsageFilterValuesQuery, UsagePage, UsageQuery,
-    UsageQueryStore, UsageRecorder, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary,
-    UsageTimeseriesPoint, VirtualKeyMaterial,
+    EntraIdentityContext, FallbackAttempt, GatewayError, GatewayResult,
+    GuardrailAdminCreateRequest, GuardrailAdminPatchRequest, GuardrailDefinition,
+    GuardrailEventQuery, GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode,
+    GuardrailObservabilityStore, GuardrailPolicy, GuardrailProviderKind, GuardrailStore, KeyPolicy,
+    LiteLlmPassthroughSettings, LiteLlmPassthroughSettingsPatchRequest, LiteLlmRouteLimits,
+    OpenAiRouteConfigPatchRequest, OpenAiRouteMode, OpenAiRouteSetting, OpenAiRouteSettingsLookup,
+    OperatorAuthorization, OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore,
+    PolicyLayer, PolicyLayerKind, ProjectUsageSummary, Provider, ProviderHealth,
+    ProviderHealthCheckTarget, ProviderHealthState, ProviderHealthStatus,
+    ProviderIntelligenceStore, Route, ServiceImportDiff, ServiceRegistrySnapshot,
+    StoredOperatorToken, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageDashboard,
+    UsageDashboardBreakdowns, UsageEvent, UsageEventsPage, UsageExport, UsageExportRow,
+    UsageFilterValues, UsageFilterValuesQuery, UsagePage, UsageQuery, UsageQueryStore,
+    UsageRecorder, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary, UsageTimeseriesPoint,
+    VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -6738,37 +6740,48 @@ fn service_registry_snapshot_from_row(
 impl PortalAccessStore for PostgresStore {
     async fn upsert_oidc_member(
         &self,
-        tenant_id: &str,
-        object_id: &str,
-        email: Option<&str>,
-        display_name: Option<&str>,
+        identity: &EntraIdentityContext,
+        bootstrap_policy: &PortalAdminBootstrapPolicy,
         now: chrono::DateTime<chrono::Utc>,
     ) -> GatewayResult<PortalMember> {
-        if tenant_id.trim().is_empty() || object_id.trim().is_empty() {
-            return Err(GatewayError::InvalidAccessPayload);
-        }
+        let login = PortalMemberLogin::from_identity(identity, bootstrap_policy)?;
         sqlx::query(
             r#"
             INSERT INTO portal_members (
-                tenant_id, object_id, email, display_name, last_sign_in_at
+                tenant_id, object_id, email, display_name, status, roles, last_sign_in_at
             )
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                CASE WHEN $5 THEN 'active' ELSE 'pending' END,
+                CASE WHEN $5 THEN ARRAY[$6]::text[] ELSE ARRAY[]::text[] END,
+                $7
+            )
             ON CONFLICT (tenant_id, object_id) DO UPDATE SET
                 email = COALESCE(EXCLUDED.email, portal_members.email),
                 display_name = COALESCE(EXCLUDED.display_name, portal_members.display_name),
+                status = CASE
+                    WHEN $5 AND portal_members.status = 'pending' THEN 'active'
+                    ELSE portal_members.status
+                END,
+                roles = CASE
+                    WHEN $5 AND portal_members.status = 'pending'
+                        THEN array_append(array_remove(portal_members.roles, $6), $6)
+                    ELSE portal_members.roles
+                END,
                 last_sign_in_at = EXCLUDED.last_sign_in_at,
                 updated_at = now()
             RETURNING *
             "#,
         )
-        .bind(tenant_id.trim())
-        .bind(object_id.trim())
-        .bind(email.map(str::trim).filter(|value| !value.is_empty()))
-        .bind(
-            display_name
-                .map(str::trim)
-                .filter(|value| !value.is_empty()),
-        )
+        .bind(&login.tenant_id)
+        .bind(&login.object_id)
+        .bind(login.email.as_deref())
+        .bind(login.display_name.as_deref())
+        .bind(login.bootstrap_admin)
+        .bind(PORTAL_ROLE_ADMIN)
         .bind(now)
         .fetch_one(&self.pool)
         .await
