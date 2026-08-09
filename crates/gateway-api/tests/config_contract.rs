@@ -30,6 +30,25 @@ const VARIABLES: &[&str] = &[
     "ENTRA_CLOCK_SKEW_SECONDS",
     "APIGEE_TRUSTED_HEADER_ENABLED",
     "APIGEE_TRUSTED_HEADER_SECRET",
+    "PORTAL_OIDC_ENABLED",
+    "PORTAL_OIDC_TENANT_ID",
+    "PORTAL_OIDC_CLIENT_ID",
+    "PORTAL_OIDC_CLIENT_SECRET",
+    "PORTAL_OIDC_ISSUER",
+    "PORTAL_OIDC_DISCOVERY_URL",
+    "PORTAL_OIDC_REDIRECT_URI",
+    "PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI",
+    "PORTAL_SESSION_TTL_SECONDS",
+    "PORTAL_LOGIN_TTL_SECONDS",
+    "PORTAL_SESSION_COOKIE_SECURE",
+    "OWNER_ENTRA_AUTH_ENABLED",
+    "OWNER_ENTRA_TENANT_ID",
+    "OWNER_ENTRA_AUDIENCE",
+    "OWNER_ENTRA_ISSUER",
+    "OWNER_ENTRA_OIDC_DISCOVERY_URL",
+    "OWNER_ENTRA_ACCEPTED_ALGORITHMS",
+    "OWNER_ENTRA_JWKS_CACHE_TTL_SECONDS",
+    "OWNER_ENTRA_CLOCK_SKEW_SECONDS",
     "GATEWAY_BIND_ADDR",
     "GATEWAY_CONTROL_BIND_ADDR",
     "GATEWAY_MAX_BUFFERED_REQUESTS",
@@ -88,6 +107,37 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         ("ENTRA_CLOCK_SKEW_SECONDS", "30"),
         ("APIGEE_TRUSTED_HEADER_ENABLED", "1"),
         ("APIGEE_TRUSTED_HEADER_SECRET", "apigee-secret"),
+        ("PORTAL_OIDC_ENABLED", "true"),
+        ("PORTAL_OIDC_TENANT_ID", "portal-tenant"),
+        ("PORTAL_OIDC_CLIENT_ID", "portal-client"),
+        ("PORTAL_OIDC_CLIENT_SECRET", "portal-secret"),
+        ("PORTAL_OIDC_ISSUER", "https://portal-issuer.example"),
+        (
+            "PORTAL_OIDC_DISCOVERY_URL",
+            "https://portal-issuer.example/.well-known/openid-configuration",
+        ),
+        (
+            "PORTAL_OIDC_REDIRECT_URI",
+            "https://gateway.example/admin-ui/auth/callback",
+        ),
+        (
+            "PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI",
+            "https://gateway.example/admin-ui",
+        ),
+        ("PORTAL_SESSION_TTL_SECONDS", "14400"),
+        ("PORTAL_LOGIN_TTL_SECONDS", "300"),
+        ("PORTAL_SESSION_COOKIE_SECURE", "yes"),
+        ("OWNER_ENTRA_AUTH_ENABLED", "true"),
+        ("OWNER_ENTRA_TENANT_ID", "owner-tenant"),
+        ("OWNER_ENTRA_AUDIENCE", "api://owner"),
+        ("OWNER_ENTRA_ISSUER", "https://owner-issuer.example"),
+        (
+            "OWNER_ENTRA_OIDC_DISCOVERY_URL",
+            "https://owner-issuer.example/.well-known/openid-configuration",
+        ),
+        ("OWNER_ENTRA_ACCEPTED_ALGORITHMS", "RS256"),
+        ("OWNER_ENTRA_JWKS_CACHE_TTL_SECONDS", "120"),
+        ("OWNER_ENTRA_CLOCK_SKEW_SECONDS", "15"),
         ("GATEWAY_MAX_BUFFERED_REQUESTS", "12"),
         ("GATEWAY_MAX_INFLIGHT_BUFFER_BYTES", "134217728"),
     ] {
@@ -106,6 +156,16 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         2
     );
     assert!(config.apigee_trusted_header.is_some());
+    let portal = config.portal_oidc.as_ref().expect("portal OIDC config");
+    assert_eq!(portal.session_ttl_seconds, 14_400);
+    assert_eq!(portal.login_ttl_seconds, 300);
+    assert!(portal.cookie_secure);
+    let owner = config
+        .owner_entra_auth
+        .as_ref()
+        .expect("owner Entra config");
+    assert_eq!(owner.audience, "api://owner");
+    assert_eq!(owner.jwks_cache_ttl_seconds, 120);
     assert_eq!(config.gateway_max_buffered_requests, 12);
     assert_eq!(config.gateway_max_inflight_buffer_bytes, 134_217_728);
     let auth_env = config.gateway_auth_env();
@@ -123,10 +183,14 @@ fn defaults_and_invalid_optional_values_are_handled_deterministically() {
     std::env::set_var("GUARDRAIL_PII_MAPPING_TTL_SECONDS", "invalid");
     std::env::set_var("ENTRA_AUTH_ENABLED", "false");
     std::env::set_var("APIGEE_TRUSTED_HEADER_ENABLED", "no");
+    std::env::set_var("PORTAL_OIDC_ENABLED", "false");
+    std::env::set_var("OWNER_ENTRA_AUTH_ENABLED", "false");
     let config = Config::from_env().expect("defaulted config");
     assert_eq!(config.guardrail_pii_mapping_ttl_seconds, 3600);
     assert!(config.entra_auth.is_none());
     assert!(config.apigee_trusted_header.is_none());
+    assert!(config.portal_oidc.is_none());
+    assert!(config.owner_entra_auth.is_none());
     assert_eq!(
         config.gateway_max_buffered_requests,
         gateway_proxy::DEFAULT_MAX_BUFFERED_REQUESTS

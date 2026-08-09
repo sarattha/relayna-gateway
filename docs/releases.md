@@ -1,18 +1,19 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.23` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.24` is the
 current release target.
 
-Version `0.1.23` adds method-, endpoint-, and status-code-aware failure
-monitoring for registered-service traffic. Usage APIs, exports, and the Admin
-Usage view group matching calls by synced OpenAPI template and retain a
-query-free concrete fallback for unlisted operations. It retains body admission,
-OpenAPI endpoint billing, persisted timeout handling, the Aurora Teal Admin UI
-2.0 shell, operator and policy governance, provider intelligence,
-supply-chain hardening, LiteLLM passthrough and credential mapping, and opt-in
-Entra ID and Apigee front-door authorization.
+Version `0.1.24` adds Entra-authenticated browser sessions for administrators
+and registered service owners, exact Owner and Viewer service memberships,
+scoped service monitoring APIs, and managed-identity workload bindings.
+Existing operator tokens remain available for emergency access. It retains
+endpoint-level failure monitoring, body admission, OpenAPI endpoint billing,
+persisted timeout handling, the Aurora Teal Admin UI 2.0 shell, policy
+governance, provider intelligence, supply-chain hardening, LiteLLM passthrough
+and credential mapping, and opt-in Entra ID and Apigee front-door authorization.
 See
 [Current Feature Highlights](current-features.md),
+[Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md),
 [OpenAPI Service Pricing](openapi-service-pricing.md),
 [Entra ID Auth](entra-id-auth.md), and
 [Apigee Gateway Path](apigee-gateway-path.md) for the feature overview.
@@ -24,7 +25,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.23
+   python3 scripts/validate-release-metadata.py v0.1.24
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -42,15 +43,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.23 .
+   docker build -t relayna-gateway:0.1.24 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.23 -m "Release v0.1.23"
-   git push origin v0.1.23
+   git tag -a v0.1.24 -m "Release v0.1.24"
+   git push origin v0.1.24
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -60,10 +61,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.23`, the workflow publishes:
+For `v0.1.24`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.23
+ghcr.io/sarattha/relayna-gateway:0.1.24
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

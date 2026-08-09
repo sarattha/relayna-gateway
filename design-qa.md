@@ -87,3 +87,83 @@
 - None required before review.
 
 final result: passed
+
+---
+
+# Entra Sign-in Design QA
+
+**Source visual truth**
+
+- Desktop: `design-prototypes/service-owner-monitoring/implementation-entra-sign-in-desktop.png`
+- Mobile: `design-prototypes/service-owner-monitoring/implementation-entra-sign-in-mobile.png`
+
+**Implementation evidence**
+
+- Desktop: `output/chrome/login-design/login-desktop.png`
+- Mobile: `output/chrome/login-design/login-mobile.png`
+- Desktop side-by-side comparison: `output/chrome/login-design/login-desktop-comparison.png`
+- Mobile side-by-side comparison: `output/chrome/login-design/login-mobile-comparison.png`
+
+**Viewport and state**
+
+- Desktop: 1280 by 720, signed-out gateway portal.
+- Mobile: 390 by 844, signed-out gateway portal.
+- The saved reference is on the left and the Chrome implementation is on the
+  right in each comparison image.
+
+**Findings**
+
+- No remaining P0, P1, or P2 findings.
+- The first comparison found the access column approximately 30 to 34 pixels
+  above the reference. The final implementation corrects that vertical offset
+  at desktop and mobile breakpoints.
+- The implementation intentionally keeps the emergency operator entry point
+  below the reference composition. It is collapsed by default and does not
+  displace the primary Entra journey.
+
+**Required fidelity surfaces**
+
+- Fonts and typography: passed. Headline size, wrapping, hierarchy, labels,
+  and supporting copy track the reference at both viewports.
+- Spacing and layout rhythm: passed. The 56/44 desktop split, 330-pixel mobile
+  brand panel, access-column alignment, button height, divider, and security
+  note match the source.
+- Colors and visual tokens: passed. The dark teal brand surface, mint mark,
+  warm eyebrow, blue Entra action, and pale security callout use the existing
+  Admin UI 2.0 token language.
+- Image quality and asset fidelity: passed. Tabler webfont icons remain crisp;
+  no placeholder or hand-drawn assets were introduced.
+- Copy and content: passed. The implemented sign-in and session-security copy
+  matches the selected design.
+- Responsiveness and accessibility: passed. The 390-pixel layout has no
+  horizontal overflow, semantic regions remain exposed, and the primary action
+  retains an explicit accessible name.
+
+**Primary interactions tested in Chrome**
+
+- Open and close Emergency operator access; the operator-token field becomes
+  visible only in the expanded state.
+- Follow Sign in with Microsoft Entra ID to the local development identity
+  provider.
+- Confirm the multi-persona chooser exposes Pending, Admin, and Owner test
+  identities, then return to the sign-in page.
+- Resize between 1280 by 720 and 390 by 844.
+
+**Open Questions**
+
+- None.
+
+**Implementation Checklist**
+
+- [x] Split-screen sign-in source implemented.
+- [x] Mobile stacked layout implemented.
+- [x] Break-glass access preserved.
+- [x] Generated static assets rebuilt.
+- [x] Admin UI regression tests passed.
+- [x] Desktop and mobile Chrome comparisons passed.
+
+**Follow-up Polish**
+
+- None required before review.
+
+final result: passed

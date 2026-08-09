@@ -1,3 +1,4 @@
+use crate::portal::PortalOidcConfig;
 use gateway_core::{
     validate_relayna_key_header_name, ApigeeTrustedHeaderConfig, EntraAuthConfig, GatewayAuthEnv,
     GatewayError, GatewayResult, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
@@ -22,6 +23,8 @@ pub struct Config {
     pub relayna_key_header: String,
     pub entra_auth: Option<EntraAuthConfig>,
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
+    pub portal_oidc: Option<PortalOidcConfig>,
+    pub owner_entra_auth: Option<EntraAuthConfig>,
     pub gateway_bind_addr: SocketAddr,
     pub gateway_control_bind_addr: SocketAddr,
     pub gateway_max_buffered_requests: usize,
@@ -83,6 +86,47 @@ impl Config {
             } else {
                 None
             };
+        let portal_oidc = if optional_bool("PORTAL_OIDC_ENABLED")?.unwrap_or(false) {
+            let config = PortalOidcConfig {
+                tenant_id: required("PORTAL_OIDC_TENANT_ID")?,
+                client_id: required("PORTAL_OIDC_CLIENT_ID")?,
+                client_secret: required("PORTAL_OIDC_CLIENT_SECRET")?,
+                issuer: required("PORTAL_OIDC_ISSUER")?,
+                discovery_url: required("PORTAL_OIDC_DISCOVERY_URL")?,
+                redirect_uri: required("PORTAL_OIDC_REDIRECT_URI")?,
+                post_logout_redirect_uri: required("PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI")?,
+                session_ttl_seconds: optional_i64("PORTAL_SESSION_TTL_SECONDS").unwrap_or(28_800),
+                login_ttl_seconds: optional_i64("PORTAL_LOGIN_TTL_SECONDS").unwrap_or(600),
+                cookie_secure: optional_bool("PORTAL_SESSION_COOKIE_SECURE")?.unwrap_or(true),
+            };
+            config.validate()?;
+            Some(config)
+        } else {
+            None
+        };
+        let owner_entra_auth = if optional_bool("OWNER_ENTRA_AUTH_ENABLED")?.unwrap_or(false) {
+            let config = EntraAuthConfig {
+                tenant_id: required("OWNER_ENTRA_TENANT_ID")?,
+                audience: required("OWNER_ENTRA_AUDIENCE")?,
+                issuer: required("OWNER_ENTRA_ISSUER")?,
+                oidc_discovery_url: required("OWNER_ENTRA_OIDC_DISCOVERY_URL")?,
+                required_scope: None,
+                required_role: None,
+                allowed_groups: Vec::new(),
+                accepted_algorithms: with_default(
+                    optional_csv("OWNER_ENTRA_ACCEPTED_ALGORITHMS"),
+                    vec!["RS256".to_owned()],
+                ),
+                relayna_key_header: relayna_key_header.clone(),
+                jwks_cache_ttl_seconds: optional_u64("OWNER_ENTRA_JWKS_CACHE_TTL_SECONDS")
+                    .unwrap_or(300),
+                clock_skew_seconds: optional_i64("OWNER_ENTRA_CLOCK_SKEW_SECONDS").unwrap_or(60),
+            };
+            config.validate()?;
+            Some(config)
+        } else {
+            None
+        };
         let gateway_bind_addr = required("GATEWAY_BIND_ADDR")?
             .parse()
             .map_err(|_| GatewayError::InvalidConfiguration)?;
@@ -115,6 +159,8 @@ impl Config {
             relayna_key_header,
             entra_auth,
             apigee_trusted_header,
+            portal_oidc,
+            owner_entra_auth,
             gateway_bind_addr,
             gateway_control_bind_addr,
             gateway_max_buffered_requests,

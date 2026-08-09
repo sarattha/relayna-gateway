@@ -2,8 +2,8 @@
 
 PostgreSQL is the durable source of truth for Relayna Gateway. It stores
 projects, virtual keys, access policy, registered service routes, provider
-configuration, route toggles, guardrail configuration, operator tokens, and
-usage records.
+configuration, route toggles, guardrail configuration, operator tokens, portal
+memberships, managed-identity bindings, and usage records.
 
 ## Scope
 
@@ -30,6 +30,7 @@ of that schema.
 | Guardrails | `guardrail_definitions`, `guardrail_execution_events` | Stores guardrail catalog entries and execution audit records. |
 | Studio settings | `studio_connection_settings` | Stores the optional Relayna Studio import connection. |
 | Operators | `operator_tokens` | Stores hashed tokens for `/admin-ui/admin/*` and `/admin-ui` access. |
+| Portal access | `portal_members`, `service_memberships`, `managed_identity_bindings`, `oidc_login_transactions`, `portal_sessions` | Stores Entra member state, exact service assignments, workload bindings, one-time browser login state, and opaque sessions. |
 | Audit | `audit_events` | Stores append-only operator mutation records with redacted snapshots. |
 | Provider intelligence | `provider_health_states`, `request_debug_bundles`, `service_registry_snapshots` | Stores health/circuit state, sanitized request debug bundles, and import version history. |
 | Usage | `usage_events` | Stores request accounting for admin usage views, exports, budget rehydration, Relayna Studio consumption, and trace-aware analytics. |
@@ -42,6 +43,13 @@ of that schema.
   seeded from that token. Otherwise startup generates and prints a raw token
   once. After an active token exists, env changes are ignored and token changes
   must go through Admin portal rotation.
+- Entra browser users require a `portal_members` row. First sign-in creates a
+  pending member; administrator access requires an active Admin role, while
+  owner monitoring requires an active exact `service_memberships` row.
+- Managed-identity monitoring requires an enabled
+  `managed_identity_bindings` row matching tenant, client ID, optional object
+  ID, application role, and service. Tenant-wide token validity alone grants no
+  service access.
 - Project-owned keys require a `projects` row and an `api_keys.project_id`
   value that references it. Individual keys must have `project_id` set to
   `NULL`.

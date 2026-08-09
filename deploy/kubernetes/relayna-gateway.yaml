@@ -16,6 +16,15 @@ data:
   ENTRA_JWKS_CACHE_TTL_SECONDS: "300"
   ENTRA_CLOCK_SKEW_SECONDS: "60"
   APIGEE_TRUSTED_HEADER_ENABLED: "false"
+  # Human portal OIDC and workload owner APIs are independent opt-in modes.
+  PORTAL_OIDC_ENABLED: "false"
+  PORTAL_SESSION_TTL_SECONDS: "28800"
+  PORTAL_LOGIN_TTL_SECONDS: "600"
+  PORTAL_SESSION_COOKIE_SECURE: "true"
+  OWNER_ENTRA_AUTH_ENABLED: "false"
+  OWNER_ENTRA_ACCEPTED_ALGORITHMS: "RS256"
+  OWNER_ENTRA_JWKS_CACHE_TTL_SECONDS: "300"
+  OWNER_ENTRA_CLOCK_SKEW_SECONDS: "60"
 ---
 apiVersion: v1
 kind: Secret
@@ -43,6 +52,19 @@ stringData:
   ENTRA_REQUIRED_SCOPE: ""
   ENTRA_REQUIRED_ROLE: ""
   ENTRA_ALLOWED_GROUPS: ""
+  # Required only when PORTAL_OIDC_ENABLED=true.
+  PORTAL_OIDC_TENANT_ID: ""
+  PORTAL_OIDC_CLIENT_ID: ""
+  PORTAL_OIDC_CLIENT_SECRET: ""
+  PORTAL_OIDC_ISSUER: ""
+  PORTAL_OIDC_DISCOVERY_URL: ""
+  PORTAL_OIDC_REDIRECT_URI: ""
+  PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI: ""
+  # Required only when OWNER_ENTRA_AUTH_ENABLED=true.
+  OWNER_ENTRA_TENANT_ID: ""
+  OWNER_ENTRA_AUDIENCE: ""
+  OWNER_ENTRA_ISSUER: ""
+  OWNER_ENTRA_OIDC_DISCOVERY_URL: ""
   # Required only when APIGEE_TRUSTED_HEADER_ENABLED=true.
   APIGEE_TRUSTED_HEADER_SECRET: ""
 ---
@@ -72,7 +94,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/sarattha/relayna-gateway:0.1.23
+          image: ghcr.io/sarattha/relayna-gateway:0.1.24
           imagePullPolicy: IfNotPresent
           ports:
             - name: proxy

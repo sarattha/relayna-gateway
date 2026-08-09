@@ -22,7 +22,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.23` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+The `v0.1.24` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
 operator work into Monitor, Discover, and Govern navigation domains. Monitor
 contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains
@@ -43,15 +43,25 @@ an accessible drawer without removing operator workflows.
 
 ## Authentication
 
-Use the operator token seeded by `GATEWAY_ADMIN_TOKEN` on first startup, or the
-generated operator token printed when no env token was set. The token is stored
-in browser session storage and sent as:
+Normal human access can use Microsoft Entra through the portal's confidential
+OIDC BFF flow. Entra tokens stay server-side and the browser receives an opaque
+HttpOnly session cookie. Relayna portal roles and service memberships determine
+whether the user sees the administrator console or only their assigned service
+dashboards. Cookie-authenticated mutations require the session-bound CSRF token
+returned by the portal session API.
+
+The operator token seeded by `GATEWAY_ADMIN_TOKEN`, or the generated token
+printed when no env token was set, remains available from **Emergency operator
+access** and is sent as:
 
 ```http
 Authorization: Bearer <operator-token>
 ```
 
-Rotate the token from the portal after bootstrap or whenever access changes. Rotation returns the new raw token once.
+Use this break-glass path to approve the first Entra administrator or recover
+when the identity provider is unavailable. Rotate the token from the portal
+after bootstrap or whenever access changes. Rotation returns the new raw token
+once.
 
 Operator tokens are bound to roles and scopes in PostgreSQL. Bootstrap and
 rotated owner tokens keep the existing `op_live_` token format and receive role
@@ -61,6 +71,10 @@ strings such as `keys:create`, `keys:disable`, `policies:update`,
 `services:update`, `settings:update`, `operators:manage`, and `audit:read`.
 Admin APIs return `insufficient_operator_scope` when a valid token lacks the
 required scope.
+
+For OIDC configuration, member approval, service assignment, workload
+identities, and local development personas, see
+[Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md).
 
 ## First-Time Admin Setup Manual
 
@@ -81,14 +95,17 @@ Open the control-plane URL in a browser:
 http://127.0.0.1:8081/admin-ui
 ```
 
-Enter the bootstrap operator token from `GATEWAY_ADMIN_TOKEN` or the token
-printed on first startup. The portal stores it in browser session storage and
-uses it only as an Admin API bearer token.
+Sign in with Microsoft Entra when an administrator membership already exists.
+For the first administrator, expand **Emergency operator access** and enter the
+bootstrap token from `GATEWAY_ADMIN_TOKEN` or the token printed on first
+startup. Use **Members** to approve the Entra identity and grant the Admin role,
+then return to Entra for normal access.
 
 ![Admin portal sign-in form](assets/screenshots/admin-first-time-setup/01-admin-ui-sign-in.png)
 
-What to check: the page title is `Gateway Admin`, the token field is empty, and
-the URL is the control-plane `/admin-ui` path. Keep the operator token private.
+What to check: the URL is the control-plane `/admin-ui` path, Microsoft sign-in
+is the primary action when configured, and the operator-token field stays
+collapsed under emergency access. Keep the operator token private.
 
 ### 2. Check Overview and readiness
 

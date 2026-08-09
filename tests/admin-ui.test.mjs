@@ -13,6 +13,7 @@ const sourceJs = readFileSync(join(sourceDir, "main.ts"), "utf8");
 // naming. The deployed bundle remains part of endpoint-contract coverage below.
 const js = `${sourceJs}\n${deployedJs}`;
 const css = readFileSync(join(uiDir, "app.css"), "utf8");
+const microsoftSignInSvg = readFileSync(join(uiDir, "microsoft-sign-in.svg"), "utf8");
 
 function test(name, fn) {
   try {
@@ -47,8 +48,67 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.23/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.23/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.24/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.24/);
+});
+
+test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
+  assert.match(sourceJs, /const state = \{\s*view: "overview",/);
+  assert.match(html, /id="entra-sign-in"[\s\S]*src="\/admin-ui\/microsoft-sign-in\.svg"[\s\S]*alt="Sign in with Microsoft"/);
+  assert.match(html, /Sign in with your work or school account/);
+  assert.doesNotMatch(html, /Sign in with Microsoft Entra ID/);
+  assert.match(microsoftSignInSvg, /width="215" height="41" viewBox="0 0 215 41"/);
+  assert.match(microsoftSignInSvg, /fill="#f25022"[\s\S]*fill="#00a4ef"[\s\S]*fill="#7fba00"[\s\S]*fill="#ffb900"/);
+  assert.match(html, /class="break-glass-login"/);
+  assert.match(html, /id="access-state-sign-out"[^>]*>Sign out and switch account/);
+  assert.match(html, /Governed access\.[\s\S]*Operational clarity\./);
+  assert.match(html, /Your identity tokens stay server-side/);
+  assert.match(css, /\.login-primary img[\s\S]*width: 215px[\s\S]*height: auto/);
+  assert.match(css, /\.login-primary \{[\s\S]*width: 100%[\s\S]*justify-content: center/);
+  assert.match(css, /\.nav-groups \{[\s\S]*align-content: start/);
+  assert.match(css, /\.login-shell[\s\S]*grid-template-columns: minmax\(430px, 56fr\) minmax\(420px, 44fr\)/);
+  assert.match(css, /@media \(max-width: 760px\)[\s\S]*\.login-shell \{[\s\S]*display: block/);
+  assert.match(js, /\/admin-ui\/auth\/config/);
+  assert.match(js, /\/admin-ui\/auth\/session/);
+  assert.match(js, /\/admin-ui\/auth\/logout/);
+  assert.match(sourceJs, /logoutUrl = result\?\.logout_url \?\? null/);
+  assert.match(sourceJs, /if \(logoutUrl\) location\.assign\(logoutUrl\)/);
+  assert.match(sourceJs, /#access-state-sign-out"\)\.addEventListener\("click", signOut\)/);
+  const accessState = sourceFunction("renderAccessState");
+  assert.match(accessState, /\.break-glass-login"\)\.classList\.remove\("hidden"\)/);
+  assert.match(accessState, /#access-state-sign-out"\)\.classList\.remove\("hidden"\)/);
+  assert.match(js, /"x-csrf-token": state\.session\.csrf_token/);
+  assert.match(js, /session\.member\.status !== "active"/);
+  assert.doesNotMatch(js, /sessionStorage\.setItem\([^,]+,\s*.*id_token/);
+});
+
+test("admin members and managed identities expose exact service bindings", () => {
+  for (const view of ["members", "managed-identities"]) {
+    assert.match(html, new RegExp(`data-view="${view}"`));
+  }
+  assert.match(js, /async function members\(\)/);
+  assert.match(js, /\/admin-ui\/admin\/members/);
+  assert.match(js, /data-membership-form/);
+  assert.match(js, /option\("viewer", "viewer"\)/);
+  assert.match(js, /option\("owner", ""\)/);
+  assert.match(js, /async function managedIdentities\(\)/);
+  assert.match(js, /\/admin-ui\/admin\/managed-identities/);
+  assert.match(js, /gateway\.monitor\.read/);
+});
+
+test("service-owner workspace uses scoped owner APIs and responsive dashboards", () => {
+  for (const view of ["my-services", "service-dashboard"]) {
+    assert.match(html, new RegExp(`data-view="${view}"`));
+  }
+  assert.match(html, /id="workspace-select"/);
+  assert.match(js, /async function myServices\(\)/);
+  assert.match(js, /api\("\/owner\/v1\/services"\)/);
+  assert.match(js, /async function serviceDashboard\(\)/);
+  assert.match(js, /\/owner\/v1\/services\/\$\{encodeURIComponent\(serviceName\)\}\/dashboard/);
+  assert.match(js, /\/errors\?\$\{query\}/);
+  assert.match(css, /\.owner-dashboard-grid/);
+  assert.match(css, /\.owner-service-grid/);
+  assert.match(css, /@media \(max-width: 700px\)[\s\S]*\.owner-dashboard-grid/);
 });
 
 test("admin portal exposes responsive operator navigation and accessible workflows", () => {
@@ -79,6 +139,17 @@ test("admin portal exposes responsive operator navigation and accessible workflo
     assert.match(css, new RegExp(style.replace(".", "\\.")));
   }
   assert.match(css, /@media \(max-width: 920px\)/);
+});
+
+test("command palette respects the active workspace and keeps rows readable", () => {
+  assert.match(js, /const ownerViewIds = new Set\(\["my-services", "service-dashboard"\]\)/);
+  assert.match(js, /function commandViewsForWorkspace\(\)/);
+  assert.match(js, /const commands = commandViewsForWorkspace\(\)/);
+  assert.match(js, /state\.workspace === "owner"/);
+  assert.match(css, /\.command-palette\s*\{[^}]*overflow:\s*hidden/s);
+  assert.match(css, /\.command-list\s*\{[^}]*grid-auto-rows:\s*minmax\(48px, auto\)/s);
+  assert.match(css, /\.command-item\s*\{[^}]*white-space:\s*normal/s);
+  assert.match(css, /\.command-item > span\s*\{[^}]*min-width:\s*0/s);
 });
 
 test("admin portal calls the expected gateway admin APIs", () => {

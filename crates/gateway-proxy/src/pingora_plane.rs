@@ -2030,6 +2030,7 @@ fn prepare_upstream_authority_and_credentials(
     upstream_request.remove_header("x-apigee-entra-identity");
     upstream_request.remove_header("x-apigee-entra-signature");
     upstream_request.remove_header("proxy-authorization");
+    upstream_request.remove_header("cookie");
     if let Some(relayna_key_header) = relayna_key_header {
         upstream_request.remove_header(relayna_key_header);
     }
@@ -3494,6 +3495,12 @@ mod tests {
             .insert_header("proxy-authorization", "Bearer proxy-client")
             .expect("client proxy authorization");
         request
+            .insert_header(
+                "cookie",
+                "relayna_portal_session=session-secret; relayna_portal_csrf=csrf-secret",
+            )
+            .expect("portal cookies");
+        request
             .insert_header("x-api-key", "client-api-key")
             .expect("client api key");
         request
@@ -3519,6 +3526,7 @@ mod tests {
         );
         assert!(!request.headers.contains_key("x-relayna-key"));
         assert!(!request.headers.contains_key("proxy-authorization"));
+        assert!(!request.headers.contains_key("cookie"));
         assert!(!request.headers.contains_key("x-aih-api-key"));
         assert!(!request.headers.contains_key("x-apigee-entra-identity"));
         assert!(!request.headers.contains_key("x-apigee-entra-signature"));
@@ -4113,6 +4121,9 @@ mod tests {
             object_id: Some("object".to_owned()),
             app_id: None,
             authorized_party: None,
+            email: None,
+            display_name: None,
+            nonce: None,
             scopes: vec!["gateway.invoke".to_owned()],
             roles: Vec::new(),
             groups: Vec::new(),

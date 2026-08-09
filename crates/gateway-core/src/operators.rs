@@ -68,6 +68,7 @@ pub struct CreatedOperatorTokenResponse {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct OperatorAuthorization {
     pub token_id: Uuid,
+    pub member_id: Option<Uuid>,
     pub token_prefix: String,
     pub roles: Vec<String>,
     pub scopes: Vec<String>,
@@ -84,7 +85,8 @@ impl OperatorAuthorization {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct AuditEvent {
     pub id: Uuid,
-    pub actor_token_id: Uuid,
+    pub actor_token_id: Option<Uuid>,
+    pub actor_member_id: Option<Uuid>,
     pub action: String,
     pub target_type: String,
     pub target_id: Option<String>,
@@ -98,7 +100,8 @@ pub struct AuditEvent {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuditEventCreate {
-    pub actor_token_id: Uuid,
+    pub actor_token_id: Option<Uuid>,
+    pub actor_member_id: Option<Uuid>,
     pub action: String,
     pub target_type: String,
     pub target_id: Option<String>,
@@ -113,6 +116,8 @@ pub struct AuditEventCreate {
 pub struct AuditEventQuery {
     #[serde(default)]
     pub actor_token_id: Option<Uuid>,
+    #[serde(default)]
+    pub actor_member_id: Option<Uuid>,
     #[serde(default)]
     pub action: Option<String>,
     #[serde(default)]
@@ -243,6 +248,7 @@ pub fn verify_stored_operator_token(
     verify_secret(raw_token, &stored.token_hash).map_err(|_| GatewayError::InvalidOperatorToken)?;
     Ok(OperatorAuthorization {
         token_id: stored.id,
+        member_id: None,
         token_prefix: stored.token_prefix.clone(),
         roles: stored.roles.clone(),
         scopes: stored.scopes.clone(),

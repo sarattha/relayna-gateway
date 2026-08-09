@@ -2,6 +2,55 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.24 - 2026-08-09
+
+### Added
+
+- Added Microsoft Entra confidential-client OIDC sign-in for the browser portal
+  with server-side sessions, pending-member approval, administrator roles, and
+  exact Owner or Viewer assignments for registered services.
+- Added service-owner views under `/admin-ui` and scoped
+  `/owner/v1/services/{service_name}/*` APIs for dashboard aggregates, usage,
+  sanitized request and error logs, endpoint breakdowns, and exports.
+- Added administrator member management and managed-identity registration for
+  workload monitoring. Workload tokens require the configured tenant,
+  audience, application role, and an enabled exact service binding.
+- Added a development-only OIDC issuer with pending, administrator, and
+  service-owner personas for repeatable local authentication testing.
+- Added an operations guide for Entra portal rollout, first-administrator
+  bootstrap, managed identities, and the development issuer.
+
+### Changed
+
+- Existing operator tokens remain supported as emergency break-glass access,
+  while normal human administration and service ownership can use Entra.
+- The Admin UI now derives navigation and command-palette entries from the
+  server-authorized principal, keeps all browser pages under `/admin-ui`, and
+  uses Microsoft's official sign-in branding.
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.24` and `v0.1.24`.
+
+### Fixed
+
+- Pending and blocked members can keep emergency operator access available or
+  sign out and switch accounts without manually clearing cookies.
+- Portal OIDC state is bound to the initiating browser, abandoned login
+  transactions and expired portal sessions are pruned, and sign-out completes
+  at the identity provider.
+- Portal cookies are stripped at the proxy boundary before requests reach
+  LiteLLM or registered upstream services.
+- Service-owner command navigation is role-scoped, and the owner sidebar keeps
+  compact normal-sized navigation items across desktop and mobile layouts.
+
+### Security
+
+- Entra tokens remain server-side; browsers receive opaque HttpOnly sessions,
+  and cookie-authenticated mutations require a session-bound CSRF token.
+- OIDC callbacks validate state, nonce, PKCE S256, issuer, tenant, audience,
+  signature, not-before, and expiry before creating a Relayna session.
+- Service visibility is enforced by server-side membership and managed-identity
+  binding checks; client-supplied service filters cannot broaden access.
+
 ## 0.1.23 - 2026-08-06
 
 ### Added
