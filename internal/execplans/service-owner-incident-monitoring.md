@@ -100,8 +100,9 @@ headers, and exposes additive P95/status/transition data through the scoped
 owner API. Computer QA passed on desktop and a 390px responsive viewport. The
 only verification exception is the repository-wide Trivy wrapper traversing an
 unrelated untracked `design-prototypes/` directory; the same high/critical scan
-passes when that user directory is excluded. Record the PR URL and first-review
-outcome after publication.
+  passes when that user directory is excluded. The implementation is published
+  for review at https://github.com/sarattha/relayna-gateway/pull/103; record the
+  first-review outcome after Codex responds.
 
 ## Context and Orientation
 
