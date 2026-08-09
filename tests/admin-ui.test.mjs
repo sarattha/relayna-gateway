@@ -125,6 +125,10 @@ test("service-owner workspace uses scoped owner APIs and responsive dashboards",
   assert.match(js, /owner-request-drawer/);
   assert.match(js, /no proxy debug bundle was captured/);
   assert.match(js, /badge\(row\.status, row\.status === "success" \? "good" : "bad"\)/);
+  const serviceDashboardSource = sourceFunction("serviceDashboard");
+  assert.match(serviceDashboardSource, /const generation = \+\+ownerDashboardGeneration/);
+  assert.match(serviceDashboardSource, /if \(isStale\(\)\) return/);
+  assert.match(serviceDashboardSource, /statusCodes\.push\(state\.ownerDashboardFilters\.statusCode\)/);
   assert.match(css, /\.owner-dashboard-grid/);
   assert.match(css, /\.owner-service-grid/);
   assert.match(css, /\.owner-incident-chart-wrap/);

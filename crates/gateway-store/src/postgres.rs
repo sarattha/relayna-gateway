@@ -57,7 +57,7 @@ use gateway_core::{
     UsageDashboardBreakdowns, UsageEvent, UsageEventsPage, UsageExport, UsageExportRow,
     UsageFilterValues, UsageFilterValuesQuery, UsagePage, UsageQuery, UsageQueryStore,
     UsageRecorder, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary, UsageTimeseriesPoint,
-    UsageVersionTransition, VirtualKeyMaterial,
+    UsageVersionTransition, VirtualKeyMaterial, MAX_USAGE_VERSION_TRANSITIONS,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -4530,9 +4530,19 @@ impl UsageQueryStore for PostgresStore {
             r#"
                 AND service_version IS NOT NULL
             )
-            SELECT service_version, created_at AS first_observed_at
-            FROM scoped
-            WHERE previous_version IS NULL OR previous_version IS DISTINCT FROM service_version
+            SELECT service_version, first_observed_at
+            FROM (
+                SELECT service_version, created_at AS first_observed_at, request_id
+                FROM scoped
+                WHERE previous_version IS NULL OR previous_version IS DISTINCT FROM service_version
+                ORDER BY first_observed_at DESC, request_id DESC
+                LIMIT
+            "#,
+        );
+        builder.push_bind(MAX_USAGE_VERSION_TRANSITIONS);
+        builder.push(
+            r#"
+            ) AS recent_transitions
             ORDER BY first_observed_at ASC, request_id ASC
             "#,
         );

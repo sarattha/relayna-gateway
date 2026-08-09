@@ -7652,6 +7652,10 @@ mod tests {
                 first_observed_at: row.created_at,
             });
         }
+        let excess = transitions
+            .len()
+            .saturating_sub(gateway_core::MAX_USAGE_VERSION_TRANSITIONS as usize);
+        transitions.drain(..excess);
         transitions
     }
 
@@ -12210,6 +12214,26 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["v1", "v2", "v1"]
         );
+
+        let bounded_transitions = usage_version_transitions_from_rows(
+            (0..gateway_core::MAX_USAGE_VERSION_TRANSITIONS + 10)
+                .map(|index| {
+                    let mut row = coverage_usage_row(
+                        &format!("version-{index}"),
+                        "success",
+                        Some("ocr"),
+                        now + chrono::Duration::seconds(index),
+                    );
+                    row.service_version = Some(format!("v{index}"));
+                    row
+                })
+                .collect(),
+        );
+        assert_eq!(
+            bounded_transitions.len(),
+            gateway_core::MAX_USAGE_VERSION_TRANSITIONS as usize
+        );
+        assert_eq!(bounded_transitions[0].service_version, "v10");
 
         let unbounded = paginate_usage_rows(rows.clone(), None, None);
         assert_eq!(unbounded.rows.len(), 2);

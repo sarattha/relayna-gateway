@@ -14717,6 +14717,7 @@ let noticeTimer = null;
 let dialogCounter = 0;
 let overviewChart = null;
 let ownerDashboardChart = null;
+let ownerDashboardGeneration = 0;
 function token() {
   return sessionStorage.getItem(tokenKey);
 }
@@ -15176,6 +15177,7 @@ async function refresh({ focus = false } = {}) {
   setNotice("");
   destroyOverviewChart();
   destroyOwnerDashboardChart();
+  if (state.view !== "service-dashboard") ownerDashboardGeneration += 1;
   applyViewChrome(state.view);
   const meta = viewMeta[state.view] || viewMeta.overview;
   document.querySelector("#breadcrumb-domain").textContent = meta.domain;
@@ -18602,8 +18604,20 @@ async function openOwnerRequestDetails(event) {
 }
 async function serviceDashboard() {
   var _a2, _b, _c, _d;
+  const generation = ++ownerDashboardGeneration;
+  const isStale = () => generation !== ownerDashboardGeneration;
   destroyOwnerDashboardChart();
-  if (!state.ownerServices.length) state.ownerServices = await api("/owner/v1/services");
+  if (!state.ownerServices.length) {
+    try {
+      const ownerServices = await api("/owner/v1/services");
+      if (isStale()) return;
+      state.ownerServices = ownerServices;
+    } catch (error) {
+      if (isStale()) return;
+      throw error;
+    }
+  }
+  if (isStale()) return;
   if (!state.selectedOwnerService) state.selectedOwnerService = (_b = (_a2 = state.ownerServices[0]) == null ? void 0 : _a2.service) == null ? void 0 : _b.name;
   if (!state.selectedOwnerService) {
     content.innerHTML = panel("Service dashboard", emptyState("No service access has been assigned."));
@@ -18619,10 +18633,22 @@ async function serviceDashboard() {
   });
   if (state.ownerDashboardFilters.outcome !== "all") eventsQuery.set("status", state.ownerDashboardFilters.outcome);
   if (state.ownerDashboardFilters.statusCode) eventsQuery.set("status_code", state.ownerDashboardFilters.statusCode);
-  const [dashboard, events] = await Promise.all([
-    api(`/owner/v1/services/${encodeURIComponent(serviceName)}/dashboard?${dashboardQuery}`),
-    api(`/owner/v1/services/${encodeURIComponent(serviceName)}/events?${eventsQuery}`)
-  ]);
+  let dashboard;
+  let events;
+  try {
+    [dashboard, events] = await Promise.all([
+      api(`/owner/v1/services/${encodeURIComponent(serviceName)}/dashboard?${dashboardQuery}`),
+      api(`/owner/v1/services/${encodeURIComponent(serviceName)}/events?${eventsQuery}`)
+    ]);
+  } catch (error) {
+    if (isStale()) return;
+    throw error;
+  }
+  if (isStale()) return;
+  const statusCodes = (dashboard.status_codes || []).map(String);
+  if (state.ownerDashboardFilters.statusCode && !statusCodes.includes(state.ownerDashboardFilters.statusCode)) {
+    statusCodes.push(state.ownerDashboardFilters.statusCode);
+  }
   const eventStart = ((_c = events.rows) == null ? void 0 : _c.length) ? events.offset + 1 : 0;
   const eventEnd = ((_d = events.rows) == null ? void 0 : _d.length) ? events.offset + events.rows.length : 0;
   content.innerHTML = `
@@ -18661,7 +18687,7 @@ async function serviceDashboard() {
         </select></label>
         <label>Status code<select id="owner-status-select">
           ${option("", state.ownerDashboardFilters.statusCode, "All status codes")}
-          ${(dashboard.status_codes || []).map((code) => option(String(code), state.ownerDashboardFilters.statusCode, String(code))).join("")}
+          ${statusCodes.map((code) => option(code, state.ownerDashboardFilters.statusCode, code)).join("")}
         </select></label>
       </div>
       <div class="table-pager owner-request-pager" aria-label="Request logs pagination">

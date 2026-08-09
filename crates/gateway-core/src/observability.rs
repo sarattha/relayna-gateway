@@ -168,6 +168,8 @@ pub struct UsageVersionTransition {
     pub first_observed_at: DateTime<Utc>,
 }
 
+pub const MAX_USAGE_VERSION_TRANSITIONS: i64 = 256;
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct UsagePage {
     pub limit: i64,
