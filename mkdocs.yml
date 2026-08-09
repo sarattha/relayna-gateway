@@ -29,6 +29,7 @@ nav:
   - Getting Started: getting-started.md
   - Admin Portal: admin-portal.md
   - Entra Portal and Service-owner Monitoring: operations/entra-portal-and-owner-monitoring.md
+  - Entra Integration Requirements: operations/entra-integration-requirements.md
   - OpenAPI Service Pricing: openapi-service-pricing.md
   - Current Feature Highlights: current-features.md
   - LiteLLM Passthrough: litellm-passthrough.md

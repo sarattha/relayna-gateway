@@ -19,6 +19,9 @@ All notable changes to Relayna Gateway are documented in this file.
   service-owner personas for repeatable local authentication testing.
 - Added an operations guide for Entra portal rollout, first-administrator
   bootstrap, managed identities, and the development issuer.
+- Added a DevOps handoff that inventories the two Entra applications, the
+  `gateway.monitor.read` application role, managed-identity count and binding
+  rules, issuer settings, raw Kubernetes inputs, and certificate lifecycle.
 
 ### Changed
 
@@ -29,6 +32,9 @@ All notable changes to Relayna Gateway are documented in this file.
   uses Microsoft's official sign-in branding.
 - Workspace crate versions, Admin UI release indicators, deployment examples,
   and release documentation now target `0.1.24` and `v0.1.24`.
+- Portal confidential-client authentication now uses certificate-backed PS256
+  `private_key_jwt` assertions instead of a client secret, following Arcweft's
+  short-lived assertion and `x5t#S256` pattern.
 
 ### Fixed
 
@@ -41,6 +47,8 @@ All notable changes to Relayna Gateway are documented in this file.
   LiteLLM or registered upstream services.
 - Service-owner command navigation is role-scoped, and the owner sidebar keeps
   compact normal-sized navigation items across desktop and mobile layouts.
+- The production control Ingress now routes `/owner/v1`, and its NetworkPolicy
+  admits only namespaces explicitly labeled for control-plane access.
 
 ### Security
 
@@ -50,6 +58,9 @@ All notable changes to Relayna Gateway are documented in this file.
   signature, not-before, and expiry before creating a Relayna session.
 - Service visibility is enforced by server-side membership and managed-identity
   binding checks; client-supplied service filters cannot broaden access.
+- First-admin ConfigMap bootstrap requires the configured tenant, immutable
+  Entra object ID, and email; invalid or mismatched certificate/key material
+  fails startup.
 
 ## 0.1.23 - 2026-08-06
 

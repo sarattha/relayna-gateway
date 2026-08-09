@@ -18,6 +18,7 @@ asset contract on the gateway binary.
 See
 [Current Feature Highlights](current-features.md),
 [Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md),
+[Entra Integration Requirements](operations/entra-integration-requirements.md),
 [OpenAPI Service Pricing](openapi-service-pricing.md),
 [Entra ID Auth](entra-id-auth.md), and
 [Apigee Gateway Path](apigee-gateway-path.md) for the public feature delta.
@@ -144,6 +145,14 @@ private control plane on separate Services.
      --from-literal=APIGEE_TRUSTED_HEADER_SECRET=''
    ```
 
+   For Entra portal sign-in, also create the dedicated
+   `relayna-gateway-portal-oidc` Secret with the matching
+   `portal-private-key.pem` and `portal-certificate.pem` values. Put portal and
+   owner Entra identifiers, issuer URLs, redirect URLs, and the temporary
+   `PORTAL_ADMIN_EMAILS` plus `PORTAL_ADMIN_OBJECT_IDS` allowlists in
+   `relayna-gateway-config`. See
+   [Entra Integration Requirements](operations/entra-integration-requirements.md).
+
 4. Apply the manifest:
 
    ```bash
@@ -164,15 +173,25 @@ private control plane on separate Services.
    kubectl apply --dry-run=client -f deploy/kubernetes/relayna-gateway.yaml
    ```
 
+7. For an Entra-enabled deployment, run the read-only raw-manifest verifier:
+
+   ```bash
+   scripts/entra/verify-deployment.sh \
+     --namespace <gateway-namespace> \
+     --control-ingress-namespace <internal-ingress-namespace> \
+     --certificate-file <approved-public-certificate.pem>
+   ```
+
 ## Network Exposure
 
 Expose only `relayna-gateway-proxy` to clients that need LLM traffic. Keep
 `relayna-gateway-control` private or protected by internal ingress, VPN,
 identity-aware proxy, or strict network policy.
 
-All Gateway control-plane paths are rooted under `/admin-ui` so an AKS ingress
-can route `/admin-ui` and `/admin-ui/*` to Relayna Gateway even when another
-gateway owns `/`, `/healthz`, `/readyz`, and `/metrics`. Use
+Browser and administrator control-plane paths are rooted under `/admin-ui`,
+while workload monitoring is rooted under `/owner/v1`. An AKS ingress must
+route both prefixes to the private control Service even when another gateway
+owns `/`, `/healthz`, `/readyz`, and `/metrics`. Use
 `/admin-ui/healthz`, `/admin-ui/readyz`, and `/admin-ui/metrics` for probes and
 scrapers.
 

@@ -30,6 +30,7 @@ Each exception must include:
 | `RUSTSEC-2025-0069` | Relayna Gateway maintainers | Transitive `daemonize` dependency enters through `pingora-core`; Gateway runs as a foreground container process and does not use daemonization behavior directly. Track upstream Pingora replacement or upgrade. | https://rustsec.org/advisories/RUSTSEC-2025-0069 | 2026-08-31 |
 | Gitleaks `relayna-live-token` in OpenAPI pricing documentation | Relayna Gateway maintainers | The documented operator-token value is an explicit non-secret placeholder already covered by `.gitleaks.toml`; Gitleaks 8.24.3 still flags its commit diff, so CI ignores only the reported commit fingerprints. | https://github.com/sarattha/relayna-gateway/pull/96 | 2026-08-31 |
 | Historical fake token fingerprints in `.gitleaksignore` | Relayna Gateway maintainers | Existing test fixtures and example tokens predate strict secret scanning. New Gitleaks findings must be fixed or documented separately. | `.gitleaksignore` | 2026-08-31 |
+| Gitleaks `generic-api-key` in PR #102's initial example Secret | Relayna Gateway maintainers | The finding is the literal prose placeholder `replace-with-pkcs8-or-pkcs1-rsa-private-key-pem`, never PEM or usable key material. The current Secret value is empty; the ignore is limited to the obsolete commit fingerprint. | https://github.com/sarattha/relayna-gateway/pull/102 | 2026-08-31 |
 
 ## Local Tooling
 

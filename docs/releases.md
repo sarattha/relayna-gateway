@@ -6,6 +6,9 @@ current release target.
 Version `0.1.24` adds Entra-authenticated browser sessions for administrators
 and registered service owners, exact Owner and Viewer service memberships,
 scoped service monitoring APIs, and managed-identity workload bindings.
+The portal confidential client uses certificate-backed PS256
+`private_key_jwt`, the production control Ingress exposes `/owner/v1`, and
+first-admin bootstrap is bound to tenant, immutable object ID, and email.
 Existing operator tokens remain available for emergency access. It retains
 endpoint-level failure monitoring, body admission, OpenAPI endpoint billing,
 persisted timeout handling, the Aurora Teal Admin UI 2.0 shell, policy
@@ -14,6 +17,7 @@ and credential mapping, and opt-in Entra ID and Apigee front-door authorization.
 See
 [Current Feature Highlights](current-features.md),
 [Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md),
+[Entra Integration Requirements](operations/entra-integration-requirements.md),
 [OpenAPI Service Pricing](openapi-service-pricing.md),
 [Entra ID Auth](entra-id-auth.md), and
 [Apigee Gateway Path](apigee-gateway-path.md) for the feature overview.

@@ -47,9 +47,15 @@ DevOps-owned operations.
   `/owner/v1` paths.
 - [x] (2026-08-09 07:20Z) Committed and pushed the scoped patch, opened ready
   PR #102, and received the first Codex review.
-- [ ] Fix, reply to, and resolve every actionable first-review thread, then
-  finalize 0.1.24 changelog/release documentation and the DevOps requirements
-  report.
+- [x] (2026-08-09 07:32Z) Fixed all three actionable first-review threads,
+  replied with commit and test evidence, and resolved them on PR #102.
+- [x] (2026-08-09 07:47Z) Finalized the 0.1.24 changelog, release and deployment
+  documentation, certificate rotation/rollback guide, and DevOps Entra
+  requirements report.
+- [x] (2026-08-09 07:47Z) Rebuilt the reviewed release image in Docker Desktop,
+  loaded it into the isolated kind cluster, passed every raw production-path
+  deployment check, and reconfirmed managed-identity authorization returns 200
+  for `orders` and 403 for an unassigned service.
 
 ## Surprises & Discoveries
 
@@ -91,6 +97,10 @@ DevOps-owned operations.
   mutable Entra claim and that syntactically valid certificate bytes did not
   prove the certificate belonged to the configured private key.
   Evidence: PR #102 review threads and the added gateway-core and portal tests.
+- Observation: using the RustCrypto `rsa` crate solely to compare key material
+  introduced `RUSTSEC-2023-0071` on a production private-key path.
+  Evidence: the mandatory `cargo deny check` failure after the first review
+  fix; the replacement OpenSSL parser passes the dependency policy.
 
 ## Decision Log
 
@@ -128,11 +138,28 @@ DevOps-owned operations.
   Rationale: thumbprint computation alone accepted unrelated certificates and
   deferred a deterministic configuration failure until Entra token exchange.
   Date/Author: 2026-08-09 / Codex.
+- Decision: use the maintained OpenSSL binding for startup-only RSA/X.509
+  parsing and public-key comparison.
+  Rationale: it preserves fail-closed certificate validation without directly
+  exposing the unpatched RustCrypto RSA implementation to production key
+  material.
+  Date/Author: 2026-08-09 / Codex.
 
 ## Outcomes & Retrospective
 
-Work is in progress. Completion requires green runtime, security, kind, UI,
-and first-review evidence with no unresolved actionable Codex comments.
+Relayna Gateway now follows Arcweft's certificate-backed confidential-client
+pattern, rejects invalid or mismatched certificate material at startup, and
+binds first-administrator bootstrap to verified tenant, immutable object ID,
+and email in gateway-core. The raw Kubernetes contract routes both private
+control prefixes and includes read-only deployment verification without adding
+Helm, tenant, or workload-identity automation.
+
+The full Rust workspace suite, Clippy, release metadata, strict docs build,
+Node Entra tests, rebuilt Docker image, kind rollout, production-path verifier,
+managed-identity allow/deny checks, and all browser role journeys passed. The
+first Codex review's three threads were answered and resolved. The mandatory
+security wrapper remains affected only by the pre-existing ignored
+`design-prototypes/` advisories documented above; tracked PR scope is clean.
 
 ## Context and Orientation
 

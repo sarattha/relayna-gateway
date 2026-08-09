@@ -7,13 +7,16 @@ Relayna remains the task execution runtime. Relayna Gateway is the public govern
 Version `0.1.24` is the current release target. Release `0.1.24` adds Microsoft
 Entra sign-in for administrators and registered service owners, exact service
 memberships, scoped owner dashboards and APIs, and managed-identity bindings
-for workload monitoring. Existing operator tokens remain available as
+for workload monitoring. The portal uses certificate-backed PS256
+`private_key_jwt`, and first-admin ConfigMap bootstrap matches tenant,
+immutable Entra object ID, and email. Existing operator tokens remain available as
 break-glass access, and all browser pages remain under `/admin-ui`. It retains
 endpoint-level failure monitoring, buffered-body admission, OpenAPI endpoint
 billing, the Aurora Teal Admin UI 2.0 shell, policy governance, provider
 intelligence, supply-chain hardening, LiteLLM passthrough and credential
 mapping, Entra front-door authorization, and Apigee provider-traffic support.
 See `docs/operations/entra-portal-and-owner-monitoring.md`,
+`docs/operations/entra-integration-requirements.md`,
 `docs/openapi-service-pricing.md`, `docs/current-features.md`,
 `docs/litellm-passthrough.md`, `docs/entra-id-auth.md`, and
 `docs/apigee-gateway-path.md` for the public feature highlights.

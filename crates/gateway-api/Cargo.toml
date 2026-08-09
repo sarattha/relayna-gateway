@@ -19,8 +19,7 @@ gateway-telemetry = { path = "../gateway-telemetry" }
 http.workspace = true
 jsonwebtoken.workspace = true
 pem.workspace = true
-rsa.workspace = true
-x509-cert.workspace = true
+openssl.workspace = true
 pingora-core.workspace = true
 pingora-proxy.workspace = true
 reqwest.workspace = true

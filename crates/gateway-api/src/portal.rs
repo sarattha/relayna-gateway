@@ -5,20 +5,12 @@ use gateway_core::{
     PortalAdminBootstrapPolicy, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-use rsa::{
-    pkcs1::DecodeRsaPrivateKey,
-    pkcs8::{DecodePrivateKey, DecodePublicKey},
-    RsaPrivateKey, RsaPublicKey,
-};
+use openssl::{pkey::PKey, x509::X509};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fmt, fs, sync::Arc, time::Duration};
 use url::Url;
 use uuid::Uuid;
-use x509_cert::{
-    der::{Decode, Encode},
-    Certificate,
-};
 
 const OIDC_HTTP_TIMEOUT: Duration = Duration::from_secs(8);
 const CLIENT_ASSERTION_LIFETIME_SECONDS: i64 = 300;
@@ -260,21 +252,20 @@ impl PortalOidcRuntime {
 }
 
 fn validate_certificate_pair(private_key_pem: &[u8], certificate_der: &[u8]) -> GatewayResult<()> {
-    let private_key_pem =
-        std::str::from_utf8(private_key_pem).map_err(|_| GatewayError::InvalidConfiguration)?;
-    let private_key = RsaPrivateKey::from_pkcs8_pem(private_key_pem)
-        .or_else(|_| RsaPrivateKey::from_pkcs1_pem(private_key_pem))
+    let private_key = PKey::private_key_from_pem(private_key_pem)
+        .map_err(|_| GatewayError::InvalidConfiguration)?;
+    private_key
+        .rsa()
         .map_err(|_| GatewayError::InvalidConfiguration)?;
     let certificate =
-        Certificate::from_der(certificate_der).map_err(|_| GatewayError::InvalidConfiguration)?;
+        X509::from_der(certificate_der).map_err(|_| GatewayError::InvalidConfiguration)?;
     let certificate_public_key = certificate
-        .tbs_certificate()
-        .subject_public_key_info()
-        .to_der()
+        .public_key()
         .map_err(|_| GatewayError::InvalidConfiguration)?;
-    let certificate_public_key = RsaPublicKey::from_public_key_der(&certificate_public_key)
+    certificate_public_key
+        .rsa()
         .map_err(|_| GatewayError::InvalidConfiguration)?;
-    if private_key.to_public_key() != certificate_public_key {
+    if !private_key.public_eq(&certificate_public_key) {
         return Err(GatewayError::InvalidConfiguration);
     }
     Ok(())
