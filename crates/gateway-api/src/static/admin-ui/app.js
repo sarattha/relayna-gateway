@@ -14699,6 +14699,13 @@ const state = {
   workspace: "admin",
   ownerServices: [],
   selectedOwnerService: null,
+  ownerDashboardFilters: {
+    range: "7d",
+    outcome: "all",
+    statusCode: "",
+    offset: 0,
+    limit: 20
+  },
   members: [],
   managedIdentities: []
 };
@@ -14709,6 +14716,8 @@ const requestTimeoutMs = 8e3;
 let noticeTimer = null;
 let dialogCounter = 0;
 let overviewChart = null;
+let ownerDashboardChart = null;
+let ownerDashboardGeneration = 0;
 function token() {
   return sessionStorage.getItem(tokenKey);
 }
@@ -14886,13 +14895,13 @@ function confirmAction(titleText, bodyText) {
   });
 }
 function mountDialog(backdrop, { initialFocus = "button", onClose = () => {
-} } = {}) {
+}, restoreFocus = null } = {}) {
   const dialog = backdrop == null ? void 0 : backdrop.querySelector('[role="dialog"]');
   if (!(backdrop instanceof HTMLElement) || !(dialog instanceof HTMLElement)) {
     return () => {
     };
   }
-  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const previousFocus = restoreFocus instanceof HTMLElement ? restoreFocus : document.activeElement instanceof HTMLElement ? document.activeElement : null;
   let closed = false;
   const focusableSelector = [
     "button:not([disabled])",
@@ -15167,6 +15176,8 @@ window.addEventListener("hashchange", () => {
 async function refresh({ focus = false } = {}) {
   setNotice("");
   destroyOverviewChart();
+  destroyOwnerDashboardChart();
+  if (state.view !== "service-dashboard") ownerDashboardGeneration += 1;
   applyViewChrome(state.view);
   const meta = viewMeta[state.view] || viewMeta.overview;
   document.querySelector("#breadcrumb-domain").textContent = meta.domain;
@@ -15411,6 +15422,11 @@ function destroyOverviewChart() {
   if (!overviewChart) return;
   overviewChart.destroy();
   overviewChart = null;
+}
+function destroyOwnerDashboardChart() {
+  if (!ownerDashboardChart) return;
+  ownerDashboardChart.destroy();
+  ownerDashboardChart = null;
 }
 function stat(label, value) {
   return metricTile(label, value);
@@ -16787,7 +16803,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.24")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.25")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -17442,7 +17458,7 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
     ${tableMarkup}
   `;
 }
-function usageEventsTable(rows) {
+function usageEventsTable(rows, { ownerService = null } = {}) {
   return table(
     ["Created", "Request", "Route", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
     rows.map((row) => [
@@ -17454,14 +17470,14 @@ function usageEventsTable(rows) {
       `<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
       esc(row.model || ""),
       esc(row.provider),
-      `${badge(row.status === "success" ? "good" : "bad", row.status)} <code>${esc(row.status_code)}</code>`,
+      `${badge(row.status, row.status === "success" ? "good" : "bad")} <code>${esc(row.status_code)}</code>`,
       `${esc(row.latency_ms)} ms`,
       esc(row.total_tokens),
       money(row.estimated_cost_usd),
       esc(row.cost_source || ""),
       esc(row.pricing_rule_name || ""),
       row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",
-      `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}">Debug</button>`
+      ownerService ? `<button type="button" data-owner-service="${attr(ownerService)}" data-owner-request="${attr(row.request_id)}">View details</button>` : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}">Debug</button>`
     ])
   );
 }
@@ -17487,15 +17503,20 @@ function unusedKeysTable(rows) {
 }
 function usageTimeseriesTable(rows) {
   return table(
-    ["Bucket", "Requests", "Success", "Failure", "Cost"],
+    ["Bucket", "Requests", "Success", "Failure", "Error rate", "P95 latency", "Cost"],
     rows.map((row) => {
-      var _a2, _b, _c, _d;
+      var _a2, _b, _c, _d, _e;
+      const requests = ((_a2 = row.summary) == null ? void 0 : _a2.request_count) ?? row.request_count ?? 0;
+      const failures = ((_b = row.summary) == null ? void 0 : _b.failure_count) ?? row.failure_count ?? 0;
+      const p95Latency = ((_c = row.summary) == null ? void 0 : _c.p95_latency_ms) ?? row.p95_latency_ms;
       return [
         esc(row.bucket_start || row.bucket || row.name),
-        ((_a2 = row.summary) == null ? void 0 : _a2.request_count) ?? row.request_count ?? 0,
-        ((_b = row.summary) == null ? void 0 : _b.success_count) ?? row.success_count ?? 0,
-        ((_c = row.summary) == null ? void 0 : _c.failure_count) ?? row.failure_count ?? 0,
-        money(((_d = row.summary) == null ? void 0 : _d.estimated_cost_usd) ?? row.estimated_cost_usd)
+        requests,
+        ((_d = row.summary) == null ? void 0 : _d.success_count) ?? row.success_count ?? 0,
+        failures,
+        requests ? `${(failures / requests * 100).toFixed(1)}%` : "0.0%",
+        p95Latency == null ? "n/a" : `${Math.round(p95Latency)} ms`,
+        money(((_e = row.summary) == null ? void 0 : _e.estimated_cost_usd) ?? row.estimated_cost_usd)
       ];
     })
   );
@@ -18406,21 +18427,230 @@ function ownerServiceCard(item) {
     <button class="primary" data-open-owner-service="${attr(service.name)}">Open dashboard</button>
   </article>`;
 }
+function ownerDashboardRange() {
+  const hours = state.ownerDashboardFilters.range === "6h" ? 6 : state.ownerDashboardFilters.range === "24h" ? 24 : 7 * 24;
+  return {
+    from: new Date(Date.now() - hours * 60 * 60 * 1e3).toISOString(),
+    interval: hours <= 24 ? "hour" : "day"
+  };
+}
+function ownerIncidentSummary(rows, markers) {
+  if (!rows.length) return "No service usage data is available for this period.";
+  const latest = rows[rows.length - 1].summary || {};
+  const requests = Number(latest.request_count || 0);
+  const failures = Number(latest.failure_count || 0);
+  const errorRate = requests ? failures / requests * 100 : 0;
+  const p95 = latest.p95_latency_ms == null ? "no P95 latency data" : `${Math.round(latest.p95_latency_ms)} milliseconds P95 latency`;
+  const versions = markers.length ? ` Observed version transitions: ${markers.map((marker) => marker.service_version).join(", ")}.` : " No service version transitions were observed.";
+  return `Latest bucket: ${errorRate.toFixed(1)} percent errors and ${p95}.${versions}`;
+}
+function renderOwnerIncidentChart(rows, markers) {
+  const canvas = document.querySelector("#owner-incident-chart");
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  const labels = rows.map((row) => time(row.bucket_start || row.bucket || row.name));
+  const bucketTimes = rows.map((row) => new Date(row.bucket_start || row.bucket || row.name).getTime());
+  const markerLabels = Array.from({ length: rows.length }, () => []);
+  for (const marker of markers) {
+    if (!rows.length) break;
+    const observed = new Date(marker.first_observed_at).getTime();
+    let index2 = 0;
+    for (let candidate = 0; candidate < bucketTimes.length; candidate += 1) {
+      if (bucketTimes[candidate] > observed) break;
+      index2 = candidate;
+    }
+    markerLabels[index2].push(marker.service_version);
+  }
+  const p95 = rows.map((row) => {
+    var _a2;
+    return ((_a2 = row.summary) == null ? void 0 : _a2.p95_latency_ms) == null ? null : Number(row.summary.p95_latency_ms);
+  });
+  const markerPlugin = {
+    id: "service-version-markers",
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea, scales: scales2 } = chart;
+      markerLabels.forEach((versions, index2) => {
+        if (!versions.length) return;
+        const x = scales2.x.getPixelForValue(index2);
+        ctx.save();
+        ctx.strokeStyle = "#6b7280";
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, chartArea.top);
+        ctx.lineTo(x, chartArea.bottom);
+        ctx.stroke();
+        ctx.fillStyle = "#36534d";
+        ctx.font = "600 10px Inter, sans-serif";
+        ctx.fillText(versions.join(" → "), Math.min(x + 5, chartArea.right - 96), chartArea.top + 12);
+        ctx.restore();
+      });
+    }
+  };
+  ownerDashboardChart = new Chart(canvas, {
+    type: "line",
+    plugins: [markerPlugin],
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Error rate (%)",
+          data: rows.map((row) => {
+            const summary = row.summary || {};
+            const requests = Number(summary.request_count || 0);
+            return requests ? Number(summary.failure_count || 0) / requests * 100 : 0;
+          }),
+          borderColor: "#d9474f",
+          backgroundColor: "#d9474f",
+          yAxisID: "errorRate",
+          tension: 0.28,
+          pointRadius: 2,
+          borderWidth: 2
+        },
+        {
+          label: "P95 latency (ms)",
+          data: p95,
+          borderColor: "#087b60",
+          backgroundColor: "#087b60",
+          yAxisID: "latency",
+          tension: 0.28,
+          pointRadius: 2,
+          borderWidth: 2
+        },
+        {
+          label: "Service version",
+          data: markerLabels.map((versions, index2) => versions.length ? p95[index2] ?? 0 : null),
+          borderColor: "#6b7280",
+          backgroundColor: "#6b7280",
+          yAxisID: "latency",
+          showLine: false,
+          pointStyle: "triangle",
+          pointRadius: markerLabels.map((versions) => versions.length ? 6 : 0),
+          markerLabels
+        }
+      ]
+    },
+    options: {
+      animation: false,
+      maintainAspectRatio: false,
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "top", align: "start", labels: { boxWidth: 18, color: "#536276", font: { size: 11, weight: 600 } } },
+        tooltip: {
+          backgroundColor: "#062f36",
+          callbacks: {
+            label(context) {
+              var _a2;
+              if (context.dataset.label === "Service version") {
+                const versions = ((_a2 = context.dataset.markerLabels) == null ? void 0 : _a2[context.dataIndex]) || [];
+                return versions.map((version2) => `Version ${version2} first observed by Gateway`);
+              }
+              return `${context.dataset.label}: ${context.formattedValue}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: "#58736e", maxTicksLimit: 8, font: { size: 10 } } },
+        errorRate: { beginAtZero: true, suggestedMax: 100, grid: { color: "#dcebe7" }, ticks: { color: "#8a3439", callback: (value) => `${value}%`, font: { size: 10 } } },
+        latency: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, ticks: { color: "#087b60", callback: (value) => `${value} ms`, font: { size: 10 } } }
+      }
+    }
+  });
+}
+function ownerRequestDetailsRows(request) {
+  return [
+    ["Request", `<code>${esc(request.request_id)}</code>`],
+    ["Created", time(request.created_at)],
+    ["Outcome", badge(request.status, request.status === "success" ? "good" : "bad")],
+    ["HTTP status", `<code>${esc(request.status_code)}</code>`],
+    ["Route", `<code>${esc(request.route)}</code>`],
+    ["Endpoint", `<code>${esc(request.endpoint_template || request.endpoint_path || "")}</code>`],
+    ["Provider", esc(request.provider)],
+    ["Service version", esc(request.service_version || "Not observed")],
+    ["Latency", `${esc(request.latency_ms)} ms`],
+    ["Tokens", esc(request.total_tokens)],
+    ["Estimated cost", money(request.estimated_cost_usd)],
+    ["Trace", request.trace_id ? `<code>${esc(request.trace_id)}</code>` : "Not recorded"]
+  ];
+}
+async function openOwnerRequestDetails(event) {
+  const trigger = event.currentTarget;
+  const serviceName = trigger.dataset.ownerService;
+  const requestId = trigger.dataset.ownerRequest;
+  const details = await api(`/owner/v1/services/${encodeURIComponent(serviceName)}/requests/${encodeURIComponent(requestId)}`);
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop owner-request-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
+  backdrop.innerHTML = `
+    <div class="modal owner-request-drawer" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+      <div class="owner-request-heading">
+        <div><span class="eyebrow">Sanitized request details</span><h3 id="${titleId}">${esc(requestId)}</h3></div>
+        <button type="button" data-close-owner-request aria-label="Close request details">Close</button>
+      </div>
+      <div class="modal-scroll owner-request-content">
+        ${table(["Field", "Value"], ownerRequestDetailsRows(details.request))}
+        <section class="owner-debug-section">
+          <h4>Debug bundle</h4>
+          ${details.debug_bundle ? jsonBlock(details.debug_bundle) : emptyState("Usage metadata is available, but no proxy debug bundle was captured for this request.")}
+        </section>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const close = mountDialog(backdrop, {
+    initialFocus: "[data-close-owner-request]",
+    restoreFocus: trigger
+  });
+  backdrop.querySelector("[data-close-owner-request]").addEventListener("click", () => close(false));
+}
 async function serviceDashboard() {
-  var _a2, _b;
-  if (!state.ownerServices.length) state.ownerServices = await api("/owner/v1/services");
+  var _a2, _b, _c, _d;
+  const generation = ++ownerDashboardGeneration;
+  const isStale = () => generation !== ownerDashboardGeneration;
+  destroyOwnerDashboardChart();
+  if (!state.ownerServices.length) {
+    try {
+      const ownerServices = await api("/owner/v1/services");
+      if (isStale()) return;
+      state.ownerServices = ownerServices;
+    } catch (error) {
+      if (isStale()) return;
+      throw error;
+    }
+  }
+  if (isStale()) return;
   if (!state.selectedOwnerService) state.selectedOwnerService = (_b = (_a2 = state.ownerServices[0]) == null ? void 0 : _a2.service) == null ? void 0 : _b.name;
   if (!state.selectedOwnerService) {
     content.innerHTML = panel("Service dashboard", emptyState("No service access has been assigned."));
     return;
   }
   const serviceName = state.selectedOwnerService;
-  const from2 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1e3).toISOString();
-  const query = new URLSearchParams({ from: from2, interval: "day", limit: "50" });
-  const [dashboard, errors] = await Promise.all([
-    api(`/owner/v1/services/${encodeURIComponent(serviceName)}/dashboard?${query}`),
-    api(`/owner/v1/services/${encodeURIComponent(serviceName)}/errors?${query}`)
-  ]);
+  const range = ownerDashboardRange();
+  const dashboardQuery = new URLSearchParams({ from: range.from, interval: range.interval });
+  const eventsQuery = new URLSearchParams({
+    from: range.from,
+    limit: String(state.ownerDashboardFilters.limit),
+    offset: String(state.ownerDashboardFilters.offset)
+  });
+  if (state.ownerDashboardFilters.outcome !== "all") eventsQuery.set("status", state.ownerDashboardFilters.outcome);
+  if (state.ownerDashboardFilters.statusCode) eventsQuery.set("status_code", state.ownerDashboardFilters.statusCode);
+  let dashboard;
+  let events;
+  try {
+    [dashboard, events] = await Promise.all([
+      api(`/owner/v1/services/${encodeURIComponent(serviceName)}/dashboard?${dashboardQuery}`),
+      api(`/owner/v1/services/${encodeURIComponent(serviceName)}/events?${eventsQuery}`)
+    ]);
+  } catch (error) {
+    if (isStale()) return;
+    throw error;
+  }
+  if (isStale()) return;
+  const statusCodes = (dashboard.status_codes || []).map(String);
+  if (state.ownerDashboardFilters.statusCode && !statusCodes.includes(state.ownerDashboardFilters.statusCode)) {
+    statusCodes.push(state.ownerDashboardFilters.statusCode);
+  }
+  const eventStart = ((_c = events.rows) == null ? void 0 : _c.length) ? events.offset + 1 : 0;
+  const eventEnd = ((_d = events.rows) == null ? void 0 : _d.length) ? events.offset + events.rows.length : 0;
   content.innerHTML = `
     <section class="owner-dashboard-toolbar">
       <label>Service<select id="owner-service-select">${state.ownerServices.map((item) => option(item.service.name, serviceName)).join("")}</select></label>
@@ -18430,19 +18660,65 @@ async function serviceDashboard() {
     <section class="metric-strip">
       ${metricTile("Requests", dashboard.summary.request_count)}
       ${metricTile("Failures", dashboard.summary.failure_count)}
-      ${metricTile("Average latency", dashboard.summary.average_latency_ms == null ? "n/a" : `${Number(dashboard.summary.average_latency_ms).toFixed(0)} ms`)}
+      ${metricTile("P95 latency", dashboard.summary.p95_latency_ms == null ? "n/a" : `${Number(dashboard.summary.p95_latency_ms).toFixed(0)} ms`)}
       ${metricTile("Estimated cost", money(dashboard.summary.estimated_cost_usd))}
+    </section>
+    <section class="panel owner-incident-panel">
+      <div class="panel-heading"><div><h3>Incident signals</h3><p>Error rate and P95 latency with service-version observations.</p></div></div>
+      <p class="sr-only">${esc(ownerIncidentSummary(dashboard.timeseries || [], dashboard.version_markers || []))}</p>
+      <div class="owner-incident-chart-wrap"><canvas id="owner-incident-chart" role="img" aria-label="Service error rate and P95 latency over time with version transition markers"></canvas></div>
     </section>
     <section class="owner-dashboard-grid">
       ${panel("Endpoint usage", usageBreakdownTable(dashboard.endpoints || []))}
       ${panel("Provider usage", usageBreakdownTable(dashboard.providers || []))}
     </section>
-    ${panel("Errors and failed request logs", usageEventsTable(errors.rows || []))}
+    <section class="panel owner-request-panel">
+      <div class="panel-heading"><div><h3>Request logs</h3><p>Inspect every scoped request outcome without exposing payloads or credentials.</p></div></div>
+      <div class="owner-request-filters" role="group" aria-label="Request log filters">
+        <label>Time range<select id="owner-range-select">
+          ${option("6h", state.ownerDashboardFilters.range, "Last 6 hours")}
+          ${option("24h", state.ownerDashboardFilters.range, "Last 24 hours")}
+          ${option("7d", state.ownerDashboardFilters.range, "Last 7 days")}
+        </select></label>
+        <label>Outcome<select id="owner-outcome-select">
+          ${option("all", state.ownerDashboardFilters.outcome, "All outcomes")}
+          ${option("success", state.ownerDashboardFilters.outcome, "Success")}
+          ${option("failure", state.ownerDashboardFilters.outcome, "Failure")}
+        </select></label>
+        <label>Status code<select id="owner-status-select">
+          ${option("", state.ownerDashboardFilters.statusCode, "All status codes")}
+          ${statusCodes.map((code) => option(code, state.ownerDashboardFilters.statusCode, code)).join("")}
+        </select></label>
+      </div>
+      <div class="table-pager owner-request-pager" aria-label="Request logs pagination">
+        <span>Showing ${eventStart}-${eventEnd}</span>
+        <button type="button" data-owner-page="previous" ${events.offset <= 0 ? "disabled" : ""}>Previous</button>
+        <button type="button" data-owner-page="next" ${events.has_more ? "" : "disabled"}>Next</button>
+      </div>
+      ${usageEventsTable(events.rows || [], { ownerService: serviceName })}
+    </section>
     ${panel("Usage over time", usageTimeseriesTable(dashboard.timeseries || []))}`;
+  renderOwnerIncidentChart(dashboard.timeseries || [], dashboard.version_markers || []);
   document.querySelector("#owner-service-select").addEventListener("change", (event) => {
     state.selectedOwnerService = event.target.value;
+    state.ownerDashboardFilters.offset = 0;
     serviceDashboard().catch((error) => setNotice(error.message));
   });
+  for (const id of ["owner-range-select", "owner-outcome-select", "owner-status-select"]) {
+    document.querySelector(`#${id}`).addEventListener("change", (event) => {
+      if (id === "owner-range-select") state.ownerDashboardFilters.range = event.target.value;
+      if (id === "owner-outcome-select") state.ownerDashboardFilters.outcome = event.target.value;
+      if (id === "owner-status-select") state.ownerDashboardFilters.statusCode = event.target.value;
+      state.ownerDashboardFilters.offset = 0;
+      serviceDashboard().catch((error) => setNotice(error.message));
+    });
+  }
+  content.querySelectorAll("[data-owner-page]").forEach((button) => button.addEventListener("click", () => {
+    const delta = button.dataset.ownerPage === "next" ? state.ownerDashboardFilters.limit : -20;
+    state.ownerDashboardFilters.offset = Math.max(0, state.ownerDashboardFilters.offset + delta);
+    serviceDashboard().catch((error) => setNotice(error.message));
+  }));
+  content.querySelectorAll("[data-owner-request]").forEach((button) => button.addEventListener("click", handleAsync(openOwnerRequestDetails)));
 }
 function blankToUndefined(value) {
   return value === null || String(value).trim() === "" ? void 0 : String(value).trim();
@@ -18475,8 +18751,8 @@ function methodSelect(selected = []) {
 function methodOption(value, selectedMethods) {
   return `<label><input name="allowed_methods" type="checkbox" value="${attr(value)}" ${selectedMethods.has(value) ? "checked" : ""}> ${esc(value)}</label>`;
 }
-function option(value, selected) {
-  return `<option value="${attr(value)}" ${value === selected ? "selected" : ""}>${esc(value)}</option>`;
+function option(value, selected, label = value) {
+  return `<option value="${attr(value)}" ${value === selected ? "selected" : ""}>${esc(label)}</option>`;
 }
 function time(value) {
   return value ? new Date(value).toLocaleString() : "n/a";

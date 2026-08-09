@@ -62,7 +62,7 @@ pub use observability::{
     ProviderHealth, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageDashboard,
     UsageDashboardBreakdowns, UsageEventsPage, UsageExport, UsageExportRow, UsageFilterValues,
     UsageFilterValuesQuery, UsagePage, UsageQuery, UsageQueryStore, UsageServiceTimeseriesPoint,
-    UsageSummary, UsageTimeseriesPoint,
+    UsageSummary, UsageTimeseriesPoint, UsageVersionTransition, MAX_USAGE_VERSION_TRANSITIONS,
 };
 pub use operators::{
     default_operator_roles, default_operator_scopes, operator_token_prefix,

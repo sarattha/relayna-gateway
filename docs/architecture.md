@@ -91,6 +91,12 @@ inject the exact authorized service into every store query. Browser OIDC tokens
 never reach JavaScript, while managed identities must match tenant, audience,
 application role, and an enabled service binding.
 
+The owner dashboard exposes incident time series, filtered request events, and
+sanitized request details only within that exact service scope. A missing
+request and a request owned by another service return the same `404` response,
+preventing request-ID enumeration. Optional debug bundles are returned only
+when their stored service scope matches the authorized service.
+
 Usage export endpoints are part of the admin surface:
 
 - `/admin-ui/admin/usage/export.json`

@@ -1,11 +1,14 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.24` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.25` is the
 current release target.
 
-Version `0.1.24` adds Entra-authenticated browser sessions for administrators
+Version `0.1.25` adds Entra-authenticated browser sessions for administrators
 and registered service owners, exact Owner and Viewer service memberships,
-scoped service monitoring APIs, and managed-identity workload bindings.
+scoped service monitoring APIs, and managed-identity workload bindings. It also
+adds owner incident charts for error rate and P95 latency, validated service-
+version observations, all-request filtering and pagination, and exact-service
+sanitized request details with optional debug bundles.
 The portal confidential client uses certificate-backed PS256
 `private_key_jwt`, the production control Ingress exposes `/owner/v1`, and
 first-admin bootstrap is bound to tenant, immutable object ID, and email.
@@ -29,7 +32,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.24
+   python3 scripts/validate-release-metadata.py v0.1.25
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -47,15 +50,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.24 .
+   docker build -t relayna-gateway:0.1.25 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.24 -m "Release v0.1.24"
-   git push origin v0.1.24
+   git tag -a v0.1.25 -m "Release v0.1.25"
+   git push origin v0.1.25
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -65,10 +68,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.24`, the workflow publishes:
+For `v0.1.25`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.24
+ghcr.io/sarattha/relayna-gateway:0.1.25
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

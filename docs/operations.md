@@ -288,10 +288,10 @@ Before deploying a new release:
 3. Run CI, including Rust checks, security scans, admin UI tests, and docs
    build.
 4. Confirm PostgreSQL migrations apply in a staging database.
-   For `0.1.24`, verify existing operator-token access remains available, new
+   For `0.1.25`, verify existing operator-token access remains available, new
    Entra identities start pending, exact service memberships scope owner data,
    and unmanaged workload identities are denied.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.24`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.25`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
 
 ## Supply Chain and Runtime Hardening

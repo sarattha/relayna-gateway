@@ -6,7 +6,7 @@ an opaque HttpOnly session cookie, not an Entra token. Relayna's persisted
 memberships decide whether the identity is pending, active, blocked, an
 administrator, an Owner, or a Viewer.
 
-Release `0.1.24` authenticates the confidential client with a certificate-signed
+Release `0.1.25` authenticates the confidential client with a certificate-signed
 PS256 `private_key_jwt`. It does not accept a portal client secret. The raw
 ConfigMap and Secrets in `deploy/kubernetes/relayna-gateway.yaml` are the
 deployment contract; Helm rendering, tenant provisioning, managed-identity
@@ -112,6 +112,31 @@ Register each managed identity in Relayna with its tenant ID, client ID,
 immutable object ID, exact service, and `gateway.monitor.read` application
 role. A tenant-wide token or Entra app-role assignment without an enabled exact
 Relayna binding cannot read any service.
+
+## Incident monitoring and request details
+
+The service dashboard supports 6-hour, 24-hour, and 7-day windows. Its incident
+chart plots error rate and P95 latency and keeps the matching usage table as a
+textual fallback. If a registered upstream returns
+`X-Relayna-Service-Version`, Gateway records it only when it matches
+`[A-Za-z0-9][A-Za-z0-9._+-]{0,63}`. Chart markers mean the first time Gateway
+observed a transition; they do not claim to be the deployment timestamp.
+Repeated events for one version do not create duplicate markers, while later
+rollbacks create a new transition marker.
+
+Request logs can show all outcomes or only Success or Failure, filter an exact
+HTTP status code, and page through results. **View details** calls:
+
+```text
+GET /owner/v1/services/{service_name}/requests/{request_id}
+```
+
+The route requires exact service membership. Missing request IDs and IDs that
+belong to another service return the same `request_not_found` 404 response. The
+response contains sanitized usage metadata plus an optional redacted debug
+bundle. Historical and demo rows remain inspectable when the bundle is absent.
+Request bodies, prompts, credentials, raw headers, and unredacted provider
+errors are never included.
 
 ## Raw Kubernetes verification
 

@@ -2,7 +2,7 @@
 
 Relayna Gateway ships as one binary and one Docker image. The image serves both the core proxy and the admin portal because the admin UI is embedded in the `gateway-api` binary.
 
-Version `0.1.24` keeps that deployment shape and adds Entra-authenticated human
+Version `0.1.25` keeps that deployment shape and adds Entra-authenticated human
 portal sessions, service memberships, scoped owner monitoring, and exact
 managed-identity service bindings. Its additive migration leaves existing
 operator-token access and registered-service traffic unchanged. It retains
@@ -28,7 +28,7 @@ See
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.24 .
+docker build -t relayna-gateway:0.1.25 .
 ```
 
 Run it with required dependencies:
@@ -48,12 +48,12 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.24
+  relayna-gateway:0.1.25
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
 
-On first `0.1.24` startup, the idempotent PostgreSQL migration adds portal
+On first `0.1.25` startup, the idempotent PostgreSQL migration adds portal
 members, exact service memberships, managed-identity bindings, OIDC login
 transactions, and opaque portal sessions. Existing operator tokens remain the
 break-glass bootstrap path and existing service registrations are not granted
@@ -111,13 +111,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.24
+   ghcr.io/sarattha/relayna-gateway:0.1.25
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.24"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.25"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -125,7 +125,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.24
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.25
    ```
 
 3. Store secrets through your cluster secret manager:
