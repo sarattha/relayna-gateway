@@ -39,8 +39,9 @@ and role-to-managed-identity assignments.
   operational handoff, release documentation, and Entra examples.
 - [x] (2026-08-09 16:05Z) Ran focused tests, the mandatory verification stack, release metadata
   validation, and Computer Use browser journeys against development OIDC.
-- [ ] Commit and publish a draft PR, wait for the first Codex review, address
-  all actionable feedback, reply, resolve threads, and rerun affected checks.
+- [x] (2026-08-09 16:15Z) Committed and published PR #104, waited for the first
+  Codex review, addressed all actionable feedback, replied to and resolved the
+  review thread, and reran affected checks.
 
 ## Surprises & Discoveries
 
@@ -80,6 +81,14 @@ and role-to-managed-identity assignments.
   vulnerabilities, and tracked-surface Trivy reported zero HIGH or CRITICAL
   findings for `Cargo.lock`.
 
+- Observation: The first Codex review found that three checked-in environment
+  harnesses still supplied the removed `ENTRA_AUDIENCE` variable. Migrating
+  their compose files alone was insufficient because their mock tokens also
+  needed the newly defaulted `gateway.invoke` role.
+  Evidence: commit `8ba768e` migrates all three harnesses, adds the role claim,
+  and adds a development OIDC regression test; the review thread was replied
+  to and resolved.
+
 ## Decision Log
 
 - Decision: Use one canonical `ENTRA_APPLICATION_ID` for portal client identity
@@ -106,13 +115,14 @@ and role-to-managed-identity assignments.
 
 ## Outcomes & Retrospective
 
-The local implementation is complete. Relayna now has one canonical Entra
+The implementation and first review cycle are complete. Relayna now has one canonical Entra
 application ID for browser and API token audiences, with separate invoke and
 monitoring workload identities represented by distinct application roles.
 Focused and full Rust tests, development OIDC integration, Admin UI tests,
 strict documentation build, release metadata, dependency checks, secret
 scanning, static analysis, and Computer Use browser validation all pass. PR
-publication and first-review handling remain.
+104 is open, its initial CI run passed, and its one actionable Codex thread was
+fixed, replied to, and resolved.
 
 ## Context and Orientation
 
