@@ -45,8 +45,8 @@ DevOps-owned operations.
   isolated Docker Desktop kind cluster, and used Computer to test signed-out,
   administrator, pending, blocked, owner, managed-identity, logout, and scoped
   `/owner/v1` paths.
-- [ ] Commit and push the scoped patch, open a draft PR, and wait for the first
-  Codex review.
+- [x] (2026-08-09 07:20Z) Committed and pushed the scoped patch, opened ready
+  PR #102, and received the first Codex review.
 - [ ] Fix, reply to, and resolve every actionable first-review thread, then
   finalize 0.1.24 changelog/release documentation and the DevOps requirements
   report.
@@ -87,6 +87,10 @@ DevOps-owned operations.
   email signed in, emptying `PORTAL_ADMIN_EMAILS` and restarting both replicas
   still returned the persisted active Admin member.
   Evidence: Computer UI sign-in before and after the kind rollout.
+- Observation: the first Codex review correctly identified that email is a
+  mutable Entra claim and that syntactically valid certificate bytes did not
+  prove the certificate belonged to the configured private key.
+  Evidence: PR #102 review threads and the added gateway-core and portal tests.
 
 ## Decision Log
 
@@ -111,6 +115,18 @@ DevOps-owned operations.
   scoped v0.1.24 readiness patch.
   Rationale: the requested authentication and network fixes must land before
   production-ready Entra support can be claimed for v0.1.24.
+  Date/Author: 2026-08-09 / Codex.
+- Decision: require the configured tenant, immutable Entra object ID, and email
+  to match before the first sign-in can bootstrap an administrator, and make
+  gateway-core own that policy decision.
+  Rationale: object ID prevents a reassigned or renamed email claim from
+  granting administrative access, while keeping the ConfigMap-driven Arcweft
+  bootstrap pattern requested for first deployment.
+  Date/Author: 2026-08-09 / Codex.
+- Decision: parse the mounted X.509 certificate and compare its RSA public key
+  to the mounted private key during startup.
+  Rationale: thumbprint computation alone accepted unrelated certificates and
+  deferred a deterministic configuration failure until Entra token exchange.
   Date/Author: 2026-08-09 / Codex.
 
 ## Outcomes & Retrospective
@@ -208,6 +224,9 @@ ownership.
 
 The final runtime interface uses `PORTAL_OIDC_PRIVATE_KEY_PATH` and
 `PORTAL_OIDC_CERTIFICATE_PATH` instead of `PORTAL_OIDC_CLIENT_SECRET`.
+`PORTAL_ADMIN_EMAILS` and `PORTAL_ADMIN_OBJECT_IDS` must either both be empty
+or both be populated; the first administrator must match the configured
+tenant, immutable object ID, and email.
 `OWNER_ENTRA_*` remains unchanged. The standard assertion type is
 `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`; PS256 and
 `x5t#S256` match Arcweft and Entra's confidential-client posture.

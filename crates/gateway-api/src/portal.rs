@@ -2,14 +2,23 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Utc};
 use gateway_core::{
     EntraAuthConfig, EntraIdentityContext, EntraJwtVerifier, GatewayError, GatewayResult,
-    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    PortalAdminBootstrapPolicy, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use rsa::{
+    pkcs1::DecodeRsaPrivateKey,
+    pkcs8::{DecodePrivateKey, DecodePublicKey},
+    RsaPrivateKey, RsaPublicKey,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fmt, fs, sync::Arc, time::Duration};
 use url::Url;
 use uuid::Uuid;
+use x509_cert::{
+    der::{Decode, Encode},
+    Certificate,
+};
 
 const OIDC_HTTP_TIMEOUT: Duration = Duration::from_secs(8);
 const CLIENT_ASSERTION_LIFETIME_SECONDS: i64 = 300;
@@ -23,6 +32,7 @@ pub struct PortalOidcConfig {
     pub private_key_path: String,
     pub certificate_path: String,
     pub admin_emails: Vec<String>,
+    pub admin_object_ids: Vec<String>,
     pub issuer: String,
     pub discovery_url: String,
     pub redirect_uri: String,
@@ -55,15 +65,12 @@ impl PortalOidcConfig {
         {
             return Err(GatewayError::InvalidConfiguration);
         }
+        PortalAdminBootstrapPolicy::new(
+            self.tenant_id.clone(),
+            self.admin_emails.clone(),
+            self.admin_object_ids.clone(),
+        )?;
         Ok(())
-    }
-
-    pub fn is_admin_email(&self, email: Option<&str>) -> bool {
-        email
-            .map(str::trim)
-            .filter(|email| !email.is_empty())
-            .map(str::to_lowercase)
-            .is_some_and(|email| self.admin_emails.iter().any(|admin| admin == &email))
     }
 }
 
@@ -79,6 +86,7 @@ pub struct PortalOidcRuntime {
     client: reqwest::Client,
     client_assertion_key: EncodingKey,
     certificate_thumbprint: String,
+    pub admin_bootstrap_policy: PortalAdminBootstrapPolicy,
 }
 
 impl fmt::Debug for PortalOidcRuntime {
@@ -104,7 +112,13 @@ impl PortalOidcRuntime {
         if certificate.tag() != "CERTIFICATE" || certificate.contents().is_empty() {
             return Err(GatewayError::InvalidConfiguration);
         }
+        validate_certificate_pair(&private_key, certificate.contents())?;
         let certificate_thumbprint = URL_SAFE_NO_PAD.encode(Sha256::digest(certificate.contents()));
+        let admin_bootstrap_policy = PortalAdminBootstrapPolicy::new(
+            config.tenant_id.clone(),
+            config.admin_emails.clone(),
+            config.admin_object_ids.clone(),
+        )?;
         let verifier = EntraJwtVerifier::new(EntraAuthConfig {
             tenant_id: config.tenant_id.clone(),
             audience: config.client_id.clone(),
@@ -129,6 +143,7 @@ impl PortalOidcRuntime {
             client,
             client_assertion_key,
             certificate_thumbprint,
+            admin_bootstrap_policy,
         })
     }
 
@@ -242,6 +257,27 @@ impl PortalOidcRuntime {
             .await
             .map_err(|_| GatewayError::OidcUnavailable)
     }
+}
+
+fn validate_certificate_pair(private_key_pem: &[u8], certificate_der: &[u8]) -> GatewayResult<()> {
+    let private_key_pem =
+        std::str::from_utf8(private_key_pem).map_err(|_| GatewayError::InvalidConfiguration)?;
+    let private_key = RsaPrivateKey::from_pkcs8_pem(private_key_pem)
+        .or_else(|_| RsaPrivateKey::from_pkcs1_pem(private_key_pem))
+        .map_err(|_| GatewayError::InvalidConfiguration)?;
+    let certificate =
+        Certificate::from_der(certificate_der).map_err(|_| GatewayError::InvalidConfiguration)?;
+    let certificate_public_key = certificate
+        .tbs_certificate()
+        .subject_public_key_info()
+        .to_der()
+        .map_err(|_| GatewayError::InvalidConfiguration)?;
+    let certificate_public_key = RsaPublicKey::from_public_key_der(&certificate_public_key)
+        .map_err(|_| GatewayError::InvalidConfiguration)?;
+    if private_key.to_public_key() != certificate_public_key {
+        return Err(GatewayError::InvalidConfiguration);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -448,6 +484,7 @@ mod tests {
             private_key_path: credentials.private_key_path.clone(),
             certificate_path: credentials.certificate_path.clone(),
             admin_emails: vec!["first.admin@example.test".into()],
+            admin_object_ids: vec!["object-admin".into()],
             issuer: base_url.into(),
             discovery_url: format!("{base_url}/.well-known/openid-configuration"),
             redirect_uri: "http://127.0.0.1:18381/admin-ui/auth/callback".into(),
@@ -490,6 +527,28 @@ mod tests {
         invalid.session_ttl_seconds = 0;
         assert_eq!(
             PortalOidcRuntime::new(invalid).unwrap_err(),
+            GatewayError::InvalidConfiguration
+        );
+
+        let invalid_certificate_path = credentials.directory.join("invalid-certificate.pem");
+        std::fs::write(
+            &invalid_certificate_path,
+            "-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----\n",
+        )
+        .expect("write invalid certificate");
+        let mut invalid_certificate = test_config(&base_url, &credentials);
+        invalid_certificate.certificate_path =
+            invalid_certificate_path.to_string_lossy().into_owned();
+        assert_eq!(
+            PortalOidcRuntime::new(invalid_certificate).unwrap_err(),
+            GatewayError::InvalidConfiguration
+        );
+
+        let other_credentials = test_credentials();
+        let mut mismatched_certificate = test_config(&base_url, &credentials);
+        mismatched_certificate.certificate_path = other_credentials.certificate_path.clone();
+        assert_eq!(
+            PortalOidcRuntime::new(mismatched_certificate).unwrap_err(),
             GatewayError::InvalidConfiguration
         );
 

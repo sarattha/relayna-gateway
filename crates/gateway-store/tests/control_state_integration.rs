@@ -1,10 +1,10 @@
 use chrono::{DateTime, Duration, Utc};
 use gateway_core::{
-    BudgetDecision, BudgetStore, GatewayError, GuardrailPolicy, KeyPolicy,
-    ManagedIdentityCreateRequest, ManagedIdentityPatchRequest, MemberPatchRequest, MemberStatus,
-    NewPortalSession, OidcLoginTransaction, PolicyLookup, PortalAccessStore, Provider,
-    RateLimitDecision, RateLimitStore, Route, ServiceMemberRole, ServiceMembershipUpsertRequest,
-    OWNER_WORKLOAD_ROLE,
+    BudgetDecision, BudgetStore, EntraIdentityContext, EntraIdentitySource, GatewayError,
+    GuardrailPolicy, KeyPolicy, ManagedIdentityCreateRequest, ManagedIdentityPatchRequest,
+    MemberPatchRequest, MemberStatus, NewPortalSession, OidcLoginTransaction, PolicyLookup,
+    PortalAccessStore, PortalAdminBootstrapPolicy, Provider, RateLimitDecision, RateLimitStore,
+    Route, ServiceMemberRole, ServiceMembershipUpsertRequest, OWNER_WORKLOAD_ROLE,
 };
 use gateway_store::{PostgresStore, RedisControlState};
 use redis::AsyncCommands;
@@ -14,6 +14,29 @@ struct IntegrationEnv {
     store: PostgresStore,
     redis: RedisControlState,
     redis_client: redis::Client,
+}
+
+fn portal_identity(
+    tenant_id: &str,
+    object_id: &str,
+    email: &str,
+    display_name: &str,
+) -> EntraIdentityContext {
+    EntraIdentityContext {
+        tenant_id: tenant_id.into(),
+        subject: Some(object_id.into()),
+        object_id: Some(object_id.into()),
+        app_id: None,
+        authorized_party: None,
+        email: Some(email.into()),
+        display_name: Some(display_name.into()),
+        nonce: None,
+        scopes: Vec::new(),
+        roles: Vec::new(),
+        groups: Vec::new(),
+        token_version: "2.0".into(),
+        source: EntraIdentitySource::Jwt,
+    }
 }
 
 async fn integration_env() -> Option<IntegrationEnv> {
@@ -206,16 +229,21 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
     .await
     .expect("insert owner service");
 
+    let empty_bootstrap_policy = PortalAdminBootstrapPolicy::new(
+        "tenant-integration",
+        Vec::<String>::new(),
+        Vec::<String>::new(),
+    )
+    .expect("empty bootstrap policy");
+    let member_identity = portal_identity(
+        "tenant-integration",
+        &format!("object-{suffix}"),
+        "owner@example.test",
+        "Owner Test",
+    );
     let member = env
         .store
-        .upsert_oidc_member(
-            "tenant-integration",
-            &format!("object-{suffix}"),
-            Some("owner@example.test"),
-            Some("Owner Test"),
-            false,
-            now,
-        )
+        .upsert_oidc_member(&member_identity, &empty_bootstrap_policy, now)
         .await
         .expect("upsert pending member");
     assert_eq!(member.status, MemberStatus::Pending);
@@ -231,16 +259,22 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
         .iter()
         .any(|candidate| candidate.id == member.id));
 
+    let bootstrap_object_id = format!("bootstrap-object-{suffix}");
+    let bootstrap_identity = portal_identity(
+        "tenant-integration",
+        &bootstrap_object_id,
+        "first.admin@example.test",
+        "First Administrator",
+    );
+    let bootstrap_policy = PortalAdminBootstrapPolicy::new(
+        "tenant-integration",
+        ["first.admin@example.test".into()],
+        [bootstrap_object_id],
+    )
+    .expect("bootstrap policy");
     let bootstrap_member = env
         .store
-        .upsert_oidc_member(
-            "tenant-integration",
-            &format!("bootstrap-object-{suffix}"),
-            Some("first.admin@example.test"),
-            Some("First Administrator"),
-            true,
-            now,
-        )
+        .upsert_oidc_member(&bootstrap_identity, &bootstrap_policy, now)
         .await
         .expect("bootstrap first administrator");
     assert_eq!(bootstrap_member.status, MemberStatus::Active);
@@ -258,16 +292,11 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
         .expect("block bootstrap administrator")
         .expect("bootstrap administrator exists");
     assert!(!blocked_bootstrap_member.is_admin());
+    let mut signed_in_blocked_identity = bootstrap_identity;
+    signed_in_blocked_identity.email = Some("FIRST.ADMIN@example.test".into());
     let signed_in_blocked_member = env
         .store
-        .upsert_oidc_member(
-            "tenant-integration",
-            &format!("bootstrap-object-{suffix}"),
-            Some("FIRST.ADMIN@example.test"),
-            Some("First Administrator"),
-            true,
-            now,
-        )
+        .upsert_oidc_member(&signed_in_blocked_identity, &bootstrap_policy, now)
         .await
         .expect("sign in blocked bootstrap administrator");
     assert_eq!(signed_in_blocked_member.status, MemberStatus::Blocked);

@@ -172,6 +172,7 @@ test("raw Kubernetes manifest preserves the Entra certificate and owner routing 
   for (const expected of [
     'PORTAL_OIDC_PRIVATE_KEY_PATH: "/var/run/secrets/relayna-portal-oidc/portal-private-key.pem"',
     'PORTAL_OIDC_CERTIFICATE_PATH: "/var/run/secrets/relayna-portal-oidc/portal-certificate.pem"',
+    'PORTAL_ADMIN_OBJECT_IDS: ""',
     'PORTAL_ADMIN_EMAILS: ""',
     "name: relayna-gateway-portal-oidc",
     "mountPath: /var/run/secrets/relayna-portal-oidc",

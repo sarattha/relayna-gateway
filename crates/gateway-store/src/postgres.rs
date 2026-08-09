@@ -4,8 +4,9 @@ use gateway_core::{
     access::{
         ManagedIdentityBinding, ManagedIdentityCreateRequest, ManagedIdentityPatchRequest,
         MemberPatchRequest, MemberStatus, NewPortalSession, OidcLoginTransaction,
-        PortalAccessStore, PortalMember, ServiceMemberRole, ServiceMembership,
-        ServiceMembershipUpsertRequest, StoredPortalSession, PORTAL_ROLE_ADMIN,
+        PortalAccessStore, PortalAdminBootstrapPolicy, PortalMember, PortalMemberLogin,
+        ServiceMemberRole, ServiceMembership, ServiceMembershipUpsertRequest, StoredPortalSession,
+        PORTAL_ROLE_ADMIN,
     },
     admin::{
         AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse,
@@ -42,20 +43,21 @@ use gateway_core::{
     verify_stored_operator_token, AdminAuditStore, AdminGuardrailDefinitionResponse, AdminKeyStore,
     AdminKeyUsageSummary, AdminOpenAiRouteStore, AdminPolicyLayerStore, AdminProjectStore,
     AuditEvent, AuditEventCreate, AuditEventQuery, CircuitBreakerState, DebugBundle,
-    FallbackAttempt, GatewayError, GatewayResult, GuardrailAdminCreateRequest,
-    GuardrailAdminPatchRequest, GuardrailDefinition, GuardrailEventQuery, GuardrailExecutionEvent,
-    GuardrailExecutionSummary, GuardrailMode, GuardrailObservabilityStore, GuardrailPolicy,
-    GuardrailProviderKind, GuardrailStore, KeyPolicy, LiteLlmPassthroughSettings,
-    LiteLlmPassthroughSettingsPatchRequest, LiteLlmRouteLimits, OpenAiRouteConfigPatchRequest,
-    OpenAiRouteMode, OpenAiRouteSetting, OpenAiRouteSettingsLookup, OperatorAuthorization,
-    OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore, PolicyLayer, PolicyLayerKind,
-    ProjectUsageSummary, Provider, ProviderHealth, ProviderHealthCheckTarget, ProviderHealthState,
-    ProviderHealthStatus, ProviderIntelligenceStore, Route, ServiceImportDiff,
-    ServiceRegistrySnapshot, StoredOperatorToken, UnusedKey, UsageBreakdown,
-    UsageBreakdownDimension, UsageDashboard, UsageDashboardBreakdowns, UsageEvent, UsageEventsPage,
-    UsageExport, UsageExportRow, UsageFilterValues, UsageFilterValuesQuery, UsagePage, UsageQuery,
-    UsageQueryStore, UsageRecorder, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary,
-    UsageTimeseriesPoint, VirtualKeyMaterial,
+    EntraIdentityContext, FallbackAttempt, GatewayError, GatewayResult,
+    GuardrailAdminCreateRequest, GuardrailAdminPatchRequest, GuardrailDefinition,
+    GuardrailEventQuery, GuardrailExecutionEvent, GuardrailExecutionSummary, GuardrailMode,
+    GuardrailObservabilityStore, GuardrailPolicy, GuardrailProviderKind, GuardrailStore, KeyPolicy,
+    LiteLlmPassthroughSettings, LiteLlmPassthroughSettingsPatchRequest, LiteLlmRouteLimits,
+    OpenAiRouteConfigPatchRequest, OpenAiRouteMode, OpenAiRouteSetting, OpenAiRouteSettingsLookup,
+    OperatorAuthorization, OperatorTokenMaterial, OperatorTokenResponse, OperatorTokenStore,
+    PolicyLayer, PolicyLayerKind, ProjectUsageSummary, Provider, ProviderHealth,
+    ProviderHealthCheckTarget, ProviderHealthState, ProviderHealthStatus,
+    ProviderIntelligenceStore, Route, ServiceImportDiff, ServiceRegistrySnapshot,
+    StoredOperatorToken, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageDashboard,
+    UsageDashboardBreakdowns, UsageEvent, UsageEventsPage, UsageExport, UsageExportRow,
+    UsageFilterValues, UsageFilterValuesQuery, UsagePage, UsageQuery, UsageQueryStore,
+    UsageRecorder, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary, UsageTimeseriesPoint,
+    VirtualKeyMaterial,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -6738,16 +6740,11 @@ fn service_registry_snapshot_from_row(
 impl PortalAccessStore for PostgresStore {
     async fn upsert_oidc_member(
         &self,
-        tenant_id: &str,
-        object_id: &str,
-        email: Option<&str>,
-        display_name: Option<&str>,
-        bootstrap_admin: bool,
+        identity: &EntraIdentityContext,
+        bootstrap_policy: &PortalAdminBootstrapPolicy,
         now: chrono::DateTime<chrono::Utc>,
     ) -> GatewayResult<PortalMember> {
-        if tenant_id.trim().is_empty() || object_id.trim().is_empty() {
-            return Err(GatewayError::InvalidAccessPayload);
-        }
+        let login = PortalMemberLogin::from_identity(identity, bootstrap_policy)?;
         sqlx::query(
             r#"
             INSERT INTO portal_members (
@@ -6779,15 +6776,11 @@ impl PortalAccessStore for PostgresStore {
             RETURNING *
             "#,
         )
-        .bind(tenant_id.trim())
-        .bind(object_id.trim())
-        .bind(email.map(str::trim).filter(|value| !value.is_empty()))
-        .bind(
-            display_name
-                .map(str::trim)
-                .filter(|value| !value.is_empty()),
-        )
-        .bind(bootstrap_admin)
+        .bind(&login.tenant_id)
+        .bind(&login.object_id)
+        .bind(login.email.as_deref())
+        .bind(login.display_name.as_deref())
+        .bind(login.bootstrap_admin)
         .bind(PORTAL_ROLE_ADMIN)
         .bind(now)
         .fetch_one(&self.pool)

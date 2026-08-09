@@ -26,9 +26,10 @@ data:
   PORTAL_OIDC_DISCOVERY_URL: ""
   PORTAL_OIDC_REDIRECT_URI: ""
   PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI: ""
-  # Initial bootstrap only. Remove after every named administrator has signed in
-  # and the persisted active Admin roles have been verified.
+  # Initial bootstrap only. Each email must be accompanied by the immutable
+  # Entra object ID. Remove both after persisted Admin roles are verified.
   PORTAL_ADMIN_EMAILS: ""
+  PORTAL_ADMIN_OBJECT_IDS: ""
   PORTAL_SESSION_TTL_SECONDS: "28800"
   PORTAL_LOGIN_TTL_SECONDS: "600"
   PORTAL_SESSION_COOKIE_SECURE: "true"

@@ -96,6 +96,10 @@ impl Config {
                     .into_iter()
                     .map(|email| email.to_lowercase())
                     .collect(),
+                admin_object_ids: optional_csv("PORTAL_ADMIN_OBJECT_IDS")
+                    .into_iter()
+                    .map(|object_id| object_id.to_lowercase())
+                    .collect(),
                 issuer: required("PORTAL_OIDC_ISSUER")?,
                 discovery_url: required("PORTAL_OIDC_DISCOVERY_URL")?,
                 redirect_uri: required("PORTAL_OIDC_REDIRECT_URI")?,

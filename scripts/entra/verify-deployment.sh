@@ -99,9 +99,12 @@ check_config_nonempty OWNER_ENTRA_ISSUER
 check_config_nonempty OWNER_ENTRA_OIDC_DISCOVERY_URL
 
 if jq -e '.data.PORTAL_ADMIN_EMAILS | type == "string" and length > 0' <<<"${config_json}" >/dev/null; then
-  printf '%s\n' 'INFO: PORTAL_ADMIN_EMAILS is configured for first-administrator bootstrap; remove it after persisted Admin roles are verified.'
+  check_config_nonempty PORTAL_ADMIN_OBJECT_IDS
+  printf '%s\n' 'INFO: immutable email/object-ID pairs are configured for first-administrator bootstrap; remove both settings after persisted Admin roles are verified.'
+elif jq -e '.data.PORTAL_ADMIN_OBJECT_IDS | type == "string" and length > 0' <<<"${config_json}" >/dev/null; then
+  check "PORTAL_ADMIN_OBJECT_IDS is empty when PORTAL_ADMIN_EMAILS is empty" false
 else
-  printf '%s\n' 'INFO: PORTAL_ADMIN_EMAILS is empty, as expected after first-administrator bootstrap.'
+  printf '%s\n' 'INFO: PORTAL_ADMIN_EMAILS and PORTAL_ADMIN_OBJECT_IDS are empty, as expected after first-administrator bootstrap.'
 fi
 
 check "certificate Secret is mounted read-only" jq -e \

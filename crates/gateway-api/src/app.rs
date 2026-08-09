@@ -800,23 +800,9 @@ async fn portal_auth_callback(
     if identity.nonce.as_deref() != Some(transaction.nonce.as_str()) {
         return error_response(&headers, GatewayError::InvalidOidcTransaction);
     }
-    let Some(object_id) = identity
-        .object_id
-        .as_deref()
-        .or(identity.subject.as_deref())
-    else {
-        return error_response(&headers, GatewayError::InvalidEntraToken);
-    };
     let member = match state
         .store
-        .upsert_oidc_member(
-            &identity.tenant_id,
-            object_id,
-            identity.email.as_deref(),
-            identity.display_name.as_deref(),
-            oidc.config.is_admin_email(identity.email.as_deref()),
-            Utc::now(),
-        )
+        .upsert_oidc_member(&identity, &oidc.admin_bootstrap_policy, Utc::now())
         .await
     {
         Ok(member) => member,
@@ -5434,14 +5420,14 @@ mod tests {
         admin::{AdminKeyUsageSummary, AdminPolicyResponse, ProjectUsageSummary},
         auth::StoredVirtualKey,
         default_operator_roles, default_operator_scopes, AuthenticatedKey, EntraAuthConfig,
-        LiteLlmPassthroughSettings, OpenAiRouteConfigPatchRequest, OpenAiRouteMode,
-        OpenAiRouteSetting, OperatorTokenResponse, PatchValue, ProjectCreateRequest,
-        ProjectPatchRequest, ProjectResponse, ProviderConfigCreateRequest,
-        ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealth, Route, ServiceCostMode,
-        ServiceResponse, ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse,
-        StoredGatewayAuthSettings, StoredStudioConnection, StudioConnectionPatchRequest,
-        UsageBreakdown, UsageExportRow, UsagePage, UsageServiceTimeseriesPoint, UsageStatus,
-        UsageSummary, UsageTimeseriesPoint,
+        EntraIdentityContext, LiteLlmPassthroughSettings, OpenAiRouteConfigPatchRequest,
+        OpenAiRouteMode, OpenAiRouteSetting, OperatorTokenResponse, PatchValue,
+        PortalAdminBootstrapPolicy, PortalMemberLogin, ProjectCreateRequest, ProjectPatchRequest,
+        ProjectResponse, ProviderConfigCreateRequest, ProviderConfigPatchRequest,
+        ProviderConfigResponse, ProviderHealth, Route, ServiceCostMode, ServiceResponse,
+        ServiceSource, ServiceSyncStatus, ServiceSyncStatusResponse, StoredGatewayAuthSettings,
+        StoredStudioConnection, StudioConnectionPatchRequest, UsageBreakdown, UsageExportRow,
+        UsagePage, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary, UsageTimeseriesPoint,
     };
     use std::{
         collections::BTreeMap,
@@ -5506,27 +5492,24 @@ mod tests {
     impl PortalAccessStore for MemoryStore {
         async fn upsert_oidc_member(
             &self,
-            tenant_id: &str,
-            object_id: &str,
-            email: Option<&str>,
-            display_name: Option<&str>,
-            bootstrap_admin: bool,
+            identity: &EntraIdentityContext,
+            bootstrap_policy: &PortalAdminBootstrapPolicy,
             now: chrono::DateTime<Utc>,
         ) -> GatewayResult<PortalMember> {
+            let login = PortalMemberLogin::from_identity(identity, bootstrap_policy)?;
             let mut members = self.portal_members.lock().expect("lock poisoned");
-            if let Some(member) = members
-                .iter_mut()
-                .find(|member| member.tenant_id == tenant_id && member.object_id == object_id)
-            {
-                if email.is_some() {
-                    member.email = email.map(ToOwned::to_owned);
+            if let Some(member) = members.iter_mut().find(|member| {
+                member.tenant_id == login.tenant_id && member.object_id == login.object_id
+            }) {
+                if login.email.is_some() {
+                    member.email = login.email.clone();
                 }
-                if display_name.is_some() {
-                    member.display_name = display_name.map(ToOwned::to_owned);
+                if login.display_name.is_some() {
+                    member.display_name = login.display_name.clone();
                 }
                 member.last_sign_in_at = Some(now);
                 member.updated_at = now;
-                if bootstrap_admin && member.status == MemberStatus::Pending {
+                if login.bootstrap_admin && member.status == MemberStatus::Pending {
                     member.status = MemberStatus::Active;
                     member.roles = vec![gateway_core::PORTAL_ROLE_ADMIN.to_owned()];
                 }
@@ -5534,16 +5517,16 @@ mod tests {
             }
             let member = PortalMember {
                 id: Uuid::new_v4(),
-                tenant_id: tenant_id.to_owned(),
-                object_id: object_id.to_owned(),
-                email: email.map(ToOwned::to_owned),
-                display_name: display_name.map(ToOwned::to_owned),
-                status: if bootstrap_admin {
+                tenant_id: login.tenant_id,
+                object_id: login.object_id,
+                email: login.email,
+                display_name: login.display_name,
+                status: if login.bootstrap_admin {
                     MemberStatus::Active
                 } else {
                     MemberStatus::Pending
                 },
-                roles: if bootstrap_admin {
+                roles: if login.bootstrap_admin {
                     vec![gateway_core::PORTAL_ROLE_ADMIN.to_owned()]
                 } else {
                     Vec::new()
@@ -7965,6 +7948,29 @@ mod tests {
         }
     }
 
+    fn test_entra_identity(
+        tenant_id: &str,
+        object_id: &str,
+        email: &str,
+        display_name: &str,
+    ) -> EntraIdentityContext {
+        EntraIdentityContext {
+            tenant_id: tenant_id.to_owned(),
+            subject: Some(object_id.to_owned()),
+            object_id: Some(object_id.to_owned()),
+            app_id: None,
+            authorized_party: None,
+            email: Some(email.to_owned()),
+            display_name: Some(display_name.to_owned()),
+            nonce: None,
+            scopes: Vec::new(),
+            roles: Vec::new(),
+            groups: Vec::new(),
+            token_version: "2.0".into(),
+            source: gateway_core::EntraIdentitySource::Jwt,
+        }
+    }
+
     fn seed_portal_session(store: &MemoryStore, member: PortalMember) -> (String, String) {
         let raw_session = random_opaque_token();
         let raw_csrf = random_opaque_token();
@@ -8385,13 +8391,22 @@ mod tests {
         let store = default_store();
         let admin = active_portal_member(true);
         let (raw_session, raw_csrf) = seed_portal_session(&store, admin);
-        let pending = PortalAccessStore::upsert_oidc_member(
-            &store,
+        let pending_identity = test_entra_identity(
             "tenant-test",
             "pending-object",
-            Some("pending@relayna.test"),
-            Some("Pending Owner"),
-            false,
+            "pending@relayna.test",
+            "Pending Owner",
+        );
+        let bootstrap_policy = PortalAdminBootstrapPolicy::new(
+            "tenant-test",
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+        )
+        .expect("empty bootstrap policy");
+        let pending = PortalAccessStore::upsert_oidc_member(
+            &store,
+            &pending_identity,
+            &bootstrap_policy,
             Utc::now(),
         )
         .await
@@ -8766,6 +8781,7 @@ mod tests {
                 private_key_path: certificate.private_key_path.clone(),
                 certificate_path: certificate.certificate_path.clone(),
                 admin_emails: Vec::new(),
+                admin_object_ids: Vec::new(),
                 issuer: "http://127.0.0.1:9".into(),
                 discovery_url: "http://127.0.0.1:9/.well-known/openid-configuration".into(),
                 redirect_uri: "http://127.0.0.1:18381/admin-ui/auth/callback".into(),
@@ -8936,6 +8952,7 @@ mod tests {
             private_key_path: oidc.certificate.private_key_path.clone(),
             certificate_path: oidc.certificate.certificate_path.clone(),
             admin_emails: vec!["gateway.admin@relayna.dev".into()],
+            admin_object_ids: vec!["00000000-0000-0000-0000-000000000002".into()],
             issuer: issuer.clone(),
             discovery_url: format!("{issuer}/.well-known/openid-configuration"),
             redirect_uri: "http://127.0.0.1:18381/admin-ui/auth/callback".into(),

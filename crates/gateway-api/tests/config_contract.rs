@@ -36,6 +36,7 @@ const VARIABLES: &[&str] = &[
     "PORTAL_OIDC_PRIVATE_KEY_PATH",
     "PORTAL_OIDC_CERTIFICATE_PATH",
     "PORTAL_ADMIN_EMAILS",
+    "PORTAL_ADMIN_OBJECT_IDS",
     "PORTAL_OIDC_ISSUER",
     "PORTAL_OIDC_DISCOVERY_URL",
     "PORTAL_OIDC_REDIRECT_URI",
@@ -124,6 +125,7 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
             "PORTAL_ADMIN_EMAILS",
             " First.Admin@example.test,SECOND.ADMIN@example.test ",
         ),
+        ("PORTAL_ADMIN_OBJECT_IDS", " ADMIN-OBJECT-1,ADMIN-OBJECT-2 "),
         ("PORTAL_OIDC_ISSUER", "https://portal-issuer.example"),
         (
             "PORTAL_OIDC_DISCOVERY_URL",
@@ -180,8 +182,10 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
             "second.admin@example.test".to_owned()
         ]
     );
-    assert!(portal.is_admin_email(Some("FIRST.ADMIN@example.test")));
-    assert!(!portal.is_admin_email(Some("member@example.test")));
+    assert_eq!(
+        portal.admin_object_ids,
+        vec!["admin-object-1".to_owned(), "admin-object-2".to_owned()]
+    );
     let owner = config
         .owner_entra_auth
         .as_ref()
