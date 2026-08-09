@@ -84,17 +84,24 @@ changes after deployment; environment variables remain useful for bootstrap,
 GitOps, and immutable deployments. See [Admin Portal](admin-portal.md) for the
 field-by-field UI walkthrough and screenshots.
 
+Release `0.1.26` uses the same Entra application registration for confidential
+portal sign-in and API authorization. Configure that registration with a Web
+platform, identifier URI `api://<application-id>`, requested access-token
+version 2, and the `gateway.invoke` and `gateway.monitor.read` application
+roles. Request-plane managed identities receive only `gateway.invoke`; service
+monitoring identities receive only `gateway.monitor.read`.
+
 The environment variables are listed below. Empty strings are treated as unset.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
+| `ENTRA_APPLICATION_ID` | When any Entra mode is enabled | none | One Entra application ID GUID shared by portal OIDC, request-plane access-token validation, and owner monitoring. For v2 access tokens this is the expected `aud`; managed identities request `api://<application-id>/.default`. |
 | `ENTRA_AUTH_ENABLED` | No | `false` | Enables direct Entra JWT validation for proxy traffic. |
 | `ENTRA_TENANT_ID` | When enabled | none | Expected `tid` claim. Use the tenant GUID or tenant identifier your app tokens carry. |
-| `ENTRA_AUDIENCE` | When enabled | none | Expected `aud` claim for the Gateway API registration, for example `api://relayna-gateway`. |
 | `ENTRA_ISSUER` | When enabled | none | Expected token issuer. For v2 tokens this is usually `https://login.microsoftonline.com/<tenant-id>/v2.0`. |
 | `ENTRA_OIDC_DISCOVERY_URL` | When enabled | none | OIDC metadata URL that returns `issuer` and `jwks_uri`. |
 | `ENTRA_REQUIRED_SCOPE` | No | none | Optional required delegated scope from the `scp` claim. |
-| `ENTRA_REQUIRED_ROLE` | No | none | Optional required app role from the `roles` claim. |
+| `ENTRA_REQUIRED_ROLE` | No | `gateway.invoke` | Required app role from the `roles` claim for request-plane Entra and trusted Apigee identities. Override only when the shared application defines a reviewed equivalent. |
 | `ENTRA_ALLOWED_GROUPS` | No | none | Optional comma-separated group IDs. At least one must appear in `groups`. |
 | `ENTRA_ACCEPTED_ALGORITHMS` | No | `RS256` | Comma-separated accepted JWT algorithms. Gateway currently validates RSA JWKS keys. |
 | `ENTRA_RELAYNA_KEY_HEADER` | No | `X-Relayna-Key` | Header that carries the Relayna `rk_live_...` key in Entra and Apigee modes. |
@@ -105,24 +112,24 @@ Minimal direct Entra configuration:
 
 ```bash
 export ENTRA_AUTH_ENABLED="true"
+export ENTRA_APPLICATION_ID="11111111-1111-1111-1111-111111111111"
 export ENTRA_TENANT_ID="00000000-0000-0000-0000-000000000000"
-export ENTRA_AUDIENCE="api://relayna-gateway"
 export ENTRA_ISSUER="https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0"
 export ENTRA_OIDC_DISCOVERY_URL="https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0/.well-known/openid-configuration"
-export ENTRA_REQUIRED_SCOPE="gateway.invoke"
+export ENTRA_REQUIRED_ROLE="gateway.invoke"
 export ENTRA_RELAYNA_KEY_HEADER="X-Relayna-Key"
 ```
 
-Application-role configuration:
+Managed identities request the shared API resource and receive the application
+roles assigned to their service principal:
 
 ```bash
-export ENTRA_AUTH_ENABLED="true"
-export ENTRA_TENANT_ID="00000000-0000-0000-0000-000000000000"
-export ENTRA_AUDIENCE="api://relayna-gateway"
-export ENTRA_ISSUER="https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0"
-export ENTRA_OIDC_DISCOVERY_URL="https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0/.well-known/openid-configuration"
-export ENTRA_REQUIRED_ROLE="Gateway.Invoke"
+export RELAYNA_GATEWAY_SCOPE="api://${ENTRA_APPLICATION_ID}/.default"
 ```
+
+Request-plane identities receive `gateway.invoke`. Service-monitoring
+identities receive `gateway.monitor.read`. Do not assign both unless the
+combined capability boundary is intentional.
 
 Group allowlist configuration:
 
@@ -182,7 +189,7 @@ Direct JWT validation checks:
 - Signature validates against JWKS modulus and exponent.
 - `iss` equals `ENTRA_ISSUER`.
 - `tid` equals `ENTRA_TENANT_ID`.
-- `aud` contains `ENTRA_AUDIENCE`.
+- `aud` contains `ENTRA_APPLICATION_ID`.
 - `exp` is not expired after allowed clock skew.
 - `nbf`, when present, is not in the future after allowed clock skew.
 - `iat`, when present, is not in the future after allowed clock skew.
@@ -206,7 +213,7 @@ Entra failures use stable Gateway error codes:
 | `malformed_entra_authorization` | Header is not `Bearer <token>` or token header cannot be parsed. |
 | `invalid_entra_token` | Unknown `kid`, invalid signature, unsupported algorithm, invalid JWKS, invalid `nbf`/`iat`, unsupported token version, or malformed token body. |
 | `expired_entra_token` | `exp` is expired after clock skew. |
-| `invalid_entra_audience` | `aud` does not contain `ENTRA_AUDIENCE`. |
+| `invalid_entra_audience` | `aud` does not contain `ENTRA_APPLICATION_ID`. |
 | `invalid_entra_issuer` | `iss`, `tid`, or OIDC metadata issuer does not match config. |
 | `insufficient_entra_authorization` | Missing required scope, role, or group, or token uses group overage. |
 | `missing_authorization` | Entra passed, but the configured Relayna key header is missing. |
@@ -262,7 +269,7 @@ empty placeholders for required Entra values.
 Useful local checks after changing Entra configuration or code:
 
 ```bash
-python3 scripts/validate-release-metadata.py v0.1.25
+python3 scripts/validate-release-metadata.py v0.1.26
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
 cargo test --workspace --all-features

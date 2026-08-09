@@ -6,7 +6,7 @@ an opaque HttpOnly session cookie, not an Entra token. Relayna's persisted
 memberships decide whether the identity is pending, active, blocked, an
 administrator, an Owner, or a Viewer.
 
-Release `0.1.25` authenticates the confidential client with a certificate-signed
+Release `0.1.26` authenticates the confidential client with a certificate-signed
 PS256 `private_key_jwt`. It does not accept a portal client secret. The raw
 ConfigMap and Secrets in `deploy/kubernetes/relayna-gateway.yaml` are the
 deployment contract; Helm rendering, tenant provisioning, managed-identity
@@ -35,8 +35,8 @@ Put non-secret values in `relayna-gateway-config`:
 
 ```text
 PORTAL_OIDC_ENABLED=true
+ENTRA_APPLICATION_ID=<single confidential Web/API application ID>
 PORTAL_OIDC_TENANT_ID=<tenant UUID>
-PORTAL_OIDC_CLIENT_ID=<confidential Web application client ID>
 PORTAL_OIDC_PRIVATE_KEY_PATH=/var/run/secrets/relayna-portal-oidc/portal-private-key.pem
 PORTAL_OIDC_CERTIFICATE_PATH=/var/run/secrets/relayna-portal-oidc/portal-certificate.pem
 PORTAL_OIDC_ISSUER=https://login.microsoftonline.com/<tenant>/v2.0
@@ -76,7 +76,7 @@ portal-certificate.pem       matching X.509 public certificate
 
 The Deployment mounts the Secret read-only at
 `/var/run/secrets/relayna-portal-oidc`. Register only the public certificate on
-the portal Web application. Gateway parses the certificate, verifies that its
+the shared Relayna Gateway application. Gateway parses the certificate, verifies that its
 RSA public key matches the private key, computes `x5t#S256`, and fails startup
 on missing, invalid, or mismatched material. Client assertions use PS256, the
 client ID as issuer and subject, the exact discovered token endpoint as
@@ -85,7 +85,7 @@ audience, a unique JTI, and a five-minute lifetime.
 Rotate without downtime:
 
 1. Generate a new RSA key and certificate in the approved key-management path.
-2. Add the new public certificate to the Entra Web application while the old
+2. Add the new public certificate to the shared Entra application while the old
    certificate remains registered.
 3. Update both Secret keys as one version and roll the Gateway Deployment.
 4. Run `scripts/entra/verify-deployment.sh`, sign in, sign out, and sign in
@@ -101,17 +101,27 @@ Entra. Never mix a private key from one version with a certificate from another.
 
 ```text
 OWNER_ENTRA_AUTH_ENABLED=true
+ENTRA_APPLICATION_ID=<same confidential Web/API application ID>
 OWNER_ENTRA_TENANT_ID=<tenant UUID>
-OWNER_ENTRA_AUDIENCE=api://relayna-gateway-owner
 OWNER_ENTRA_ISSUER=https://login.microsoftonline.com/<tenant>/v2.0
 OWNER_ENTRA_OIDC_DISCOVERY_URL=https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration
 OWNER_ENTRA_ACCEPTED_ALGORITHMS=RS256
 ```
 
-Register each managed identity in Relayna with its tenant ID, client ID,
-immutable object ID, exact service, and `gateway.monitor.read` application
-role. A tenant-wide token or Entra app-role assignment without an enabled exact
-Relayna binding cannot read any service.
+Configure the one shared Entra application with identifier URI
+`api://<ENTRA_APPLICATION_ID>` and requested access-token version 2. Managed
+identities request `api://<ENTRA_APPLICATION_ID>/.default`; Gateway validates
+the resulting token's `aud` as the application ID GUID. Register each monitoring
+identity in Relayna with its tenant ID, client ID, immutable object ID, exact
+service, and `gateway.monitor.read` application role. A tenant-wide token or
+Entra app-role assignment without an enabled exact Relayna binding cannot read
+any service.
+
+Use a separate request-plane managed identity with only `gateway.invoke` when a
+Relayna worker or another service calls provider routes. Those calls still need
+a Relayna virtual key and must pass route, model, budget, rate-limit, and
+guardrail policy. Do not assign both application roles to one identity unless
+the combined capability boundary is explicitly intended.
 
 ## Incident monitoring and request details
 
@@ -170,14 +180,14 @@ RELAYNA_DEV_OIDC_BROWSER_CERTIFICATE_PATH=target/development-oidc/portal-certifi
 
 Set Gateway's `PORTAL_OIDC_PRIVATE_KEY_PATH` and
 `PORTAL_OIDC_CERTIFICATE_PATH` to the generated files, and use issuer/discovery
-URLs rooted at `http://127.0.0.1:18090`. Use client ID
-`relayna-gateway-local`, redirect URI
+URLs rooted at `http://127.0.0.1:18090`. Use shared application ID
+`relayna-gateway-local`, identifier URI `api://relayna-gateway-local`, redirect URI
 `http://127.0.0.1:18381/admin-ui/auth/callback`, logout return
 `http://127.0.0.1:18381/admin-ui`, and `PORTAL_SESSION_COOKIE_SECURE=false`.
 Use the generated private-key and certificate paths instead of a client secret.
 The account chooser provides pending, administrator, and service-owner-shaped
 identities. The development administrator object ID is
-`00000000-0000-0000-0000-000000000002`. The workload fixture uses client ID
-`00000000-0000-0000-0000-000000000101`, object ID
-`00000000-0000-0000-0000-000000000102`, and the development-only secret printed
-in the source. Never deploy the fixture, its keys, or its credentials.
+`00000000-0000-0000-0000-000000000002`. The invoke fixture uses client/object
+IDs ending in `0101`/`0102`, and the monitoring fixture uses IDs ending in
+`0201`/`0202`; each has a separate development-only secret and only its named
+application role. Never deploy the fixture, its keys, or its credentials.

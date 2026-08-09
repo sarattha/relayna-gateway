@@ -118,6 +118,7 @@ function tokenClaims(overrides = {}) {
     oid: "litellm-review-object",
     azp: "litellm-review-client",
     scp: requiredScope,
+    roles: ["gateway.invoke"],
     groups: [allowedGroup],
     ...overrides,
   };

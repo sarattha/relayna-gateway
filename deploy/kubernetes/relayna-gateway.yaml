@@ -10,16 +10,20 @@ data:
   LOG_LEVEL: "gateway_api=info,gateway_proxy=info"
   # Entra and Apigee modes are opt-in. Keep disabled unless this gateway is
   # behind Microsoft Entra ID or an Apigee front door.
+  # One application acts as the confidential Web client and API resource.
+  # Managed identities request api://<ENTRA_APPLICATION_ID>/.default and
+  # receive only their assigned gateway.invoke or gateway.monitor.read role.
+  ENTRA_APPLICATION_ID: ""
   ENTRA_AUTH_ENABLED: "false"
   ENTRA_RELAYNA_KEY_HEADER: "X-Relayna-Key"
   ENTRA_ACCEPTED_ALGORITHMS: "RS256"
   ENTRA_JWKS_CACHE_TTL_SECONDS: "300"
   ENTRA_CLOCK_SKEW_SECONDS: "60"
   APIGEE_TRUSTED_HEADER_ENABLED: "false"
-  # Human portal OIDC and workload owner APIs are independent opt-in modes.
+  # Human portal OIDC and workload owner APIs are independent opt-in modes but
+  # use the shared ENTRA_APPLICATION_ID when enabled.
   PORTAL_OIDC_ENABLED: "false"
   PORTAL_OIDC_TENANT_ID: ""
-  PORTAL_OIDC_CLIENT_ID: ""
   PORTAL_OIDC_PRIVATE_KEY_PATH: "/var/run/secrets/relayna-portal-oidc/portal-private-key.pem"
   PORTAL_OIDC_CERTIFICATE_PATH: "/var/run/secrets/relayna-portal-oidc/portal-certificate.pem"
   PORTAL_OIDC_ISSUER: ""
@@ -35,7 +39,6 @@ data:
   PORTAL_SESSION_COOKIE_SECURE: "true"
   OWNER_ENTRA_AUTH_ENABLED: "false"
   OWNER_ENTRA_TENANT_ID: ""
-  OWNER_ENTRA_AUDIENCE: ""
   OWNER_ENTRA_ISSUER: ""
   OWNER_ENTRA_OIDC_DISCOVERY_URL: ""
   OWNER_ENTRA_ACCEPTED_ALGORITHMS: "RS256"
@@ -62,11 +65,10 @@ stringData:
   RELAYNA_STUDIO_TOKEN: ""
   # Required only when ENTRA_AUTH_ENABLED=true.
   ENTRA_TENANT_ID: ""
-  ENTRA_AUDIENCE: ""
   ENTRA_ISSUER: ""
   ENTRA_OIDC_DISCOVERY_URL: ""
   ENTRA_REQUIRED_SCOPE: ""
-  ENTRA_REQUIRED_ROLE: ""
+  ENTRA_REQUIRED_ROLE: "gateway.invoke"
   ENTRA_ALLOWED_GROUPS: ""
   # Required only when APIGEE_TRUSTED_HEADER_ENABLED=true.
   APIGEE_TRUSTED_HEADER_SECRET: ""
@@ -108,7 +110,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/sarattha/relayna-gateway:0.1.25
+          image: ghcr.io/sarattha/relayna-gateway:0.1.26
           imagePullPolicy: IfNotPresent
           ports:
             - name: proxy

@@ -68,11 +68,11 @@ Configuration is the same as direct Entra mode:
 
 ```bash
 export ENTRA_AUTH_ENABLED="true"
+export ENTRA_APPLICATION_ID="11111111-1111-1111-1111-111111111111"
 export ENTRA_TENANT_ID="00000000-0000-0000-0000-000000000000"
-export ENTRA_AUDIENCE="api://relayna-gateway"
 export ENTRA_ISSUER="https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0"
 export ENTRA_OIDC_DISCOVERY_URL="https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0/.well-known/openid-configuration"
-export ENTRA_REQUIRED_SCOPE="gateway.invoke"
+export ENTRA_REQUIRED_ROLE="gateway.invoke"
 export ENTRA_RELAYNA_KEY_HEADER="X-Relayna-Key"
 ```
 
@@ -117,7 +117,7 @@ The identity JSON maps to Gateway's sanitized Entra identity context:
   "app_id": "client-application-id",
   "authorized_party": "client-application-id",
   "scopes": ["gateway.invoke"],
-  "roles": ["Gateway.Invoke"],
+  "roles": ["gateway.invoke"],
   "groups": ["11111111-1111-1111-1111-111111111111"],
   "token_version": "2.0",
   "source": "jwt"

@@ -11,17 +11,26 @@ const host = process.env.RELAYNA_DEV_OIDC_HOST ?? "127.0.0.1";
 const port = Number(process.env.RELAYNA_DEV_OIDC_PORT ?? 18090);
 const issuer = process.env.RELAYNA_DEV_OIDC_ISSUER ?? `http://127.0.0.1:${port}`;
 const tenantId = "00000000-0000-0000-0000-000000000001";
-const browserClientId = "relayna-gateway-local";
+const applicationId = "relayna-gateway-local";
+const applicationIdentifierUri = `api://${applicationId}`;
 const browserCertificatePath = process.env.RELAYNA_DEV_OIDC_BROWSER_CERTIFICATE_PATH;
 if (!browserCertificatePath) throw new Error("RELAYNA_DEV_OIDC_BROWSER_CERTIFICATE_PATH is required.");
 const browserCertificate = new X509Certificate(readFileSync(browserCertificatePath));
 const browserCertificateThumbprint = createHash("sha256").update(browserCertificate.raw).digest("base64url");
 const browserRedirectUri = process.env.RELAYNA_DEV_OIDC_BROWSER_REDIRECT_URI ?? "http://127.0.0.1:18381/admin-ui/auth/callback";
 const browserPostLogoutRedirectUri = process.env.RELAYNA_DEV_OIDC_BROWSER_POST_LOGOUT_REDIRECT_URI ?? "http://127.0.0.1:18381/admin-ui";
-const ownerAudience = "api://relayna-gateway-owner";
-const workloadClientId = "00000000-0000-0000-0000-000000000101";
-const workloadObjectId = "00000000-0000-0000-0000-000000000102";
-const workloadSecret = "relayna-development-workload-secret";
+const workloads = new Map([
+  ["00000000-0000-0000-0000-000000000101", {
+    objectId: "00000000-0000-0000-0000-000000000102",
+    secret: "relayna-development-invoke-secret",
+    roles: ["gateway.invoke"],
+  }],
+  ["00000000-0000-0000-0000-000000000201", {
+    objectId: "00000000-0000-0000-0000-000000000202",
+    secret: "relayna-development-monitor-secret",
+    roles: ["gateway.monitor.read"],
+  }],
+]);
 
 const personas = {
   pending_user: {
@@ -87,7 +96,7 @@ function validatePrivateKeyJwt(body) {
     if (
       header.alg !== "PS256" || header.typ !== "JWT"
       || header["x5t#S256"] !== browserCertificateThumbprint
-      || payload.iss !== browserClientId || payload.sub !== browserClientId
+      || payload.iss !== applicationId || payload.sub !== applicationId
       || payload.aud !== `${issuer}/token`
       || typeof payload.jti !== "string" || !payload.jti
       || typeof payload.iat !== "number" || typeof payload.nbf !== "number" || typeof payload.exp !== "number"
@@ -158,18 +167,18 @@ function readBody(request) {
 function issueBrowserToken(persona, nonce) {
   const now = Math.floor(Date.now() / 1000);
   return signJwt({
-    iss: issuer, aud: browserClientId, tid: tenantId, ver: "2.0", sub: persona.oid,
-    oid: persona.oid, azp: browserClientId, nonce, name: persona.name, email: persona.email,
+    iss: issuer, aud: applicationId, tid: tenantId, ver: "2.0", sub: persona.oid,
+    oid: persona.oid, azp: applicationId, nonce, name: persona.name, email: persona.email,
     preferred_username: persona.email, iat: now, nbf: now - 1, exp: now + 600,
   });
 }
 
-function issueWorkloadToken() {
+function issueWorkloadToken(clientId, workload) {
   const now = Math.floor(Date.now() / 1000);
   return signJwt({
-    iss: issuer, aud: ownerAudience, tid: tenantId, ver: "2.0", sub: workloadObjectId,
-    oid: workloadObjectId, appid: workloadClientId, azp: workloadClientId,
-    roles: ["gateway.monitor.read"], iat: now, nbf: now - 1, exp: now + 600,
+    iss: issuer, aud: applicationId, tid: tenantId, ver: "2.0", sub: workload.objectId,
+    oid: workload.objectId, appid: clientId, azp: clientId,
+    roles: workload.roles, iat: now, nbf: now - 1, exp: now + 600,
   });
 }
 
@@ -192,7 +201,7 @@ const server = http.createServer(async (request, response) => {
     return response.end();
   }
   if (url.pathname === "/authorize" && request.method === "GET") {
-    const valid = url.searchParams.get("client_id") === browserClientId
+    const valid = url.searchParams.get("client_id") === applicationId
       && url.searchParams.get("redirect_uri") === browserRedirectUri
       && url.searchParams.get("response_type") === "code"
       && url.searchParams.get("code_challenge_method") === "S256"
@@ -216,14 +225,16 @@ const server = http.createServer(async (request, response) => {
   if (url.pathname === "/token" && request.method === "POST") {
     const body = await readBody(request);
     if (body.get("grant_type") === "client_credentials") {
-      if (body.get("client_id") !== workloadClientId || !secureEqual(body.get("client_secret") ?? "", workloadSecret) || body.get("scope") !== `${ownerAudience}/.default`) return json(response, 401, { error: "invalid_client" });
-      return json(response, 200, { access_token: issueWorkloadToken(), token_type: "Bearer", expires_in: 600 });
+      const clientId = body.get("client_id") ?? "";
+      const workload = workloads.get(clientId);
+      if (!workload || !secureEqual(body.get("client_secret") ?? "", workload.secret) || body.get("scope") !== `${applicationIdentifierUri}/.default`) return json(response, 401, { error: "invalid_client" });
+      return json(response, 200, { access_token: issueWorkloadToken(clientId, workload), token_type: "Bearer", expires_in: 600 });
     }
     const code = codes.get(body.get("code"));
     codes.delete(body.get("code"));
     const verifierChallenge = createHash("sha256").update(body.get("code_verifier") ?? "").digest("base64url");
     const valid = body.get("grant_type") === "authorization_code"
-      && body.get("client_id") === browserClientId
+      && body.get("client_id") === applicationId
       && validatePrivateKeyJwt(body)
       && body.get("redirect_uri") === browserRedirectUri
       && code && code.expiresAt > Date.now() && code.redirectUri === browserRedirectUri
@@ -236,5 +247,5 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   console.log(`Relayna development OIDC listening at ${issuer}`);
-  console.log(`Browser client: ${browserClientId}; workload client: ${workloadClientId}`);
+  console.log(`Application: ${applicationId}; resource: ${applicationIdentifierUri}; workload clients: ${[...workloads.keys()].join(", ")}`);
 });

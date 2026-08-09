@@ -12,6 +12,23 @@ const scriptDirectory = fileURLToPath(new URL(".", import.meta.url));
 const generator = join(scriptDirectory, "generate-development-portal-certificate.sh");
 const issuerScript = join(scriptDirectory, "development-oidc.mjs");
 const deploymentManifest = fileURLToPath(new URL("../../deploy/kubernetes/relayna-gateway.yaml", import.meta.url));
+const checkedInHarnesses = [
+  [
+    "../../internal/test-reports/entra-front-door-real-env/docker-compose.yml",
+    "../../internal/test-reports/entra-front-door-real-env/mock-app/server.mjs",
+  ],
+  [
+    "../../internal/test-reports/front-door-penetration/docker-compose.yml",
+    "../../internal/test-reports/front-door-penetration/mock-provider/server.mjs",
+  ],
+  [
+    "../../internal/test-reports/litellm-real-passthrough/docker-compose.yml",
+    "../../internal/test-reports/litellm-real-passthrough/mock-provider/server.mjs",
+  ],
+].map(([compose, issuer]) => [
+  fileURLToPath(new URL(compose, import.meta.url)),
+  fileURLToPath(new URL(issuer, import.meta.url)),
+]);
 const redirectUri = "http://127.0.0.1:18381/admin-ui/auth/callback";
 let directory;
 let privateKey;
@@ -98,6 +115,23 @@ async function exchange(code, verifier, assertion) {
   });
 }
 
+async function workloadToken(clientId, clientSecret, scope = "api://relayna-gateway-local/.default") {
+  return await fetch(`${issuer}/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: clientId,
+      client_secret: clientSecret,
+      scope,
+    }),
+  });
+}
+
+function tokenClaims(token) {
+  return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
+}
+
 before(async () => {
   directory = await mkdtemp(join(tmpdir(), "relayna-entra-integration-"));
   const generated = spawnSync("bash", [generator, "--output-dir", directory, "--days", "1"], {
@@ -167,11 +201,46 @@ test("development issuer rejects assertions with the wrong audience or certifica
   assert.equal(wrongThumbprint.status, 400);
 });
 
+test("one application issues least-privilege tokens to separate managed identities", async () => {
+  const invokeResponse = await workloadToken(
+    "00000000-0000-0000-0000-000000000101",
+    "relayna-development-invoke-secret",
+  );
+  assert.equal(invokeResponse.status, 200);
+  const invokeClaims = tokenClaims((await invokeResponse.json()).access_token);
+  assert.equal(invokeClaims.aud, "relayna-gateway-local");
+  assert.equal(invokeClaims.azp, "00000000-0000-0000-0000-000000000101");
+  assert.deepEqual(invokeClaims.roles, ["gateway.invoke"]);
+
+  const monitorResponse = await workloadToken(
+    "00000000-0000-0000-0000-000000000201",
+    "relayna-development-monitor-secret",
+  );
+  assert.equal(monitorResponse.status, 200);
+  const monitorClaims = tokenClaims((await monitorResponse.json()).access_token);
+  assert.equal(monitorClaims.aud, "relayna-gateway-local");
+  assert.equal(monitorClaims.azp, "00000000-0000-0000-0000-000000000201");
+  assert.deepEqual(monitorClaims.roles, ["gateway.monitor.read"]);
+
+  const oldOwnerResource = await workloadToken(
+    "00000000-0000-0000-0000-000000000201",
+    "relayna-development-monitor-secret",
+    "api://relayna-gateway-owner/.default",
+  );
+  assert.equal(oldOwnerResource.status, 401);
+  const crossedCredential = await workloadToken(
+    "00000000-0000-0000-0000-000000000101",
+    "relayna-development-monitor-secret",
+  );
+  assert.equal(crossedCredential.status, 401);
+});
+
 test("raw Kubernetes manifest preserves the Entra certificate and owner routing contract", async () => {
   const manifest = await readFile(deploymentManifest, "utf8");
   for (const expected of [
     'PORTAL_OIDC_PRIVATE_KEY_PATH: "/var/run/secrets/relayna-portal-oidc/portal-private-key.pem"',
     'PORTAL_OIDC_CERTIFICATE_PATH: "/var/run/secrets/relayna-portal-oidc/portal-certificate.pem"',
+    'ENTRA_APPLICATION_ID: ""',
     'PORTAL_ADMIN_OBJECT_IDS: ""',
     'PORTAL_ADMIN_EMAILS: ""',
     "name: relayna-gateway-portal-oidc",
@@ -180,5 +249,17 @@ test("raw Kubernetes manifest preserves the Entra certificate and owner routing 
     "- path: /owner/v1",
     'relayna.io/control-plane-access: "true"',
   ]) assert.match(manifest, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.doesNotMatch(manifest, /PORTAL_OIDC_CLIENT_SECRET/);
+  assert.doesNotMatch(manifest, /PORTAL_OIDC_CLIENT_SECRET|PORTAL_OIDC_CLIENT_ID|OWNER_ENTRA_AUDIENCE|ENTRA_AUDIENCE/);
+});
+
+test("checked-in Entra harnesses use the shared application and invoke-role contract", async () => {
+  for (const [composePath, issuerPath] of checkedInHarnesses) {
+    const [compose, mockIssuer] = await Promise.all([
+      readFile(composePath, "utf8"),
+      readFile(issuerPath, "utf8"),
+    ]);
+    assert.match(compose, /ENTRA_APPLICATION_ID:/);
+    assert.doesNotMatch(compose, /ENTRA_AUDIENCE:/);
+    assert.match(mockIssuer, /roles: \["gateway\.invoke"\]/);
+  }
 });
