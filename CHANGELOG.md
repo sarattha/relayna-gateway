@@ -2,6 +2,38 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.26 - 2026-08-09
+
+### Added
+
+- Added a shared Entra application contract with separate `gateway.invoke` and
+  `gateway.monitor.read` application roles for least-privilege request-plane
+  and service-monitoring managed identities.
+- Added development OIDC coverage for two distinct workload identities that
+  request the same API resource and receive only their assigned role.
+
+### Changed
+
+- Portal OIDC, direct Entra front-door authorization, and owner monitoring now
+  use one confidential Web/API application ID through
+  `ENTRA_APPLICATION_ID`, following Arcweft's single-registration pattern.
+- Replaced `ENTRA_AUDIENCE`, `PORTAL_OIDC_CLIENT_ID`, and
+  `OWNER_ENTRA_AUDIENCE`; operators must merge the former Web and API
+  configuration before upgrading and request workload tokens for
+  `api://<application-id>/.default`.
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.26` and `v0.1.26`.
+
+### Security
+
+- Entra v2 access tokens remain subject to exact tenant, issuer, signature,
+  timestamp, and application-ID audience validation. The invoke identity still
+  requires Relayna virtual-key policy, while monitoring identities still
+  require an enabled exact service binding.
+- Portal client authentication remains certificate-backed PS256
+  `private_key_jwt`; no client secret or delegated product scope is introduced
+  by the shared registration.
+
 ## 0.1.25 - 2026-08-09
 
 ### Added

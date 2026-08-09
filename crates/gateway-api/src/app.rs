@@ -9225,8 +9225,8 @@ mod tests {
             .push(gateway_core::ManagedIdentityBinding {
                 id: Uuid::new_v4(),
                 tenant_id: "00000000-0000-0000-0000-000000000001".into(),
-                client_id: "00000000-0000-0000-0000-000000000101".into(),
-                object_id: Some("00000000-0000-0000-0000-000000000102".into()),
+                client_id: "00000000-0000-0000-0000-000000000201".into(),
+                object_id: Some("00000000-0000-0000-0000-000000000202".into()),
                 display_name: "Development workload".into(),
                 service_name: "orders".into(),
                 required_role: gateway_core::OWNER_WORKLOAD_ROLE.into(),
@@ -9256,7 +9256,7 @@ mod tests {
         state.owner_entra_verifier = Some(Arc::new(
             EntraJwtVerifier::new(EntraAuthConfig {
                 tenant_id: "00000000-0000-0000-0000-000000000001".into(),
-                audience: "api://relayna-gateway-owner".into(),
+                audience: "relayna-gateway-local".into(),
                 issuer: issuer.clone(),
                 oidc_discovery_url: format!("{issuer}/.well-known/openid-configuration"),
                 required_scope: None,
@@ -9389,13 +9389,43 @@ mod tests {
             "http://127.0.0.1:18381/admin-ui"
         );
 
-        let workload_token = client
+        let invoke_token = client
             .post(format!("{issuer}/token"))
             .form(&[
                 ("grant_type", "client_credentials"),
                 ("client_id", "00000000-0000-0000-0000-000000000101"),
-                ("client_secret", "relayna-development-workload-secret"),
-                ("scope", "api://relayna-gateway-owner/.default"),
+                ("client_secret", "relayna-development-invoke-secret"),
+                ("scope", "api://relayna-gateway-local/.default"),
+            ])
+            .send()
+            .await
+            .unwrap()
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["access_token"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let invoke_owner_response = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/owner/v1/services/orders")
+                    .header(header::AUTHORIZATION, format!("Bearer {invoke_token}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invoke_owner_response.status(), StatusCode::FORBIDDEN);
+
+        let workload_token = client
+            .post(format!("{issuer}/token"))
+            .form(&[
+                ("grant_type", "client_credentials"),
+                ("client_id", "00000000-0000-0000-0000-000000000201"),
+                ("client_secret", "relayna-development-monitor-secret"),
+                ("scope", "api://relayna-gateway-local/.default"),
             ])
             .send()
             .await
@@ -11322,11 +11352,11 @@ mod tests {
                 "apigee_trusted_header_enabled": true,
                 "relayna_key_header": "X-Relayna-Key",
                 "tenant_id": "tenant-1",
-                "audience": "api://relayna-gateway",
+                "audience": "11111111-1111-1111-1111-111111111111",
                 "issuer": "https://login.example/tenant-1/v2.0",
                 "oidc_discovery_url": "https://login.example/tenant-1/.well-known/openid-configuration",
                 "required_scope": "gateway.invoke",
-                "required_role": "Gateway.Invoke",
+                "required_role": "gateway.invoke",
                 "allowed_groups": ["gateway-users"],
                 "accepted_algorithms": ["RS256"],
                 "jwks_cache_ttl_seconds": 120,

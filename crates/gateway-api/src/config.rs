@@ -1,7 +1,7 @@
 use crate::portal::PortalOidcConfig;
 use gateway_core::{
     validate_relayna_key_header_name, ApigeeTrustedHeaderConfig, EntraAuthConfig, GatewayAuthEnv,
-    GatewayError, GatewayResult, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    GatewayError, GatewayResult, ENTRA_DEFAULT_RELAYNA_KEY_HEADER, GATEWAY_INVOKE_ROLE,
 };
 use gateway_proxy::{DEFAULT_MAX_BUFFERED_REQUESTS, DEFAULT_MAX_INFLIGHT_BUFFER_BYTES};
 use std::{env, net::SocketAddr};
@@ -48,17 +48,23 @@ impl Config {
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(3600);
         let guardrail_mapping_encryption_key = optional("GUARDRAIL_MAPPING_ENCRYPTION_KEY");
+        let entra_application_id = optional("ENTRA_APPLICATION_ID");
         let relayna_key_header = optional("ENTRA_RELAYNA_KEY_HEADER")
             .unwrap_or_else(|| ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned());
         validate_relayna_key_header_name(&relayna_key_header)?;
         let entra_auth = if optional_bool("ENTRA_AUTH_ENABLED")?.unwrap_or(false) {
             let config = EntraAuthConfig {
                 tenant_id: required("ENTRA_TENANT_ID")?,
-                audience: required("ENTRA_AUDIENCE")?,
+                audience: entra_application_id
+                    .clone()
+                    .ok_or(GatewayError::InvalidConfiguration)?,
                 issuer: required("ENTRA_ISSUER")?,
                 oidc_discovery_url: required("ENTRA_OIDC_DISCOVERY_URL")?,
                 required_scope: optional("ENTRA_REQUIRED_SCOPE"),
-                required_role: optional("ENTRA_REQUIRED_ROLE"),
+                required_role: Some(
+                    optional("ENTRA_REQUIRED_ROLE")
+                        .unwrap_or_else(|| GATEWAY_INVOKE_ROLE.to_owned()),
+                ),
                 allowed_groups: optional_csv("ENTRA_ALLOWED_GROUPS"),
                 accepted_algorithms: with_default(
                     optional_csv("ENTRA_ACCEPTED_ALGORITHMS"),
@@ -78,7 +84,10 @@ impl Config {
                 let config = ApigeeTrustedHeaderConfig {
                     secret: required("APIGEE_TRUSTED_HEADER_SECRET")?,
                     required_scope: optional("ENTRA_REQUIRED_SCOPE"),
-                    required_role: optional("ENTRA_REQUIRED_ROLE"),
+                    required_role: Some(
+                        optional("ENTRA_REQUIRED_ROLE")
+                            .unwrap_or_else(|| GATEWAY_INVOKE_ROLE.to_owned()),
+                    ),
                     allowed_groups: optional_csv("ENTRA_ALLOWED_GROUPS"),
                 };
                 config.validate()?;
@@ -89,7 +98,9 @@ impl Config {
         let portal_oidc = if optional_bool("PORTAL_OIDC_ENABLED")?.unwrap_or(false) {
             let config = PortalOidcConfig {
                 tenant_id: required("PORTAL_OIDC_TENANT_ID")?,
-                client_id: required("PORTAL_OIDC_CLIENT_ID")?,
+                client_id: entra_application_id
+                    .clone()
+                    .ok_or(GatewayError::InvalidConfiguration)?,
                 private_key_path: required("PORTAL_OIDC_PRIVATE_KEY_PATH")?,
                 certificate_path: required("PORTAL_OIDC_CERTIFICATE_PATH")?,
                 admin_emails: optional_csv("PORTAL_ADMIN_EMAILS")
@@ -116,7 +127,9 @@ impl Config {
         let owner_entra_auth = if optional_bool("OWNER_ENTRA_AUTH_ENABLED")?.unwrap_or(false) {
             let config = EntraAuthConfig {
                 tenant_id: required("OWNER_ENTRA_TENANT_ID")?,
-                audience: required("OWNER_ENTRA_AUDIENCE")?,
+                audience: entra_application_id
+                    .clone()
+                    .ok_or(GatewayError::InvalidConfiguration)?,
                 issuer: required("OWNER_ENTRA_ISSUER")?,
                 oidc_discovery_url: required("OWNER_ENTRA_OIDC_DISCOVERY_URL")?,
                 required_scope: None,

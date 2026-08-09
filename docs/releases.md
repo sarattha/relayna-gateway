@@ -1,9 +1,15 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.25` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.26` is the
 current release target.
 
-Version `0.1.25` adds Entra-authenticated browser sessions for administrators
+Version `0.1.26` consolidates Entra-authenticated browser sessions and workload
+API authorization onto one confidential Web/API application registration. It
+defines separate `gateway.invoke` and `gateway.monitor.read` application roles
+for least-privilege managed identities and replaces the duplicated startup
+audience/client-ID variables with `ENTRA_APPLICATION_ID`.
+
+It retains Entra-authenticated browser sessions for administrators
 and registered service owners, exact Owner and Viewer service memberships,
 scoped service monitoring APIs, and managed-identity workload bindings. It also
 adds owner incident charts for error rate and P95 latency, validated service-
@@ -32,7 +38,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.25
+   python3 scripts/validate-release-metadata.py v0.1.26
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -50,15 +56,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.25 .
+   docker build -t relayna-gateway:0.1.26 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.25 -m "Release v0.1.25"
-   git push origin v0.1.25
+   git tag -a v0.1.26 -m "Release v0.1.26"
+   git push origin v0.1.26
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -68,10 +74,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.25`, the workflow publishes:
+For `v0.1.26`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.25
+ghcr.io/sarattha/relayna-gateway:0.1.26
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

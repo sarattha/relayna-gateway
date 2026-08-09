@@ -2237,14 +2237,14 @@ async function settings() {
           <label class="check"><input name="apigee_trusted_header_enabled" type="checkbox" ${state.authSettings.apigee.trusted_header_enabled ? "checked" : ""}> Enable Apigee trusted headers</label>
           <label>Apigee secret<input name="apigee_trusted_header_secret" type="password" autocomplete="new-password" placeholder="${apigeeSecretPlaceholder()}"></label>
         `, true)}
-        ${formSection("Microsoft Entra ID", "Validate tenant, audience, issuer, claims, and JWKS behavior.", `
+        ${formSection("Microsoft Entra ID", "Use one application ID for portal sign-in and API token validation.", `
           <label class="check"><input name="entra_enabled" type="checkbox" ${state.authSettings.entra.enabled ? "checked" : ""}> Enable Entra ID</label>
           <label>Tenant ID<input name="tenant_id" value="${attr(state.authSettings.entra.tenant_id || "")}"></label>
-          <label>Audience<input name="audience" value="${attr(state.authSettings.entra.audience || "")}" placeholder="api://relayna-gateway"></label>
+          <label>Application ID / token audience<input name="audience" value="${attr(state.authSettings.entra.audience || "")}" placeholder="00000000-0000-0000-0000-000000000000"></label>
           <label>Trusted issuer<input name="issuer" type="url" value="${attr(state.authSettings.entra.issuer || "")}"></label>
           <label class="wide-field">OIDC discovery URL<input name="oidc_discovery_url" type="url" value="${attr(state.authSettings.entra.oidc_discovery_url || "")}"></label>
           <label>Required scope<input name="required_scope" value="${attr(state.authSettings.entra.required_scope || "")}" placeholder="gateway.invoke"></label>
-          <label>Required role<input name="required_role" value="${attr(state.authSettings.entra.required_role || "")}" placeholder="Gateway.Invoke"></label>
+          <label>Required role<input name="required_role" value="${attr(state.authSettings.entra.required_role || "")}" placeholder="gateway.invoke"></label>
           <label>Allowed groups<input name="allowed_groups" value="${attr(listValue(state.authSettings.entra.allowed_groups, ""))}" placeholder="group-a,group-b"></label>
           <label>Accepted algorithms<input name="accepted_algorithms" value="${attr(listValue(state.authSettings.entra.accepted_algorithms, "RS256"))}"></label>
           <label>JWKS cache TTL<input name="jwks_cache_ttl_seconds" type="number" min="1" value="${attr(state.authSettings.entra.jwks_cache_ttl_seconds ?? 300)}"></label>
@@ -2259,7 +2259,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.25")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.26")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>

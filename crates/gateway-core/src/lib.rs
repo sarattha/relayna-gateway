@@ -24,7 +24,7 @@ pub use access::{
     MemberPatchRequest, MemberStatus, NewPortalSession, OidcLoginTransaction, OwnerServiceSummary,
     PortalAccessStore, PortalAdminBootstrapPolicy, PortalMember, PortalMemberLogin,
     PortalSessionResponse, ServiceMemberRole, ServiceMembership, ServiceMembershipUpsertRequest,
-    StoredPortalSession, OWNER_WORKLOAD_ROLE, PORTAL_ROLE_ADMIN,
+    StoredPortalSession, GATEWAY_INVOKE_ROLE, OWNER_WORKLOAD_ROLE, PORTAL_ROLE_ADMIN,
 };
 pub use admin::{
     AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,

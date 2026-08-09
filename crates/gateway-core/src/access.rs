@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use uuid::Uuid;
 
 pub const PORTAL_ROLE_ADMIN: &str = "admin";
+pub const GATEWAY_INVOKE_ROLE: &str = "gateway.invoke";
 pub const OWNER_WORKLOAD_ROLE: &str = "gateway.monitor.read";
 
 #[derive(Debug, Clone, PartialEq, Eq)]

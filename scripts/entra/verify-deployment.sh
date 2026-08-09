@@ -81,8 +81,8 @@ check_config_nonempty() {
 }
 
 check_config_value PORTAL_OIDC_ENABLED true
+check_config_nonempty ENTRA_APPLICATION_ID
 check_config_nonempty PORTAL_OIDC_TENANT_ID
-check_config_nonempty PORTAL_OIDC_CLIENT_ID
 check_config_value PORTAL_OIDC_PRIVATE_KEY_PATH /var/run/secrets/relayna-portal-oidc/portal-private-key.pem
 check_config_value PORTAL_OIDC_CERTIFICATE_PATH /var/run/secrets/relayna-portal-oidc/portal-certificate.pem
 check_config_nonempty PORTAL_OIDC_ISSUER
@@ -94,9 +94,12 @@ check "portal logout redirect uses exact admin route" jq -e \
 check_config_value PORTAL_SESSION_COOKIE_SECURE true
 check_config_value OWNER_ENTRA_AUTH_ENABLED true
 check_config_nonempty OWNER_ENTRA_TENANT_ID
-check_config_nonempty OWNER_ENTRA_AUDIENCE
 check_config_nonempty OWNER_ENTRA_ISSUER
 check_config_nonempty OWNER_ENTRA_OIDC_DISCOVERY_URL
+check "deprecated application/audience settings are absent" jq -e \
+  '.data
+   | [has("PORTAL_OIDC_CLIENT_ID"), has("OWNER_ENTRA_AUDIENCE"), has("ENTRA_AUDIENCE")]
+   | all(. == false)' <<<"${config_json}"
 
 if jq -e '.data.PORTAL_ADMIN_EMAILS | type == "string" and length > 0' <<<"${config_json}" >/dev/null; then
   check_config_nonempty PORTAL_ADMIN_OBJECT_IDS

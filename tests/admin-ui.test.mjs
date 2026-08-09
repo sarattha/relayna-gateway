@@ -48,8 +48,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.25/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.25/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.26/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.26/);
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
@@ -290,6 +290,8 @@ test("settings view configures Entra ID and Apigee front-door auth", () => {
   assert.match(js, /name="entra_enabled" type="checkbox"/);
   assert.match(js, /name="apigee_trusted_header_enabled" type="checkbox"/);
   assert.match(js, /name="issuer" type="url"/);
+  assert.match(js, /Application ID \/ token audience/);
+  assert.match(js, /placeholder="gateway\.invoke"/);
   assert.match(js, /name="required_scope"/);
   assert.match(js, /name="allowed_groups"/);
   assert.match(js, /name="apigee_trusted_header_secret" type="password"/);

@@ -16,10 +16,10 @@ const VARIABLES: &[&str] = &[
     "RELAYNA_STUDIO_TOKEN",
     "GUARDRAIL_PII_MAPPING_TTL_SECONDS",
     "GUARDRAIL_MAPPING_ENCRYPTION_KEY",
+    "ENTRA_APPLICATION_ID",
     "ENTRA_RELAYNA_KEY_HEADER",
     "ENTRA_AUTH_ENABLED",
     "ENTRA_TENANT_ID",
-    "ENTRA_AUDIENCE",
     "ENTRA_ISSUER",
     "ENTRA_OIDC_DISCOVERY_URL",
     "ENTRA_REQUIRED_SCOPE",
@@ -32,7 +32,6 @@ const VARIABLES: &[&str] = &[
     "APIGEE_TRUSTED_HEADER_SECRET",
     "PORTAL_OIDC_ENABLED",
     "PORTAL_OIDC_TENANT_ID",
-    "PORTAL_OIDC_CLIENT_ID",
     "PORTAL_OIDC_PRIVATE_KEY_PATH",
     "PORTAL_OIDC_CERTIFICATE_PATH",
     "PORTAL_ADMIN_EMAILS",
@@ -46,7 +45,6 @@ const VARIABLES: &[&str] = &[
     "PORTAL_SESSION_COOKIE_SECURE",
     "OWNER_ENTRA_AUTH_ENABLED",
     "OWNER_ENTRA_TENANT_ID",
-    "OWNER_ENTRA_AUDIENCE",
     "OWNER_ENTRA_ISSUER",
     "OWNER_ENTRA_OIDC_DISCOVERY_URL",
     "OWNER_ENTRA_ACCEPTED_ALGORITHMS",
@@ -93,10 +91,10 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         ("RELAYNA_STUDIO_TOKEN", "studio-secret"),
         ("GUARDRAIL_PII_MAPPING_TTL_SECONDS", "7200"),
         ("GUARDRAIL_MAPPING_ENCRYPTION_KEY", "mapping-secret"),
+        ("ENTRA_APPLICATION_ID", "relayna-application"),
         ("ENTRA_RELAYNA_KEY_HEADER", "x-relayna-key"),
         ("ENTRA_AUTH_ENABLED", "yes"),
         ("ENTRA_TENANT_ID", "tenant"),
-        ("ENTRA_AUDIENCE", "audience"),
         ("ENTRA_ISSUER", "https://issuer.example"),
         (
             "ENTRA_OIDC_DISCOVERY_URL",
@@ -111,8 +109,7 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         ("APIGEE_TRUSTED_HEADER_ENABLED", "1"),
         ("APIGEE_TRUSTED_HEADER_SECRET", "apigee-secret"),
         ("PORTAL_OIDC_ENABLED", "true"),
-        ("PORTAL_OIDC_TENANT_ID", "portal-tenant"),
-        ("PORTAL_OIDC_CLIENT_ID", "portal-client"),
+        ("PORTAL_OIDC_TENANT_ID", "tenant"),
         (
             "PORTAL_OIDC_PRIVATE_KEY_PATH",
             "/run/secrets/portal-private.pem",
@@ -126,10 +123,10 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
             " First.Admin@example.test,SECOND.ADMIN@example.test ",
         ),
         ("PORTAL_ADMIN_OBJECT_IDS", " ADMIN-OBJECT-1,ADMIN-OBJECT-2 "),
-        ("PORTAL_OIDC_ISSUER", "https://portal-issuer.example"),
+        ("PORTAL_OIDC_ISSUER", "https://issuer.example"),
         (
             "PORTAL_OIDC_DISCOVERY_URL",
-            "https://portal-issuer.example/.well-known/openid-configuration",
+            "https://issuer.example/.well-known/openid-configuration",
         ),
         (
             "PORTAL_OIDC_REDIRECT_URI",
@@ -143,12 +140,11 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         ("PORTAL_LOGIN_TTL_SECONDS", "300"),
         ("PORTAL_SESSION_COOKIE_SECURE", "yes"),
         ("OWNER_ENTRA_AUTH_ENABLED", "true"),
-        ("OWNER_ENTRA_TENANT_ID", "owner-tenant"),
-        ("OWNER_ENTRA_AUDIENCE", "api://owner"),
-        ("OWNER_ENTRA_ISSUER", "https://owner-issuer.example"),
+        ("OWNER_ENTRA_TENANT_ID", "tenant"),
+        ("OWNER_ENTRA_ISSUER", "https://issuer.example"),
         (
             "OWNER_ENTRA_OIDC_DISCOVERY_URL",
-            "https://owner-issuer.example/.well-known/openid-configuration",
+            "https://issuer.example/.well-known/openid-configuration",
         ),
         ("OWNER_ENTRA_ACCEPTED_ALGORITHMS", "RS256"),
         ("OWNER_ENTRA_JWKS_CACHE_TTL_SECONDS", "120"),
@@ -172,6 +168,7 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
     );
     assert!(config.apigee_trusted_header.is_some());
     let portal = config.portal_oidc.as_ref().expect("portal OIDC config");
+    assert_eq!(portal.client_id, "relayna-application");
     assert_eq!(portal.session_ttl_seconds, 14_400);
     assert_eq!(portal.login_ttl_seconds, 300);
     assert!(portal.cookie_secure);
@@ -190,7 +187,15 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         .owner_entra_auth
         .as_ref()
         .expect("owner Entra config");
-    assert_eq!(owner.audience, "api://owner");
+    assert_eq!(owner.audience, "relayna-application");
+    assert_eq!(
+        config
+            .entra_auth
+            .as_ref()
+            .expect("request-plane Entra config")
+            .audience,
+        "relayna-application"
+    );
     assert_eq!(owner.jwks_cache_ttl_seconds, 120);
     assert_eq!(config.gateway_max_buffered_requests, 12);
     assert_eq!(config.gateway_max_inflight_buffer_bytes, 134_217_728);
@@ -198,6 +203,106 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
     assert_eq!(auth_env.relayna_key_header, "x-relayna-key");
     assert!(auth_env.entra_auth.is_some());
     assert!(auth_env.apigee_trusted_header.is_some());
+    clear_environment();
+}
+
+#[test]
+fn every_enabled_entra_mode_requires_the_shared_application_id() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+
+    for (enabled_name, required_values) in [
+        (
+            "ENTRA_AUTH_ENABLED",
+            vec![
+                ("ENTRA_TENANT_ID", "tenant"),
+                ("ENTRA_ISSUER", "https://issuer.example"),
+                (
+                    "ENTRA_OIDC_DISCOVERY_URL",
+                    "https://issuer.example/.well-known/openid-configuration",
+                ),
+            ],
+        ),
+        (
+            "PORTAL_OIDC_ENABLED",
+            vec![
+                ("PORTAL_OIDC_TENANT_ID", "tenant"),
+                ("PORTAL_OIDC_PRIVATE_KEY_PATH", "/run/private.pem"),
+                ("PORTAL_OIDC_CERTIFICATE_PATH", "/run/certificate.pem"),
+                ("PORTAL_OIDC_ISSUER", "https://issuer.example"),
+                (
+                    "PORTAL_OIDC_DISCOVERY_URL",
+                    "https://issuer.example/.well-known/openid-configuration",
+                ),
+                (
+                    "PORTAL_OIDC_REDIRECT_URI",
+                    "https://gateway.example/admin-ui/auth/callback",
+                ),
+                (
+                    "PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI",
+                    "https://gateway.example/admin-ui",
+                ),
+            ],
+        ),
+        (
+            "OWNER_ENTRA_AUTH_ENABLED",
+            vec![
+                ("OWNER_ENTRA_TENANT_ID", "tenant"),
+                ("OWNER_ENTRA_ISSUER", "https://issuer.example"),
+                (
+                    "OWNER_ENTRA_OIDC_DISCOVERY_URL",
+                    "https://issuer.example/.well-known/openid-configuration",
+                ),
+            ],
+        ),
+    ] {
+        clear_environment();
+        set_required_environment();
+        std::env::set_var(enabled_name, "true");
+        for (name, value) in required_values {
+            std::env::set_var(name, value);
+        }
+        assert_eq!(
+            Config::from_env().expect_err("missing shared application ID"),
+            gateway_core::GatewayError::InvalidConfiguration,
+            "{enabled_name} must require ENTRA_APPLICATION_ID"
+        );
+    }
+
+    clear_environment();
+}
+
+#[test]
+fn request_plane_entra_defaults_to_the_invoke_application_role() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    clear_environment();
+    set_required_environment();
+    for (name, value) in [
+        ("ENTRA_APPLICATION_ID", "relayna-application"),
+        ("ENTRA_AUTH_ENABLED", "true"),
+        ("ENTRA_TENANT_ID", "tenant"),
+        ("ENTRA_ISSUER", "https://issuer.example"),
+        (
+            "ENTRA_OIDC_DISCOVERY_URL",
+            "https://issuer.example/.well-known/openid-configuration",
+        ),
+        ("APIGEE_TRUSTED_HEADER_ENABLED", "true"),
+        ("APIGEE_TRUSTED_HEADER_SECRET", "secret"),
+    ] {
+        std::env::set_var(name, value);
+    }
+
+    let config = Config::from_env().expect("role-defaulted config");
+    assert_eq!(
+        config.entra_auth.expect("Entra config").required_role,
+        Some(gateway_core::GATEWAY_INVOKE_ROLE.to_owned())
+    );
+    assert_eq!(
+        config
+            .apigee_trusted_header
+            .expect("Apigee config")
+            .required_role,
+        Some(gateway_core::GATEWAY_INVOKE_ROLE.to_owned())
+    );
     clear_environment();
 }
 

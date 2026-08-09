@@ -22,7 +22,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.25` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+The `v0.1.26` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
 operator work into Monitor, Discover, and Govern navigation domains. Monitor
 contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains
@@ -582,7 +582,7 @@ trust. They are required when `Enable Entra ID` is checked.
 | UI option | Environment variable | What it does | How to set it |
 | --- | --- | --- | --- |
 | `Tenant ID` | `ENTRA_TENANT_ID` | Matches the token `tid` claim. | Use the tenant GUID or tenant identifier that appears in issued access tokens. |
-| `Audience` | `ENTRA_AUDIENCE` | Matches the token `aud` claim for the Gateway API registration. | Use the Application ID URI or audience configured for Relayna Gateway, for example `api://relayna-gateway`. |
+| `Application ID / token audience` | `ENTRA_APPLICATION_ID` at startup; persisted `audience` at runtime | Matches the token `aud` claim for the shared Relayna Gateway application. | For Microsoft identity platform v2 tokens, use the application ID GUID. Managed identities request `api://<application-id>/.default`, but the issued token's `aud` is the GUID. |
 | `Trusted issuer` | `ENTRA_ISSUER` | Matches the token `iss` claim and the OIDC metadata issuer. | For Microsoft identity platform v2 tokens, use `https://login.microsoftonline.com/<tenant-id>/v2.0`. |
 | `OIDC discovery URL` | `ENTRA_OIDC_DISCOVERY_URL` | Lets Gateway fetch OIDC metadata and find the JWKS URI used for JWT signature validation. | Use the tenant's `.well-known/openid-configuration` URL. For v2 tokens, it normally ends with `/v2.0/.well-known/openid-configuration`. |
 
@@ -600,7 +600,7 @@ or trusted Apigee identity must satisfy each configured requirement.
 | UI option | Environment variable | What it does | How to set it |
 | --- | --- | --- | --- |
 | `Required scope` | `ENTRA_REQUIRED_SCOPE` | Requires the delegated scope to appear in the Entra `scp` claim. Apigee trusted-header mode checks the same value against the signed identity scopes. | Use a single scope value such as `gateway.invoke`. Leave blank when only app roles or groups are used. |
-| `Required role` | `ENTRA_REQUIRED_ROLE` | Requires an app role to appear in the Entra `roles` claim. Apigee trusted-header mode checks the same value against the signed identity roles. | Use a single app role such as `Gateway.Invoke`. Leave blank when only delegated scopes or groups are used. |
+| `Required role` | `ENTRA_REQUIRED_ROLE` | Requires an app role to appear in the Entra `roles` claim. Apigee trusted-header mode checks the same value against the signed identity roles. Startup configuration defaults to `gateway.invoke`. | Use `gateway.invoke` for governed request-plane callers. Override it only when the shared application defines a reviewed equivalent role. |
 | `Allowed groups` | `ENTRA_ALLOWED_GROUPS` | Requires at least one configured group to appear in the Entra `groups` claim or signed Apigee identity groups. | Enter a comma-separated list of group IDs. Leave blank to skip group authorization. Entra group-overage tokens fail closed. |
 
 ### JWT validation, cache, and clock settings
