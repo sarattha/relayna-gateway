@@ -32,16 +32,17 @@ does not issue one query per project, key, or service.
   regenerated embedded assets.
 - [x] (2026-08-18 14:08Z) Added backend, database-backed, and frontend
   regression tests.
-- [x] (2026-08-18 14:12Z) Bumped the workspace release target to `0.1.27` and updated the changelog
-  and operator/release documentation.
+- [x] (2026-08-18 14:12Z) Bumped the workspace release target to `0.1.27` and
+  updated the changelog and operator/release documentation.
 - [x] (2026-08-18 14:18Z) Exercised the real Gateway UI with Computer Use
   against disposable PostgreSQL and Redis data on desktop and at 390px wide.
 - [x] (2026-08-18 14:19Z) Ran focused tests, the complete mandatory
   verification stack, release build and metadata checks, and strict docs build.
-- [ ] Commit, push, open a ready-for-review pull request, and wait for the first
-  Codex review.
-- [ ] Address all actionable first-review findings, reply on each thread,
-  resolve them, rerun relevant checks, and update the pull request.
+- [x] (2026-08-18 14:24Z) Committed, pushed, opened ready-for-review pull
+  request #105, and received the first Codex review.
+- [x] (2026-08-18 14:37Z) Addressed the one actionable first-review finding,
+  reran the complete verification stack plus a live PostgreSQL regression,
+  replied with evidence, and resolved the thread.
 
 ## Surprises & Discoveries
 
@@ -127,10 +128,11 @@ and their seeded data was removed after validation.
 The complete mandatory stack passed: Rust formatting, clippy, workspace tests,
 Cargo audit and deny, cargo-machete, nextest, Trivy, Gitleaks, and Semgrep. The
 workspace release build, Admin UI build and tests, `v0.1.27` metadata validator,
-strict MkDocs build, and diff whitespace check also passed. Publication and
-first-review handling remain in progress. The first Codex finding was fixed by
-preserving nullable service attribution, covered by an actual PostgreSQL run,
-and the complete verification stack passed again on the final patch.
+strict MkDocs build, and diff whitespace check also passed. Pull request #105
+is open and ready for review. Its first Codex finding was fixed by preserving
+nullable service attribution, covered by an actual PostgreSQL run; the thread
+has an evidence reply and is resolved, and the complete verification stack
+passed again on the final patch.
 
 ## Context and Orientation
 
