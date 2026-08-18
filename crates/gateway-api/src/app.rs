@@ -7266,6 +7266,10 @@ mod tests {
                     services: self
                         .usage_breakdown(query.clone(), UsageBreakdownDimension::Service)
                         .await?,
+                    project_key_services: usage_project_key_services_from_rows(
+                        &export.rows,
+                        &query,
+                    ),
                     endpoints: self
                         .usage_breakdown(query.clone(), UsageBreakdownDimension::Endpoint)
                         .await?,
@@ -7758,6 +7762,69 @@ mod tests {
                 },
             )
             .collect()
+    }
+
+    fn usage_project_key_services_from_rows(
+        rows: &[UsageExportRow],
+        query: &UsageQuery,
+    ) -> Vec<gateway_core::UsageProjectKeyServiceBreakdown> {
+        let mut grouped = BTreeMap::<(Option<Uuid>, Uuid, String), Vec<UsageExportRow>>::new();
+        for row in rows {
+            grouped
+                .entry((
+                    row.project_id,
+                    row.key_id,
+                    row.service_name
+                        .clone()
+                        .unwrap_or_else(|| "none".to_owned()),
+                ))
+                .or_default()
+                .push(row.clone());
+        }
+        let mut breakdowns = grouped
+            .into_iter()
+            .map(|((project_id, key_id, service_name), rows)| {
+                gateway_core::UsageProjectKeyServiceBreakdown {
+                    project_id,
+                    key_id,
+                    service_name,
+                    summary: usage_summary_from_rows(&rows),
+                }
+            })
+            .collect::<Vec<_>>();
+        breakdowns.sort_by(|left, right| {
+            let ordering = match query.sort_by.as_deref() {
+                Some("cost") => left
+                    .summary
+                    .estimated_cost_usd
+                    .unwrap_or_default()
+                    .total_cmp(&right.summary.estimated_cost_usd.unwrap_or_default()),
+                Some("failures") => left.summary.failure_count.cmp(&right.summary.failure_count),
+                Some("success") => left.summary.success_count.cmp(&right.summary.success_count),
+                Some("latency") => left
+                    .summary
+                    .total_latency_ms
+                    .cmp(&right.summary.total_latency_ms),
+                Some("tokens") => left.summary.total_tokens.cmp(&right.summary.total_tokens),
+                Some("fallbacks") => left
+                    .summary
+                    .fallback_count
+                    .cmp(&right.summary.fallback_count),
+                _ => left.summary.request_count.cmp(&right.summary.request_count),
+            };
+            let ordering = if query.sort_order.as_deref() == Some("asc") {
+                ordering
+            } else {
+                ordering.reverse()
+            };
+            ordering
+                .then_with(|| left.project_id.cmp(&right.project_id))
+                .then_with(|| left.key_id.cmp(&right.key_id))
+                .then_with(|| left.service_name.cmp(&right.service_name))
+        });
+        let offset = query.breakdown_offset.unwrap_or_default().max(0) as usize;
+        let limit = query.breakdown_limit.unwrap_or(20).clamp(1, 500) as usize;
+        breakdowns.into_iter().skip(offset).take(limit).collect()
     }
 
     fn stored_key(raw: &str) -> StoredVirtualKey {
@@ -11005,6 +11072,120 @@ mod tests {
             value["service_timeseries"][1]["summary"]["estimated_cost_usd"],
             0.042
         );
+    }
+
+    #[tokio::test]
+    async fn usage_dashboard_groups_services_by_project_and_virtual_key() {
+        let store = default_store();
+        let project_a = Uuid::new_v4();
+        let project_b = Uuid::new_v4();
+        let key_a = Uuid::new_v4();
+        let key_b = Uuid::new_v4();
+        let key_c = Uuid::new_v4();
+        let created_at = chrono::DateTime::parse_from_rfc3339("2026-08-18T10:00:00Z")
+            .expect("time")
+            .with_timezone(&Utc);
+        let base = UsageEvent {
+            request_id: "project-a-key-a-summarizer-1".to_owned(),
+            key_id: key_a,
+            project_id: Some(project_a),
+            route: Route::Summary,
+            model: None,
+            provider: gateway_core::Provider::InternalService,
+            status: UsageStatus::Success,
+            status_code: 200,
+            latency_ms: 100,
+            input_tokens: Some(100),
+            output_tokens: Some(20),
+            total_tokens: Some(120),
+            estimated_cost_usd: Some(0.1),
+            cost_source: Some("service_default".to_owned()),
+            cost_mode: Some(ServiceCostMode::Fixed),
+            pricing_rule_name: None,
+            service_name: Some("summarizer".to_owned()),
+            service_version: None,
+            http_method: Some("POST".to_owned()),
+            endpoint_path: Some("/summary".to_owned()),
+            endpoint_template: Some("/summary".to_owned()),
+            task_id: None,
+            run_id: None,
+            trace_id: None,
+            fallback_count: 0,
+            created_at,
+        };
+        store.events.lock().expect("events lock").extend([
+            base.clone(),
+            UsageEvent {
+                request_id: "project-a-key-a-summarizer-2".to_owned(),
+                status: UsageStatus::Failure,
+                status_code: 500,
+                latency_ms: 300,
+                input_tokens: Some(80),
+                output_tokens: Some(0),
+                total_tokens: Some(80),
+                estimated_cost_usd: Some(0.4),
+                ..base.clone()
+            },
+            UsageEvent {
+                request_id: "project-a-key-b-translation".to_owned(),
+                key_id: key_b,
+                service_name: Some("translation".to_owned()),
+                estimated_cost_usd: Some(0.2),
+                ..base.clone()
+            },
+            UsageEvent {
+                request_id: "project-b-key-c-summarizer".to_owned(),
+                key_id: key_c,
+                project_id: Some(project_b),
+                estimated_cost_usd: Some(0.3),
+                ..base
+            },
+        ]);
+        let app = router_with_state(test_state(store));
+
+        let response = admin_get(
+            app.clone(),
+            "/admin-ui/admin/usage/dashboard?sort_by=requests",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        let rows = value["breakdowns"]["project_key_services"]
+            .as_array()
+            .expect("project key service breakdowns");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0]["project_id"], project_a.to_string());
+        assert_eq!(rows[0]["key_id"], key_a.to_string());
+        assert_eq!(rows[0]["service_name"], "summarizer");
+        assert_eq!(rows[0]["summary"]["request_count"], 2);
+        assert_eq!(rows[0]["summary"]["success_count"], 1);
+        assert_eq!(rows[0]["summary"]["failure_count"], 1);
+        assert_eq!(rows[0]["summary"]["total_tokens"], 200);
+        assert_eq!(rows[0]["summary"]["average_latency_ms"], 200.0);
+        assert_eq!(rows[0]["summary"]["estimated_cost_usd"], 0.5);
+
+        let response = admin_get(
+            app,
+            &format!("/admin-ui/admin/usage/dashboard?project_id={project_b}&service=summarizer"),
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        let rows = value["breakdowns"]["project_key_services"]
+            .as_array()
+            .expect("filtered project key service breakdowns");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["project_id"], project_b.to_string());
+        assert_eq!(rows[0]["key_id"], key_c.to_string());
+        assert_eq!(rows[0]["service_name"], "summarizer");
     }
 
     #[tokio::test]

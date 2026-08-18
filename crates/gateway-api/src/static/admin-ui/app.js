@@ -16803,7 +16803,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.26")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.27")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -17236,6 +17236,8 @@ async function loadUsage(event) {
       ${stat("Expensive", summary.expensive_request_count || 0)}
       ${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
     </div>
+    <h4>Project → Virtual key → Service</h4>
+    ${usageProjectKeyServiceHierarchy(dashboard.breakdowns.project_key_services || [])}
     <h4>Projects</h4>${usageBreakdownTable(dashboard.breakdowns.projects, projectName)}
     <h4>Keys</h4>${usageBreakdownTable(dashboard.breakdowns.keys, keyName)}
     <h4>Services</h4>${usageBreakdownTable(dashboard.breakdowns.services)}
@@ -17436,6 +17438,45 @@ function usageBreakdownTable(rows, label = (value) => value) {
       row.summary.failure_count,
       row.summary.average_latency_ms == null ? "n/a" : `${Math.round(row.summary.average_latency_ms)} ms`,
       `${row.summary.total_latency_ms} ms`,
+      money(row.summary.estimated_cost_usd)
+    ])
+  );
+}
+function usageProjectKeyServiceHierarchy(rows) {
+  if (!rows.length) return emptyState("No project, virtual key, and service usage combinations are available for these filters.");
+  const projects2 = /* @__PURE__ */ new Map();
+  rows.forEach((row) => {
+    const projectId = row.project_id || "";
+    if (!projects2.has(projectId)) projects2.set(projectId, /* @__PURE__ */ new Map());
+    const keys2 = projects2.get(projectId);
+    if (!keys2.has(row.key_id)) keys2.set(row.key_id, []);
+    keys2.get(row.key_id).push(row);
+  });
+  return `<div class="usage-hierarchy">
+    <div class="help">Showing ${rows.length} top project, key, and service combinations using the selected sort and limit.</div>
+    ${[...projects2.entries()].map(([projectId, keys2], projectIndex) => `
+      <details class="usage-hierarchy-project" data-usage-project="${attr(projectId || "individual")}" ${projectIndex === 0 ? "open" : ""}>
+        <summary><span><strong>${esc(projectName(projectId))}</strong><small>${keys2.size} virtual ${keys2.size === 1 ? "key" : "keys"}</small></span><span>${[...keys2.values()].reduce((count, services2) => count + services2.length, 0)} combinations</span></summary>
+        <div class="usage-hierarchy-keys">
+          ${[...keys2.entries()].map(([keyId, services2], keyIndex) => `
+            <details class="usage-hierarchy-key" data-usage-key="${attr(keyId)}" ${projectIndex === 0 && keyIndex === 0 ? "open" : ""}>
+              <summary><span><strong><code>${esc(keyName(keyId))}</code></strong><small>${services2.length} ${services2.length === 1 ? "service" : "services"}</small></span></summary>
+              ${usageProjectKeyServiceTable(services2)}
+            </details>`).join("")}
+        </div>
+      </details>`).join("")}
+  </div>`;
+}
+function usageProjectKeyServiceTable(rows) {
+  return table(
+    ["Service", "Requests", "Success", "Failure", "Tokens", "Avg latency", "Cost"],
+    rows.map((row) => [
+      esc(row.service_name === "none" ? "Unattributed" : row.service_name),
+      row.summary.request_count,
+      row.summary.success_count,
+      row.summary.failure_count,
+      row.summary.total_tokens,
+      row.summary.average_latency_ms == null ? "n/a" : `${Math.round(row.summary.average_latency_ms)} ms`,
       money(row.summary.estimated_cost_usd)
     ])
   );

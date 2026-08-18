@@ -1,6 +1,6 @@
 # Current Feature Highlights
 
-This page summarizes the `v0.1.26` feature set.
+This page summarizes the `v0.1.27` feature set.
 
 Screenshots on this page use sanitized seeded demo data captured from a local
 Admin UI 2.0 rendering. They are meant to show workflow shape, not live
@@ -10,7 +10,7 @@ customer, provider, token, or prompt data.
 
 Admin UI 2.0 turns the embedded portal into a compact operator console for
 governing AI traffic. The Aurora Teal redesign introduced in `v0.1.19` remains
-the visual foundation in `v0.1.26`, including a live Overview with usage
+the visual foundation in `v0.1.27`, including a live Overview with usage
 charts, gateway posture, provider-health attention signals, recent operations,
 and governed-change shortcuts backed by existing Admin APIs. The UI is still
 served from
@@ -209,7 +209,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.26` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.27` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -300,7 +300,7 @@ passthrough against a real `litellm/litellm` container.
 
 ## Memory-Safe Body Processing
 
-Release `0.1.26` bounds complete request and response buffering with one
+Release `0.1.27` bounds complete request and response buffering with one
 process-wide admission controller. By default, at most eight managed requests
 or post-call responses may retain complete bodies, and their aggregate
 serialized reservations may not exceed 512 MiB. Operators can tune these
@@ -336,6 +336,13 @@ time range, project, key, route, provider, service, HTTP method, effective
 endpoint, numeric status code, task ID, run ID, model, status, trace ID, and
 minimum cost.
 
+The Usage view also exposes the selected top consumption combinations as an
+expandable Project → Virtual key → Service hierarchy. Each service row reports
+exact request, success, failure, token, average-latency, and estimated-cost
+aggregates after applying the active filters. Project IDs and key IDs resolve
+to operator-friendly project names and safe key prefixes; raw virtual keys are
+never returned or rendered.
+
 ![Usage analytics filters and exports](assets/screenshots/admin-ui-2/aurora-teal-usage.png)
 
 Every authenticated routed status of 400 or greater counts as an endpoint
@@ -354,7 +361,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.26` release retains CI and release workflow hardening with strict
+The `v0.1.27` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

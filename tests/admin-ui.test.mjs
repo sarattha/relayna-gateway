@@ -48,8 +48,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.26/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.26/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.27/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.27/);
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
@@ -484,6 +484,14 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /GATEWAY_OPERATOR_TOKEN/);
   assert.match(js, /data-debug-request/);
   assert.match(js, /dashboard\.breakdowns\.endpoints \|\| \[\]/);
+  assert.match(js, /dashboard\.breakdowns\.project_key_services \|\| \[\]/);
+  assert.match(js, /function usageProjectKeyServiceHierarchy\(rows\)/);
+  assert.match(js, /function usageProjectKeyServiceTable\(rows\)/);
+  assert.match(js, /data-usage-project=/);
+  assert.match(js, /data-usage-key=/);
+  assert.match(js, /projectName\(projectId\)/);
+  assert.match(js, /keyName\(keyId\)/);
+  assert.match(js, /row\.service_name === "none" \? "Unattributed"/);
   assert.match(js, /row\.endpoint_template \|\| row\.endpoint_path/);
   assert.match(js, /esc\(row\.status_code\)/);
   assert.match(js, /async function loadTaskUsage\(event\)/);
@@ -498,6 +506,8 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /query\.set\("service_timeseries_offset", String\(state\.usagePagination\.serviceTimeseriesOffset\)\)/);
   assert.match(js, /data-usage-page-direction="next"/);
   assert.match(css, /\.table-pager/);
+  assert.match(css, /\.usage-hierarchy-project/);
+  assert.match(css, /\.usage-hierarchy-key/);
 });
 
 test("audit view exposes read-only operator event filters and redacted snapshots", () => {

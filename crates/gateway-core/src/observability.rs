@@ -96,6 +96,14 @@ pub struct UsageBreakdown {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageProjectKeyServiceBreakdown {
+    pub project_id: Option<Uuid>,
+    pub key_id: Uuid,
+    pub service_name: String,
+    pub summary: UsageSummary,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct UsageExportRow {
     pub request_id: String,
     pub key_id: Uuid,
@@ -148,6 +156,7 @@ pub struct UsageDashboardBreakdowns {
     pub projects: Vec<UsageBreakdown>,
     pub keys: Vec<UsageBreakdown>,
     pub services: Vec<UsageBreakdown>,
+    pub project_key_services: Vec<UsageProjectKeyServiceBreakdown>,
     pub endpoints: Vec<UsageBreakdown>,
     pub providers: Vec<UsageBreakdown>,
     pub models: Vec<UsageBreakdown>,
