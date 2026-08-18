@@ -613,6 +613,20 @@ test("floating notifications auto-dismiss and still support manual close", () =>
   assert.match(js, /focusin/);
 });
 
+test("global overlays stay above sticky shell chrome on every view", () => {
+  const cssLayer = (selector) => {
+    const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const layers = [...css.matchAll(new RegExp(`${escapedSelector}\\s*\\{[^}]*?z-index:\\s*(\\d+)`, "g"))].map((match) => Number(match[1]));
+    assert.ok(layers.length > 0, `missing z-index for ${selector}`);
+    return Math.max(...layers);
+  };
+
+  const shellLayer = Math.max(cssLayer(".global-toolbar"), cssLayer(".action-menu"), cssLayer(".nav-backdrop"), cssLayer(".sidebar"));
+  assert.ok(cssLayer(".modal-backdrop") > shellLayer, "dialogs and drawers must cover the complete application shell");
+  assert.ok(cssLayer(".message-box") > cssLayer(".modal-backdrop"), "notifications must remain visible above dialogs");
+  assert.ok(cssLayer(".skip-link") > cssLayer(".message-box"), "the focused skip link must remain the top accessibility layer");
+});
+
 test("overview ignores clean provider health rows without a status field", () => {
   const overviewRisks = Function(`return (${sourceFunction("overviewRisks")})`)();
   const cleanRow = {
