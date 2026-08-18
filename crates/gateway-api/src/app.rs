@@ -1914,7 +1914,7 @@ async fn owner_project_request_details(
         Err(error) => return error_response(&headers, error),
     };
     let debug_bundle = match state.store.get_debug_bundle(&request_id).await {
-        Ok(Some(bundle)) if request.project_id == Some(project_id) => Some(bundle),
+        Ok(Some(bundle)) if bundle.project_id == Some(project_id) => Some(bundle),
         Ok(_) => None,
         Err(error) => return error_response(&headers, error),
     };
@@ -8244,6 +8244,7 @@ mod tests {
                 .find(|event| event.request_id == request_id)
                 .map(|event| gateway_core::DebugBundle {
                     request_id: event.request_id.clone(),
+                    project_id: event.project_id,
                     route: Some(event.route),
                     provider: Some(event.provider),
                     service_name: event.service_name.clone(),
@@ -9617,6 +9618,8 @@ mod tests {
         store.events.lock().expect("lock poisoned").extend([
             test_usage_event_for_project("req-orders", allowed_project_id),
             test_usage_event_for_project("req-payments", denied_project_id),
+            test_usage_event_for_project("req-collision-debug", denied_project_id),
+            test_usage_event_for_project("req-collision-debug", allowed_project_id),
         ]);
         let app = router_with_state(test_state(store));
 
@@ -9665,8 +9668,29 @@ mod tests {
         )
         .await;
         let scoped_events = response_json(scoped_events).await;
-        assert_eq!(scoped_events["rows"].as_array().unwrap().len(), 1);
-        assert_eq!(scoped_events["rows"][0]["request_id"], "req-orders");
+        let scoped_rows = scoped_events["rows"].as_array().unwrap();
+        assert_eq!(scoped_rows.len(), 2);
+        assert!(scoped_rows
+            .iter()
+            .all(|row| row["project_id"] == allowed_project_id.to_string()));
+
+        let colliding_request = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            &format!("/owner/v1/projects/{allowed_project_id}/requests/req-collision-debug"),
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(colliding_request.status(), StatusCode::OK);
+        let colliding_request = response_json(colliding_request).await;
+        assert_eq!(
+            colliding_request["request"]["project_id"],
+            allowed_project_id.to_string()
+        );
+        assert!(colliding_request["debug_bundle"].is_null());
 
         let cross_project_request = portal_request(
             app.clone(),

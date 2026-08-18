@@ -19076,7 +19076,7 @@ async function initializePortal() {
     state.authConfig = await json("/admin-ui/auth/config");
     const signIn = document.querySelector("#entra-sign-in");
     if (state.authConfig.enabled) {
-      const returnTo = `${location.pathname}${location.hash || "#/my-projects"}`;
+      const returnTo = `${location.pathname}${location.hash}`;
       signIn.href = `/admin-ui/auth/login?return_to=${encodeURIComponent(returnTo)}`;
     } else {
       signIn.classList.add("hidden");

@@ -2769,6 +2769,7 @@ fn debug_bundle_for_ctx(ctx: &PingoraContext, status_code: u16) -> gateway_core:
     };
     gateway_core::DebugBundle {
         request_id: ctx.request_id.clone(),
+        project_id: ctx.key.as_ref().and_then(|key| key.project_id),
         route,
         provider: Some(provider),
         service_name,
@@ -4894,8 +4895,14 @@ mod tests {
     #[test]
     fn debug_bundle_hashes_prefixes_without_storing_prompt_text() {
         let mut ctx = new_pingora_context_for_tests();
+        let project_id = Uuid::new_v4();
         ctx.request_id = "req_debug".to_owned();
         ctx.route = Some(Route::ChatCompletions);
+        ctx.key = Some(AuthenticatedKey {
+            key_id: Uuid::new_v4(),
+            project_id: Some(project_id),
+            key_prefix: "rk_live_test_key".to_owned(),
+        });
         ctx.route_match =
             Some(Route::resolve_match(&http::Method::POST, "/v1/chat/completions").expect("route"));
         ctx.body_prefix = br#"{"messages":[{"content":"secret prompt"}]}"#.to_vec();
@@ -4905,6 +4912,7 @@ mod tests {
         let bundle = debug_bundle_for_ctx(&ctx, 200);
 
         assert_eq!(bundle.request_id, "req_debug");
+        assert_eq!(bundle.project_id, Some(project_id));
         assert!(bundle
             .request_hash
             .as_ref()

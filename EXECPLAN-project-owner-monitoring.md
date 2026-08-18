@@ -26,6 +26,7 @@ Relayna.
 - [x] (2026-08-18 08:00Z) Added project-owner portal navigation, assignment controls, managed-identity controls, project dashboard, and sanitized request detail UI.
 - [x] (2026-08-18 08:00Z) Updated Entra/operator documentation, release metadata, and the `v0.1.28` changelog.
 - [x] (2026-08-18 08:00Z) Regenerated checked-in Admin UI assets; passed frontend, Rust, dependency, static-analysis, and real-browser verification. The repository-wide Trivy scan retains a documented pre-existing failure in an unchanged design-prototype lockfile.
+- [x] (2026-08-18 09:10Z) Addressed the first Codex review: project-attributed debug bundles now fail closed on mismatches, and hashless Entra sign-in returns defer to the membership-aware owner landing view.
 
 ## Surprises & Discoveries
 
@@ -37,6 +38,8 @@ Relayna.
   Evidence: `cargo audit` passed against a freshly fetched database under `/private/tmp/relayna-rustsec-audit-db` with the repository's configured ignores.
 - Observation: Trivy now reports four high-severity npm advisories in `design-prototypes/service-owner-monitoring/package-lock.json`.
   Evidence: The lockfile is unchanged from `HEAD`; Cargo dependencies report zero vulnerabilities, and the production Admin UI has its own passing dependency tests. The prototype was left untouched to avoid mixing unrelated dependency maintenance into this feature.
+- Observation: Request IDs are client-supplied and debug bundles use the request ID as a global upsert key, so checking only the already-scoped usage row cannot prove a bundle belongs to that project.
+  Evidence: The first Codex review identified the collision; debug bundles now persist the authenticated key's `project_id`, and project details expose a bundle only on an exact attribution match.
 
 ## Decision Log
 
@@ -49,6 +52,9 @@ Relayna.
 - Decision: Scope project dashboards by persisted usage-event `project_id`, not by `project_service_links`.
   Rationale: A service may be shared across projects; service linkage is policy/catalog metadata, while usage attribution is the security-safe project boundary.
   Date/Author: 2026-08-18 / Codex.
+- Decision: Add nullable project attribution to debug bundles and treat missing attribution as ineligible for project-owner display.
+  Rationale: Existing bundles predate project-owner access and cannot be safely inferred from a globally keyed request ID. Nullable attribution preserves existing operator access while new virtual-key traffic can be matched exactly.
+  Date/Author: 2026-08-18 / Codex, after Codex review.
 
 ## Outcomes & Retrospective
 

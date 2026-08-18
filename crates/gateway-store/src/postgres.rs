@@ -4860,6 +4860,7 @@ impl ProviderIntelligenceStore for PostgresStore {
             r#"
             SELECT
                 request_id,
+                project_id,
                 route,
                 provider,
                 service_name,
@@ -4889,6 +4890,7 @@ impl ProviderIntelligenceStore for PostgresStore {
             r#"
             INSERT INTO request_debug_bundles (
                 request_id,
+                project_id,
                 route,
                 provider,
                 service_name,
@@ -4903,8 +4905,9 @@ impl ProviderIntelligenceStore for PostgresStore {
                 redaction_version,
                 created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             ON CONFLICT (request_id) DO UPDATE SET
+                project_id = EXCLUDED.project_id,
                 route = EXCLUDED.route,
                 provider = EXCLUDED.provider,
                 service_name = EXCLUDED.service_name,
@@ -4920,6 +4923,7 @@ impl ProviderIntelligenceStore for PostgresStore {
             "#,
         )
         .bind(&bundle.request_id)
+        .bind(bundle.project_id)
         .bind(bundle.route.map(route_str))
         .bind(bundle.provider.map(provider_str))
         .bind(&bundle.service_name)
@@ -6915,6 +6919,7 @@ fn debug_bundle_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<DebugBund
         request_id: row
             .try_get("request_id")
             .map_err(|_| GatewayError::StoreUnavailable)?,
+        project_id: row.try_get("project_id").ok().flatten(),
         route: route.as_deref().map(parse_route_value).transpose()?,
         provider: provider.as_deref().map(parse_provider_value).transpose()?,
         service_name: row.try_get("service_name").ok().flatten(),
@@ -8965,6 +8970,7 @@ mod tests {
 
         let debug_bundle = DebugBundle {
             request_id: format!("debug-{suffix}"),
+            project_id: Some(project.id),
             route: Some(Route::ServiceWildcard),
             provider: Some(Provider::InternalService),
             service_name: Some(service_name.clone()),

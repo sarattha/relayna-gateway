@@ -79,6 +79,8 @@ test("portal uses Entra BFF sessions and preserves explicit break-glass access",
   assert.match(accessState, /#access-state-sign-out"\)\.classList\.remove\("hidden"\)/);
   assert.match(js, /"x-csrf-token": state\.session\.csrf_token/);
   assert.match(js, /session\.member\.status !== "active"/);
+  assert.match(sourceJs, /const returnTo = `\$\{location\.pathname\}\$\{location\.hash\}`/);
+  assert.doesNotMatch(sourceJs, /location\.hash \|\| "#\/my-projects"/);
   assert.doesNotMatch(js, /sessionStorage\.setItem\([^,]+,\s*.*id_token/);
 });
 

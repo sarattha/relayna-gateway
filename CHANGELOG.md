@@ -30,6 +30,9 @@ All notable changes to Relayna Gateway are documented in this file.
 - Project owner queries overwrite caller-supplied `project_id` filters with the
   authorized route project before reading usage. Request IDs from other
   projects use the same not-found response as missing IDs.
+- Debug bundles now retain project attribution and are included in project
+  request details only when that attribution exactly matches the authorized
+  project. Legacy or otherwise unattributed bundles remain operator-only.
 - Project visibility follows the usage event's persisted `project_id`, not
   service links, so a service shared by multiple projects cannot expose another
   project's traffic.

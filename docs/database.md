@@ -32,7 +32,7 @@ of that schema.
 | Operators | `operator_tokens` | Stores hashed tokens for `/admin-ui/admin/*` and `/admin-ui` access. |
 | Portal access | `portal_members`, `service_memberships`, `project_memberships`, `managed_identity_bindings`, `managed_identity_project_bindings`, `oidc_login_transactions`, `portal_sessions` | Stores Entra member state, exact service and project assignments, workload bindings, one-time browser login state, and opaque sessions. |
 | Audit | `audit_events` | Stores append-only operator mutation records with redacted snapshots. |
-| Provider intelligence | `provider_health_states`, `request_debug_bundles`, `service_registry_snapshots` | Stores health/circuit state, sanitized request debug bundles, and import version history. |
+| Provider intelligence | `provider_health_states`, `request_debug_bundles`, `service_registry_snapshots` | Stores health/circuit state, sanitized request debug bundles with optional project attribution, and import version history. |
 | Usage | `usage_events` | Stores request accounting for admin usage views, exports, budget rehydration, Relayna Studio consumption, and trace-aware analytics. |
 
 ## Required Operational Data
