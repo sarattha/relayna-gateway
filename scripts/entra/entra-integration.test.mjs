@@ -35,6 +35,7 @@ let privateKey;
 let certificate;
 let certificateThumbprint;
 let issuer;
+let tokenEndpoint;
 let child;
 
 function base64url(value) {
@@ -52,7 +53,7 @@ function clientAssertion(overrides = {}) {
   const claims = {
     iss: "relayna-gateway-local",
     sub: "relayna-gateway-local",
-    aud: `${issuer}/token`,
+    aud: tokenEndpoint,
     iat: now,
     nbf: now - 5,
     exp: now + 300,
@@ -79,7 +80,7 @@ async function reservePort() {
   });
 }
 
-async function authorizationCode(verifier) {
+async function authorizationCode(verifier, mockUser = "gateway_admin") {
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   const url = new URL(`${issuer}/authorize`);
   for (const [name, value] of Object.entries({
@@ -92,7 +93,7 @@ async function authorizationCode(verifier) {
     nonce: randomUUID(),
     code_challenge: challenge,
     code_challenge_method: "S256",
-    mock_user: "gateway_admin",
+    mock_user: mockUser,
   })) url.searchParams.set(name, value);
   const response = await fetch(url, { redirect: "manual" });
   assert.equal(response.status, 302);
@@ -147,11 +148,13 @@ before(async () => {
   certificateThumbprint = createHash("sha256").update(certificate.raw).digest("base64url");
   const port = await reservePort();
   issuer = `http://127.0.0.1:${port}`;
+  tokenEndpoint = `http://oidc.internal:${port}/token`;
   child = spawn(process.execPath, [issuerScript], {
     env: {
       ...process.env,
       RELAYNA_DEV_OIDC_PORT: String(port),
       RELAYNA_DEV_OIDC_ISSUER: issuer,
+      RELAYNA_DEV_OIDC_INTERNAL_BASE_URL: `http://oidc.internal:${port}`,
       RELAYNA_DEV_OIDC_BROWSER_CERTIFICATE_PATH: join(directory, "portal-certificate.pem"),
       RELAYNA_DEV_OIDC_BROWSER_REDIRECT_URI: redirectUri,
       RELAYNA_DEV_OIDC_BROWSER_POST_LOGOUT_REDIRECT_URI: "http://127.0.0.1:18381/admin-ui",
@@ -175,6 +178,9 @@ after(async () => {
 
 test("development issuer accepts certificate private_key_jwt and rejects replay", async () => {
   const discovery = await fetch(`${issuer}/.well-known/openid-configuration`).then((response) => response.json());
+  assert.equal(discovery.authorization_endpoint, `${issuer}/authorize`);
+  assert.equal(discovery.token_endpoint, tokenEndpoint);
+  assert.equal(discovery.jwks_uri, `http://oidc.internal:${new URL(issuer).port}/.well-known/jwks.json`);
   assert.deepEqual(discovery.token_endpoint_auth_methods_supported, ["private_key_jwt", "client_secret_post"]);
   const verifier = `pkce-${randomUUID()}`;
   const assertion = clientAssertion();
@@ -199,6 +205,19 @@ test("development issuer rejects assertions with the wrong audience or certifica
     clientAssertion({ header: { "x5t#S256": "wrong-thumbprint" } }),
   );
   assert.equal(wrongThumbprint.status, 400);
+});
+
+test("development issuer exposes the seeded project-owner identity", async () => {
+  const verifier = `pkce-${randomUUID()}`;
+  const response = await exchange(
+    await authorizationCode(verifier, "project_owner"),
+    verifier,
+    clientAssertion(),
+  );
+  assert.equal(response.status, 200);
+  const claims = tokenClaims((await response.json()).id_token);
+  assert.equal(claims.oid, "00000000-0000-0000-0000-000000000005");
+  assert.equal(claims.email, "analytics.owner@relayna.dev");
 });
 
 test("one application issues least-privilege tokens to separate managed identities", async () => {

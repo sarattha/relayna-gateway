@@ -207,6 +207,12 @@ let Gateway generate and print a first-start operator token. Once PostgreSQL has
 an active operator token, changing this env var has no effect; rotate from the
 Admin portal instead.
 
+To inspect the project-owner flow with local Entra-shaped sign-in and realistic
+mock usage, run `./deploy/local/run.sh --rebuild` and open
+<http://127.0.0.1:18381/admin-ui>. See
+[`deploy/local/README.md`](deploy/local/README.md) for the test identities,
+managed-identity example, ports, and cleanup commands.
+
 ## Kubernetes
 
 Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.28`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.

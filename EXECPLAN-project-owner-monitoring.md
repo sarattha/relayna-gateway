@@ -28,6 +28,7 @@ Relayna.
 - [x] (2026-08-18 08:00Z) Regenerated checked-in Admin UI assets; passed frontend, Rust, dependency, static-analysis, and real-browser verification. The repository-wide Trivy scan retains a documented pre-existing failure in an unchanged design-prototype lockfile.
 - [x] (2026-08-18 09:10Z) Addressed the first Codex review: project-attributed debug bundles now fail closed on mismatches, and hashless Entra sign-in returns defer to the membership-aware owner landing view.
 - [x] (2026-08-18 09:20Z) Addressed a delayed duplicate Codex review by scoping guardrail summary, event, and export joins to the persisted virtual key and project as well as request ID.
+- [x] (2026-08-18 16:30Z) Added and ran an isolated Docker Compose inspection stack with an Entra-shaped project-owner persona, mock upstream, idempotent seeded usage, and shared-role managed-identity binding.
 
 ## Surprises & Discoveries
 
@@ -41,6 +42,8 @@ Relayna.
   Evidence: The lockfile is unchanged from `HEAD`; Cargo dependencies report zero vulnerabilities, and the production Admin UI has its own passing dependency tests. The prototype was left untouched to avoid mixing unrelated dependency maintenance into this feature.
 - Observation: Request IDs are client-supplied and debug bundles use the request ID as a global upsert key, so checking only the already-scoped usage row cannot prove a bundle belongs to that project.
   Evidence: The first Codex review identified the collision; debug bundles now persist the authenticated key's `project_id`, and project details expose a bundle only on an exact attribution match.
+- Observation: A browser-visible localhost OIDC issuer cannot advertise that same localhost token and JWKS address to a containerized Gateway.
+  Evidence: The development issuer now keeps public authorization/logout endpoints on its configured issuer while optionally advertising an internal token/JWKS base URL; its regression test covers the split endpoints.
 
 ## Decision Log
 
@@ -56,6 +59,9 @@ Relayna.
 - Decision: Add nullable project attribution to debug bundles and treat missing attribution as ineligible for project-owner display.
   Rationale: Existing bundles predate project-owner access and cannot be safely inferred from a globally keyed request ID. Nullable attribution preserves existing operator access while new virtual-key traffic can be matched exactly.
   Date/Author: 2026-08-18 / Codex, after Codex review.
+- Decision: Keep the inspection environment additive under `deploy/local` with localhost-only alternate ports and named volumes.
+  Rationale: The user can inspect the real compiled UI and authorization path without changing production defaults or colliding with existing PostgreSQL, Redis, or Gateway services.
+  Date/Author: 2026-08-18 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -70,6 +76,14 @@ malicious query-filter replacement, durable PostgreSQL access state, and one
 development OIDC workload token using the shared role for both a service and a
 project. The compiled Admin UI was also exercised in Chrome at desktop and a
 390 by 844 responsive viewport, including the sanitized request-detail drawer.
+
+The local inspection stack builds this branch into a release image and runs it
+with PostgreSQL, Redis, a development OIDC issuer, and a mock upstream. Its
+seeded Analytics Project Owner sees exactly one project containing 168 usage
+events, 16 failures, two services, two models, version transitions, guardrail
+actions, and project-attributed sanitized debug bundles. The same development
+managed identity reads that project with `gateway.monitor.read` and an exact
+project binding.
 
 All formatting, Clippy, workspace tests, Nextest (307 tests), cargo-audit with a
 fresh database, cargo-deny, cargo-machete, Gitleaks, and Semgrep checks passed.

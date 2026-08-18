@@ -10,6 +10,8 @@ if (["production", "prod"].includes(environment)) throw new Error("Relayna devel
 const host = process.env.RELAYNA_DEV_OIDC_HOST ?? "127.0.0.1";
 const port = Number(process.env.RELAYNA_DEV_OIDC_PORT ?? 18090);
 const issuer = process.env.RELAYNA_DEV_OIDC_ISSUER ?? `http://127.0.0.1:${port}`;
+const internalBaseUrl = process.env.RELAYNA_DEV_OIDC_INTERNAL_BASE_URL ?? issuer;
+const tokenEndpoint = `${internalBaseUrl}/token`;
 const tenantId = "00000000-0000-0000-0000-000000000001";
 const applicationId = "relayna-gateway-local";
 const applicationIdentifierUri = `api://${applicationId}`;
@@ -54,6 +56,13 @@ const personas = {
     badge: "Owner",
     description: "Assign Owner access to a registered service from the Members page.",
   },
+  project_owner: {
+    oid: "00000000-0000-0000-0000-000000000005",
+    name: "Analytics Project Owner",
+    email: "analytics.owner@relayna.dev",
+    badge: "Project owner",
+    description: "Inspect read-only usage for the seeded Analytics Platform project.",
+  },
 };
 
 const privateKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
@@ -97,7 +106,7 @@ function validatePrivateKeyJwt(body) {
       header.alg !== "PS256" || header.typ !== "JWT"
       || header["x5t#S256"] !== browserCertificateThumbprint
       || payload.iss !== applicationId || payload.sub !== applicationId
-      || payload.aud !== `${issuer}/token`
+      || payload.aud !== tokenEndpoint
       || typeof payload.jti !== "string" || !payload.jti
       || typeof payload.iat !== "number" || typeof payload.nbf !== "number" || typeof payload.exp !== "number"
       || payload.iat > now + 30 || payload.nbf > now + 30 || payload.exp <= now
@@ -185,9 +194,9 @@ function issueWorkloadToken(clientId, workload) {
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", issuer);
   if (url.pathname === "/.well-known/openid-configuration") return json(response, 200, {
-    issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`,
+    issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: tokenEndpoint,
     end_session_endpoint: `${issuer}/logout`,
-    jwks_uri: `${issuer}/.well-known/jwks.json`, response_types_supported: ["code"],
+    jwks_uri: `${internalBaseUrl}/.well-known/jwks.json`, response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "client_credentials"],
     subject_types_supported: ["public"], id_token_signing_alg_values_supported: ["RS256"],
     token_endpoint_auth_methods_supported: ["private_key_jwt", "client_secret_post"], code_challenge_methods_supported: ["S256"],

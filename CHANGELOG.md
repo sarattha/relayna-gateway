@@ -17,6 +17,8 @@ All notable changes to Relayna Gateway are documented in this file.
 - Added regression coverage for server-enforced project scoping, cross-project
   request concealment, durable PostgreSQL access state, and the shared-role
   Entra workload flow.
+- Added an isolated local Compose inspection stack with Entra-shaped test
+  personas, a mock upstream, and idempotent project-owner usage fixtures.
 
 ### Changed
 
