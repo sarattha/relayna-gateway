@@ -4343,10 +4343,13 @@ impl UsageQueryStore for PostgresStore {
                 u.created_at
             FROM usage_events u
             LEFT JOIN (
-                SELECT request_id, COUNT(*)::bigint AS guardrail_action_count
+                SELECT request_id, key_id, project_id,
+                       COUNT(*)::bigint AS guardrail_action_count
                 FROM guardrail_execution_events
-                GROUP BY request_id
+                GROUP BY request_id, key_id, project_id
             ) g ON g.request_id = u.request_id
+               AND g.key_id IS NOT DISTINCT FROM u.key_id
+               AND g.project_id IS NOT DISTINCT FROM u.project_id
             "#,
         );
         append_usage_filters_with_alias(&mut builder, &query, "u");
@@ -4471,10 +4474,13 @@ impl UsageQueryStore for PostgresStore {
                 u.created_at
             FROM usage_events u
             LEFT JOIN (
-                SELECT request_id, COUNT(*)::bigint AS guardrail_action_count
+                SELECT request_id, key_id, project_id,
+                       COUNT(*)::bigint AS guardrail_action_count
                 FROM guardrail_execution_events
-                GROUP BY request_id
+                GROUP BY request_id, key_id, project_id
             ) g ON g.request_id = u.request_id
+               AND g.key_id IS NOT DISTINCT FROM u.key_id
+               AND g.project_id IS NOT DISTINCT FROM u.project_id
             "#,
         );
         append_usage_filters_with_alias(&mut builder, &query, "u");
@@ -6646,7 +6652,10 @@ async fn enrich_usage_summary(
         r#"
         SELECT COUNT(DISTINCT u.request_id)::bigint
         FROM usage_events u
-        INNER JOIN guardrail_execution_events g ON g.request_id = u.request_id
+        INNER JOIN guardrail_execution_events g
+            ON g.request_id = u.request_id
+           AND g.key_id IS NOT DISTINCT FROM u.key_id
+           AND g.project_id IS NOT DISTINCT FROM u.project_id
         "#,
     );
     append_usage_filters_with_alias(&mut guardrail_builder, query, "u");

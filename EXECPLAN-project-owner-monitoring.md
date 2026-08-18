@@ -27,6 +27,7 @@ Relayna.
 - [x] (2026-08-18 08:00Z) Updated Entra/operator documentation, release metadata, and the `v0.1.28` changelog.
 - [x] (2026-08-18 08:00Z) Regenerated checked-in Admin UI assets; passed frontend, Rust, dependency, static-analysis, and real-browser verification. The repository-wide Trivy scan retains a documented pre-existing failure in an unchanged design-prototype lockfile.
 - [x] (2026-08-18 09:10Z) Addressed the first Codex review: project-attributed debug bundles now fail closed on mismatches, and hashless Entra sign-in returns defer to the membership-aware owner landing view.
+- [x] (2026-08-18 09:20Z) Addressed a delayed duplicate Codex review by scoping guardrail summary, event, and export joins to the persisted virtual key and project as well as request ID.
 
 ## Surprises & Discoveries
 
@@ -70,7 +71,7 @@ development OIDC workload token using the shared role for both a service and a
 project. The compiled Admin UI was also exercised in Chrome at desktop and a
 390 by 844 responsive viewport, including the sanitized request-detail drawer.
 
-All formatting, Clippy, workspace tests, Nextest (306 tests), cargo-audit with a
+All formatting, Clippy, workspace tests, Nextest (307 tests), cargo-audit with a
 fresh database, cargo-deny, cargo-machete, Gitleaks, and Semgrep checks passed.
 Trivy's only failure is the unchanged historical design-prototype lockfile
 recorded above; the changed Rust and production Admin UI surfaces are clean.

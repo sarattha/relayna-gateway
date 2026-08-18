@@ -33,6 +33,9 @@ All notable changes to Relayna Gateway are documented in this file.
 - Debug bundles now retain project attribution and are included in project
   request details only when that attribution exactly matches the authorized
   project. Legacy or otherwise unattributed bundles remain operator-only.
+- Guardrail block and action counts now join usage on request, virtual key, and
+  project attribution so a reused client request ID cannot cross project
+  boundaries in dashboards, event rows, or exports.
 - Project visibility follows the usage event's persisted `project_id`, not
   service links, so a service shared by multiple projects cannot expose another
   project's traffic.

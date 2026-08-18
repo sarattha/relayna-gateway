@@ -6,7 +6,8 @@ use gateway_core::{
     ManagedIdentityProjectPatchRequest, MemberPatchRequest, MemberStatus, NewPortalSession,
     OidcLoginTransaction, PolicyLookup, PortalAccessStore, PortalAdminBootstrapPolicy,
     ProjectCreateRequest, ProjectMembershipUpsertRequest, Provider, RateLimitDecision,
-    RateLimitStore, Route, ServiceMemberRole, ServiceMembershipUpsertRequest, OWNER_WORKLOAD_ROLE,
+    RateLimitStore, Route, ServiceMemberRole, ServiceMembershipUpsertRequest, UsageQuery,
+    UsageQueryStore, OWNER_WORKLOAD_ROLE,
 };
 use gateway_store::{PostgresStore, RedisControlState};
 use redis::AsyncCommands;
@@ -209,6 +210,96 @@ async fn seed_from_postgres(store: &PostgresStore, redis: &RedisControlState, no
             .await
             .expect("seed redis");
     }
+}
+
+#[tokio::test]
+async fn usage_guardrail_counts_are_scoped_by_key_and_project() {
+    let Some(env) = integration_env().await else {
+        return;
+    };
+    let now = Utc::now();
+    let request_id = format!("shared-request-{}", Uuid::new_v4().simple());
+    let (first_project, first_key) = insert_budgeted_key(&env.store, None, None).await;
+    let (second_project, second_key) = insert_budgeted_key(&env.store, None, None).await;
+    insert_usage(&env.store, first_key, first_project, &request_id, None, now).await;
+    insert_usage(
+        &env.store,
+        second_key,
+        second_project,
+        &request_id,
+        None,
+        now,
+    )
+    .await;
+    sqlx::query(
+        r#"
+        INSERT INTO guardrail_execution_events (
+            request_id, key_id, project_id, guardrail_name, mode, action,
+            failure_policy, latency_ms, created_at
+        )
+        VALUES ($1, $2, $3, 'project-scope-test', 'pre_call', 'block', 'fail_closed', 1, $4)
+        "#,
+    )
+    .bind(&request_id)
+    .bind(second_key)
+    .bind(second_project)
+    .bind(now)
+    .execute(env.store.pool())
+    .await
+    .expect("insert second-project guardrail event");
+
+    let first_query = UsageQuery {
+        project_id: Some(first_project),
+        ..UsageQuery::default()
+    };
+    assert_eq!(
+        env.store
+            .usage_summary(first_query.clone())
+            .await
+            .expect("first project summary")
+            .guardrail_block_count,
+        0
+    );
+    assert_eq!(
+        env.store
+            .usage_events(first_query.clone())
+            .await
+            .expect("first project events")
+            .rows[0]
+            .guardrail_action_count,
+        0
+    );
+    assert_eq!(
+        env.store
+            .usage_export(first_query)
+            .await
+            .expect("first project export")
+            .rows[0]
+            .guardrail_action_count,
+        0
+    );
+
+    let second_query = UsageQuery {
+        project_id: Some(second_project),
+        ..UsageQuery::default()
+    };
+    assert_eq!(
+        env.store
+            .usage_summary(second_query.clone())
+            .await
+            .expect("second project summary")
+            .guardrail_block_count,
+        1
+    );
+    assert_eq!(
+        env.store
+            .usage_events(second_query)
+            .await
+            .expect("second project events")
+            .rows[0]
+            .guardrail_action_count,
+        1
+    );
 }
 
 #[tokio::test]
