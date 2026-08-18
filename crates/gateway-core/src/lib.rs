@@ -21,10 +21,13 @@ pub mod usage;
 
 pub use access::{
     ManagedIdentityBinding, ManagedIdentityCreateRequest, ManagedIdentityPatchRequest,
-    MemberPatchRequest, MemberStatus, NewPortalSession, OidcLoginTransaction, OwnerServiceSummary,
-    PortalAccessStore, PortalAdminBootstrapPolicy, PortalMember, PortalMemberLogin,
-    PortalSessionResponse, ServiceMemberRole, ServiceMembership, ServiceMembershipUpsertRequest,
-    StoredPortalSession, GATEWAY_INVOKE_ROLE, OWNER_WORKLOAD_ROLE, PORTAL_ROLE_ADMIN,
+    ManagedIdentityProjectBinding, ManagedIdentityProjectCreateRequest,
+    ManagedIdentityProjectPatchRequest, MemberPatchRequest, MemberStatus, NewPortalSession,
+    OidcLoginTransaction, OwnerServiceSummary, PortalAccessStore, PortalAdminBootstrapPolicy,
+    PortalMember, PortalMemberLogin, PortalSessionResponse, ProjectMembership,
+    ProjectMembershipUpsertRequest, ServiceMemberRole, ServiceMembership,
+    ServiceMembershipUpsertRequest, StoredPortalSession, GATEWAY_INVOKE_ROLE, OWNER_WORKLOAD_ROLE,
+    PORTAL_ROLE_ADMIN,
 };
 pub use admin::{
     AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse, AdminKeyStore,

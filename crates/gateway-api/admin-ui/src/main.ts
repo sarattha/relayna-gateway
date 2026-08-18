@@ -17,7 +17,7 @@ import {
 
 const tokenKey = "relayna_gateway_operator_token";
 const viewIds = new Set(Object.keys(viewMeta));
-const ownerViewIds = new Set(["my-services", "service-dashboard"]);
+const ownerViewIds = new Set(["my-services", "service-dashboard", "my-projects", "project-dashboard"]);
 const state = {
   view: "overview",
   keys: [],
@@ -55,6 +55,8 @@ const state = {
   workspace: "admin",
   ownerServices: [],
   selectedOwnerService: null,
+  ownerProjects: [],
+  selectedOwnerProject: null,
   ownerDashboardFilters: {
     range: "7d",
     outcome: "all",
@@ -64,6 +66,7 @@ const state = {
   },
   members: [],
   managedIdentities: [],
+  managedIdentityProjects: [],
 };
 
 const login = document.querySelector("#login");
@@ -342,7 +345,7 @@ function signedIn() {
 function viewFromHash() {
   const value = location.hash.replace(/^#\/?/, "");
   if (viewIds?.has(value) && viewAllowed(value)) return value;
-  return state.workspace === "owner" ? "my-services" : "overview";
+  return state.workspace === "owner" ? ownerLandingView() : "overview";
 }
 
 function isAdmin() {
@@ -350,7 +353,11 @@ function isAdmin() {
 }
 
 function hasOwnerAccess() {
-  return Boolean(state.session?.service_memberships?.length);
+  return Boolean(state.session?.service_memberships?.length || state.session?.project_memberships?.length);
+}
+
+function ownerLandingView() {
+  return state.session?.service_memberships?.length ? "my-services" : "my-projects";
 }
 
 function viewAllowed(view) {
@@ -378,7 +385,7 @@ function configurePortalShell() {
   if (workspaceSelect) workspaceSelect.value = state.workspace;
   const member = state.session?.member;
   document.querySelector("#session-name").textContent = member?.display_name || member?.email || (token() ? "Break-glass operator" : "Portal member");
-  document.querySelector("#session-role").textContent = token() ? "Operator token" : admin ? "Admin member" : "Service member";
+  document.querySelector("#session-role").textContent = token() ? "Operator token" : admin ? "Admin member" : "Owner member";
 }
 
 function navigateToView(view, { replace = false, focus = true } = {}) {
@@ -444,7 +451,7 @@ function showCommandPalette() {
       <kbd>↵</kbd>
     </button>`)
     .join("");
-  const workspaceLabel = state.workspace === "owner" ? "Service owner" : "Admin";
+  const workspaceLabel = state.workspace === "owner" ? "Owner" : "Admin";
   backdrop.innerHTML = `
     <div class="modal command-palette" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
       <h3 id="${titleId}">Go to ${workspaceLabel} view</h3>
@@ -510,7 +517,7 @@ document.querySelector("#access-state-sign-out").addEventListener("click", signO
 document.querySelector("#workspace-select").addEventListener("change", (event) => {
   state.workspace = event.target.value;
   configurePortalShell();
-  navigateToView(state.workspace === "owner" ? "my-services" : "overview");
+  navigateToView(state.workspace === "owner" ? ownerLandingView() : "overview");
 });
 
 document.querySelector("#refresh").addEventListener("click", refresh);
@@ -561,7 +568,7 @@ async function refresh({ focus = false } = {}) {
   setNotice("");
   destroyOverviewChart();
   destroyOwnerDashboardChart();
-  if (state.view !== "service-dashboard") ownerDashboardGeneration += 1;
+  if (state.view !== "service-dashboard" && state.view !== "project-dashboard") ownerDashboardGeneration += 1;
   applyViewChrome(state.view);
   const meta = viewMeta[state.view] || viewMeta.overview;
   document.querySelector("#breadcrumb-domain").textContent = meta.domain;
@@ -584,6 +591,8 @@ async function refresh({ focus = false } = {}) {
     if (state.view === "managed-identities") await managedIdentities();
     if (state.view === "my-services") await myServices();
     if (state.view === "service-dashboard") await serviceDashboard();
+    if (state.view === "my-projects") await myProjects();
+    if (state.view === "project-dashboard") await projectDashboard();
     document.querySelector("#last-refreshed").textContent = `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     if (focus) content.focus({ preventScroll: true });
   } catch (error) {
@@ -2259,7 +2268,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.27")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.28")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -3009,7 +3018,7 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
   `;
 }
 
-function usageEventsTable(rows, { ownerService = null } = {}) {
+function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {}) {
   return table(
     ["Created", "Request", "Route", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
     rows.map((row) => [
@@ -3028,8 +3037,8 @@ function usageEventsTable(rows, { ownerService = null } = {}) {
       esc(row.cost_source || ""),
       esc(row.pricing_rule_name || ""),
       row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",
-      ownerService
-        ? `<button type="button" data-owner-service="${attr(ownerService)}" data-owner-request="${attr(row.request_id)}">View details</button>`
+      ownerService || ownerProject
+        ? `<button type="button" ${ownerService ? `data-owner-service="${attr(ownerService)}"` : `data-owner-project="${attr(ownerProject)}"`} data-owner-request="${attr(row.request_id)}">View details</button>`
         : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}">Debug</button>`,
     ]),
   );
@@ -3889,9 +3898,10 @@ function serviceRouteOptions() {
 }
 
 async function members() {
-  [state.members, state.services] = await Promise.all([
+  [state.members, state.services, state.projects] = await Promise.all([
     api("/admin-ui/admin/members"),
     api("/admin-ui/admin/services"),
+    api("/admin-ui/admin/projects"),
   ]);
   content.innerHTML = `
     <section class="panel">
@@ -3902,6 +3912,8 @@ async function members() {
   content.querySelectorAll("[data-member-admin]").forEach((button) => button.addEventListener("click", handleAsync(updateMemberAdmin)));
   content.querySelectorAll("[data-membership-form]").forEach((form) => form.addEventListener("submit", handleAsync(saveServiceMembership)));
   content.querySelectorAll("[data-membership-delete]").forEach((button) => button.addEventListener("click", handleAsync(deleteServiceMembership)));
+  content.querySelectorAll("[data-project-membership-form]").forEach((form) => form.addEventListener("submit", handleAsync(saveProjectMembership)));
+  content.querySelectorAll("[data-project-membership-delete]").forEach((button) => button.addEventListener("click", handleAsync(deleteProjectMembership)));
 }
 
 function memberAccessCard(item) {
@@ -3926,6 +3938,17 @@ function memberAccessCard(item) {
     ])) : '<p class="subtle">No service access assigned.</p>'}
     <form data-membership-form data-member-id="${attr(member.id)}" class="inline-form membership-form">
       <label>Service<select name="service_name" required><option value="">Select service</option>${state.services.map((service) => option(service.name, "")).join("")}</select></label>
+      <label>Role<select name="role">${option("viewer", "viewer")}${option("owner", "")}</select></label>
+      <button type="submit">Assign</button>
+    </form>
+    <h5>Project access</h5>
+    ${item.project_memberships?.length ? table(["Project", "Role", ""], item.project_memberships.map((membership) => [
+      esc(projectName(membership.project_id)),
+      badge(membership.role),
+      `<button class="danger" data-project-membership-delete data-member-id="${attr(member.id)}" data-project-id="${attr(membership.project_id)}">Remove</button>`,
+    ])) : '<p class="subtle">No project access assigned.</p>'}
+    <form data-project-membership-form data-member-id="${attr(member.id)}" class="inline-form membership-form">
+      <label>Project<select name="project_id" required><option value="">Select project</option>${state.projects.map((project) => option(project.id, "", project.name)).join("")}</select></label>
       <label>Role<select name="role">${option("viewer", "viewer")}${option("owner", "")}</select></label>
       <button type="submit">Assign</button>
     </form>
@@ -3970,10 +3993,32 @@ async function deleteServiceMembership(event) {
   await members();
 }
 
+async function saveProjectMembership(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const projectId = form.get("project_id");
+  await api(`/admin-ui/admin/members/${event.currentTarget.dataset.memberId}/projects/${encodeURIComponent(projectId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ role: form.get("role") }),
+  });
+  setNotice("Project access assigned.", "success");
+  await members();
+}
+
+async function deleteProjectMembership(event) {
+  const { memberId, projectId } = event.currentTarget.dataset;
+  if (!(await confirmAction("Remove project access", `This member will immediately lose access to ${projectName(projectId)}.`))) return;
+  await api(`/admin-ui/admin/members/${memberId}/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+  setNotice("Project access removed.", "success");
+  await members();
+}
+
 async function managedIdentities() {
-  [state.managedIdentities, state.services] = await Promise.all([
+  [state.managedIdentities, state.managedIdentityProjects, state.services, state.projects] = await Promise.all([
     api("/admin-ui/admin/managed-identities"),
+    api("/admin-ui/admin/managed-identity-projects"),
     api("/admin-ui/admin/services"),
+    api("/admin-ui/admin/projects"),
   ]);
   content.innerHTML = `
     <section class="panel">
@@ -3991,10 +4036,41 @@ async function managedIdentities() {
     <section class="panel">
       <div class="panel-heading"><h3>Service bindings</h3><span class="badge">${state.managedIdentities.length}</span></div>
       ${managedIdentityTable(state.managedIdentities)}
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><div><h3>Register project monitoring identity</h3><p>The same <code>gateway.monitor.read</code> app role is narrowed to one exact project by Relayna.</p></div></div>
+      <form id="managed-identity-project-form" class="form-grid">
+        <label>Display name<input name="display_name" required placeholder="payments project monitor"></label>
+        <label>Tenant ID<input name="tenant_id" required></label>
+        <label>Client ID<input name="client_id" required></label>
+        <label>Object ID <span class="subtle">optional exact match</span><input name="object_id"></label>
+        <label>Project<select name="project_id" required><option value="">Select project</option>${state.projects.map((project) => option(project.id, "", project.name)).join("")}</select></label>
+        <label>Required app role<input name="required_role" value="gateway.monitor.read" required></label>
+        <div class="form-actions wide-field"><button class="primary">Register identity</button></div>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h3>Project bindings</h3><span class="badge">${state.managedIdentityProjects.length}</span></div>
+      ${managedIdentityProjectTable(state.managedIdentityProjects)}
     </section>`;
   document.querySelector("#managed-identity-form").addEventListener("submit", handleAsync(createManagedIdentity));
   content.querySelectorAll("[data-managed-toggle]").forEach((button) => button.addEventListener("click", handleAsync(toggleManagedIdentity)));
   content.querySelectorAll("[data-managed-delete]").forEach((button) => button.addEventListener("click", handleAsync(deleteManagedIdentity)));
+  document.querySelector("#managed-identity-project-form").addEventListener("submit", handleAsync(createManagedIdentityProject));
+  content.querySelectorAll("[data-managed-project-toggle]").forEach((button) => button.addEventListener("click", handleAsync(toggleManagedIdentityProject)));
+  content.querySelectorAll("[data-managed-project-delete]").forEach((button) => button.addEventListener("click", handleAsync(deleteManagedIdentityProject)));
+}
+
+function managedIdentityProjectTable(rows) {
+  if (!rows.length) return emptyState("No project managed identities registered.");
+  return table(["Identity", "Tenant / client", "Project", "Role", "Status", "Actions"], rows.map((row) => [
+    `<strong>${esc(row.display_name)}</strong>${row.object_id ? `<div class="subtle"><code>${esc(row.object_id)}</code></div>` : ""}`,
+    `<code>${esc(row.tenant_id)}</code><div class="subtle"><code>${esc(row.client_id)}</code></div>`,
+    esc(projectName(row.project_id)),
+    `<code>${esc(row.required_role)}</code>`,
+    badge(row.enabled ? "enabled" : "disabled", row.enabled ? "good" : "bad"),
+    `<div class="actions"><button data-managed-project-toggle data-identity-id="${attr(row.id)}" data-enabled="${row.enabled ? "false" : "true"}">${row.enabled ? "Disable" : "Enable"}</button><button class="danger" data-managed-project-delete data-identity-id="${attr(row.id)}">Delete</button></div>`,
+  ]));
 }
 
 function managedIdentityTable(rows) {
@@ -4042,6 +4118,39 @@ async function deleteManagedIdentity(event) {
   await managedIdentities();
 }
 
+async function createManagedIdentityProject(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  await api("/admin-ui/admin/managed-identity-projects", {
+    method: "POST",
+    body: JSON.stringify({
+      display_name: form.get("display_name"),
+      tenant_id: form.get("tenant_id"),
+      client_id: form.get("client_id"),
+      object_id: nullableText(form.get("object_id")),
+      project_id: form.get("project_id"),
+      required_role: form.get("required_role"),
+      enabled: true,
+    }),
+  });
+  setNotice("Project monitoring identity registered.", "success");
+  await managedIdentities();
+}
+
+async function toggleManagedIdentityProject(event) {
+  await api(`/admin-ui/admin/managed-identity-projects/${event.currentTarget.dataset.identityId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled: event.currentTarget.dataset.enabled === "true" }),
+  });
+  await managedIdentities();
+}
+
+async function deleteManagedIdentityProject(event) {
+  if (!(await confirmAction("Delete project identity binding", "The workload immediately loses project monitoring API access."))) return;
+  await api(`/admin-ui/admin/managed-identity-projects/${event.currentTarget.dataset.identityId}`, { method: "DELETE" });
+  await managedIdentities();
+}
+
 async function myServices() {
   state.ownerServices = await api("/owner/v1/services");
   if (!state.selectedOwnerService && state.ownerServices.length) state.selectedOwnerService = state.ownerServices[0].service.name;
@@ -4061,6 +4170,28 @@ function ownerServiceCard(item) {
     <div><span class="eyebrow">${esc(item.role)}</span><h3>${esc(service.name)}</h3><p><code>${esc(service.route_pattern)}</code></p></div>
     <div class="member-meta"><span>${service.enabled ? "Active" : "Disabled"}</span><span>${esc(service.allowed_methods?.join(", ") || "")}</span></div>
     <button class="primary" data-open-owner-service="${attr(service.name)}">Open dashboard</button>
+  </article>`;
+}
+
+async function myProjects() {
+  state.ownerProjects = await api("/owner/v1/projects");
+  if (!state.selectedOwnerProject && state.ownerProjects.length) state.selectedOwnerProject = state.ownerProjects[0].project.id;
+  content.innerHTML = `<section class="panel">
+    <div class="panel-heading"><div><h3>My projects</h3><p>Only exact Relayna project assignments shown here are available through the dashboard and owner API.</p></div><span class="badge">${state.ownerProjects.length}</span></div>
+    <div class="owner-service-grid">${state.ownerProjects.map(ownerProjectCard).join("") || emptyState("No project access has been assigned to this member.")}</div>
+  </section>`;
+  content.querySelectorAll("[data-open-owner-project]").forEach((button) => button.addEventListener("click", () => {
+    state.selectedOwnerProject = button.dataset.openOwnerProject;
+    navigateToView("project-dashboard");
+  }));
+}
+
+function ownerProjectCard(item) {
+  const project = item.project;
+  return `<article class="owner-service-card">
+    <div><span class="eyebrow">${esc(item.role)}</span><h3>${esc(project.name)}</h3><p><code>${esc(project.id)}</code></p></div>
+    <div class="member-meta"><span>${project.service_names?.length || 0} linked services</span></div>
+    <button class="primary" data-open-owner-project="${attr(project.id)}">Open dashboard</button>
   </article>`;
 }
 
@@ -4214,7 +4345,10 @@ async function openOwnerRequestDetails(event) {
   const trigger = event.currentTarget;
   const serviceName = trigger.dataset.ownerService;
   const requestId = trigger.dataset.ownerRequest;
-  const details = await api(`/owner/v1/services/${encodeURIComponent(serviceName)}/requests/${encodeURIComponent(requestId)}`);
+  const projectId = trigger.dataset.ownerProject;
+  const details = await api(projectId
+    ? `/owner/v1/projects/${encodeURIComponent(projectId)}/requests/${encodeURIComponent(requestId)}`
+    : `/owner/v1/services/${encodeURIComponent(serviceName)}/requests/${encodeURIComponent(requestId)}`);
   const backdrop = document.createElement("section");
   backdrop.className = "modal-backdrop owner-request-backdrop";
   const titleId = `dialog-title-${++dialogCounter}`;
@@ -4358,6 +4492,126 @@ async function serviceDashboard() {
   content.querySelectorAll("[data-owner-request]").forEach((button) => button.addEventListener("click", handleAsync(openOwnerRequestDetails)));
 }
 
+async function projectDashboard() {
+  const generation = ++ownerDashboardGeneration;
+  const isStale = () => generation !== ownerDashboardGeneration;
+  destroyOwnerDashboardChart();
+  if (!state.ownerProjects.length) {
+    try {
+      const ownerProjects = await api("/owner/v1/projects");
+      if (isStale()) return;
+      state.ownerProjects = ownerProjects;
+    } catch (error) {
+      if (isStale()) return;
+      throw error;
+    }
+  }
+  if (isStale()) return;
+  if (!state.selectedOwnerProject) state.selectedOwnerProject = state.ownerProjects[0]?.project?.id;
+  if (!state.selectedOwnerProject) {
+    content.innerHTML = panel("Project dashboard", emptyState("No project access has been assigned."));
+    return;
+  }
+  const projectId = state.selectedOwnerProject;
+  const range = ownerDashboardRange();
+  const dashboardQuery = new URLSearchParams({ from: range.from, interval: range.interval });
+  const eventsQuery = new URLSearchParams({
+    from: range.from,
+    limit: String(state.ownerDashboardFilters.limit),
+    offset: String(state.ownerDashboardFilters.offset),
+  });
+  if (state.ownerDashboardFilters.outcome !== "all") eventsQuery.set("status", state.ownerDashboardFilters.outcome);
+  if (state.ownerDashboardFilters.statusCode) eventsQuery.set("status_code", state.ownerDashboardFilters.statusCode);
+  let dashboard;
+  let events;
+  try {
+    [dashboard, events] = await Promise.all([
+      api(`/owner/v1/projects/${encodeURIComponent(projectId)}/dashboard?${dashboardQuery}`),
+      api(`/owner/v1/projects/${encodeURIComponent(projectId)}/events?${eventsQuery}`),
+    ]);
+  } catch (error) {
+    if (isStale()) return;
+    throw error;
+  }
+  if (isStale()) return;
+  const statusCodes = (dashboard.status_codes || []).map(String);
+  if (state.ownerDashboardFilters.statusCode && !statusCodes.includes(state.ownerDashboardFilters.statusCode)) {
+    statusCodes.push(state.ownerDashboardFilters.statusCode);
+  }
+  const eventStart = events.rows?.length ? events.offset + 1 : 0;
+  const eventEnd = events.rows?.length ? events.offset + events.rows.length : 0;
+  content.innerHTML = `
+    <section class="owner-dashboard-toolbar">
+      <label>Project<select id="owner-project-select">${state.ownerProjects.map((item) => option(item.project.id, projectId, item.project.name)).join("")}</select></label>
+      <span class="badge">${esc(dashboard.role)}</span>
+      <code>GET /owner/v1/projects/${esc(projectId)}/dashboard</code>
+    </section>
+    <section class="metric-strip">
+      ${metricTile("Requests", dashboard.summary.request_count)}
+      ${metricTile("Failures", dashboard.summary.failure_count)}
+      ${metricTile("P95 latency", dashboard.summary.p95_latency_ms == null ? "n/a" : `${Number(dashboard.summary.p95_latency_ms).toFixed(0)} ms`)}
+      ${metricTile("Estimated cost", money(dashboard.summary.estimated_cost_usd))}
+    </section>
+    <section class="panel owner-incident-panel">
+      <div class="panel-heading"><div><h3>Project incident signals</h3><p>Error rate and P95 latency for requests attributed to this exact project.</p></div></div>
+      <p class="sr-only">${esc(ownerIncidentSummary(dashboard.timeseries || [], dashboard.version_markers || []))}</p>
+      <div class="owner-incident-chart-wrap"><canvas id="owner-incident-chart" role="img" aria-label="Project error rate and P95 latency over time"></canvas></div>
+    </section>
+    <section class="owner-dashboard-grid">
+      ${panel("Service usage", usageBreakdownTable(dashboard.services || []))}
+      ${panel("Endpoint usage", usageBreakdownTable(dashboard.endpoints || []))}
+      ${panel("Provider usage", usageBreakdownTable(dashboard.providers || []))}
+      ${panel("Model usage", usageBreakdownTable(dashboard.models || []))}
+    </section>
+    <section class="panel owner-request-panel">
+      <div class="panel-heading"><div><h3>Project request logs</h3><p>Inspect scoped request outcomes without exposing payloads or credentials.</p></div></div>
+      <div class="owner-request-filters" role="group" aria-label="Project request log filters">
+        <label>Time range<select id="owner-range-select">
+          ${option("6h", state.ownerDashboardFilters.range, "Last 6 hours")}
+          ${option("24h", state.ownerDashboardFilters.range, "Last 24 hours")}
+          ${option("7d", state.ownerDashboardFilters.range, "Last 7 days")}
+        </select></label>
+        <label>Outcome<select id="owner-outcome-select">
+          ${option("all", state.ownerDashboardFilters.outcome, "All outcomes")}
+          ${option("success", state.ownerDashboardFilters.outcome, "Success")}
+          ${option("failure", state.ownerDashboardFilters.outcome, "Failure")}
+        </select></label>
+        <label>Status code<select id="owner-status-select">
+          ${option("", state.ownerDashboardFilters.statusCode, "All status codes")}
+          ${statusCodes.map((code) => option(code, state.ownerDashboardFilters.statusCode, code)).join("")}
+        </select></label>
+      </div>
+      <div class="table-pager owner-request-pager" aria-label="Project request logs pagination">
+        <span>Showing ${eventStart}-${eventEnd}</span>
+        <button type="button" data-owner-page="previous" ${events.offset <= 0 ? "disabled" : ""}>Previous</button>
+        <button type="button" data-owner-page="next" ${events.has_more ? "" : "disabled"}>Next</button>
+      </div>
+      ${usageEventsTable(events.rows || [], { ownerProject: projectId })}
+    </section>
+    ${panel("Usage over time", usageTimeseriesTable(dashboard.timeseries || []))}`;
+  renderOwnerIncidentChart(dashboard.timeseries || [], dashboard.version_markers || []);
+  document.querySelector("#owner-project-select").addEventListener("change", (event) => {
+    state.selectedOwnerProject = event.target.value;
+    state.ownerDashboardFilters.offset = 0;
+    projectDashboard().catch((error) => setNotice(error.message));
+  });
+  for (const id of ["owner-range-select", "owner-outcome-select", "owner-status-select"]) {
+    document.querySelector(`#${id}`).addEventListener("change", (event) => {
+      if (id === "owner-range-select") state.ownerDashboardFilters.range = event.target.value;
+      if (id === "owner-outcome-select") state.ownerDashboardFilters.outcome = event.target.value;
+      if (id === "owner-status-select") state.ownerDashboardFilters.statusCode = event.target.value;
+      state.ownerDashboardFilters.offset = 0;
+      projectDashboard().catch((error) => setNotice(error.message));
+    });
+  }
+  content.querySelectorAll("[data-owner-page]").forEach((button) => button.addEventListener("click", () => {
+    const delta = button.dataset.ownerPage === "next" ? state.ownerDashboardFilters.limit : -state.ownerDashboardFilters.limit;
+    state.ownerDashboardFilters.offset = Math.max(0, state.ownerDashboardFilters.offset + delta);
+    projectDashboard().catch((error) => setNotice(error.message));
+  }));
+  content.querySelectorAll("[data-owner-request]").forEach((button) => button.addEventListener("click", handleAsync(openOwnerRequestDetails)));
+}
+
 function blankToUndefined(value) {
   return value === null || String(value).trim() === "" ? undefined : String(value).trim();
 }
@@ -4436,7 +4690,7 @@ async function initializePortal() {
     state.authConfig = await json("/admin-ui/auth/config");
     const signIn = document.querySelector("#entra-sign-in");
     if (state.authConfig.enabled) {
-      const returnTo = `${location.pathname}${location.hash || "#/my-services"}`;
+      const returnTo = `${location.pathname}${location.hash || "#/my-projects"}`;
       signIn.href = `/admin-ui/auth/login?return_to=${encodeURIComponent(returnTo)}`;
     } else {
       signIn.classList.add("hidden");

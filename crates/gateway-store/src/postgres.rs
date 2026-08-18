@@ -3,10 +3,11 @@ use chrono::Datelike;
 use gateway_core::{
     access::{
         ManagedIdentityBinding, ManagedIdentityCreateRequest, ManagedIdentityPatchRequest,
-        MemberPatchRequest, MemberStatus, NewPortalSession, OidcLoginTransaction,
-        PortalAccessStore, PortalAdminBootstrapPolicy, PortalMember, PortalMemberLogin,
-        ServiceMemberRole, ServiceMembership, ServiceMembershipUpsertRequest, StoredPortalSession,
-        PORTAL_ROLE_ADMIN,
+        ManagedIdentityProjectBinding, ManagedIdentityProjectCreateRequest,
+        ManagedIdentityProjectPatchRequest, MemberPatchRequest, MemberStatus, NewPortalSession,
+        OidcLoginTransaction, PortalAccessStore, PortalAdminBootstrapPolicy, PortalMember,
+        PortalMemberLogin, ProjectMembership, ProjectMembershipUpsertRequest, ServiceMemberRole,
+        ServiceMembership, ServiceMembershipUpsertRequest, StoredPortalSession, PORTAL_ROLE_ADMIN,
     },
     admin::{
         AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse,
@@ -7129,6 +7130,65 @@ impl PortalAccessStore for PostgresStore {
             .map_err(|_| GatewayError::StoreUnavailable)
     }
 
+    async fn list_project_memberships(
+        &self,
+        member_id: Uuid,
+    ) -> GatewayResult<Vec<ProjectMembership>> {
+        sqlx::query("SELECT * FROM project_memberships WHERE member_id = $1 ORDER BY project_id")
+            .bind(member_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .iter()
+            .map(project_membership_from_row)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn upsert_project_membership(
+        &self,
+        member_id: Uuid,
+        request: ProjectMembershipUpsertRequest,
+    ) -> GatewayResult<ProjectMembership> {
+        sqlx::query(
+            r#"
+            INSERT INTO project_memberships (member_id, project_id, role)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (member_id, project_id) DO UPDATE SET
+                role = EXCLUDED.role,
+                updated_at = now()
+            RETURNING *
+            "#,
+        )
+        .bind(member_id)
+        .bind(request.project_id)
+        .bind(request.role.as_str())
+        .fetch_one(&self.pool)
+        .await
+        .and_then(|row| project_membership_from_row(&row))
+        .map_err(|error| {
+            if is_foreign_key_violation(&error) {
+                GatewayError::InvalidAccessPayload
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })
+    }
+
+    async fn delete_project_membership(
+        &self,
+        member_id: Uuid,
+        project_id: Uuid,
+    ) -> GatewayResult<bool> {
+        sqlx::query("DELETE FROM project_memberships WHERE member_id = $1 AND project_id = $2")
+            .bind(member_id)
+            .bind(project_id)
+            .execute(&self.pool)
+            .await
+            .map(|result| result.rows_affected() > 0)
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
     async fn list_managed_identities(&self) -> GatewayResult<Vec<ManagedIdentityBinding>> {
         sqlx::query("SELECT * FROM managed_identity_bindings ORDER BY display_name, id")
             .fetch_all(&self.pool)
@@ -7252,6 +7312,133 @@ impl PortalAccessStore for PostgresStore {
 
     async fn delete_managed_identity(&self, identity_id: Uuid) -> GatewayResult<bool> {
         sqlx::query("DELETE FROM managed_identity_bindings WHERE id = $1")
+            .bind(identity_id)
+            .execute(&self.pool)
+            .await
+            .map(|result| result.rows_affected() > 0)
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn list_managed_identity_projects(
+        &self,
+    ) -> GatewayResult<Vec<ManagedIdentityProjectBinding>> {
+        sqlx::query("SELECT * FROM managed_identity_project_bindings ORDER BY display_name, id")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .iter()
+            .map(managed_identity_project_from_row)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn create_managed_identity_project(
+        &self,
+        request: ManagedIdentityProjectCreateRequest,
+    ) -> GatewayResult<ManagedIdentityProjectBinding> {
+        validate_managed_identity_project_fields(
+            &request.tenant_id,
+            &request.client_id,
+            &request.display_name,
+            &request.required_role,
+        )?;
+        sqlx::query(
+            r#"
+            INSERT INTO managed_identity_project_bindings (
+                tenant_id, client_id, object_id, display_name, project_id,
+                required_role, enabled
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING *
+            "#,
+        )
+        .bind(request.tenant_id.trim())
+        .bind(request.client_id.trim())
+        .bind(
+            request
+                .object_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(request.display_name.trim())
+        .bind(request.project_id)
+        .bind(request.required_role.trim())
+        .bind(request.enabled)
+        .fetch_one(&self.pool)
+        .await
+        .and_then(|row| managed_identity_project_from_row(&row))
+        .map_err(|error| {
+            if is_unique_violation_on(&error, "managed_identity_project_binding_unique")
+                || is_foreign_key_violation(&error)
+            {
+                GatewayError::InvalidAccessPayload
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })
+    }
+
+    async fn patch_managed_identity_project(
+        &self,
+        identity_id: Uuid,
+        patch: ManagedIdentityProjectPatchRequest,
+    ) -> GatewayResult<Option<ManagedIdentityProjectBinding>> {
+        if patch
+            .display_name
+            .as_deref()
+            .is_some_and(|value| value.trim().is_empty())
+            || patch
+                .required_role
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+        {
+            return Err(GatewayError::InvalidAccessPayload);
+        }
+        let object_id_present = patch.object_id.is_some();
+        let object_id = patch.object_id.flatten();
+        sqlx::query(
+            r#"
+            UPDATE managed_identity_project_bindings
+            SET display_name = COALESCE($2, display_name),
+                object_id = CASE WHEN $3 THEN $4 ELSE object_id END,
+                project_id = COALESCE($5, project_id),
+                required_role = COALESCE($6, required_role),
+                enabled = COALESCE($7, enabled),
+                updated_at = now()
+            WHERE id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(identity_id)
+        .bind(patch.display_name.map(|value| value.trim().to_owned()))
+        .bind(object_id_present)
+        .bind(
+            object_id
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(patch.project_id)
+        .bind(patch.required_role.map(|value| value.trim().to_owned()))
+        .bind(patch.enabled)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            if is_unique_violation_on(&error, "managed_identity_project_binding_unique")
+                || is_foreign_key_violation(&error)
+            {
+                GatewayError::InvalidAccessPayload
+            } else {
+                GatewayError::StoreUnavailable
+            }
+        })?
+        .map(|row| managed_identity_project_from_row(&row))
+        .transpose()
+        .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
+    async fn delete_managed_identity_project(&self, identity_id: Uuid) -> GatewayResult<bool> {
+        sqlx::query("DELETE FROM managed_identity_project_bindings WHERE id = $1")
             .bind(identity_id)
             .execute(&self.pool)
             .await
@@ -7439,6 +7626,31 @@ impl PortalAccessStore for PostgresStore {
         .transpose()
     }
 
+    async fn member_project_role(
+        &self,
+        member_id: Uuid,
+        project_id: Uuid,
+    ) -> GatewayResult<Option<ServiceMemberRole>> {
+        sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT pm.role
+            FROM project_memberships pm
+            INNER JOIN portal_members m ON m.id = pm.member_id
+            INNER JOIN projects p ON p.id = pm.project_id
+            WHERE pm.member_id = $1
+              AND pm.project_id = $2
+              AND m.status = 'active'
+            "#,
+        )
+        .bind(member_id)
+        .bind(project_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|role| ServiceMemberRole::parse(&role))
+        .transpose()
+    }
+
     async fn workload_service_binding(
         &self,
         tenant_id: &str,
@@ -7469,6 +7681,44 @@ impl PortalAccessStore for PostgresStore {
         .map_err(|_| GatewayError::StoreUnavailable)?;
         let binding = row
             .map(|row| managed_identity_from_row(&row))
+            .transpose()
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(binding.filter(|binding| {
+            token_roles
+                .iter()
+                .any(|role| role == &binding.required_role)
+        }))
+    }
+
+    async fn workload_project_binding(
+        &self,
+        tenant_id: &str,
+        client_id: &str,
+        object_id: Option<&str>,
+        project_id: Uuid,
+        token_roles: &[String],
+    ) -> GatewayResult<Option<ManagedIdentityProjectBinding>> {
+        let row = sqlx::query(
+            r#"
+            SELECT b.*
+            FROM managed_identity_project_bindings b
+            INNER JOIN projects p ON p.id = b.project_id
+            WHERE b.tenant_id = $1
+              AND b.client_id = $2
+              AND b.project_id = $3
+              AND b.enabled = true
+              AND (b.object_id IS NULL OR b.object_id = $4)
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(client_id)
+        .bind(project_id)
+        .bind(object_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        let binding = row
+            .map(|row| managed_identity_project_from_row(&row))
             .transpose()
             .map_err(|_| GatewayError::StoreUnavailable)?;
         Ok(binding.filter(|binding| {
@@ -7514,6 +7764,22 @@ fn service_membership_from_row(
     })
 }
 
+fn project_membership_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<ProjectMembership, sqlx::Error> {
+    let role: String = row.try_get("role")?;
+    Ok(ProjectMembership {
+        member_id: row.try_get("member_id")?,
+        project_id: row.try_get("project_id")?,
+        role: ServiceMemberRole::parse(&role).map_err(|_| sqlx::Error::ColumnDecode {
+            index: "role".into(),
+            source: "invalid project member role".into(),
+        })?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
 fn managed_identity_from_row(
     row: &sqlx::postgres::PgRow,
 ) -> Result<ManagedIdentityBinding, sqlx::Error> {
@@ -7524,6 +7790,23 @@ fn managed_identity_from_row(
         object_id: row.try_get("object_id")?,
         display_name: row.try_get("display_name")?,
         service_name: row.try_get("service_name")?,
+        required_role: row.try_get("required_role")?,
+        enabled: row.try_get("enabled")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn managed_identity_project_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<ManagedIdentityProjectBinding, sqlx::Error> {
+    Ok(ManagedIdentityProjectBinding {
+        id: row.try_get("id")?,
+        tenant_id: row.try_get("tenant_id")?,
+        client_id: row.try_get("client_id")?,
+        object_id: row.try_get("object_id")?,
+        display_name: row.try_get("display_name")?,
+        project_id: row.try_get("project_id")?,
         required_role: row.try_get("required_role")?,
         enabled: row.try_get("enabled")?,
         created_at: row.try_get("created_at")?,
@@ -7547,6 +7830,21 @@ fn validate_managed_identity_fields(
     ]
     .iter()
     .any(|value| value.trim().is_empty())
+    {
+        return Err(GatewayError::InvalidAccessPayload);
+    }
+    Ok(())
+}
+
+fn validate_managed_identity_project_fields(
+    tenant_id: &str,
+    client_id: &str,
+    display_name: &str,
+    required_role: &str,
+) -> GatewayResult<()> {
+    if [tenant_id, client_id, display_name, required_role]
+        .iter()
+        .any(|value| value.trim().is_empty())
     {
         return Err(GatewayError::InvalidAccessPayload);
     }

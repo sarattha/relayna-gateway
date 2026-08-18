@@ -2,6 +2,38 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.28 - 2026-08-18
+
+### Added
+
+- Added exact Owner and Viewer project memberships for Entra-authenticated
+  portal users, with read-only project cards, dashboards, request logs,
+  sanitized request details, endpoint views, and usage exports.
+- Added exact project bindings for managed identities. Project monitoring
+  reuses the existing `gateway.monitor.read` Entra application role and still
+  requires a matching enabled Relayna binding.
+- Added `/owner/v1/projects/{project_id}/*` APIs and administrator controls for
+  human project assignments and project-monitoring workloads.
+- Added regression coverage for server-enforced project scoping, cross-project
+  request concealment, durable PostgreSQL access state, and the shared-role
+  Entra workload flow.
+
+### Changed
+
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.28` and `v0.1.28`.
+- Renamed the portal's Service owner workspace label to Owner because the same
+  read-only workspace now supports service and project ownership.
+
+### Security
+
+- Project owner queries overwrite caller-supplied `project_id` filters with the
+  authorized route project before reading usage. Request IDs from other
+  projects use the same not-found response as missing IDs.
+- Project visibility follows the usage event's persisted `project_id`, not
+  service links, so a service shared by multiple projects cannot expose another
+  project's traffic.
+
 ## 0.1.27 - 2026-08-18
 
 ### Added

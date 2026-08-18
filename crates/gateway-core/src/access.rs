@@ -207,6 +207,21 @@ pub struct ServiceMembershipUpsertRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProjectMembership {
+    pub member_id: Uuid,
+    pub project_id: Uuid,
+    pub role: ServiceMemberRole,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct ProjectMembershipUpsertRequest {
+    pub project_id: Uuid,
+    pub role: ServiceMemberRole,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ManagedIdentityBinding {
     pub id: Uuid,
     pub tenant_id: String,
@@ -242,6 +257,48 @@ pub struct ManagedIdentityPatchRequest {
     pub object_id: Option<Option<String>>,
     #[serde(default)]
     pub service_name: Option<String>,
+    #[serde(default)]
+    pub required_role: Option<String>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ManagedIdentityProjectBinding {
+    pub id: Uuid,
+    pub tenant_id: String,
+    pub client_id: String,
+    pub object_id: Option<String>,
+    pub display_name: String,
+    pub project_id: Uuid,
+    pub required_role: String,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct ManagedIdentityProjectCreateRequest {
+    pub tenant_id: String,
+    pub client_id: String,
+    #[serde(default)]
+    pub object_id: Option<String>,
+    pub display_name: String,
+    pub project_id: Uuid,
+    #[serde(default = "default_owner_workload_role")]
+    pub required_role: String,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+pub struct ManagedIdentityProjectPatchRequest {
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub object_id: Option<Option<String>>,
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
     #[serde(default)]
     pub required_role: Option<String>,
     #[serde(default)]
@@ -288,6 +345,7 @@ pub struct PortalSessionResponse {
     pub authenticated: bool,
     pub member: PortalMember,
     pub service_memberships: Vec<ServiceMembership>,
+    pub project_memberships: Vec<ProjectMembership>,
     pub csrf_token: String,
 }
 
@@ -331,6 +389,21 @@ pub trait PortalAccessStore: Send + Sync {
         service_name: &str,
     ) -> GatewayResult<bool>;
 
+    async fn list_project_memberships(
+        &self,
+        member_id: Uuid,
+    ) -> GatewayResult<Vec<ProjectMembership>>;
+    async fn upsert_project_membership(
+        &self,
+        member_id: Uuid,
+        request: ProjectMembershipUpsertRequest,
+    ) -> GatewayResult<ProjectMembership>;
+    async fn delete_project_membership(
+        &self,
+        member_id: Uuid,
+        project_id: Uuid,
+    ) -> GatewayResult<bool>;
+
     async fn list_managed_identities(&self) -> GatewayResult<Vec<ManagedIdentityBinding>>;
     async fn create_managed_identity(
         &self,
@@ -342,6 +415,20 @@ pub trait PortalAccessStore: Send + Sync {
         patch: ManagedIdentityPatchRequest,
     ) -> GatewayResult<Option<ManagedIdentityBinding>>;
     async fn delete_managed_identity(&self, identity_id: Uuid) -> GatewayResult<bool>;
+
+    async fn list_managed_identity_projects(
+        &self,
+    ) -> GatewayResult<Vec<ManagedIdentityProjectBinding>>;
+    async fn create_managed_identity_project(
+        &self,
+        request: ManagedIdentityProjectCreateRequest,
+    ) -> GatewayResult<ManagedIdentityProjectBinding>;
+    async fn patch_managed_identity_project(
+        &self,
+        identity_id: Uuid,
+        patch: ManagedIdentityProjectPatchRequest,
+    ) -> GatewayResult<Option<ManagedIdentityProjectBinding>>;
+    async fn delete_managed_identity_project(&self, identity_id: Uuid) -> GatewayResult<bool>;
 
     async fn create_oidc_login_transaction(
         &self,
@@ -366,6 +453,11 @@ pub trait PortalAccessStore: Send + Sync {
         member_id: Uuid,
         service_name: &str,
     ) -> GatewayResult<Option<ServiceMemberRole>>;
+    async fn member_project_role(
+        &self,
+        member_id: Uuid,
+        project_id: Uuid,
+    ) -> GatewayResult<Option<ServiceMemberRole>>;
     async fn workload_service_binding(
         &self,
         tenant_id: &str,
@@ -374,6 +466,14 @@ pub trait PortalAccessStore: Send + Sync {
         service_name: &str,
         token_roles: &[String],
     ) -> GatewayResult<Option<ManagedIdentityBinding>>;
+    async fn workload_project_binding(
+        &self,
+        tenant_id: &str,
+        client_id: &str,
+        object_id: Option<&str>,
+        project_id: Uuid,
+        token_roles: &[String],
+    ) -> GatewayResult<Option<ManagedIdentityProjectBinding>>;
 }
 
 #[async_trait]
@@ -426,6 +526,28 @@ where
             .delete_service_membership(member_id, service_name)
             .await
     }
+    async fn list_project_memberships(
+        &self,
+        member_id: Uuid,
+    ) -> GatewayResult<Vec<ProjectMembership>> {
+        (**self).list_project_memberships(member_id).await
+    }
+    async fn upsert_project_membership(
+        &self,
+        member_id: Uuid,
+        request: ProjectMembershipUpsertRequest,
+    ) -> GatewayResult<ProjectMembership> {
+        (**self).upsert_project_membership(member_id, request).await
+    }
+    async fn delete_project_membership(
+        &self,
+        member_id: Uuid,
+        project_id: Uuid,
+    ) -> GatewayResult<bool> {
+        (**self)
+            .delete_project_membership(member_id, project_id)
+            .await
+    }
     async fn list_managed_identities(&self) -> GatewayResult<Vec<ManagedIdentityBinding>> {
         (**self).list_managed_identities().await
     }
@@ -444,6 +566,29 @@ where
     }
     async fn delete_managed_identity(&self, identity_id: Uuid) -> GatewayResult<bool> {
         (**self).delete_managed_identity(identity_id).await
+    }
+    async fn list_managed_identity_projects(
+        &self,
+    ) -> GatewayResult<Vec<ManagedIdentityProjectBinding>> {
+        (**self).list_managed_identity_projects().await
+    }
+    async fn create_managed_identity_project(
+        &self,
+        request: ManagedIdentityProjectCreateRequest,
+    ) -> GatewayResult<ManagedIdentityProjectBinding> {
+        (**self).create_managed_identity_project(request).await
+    }
+    async fn patch_managed_identity_project(
+        &self,
+        identity_id: Uuid,
+        patch: ManagedIdentityProjectPatchRequest,
+    ) -> GatewayResult<Option<ManagedIdentityProjectBinding>> {
+        (**self)
+            .patch_managed_identity_project(identity_id, patch)
+            .await
+    }
+    async fn delete_managed_identity_project(&self, identity_id: Uuid) -> GatewayResult<bool> {
+        (**self).delete_managed_identity_project(identity_id).await
     }
     async fn create_oidc_login_transaction(
         &self,
@@ -481,6 +626,13 @@ where
     ) -> GatewayResult<Option<ServiceMemberRole>> {
         (**self).member_service_role(member_id, service_name).await
     }
+    async fn member_project_role(
+        &self,
+        member_id: Uuid,
+        project_id: Uuid,
+    ) -> GatewayResult<Option<ServiceMemberRole>> {
+        (**self).member_project_role(member_id, project_id).await
+    }
     async fn workload_service_binding(
         &self,
         tenant_id: &str,
@@ -491,6 +643,18 @@ where
     ) -> GatewayResult<Option<ManagedIdentityBinding>> {
         (**self)
             .workload_service_binding(tenant_id, client_id, object_id, service_name, token_roles)
+            .await
+    }
+    async fn workload_project_binding(
+        &self,
+        tenant_id: &str,
+        client_id: &str,
+        object_id: Option<&str>,
+        project_id: Uuid,
+        token_roles: &[String],
+    ) -> GatewayResult<Option<ManagedIdentityProjectBinding>> {
+        (**self)
+            .workload_project_binding(tenant_id, client_id, object_id, project_id, token_roles)
             .await
     }
 }

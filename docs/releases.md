@@ -1,19 +1,19 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.27` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.28` is the
 current release target.
 
-Version `0.1.27` adds an expandable Project → Virtual key → Service usage
-hierarchy backed by one bounded aggregate over the existing usage ledger. The
-dashboard response change is additive, requires no database migration, honors
-the existing usage filters and sort controls, and resolves virtual-key IDs to
-safe prefixes rather than raw key material. The release also updates `h2` to
-`0.4.16` for `RUSTSEC-2026-0258`.
+Version `0.1.28` adds read-only project-owner dashboards and APIs, exact
+project Owner and Viewer memberships for Entra portal users, and exact project
+bindings for managed identities. Project monitoring reuses
+`gateway.monitor.read`; Relayna still requires an enabled resource binding.
+The forward migration adds separate project access tables and leaves released
+service-owner rows and routes unchanged.
 
 It retains the `0.1.26` single-application Entra contract,
 Entra-authenticated browser sessions for administrators
-and registered service owners, exact Owner and Viewer service memberships,
-scoped service monitoring APIs, and managed-identity workload bindings. It also
+and registered owners, exact Owner and Viewer service memberships, scoped
+service monitoring APIs, and managed-identity workload bindings. It also
 adds owner incident charts for error rate and P95 latency, validated service-
 version observations, all-request filtering and pagination, and exact-service
 sanitized request details with optional debug bundles.
@@ -40,7 +40,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.27
+   python3 scripts/validate-release-metadata.py v0.1.28
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -58,15 +58,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.27 .
+   docker build -t relayna-gateway:0.1.28 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.27 -m "Release v0.1.27"
-   git push origin v0.1.27
+   git tag -a v0.1.28 -m "Release v0.1.28"
+   git push origin v0.1.28
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -76,10 +76,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.27`, the workflow publishes:
+For `v0.1.28`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.27
+ghcr.io/sarattha/relayna-gateway:0.1.28
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```
