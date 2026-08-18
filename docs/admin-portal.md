@@ -22,7 +22,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.26` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+The `v0.1.27` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
 operator work into Monitor, Discover, and Govern navigation domains. Monitor
 contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains
@@ -503,7 +503,10 @@ First-time setup is complete when:
   target.
 - Usage filters usage by project, virtual key, service, route, provider, HTTP
   method, effective endpoint, numeric status code, model, task ID, run ID,
-  trace ID, status, and minimum cost. It shows endpoint request/success/failure
+  trace ID, status, and minimum cost. It groups the selected top combinations
+  as expandable Project → Virtual key → Service disclosures, resolving only
+  safe key prefixes and showing request, success, failure, token, latency, and
+  cost totals for each service. It also shows endpoint request/success/failure
   breakdowns grouped as `METHOD /path`, plus method, effective endpoint, and
   numeric status in recent rows alongside the existing cost, error, fallback,
   guardrail, timeseries, unused-key, task-drilldown, and export views.

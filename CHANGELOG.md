@@ -2,6 +2,31 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.27 - 2026-08-18
+
+### Added
+
+- Added an additive project, virtual-key, and service usage breakdown to the
+  admin usage dashboard so operators can identify which services each project
+  consumes through each safe virtual-key prefix.
+- Added a compact expandable Project → Virtual key → Service hierarchy that
+  honors the existing usage filters, sort order, and top-result limit.
+- Added backend aggregation, filter, and Admin UI regression coverage for the
+  new hierarchy.
+
+### Changed
+
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.27` and `v0.1.27`.
+
+### Security
+
+- The hierarchy resolves virtual-key IDs to stored prefixes only and never
+  renders raw virtual-key material. Existing `usage:read` authorization remains
+  required, and the change adds no new route or persisted data shape.
+- Updated the transitive `h2` dependency to `0.4.16` to address
+  `RUSTSEC-2026-0258` (unbounded empty DATA frames).
+
 ## 0.1.26 - 2026-08-09
 
 ### Added

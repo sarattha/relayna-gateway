@@ -55,9 +55,10 @@ use gateway_core::{
     ProviderIntelligenceStore, Route, ServiceImportDiff, ServiceRegistrySnapshot,
     StoredOperatorToken, UnusedKey, UsageBreakdown, UsageBreakdownDimension, UsageDashboard,
     UsageDashboardBreakdowns, UsageEvent, UsageEventsPage, UsageExport, UsageExportRow,
-    UsageFilterValues, UsageFilterValuesQuery, UsagePage, UsageQuery, UsageQueryStore,
-    UsageRecorder, UsageServiceTimeseriesPoint, UsageStatus, UsageSummary, UsageTimeseriesPoint,
-    UsageVersionTransition, VirtualKeyMaterial, MAX_USAGE_VERSION_TRANSITIONS,
+    UsageFilterValues, UsageFilterValuesQuery, UsagePage, UsageProjectKeyServiceBreakdown,
+    UsageQuery, UsageQueryStore, UsageRecorder, UsageServiceTimeseriesPoint, UsageStatus,
+    UsageSummary, UsageTimeseriesPoint, UsageVersionTransition, VirtualKeyMaterial,
+    MAX_USAGE_VERSION_TRANSITIONS,
 };
 use sqlx::{
     postgres::PgPoolOptions, types::Json, PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -4412,6 +4413,7 @@ impl UsageQueryStore for PostgresStore {
                 services: self
                     .usage_breakdown(query.clone(), UsageBreakdownDimension::Service)
                     .await?,
+                project_key_services: usage_project_key_services(&self.pool, &query).await?,
                 endpoints: self
                     .usage_breakdown(query.clone(), UsageBreakdownDimension::Endpoint)
                     .await?,
@@ -6506,6 +6508,103 @@ async fn usage_service_timeseries(
     Ok(UsageRowsPage { rows, page })
 }
 
+async fn usage_project_key_services(
+    pool: &PgPool,
+    query: &UsageQuery,
+) -> GatewayResult<Vec<UsageProjectKeyServiceBreakdown>> {
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT
+            project_id,
+            key_id,
+            service_name,
+            COUNT(*)::bigint AS request_count,
+            COUNT(*) FILTER (WHERE status = 'success')::bigint AS success_count,
+            COUNT(*) FILTER (WHERE status = 'failure')::bigint AS failure_count,
+            COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
+            COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens,
+            COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+            COALESCE(SUM(estimated_cost), 0)::double precision AS estimated_cost_usd,
+            COALESCE(SUM(latency_ms), 0)::bigint AS total_latency_ms,
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::double precision AS p95_latency_ms,
+            COALESCE(SUM(fallback_count), 0)::bigint AS fallback_count
+        FROM usage_events
+        "#,
+    );
+    append_usage_filters(&mut builder, query);
+    builder.push(" GROUP BY project_id, key_id, service_name ORDER BY ");
+    builder.push(usage_breakdown_sort_column(query.sort_by.as_deref()));
+    builder.push(if usage_sort_desc(query.sort_order.as_deref()) {
+        " DESC"
+    } else {
+        " ASC"
+    });
+    builder.push(", project_id ASC NULLS FIRST, key_id ASC, service_name ASC LIMIT ");
+    builder.push_bind(query.breakdown_limit.unwrap_or(20).clamp(1, 500));
+    builder.push(" OFFSET ");
+    builder.push_bind(query.breakdown_offset.unwrap_or_default().max(0));
+
+    builder
+        .build_query_as::<(
+            Option<Uuid>,
+            Uuid,
+            Option<String>,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            Option<f64>,
+            i64,
+            Option<f64>,
+            i64,
+        )>()
+        .fetch_all(pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(
+                    |(
+                        project_id,
+                        key_id,
+                        service_name,
+                        request_count,
+                        success_count,
+                        failure_count,
+                        input_tokens,
+                        output_tokens,
+                        total_tokens,
+                        estimated_cost_usd,
+                        total_latency_ms,
+                        p95_latency_ms,
+                        fallback_count,
+                    )| UsageProjectKeyServiceBreakdown {
+                        project_id,
+                        key_id,
+                        service_name,
+                        summary: UsageSummary {
+                            request_count,
+                            success_count,
+                            failure_count,
+                            input_tokens,
+                            output_tokens,
+                            total_tokens,
+                            estimated_cost_usd,
+                            total_latency_ms,
+                            average_latency_ms: average_latency_ms(request_count, total_latency_ms),
+                            p95_latency_ms,
+                            fallback_count,
+                            fallback_rate: fallback_rate(request_count, fallback_count),
+                            ..UsageSummary::default()
+                        },
+                    },
+                )
+                .collect()
+        })
+        .map_err(|_| GatewayError::StoreUnavailable)
+}
+
 async fn enrich_usage_summary(
     pool: &PgPool,
     query: &UsageQuery,
@@ -8437,9 +8536,51 @@ mod tests {
             .expect("endpoint breakdown");
         assert_eq!(endpoint_breakdown[0].name, "POST /jobs/{job_id}");
         store
+            .insert_usage_event(&UsageEvent {
+                request_id: format!("usage-none-service-{suffix}"),
+                service_name: Some("none".to_owned()),
+                service_version: None,
+                estimated_cost_usd: Some(0.2),
+                ..usage.clone()
+            })
+            .await
+            .expect("insert literal none service usage");
+        store
+            .insert_usage_event(&UsageEvent {
+                request_id: format!("usage-unattributed-{suffix}"),
+                service_name: None,
+                service_version: None,
+                estimated_cost_usd: Some(0.1),
+                ..usage.clone()
+            })
+            .await
+            .expect("insert unattributed service usage");
+        let usage_dashboard = store
             .usage_dashboard(usage_query.clone())
             .await
             .expect("usage dashboard");
+        assert_eq!(usage_dashboard.breakdowns.project_key_services.len(), 3);
+        let project_key_service = usage_dashboard
+            .breakdowns
+            .project_key_services
+            .iter()
+            .find(|row| row.service_name.as_deref() == Some(service_name.as_str()))
+            .expect("registered service usage");
+        assert_eq!(project_key_service.project_id, Some(project.id));
+        assert_eq!(project_key_service.key_id, key.id);
+        assert_eq!(project_key_service.summary.request_count, 1);
+        assert_eq!(project_key_service.summary.total_tokens, 15);
+        assert_eq!(project_key_service.summary.estimated_cost_usd, Some(0.3));
+        assert!(usage_dashboard
+            .breakdowns
+            .project_key_services
+            .iter()
+            .any(|row| row.service_name.as_deref() == Some("none")));
+        assert!(usage_dashboard
+            .breakdowns
+            .project_key_services
+            .iter()
+            .any(|row| row.service_name.is_none()));
         store
             .usage_events(usage_query.clone())
             .await

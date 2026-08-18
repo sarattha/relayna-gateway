@@ -106,6 +106,12 @@ They use the same usage filters as the dashboard, include summary totals, and
 return paginated rows. CSV output is escaped and spreadsheet formula prefixes
 are neutralized before the response is sent.
 
+The additive `project_key_services` dashboard breakdown groups persisted usage
+events by project ID, virtual-key ID, and service name in one bounded aggregate
+query. The Admin UI resolves those identifiers to project names and safe key
+prefixes, then presents Project → Virtual key → Service disclosures. Existing
+dashboard fields and the usage event schema remain unchanged.
+
 ## Crate Ownership
 
 - `gateway-api` owns Axum routes, admin API handlers, request IDs, health, readiness, metrics, static admin UI serving, and process startup.

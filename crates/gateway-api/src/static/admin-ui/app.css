@@ -684,6 +684,66 @@ td code {
   font-weight: 700;
 }
 
+.usage-hierarchy {
+  display: grid;
+  gap: var(--rg-space-3);
+}
+
+.usage-hierarchy-project,
+.usage-hierarchy-key {
+  min-width: 0;
+  border: 1px solid var(--rg-color-border);
+  border-radius: var(--rg-radius-md);
+  background: var(--rg-color-surface);
+}
+
+.usage-hierarchy-project > summary,
+.usage-hierarchy-key > summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: var(--rg-space-3);
+  justify-content: space-between;
+  list-style: none;
+  min-height: 44px;
+  padding: 9px 12px;
+}
+
+.usage-hierarchy-project > summary::-webkit-details-marker,
+.usage-hierarchy-key > summary::-webkit-details-marker {
+  display: none;
+}
+
+.usage-hierarchy-project > summary span:first-child,
+.usage-hierarchy-key > summary span:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.usage-hierarchy-project > summary span:last-child,
+.usage-hierarchy-project > summary small,
+.usage-hierarchy-key > summary small {
+  color: var(--rg-color-muted);
+  font-size: 12px;
+}
+
+.usage-hierarchy-project[open] > summary,
+.usage-hierarchy-key[open] > summary {
+  border-bottom: 1px solid var(--rg-color-border);
+}
+
+.usage-hierarchy-keys {
+  display: grid;
+  gap: var(--rg-space-3);
+  padding: var(--rg-space-3);
+}
+
+.usage-hierarchy-key > .table-wrap {
+  border: 0;
+  border-radius: 0 0 var(--rg-radius-md) var(--rg-radius-md);
+}
+
 table {
   width: 100%;
   min-width: 780px;
