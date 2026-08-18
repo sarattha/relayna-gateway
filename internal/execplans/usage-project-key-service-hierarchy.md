@@ -70,6 +70,11 @@ does not issue one query per project, key, or service.
   Evidence: `git check-ignore` attributes the whole directory to `.gitignore`;
   the final repository-scoped scan excluded it and Semgrep independently
   confirmed that it scans only tracked files.
+- Observation: The first Codex review identified that the string sentinel
+  `"none"` collided with a valid registered service name.
+  Evidence: service-name validation permits `none`; preserving the database
+  null now produces separate JSON `null` and `"none"` rows, covered in both
+  in-memory and PostgreSQL-backed regression tests.
 
 ## Decision Log
 
@@ -99,6 +104,10 @@ does not issue one query per project, key, or service.
   fixed patch release preserves the public contract, and the user authorized
   the release change despite the production freeze.
   Date/Author: 2026-08-18 / Codex.
+- Decision: Preserve `service_name` nullability in the new aggregate response.
+  Rationale: JSON `null` unambiguously represents unattributed usage without
+  reserving a service-name value or changing registered service validation.
+  Date/Author: 2026-08-18 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -119,7 +128,9 @@ The complete mandatory stack passed: Rust formatting, clippy, workspace tests,
 Cargo audit and deny, cargo-machete, nextest, Trivy, Gitleaks, and Semgrep. The
 workspace release build, Admin UI build and tests, `v0.1.27` metadata validator,
 strict MkDocs build, and diff whitespace check also passed. Publication and
-first-review handling remain in progress.
+first-review handling remain in progress. The first Codex finding was fixed by
+preserving nullable service attribution, covered by an actual PostgreSQL run,
+and the complete verification stack passed again on the final patch.
 
 ## Context and Orientation
 
@@ -232,7 +243,7 @@ Feature branch at plan creation:
 
 At completion, `UsageDashboardBreakdowns` exposes an additive collection of
 rows containing `project_id: Option<Uuid>`, `key_id: Uuid`, `service_name:
-String`, and `summary: UsageSummary`. `PostgresStore::usage_dashboard` populates
+Option<String>`, and `summary: UsageSummary`. `PostgresStore::usage_dashboard` populates
 the collection with one SQL aggregate. The in-memory `UsageQueryStore` used by
 gateway-api tests produces the same semantics. The Admin UI consumes the field
 without adding a new route or JavaScript dependency.

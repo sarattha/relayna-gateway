@@ -7768,16 +7768,11 @@ mod tests {
         rows: &[UsageExportRow],
         query: &UsageQuery,
     ) -> Vec<gateway_core::UsageProjectKeyServiceBreakdown> {
-        let mut grouped = BTreeMap::<(Option<Uuid>, Uuid, String), Vec<UsageExportRow>>::new();
+        let mut grouped =
+            BTreeMap::<(Option<Uuid>, Uuid, Option<String>), Vec<UsageExportRow>>::new();
         for row in rows {
             grouped
-                .entry((
-                    row.project_id,
-                    row.key_id,
-                    row.service_name
-                        .clone()
-                        .unwrap_or_else(|| "none".to_owned()),
-                ))
+                .entry((row.project_id, row.key_id, row.service_name.clone()))
                 .or_default()
                 .push(row.clone());
         }
@@ -11138,6 +11133,20 @@ mod tests {
                 key_id: key_c,
                 project_id: Some(project_b),
                 estimated_cost_usd: Some(0.3),
+                ..base.clone()
+            },
+            UsageEvent {
+                request_id: "project-a-key-a-none-service".to_owned(),
+                key_id: key_a,
+                project_id: Some(project_a),
+                service_name: Some("none".to_owned()),
+                ..base.clone()
+            },
+            UsageEvent {
+                request_id: "project-a-key-a-unattributed".to_owned(),
+                key_id: key_a,
+                project_id: Some(project_a),
+                service_name: None,
                 ..base
             },
         ]);
@@ -11157,7 +11166,7 @@ mod tests {
         let rows = value["breakdowns"]["project_key_services"]
             .as_array()
             .expect("project key service breakdowns");
-        assert_eq!(rows.len(), 3);
+        assert_eq!(rows.len(), 5);
         assert_eq!(rows[0]["project_id"], project_a.to_string());
         assert_eq!(rows[0]["key_id"], key_a.to_string());
         assert_eq!(rows[0]["service_name"], "summarizer");
@@ -11167,6 +11176,16 @@ mod tests {
         assert_eq!(rows[0]["summary"]["total_tokens"], 200);
         assert_eq!(rows[0]["summary"]["average_latency_ms"], 200.0);
         assert_eq!(rows[0]["summary"]["estimated_cost_usd"], 0.5);
+        let none_service = rows
+            .iter()
+            .find(|row| row["service_name"] == "none")
+            .expect("literal none service");
+        assert_eq!(none_service["summary"]["request_count"], 1);
+        let unattributed = rows
+            .iter()
+            .find(|row| row["service_name"].is_null())
+            .expect("unattributed service usage");
+        assert_eq!(unattributed["summary"]["request_count"], 1);
 
         let response = admin_get(
             app,

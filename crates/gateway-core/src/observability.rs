@@ -99,7 +99,7 @@ pub struct UsageBreakdown {
 pub struct UsageProjectKeyServiceBreakdown {
     pub project_id: Option<Uuid>,
     pub key_id: Uuid,
-    pub service_name: String,
+    pub service_name: Option<String>,
     pub summary: UsageSummary,
 }
 

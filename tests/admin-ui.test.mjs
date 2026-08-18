@@ -491,7 +491,7 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /data-usage-key=/);
   assert.match(js, /projectName\(projectId\)/);
   assert.match(js, /keyName\(keyId\)/);
-  assert.match(js, /row\.service_name === "none" \? "Unattributed"/);
+  assert.match(js, /row\.service_name == null \? "Unattributed"/);
   assert.match(js, /row\.endpoint_template \|\| row\.endpoint_path/);
   assert.match(js, /esc\(row\.status_code\)/);
   assert.match(js, /async function loadTaskUsage\(event\)/);

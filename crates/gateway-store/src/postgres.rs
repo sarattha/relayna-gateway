@@ -6517,7 +6517,7 @@ async fn usage_project_key_services(
         SELECT
             project_id,
             key_id,
-            COALESCE(service_name, 'none') AS service_name,
+            service_name,
             COUNT(*)::bigint AS request_count,
             COUNT(*) FILTER (WHERE status = 'success')::bigint AS success_count,
             COUNT(*) FILTER (WHERE status = 'failure')::bigint AS failure_count,
@@ -6548,7 +6548,7 @@ async fn usage_project_key_services(
         .build_query_as::<(
             Option<Uuid>,
             Uuid,
-            String,
+            Option<String>,
             i64,
             i64,
             i64,
@@ -8535,18 +8535,52 @@ mod tests {
             .await
             .expect("endpoint breakdown");
         assert_eq!(endpoint_breakdown[0].name, "POST /jobs/{job_id}");
+        store
+            .insert_usage_event(&UsageEvent {
+                request_id: format!("usage-none-service-{suffix}"),
+                service_name: Some("none".to_owned()),
+                service_version: None,
+                estimated_cost_usd: Some(0.2),
+                ..usage.clone()
+            })
+            .await
+            .expect("insert literal none service usage");
+        store
+            .insert_usage_event(&UsageEvent {
+                request_id: format!("usage-unattributed-{suffix}"),
+                service_name: None,
+                service_version: None,
+                estimated_cost_usd: Some(0.1),
+                ..usage.clone()
+            })
+            .await
+            .expect("insert unattributed service usage");
         let usage_dashboard = store
             .usage_dashboard(usage_query.clone())
             .await
             .expect("usage dashboard");
-        assert_eq!(usage_dashboard.breakdowns.project_key_services.len(), 1);
-        let project_key_service = &usage_dashboard.breakdowns.project_key_services[0];
+        assert_eq!(usage_dashboard.breakdowns.project_key_services.len(), 3);
+        let project_key_service = usage_dashboard
+            .breakdowns
+            .project_key_services
+            .iter()
+            .find(|row| row.service_name.as_deref() == Some(service_name.as_str()))
+            .expect("registered service usage");
         assert_eq!(project_key_service.project_id, Some(project.id));
         assert_eq!(project_key_service.key_id, key.id);
-        assert_eq!(project_key_service.service_name, service_name);
         assert_eq!(project_key_service.summary.request_count, 1);
         assert_eq!(project_key_service.summary.total_tokens, 15);
         assert_eq!(project_key_service.summary.estimated_cost_usd, Some(0.3));
+        assert!(usage_dashboard
+            .breakdowns
+            .project_key_services
+            .iter()
+            .any(|row| row.service_name.as_deref() == Some("none")));
+        assert!(usage_dashboard
+            .breakdowns
+            .project_key_services
+            .iter()
+            .any(|row| row.service_name.is_none()));
         store
             .usage_events(usage_query.clone())
             .await

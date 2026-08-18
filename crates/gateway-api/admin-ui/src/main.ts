@@ -2979,7 +2979,7 @@ function usageProjectKeyServiceTable(rows) {
   return table(
     ["Service", "Requests", "Success", "Failure", "Tokens", "Avg latency", "Cost"],
     rows.map((row) => [
-      esc(row.service_name === "none" ? "Unattributed" : row.service_name),
+      esc(row.service_name == null ? "Unattributed" : row.service_name),
       row.summary.request_count,
       row.summary.success_count,
       row.summary.failure_count,
