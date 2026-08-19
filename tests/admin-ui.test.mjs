@@ -48,8 +48,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.27/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.27/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.28/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.28/);
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
@@ -79,6 +79,8 @@ test("portal uses Entra BFF sessions and preserves explicit break-glass access",
   assert.match(accessState, /#access-state-sign-out"\)\.classList\.remove\("hidden"\)/);
   assert.match(js, /"x-csrf-token": state\.session\.csrf_token/);
   assert.match(js, /session\.member\.status !== "active"/);
+  assert.match(sourceJs, /const returnTo = `\$\{location\.pathname\}\$\{location\.hash\}`/);
+  assert.doesNotMatch(sourceJs, /location\.hash \|\| "#\/my-projects"/);
   assert.doesNotMatch(js, /sessionStorage\.setItem\([^,]+,\s*.*id_token/);
 });
 
@@ -137,6 +139,26 @@ test("service-owner workspace uses scoped owner APIs and responsive dashboards",
   assert.match(css, /@media \(max-width: 700px\)[\s\S]*\.owner-dashboard-grid/);
 });
 
+test("project-owner workspace uses exact project APIs and the shared monitoring role", () => {
+  for (const view of ["my-projects", "project-dashboard"]) {
+    assert.match(html, new RegExp(`data-view="${view}"`));
+  }
+  assert.match(sourceJs, /state\.session\?\.project_memberships\?\.length/);
+  assert.match(js, /async function myProjects\(\)/);
+  assert.match(js, /api\("\/owner\/v1\/projects"\)/);
+  assert.match(js, /async function projectDashboard\(\)/);
+  assert.match(js, /\/owner\/v1\/projects\/\$\{encodeURIComponent\(projectId\)\}\/dashboard/);
+  assert.match(js, /\/owner\/v1\/projects\/\$\{encodeURIComponent\(projectId\)\}\/events\?\$\{eventsQuery\}/);
+  assert.match(sourceJs, /usageEventsTable\(events\.rows \|\| \[\], \{ ownerProject: projectId \}\)/);
+  assert.match(sourceJs, /\/admin-ui\/admin\/managed-identity-projects/);
+  assert.match(sourceJs, /The same <code>gateway\.monitor\.read<\/code> app role is narrowed to one exact project/);
+  assert.match(sourceJs, /data-project-membership-form/);
+  const projectDashboardSource = sourceFunction("projectDashboard");
+  assert.match(projectDashboardSource, /const generation = \+\+ownerDashboardGeneration/);
+  assert.match(projectDashboardSource, /Project incident signals/);
+  assert.match(projectDashboardSource, /Service usage/);
+});
+
 test("admin portal exposes responsive operator navigation and accessible workflows", () => {
   for (const marker of [
     'class="skip-link"',
@@ -168,7 +190,7 @@ test("admin portal exposes responsive operator navigation and accessible workflo
 });
 
 test("command palette respects the active workspace and keeps rows readable", () => {
-  assert.match(js, /const ownerViewIds = new Set\(\["my-services", "service-dashboard"\]\)/);
+  assert.match(js, /const ownerViewIds = new Set\(\["my-services", "service-dashboard", "my-projects", "project-dashboard"\]\)/);
   assert.match(js, /function commandViewsForWorkspace\(\)/);
   assert.match(js, /const commands = commandViewsForWorkspace\(\)/);
   assert.match(js, /state\.workspace === "owner"/);
@@ -589,6 +611,20 @@ test("floating notifications auto-dismiss and still support manual close", () =>
   assert.match(js, /data-close-message/);
   assert.match(js, /mouseenter/);
   assert.match(js, /focusin/);
+});
+
+test("global overlays stay above sticky shell chrome on every view", () => {
+  const cssLayer = (selector) => {
+    const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const layers = [...css.matchAll(new RegExp(`${escapedSelector}\\s*\\{[^}]*?z-index:\\s*(\\d+)`, "g"))].map((match) => Number(match[1]));
+    assert.ok(layers.length > 0, `missing z-index for ${selector}`);
+    return Math.max(...layers);
+  };
+
+  const shellLayer = Math.max(cssLayer(".global-toolbar"), cssLayer(".action-menu"), cssLayer(".nav-backdrop"), cssLayer(".sidebar"));
+  assert.ok(cssLayer(".modal-backdrop") > shellLayer, "dialogs and drawers must cover the complete application shell");
+  assert.ok(cssLayer(".message-box") > cssLayer(".modal-backdrop"), "notifications must remain visible above dialogs");
+  assert.ok(cssLayer(".skip-link") > cssLayer(".message-box"), "the focused skip link must remain the top accessibility layer");
 });
 
 test("overview ignores clean provider health rows without a status field", () => {

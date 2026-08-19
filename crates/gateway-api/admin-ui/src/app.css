@@ -435,7 +435,7 @@ td code {
   position: fixed;
   top: var(--rg-space-4);
   right: var(--rg-space-4);
-  z-index: 9;
+  z-index: 31;
   width: min(420px, calc(100vw - 32px));
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -805,7 +805,7 @@ tr:last-child td {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 10;
+  z-index: 30;
   background: rgb(18 24 32 / 62%);
   display: grid;
   place-items: center;

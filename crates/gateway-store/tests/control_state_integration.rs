@@ -1,10 +1,13 @@
 use chrono::{DateTime, Duration, Utc};
 use gateway_core::{
-    BudgetDecision, BudgetStore, EntraIdentityContext, EntraIdentitySource, GatewayError,
-    GuardrailPolicy, KeyPolicy, ManagedIdentityCreateRequest, ManagedIdentityPatchRequest,
-    MemberPatchRequest, MemberStatus, NewPortalSession, OidcLoginTransaction, PolicyLookup,
-    PortalAccessStore, PortalAdminBootstrapPolicy, Provider, RateLimitDecision, RateLimitStore,
-    Route, ServiceMemberRole, ServiceMembershipUpsertRequest, OWNER_WORKLOAD_ROLE,
+    AdminProjectStore, BudgetDecision, BudgetStore, EntraIdentityContext, EntraIdentitySource,
+    GatewayError, GuardrailPolicy, KeyPolicy, ManagedIdentityCreateRequest,
+    ManagedIdentityPatchRequest, ManagedIdentityProjectCreateRequest,
+    ManagedIdentityProjectPatchRequest, MemberPatchRequest, MemberStatus, NewPortalSession,
+    OidcLoginTransaction, PolicyLookup, PortalAccessStore, PortalAdminBootstrapPolicy,
+    ProjectCreateRequest, ProjectMembershipUpsertRequest, Provider, RateLimitDecision,
+    RateLimitStore, Route, ServiceMemberRole, ServiceMembershipUpsertRequest, UsageQuery,
+    UsageQueryStore, OWNER_WORKLOAD_ROLE,
 };
 use gateway_store::{PostgresStore, RedisControlState};
 use redis::AsyncCommands;
@@ -210,6 +213,96 @@ async fn seed_from_postgres(store: &PostgresStore, redis: &RedisControlState, no
 }
 
 #[tokio::test]
+async fn usage_guardrail_counts_are_scoped_by_key_and_project() {
+    let Some(env) = integration_env().await else {
+        return;
+    };
+    let now = Utc::now();
+    let request_id = format!("shared-request-{}", Uuid::new_v4().simple());
+    let (first_project, first_key) = insert_budgeted_key(&env.store, None, None).await;
+    let (second_project, second_key) = insert_budgeted_key(&env.store, None, None).await;
+    insert_usage(&env.store, first_key, first_project, &request_id, None, now).await;
+    insert_usage(
+        &env.store,
+        second_key,
+        second_project,
+        &request_id,
+        None,
+        now,
+    )
+    .await;
+    sqlx::query(
+        r#"
+        INSERT INTO guardrail_execution_events (
+            request_id, key_id, project_id, guardrail_name, mode, action,
+            failure_policy, latency_ms, created_at
+        )
+        VALUES ($1, $2, $3, 'project-scope-test', 'pre_call', 'block', 'fail_closed', 1, $4)
+        "#,
+    )
+    .bind(&request_id)
+    .bind(second_key)
+    .bind(second_project)
+    .bind(now)
+    .execute(env.store.pool())
+    .await
+    .expect("insert second-project guardrail event");
+
+    let first_query = UsageQuery {
+        project_id: Some(first_project),
+        ..UsageQuery::default()
+    };
+    assert_eq!(
+        env.store
+            .usage_summary(first_query.clone())
+            .await
+            .expect("first project summary")
+            .guardrail_block_count,
+        0
+    );
+    assert_eq!(
+        env.store
+            .usage_events(first_query.clone())
+            .await
+            .expect("first project events")
+            .rows[0]
+            .guardrail_action_count,
+        0
+    );
+    assert_eq!(
+        env.store
+            .usage_export(first_query)
+            .await
+            .expect("first project export")
+            .rows[0]
+            .guardrail_action_count,
+        0
+    );
+
+    let second_query = UsageQuery {
+        project_id: Some(second_project),
+        ..UsageQuery::default()
+    };
+    assert_eq!(
+        env.store
+            .usage_summary(second_query.clone())
+            .await
+            .expect("second project summary")
+            .guardrail_block_count,
+        1
+    );
+    assert_eq!(
+        env.store
+            .usage_events(second_query)
+            .await
+            .expect("second project events")
+            .rows[0]
+            .guardrail_action_count,
+        1
+    );
+}
+
+#[tokio::test]
 async fn portal_access_state_is_durable_scoped_and_revocable() {
     let Some(env) = integration_env().await else {
         return;
@@ -351,6 +444,94 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
         env.store.list_service_memberships(member.id).await.unwrap(),
         vec![membership]
     );
+
+    let project = env
+        .store
+        .create_project(ProjectCreateRequest {
+            name: format!("Owner project {suffix}"),
+        })
+        .await
+        .expect("create owner project");
+    let project_membership = env
+        .store
+        .upsert_project_membership(
+            member.id,
+            ProjectMembershipUpsertRequest {
+                project_id: project.id,
+                role: ServiceMemberRole::Viewer,
+            },
+        )
+        .await
+        .expect("assign project");
+    assert_eq!(
+        env.store
+            .member_project_role(member.id, project.id)
+            .await
+            .unwrap(),
+        Some(ServiceMemberRole::Viewer)
+    );
+    assert_eq!(
+        env.store.list_project_memberships(member.id).await.unwrap(),
+        vec![project_membership]
+    );
+
+    let project_binding = env
+        .store
+        .create_managed_identity_project(ManagedIdentityProjectCreateRequest {
+            tenant_id: "tenant-integration".into(),
+            client_id: format!("project-client-{suffix}"),
+            object_id: Some(format!("project-workload-{suffix}")),
+            display_name: "Project monitor".into(),
+            project_id: project.id,
+            required_role: OWNER_WORKLOAD_ROLE.into(),
+            enabled: true,
+        })
+        .await
+        .expect("create project workload binding");
+    assert!(env
+        .store
+        .list_managed_identity_projects()
+        .await
+        .unwrap()
+        .iter()
+        .any(|candidate| candidate.id == project_binding.id));
+    assert!(env
+        .store
+        .workload_project_binding(
+            &project_binding.tenant_id,
+            &project_binding.client_id,
+            project_binding.object_id.as_deref(),
+            project.id,
+            &[OWNER_WORKLOAD_ROLE.into()],
+        )
+        .await
+        .unwrap()
+        .is_some());
+    assert!(env
+        .store
+        .workload_project_binding(
+            &project_binding.tenant_id,
+            &project_binding.client_id,
+            project_binding.object_id.as_deref(),
+            project.id,
+            &["wrong.role".into()],
+        )
+        .await
+        .unwrap()
+        .is_none());
+    let project_binding = env
+        .store
+        .patch_managed_identity_project(
+            project_binding.id,
+            ManagedIdentityProjectPatchRequest {
+                enabled: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("patch project binding")
+        .expect("project binding exists");
+    assert!(!project_binding.enabled);
 
     let binding = env
         .store
@@ -578,6 +759,16 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
     assert!(env.store.delete_managed_identity(binding.id).await.unwrap());
     assert!(env
         .store
+        .delete_managed_identity_project(project_binding.id)
+        .await
+        .unwrap());
+    assert!(env
+        .store
+        .delete_project_membership(member.id, project.id)
+        .await
+        .unwrap());
+    assert!(env
+        .store
         .delete_service_membership(member.id, &service_name)
         .await
         .unwrap());
@@ -597,6 +788,7 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
         .execute(env.store.pool())
         .await
         .expect("delete test service");
+    assert!(env.store.delete_project(project.id).await.unwrap());
 }
 
 #[tokio::test]

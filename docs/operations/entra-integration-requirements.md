@@ -32,7 +32,7 @@ with two identities:
 | Managed identity boundary | App role | Permitted entrance | Additional Relayna authorization |
 | --- | --- | --- | --- |
 | Relayna runtime or other governed provider caller | `gateway.invoke` | `/v1/*`, `/providers/*`, and `/services/*` when Entra front-door auth is enabled | Valid Relayna virtual key plus route, model, budget, rate-limit, and guardrail policy. |
-| Service-monitoring workload | `gateway.monitor.read` | `/owner/v1/services/{service_name}/*` | Enabled exact managed-identity binding for the requested service. |
+| Owner-monitoring workload | `gateway.monitor.read` | `/owner/v1/services/{service_name}/*` and `/owner/v1/projects/{project_id}/*` | Enabled exact managed-identity binding for the requested service or project. |
 
 The Gateway portal itself requires zero managed identities. Do not share an
 identity across unrelated teams, environments, services, or capability
@@ -50,7 +50,7 @@ For every managed identity, DevOps must:
    immutable service-principal object ID, display name, and exact Relayna
    service name.
 4. For monitoring identities, create an enabled managed-identity binding in
-   **Members** for each allowed service, with required role
+   **Members** for each allowed service or project, with required role
    `gateway.monitor.read`.
 
 Both authorization layers are mandatory. Entra app-role assignment permits a
@@ -62,7 +62,7 @@ its exact binding limits which service a monitoring identity can read.
 | App registration | Role value | Allowed member type | Assigned to | Relayna effect |
 | --- | --- | --- | --- | --- |
 | Relayna Gateway | `gateway.invoke` | Applications | Managed identities that may enter governed request-plane routes | Request must also carry a valid Relayna virtual key and pass its policy. |
-| Relayna Gateway | `gateway.monitor.read` | Applications | Managed identities that may call `/owner/v1` | Token must also match an enabled exact service binding. |
+| Relayna Gateway | `gateway.monitor.read` | Applications | Managed identities that may call `/owner/v1` | Token must also match an enabled exact service or project binding. |
 
 `Admin`, `Owner`, and `Viewer` remain Relayna roles, not Entra application
 roles. Do not expose them on the shared registration.
@@ -161,7 +161,9 @@ Then set `ENTRA_APPLICATION_ID` to the shared application ID GUID and remove:
 
 Existing browser sessions may be invalid after the application-ID cutover; ask
 users to sign in again. Existing Relayna members, service memberships, managed
-identity bindings, virtual keys, and usage data do not require migration.
+identity service bindings, virtual keys, and usage data do not require data
+rewrites. Release `0.1.28` creates separate project membership and project
+managed-identity binding tables.
 
 ## Certificate standard and lifecycle
 

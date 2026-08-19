@@ -22,7 +22,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.27` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+The `v0.1.28` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
 operator work into Monitor, Discover, and Govern navigation domains. Monitor
 contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains
@@ -34,11 +34,12 @@ preserve the same capabilities on narrower screens. The source package owns
 design-system tokens, view metadata, templates, and reusable components, while
 the generated asset paths stay stable for deployed gateways.
 
-The service-owner workspace includes an incident chart for error rate and P95
+The owner workspace includes service and project dashboards with incident charts for error rate and P95
 latency, bounded upstream service-version observations, all-request outcome and
 status-code filters, offset pagination, and an accessible request-details
-drawer. Owner details remain exact-service scoped and contain only sanitized
-usage metadata plus an optional redacted debug bundle.
+drawer. Owner details remain exact-resource scoped and contain only sanitized
+usage metadata plus an optional redacted debug bundle. Project dashboards scope
+usage by persisted project attribution and add service-level breakdowns.
 
 ![Aurora Teal operational Overview](assets/screenshots/admin-ui-2/aurora-teal-overview.png)
 
@@ -51,10 +52,10 @@ an accessible drawer without removing operator workflows.
 
 Normal human access can use Microsoft Entra through the portal's confidential
 OIDC BFF flow. Entra tokens stay server-side and the browser receives an opaque
-HttpOnly session cookie. Relayna portal roles and service memberships determine
-whether the user sees the administrator console or only their assigned service
-dashboards. Cookie-authenticated mutations require the session-bound CSRF token
-returned by the portal session API.
+HttpOnly session cookie. Relayna portal roles plus exact service and project
+memberships determine whether the user sees the administrator console or only
+assigned owner dashboards. Cookie-authenticated mutations require the
+session-bound CSRF token returned by the portal session API.
 
 The operator token seeded by `GATEWAY_ADMIN_TOKEN`, or the generated token
 printed when no env token was set, remains available from **Emergency operator

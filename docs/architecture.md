@@ -70,6 +70,7 @@ The control listener exposes:
 - `/admin-ui/admin/*` APIs for operator actions.
 - `/admin-ui/auth/*` for the browser OIDC BFF protocol and portal session.
 - `/owner/v1/services/{service-name}/*` for exact service-scoped monitoring.
+- `/owner/v1/projects/{project-id}/*` for exact project-scoped monitoring.
 - `/admin-ui` for the embedded operator portal.
 
 Version `0.1.0` extends this control plane with scoped
@@ -86,16 +87,16 @@ as break-glass access to approve the first Entra administrator. After an active
 token exists, env changes are ignored and rotation through the Admin portal is
 the supported change path.
 
-Service-owner APIs resolve the signed-in portal member or workload identity and
-inject the exact authorized service into every store query. Browser OIDC tokens
-never reach JavaScript, while managed identities must match tenant, audience,
-application role, and an enabled service binding.
+Owner APIs resolve the signed-in portal member or workload identity and inject
+the exact authorized service or project into every store query. Browser OIDC
+tokens never reach JavaScript, while managed identities must match tenant,
+audience, application role, and an enabled exact resource binding.
 
-The owner dashboard exposes incident time series, filtered request events, and
-sanitized request details only within that exact service scope. A missing
-request and a request owned by another service return the same `404` response,
-preventing request-ID enumeration. Optional debug bundles are returned only
-when their stored service scope matches the authorized service.
+Owner dashboards expose incident time series, filtered request events, and
+sanitized request details only within the exact service or project scope. A
+missing request and a request owned by another resource return the same `404`
+response, preventing request-ID enumeration. Project scope uses the persisted
+usage-event project ID rather than service links.
 
 Usage export endpoints are part of the admin surface:
 
@@ -135,8 +136,9 @@ PostgreSQL is the source of truth for durable state:
 - LiteLLM wildcard passthrough settings for enablement, path/method
   allowlists, `/ui` exposure, and LiteLLM admin API exposure.
 - Operator token hashes, roles, scopes, and append-only admin audit events.
-- Portal members, exact service memberships, one-time OIDC transactions,
-  opaque browser sessions, and managed-identity service bindings.
+- Portal members, exact service and project memberships, one-time OIDC
+  transactions, opaque browser sessions, and exact managed-identity service
+  and project bindings.
 - Provider health state, request debug bundles, and service import snapshots.
 
 Registered service routes support wildcard paths under `/services/<service-name>/*`. The route resolver can match `GET` for service wildcard traffic, but forwarding still requires the service registration to include `GET` in its allowed method set. OpenAI-compatible routes, direct provider routes, and legacy named service routes remain `POST` routes.

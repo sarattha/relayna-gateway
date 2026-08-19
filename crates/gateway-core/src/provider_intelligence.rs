@@ -116,6 +116,7 @@ pub struct ProviderHealthCheckTarget {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DebugBundle {
     pub request_id: String,
+    pub project_id: Option<uuid::Uuid>,
     pub route: Option<Route>,
     pub provider: Option<Provider>,
     pub service_name: Option<String>,

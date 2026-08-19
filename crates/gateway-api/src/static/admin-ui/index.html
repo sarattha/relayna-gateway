@@ -32,13 +32,13 @@
         <div class="login-access-card">
           <span class="login-access-eyebrow">Organization access</span>
           <h1 id="login-title">Welcome back</h1>
-          <p class="login-copy">Sign in with your work or school account. Relayna will resolve your administrator role and service memberships after Microsoft verifies your identity.</p>
+          <p class="login-copy">Sign in with your work or school account. Relayna will resolve your administrator role and service or project memberships after Microsoft verifies your identity.</p>
           <a id="entra-sign-in" class="login-primary" href="/admin-ui/auth/login"><img src="/admin-ui/microsoft-sign-in.svg" width="215" height="41" alt="Sign in with Microsoft" /></a>
           <p id="oidc-unavailable" class="subtle hidden">Microsoft sign-in is not configured for this gateway.</p>
           <div class="login-session-divider"><span>Secure browser session</span></div>
           <div class="login-security-note">
             <i class="ti ti-shield-lock" aria-hidden="true"></i>
-            <span><strong>Your identity tokens stay server-side</strong><small>The browser receives an HttpOnly session cookie. Gateway permissions come from Relayna roles and service memberships.</small></span>
+            <span><strong>Your identity tokens stay server-side</strong><small>The browser receives an HttpOnly session cookie. Gateway permissions come from Relayna roles and exact resource memberships.</small></span>
           </div>
           <details class="break-glass-login">
             <summary>Emergency operator access</summary>
@@ -65,7 +65,7 @@
             <span class="brand-kicker">Relayna</span>
             <span class="brand-title">
               <strong>Gateway Admin</strong>
-              <span class="version-indicator" aria-label="Current Relayna Gateway version">v0.1.27</span>
+              <span class="version-indicator" aria-label="Current Relayna Gateway version">v0.1.28</span>
             </span>
           </div>
           <button id="nav-close" class="icon-button nav-close" type="button" aria-label="Close navigation">
@@ -96,9 +96,11 @@
             <button data-view="managed-identities" class="nav"><i class="ti ti-id-badge-2" aria-hidden="true"></i><span>Managed identities</span></button>
           </section>
           <section class="nav-group" data-owner-nav>
-            <span>Service owner</span>
+            <span>Owner</span>
             <button data-view="my-services" class="nav"><i class="ti ti-cubes" aria-hidden="true"></i><span>My services</span></button>
             <button data-view="service-dashboard" class="nav"><i class="ti ti-chart-histogram" aria-hidden="true"></i><span>Service dashboard</span></button>
+            <button data-view="my-projects" class="nav"><i class="ti ti-folders" aria-hidden="true"></i><span>My projects</span></button>
+            <button data-view="project-dashboard" class="nav"><i class="ti ti-chart-histogram" aria-hidden="true"></i><span>Project dashboard</span></button>
           </section>
         </nav>
         <div class="sidebar-actions">
@@ -129,7 +131,7 @@
             <kbd>⌘K</kbd>
           </button>
           <div class="global-end">
-            <label id="workspace-control" class="workspace-control hidden"><span class="sr-only">Workspace</span><select id="workspace-select"><option value="admin">Admin</option><option value="owner">Service owner</option></select></label>
+            <label id="workspace-control" class="workspace-control hidden"><span class="sr-only">Workspace</span><select id="workspace-select"><option value="admin">Admin</option><option value="owner">Owner</option></select></label>
             <span class="environment-chip"><span class="environment-dot" aria-hidden="true"></span>Local</span>
             <span id="last-refreshed" class="last-refreshed">Not refreshed</span>
             <button id="refresh" class="icon-button" type="button" aria-label="Refresh current view">

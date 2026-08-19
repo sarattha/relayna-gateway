@@ -1,4 +1,4 @@
-# Entra portal and service-owner monitoring
+# Entra portal and owner monitoring
 
 Relayna Gateway serves human browser views from `/admin-ui`. Microsoft Entra ID
 proves human identity through a confidential OIDC BFF flow; the browser receives
@@ -21,6 +21,7 @@ complete application, role, managed-identity, certificate, and issuer handoff.
 - BFF protocol: `/admin-ui/auth/*`
 - Administrator APIs: `/admin-ui/admin/*`
 - Service-owner API: `/owner/v1/services/{service_name}/*`
+- Project-owner API: `/owner/v1/projects/{project_id}/*`
 - Gateway request plane: `/v1/*` and `/services/*`
 
 The private control Ingress must route both `/admin-ui` and `/owner/v1` to the
@@ -28,6 +29,12 @@ control Service on port 8081. Owner endpoints include service details,
 dashboard aggregates, sanitized usage events and request logs, failures,
 endpoint breakdowns, and exports. The server overwrites the usage query's
 service filter with the service named in the route.
+
+Project endpoints provide the same read-only monitoring shape plus service
+breakdowns. The server overwrites the usage query's `project_id` with the UUID
+in the route. Project access follows each usage event's persisted project ID,
+not `project_service_links`, because one service may be shared by several
+projects.
 
 ## Human OIDC configuration
 
@@ -113,9 +120,14 @@ Configure the one shared Entra application with identifier URI
 identities request `api://<ENTRA_APPLICATION_ID>/.default`; Gateway validates
 the resulting token's `aud` as the application ID GUID. Register each monitoring
 identity in Relayna with its tenant ID, client ID, immutable object ID, exact
-service, and `gateway.monitor.read` application role. A tenant-wide token or
-Entra app-role assignment without an enabled exact Relayna binding cannot read
-any service.
+service or project, and `gateway.monitor.read` application role. A tenant-wide
+token or Entra app-role assignment without an enabled exact Relayna binding
+cannot read any service or project.
+
+The same managed identity may hold both service and project bindings when that
+combined read boundary is intentional. The one `gateway.monitor.read` role is a
+coarse monitoring capability; the Relayna binding remains the authoritative
+resource scope.
 
 Use a separate request-plane managed identity with only `gateway.invoke` when a
 Relayna worker or another service calls provider routes. Those calls still need
@@ -185,7 +197,7 @@ URLs rooted at `http://127.0.0.1:18090`. Use shared application ID
 `http://127.0.0.1:18381/admin-ui/auth/callback`, logout return
 `http://127.0.0.1:18381/admin-ui`, and `PORTAL_SESSION_COOKIE_SECURE=false`.
 Use the generated private-key and certificate paths instead of a client secret.
-The account chooser provides pending, administrator, and service-owner-shaped
+The account chooser provides pending, administrator, and owner-shaped
 identities. The development administrator object ID is
 `00000000-0000-0000-0000-000000000002`. The invoke fixture uses client/object
 IDs ending in `0101`/`0102`, and the monitoring fixture uses IDs ending in

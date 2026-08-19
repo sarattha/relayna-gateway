@@ -88,8 +88,10 @@ Release `0.1.26` uses the same Entra application registration for confidential
 portal sign-in and API authorization. Configure that registration with a Web
 platform, identifier URI `api://<application-id>`, requested access-token
 version 2, and the `gateway.invoke` and `gateway.monitor.read` application
-roles. Request-plane managed identities receive only `gateway.invoke`; service
-monitoring identities receive only `gateway.monitor.read`.
+roles. Request-plane managed identities receive only `gateway.invoke`; owner
+monitoring identities receive only `gateway.monitor.read`. The monitoring role
+is shared by service and project APIs, while Relayna requires an enabled exact
+binding for the route resource.
 
 The environment variables are listed below. Empty strings are treated as unset.
 
@@ -127,8 +129,8 @@ roles assigned to their service principal:
 export RELAYNA_GATEWAY_SCOPE="api://${ENTRA_APPLICATION_ID}/.default"
 ```
 
-Request-plane identities receive `gateway.invoke`. Service-monitoring
-identities receive `gateway.monitor.read`. Do not assign both unless the
+Request-plane identities receive `gateway.invoke`. Owner-monitoring identities
+receive `gateway.monitor.read`. Do not assign both unless the
 combined capability boundary is intentional.
 
 Group allowlist configuration:
@@ -269,7 +271,7 @@ empty placeholders for required Entra values.
 Useful local checks after changing Entra configuration or code:
 
 ```bash
-python3 scripts/validate-release-metadata.py v0.1.27
+python3 scripts/validate-release-metadata.py v0.1.28
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
 cargo test --workspace --all-features

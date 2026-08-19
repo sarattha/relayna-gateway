@@ -1,0 +1,151 @@
+name: relayna-project-owner-local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: relayna_gateway
+      POSTGRES_USER: relayna_gateway
+      POSTGRES_PASSWORD: relayna_gateway_local
+    ports:
+      - "127.0.0.1:19432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relayna_gateway -d relayna_gateway"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:19379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  certificates:
+    image: alpine:3.20
+    command:
+      - sh
+      - -ec
+      - |
+        cp /source/portal-private-key.pem /certs/portal-private-key.pem
+        cp /source/portal-certificate.pem /certs/portal-certificate.pem
+        chown 10001:10001 /certs/portal-private-key.pem /certs/portal-certificate.pem
+        chmod 600 /certs/portal-private-key.pem
+        chmod 644 /certs/portal-certificate.pem
+    volumes:
+      - ../../target/development-oidc:/source:ro
+      - oidc-certificates:/certs
+
+  oidc:
+    image: relayna-development-oidc:project-owner-local
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile.oidc
+    environment:
+      RELAYNA_ENV: development
+      RELAYNA_DEV_OIDC_HOST: 0.0.0.0
+      RELAYNA_DEV_OIDC_PORT: "18090"
+      RELAYNA_DEV_OIDC_ISSUER: http://127.0.0.1:18390
+      RELAYNA_DEV_OIDC_INTERNAL_BASE_URL: http://oidc:18090
+      RELAYNA_DEV_OIDC_BROWSER_CERTIFICATE_PATH: /certs/portal-certificate.pem
+      RELAYNA_DEV_OIDC_BROWSER_REDIRECT_URI: http://127.0.0.1:18381/admin-ui/auth/callback
+      RELAYNA_DEV_OIDC_BROWSER_POST_LOGOUT_REDIRECT_URI: http://127.0.0.1:18381/admin-ui
+    depends_on:
+      certificates:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:18390:18090"
+    volumes:
+      - oidc-certificates:/certs:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18090/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mock-upstream:
+    image: relayna-gateway-mock-upstream:project-owner-local
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile.mock-upstream
+    ports:
+      - "127.0.0.1:18382:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  gateway:
+    image: relayna-gateway:project-owner-local
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://relayna_gateway:relayna_gateway_local@postgres:5432/relayna_gateway
+      REDIS_URL: redis://redis:6379
+      LITELLM_BASE_URL: http://mock-upstream:4000
+      LITELLM_SERVICE_KEY: sk-relayna-local-upstream
+      GATEWAY_BIND_ADDR: 0.0.0.0:8080
+      GATEWAY_CONTROL_BIND_ADDR: 0.0.0.0:8081
+      LOG_LEVEL: gateway_api=info,gateway_proxy=info
+      ENTRA_APPLICATION_ID: relayna-gateway-local
+      PORTAL_OIDC_ENABLED: "true"
+      PORTAL_OIDC_TENANT_ID: 00000000-0000-0000-0000-000000000001
+      PORTAL_OIDC_PRIVATE_KEY_PATH: /certs/portal-private-key.pem
+      PORTAL_OIDC_CERTIFICATE_PATH: /certs/portal-certificate.pem
+      PORTAL_OIDC_ISSUER: http://127.0.0.1:18390
+      PORTAL_OIDC_DISCOVERY_URL: http://oidc:18090/.well-known/openid-configuration
+      PORTAL_OIDC_REDIRECT_URI: http://127.0.0.1:18381/admin-ui/auth/callback
+      PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI: http://127.0.0.1:18381/admin-ui
+      PORTAL_SESSION_COOKIE_SECURE: "false"
+      PORTAL_ADMIN_OBJECT_IDS: 00000000-0000-0000-0000-000000000002
+      PORTAL_ADMIN_EMAILS: gateway.admin@relayna.dev
+      OWNER_ENTRA_AUTH_ENABLED: "true"
+      OWNER_ENTRA_TENANT_ID: 00000000-0000-0000-0000-000000000001
+      OWNER_ENTRA_ISSUER: http://127.0.0.1:18390
+      OWNER_ENTRA_OIDC_DISCOVERY_URL: http://oidc:18090/.well-known/openid-configuration
+      OWNER_ENTRA_ACCEPTED_ALGORITHMS: RS256
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      oidc:
+        condition: service_healthy
+      mock-upstream:
+        condition: service_healthy
+      certificates:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:18380:8080"
+      - "127.0.0.1:18381:8081"
+    volumes:
+      - oidc-certificates:/certs:ro
+
+  seed:
+    image: postgres:16-alpine
+    environment:
+      DATABASE_URL: postgres://relayna_gateway:relayna_gateway_local@postgres:5432/relayna_gateway
+    command:
+      - sh
+      - -ec
+      - |
+        until [ "$$(psql "$$DATABASE_URL" -Atqc "SELECT to_regclass('public.project_memberships') IS NOT NULL")" = "t" ]; do sleep 1; done
+        psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /seed/seed.sql
+    depends_on:
+      gateway:
+        condition: service_started
+    volumes:
+      - ./seed.sql:/seed/seed.sql:ro
+
+volumes:
+  postgres-data:
+  oidc-certificates:

@@ -32,23 +32,24 @@ use gateway_core::{
     GuardrailObservabilityStore, GuardrailPlanRequest, GuardrailPolicySet, GuardrailStore,
     GuardrailTestRequest, GuardrailTestResponse, KeyPolicy, LiteLlmCredentialMappingResponse,
     LiteLlmCredentialMappingUpsertRequest, LiteLlmPassthroughSettingsPatchRequest,
-    ManagedIdentityCreateRequest, ManagedIdentityPatchRequest, MemberPatchRequest, MemberStatus,
-    NewPortalSession, OidcLoginTransaction, OpenAiRouteConfigPatchRequest, OpenAiRouteMode,
-    OperatorAuthorization, OperatorTokenMaterial, OperatorTokenStore, PolicyLookup,
-    PortalAccessStore, PortalMember, ProjectCreateRequest, ProjectPatchRequest, ProjectResponse,
-    Provider, ProviderConfigCreateRequest, ProviderConfigLookup, ProviderConfigPatchRequest,
-    ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus, ProviderIntelligenceStore,
-    Route, ServiceCreateRequest, ServiceImportDiff, ServiceImportValidationIssue,
-    ServiceMemberRole, ServiceMembership, ServiceMembershipUpsertRequest, ServiceOpenApiEndpoint,
-    ServiceOpenApiPreview, ServiceOpenApiPreviewRequest, ServiceOpenApiSyncRequest,
-    ServicePatchRequest, ServiceRegistrySnapshot, ServiceResponse, SharedGatewayAuthRuntime,
-    StudioConnectionEnv, StudioConnectionPatchRequest, StudioConnectionTestResponse,
-    StudioServiceCatalogResponse, StudioServiceImportPreview, StudioServiceImportRequest,
-    UsageBreakdownDimension, UsageEvent, UsageExport, UsageFilterValuesQuery, UsageQuery,
-    UsageQueryStore, VirtualKeyMaterial, SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE,
-    SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE, SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE,
-    SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE, SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT,
-    SCOPE_USAGE_READ,
+    ManagedIdentityCreateRequest, ManagedIdentityPatchRequest, ManagedIdentityProjectCreateRequest,
+    ManagedIdentityProjectPatchRequest, MemberPatchRequest, MemberStatus, NewPortalSession,
+    OidcLoginTransaction, OpenAiRouteConfigPatchRequest, OpenAiRouteMode, OperatorAuthorization,
+    OperatorTokenMaterial, OperatorTokenStore, PolicyLookup, PortalAccessStore, PortalMember,
+    ProjectCreateRequest, ProjectMembership, ProjectMembershipUpsertRequest, ProjectPatchRequest,
+    ProjectResponse, Provider, ProviderConfigCreateRequest, ProviderConfigLookup,
+    ProviderConfigPatchRequest, ProviderConfigResponse, ProviderHealthState, ProviderHealthStatus,
+    ProviderIntelligenceStore, Route, ServiceCreateRequest, ServiceImportDiff,
+    ServiceImportValidationIssue, ServiceMemberRole, ServiceMembership,
+    ServiceMembershipUpsertRequest, ServiceOpenApiEndpoint, ServiceOpenApiPreview,
+    ServiceOpenApiPreviewRequest, ServiceOpenApiSyncRequest, ServicePatchRequest,
+    ServiceRegistrySnapshot, ServiceResponse, SharedGatewayAuthRuntime, StudioConnectionEnv,
+    StudioConnectionPatchRequest, StudioConnectionTestResponse, StudioServiceCatalogResponse,
+    StudioServiceImportPreview, StudioServiceImportRequest, UsageBreakdownDimension, UsageEvent,
+    UsageExport, UsageFilterValuesQuery, UsageQuery, UsageQueryStore, VirtualKeyMaterial,
+    SCOPE_AUDIT_READ, SCOPE_GUARDRAILS_UPDATE, SCOPE_KEYS_CREATE, SCOPE_KEYS_DISABLE,
+    SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE,
+    SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::{Deserialize, Serialize};
@@ -354,12 +355,26 @@ pub fn router_with_state(state: AppState) -> Router {
                 .delete(admin_delete_service_membership),
         )
         .route(
+            "/admin-ui/admin/members/{member_id}/projects/{project_id}",
+            axum::routing::put(admin_upsert_project_membership)
+                .delete(admin_delete_project_membership),
+        )
+        .route(
             "/admin-ui/admin/managed-identities",
             get(admin_managed_identities).post(admin_create_managed_identity),
         )
         .route(
             "/admin-ui/admin/managed-identities/{identity_id}",
             patch(admin_patch_managed_identity).delete(admin_delete_managed_identity),
+        )
+        .route(
+            "/admin-ui/admin/managed-identity-projects",
+            get(admin_managed_identity_projects).post(admin_create_managed_identity_project),
+        )
+        .route(
+            "/admin-ui/admin/managed-identity-projects/{identity_id}",
+            patch(admin_patch_managed_identity_project)
+                .delete(admin_delete_managed_identity_project),
         )
         .route("/owner/v1/services", get(owner_services))
         .route("/owner/v1/services/{service_name}", get(owner_service))
@@ -394,6 +409,40 @@ pub fn router_with_state(state: AppState) -> Router {
         .route(
             "/owner/v1/services/{service_name}/export.csv",
             get(owner_service_export_csv),
+        )
+        .route("/owner/v1/projects", get(owner_projects))
+        .route("/owner/v1/projects/{project_id}", get(owner_project))
+        .route(
+            "/owner/v1/projects/{project_id}/dashboard",
+            get(owner_project_dashboard),
+        )
+        .route(
+            "/owner/v1/projects/{project_id}/events",
+            get(owner_project_events),
+        )
+        .route(
+            "/owner/v1/projects/{project_id}/errors",
+            get(owner_project_errors),
+        )
+        .route(
+            "/owner/v1/projects/{project_id}/logs",
+            get(owner_project_logs),
+        )
+        .route(
+            "/owner/v1/projects/{project_id}/requests/{request_id}",
+            get(owner_project_request_details),
+        )
+        .route(
+            "/owner/v1/projects/{project_id}/endpoints",
+            get(owner_project_endpoints),
+        )
+        .route(
+            "/owner/v1/projects/{project_id}/export.json",
+            get(owner_project_export_json),
+        )
+        .route(
+            "/owner/v1/projects/{project_id}/export.csv",
+            get(owner_project_export_csv),
         )
         .route("/admin-ui/litellm-ui", any(litellm_ui_proxy_root))
         .route("/admin-ui/litellm-ui/", any(litellm_ui_proxy_root))
@@ -844,6 +893,7 @@ struct PortalSessionBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     member: Option<PortalMember>,
     service_memberships: Vec<ServiceMembership>,
+    project_memberships: Vec<ProjectMembership>,
     #[serde(skip_serializing_if = "Option::is_none")]
     csrf_token: Option<String>,
 }
@@ -854,6 +904,7 @@ async fn portal_auth_session(State(state): State<AppState>, headers: HeaderMap) 
             authenticated: false,
             member: None,
             service_memberships: Vec::new(),
+            project_memberships: Vec::new(),
             csrf_token: None,
         })
         .into_response();
@@ -870,15 +921,24 @@ async fn portal_auth_session(State(state): State<AppState>, headers: HeaderMap) 
         Ok(_) => return error_response(&headers, GatewayError::InvalidPortalSession),
         Err(error) => return error_response(&headers, error),
     };
-    match state
+    let service_memberships = match state
         .store
         .list_service_memberships(session.member.id)
         .await
     {
-        Ok(service_memberships) => Json(PortalSessionBody {
+        Ok(service_memberships) => service_memberships,
+        Err(error) => return error_response(&headers, error),
+    };
+    match state
+        .store
+        .list_project_memberships(session.member.id)
+        .await
+    {
+        Ok(project_memberships) => Json(PortalSessionBody {
             authenticated: true,
             member: Some(session.member),
             service_memberships,
+            project_memberships,
             csrf_token: Some(raw_csrf.to_owned()),
         })
         .into_response(),
@@ -912,6 +972,7 @@ async fn portal_auth_logout(State(state): State<AppState>, headers: HeaderMap) -
 struct MemberAccessBody {
     member: PortalMember,
     service_memberships: Vec<ServiceMembership>,
+    project_memberships: Vec<ProjectMembership>,
 }
 
 async fn admin_members(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -928,9 +989,14 @@ async fn admin_members(State(state): State<AppState>, headers: HeaderMap) -> Res
             Ok(memberships) => memberships,
             Err(error) => return error_response(&headers, error),
         };
+        let project_memberships = match state.store.list_project_memberships(member.id).await {
+            Ok(memberships) => memberships,
+            Err(error) => return error_response(&headers, error),
+        };
         response.push(MemberAccessBody {
             member,
             service_memberships,
+            project_memberships,
         });
     }
     Json(response).into_response()
@@ -1056,6 +1122,84 @@ async fn admin_delete_service_membership(
     }
 }
 
+async fn admin_upsert_project_membership(
+    State(state): State<AppState>,
+    Path((member_id, project_id)): Path<(uuid::Uuid, uuid::Uuid)>,
+    headers: HeaderMap,
+    Json(body): Json<ServiceMembershipRoleBody>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state
+        .store
+        .upsert_project_membership(
+            member_id,
+            ProjectMembershipUpsertRequest {
+                project_id,
+                role: body.role,
+            },
+        )
+        .await
+    {
+        Ok(membership) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "memberships:upsert",
+                "project_membership",
+                Some(format!("{member_id}:{project_id}")),
+                None,
+                audit_json(&membership),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(membership).into_response()
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_delete_project_membership(
+    State(state): State<AppState>,
+    Path((member_id, project_id)): Path<(uuid::Uuid, uuid::Uuid)>,
+    headers: HeaderMap,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state
+        .store
+        .delete_project_membership(member_id, project_id)
+        .await
+    {
+        Ok(true) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "memberships:delete",
+                "project_membership",
+                Some(format!("{member_id}:{project_id}")),
+                None,
+                None,
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn admin_managed_identities(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(response) = require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
         return response;
@@ -1147,6 +1291,123 @@ async fn admin_delete_managed_identity(
                 &actor,
                 "managed_identities:delete",
                 "managed_identity_binding",
+                Some(identity_id.to_string()),
+                None,
+                None,
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_managed_identity_projects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        return response;
+    }
+    match state.store.list_managed_identity_projects().await {
+        Ok(identities) => Json(identities).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_create_managed_identity_project(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ManagedIdentityProjectCreateRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state.store.create_managed_identity_project(request).await {
+        Ok(identity) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "managed_identity_projects:create",
+                "managed_identity_project_binding",
+                Some(identity.id.to_string()),
+                None,
+                audit_json(&identity),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            (StatusCode::CREATED, Json(identity)).into_response()
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_patch_managed_identity_project(
+    State(state): State<AppState>,
+    Path(identity_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Json(patch): Json<ManagedIdentityProjectPatchRequest>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state
+        .store
+        .patch_managed_identity_project(identity_id, patch)
+        .await
+    {
+        Ok(Some(identity)) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "managed_identity_projects:update",
+                "managed_identity_project_binding",
+                Some(identity_id.to_string()),
+                None,
+                audit_json(&identity),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(identity).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn admin_delete_managed_identity_project(
+    State(state): State<AppState>,
+    Path(identity_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_OPERATORS_MANAGE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match state
+        .store
+        .delete_managed_identity_project(identity_id)
+        .await
+    {
+        Ok(true) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "managed_identity_projects:delete",
+                "managed_identity_project_binding",
                 Some(identity_id.to_string()),
                 None,
                 None,
@@ -1443,6 +1704,294 @@ async fn owner_service_export_csv(
                 header::CONTENT_DISPOSITION,
                 HeaderValue::from_str(&format!(
                     "attachment; filename=\"relayna-{service_name}-usage.csv\""
+                ))
+                .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
+            );
+            response
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OwnerProjectBody {
+    project: ProjectResponse,
+    role: ServiceMemberRole,
+}
+
+async fn owner_projects(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let session = match require_active_portal_session(&state, &headers).await {
+        Ok(session) => session,
+        Err(response) => return response,
+    };
+    let memberships = match state
+        .store
+        .list_project_memberships(session.member.id)
+        .await
+    {
+        Ok(memberships) => memberships,
+        Err(error) => return error_response(&headers, error),
+    };
+    let mut projects = Vec::new();
+    for membership in memberships {
+        match state.store.get_project(membership.project_id).await {
+            Ok(Some(project)) => projects.push(OwnerProjectBody {
+                project,
+                role: membership.role,
+            }),
+            Ok(None) => {}
+            Err(error) => return error_response(&headers, error),
+        }
+    }
+    Json(projects).into_response()
+}
+
+async fn owner_project(
+    State(state): State<AppState>,
+    Path(project_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    let role = match require_owner_project_access(&state, &headers, project_id).await {
+        Ok(role) => role,
+        Err(response) => return response,
+    };
+    match state.store.get_project(project_id).await {
+        Ok(Some(project)) => Json(OwnerProjectBody { project, role }).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OwnerProjectDashboardBody {
+    project_id: uuid::Uuid,
+    role: ServiceMemberRole,
+    summary: gateway_core::UsageSummary,
+    timeseries: Vec<gateway_core::UsageTimeseriesPoint>,
+    services: Vec<gateway_core::UsageBreakdown>,
+    endpoints: Vec<gateway_core::UsageBreakdown>,
+    providers: Vec<gateway_core::UsageBreakdown>,
+    models: Vec<gateway_core::UsageBreakdown>,
+    status_codes: Vec<i32>,
+    version_markers: Vec<gateway_core::UsageVersionTransition>,
+}
+
+async fn owner_project_dashboard(
+    State(state): State<AppState>,
+    Path(project_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    let role = match require_owner_project_access(&state, &headers, project_id).await {
+        Ok(role) => role,
+        Err(response) => return response,
+    };
+    query.project_id = Some(project_id);
+    let summary = match state.store.usage_summary(query.clone()).await {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let timeseries = match state.store.usage_timeseries(query.clone()).await {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let services = match state
+        .store
+        .usage_breakdown(query.clone(), UsageBreakdownDimension::Service)
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let endpoints = match state
+        .store
+        .usage_breakdown(query.clone(), UsageBreakdownDimension::Endpoint)
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let providers = match state
+        .store
+        .usage_breakdown(query.clone(), UsageBreakdownDimension::Provider)
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let models = match state
+        .store
+        .usage_breakdown(query.clone(), UsageBreakdownDimension::Model)
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let status_codes = match state.store.usage_status_codes(query.clone()).await {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    let version_markers = match state.store.usage_version_transitions(query).await {
+        Ok(value) => value,
+        Err(error) => return error_response(&headers, error),
+    };
+    Json(OwnerProjectDashboardBody {
+        project_id,
+        role,
+        summary,
+        timeseries,
+        services,
+        endpoints,
+        providers,
+        models,
+        status_codes,
+        version_markers,
+    })
+    .into_response()
+}
+
+async fn owner_project_events(
+    State(state): State<AppState>,
+    Path(project_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    if let Err(response) = require_owner_project_access(&state, &headers, project_id).await {
+        return response;
+    }
+    query.project_id = Some(project_id);
+    match state.store.usage_events(query).await {
+        Ok(events) => Json(events).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn owner_project_errors(
+    State(state): State<AppState>,
+    Path(project_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    if let Err(response) = require_owner_project_access(&state, &headers, project_id).await {
+        return response;
+    }
+    query.project_id = Some(project_id);
+    query.status = Some("failure".to_owned());
+    match state.store.usage_events(query).await {
+        Ok(events) => Json(events).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn owner_project_logs(
+    state: State<AppState>,
+    path: Path<uuid::Uuid>,
+    headers: HeaderMap,
+    query: Query<UsageQuery>,
+) -> Response {
+    owner_project_events(state, path, headers, query).await
+}
+
+async fn owner_project_request_details(
+    State(state): State<AppState>,
+    Path((project_id, request_id)): Path<(uuid::Uuid, String)>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = require_owner_project_access(&state, &headers, project_id).await {
+        return response;
+    }
+    let query = UsageQuery {
+        project_id: Some(project_id),
+        request_id: Some(request_id.clone()),
+        limit: Some(1),
+        ..UsageQuery::default()
+    };
+    let request = match state.store.usage_events(query).await {
+        Ok(events) => match events.rows.into_iter().next() {
+            Some(request) => request,
+            None => return error_response(&headers, GatewayError::MissingUsageEvent),
+        },
+        Err(error) => return error_response(&headers, error),
+    };
+    let debug_bundle = match state.store.get_debug_bundle(&request_id).await {
+        Ok(Some(bundle)) if bundle.project_id == Some(project_id) => Some(bundle),
+        Ok(_) => None,
+        Err(error) => return error_response(&headers, error),
+    };
+    Json(OwnerRequestDetailsBody {
+        request,
+        debug_bundle,
+    })
+    .into_response()
+}
+
+async fn owner_project_endpoints(
+    State(state): State<AppState>,
+    Path(project_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    if let Err(response) = require_owner_project_access(&state, &headers, project_id).await {
+        return response;
+    }
+    query.project_id = Some(project_id);
+    match state
+        .store
+        .usage_breakdown(query, UsageBreakdownDimension::Endpoint)
+        .await
+    {
+        Ok(endpoints) => Json(endpoints).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn owner_project_export_json(
+    State(state): State<AppState>,
+    Path(project_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    if let Err(response) = require_owner_project_access(&state, &headers, project_id).await {
+        return response;
+    }
+    query.project_id = Some(project_id);
+    match state.store.usage_export(query).await {
+        Ok(export) => {
+            let mut response = Json(export).into_response();
+            response.headers_mut().insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&format!(
+                    "attachment; filename=\"relayna-project-{project_id}-usage.json\""
+                ))
+                .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
+            );
+            response
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn owner_project_export_csv(
+    State(state): State<AppState>,
+    Path(project_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Query(mut query): Query<UsageQuery>,
+) -> Response {
+    if let Err(response) = require_owner_project_access(&state, &headers, project_id).await {
+        return response;
+    }
+    query.project_id = Some(project_id);
+    match state.store.usage_export(query).await {
+        Ok(export) => {
+            let mut response = usage_export_csv_body(&export).into_response();
+            response.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/csv; charset=utf-8"),
+            );
+            response.headers_mut().insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&format!(
+                    "attachment; filename=\"relayna-project-{project_id}-usage.csv\""
                 ))
                 .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
             );
@@ -4663,6 +5212,70 @@ async fn require_owner_service_access(
     }
 }
 
+async fn require_owner_project_access(
+    state: &AppState,
+    headers: &HeaderMap,
+    project_id: uuid::Uuid,
+) -> Result<ServiceMemberRole, Response> {
+    if cookie_value(headers, PORTAL_SESSION_COOKIE).is_some() {
+        let session = require_active_portal_session(state, headers).await?;
+        return match state
+            .store
+            .member_project_role(session.member.id, project_id)
+            .await
+        {
+            Ok(Some(role)) => Ok(role),
+            Ok(None) => Err(error_response(
+                headers,
+                GatewayError::InsufficientPortalAccess,
+            )),
+            Err(error) => Err(error_response(headers, error)),
+        };
+    }
+
+    let Some(verifier) = state.owner_entra_verifier.as_ref() else {
+        return Err(error_response(
+            headers,
+            GatewayError::MissingEntraAuthorization,
+        ));
+    };
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+    let identity = match verifier
+        .verify_authorization(authorization, Utc::now())
+        .await
+    {
+        Ok(identity) => identity,
+        Err(error) => return Err(error_response(headers, error)),
+    };
+    let Some(client_id) = identity
+        .app_id
+        .as_deref()
+        .or(identity.authorized_party.as_deref())
+    else {
+        return Err(error_response(headers, GatewayError::InvalidEntraToken));
+    };
+    match state
+        .store
+        .workload_project_binding(
+            &identity.tenant_id,
+            client_id,
+            identity.object_id.as_deref(),
+            project_id,
+            &identity.roles,
+        )
+        .await
+    {
+        Ok(Some(_)) => Ok(ServiceMemberRole::Viewer),
+        Ok(None) => Err(error_response(
+            headers,
+            GatewayError::InsufficientPortalAccess,
+        )),
+        Err(error) => Err(error_response(headers, error)),
+    }
+}
+
 fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers
         .get(header::COOKIE)
@@ -5514,7 +6127,10 @@ mod tests {
         litellm_passthrough_settings: Arc<Mutex<LiteLlmPassthroughSettings>>,
         portal_members: Arc<Mutex<Vec<PortalMember>>>,
         service_memberships: Arc<Mutex<Vec<ServiceMembership>>>,
+        project_memberships: Arc<Mutex<Vec<ProjectMembership>>>,
         managed_identities: Arc<Mutex<Vec<gateway_core::ManagedIdentityBinding>>>,
+        managed_identity_projects: Arc<Mutex<Vec<gateway_core::ManagedIdentityProjectBinding>>>,
+        projects: Arc<Mutex<Vec<ProjectResponse>>>,
         oidc_transactions: Arc<Mutex<Vec<OidcLoginTransaction>>>,
         portal_sessions: Arc<Mutex<Vec<NewPortalSession>>>,
         postgres_ready: bool,
@@ -5699,6 +6315,68 @@ mod tests {
             Ok(memberships.len() != before)
         }
 
+        async fn list_project_memberships(
+            &self,
+            member_id: Uuid,
+        ) -> GatewayResult<Vec<ProjectMembership>> {
+            Ok(self
+                .project_memberships
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .filter(|membership| membership.member_id == member_id)
+                .cloned()
+                .collect())
+        }
+
+        async fn upsert_project_membership(
+            &self,
+            member_id: Uuid,
+            request: ProjectMembershipUpsertRequest,
+        ) -> GatewayResult<ProjectMembership> {
+            if self.get_member(member_id).await?.is_none()
+                || !self
+                    .projects
+                    .lock()
+                    .expect("lock poisoned")
+                    .iter()
+                    .any(|project| project.id == request.project_id)
+            {
+                return Err(GatewayError::InvalidAccessPayload);
+            }
+            let now = Utc::now();
+            let mut memberships = self.project_memberships.lock().expect("lock poisoned");
+            if let Some(membership) = memberships.iter_mut().find(|membership| {
+                membership.member_id == member_id && membership.project_id == request.project_id
+            }) {
+                membership.role = request.role;
+                membership.updated_at = now;
+                return Ok(membership.clone());
+            }
+            let membership = ProjectMembership {
+                member_id,
+                project_id: request.project_id,
+                role: request.role,
+                created_at: now,
+                updated_at: now,
+            };
+            memberships.push(membership.clone());
+            Ok(membership)
+        }
+
+        async fn delete_project_membership(
+            &self,
+            member_id: Uuid,
+            project_id: Uuid,
+        ) -> GatewayResult<bool> {
+            let mut memberships = self.project_memberships.lock().expect("lock poisoned");
+            let before = memberships.len();
+            memberships.retain(|membership| {
+                membership.member_id != member_id || membership.project_id != project_id
+            });
+            Ok(memberships.len() != before)
+        }
+
         async fn list_managed_identities(
             &self,
         ) -> GatewayResult<Vec<gateway_core::ManagedIdentityBinding>> {
@@ -5766,6 +6444,84 @@ mod tests {
 
         async fn delete_managed_identity(&self, identity_id: Uuid) -> GatewayResult<bool> {
             let mut identities = self.managed_identities.lock().expect("lock poisoned");
+            let before = identities.len();
+            identities.retain(|identity| identity.id != identity_id);
+            Ok(identities.len() != before)
+        }
+
+        async fn list_managed_identity_projects(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::ManagedIdentityProjectBinding>> {
+            Ok(self
+                .managed_identity_projects
+                .lock()
+                .expect("lock poisoned")
+                .clone())
+        }
+
+        async fn create_managed_identity_project(
+            &self,
+            request: ManagedIdentityProjectCreateRequest,
+        ) -> GatewayResult<gateway_core::ManagedIdentityProjectBinding> {
+            let now = Utc::now();
+            let identity = gateway_core::ManagedIdentityProjectBinding {
+                id: Uuid::new_v4(),
+                tenant_id: request.tenant_id,
+                client_id: request.client_id,
+                object_id: request.object_id,
+                display_name: request.display_name,
+                project_id: request.project_id,
+                required_role: request.required_role,
+                enabled: request.enabled,
+                created_at: now,
+                updated_at: now,
+            };
+            self.managed_identity_projects
+                .lock()
+                .expect("lock poisoned")
+                .push(identity.clone());
+            Ok(identity)
+        }
+
+        async fn patch_managed_identity_project(
+            &self,
+            identity_id: Uuid,
+            patch: ManagedIdentityProjectPatchRequest,
+        ) -> GatewayResult<Option<gateway_core::ManagedIdentityProjectBinding>> {
+            let mut identities = self
+                .managed_identity_projects
+                .lock()
+                .expect("lock poisoned");
+            let Some(identity) = identities
+                .iter_mut()
+                .find(|identity| identity.id == identity_id)
+            else {
+                return Ok(None);
+            };
+            if let Some(value) = patch.display_name {
+                identity.display_name = value;
+            }
+            if let Some(value) = patch.object_id {
+                identity.object_id = value;
+            }
+            if let Some(value) = patch.project_id {
+                identity.project_id = value;
+            }
+            if let Some(value) = patch.required_role {
+                identity.required_role = value;
+            }
+            if let Some(value) = patch.enabled {
+                identity.enabled = value;
+            }
+            identity.updated_at = Utc::now();
+            Ok(Some(identity.clone()))
+        }
+
+        async fn delete_managed_identity_project(&self, identity_id: Uuid) -> GatewayResult<bool> {
+            let mut identities = self
+                .managed_identity_projects
+                .lock()
+                .expect("lock poisoned");
             let before = identities.len();
             identities.retain(|identity| identity.id != identity_id);
             Ok(identities.len() != before)
@@ -5863,6 +6619,29 @@ mod tests {
                 .map(|membership| membership.role))
         }
 
+        async fn member_project_role(
+            &self,
+            member_id: Uuid,
+            project_id: Uuid,
+        ) -> GatewayResult<Option<ServiceMemberRole>> {
+            let active = self
+                .get_member(member_id)
+                .await?
+                .is_some_and(|member| member.status == MemberStatus::Active);
+            if !active {
+                return Ok(None);
+            }
+            Ok(self
+                .project_memberships
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|membership| {
+                    membership.member_id == member_id && membership.project_id == project_id
+                })
+                .map(|membership| membership.role))
+        }
+
         async fn workload_service_binding(
             &self,
             tenant_id: &str,
@@ -5881,6 +6660,35 @@ mod tests {
                         && identity.tenant_id == tenant_id
                         && identity.client_id == client_id
                         && identity.service_name == service_name
+                        && identity
+                            .object_id
+                            .as_deref()
+                            .is_none_or(|value| Some(value) == object_id)
+                        && token_roles
+                            .iter()
+                            .any(|role| role == &identity.required_role)
+                })
+                .cloned())
+        }
+
+        async fn workload_project_binding(
+            &self,
+            tenant_id: &str,
+            client_id: &str,
+            object_id: Option<&str>,
+            project_id: Uuid,
+            token_roles: &[String],
+        ) -> GatewayResult<Option<gateway_core::ManagedIdentityProjectBinding>> {
+            Ok(self
+                .managed_identity_projects
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|identity| {
+                    identity.enabled
+                        && identity.tenant_id == tenant_id
+                        && identity.client_id == client_id
+                        && identity.project_id == project_id
                         && identity
                             .object_id
                             .as_deref()
@@ -6508,21 +7316,32 @@ mod tests {
         ) -> GatewayResult<ProjectResponse> {
             request.validate()?;
             let now = Utc::now();
-            Ok(ProjectResponse {
+            let project = ProjectResponse {
                 id: Uuid::new_v4(),
                 name: request.name,
                 service_names: Vec::new(),
                 created_at: now,
                 updated_at: now,
-            })
+            };
+            self.projects
+                .lock()
+                .expect("lock poisoned")
+                .push(project.clone());
+            Ok(project)
         }
 
         async fn list_projects(&self) -> GatewayResult<Vec<ProjectResponse>> {
-            Ok(Vec::new())
+            Ok(self.projects.lock().expect("lock poisoned").clone())
         }
 
-        async fn get_project(&self, _project_id: Uuid) -> GatewayResult<Option<ProjectResponse>> {
-            Ok(None)
+        async fn get_project(&self, project_id: Uuid) -> GatewayResult<Option<ProjectResponse>> {
+            Ok(self
+                .projects
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .find(|project| project.id == project_id)
+                .cloned())
         }
 
         async fn patch_project(
@@ -7425,6 +8244,7 @@ mod tests {
                 .find(|event| event.request_id == request_id)
                 .map(|event| gateway_core::DebugBundle {
                     request_id: event.request_id.clone(),
+                    project_id: event.project_id,
                     route: Some(event.route),
                     provider: Some(event.provider),
                     service_name: event.service_name.clone(),
@@ -7835,6 +8655,37 @@ mod tests {
         }
     }
 
+    fn test_usage_event_for_project(request_id: &str, project_id: Uuid) -> UsageEvent {
+        UsageEvent {
+            request_id: request_id.to_owned(),
+            key_id: Uuid::new_v4(),
+            project_id: Some(project_id),
+            route: Route::ServiceWildcard,
+            model: None,
+            provider: gateway_core::Provider::InternalService,
+            status: UsageStatus::Success,
+            status_code: 200,
+            latency_ms: 10,
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+            estimated_cost_usd: Some(0.01),
+            cost_source: Some("fixed".to_owned()),
+            cost_mode: Some(ServiceCostMode::Fixed),
+            pricing_rule_name: None,
+            service_name: Some("shared".to_owned()),
+            service_version: Some("2026.08.18".to_owned()),
+            http_method: Some("GET".to_owned()),
+            endpoint_path: Some("/shared".to_owned()),
+            endpoint_template: Some("/shared".to_owned()),
+            task_id: None,
+            run_id: None,
+            trace_id: None,
+            fallback_count: 0,
+            created_at: Utc::now(),
+        }
+    }
+
     fn admin_key_for(
         stored: &StoredVirtualKey,
         guardrail_policy: gateway_core::GuardrailPolicy,
@@ -7987,7 +8838,10 @@ mod tests {
             )),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -8549,7 +9403,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -8709,6 +9566,152 @@ mod tests {
             app,
             axum::http::Method::GET,
             "/owner/v1/services/ocr/dashboard",
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response_json(denied).await["error"]["code"],
+            "insufficient_portal_access"
+        );
+    }
+
+    #[tokio::test]
+    async fn owner_api_enforces_exact_project_membership_and_usage_scope_server_side() {
+        let store = default_store();
+        let owner = active_portal_member(false);
+        let owner_id = owner.id;
+        let (raw_session, raw_csrf) = seed_portal_session(&store, owner);
+        let allowed_project_id = Uuid::new_v4();
+        let denied_project_id = Uuid::new_v4();
+        let now = Utc::now();
+        store.projects.lock().expect("lock poisoned").extend([
+            ProjectResponse {
+                id: allowed_project_id,
+                name: "Orders".to_owned(),
+                service_names: vec!["shared".to_owned()],
+                created_at: now,
+                updated_at: now,
+            },
+            ProjectResponse {
+                id: denied_project_id,
+                name: "Payments".to_owned(),
+                service_names: vec!["shared".to_owned()],
+                created_at: now,
+                updated_at: now,
+            },
+        ]);
+        store
+            .project_memberships
+            .lock()
+            .expect("lock poisoned")
+            .push(ProjectMembership {
+                member_id: owner_id,
+                project_id: allowed_project_id,
+                role: ServiceMemberRole::Owner,
+                created_at: now,
+                updated_at: now,
+            });
+        store.events.lock().expect("lock poisoned").extend([
+            test_usage_event_for_project("req-orders", allowed_project_id),
+            test_usage_event_for_project("req-payments", denied_project_id),
+            test_usage_event_for_project("req-collision-debug", denied_project_id),
+            test_usage_event_for_project("req-collision-debug", allowed_project_id),
+        ]);
+        let app = router_with_state(test_state(store));
+
+        let session = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            "/admin-ui/auth/session",
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        let session = response_json(session).await;
+        assert_eq!(
+            session["project_memberships"][0]["project_id"],
+            allowed_project_id.to_string()
+        );
+
+        let allowed = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            &format!(
+                "/owner/v1/projects/{allowed_project_id}/dashboard?project_id={denied_project_id}"
+            ),
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(allowed.status(), StatusCode::OK);
+        let allowed = response_json(allowed).await;
+        assert_eq!(allowed["project_id"], allowed_project_id.to_string());
+
+        let scoped_events = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            &format!(
+                "/owner/v1/projects/{allowed_project_id}/events?project_id={denied_project_id}"
+            ),
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        let scoped_events = response_json(scoped_events).await;
+        let scoped_rows = scoped_events["rows"].as_array().unwrap();
+        assert_eq!(scoped_rows.len(), 2);
+        assert!(scoped_rows
+            .iter()
+            .all(|row| row["project_id"] == allowed_project_id.to_string()));
+
+        let colliding_request = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            &format!("/owner/v1/projects/{allowed_project_id}/requests/req-collision-debug"),
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(colliding_request.status(), StatusCode::OK);
+        let colliding_request = response_json(colliding_request).await;
+        assert_eq!(
+            colliding_request["request"]["project_id"],
+            allowed_project_id.to_string()
+        );
+        assert!(colliding_request["debug_bundle"].is_null());
+
+        let cross_project_request = portal_request(
+            app.clone(),
+            axum::http::Method::GET,
+            &format!("/owner/v1/projects/{allowed_project_id}/requests/req-payments"),
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(cross_project_request.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response_json(cross_project_request).await["error"]["code"],
+            "request_not_found"
+        );
+
+        let denied = portal_request(
+            app,
+            axum::http::Method::GET,
+            &format!("/owner/v1/projects/{denied_project_id}/dashboard"),
             &raw_session,
             &raw_csrf,
             None,
@@ -9280,6 +10283,18 @@ mod tests {
         service.name = "orders".to_owned();
         service.route_pattern = "/services/orders/*".to_owned();
         store.services.lock().expect("lock poisoned").push(service);
+        let project_id = Uuid::new_v4();
+        store
+            .projects
+            .lock()
+            .expect("lock poisoned")
+            .push(ProjectResponse {
+                id: project_id,
+                name: "Development project".into(),
+                service_names: vec!["orders".into()],
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
         store
             .managed_identities
             .lock()
@@ -9291,6 +10306,22 @@ mod tests {
                 object_id: Some("00000000-0000-0000-0000-000000000202".into()),
                 display_name: "Development workload".into(),
                 service_name: "orders".into(),
+                required_role: gateway_core::OWNER_WORKLOAD_ROLE.into(),
+                enabled: true,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
+        store
+            .managed_identity_projects
+            .lock()
+            .expect("lock poisoned")
+            .push(gateway_core::ManagedIdentityProjectBinding {
+                id: Uuid::new_v4(),
+                tenant_id: "00000000-0000-0000-0000-000000000001".into(),
+                client_id: "00000000-0000-0000-0000-000000000201".into(),
+                object_id: Some("00000000-0000-0000-0000-000000000202".into()),
+                display_name: "Development project workload".into(),
+                project_id,
                 required_role: gateway_core::OWNER_WORKLOAD_ROLE.into(),
                 enabled: true,
                 created_at: Utc::now(),
@@ -9499,6 +10530,7 @@ mod tests {
             .unwrap()
             .to_owned();
         let workload_response = app
+            .clone()
             .oneshot(
                 axum::http::Request::builder()
                     .uri("/owner/v1/services/orders")
@@ -9510,6 +10542,22 @@ mod tests {
             .unwrap();
         assert_eq!(workload_response.status(), StatusCode::OK);
         assert_eq!(response_json(workload_response).await["role"], "viewer");
+
+        let project_workload_response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(format!("/owner/v1/projects/{project_id}"))
+                    .header(header::AUTHORIZATION, format!("Bearer {workload_token}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(project_workload_response.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(project_workload_response).await["role"],
+            "viewer"
+        );
     }
 
     #[tokio::test]
@@ -9805,7 +10853,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10012,7 +11063,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: false,
@@ -10042,7 +11096,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10078,7 +11135,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10344,7 +11404,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10388,7 +11451,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10462,7 +11528,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10499,7 +11568,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10540,7 +11612,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10582,7 +11657,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10630,7 +11708,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10728,7 +11809,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10791,7 +11875,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -11344,7 +12431,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -11411,7 +12501,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -11629,7 +12722,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -11855,7 +12951,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -11926,7 +13025,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -11980,7 +13082,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -12070,7 +13175,10 @@ mod tests {
             audit_events: Arc::new(Mutex::new(Vec::new())),
             portal_members: Arc::new(Mutex::new(Vec::new())),
             service_memberships: Arc::new(Mutex::new(Vec::new())),
+            project_memberships: Arc::new(Mutex::new(Vec::new())),
             managed_identities: Arc::new(Mutex::new(Vec::new())),
+            managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
+            projects: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,

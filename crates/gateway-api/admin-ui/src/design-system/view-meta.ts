@@ -13,7 +13,9 @@ export type ViewId =
   | "members"
   | "managed-identities"
   | "my-services"
-  | "service-dashboard";
+  | "service-dashboard"
+  | "my-projects"
+  | "project-dashboard";
 
 export type ViewMeta = {
   title: string;
@@ -96,6 +98,16 @@ export const viewMeta: Record<ViewId, ViewMeta> = {
     title: "Service dashboard",
     domain: "Monitor",
     summary: "Scoped usage, errors, request logs, endpoints, providers, and models for one service.",
+  },
+  "my-projects": {
+    title: "My projects",
+    domain: "Discover",
+    summary: "Projects for which you have Owner or Viewer access.",
+  },
+  "project-dashboard": {
+    title: "Project dashboard",
+    domain: "Monitor",
+    summary: "Scoped usage, errors, request logs, services, endpoints, and providers for one project.",
   },
 };
 

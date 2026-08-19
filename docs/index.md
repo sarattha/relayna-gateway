@@ -36,7 +36,7 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
 - [OpenAPI Service Pricing](openapi-service-pricing.md) explains registered
   service discovery, endpoint billing, multipart selectors, and budget rules.
-- [Current Feature Highlights](current-features.md) summarizes the `v0.1.27`
+- [Current Feature Highlights](current-features.md) summarizes the `v0.1.28`
   feature set, including Admin UI screenshots.
 - [Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md)
   covers browser OIDC, member approval, service assignments, managed
