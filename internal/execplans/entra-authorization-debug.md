@@ -51,8 +51,10 @@ that cookie-header construction can no longer fail silently.
   P2 finding identified the string-encoded event envelope; changed the stable
   envelope to native tracing fields, updated the runbook, and reran formatting,
   Clippy, the full workspace test suite, telemetry tests, and strict docs build.
-- [ ] Push the review fix, reply with commit/test evidence, resolve the thread,
-  and confirm the final CI run.
+- [x] (2026-08-26 00:35Z) Pushed review fix `0799669`, replied with commit/test
+  evidence, resolved the only new review thread, confirmed the final CI run is
+  fully green, and rebuilt the v0.1.29 Docker image to prove the corrected
+  native event fields in real container logs.
 
 ## Surprises & Discoveries
 
@@ -122,14 +124,28 @@ that cookie-header construction can no longer fail silently.
   silent error into an explicit public configuration failure plus a precise
   diagnostic event.
   Date/Author: 2026-08-25 / Codex.
+- Decision: emit the stable diagnostic envelope as native tracing fields and
+  keep only the bounded, phase-specific `details` value JSON-encoded.
+  Rationale: log collectors can index and filter the authorization surface,
+  phase, outcome, reason, and request ID without reparsing an escaped payload,
+  while arbitrary detail objects remain bounded and schema-flexible.
+  Date/Author: 2026-08-26 / Codex, following the one requested Codex review.
 
 ## Outcomes & Retrospective
 
-Implementation, local runtime validation, documentation, release metadata, and
-the pre-push verification stack are complete. The only remaining work is the
-GitHub handoff: commit and push the branch, update PR #107, request the one
-authorized Codex re-review, address and resolve any actionable review threads,
-and confirm final PR checks.
+Relayna Gateway 0.1.29 now has one explicitly enabled Entra authorization trail
+covering portal OIDC, database-backed sessions and both browser cookies, direct
+JWT admission, trusted Apigee identity, owner bindings, and Relayna-key
+handoff. The default remains off, public behavior and persisted formats remain
+stable, replayable credentials and browser secrets are excluded, and the full
+operator contract is documented.
+
+Real Docker/Computer Use validation proved successful login, cookie return,
+session resolution, CSRF use, logout, direct and trusted-ingress acceptance and
+rejection, plus exact failure reasons. The run also found and eliminated an
+unsafe nonce detail before handoff. Local verification and final GitHub CI are
+green. The one requested Codex re-review produced one P2 event-shape finding;
+it was fixed, replied to, and resolved without requesting another review.
 
 ## Context and Orientation
 
