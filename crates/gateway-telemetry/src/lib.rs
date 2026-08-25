@@ -37,18 +37,15 @@ pub fn authorization_debug(
         return;
     }
     let details = bounded_authorization_debug_details(details);
-    let payload = json!({
-        "event": "relayna.authorization_debug",
-        "surface": surface,
-        "phase": phase,
-        "outcome": outcome,
-        "reason": reason,
-        "request_id": request_id.unwrap_or("unknown"),
-        "details": details,
-    });
     tracing::warn!(
         target: AUTHORIZATION_DEBUG_TARGET,
-        authorization_debug = %payload,
+        event = "relayna.authorization_debug",
+        surface,
+        phase,
+        outcome,
+        reason,
+        request_id = request_id.unwrap_or("unknown"),
+        details = %details,
         "Entra authorization debug"
     );
 }

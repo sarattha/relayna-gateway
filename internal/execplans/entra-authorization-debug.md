@@ -44,9 +44,15 @@ that cookie-header construction can no longer fail silently.
 - [x] (2026-08-26 00:19Z) Bumped the release target to `0.1.29` and updated the
   changelog, deployment examples, Admin UI indicators, release documentation,
   and detailed operator runbook.
-- [ ] Commit, push, and update PR #107.
-- [ ] Request exactly one additional Codex review, address every actionable new
-  thread with replies, resolve the threads, and rerun required verification.
+- [x] (2026-08-26 00:18Z) Committed and pushed `7f05456`, and updated PR #107's
+  title and description with the feature, security, compatibility, local
+  runtime, and verification evidence.
+- [x] (2026-08-26 00:29Z) Requested exactly one additional Codex review. Its one
+  P2 finding identified the string-encoded event envelope; changed the stable
+  envelope to native tracing fields, updated the runbook, and reran formatting,
+  Clippy, the full workspace test suite, telemetry tests, and strict docs build.
+- [ ] Push the review fix, reply with commit/test evidence, resolve the thread,
+  and confirm the final CI run.
 
 ## Surprises & Discoveries
 
@@ -249,8 +255,7 @@ Expected event envelope:
       "outcome": "rejected",
       "reason": "audience_mismatch",
       "request_id": "...",
-      "public_error_code": "invalid_entra_audience",
-      "details": { "token_trust": "signature_verified", "token": { ... } }
+      "details": "{\"public_error_code\":\"invalid_entra_audience\",\"token_trust\":\"signature_verified\",\"token\":{...}}"
     }
 
 ## Interfaces and Dependencies

@@ -47,8 +47,11 @@ again. Do not leave it enabled after the investigation.
 
 ## Event format
 
-Each event is emitted by the `relayna_authorization_debug` tracing target. In
-JSON logs, the `authorization_debug` field is itself a JSON object:
+Each event is emitted by the `relayna_authorization_debug` tracing target. The
+stable envelope is emitted as native JSON tracing fields so log collectors can
+filter and index `surface`, `phase`, `reason`, and `request_id` without parsing
+another string. The dynamic `details` field is a bounded JSON-encoded value.
+The `fields` portion of one complete tracing record is:
 
 ```json
 {
@@ -58,12 +61,7 @@ JSON logs, the `authorization_debug` field is itself a JSON object:
   "outcome": "rejected",
   "reason": "login_cookie_not_returned",
   "request_id": "01J...",
-  "details": {
-    "configured_secure": true,
-    "external_scheme": "http",
-    "known_configuration_warning": "secure_cookie_over_http",
-    "server_can_observe_browser_acceptance": false
-  }
+  "details": "{\"configured_secure\":true,\"external_scheme\":\"http\",\"known_configuration_warning\":\"secure_cookie_over_http\",\"server_can_observe_browser_acceptance\":false}"
 }
 ```
 
@@ -76,7 +74,7 @@ The stable envelope fields are:
 | `outcome` | `started`, `accepted`, or `rejected`. |
 | `reason` | Machine-searchable explanation for the result. This is more precise than the public HTTP error code. |
 | `request_id` | Gateway request correlation ID when an HTTP request exists. Startup/cache events can omit it. |
-| `details` | Safe diagnostic context for that phase. The complete serialized details object is bounded to 64 KiB. |
+| `details` | Safe diagnostic context for that phase, serialized as a JSON value inside the tracing field. Parse this field once when inspecting its dynamic keys. The serialized value is bounded to 64 KiB. |
 
 Public HTTP statuses and error shapes do not change. Debug reasons are an
 operator aid and are not an external API contract.
