@@ -4,28 +4,25 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
-Version `0.1.28` is the current release target. Release `0.1.28` adds
-read-only project-owner dashboards and APIs beside the existing service-owner
-experience. Administrators can grant Entra portal members exact project Owner
-or Viewer memberships and register exact project bindings for monitoring
-managed identities. The shared confidential Web/API registration exposes
-separate `gateway.invoke` and `gateway.monitor.read` application roles for
-least-privilege managed identities; both service and project monitoring reuse
-`gateway.monitor.read`, while Relayna bindings enforce the exact resource.
-Owners can chart error rate and P95 latency, filter request outcomes and exact
-status codes, and open sanitized scoped request details with optional debug
-bundles. The portal uses certificate-backed PS256
-`private_key_jwt`, and first-admin ConfigMap bootstrap matches tenant,
-immutable Entra object ID, and email. Existing operator tokens remain available as
-break-glass access, and all browser pages remain under `/admin-ui`. It retains
-endpoint-level failure monitoring, buffered-body admission, OpenAPI endpoint
+Version `0.1.29` is the current release target. Release `0.1.29` adds an
+explicit `ENTRA_AUTH_DEBUG` incident mode for direct Entra JWTs, trusted Apigee
+identity, portal OIDC and cookie sessions, and managed-identity owner APIs. Its
+structured decision trail distinguishes discovery, key, signature, claim,
+role, binding, database-session, cookie-emission, browser-return, and CSRF
+failures. It can show decoded claims under a sensitive-data warning while
+redacting compact tokens, OAuth transaction values, cookies, keys, codes,
+PKCE material, and credentials. Existing HTTP errors and authorization
+decisions remain stable, and cookie-header construction now fails closed
+instead of silently leaving a server session without browser credentials. It
+retains endpoint-level failure monitoring, buffered-body admission, OpenAPI endpoint
 billing, the Aurora Teal Admin UI 2.0 shell, policy governance, provider
 intelligence, supply-chain hardening, LiteLLM passthrough and credential
 mapping, Entra front-door authorization, and Apigee provider-traffic support.
 See `docs/operations/entra-portal-and-owner-monitoring.md`,
 `docs/operations/entra-integration-requirements.md`,
 `docs/openapi-service-pricing.md`, `docs/current-features.md`,
-`docs/litellm-passthrough.md`, `docs/entra-id-auth.md`, and
+`docs/litellm-passthrough.md`, `docs/entra-id-auth.md`,
+`docs/operations/entra-authorization-debug.md`, and
 `docs/apigee-gateway-path.md` for the public feature highlights.
 
 ## What This Repository Contains
@@ -80,10 +77,19 @@ export LOG_LEVEL="gateway_api=info,gateway_proxy=info"
 # export ENTRA_OIDC_DISCOVERY_URL="https://login.microsoftonline.com/<tenant-guid>/v2.0/.well-known/openid-configuration"
 # export ENTRA_REQUIRED_ROLE="gateway.invoke"
 # export ENTRA_RELAYNA_KEY_HEADER="X-Relayna-Key"
+# Temporary incident diagnostics. Decoded claims can contain personal data.
+# export ENTRA_AUTH_DEBUG="true"
 # Optional Apigee trusted signed-header mode. Disabled by default.
 # export APIGEE_TRUSTED_HEADER_ENABLED="true"
 # export APIGEE_TRUSTED_HEADER_SECRET="<shared-hmac-secret>"
 ```
+
+When debugging an Entra or portal-cookie failure, temporarily enable
+`ENTRA_AUTH_DEBUG=true` and follow
+[`docs/operations/entra-authorization-debug.md`](docs/operations/entra-authorization-debug.md).
+The dedicated structured trail identifies the first rejected validation,
+session-persistence, or cookie-observation phase without logging compact
+tokens, cookie values, authorization codes, PKCE values, or raw Relayna keys.
 
 Run the gateway:
 
@@ -111,7 +117,7 @@ simulation, policy layers, provider health state, debug bundles, service import
 preview/activation/version/rollback, and paginated expanded usage analytics. These are
 documented in `docs/current-features.md`.
 
-Release `0.1.28` can run Relayna Gateway as the single ingress in front of
+Release `0.1.29` can run Relayna Gateway as the single ingress in front of
 LiteLLM. Canonical OpenAI-compatible and Anthropic-compatible Claude routes
 remain governed by Relayna policy by default, and operators can optionally
 switch each canonical route to direct LiteLLM passthrough while preserving
@@ -185,7 +191,7 @@ of 400 or greater remains a failure, whether returned by Gateway or upstream.
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.1.28 .
+docker build -t relayna-gateway:0.1.29 .
 ```
 
 Run it:
@@ -199,7 +205,7 @@ docker run --rm \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
   -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.1.28
+  relayna-gateway:0.1.29
 ```
 
 `GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
@@ -215,7 +221,7 @@ managed-identity example, ports, and cleanup commands.
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.28`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.29`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Budgets, TPM, and Usage Exports
 

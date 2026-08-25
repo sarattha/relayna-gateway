@@ -14,7 +14,20 @@ use tokio::time::{self, Duration};
 
 fn main() -> anyhow::Result<()> {
     let config = Config::from_env().context("load gateway configuration")?;
-    gateway_telemetry::init(&config.log_level);
+    gateway_telemetry::init(&config.log_level, config.entra_auth_debug);
+    if config.entra_auth_debug {
+        gateway_telemetry::authorization_debug(
+            "configuration",
+            "startup",
+            "enabled",
+            "operator_enabled_sensitive_diagnostics",
+            None,
+            serde_json::json!({
+                "warning": "decoded Entra claims and authorization decisions may contain sensitive identity data",
+                "compact_credentials_logged": false,
+            }),
+        );
+    }
 
     let setup_runtime = tokio::runtime::Runtime::new().context("create setup runtime")?;
     let store = setup_runtime

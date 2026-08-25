@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-api"
-version = "0.1.28"
+version = "0.1.29"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -992,12 +992,13 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "0.1.28"
+version = "0.1.29"
 dependencies = [
  "argon2",
  "async-trait",
  "base64",
  "chrono",
+ "gateway-telemetry",
  "hmac",
  "http",
  "jsonwebtoken",
@@ -1014,7 +1015,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-proxy"
-version = "0.1.28"
+version = "0.1.29"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1035,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "0.1.28"
+version = "0.1.29"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1052,8 +1053,9 @@ dependencies = [
 
 [[package]]
 name = "gateway-telemetry"
-version = "0.1.28"
+version = "0.1.29"
 dependencies = [
+ "serde_json",
  "tracing",
  "tracing-subscriber",
 ]

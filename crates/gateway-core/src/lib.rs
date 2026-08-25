@@ -43,9 +43,10 @@ pub use auth_settings::{
 };
 pub use budgets::{BudgetDecision, BudgetState, BudgetStore};
 pub use entra::{
-    sign_apigee_trusted_identity, validate_relayna_key_header_name, verify_apigee_trusted_identity,
-    ApigeeTrustedHeaderConfig, EntraAuthConfig, EntraIdentityContext, EntraIdentitySource,
-    EntraJwtVerifier, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    authorization_debug_identity, sign_apigee_trusted_identity, validate_relayna_key_header_name,
+    verify_apigee_trusted_identity, verify_apigee_trusted_identity_with_context,
+    ApigeeTrustedHeaderConfig, EntraAuthConfig, EntraAuthDebugContext, EntraIdentityContext,
+    EntraIdentitySource, EntraJwtVerifier, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 pub use errors::{GatewayError, GatewayResult};
 pub use guardrails::{

@@ -11,23 +11,24 @@ use chrono::Utc;
 use gateway_core::{
     analyze_generation_request,
     auth::{Authenticator, VirtualKeyLookup},
-    estimate_generation_tokens, evaluate_policy, evaluate_policy_limits,
-    execution_events_from_records, extract_client_guardrails_value, extract_estimated_cost_usd,
-    extract_generation_features, extract_model, extract_usage_tokens,
+    authorization_debug_identity, estimate_generation_tokens, evaluate_policy,
+    evaluate_policy_limits, execution_events_from_records, extract_client_guardrails_value,
+    extract_estimated_cost_usd, extract_generation_features, extract_model, extract_usage_tokens,
     guardrail_executor_for_definitions, is_retry_safe_status, matching_openapi_endpoint,
     matching_service_pricing_rule, redact_pii_text, resolve_endpoint_pricing_rule,
     resolve_guardrail_plan, resolve_service_cost_from_value, route_pattern_wildcard_suffix,
     service_preflight_estimated_cost, service_wildcard_suffix, strip_client_guardrails,
-    validate_relayna_key_header_name, verify_apigee_trusted_identity, ApigeeTrustedHeaderConfig,
-    AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
-    CredentialHeaderValueFormat, EntraAuthConfig, EntraIdentityContext, GatewayAuthRuntimeConfig,
-    GatewayAuthRuntimeSnapshot, GatewayError, GatewayResult, GuardrailContext, GuardrailDefinition,
-    GuardrailExecutionEvent, GuardrailMode, GuardrailPlan, GuardrailPlanRequest, GuardrailPolicy,
-    GuardrailPolicySet, GuardrailStore, KeyPolicy, LiteLlmSensitiveRouteExposure, OpenAiRouteMode,
-    OpenAiRouteSettingsLookup, PolicyLookup, Provider, ProviderConfigLookup,
-    ProviderIntelligenceStore, RateLimitDecision, RateLimitStore, ResolvedServiceCost, Route,
-    RouteMatch, ServiceCostMode, ServicePricingRule, ServiceRegistryLookup, ServiceRouteLookup,
-    SharedGatewayAuthRuntime, UsageEvent, UsageRecorder, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    validate_relayna_key_header_name, verify_apigee_trusted_identity_with_context,
+    ApigeeTrustedHeaderConfig, AuthenticatedKey, BudgetDecision, BudgetStore, CredentialHeaderMode,
+    CredentialHeaderValueFormat, EntraAuthConfig, EntraAuthDebugContext, EntraIdentityContext,
+    GatewayAuthRuntimeConfig, GatewayAuthRuntimeSnapshot, GatewayError, GatewayResult,
+    GuardrailContext, GuardrailDefinition, GuardrailExecutionEvent, GuardrailMode, GuardrailPlan,
+    GuardrailPlanRequest, GuardrailPolicy, GuardrailPolicySet, GuardrailStore, KeyPolicy,
+    LiteLlmSensitiveRouteExposure, OpenAiRouteMode, OpenAiRouteSettingsLookup, PolicyLookup,
+    Provider, ProviderConfigLookup, ProviderIntelligenceStore, RateLimitDecision, RateLimitStore,
+    ResolvedServiceCost, Route, RouteMatch, ServiceCostMode, ServicePricingRule,
+    ServiceRegistryLookup, ServiceRouteLookup, SharedGatewayAuthRuntime, UsageEvent, UsageRecorder,
+    ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use http::{header, header::HeaderName, Uri};
 use multra::{Constraints, Multipart, SizeLimit};
@@ -249,15 +250,17 @@ impl<S, R> RelaynaPingoraProxy<S, R> {
         req: &RequestHeader,
         now: chrono::DateTime<Utc>,
         auth: &GatewayAuthRuntimeSnapshot,
+        request_id: &str,
     ) -> GatewayResult<EntraIdentityContext> {
         if let Some(config) = auth.config.apigee_trusted_header.as_ref() {
             if header_value(req, "x-apigee-entra-identity").is_some()
                 || header_value(req, "x-apigee-entra-signature").is_some()
             {
-                return verify_apigee_trusted_identity(
+                return verify_apigee_trusted_identity_with_context(
                     header_value(req, "x-apigee-entra-identity"),
                     header_value(req, "x-apigee-entra-signature"),
                     config,
+                    EntraAuthDebugContext::new("request_plane_apigee", Some(request_id)),
                 );
             }
         }
@@ -266,7 +269,11 @@ impl<S, R> RelaynaPingoraProxy<S, R> {
             .as_ref()
             .ok_or(GatewayError::MissingEntraAuthorization)?;
         verifier
-            .verify_authorization(header_value(req, "authorization"), now)
+            .verify_authorization_with_context(
+                header_value(req, "authorization"),
+                now,
+                EntraAuthDebugContext::new("request_plane", Some(request_id)),
+            )
             .await
     }
 }
@@ -611,7 +618,10 @@ where
             }
         }
         let key_result = if auth.entra_enabled() {
-            match self.verify_entra_request(req, now, &auth).await {
+            match self
+                .verify_entra_request(req, now, &auth, &ctx.request_id)
+                .await
+            {
                 Ok(identity) => {
                     ctx.entra_identity = Some(identity);
                     gateway_telemetry::phase_span("gateway.auth.entra", &ctx.request_id)
@@ -633,6 +643,19 @@ where
         };
         match key_result {
             Ok(key) => {
+                if ctx.entra_identity.is_some() {
+                    gateway_telemetry::authorization_debug(
+                        "request_plane",
+                        "relayna_virtual_key",
+                        "accepted",
+                        "virtual_key_authenticated",
+                        Some(&ctx.request_id),
+                        serde_json::json!({
+                            "key_prefix": key.key_prefix,
+                            "identity": ctx.entra_identity.as_ref().map(authorization_debug_identity),
+                        }),
+                    );
+                }
                 gateway_telemetry::phase_span("gateway.auth.verify", &ctx.request_id)
                     .in_scope(|| tracing::info!("virtual key authenticated"));
                 match self.store.list_guardrail_definitions().await {
@@ -736,6 +759,19 @@ where
                 Ok(false)
             }
             Err(error) => {
+                if ctx.entra_identity.is_some() {
+                    gateway_telemetry::authorization_debug(
+                        "request_plane",
+                        "relayna_virtual_key",
+                        "rejected",
+                        "virtual_key_authentication_failed",
+                        Some(&ctx.request_id),
+                        serde_json::json!({
+                            "public_error_code": error.code(),
+                            "identity": ctx.entra_identity.as_ref().map(authorization_debug_identity),
+                        }),
+                    );
+                }
                 gateway_telemetry::record_auth_failure(error.code());
                 respond_error(session, error, &ctx.request_id).await?;
                 Ok(true)

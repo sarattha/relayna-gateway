@@ -50,6 +50,7 @@ const VARIABLES: &[&str] = &[
     "OWNER_ENTRA_ACCEPTED_ALGORITHMS",
     "OWNER_ENTRA_JWKS_CACHE_TTL_SECONDS",
     "OWNER_ENTRA_CLOCK_SKEW_SECONDS",
+    "ENTRA_AUTH_DEBUG",
     "GATEWAY_BIND_ADDR",
     "GATEWAY_CONTROL_BIND_ADDR",
     "GATEWAY_MAX_BUFFERED_REQUESTS",
@@ -149,6 +150,7 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         ("OWNER_ENTRA_ACCEPTED_ALGORITHMS", "RS256"),
         ("OWNER_ENTRA_JWKS_CACHE_TTL_SECONDS", "120"),
         ("OWNER_ENTRA_CLOCK_SKEW_SECONDS", "15"),
+        ("ENTRA_AUTH_DEBUG", "true"),
         ("GATEWAY_MAX_BUFFERED_REQUESTS", "12"),
         ("GATEWAY_MAX_INFLIGHT_BUFFER_BYTES", "134217728"),
     ] {
@@ -197,6 +199,7 @@ fn complete_environment_builds_all_optional_auth_and_runtime_settings() {
         "relayna-application"
     );
     assert_eq!(owner.jwks_cache_ttl_seconds, 120);
+    assert!(config.entra_auth_debug);
     assert_eq!(config.gateway_max_buffered_requests, 12);
     assert_eq!(config.gateway_max_inflight_buffer_bytes, 134_217_728);
     let auth_env = config.gateway_auth_env();
@@ -322,6 +325,7 @@ fn defaults_and_invalid_optional_values_are_handled_deterministically() {
     assert!(config.apigee_trusted_header.is_none());
     assert!(config.portal_oidc.is_none());
     assert!(config.owner_entra_auth.is_none());
+    assert!(!config.entra_auth_debug);
     assert_eq!(
         config.gateway_max_buffered_requests,
         gateway_proxy::DEFAULT_MAX_BUFFERED_REQUESTS
@@ -341,6 +345,9 @@ fn defaults_and_invalid_optional_values_are_handled_deterministically() {
     std::env::set_var("ENTRA_AUTH_ENABLED", "sometimes");
     assert!(Config::from_env().is_err());
     std::env::set_var("ENTRA_AUTH_ENABLED", "false");
+    std::env::set_var("ENTRA_AUTH_DEBUG", "sometimes");
+    assert!(Config::from_env().is_err());
+    std::env::remove_var("ENTRA_AUTH_DEBUG");
     std::env::set_var("GATEWAY_BIND_ADDR", "not-an-address");
     assert!(Config::from_env().is_err());
     clear_environment();

@@ -236,7 +236,14 @@ PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI=https://<gateway-host>/admin-ui
 PORTAL_ADMIN_EMAILS=<comma-separated initial admin emails>
 PORTAL_ADMIN_OBJECT_IDS=<comma-separated immutable Entra user object IDs>
 PORTAL_SESSION_COOKIE_SECURE=true
+ENTRA_AUTH_DEBUG=false
 ```
+
+Keep `ENTRA_AUTH_DEBUG=false` during normal operation. During a controlled
+incident, it can be set to `true` temporarily to record every Entra validation,
+portal login, and cookie-session decision. The logs may contain decoded claims;
+follow the retention and access controls in the
+[debug-mode runbook](entra-authorization-debug.md).
 
 Every initial admin must be represented in both allowlists. Gateway requires a
 verified tenant, object ID, and email match. Require every intended bootstrap
@@ -272,7 +279,7 @@ Then set `ENTRA_APPLICATION_ID` to the shared application ID GUID and remove:
 Existing browser sessions may be invalid after the application-ID cutover; ask
 users to sign in again. Existing Relayna members, service memberships, managed
 identity service bindings, virtual keys, and usage data do not require data
-rewrites. Release `0.1.28` creates separate project membership and project
+rewrites. Release `0.1.29` retains the separate project membership and project
 managed-identity binding tables.
 
 ## Certificate standard and lifecycle

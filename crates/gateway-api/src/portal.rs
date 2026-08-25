@@ -1,12 +1,13 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Utc};
 use gateway_core::{
-    EntraAuthConfig, EntraIdentityContext, EntraJwtVerifier, GatewayError, GatewayResult,
-    PortalAdminBootstrapPolicy, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
+    EntraAuthConfig, EntraAuthDebugContext, EntraIdentityContext, EntraJwtVerifier, GatewayError,
+    GatewayResult, PortalAdminBootstrapPolicy, ENTRA_DEFAULT_RELAYNA_KEY_HEADER,
 };
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use openssl::{pkey::PKey, x509::X509};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{fmt, fs, sync::Arc, time::Duration};
 use url::Url;
@@ -145,12 +146,43 @@ impl PortalOidcRuntime {
         nonce: &str,
         pkce_challenge: &str,
     ) -> GatewayResult<String> {
-        let metadata = self.metadata().await?;
+        self.authorization_url_with_context(
+            state,
+            nonce,
+            pkce_challenge,
+            EntraAuthDebugContext::new("portal_oidc", None),
+        )
+        .await
+    }
+
+    pub async fn authorization_url_with_context(
+        &self,
+        state: &str,
+        nonce: &str,
+        pkce_challenge: &str,
+        context: EntraAuthDebugContext<'_>,
+    ) -> GatewayResult<String> {
+        let metadata = self.metadata(context).await?;
         if metadata.issuer != self.config.issuer {
+            self.debug(
+                context,
+                "oidc_discovery",
+                "rejected",
+                "discovery_issuer_mismatch",
+                json!({"discovered_issuer": metadata.issuer}),
+            );
             return Err(GatewayError::OidcUnavailable);
         }
-        let mut url = Url::parse(&metadata.authorization_endpoint)
-            .map_err(|_| GatewayError::OidcUnavailable)?;
+        let mut url = Url::parse(&metadata.authorization_endpoint).map_err(|_| {
+            self.debug(
+                context,
+                "authorization_request",
+                "rejected",
+                "authorization_endpoint_invalid",
+                Value::Null,
+            );
+            GatewayError::OidcUnavailable
+        })?;
         url.query_pairs_mut()
             .append_pair("client_id", &self.config.client_id)
             .append_pair("response_type", "code")
@@ -161,6 +193,21 @@ impl PortalOidcRuntime {
             .append_pair("nonce", nonce)
             .append_pair("code_challenge", pkce_challenge)
             .append_pair("code_challenge_method", "S256");
+        self.debug(
+            context,
+            "authorization_request",
+            "accepted",
+            "authorization_url_created",
+            json!({
+                "response_type": "code",
+                "response_mode": "query",
+                "scopes": ["openid", "profile", "email"],
+                "pkce_method": "S256",
+                "state_logged": false,
+                "nonce_logged": false,
+                "pkce_logged": false,
+            }),
+        );
         Ok(url.into())
     }
 
@@ -170,11 +217,57 @@ impl PortalOidcRuntime {
         pkce_verifier: &str,
         now: DateTime<Utc>,
     ) -> GatewayResult<EntraIdentityContext> {
-        let metadata = self.metadata().await?;
+        self.exchange_code_with_context(
+            code,
+            pkce_verifier,
+            now,
+            EntraAuthDebugContext::new("portal_oidc", None),
+        )
+        .await
+    }
+
+    pub async fn exchange_code_with_context(
+        &self,
+        code: &str,
+        pkce_verifier: &str,
+        now: DateTime<Utc>,
+        context: EntraAuthDebugContext<'_>,
+    ) -> GatewayResult<EntraIdentityContext> {
+        let metadata = self.metadata(context).await?;
         if metadata.issuer != self.config.issuer {
+            self.debug(
+                context,
+                "oidc_discovery",
+                "rejected",
+                "discovery_issuer_mismatch",
+                json!({"discovered_issuer": metadata.issuer}),
+            );
             return Err(GatewayError::OidcUnavailable);
         }
         let client_assertion = self.client_assertion(&metadata.token_endpoint, now)?;
+        self.debug(
+            context,
+            "client_assertion",
+            "accepted",
+            "client_assertion_created",
+            json!({
+                "protected_header": {
+                    "alg": "PS256",
+                    "x5t#S256": self.certificate_thumbprint,
+                },
+                "claims": {
+                    "iss": self.config.client_id,
+                    "sub": self.config.client_id,
+                    "aud": metadata.token_endpoint,
+                    "iat": now.timestamp(),
+                    "nbf": now.timestamp() - CLIENT_ASSERTION_CLOCK_SKEW_SECONDS,
+                    "exp": now.timestamp() + CLIENT_ASSERTION_LIFETIME_SECONDS,
+                },
+                "compact_assertion_logged": false,
+                "authorization_code_logged": false,
+                "pkce_verifier_logged": false,
+            }),
+        );
         let response = self
             .client
             .post(&metadata.token_endpoint)
@@ -189,13 +282,64 @@ impl PortalOidcRuntime {
             ])
             .send()
             .await
-            .map_err(|_| GatewayError::OidcUnavailable)?
-            .error_for_status()
-            .map_err(|_| GatewayError::InvalidOidcTransaction)?
-            .json::<OidcTokenResponse>()
+            .map_err(|error| {
+                self.debug(
+                    context,
+                    "token_endpoint",
+                    "rejected",
+                    portal_reqwest_error_reason(&error),
+                    Value::Null,
+                );
+                GatewayError::OidcUnavailable
+            })?;
+        let status = response.status();
+        let value = response.json::<Value>().await.map_err(|_| {
+            self.debug(
+                context,
+                "token_endpoint",
+                "rejected",
+                "token_response_json_invalid",
+                json!({"upstream_status": status.as_u16()}),
+            );
+            GatewayError::OidcUnavailable
+        })?;
+        if !status.is_success() {
+            self.debug(
+                context,
+                "token_endpoint",
+                "rejected",
+                "token_endpoint_rejected",
+                json!({
+                    "upstream_status": status.as_u16(),
+                    "provider_error": safe_oidc_error(&value),
+                }),
+            );
+            return Err(GatewayError::InvalidOidcTransaction);
+        }
+        let response: OidcTokenResponse = serde_json::from_value(value).map_err(|_| {
+            self.debug(
+                context,
+                "token_endpoint",
+                "rejected",
+                "id_token_missing_or_invalid",
+                json!({"upstream_status": status.as_u16()}),
+            );
+            GatewayError::OidcUnavailable
+        })?;
+        self.debug(
+            context,
+            "token_endpoint",
+            "accepted",
+            "token_response_received",
+            json!({
+                "upstream_status": status.as_u16(),
+                "id_token_present": true,
+                "compact_tokens_logged": false,
+            }),
+        );
+        self.verifier
+            .verify_token_with_context(&response.id_token, now, context)
             .await
-            .map_err(|_| GatewayError::OidcUnavailable)?;
-        self.verifier.verify_token(&response.id_token, now).await
     }
 
     fn client_assertion(&self, token_endpoint: &str, now: DateTime<Utc>) -> GatewayResult<String> {
@@ -219,7 +363,8 @@ impl PortalOidcRuntime {
     }
 
     pub async fn end_session_url(&self) -> GatewayResult<String> {
-        let metadata = self.metadata().await?;
+        let context = EntraAuthDebugContext::new("portal_oidc", None);
+        let metadata = self.metadata(context).await?;
         if metadata.issuer != self.config.issuer {
             return Err(GatewayError::OidcUnavailable);
         }
@@ -237,18 +382,114 @@ impl PortalOidcRuntime {
         Ok(url.into())
     }
 
-    async fn metadata(&self) -> GatewayResult<OidcMetadata> {
-        self.client
+    async fn metadata(&self, context: EntraAuthDebugContext<'_>) -> GatewayResult<OidcMetadata> {
+        let response = self
+            .client
             .get(&self.config.discovery_url)
             .send()
             .await
-            .map_err(|_| GatewayError::OidcUnavailable)?
-            .error_for_status()
-            .map_err(|_| GatewayError::OidcUnavailable)?
-            .json::<OidcMetadata>()
-            .await
-            .map_err(|_| GatewayError::OidcUnavailable)
+            .map_err(|error| {
+                self.debug(
+                    context,
+                    "oidc_discovery",
+                    "rejected",
+                    portal_reqwest_error_reason(&error),
+                    Value::Null,
+                );
+                GatewayError::OidcUnavailable
+            })?;
+        if !response.status().is_success() {
+            self.debug(
+                context,
+                "oidc_discovery",
+                "rejected",
+                "discovery_http_status",
+                json!({"upstream_status": response.status().as_u16()}),
+            );
+            return Err(GatewayError::OidcUnavailable);
+        }
+        let metadata = response.json::<OidcMetadata>().await.map_err(|_| {
+            self.debug(
+                context,
+                "oidc_discovery",
+                "rejected",
+                "discovery_json_invalid",
+                Value::Null,
+            );
+            GatewayError::OidcUnavailable
+        })?;
+        self.debug(
+            context,
+            "oidc_discovery",
+            "accepted",
+            "discovery_loaded",
+            json!({
+                "issuer": metadata.issuer,
+                "authorization_endpoint_present": !metadata.authorization_endpoint.is_empty(),
+                "token_endpoint_present": !metadata.token_endpoint.is_empty(),
+                "end_session_endpoint_present": metadata.end_session_endpoint.is_some(),
+            }),
+        );
+        Ok(metadata)
     }
+
+    fn debug(
+        &self,
+        context: EntraAuthDebugContext<'_>,
+        phase: &str,
+        outcome: &str,
+        reason: &str,
+        details: Value,
+    ) {
+        if !gateway_telemetry::authorization_debug_enabled() {
+            return;
+        }
+        gateway_telemetry::authorization_debug(
+            context.surface,
+            phase,
+            outcome,
+            reason,
+            context.request_id,
+            json!({
+                "expected": {
+                    "tenant_id": self.config.tenant_id,
+                    "client_id": self.config.client_id,
+                    "issuer": self.config.issuer,
+                    "redirect_uri": self.config.redirect_uri,
+                },
+                "details": details,
+            }),
+        );
+    }
+}
+
+fn portal_reqwest_error_reason(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "network_timeout"
+    } else if error.is_connect() {
+        "network_connect_failed"
+    } else if error.is_decode() {
+        "response_decode_failed"
+    } else {
+        "network_request_failed"
+    }
+}
+
+fn safe_oidc_error(value: &Value) -> Value {
+    let mut safe = serde_json::Map::new();
+    for name in [
+        "error",
+        "suberror",
+        "error_codes",
+        "timestamp",
+        "trace_id",
+        "correlation_id",
+    ] {
+        if let Some(value) = value.get(name) {
+            safe.insert(name.to_owned(), value.clone());
+        }
+    }
+    Value::Object(safe)
 }
 
 fn validate_certificate_pair(private_key_pem: &[u8], certificate_der: &[u8]) -> GatewayResult<()> {
@@ -502,6 +743,33 @@ mod tests {
         assert_eq!(safe_return_to(Some("/admin-ui#/usage")), "/admin-ui#/usage");
         assert_eq!(safe_return_to(Some("https://evil.example")), "/admin-ui");
         assert_eq!(safe_return_to(Some("//evil.example/admin-ui")), "/admin-ui");
+    }
+
+    #[test]
+    fn provider_error_diagnostics_allowlist_safe_fields() {
+        let source = serde_json::json!({
+            "error": "invalid_grant",
+            "suberror": "bad_token",
+            "error_codes": [70000],
+            "timestamp": "2026-08-25T00:00:00Z",
+            "trace_id": "trace-id",
+            "correlation_id": "correlation-id",
+            "error_description": "may contain supplied or sensitive values",
+            "id_token": "header.payload.signature",
+            "access_token": "secret"
+        });
+
+        assert_eq!(
+            safe_oidc_error(&source),
+            serde_json::json!({
+                "error": "invalid_grant",
+                "suberror": "bad_token",
+                "error_codes": [70000],
+                "timestamp": "2026-08-25T00:00:00Z",
+                "trace_id": "trace-id",
+                "correlation_id": "correlation-id"
+            })
+        );
     }
 
     #[tokio::test]
