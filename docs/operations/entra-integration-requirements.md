@@ -103,8 +103,9 @@ Entra team. This handoff does not use Helm values or templates.
       certificate Secret volume shown in
       `deploy/kubernetes/relayna-gateway.yaml`.
 - [ ] Configure initial administrator email and immutable object-ID allowlists
-      together. After persisted Admin access is verified, clear both bootstrap
-      values and roll the Deployment.
+      together. Require every intended bootstrap administrator to sign in and
+      verify each persisted Admin role before clearing both bootstrap values
+      and rolling the Deployment.
 - [ ] Ask a Relayna administrator to create each required service or project
       managed-identity binding. Record the exact Relayna resource name and
       required `gateway.monitor.read` role; an Entra assignment alone grants no
@@ -238,8 +239,9 @@ PORTAL_SESSION_COOKIE_SECURE=true
 ```
 
 Every initial admin must be represented in both allowlists. Gateway requires a
-verified tenant, object ID, and email match. After sign-in and persisted Admin
-role verification, clear both bootstrap values and roll the Deployment.
+verified tenant, object ID, and email match. Require every intended bootstrap
+administrator to sign in and verify each persisted Admin role before clearing
+both bootstrap values and rolling the Deployment.
 
 For provider/request-plane authorization, set `ENTRA_AUTH_ENABLED=true`,
 `ENTRA_TENANT_ID`, issuer/discovery values, and

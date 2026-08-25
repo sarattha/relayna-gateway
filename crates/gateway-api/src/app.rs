@@ -5107,6 +5107,10 @@ async fn effective_studio_client(state: &AppState) -> GatewayResult<StudioCatalo
     Ok(StudioCatalogClient::new(base_url, connection.token))
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_portal_session(
     state: &AppState,
     headers: &HeaderMap,
@@ -5136,6 +5140,10 @@ async fn require_portal_session(
     Ok(session)
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_active_portal_session(
     state: &AppState,
     headers: &HeaderMap,
@@ -5148,6 +5156,10 @@ async fn require_active_portal_session(
     }
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_owner_service_access(
     state: &AppState,
     headers: &HeaderMap,
@@ -5212,6 +5224,10 @@ async fn require_owner_service_access(
     }
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_owner_project_access(
     state: &AppState,
     headers: &HeaderMap,
@@ -5347,6 +5363,10 @@ fn clear_portal_cookies(headers: &mut HeaderMap, secure: bool) {
     }
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_admin_scope(
     state: &AppState,
     headers: &HeaderMap,
@@ -5355,6 +5375,10 @@ async fn require_admin_scope(
     require_admin_scopes(state, headers, &[required_scope]).await
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_admin_scopes(
     state: &AppState,
     headers: &HeaderMap,
@@ -5407,6 +5431,10 @@ async fn require_admin_scopes(
     })
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_litellm_ui_operator_scope(
     state: &AppState,
     headers: &HeaderMap,
