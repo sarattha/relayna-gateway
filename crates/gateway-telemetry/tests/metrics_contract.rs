@@ -12,8 +12,8 @@ use gateway_telemetry::{
 
 #[test]
 fn metrics_contract_records_every_counter_histogram_and_dimension() {
-    init("not a valid directive[");
-    init("gateway_telemetry=debug");
+    init("not a valid directive[", false);
+    init("gateway_telemetry=debug", false);
     request_started();
     record_request_with_dimensions("chat_completions", "litellm", 101, 1, false);
     record_request_with_dimensions("custom /route", "provider!", 204, 4, false);

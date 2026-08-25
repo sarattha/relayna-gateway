@@ -5,6 +5,7 @@ use hmac::{Hmac, Mac};
 use http::header::HeaderName;
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
 use sha2::Sha256;
 use std::{
     sync::Mutex,
@@ -14,6 +15,24 @@ use std::{
 type HmacSha256 = Hmac<Sha256>;
 pub const ENTRA_DEFAULT_RELAYNA_KEY_HEADER: &str = "X-Relayna-Key";
 const ENTRA_OIDC_HTTP_TIMEOUT: Duration = Duration::from_secs(3);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntraAuthDebugContext<'a> {
+    pub surface: &'a str,
+    pub request_id: Option<&'a str>,
+}
+
+impl<'a> EntraAuthDebugContext<'a> {
+    pub const fn new(surface: &'a str, request_id: Option<&'a str>) -> Self {
+        Self {
+            surface,
+            request_id,
+        }
+    }
+}
+
+const DEFAULT_ENTRA_DEBUG_CONTEXT: EntraAuthDebugContext<'static> =
+    EntraAuthDebugContext::new("entra", None);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntraAuthConfig {
@@ -76,6 +95,25 @@ pub struct EntraIdentityContext {
     pub source: EntraIdentitySource,
 }
 
+pub fn authorization_debug_identity(identity: &EntraIdentityContext) -> Value {
+    json!({
+        "tenant_id": identity.tenant_id,
+        "subject": identity.subject,
+        "object_id": identity.object_id,
+        "app_id": identity.app_id,
+        "authorized_party": identity.authorized_party,
+        "email": identity.email,
+        "display_name": identity.display_name,
+        "nonce_present": identity.nonce.is_some(),
+        "nonce_logged": false,
+        "scopes": identity.scopes,
+        "roles": identity.roles,
+        "groups": identity.groups,
+        "token_version": identity.token_version,
+        "source": identity.source,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntraIdentitySource {
@@ -111,11 +149,40 @@ impl EntraJwtVerifier {
         authorization: Option<&str>,
         now: DateTime<Utc>,
     ) -> GatewayResult<EntraIdentityContext> {
-        let authorization = authorization.ok_or(GatewayError::MissingEntraAuthorization)?;
-        let Some(token) = authorization.strip_prefix("Bearer ") else {
-            return Err(GatewayError::MalformedEntraAuthorization);
+        self.verify_authorization_with_context(authorization, now, DEFAULT_ENTRA_DEBUG_CONTEXT)
+            .await
+    }
+
+    pub async fn verify_authorization_with_context(
+        &self,
+        authorization: Option<&str>,
+        now: DateTime<Utc>,
+        context: EntraAuthDebugContext<'_>,
+    ) -> GatewayResult<EntraIdentityContext> {
+        let Some(authorization) = authorization else {
+            return Err(self.reject(
+                context,
+                "authorization_header",
+                "authorization_header_missing",
+                GatewayError::MissingEntraAuthorization,
+                None,
+                "unverified",
+                Value::Null,
+            ));
         };
-        self.verify_token(token.trim(), now).await
+        let Some(token) = authorization.strip_prefix("Bearer ") else {
+            return Err(self.reject(
+                context,
+                "authorization_header",
+                "bearer_scheme_invalid",
+                GatewayError::MalformedEntraAuthorization,
+                None,
+                "unverified",
+                Value::Null,
+            ));
+        };
+        self.verify_token_with_context(token.trim(), now, context)
+            .await
     }
 
     pub async fn verify_token(
@@ -123,12 +190,50 @@ impl EntraJwtVerifier {
         token: &str,
         now: DateTime<Utc>,
     ) -> GatewayResult<EntraIdentityContext> {
+        self.verify_token_with_context(token, now, DEFAULT_ENTRA_DEBUG_CONTEXT)
+            .await
+    }
+
+    pub async fn verify_token_with_context(
+        &self,
+        token: &str,
+        now: DateTime<Utc>,
+        context: EntraAuthDebugContext<'_>,
+    ) -> GatewayResult<EntraIdentityContext> {
         if token.is_empty() {
-            return Err(GatewayError::MalformedEntraAuthorization);
+            return Err(self.reject(
+                context,
+                "jwt_decode",
+                "token_empty",
+                GatewayError::MalformedEntraAuthorization,
+                None,
+                "unverified",
+                Value::Null,
+            ));
         }
 
-        let header = decode_header(token).map_err(|_| GatewayError::MalformedEntraAuthorization)?;
-        let kid = header.kid.ok_or(GatewayError::InvalidEntraToken)?;
+        let header = decode_header(token).map_err(|_| {
+            self.reject(
+                context,
+                "jwt_decode",
+                "jwt_header_decode_failed",
+                GatewayError::MalformedEntraAuthorization,
+                Some(token),
+                "unverified",
+                Value::Null,
+            )
+        })?;
+        let kid = header.kid.clone().ok_or_else(|| {
+            self.reject(
+                context,
+                "jwt_header",
+                "kid_missing",
+                GatewayError::InvalidEntraToken,
+                Some(token),
+                "unverified",
+                Value::Null,
+            )
+        })?;
         let algorithm = header_algorithm_name(header.alg);
         if !self
             .config
@@ -136,28 +241,103 @@ impl EntraJwtVerifier {
             .iter()
             .any(|accepted| accepted == algorithm)
         {
-            return Err(GatewayError::InvalidEntraToken);
+            return Err(self.reject(
+                context,
+                "jwt_header",
+                "algorithm_not_allowed",
+                GatewayError::InvalidEntraToken,
+                Some(token),
+                "unverified",
+                json!({"actual_algorithm": algorithm}),
+            ));
         }
-        let algorithm =
-            algorithm_to_jsonwebtoken(algorithm).ok_or(GatewayError::InvalidEntraToken)?;
+        let algorithm = algorithm_to_jsonwebtoken(algorithm).ok_or_else(|| {
+            self.reject(
+                context,
+                "jwt_header",
+                "algorithm_unsupported",
+                GatewayError::InvalidEntraToken,
+                Some(token),
+                "unverified",
+                Value::Null,
+            )
+        })?;
 
-        let mut jwk = self.cached_key(&kid).await?;
+        let mut jwk = self.cached_key(&kid).await.map_err(|error| {
+            self.reject(
+                context,
+                "jwks_cache",
+                "jwks_cache_unavailable",
+                error,
+                Some(token),
+                "unverified",
+                Value::Null,
+            )
+        })?;
         if jwk.is_none() {
-            self.refresh_keys().await?;
-            jwk = self.cached_key(&kid).await?;
+            self.refresh_keys(context, token).await?;
+            jwk = self.cached_key(&kid).await.map_err(|error| {
+                self.reject(
+                    context,
+                    "jwks_cache",
+                    "jwks_cache_unavailable_after_refresh",
+                    error,
+                    Some(token),
+                    "unverified",
+                    Value::Null,
+                )
+            })?;
         }
-        let jwk = jwk.ok_or(GatewayError::InvalidEntraToken)?;
+        let jwk = jwk.ok_or_else(|| {
+            self.reject(
+                context,
+                "jwks_key_selection",
+                "kid_not_found_after_refresh",
+                GatewayError::InvalidEntraToken,
+                Some(token),
+                "unverified",
+                json!({"kid": kid}),
+            )
+        })?;
         if jwk.kty != "RSA" {
-            return Err(GatewayError::InvalidEntraToken);
+            return Err(self.reject(
+                context,
+                "jwks_key_selection",
+                "key_type_not_rsa",
+                GatewayError::InvalidEntraToken,
+                Some(token),
+                "unverified",
+                json!({"key_type": jwk.kty}),
+            ));
         }
         if let Some(key_algorithm) = jwk.alg.as_deref() {
             if key_algorithm != header_algorithm_name(header.alg) {
-                return Err(GatewayError::InvalidEntraToken);
+                return Err(self.reject(
+                    context,
+                    "jwks_key_selection",
+                    "key_algorithm_mismatch",
+                    GatewayError::InvalidEntraToken,
+                    Some(token),
+                    "unverified",
+                    json!({
+                        "token_algorithm": header_algorithm_name(header.alg),
+                        "key_algorithm": key_algorithm,
+                    }),
+                ));
             }
         }
 
-        let decoding_key = DecodingKey::from_rsa_components(&jwk.n, &jwk.e)
-            .map_err(|_| GatewayError::InvalidEntraToken)?;
+        let decoding_key = DecodingKey::from_rsa_components(&jwk.n, &jwk.e).map_err(|_| {
+            self.reject(
+                context,
+                "jwks_key_selection",
+                "rsa_key_components_invalid",
+                GatewayError::InvalidEntraToken,
+                Some(token),
+                "unverified",
+                Value::Null,
+            )
+        })?;
         let mut validation = Validation::new(algorithm);
         validation.validate_aud = false;
         validation.validate_exp = false;
@@ -165,9 +345,40 @@ impl EntraJwtVerifier {
         validation.required_spec_claims.clear();
 
         let claims = decode::<EntraClaims>(token, &decoding_key, &validation)
-            .map_err(|_| GatewayError::InvalidEntraToken)?
+            .map_err(|error| {
+                self.reject(
+                    context,
+                    "jwt_signature",
+                    "signature_or_claim_schema_invalid",
+                    GatewayError::InvalidEntraToken,
+                    Some(token),
+                    "unverified",
+                    json!({"verification_error": jwt_error_reason(&error)}),
+                )
+            })?
             .claims;
-        self.validate_claims(claims, now)
+        let identity = self.validate_claims(claims, now).map_err(|failure| {
+            self.reject(
+                context,
+                "jwt_claims",
+                failure.reason,
+                failure.error,
+                Some(token),
+                "signature_verified",
+                json!({"server_time": now.to_rfc3339()}),
+            )
+        })?;
+        self.emit(
+            context,
+            "jwt_claims",
+            "accepted",
+            "token_verified",
+            None,
+            Some(token),
+            "signature_verified",
+            json!({"normalized_identity": authorization_debug_identity(&identity)}),
+        );
+        Ok(identity)
     }
 
     async fn cached_key(&self, kid: &str) -> GatewayResult<Option<JsonWebKey>> {
@@ -187,40 +398,130 @@ impl EntraJwtVerifier {
         Ok(None)
     }
 
-    async fn refresh_keys(&self) -> GatewayResult<()> {
-        let metadata = self
+    async fn refresh_keys(
+        &self,
+        context: EntraAuthDebugContext<'_>,
+        token: &str,
+    ) -> GatewayResult<()> {
+        let metadata_response = self
             .client
             .get(&self.config.oidc_discovery_url)
             .send()
             .await
-            .map_err(|_| GatewayError::InvalidEntraToken)?
-            .error_for_status()
-            .map_err(|_| GatewayError::InvalidEntraToken)?
+            .map_err(|error| {
+                self.reject(
+                    context,
+                    "oidc_discovery",
+                    reqwest_error_reason(&error),
+                    GatewayError::InvalidEntraToken,
+                    Some(token),
+                    "unverified",
+                    Value::Null,
+                )
+            })?;
+        if !metadata_response.status().is_success() {
+            return Err(self.reject(
+                context,
+                "oidc_discovery",
+                "discovery_http_status",
+                GatewayError::InvalidEntraToken,
+                Some(token),
+                "unverified",
+                json!({"upstream_status": metadata_response.status().as_u16()}),
+            ));
+        }
+        let metadata = metadata_response
             .json::<OidcMetadata>()
             .await
-            .map_err(|_| GatewayError::InvalidEntraToken)?;
+            .map_err(|_| {
+                self.reject(
+                    context,
+                    "oidc_discovery",
+                    "discovery_json_invalid",
+                    GatewayError::InvalidEntraToken,
+                    Some(token),
+                    "unverified",
+                    Value::Null,
+                )
+            })?;
         if metadata.issuer != self.config.issuer {
-            return Err(GatewayError::InvalidEntraIssuer);
+            return Err(self.reject(
+                context,
+                "oidc_discovery",
+                "discovery_issuer_mismatch",
+                GatewayError::InvalidEntraIssuer,
+                Some(token),
+                "unverified",
+                json!({"discovered_issuer": metadata.issuer}),
+            ));
         }
-        let jwks = self
+        let jwks_response = self
             .client
             .get(metadata.jwks_uri)
             .send()
             .await
-            .map_err(|_| GatewayError::InvalidEntraToken)?
-            .error_for_status()
-            .map_err(|_| GatewayError::InvalidEntraToken)?
-            .json::<JwksDocument>()
-            .await
-            .map_err(|_| GatewayError::InvalidEntraToken)?;
+            .map_err(|error| {
+                self.reject(
+                    context,
+                    "jwks_refresh",
+                    reqwest_error_reason(&error),
+                    GatewayError::InvalidEntraToken,
+                    Some(token),
+                    "unverified",
+                    Value::Null,
+                )
+            })?;
+        if !jwks_response.status().is_success() {
+            return Err(self.reject(
+                context,
+                "jwks_refresh",
+                "jwks_http_status",
+                GatewayError::InvalidEntraToken,
+                Some(token),
+                "unverified",
+                json!({"upstream_status": jwks_response.status().as_u16()}),
+            ));
+        }
+        let jwks = jwks_response.json::<JwksDocument>().await.map_err(|_| {
+            self.reject(
+                context,
+                "jwks_refresh",
+                "jwks_json_invalid",
+                GatewayError::InvalidEntraToken,
+                Some(token),
+                "unverified",
+                Value::Null,
+            )
+        })?;
+        let key_count = jwks.keys.len();
         let expires_at = Instant::now() + Duration::from_secs(self.config.jwks_cache_ttl_seconds);
-        *self
-            .cache
-            .lock()
-            .map_err(|_| GatewayError::InvalidEntraToken)? = Some(CachedJwks {
+        *self.cache.lock().map_err(|_| {
+            self.reject(
+                context,
+                "jwks_cache",
+                "jwks_cache_write_failed",
+                GatewayError::InvalidEntraToken,
+                Some(token),
+                "unverified",
+                Value::Null,
+            )
+        })? = Some(CachedJwks {
             keys: jwks.keys,
             expires_at,
         });
+        self.emit(
+            context,
+            "jwks_refresh",
+            "accepted",
+            "jwks_cache_refreshed",
+            None,
+            Some(token),
+            "unverified",
+            json!({
+                "key_count": key_count,
+                "cache_ttl_seconds": self.config.jwks_cache_ttl_seconds,
+            }),
+        );
         Ok(())
     }
 
@@ -228,53 +529,80 @@ impl EntraJwtVerifier {
         &self,
         claims: EntraClaims,
         now: DateTime<Utc>,
-    ) -> GatewayResult<EntraIdentityContext> {
+    ) -> Result<EntraIdentityContext, ClaimValidationFailure> {
         if claims.iss != self.config.issuer {
-            return Err(GatewayError::InvalidEntraIssuer);
+            return Err(ClaimValidationFailure::new(
+                GatewayError::InvalidEntraIssuer,
+                "issuer_mismatch",
+            ));
         }
         if claims.tid != self.config.tenant_id {
-            return Err(GatewayError::InvalidEntraIssuer);
+            return Err(ClaimValidationFailure::new(
+                GatewayError::InvalidEntraIssuer,
+                "tenant_mismatch",
+            ));
         }
         if !audience_contains(&claims.aud, &self.config.audience) {
-            return Err(GatewayError::InvalidEntraAudience);
+            return Err(ClaimValidationFailure::new(
+                GatewayError::InvalidEntraAudience,
+                "audience_mismatch",
+            ));
         }
 
         let skew = ChronoDuration::seconds(self.config.clock_skew_seconds);
         if timestamp_to_datetime(claims.exp).is_none_or(|expires_at| expires_at + skew <= now) {
-            return Err(GatewayError::ExpiredEntraToken);
+            return Err(ClaimValidationFailure::new(
+                GatewayError::ExpiredEntraToken,
+                "token_expired",
+            ));
         }
         if claims
             .nbf
             .and_then(timestamp_to_datetime)
             .is_some_and(|not_before| not_before - skew > now)
         {
-            return Err(GatewayError::InvalidEntraToken);
+            return Err(ClaimValidationFailure::new(
+                GatewayError::InvalidEntraToken,
+                "token_not_yet_valid",
+            ));
         }
         if claims
             .iat
             .and_then(timestamp_to_datetime)
             .is_some_and(|issued_at| issued_at - skew > now)
         {
-            return Err(GatewayError::InvalidEntraToken);
+            return Err(ClaimValidationFailure::new(
+                GatewayError::InvalidEntraToken,
+                "issued_at_in_future",
+            ));
         }
         if claims.ver != "1.0" && claims.ver != "2.0" {
-            return Err(GatewayError::InvalidEntraToken);
+            return Err(ClaimValidationFailure::new(
+                GatewayError::InvalidEntraToken,
+                "token_version_unsupported",
+            ));
         }
         if claims.has_group_overage() {
-            return Err(GatewayError::InsufficientEntraAuthorization);
+            return Err(ClaimValidationFailure::new(
+                GatewayError::InsufficientEntraAuthorization,
+                "group_overage_not_supported",
+            ));
         }
 
         let scopes = split_scopes(claims.scp.as_deref());
         let roles = claims.roles.unwrap_or_default();
         let groups = claims.groups.unwrap_or_default();
-        validate_entra_authorization(
+        validate_entra_authorization_detailed(
             self.config.required_scope.as_deref(),
             self.config.required_role.as_deref(),
             &self.config.allowed_groups,
             &scopes,
             &roles,
             &groups,
-        )?;
+        )
+        .map_err(|reason| {
+            ClaimValidationFailure::new(GatewayError::InsufficientEntraAuthorization, reason)
+        })?;
 
         Ok(EntraIdentityContext {
             tenant_id: claims.tid,
@@ -291,6 +619,82 @@ impl EntraJwtVerifier {
             token_version: claims.ver,
             source: EntraIdentitySource::Jwt,
         })
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "authorization rejection keeps the public error and structured debug evidence together"
+    )]
+    fn reject(
+        &self,
+        context: EntraAuthDebugContext<'_>,
+        phase: &str,
+        reason: &str,
+        error: GatewayError,
+        token: Option<&str>,
+        token_trust: &str,
+        extra: Value,
+    ) -> GatewayError {
+        self.emit(
+            context,
+            phase,
+            "rejected",
+            reason,
+            Some(&error),
+            token,
+            token_trust,
+            extra,
+        );
+        error
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit(
+        &self,
+        context: EntraAuthDebugContext<'_>,
+        phase: &str,
+        outcome: &str,
+        reason: &str,
+        error: Option<&GatewayError>,
+        token: Option<&str>,
+        token_trust: &str,
+        extra: Value,
+    ) {
+        if !gateway_telemetry::authorization_debug_enabled() {
+            return;
+        }
+        let mut details = Map::new();
+        details.insert(
+            "expected".to_owned(),
+            json!({
+                "tenant_id": self.config.tenant_id,
+                "audience": self.config.audience,
+                "issuer": self.config.issuer,
+                "required_scope": self.config.required_scope,
+                "required_role": self.config.required_role,
+                "allowed_groups": self.config.allowed_groups,
+                "accepted_algorithms": self.config.accepted_algorithms,
+                "clock_skew_seconds": self.config.clock_skew_seconds,
+            }),
+        );
+        if let Some(error) = error {
+            details.insert("public_error_code".to_owned(), json!(error.code()));
+        }
+        if let Some(token) = token {
+            details.insert("token_trust".to_owned(), json!(token_trust));
+            details.insert("token".to_owned(), decoded_jwt_debug(token));
+        }
+        if let Value::Object(extra) = extra {
+            details.extend(extra);
+        }
+        gateway_telemetry::authorization_debug(
+            context.surface,
+            phase,
+            outcome,
+            reason,
+            context.request_id,
+            Value::Object(details),
+        );
     }
 
     #[cfg(test)]
@@ -313,6 +717,81 @@ fn entra_http_client() -> GatewayResult<reqwest::Client> {
         .map_err(|_| GatewayError::InvalidConfiguration)
 }
 
+#[derive(Debug)]
+struct ClaimValidationFailure {
+    error: GatewayError,
+    reason: &'static str,
+}
+
+impl ClaimValidationFailure {
+    const fn new(error: GatewayError, reason: &'static str) -> Self {
+        Self { error, reason }
+    }
+}
+
+fn decoded_jwt_debug(token: &str) -> Value {
+    let mut segments = token.split('.');
+    let Some(header) = segments.next() else {
+        return json!({"decode_error": "header_segment_missing"});
+    };
+    let Some(claims) = segments.next() else {
+        return json!({"decode_error": "claims_segment_missing"});
+    };
+    if segments.next().is_none() || segments.next().is_some() {
+        return json!({"decode_error": "compact_segment_count_invalid"});
+    }
+    let claims = decode_jwt_segment(claims)
+        .map(redact_transaction_claims)
+        .unwrap_or_else(|reason| json!({"decode_error": reason}));
+    json!({
+        "header": decode_jwt_segment(header).unwrap_or_else(|reason| json!({"decode_error": reason})),
+        "claims": claims,
+    })
+}
+
+fn redact_transaction_claims(mut claims: Value) -> Value {
+    if let Value::Object(values) = &mut claims {
+        for name in ["nonce", "at_hash", "c_hash", "s_hash"] {
+            if values.contains_key(name) {
+                values.insert(name.to_owned(), Value::String("[redacted]".to_owned()));
+            }
+        }
+    }
+    claims
+}
+
+fn decode_jwt_segment(segment: &str) -> Result<Value, &'static str> {
+    let decoded = URL_SAFE_NO_PAD
+        .decode(segment)
+        .map_err(|_| "base64url_invalid")?;
+    serde_json::from_slice(&decoded).map_err(|_| "json_invalid")
+}
+
+fn reqwest_error_reason(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "network_timeout"
+    } else if error.is_connect() {
+        "network_connect_failed"
+    } else if error.is_decode() {
+        "response_decode_failed"
+    } else {
+        "network_request_failed"
+    }
+}
+
+fn jwt_error_reason(error: &jsonwebtoken::errors::Error) -> &'static str {
+    use jsonwebtoken::errors::ErrorKind;
+    match error.kind() {
+        ErrorKind::InvalidSignature => "invalid_signature",
+        ErrorKind::InvalidAlgorithm => "invalid_algorithm",
+        ErrorKind::MissingRequiredClaim(_) => "required_claim_missing",
+        ErrorKind::Json(_) => "claim_json_invalid",
+        ErrorKind::Base64(_) => "base64url_invalid",
+        ErrorKind::Utf8(_) => "utf8_invalid",
+        _ => "jwt_verification_failed",
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApigeeTrustedHeaderConfig {
     pub secret: String,
@@ -328,20 +807,6 @@ impl ApigeeTrustedHeaderConfig {
         }
         Ok(())
     }
-
-    fn validate_identity_authorization(
-        &self,
-        identity: &EntraIdentityContext,
-    ) -> GatewayResult<()> {
-        validate_entra_authorization(
-            self.required_scope.as_deref(),
-            self.required_role.as_deref(),
-            &self.allowed_groups,
-            &identity.scopes,
-            &identity.roles,
-            &identity.groups,
-        )
-    }
 }
 
 pub fn verify_apigee_trusted_identity(
@@ -349,21 +814,146 @@ pub fn verify_apigee_trusted_identity(
     signature_header: Option<&str>,
     config: &ApigeeTrustedHeaderConfig,
 ) -> GatewayResult<EntraIdentityContext> {
+    verify_apigee_trusted_identity_with_context(
+        identity_header,
+        signature_header,
+        config,
+        DEFAULT_ENTRA_DEBUG_CONTEXT,
+    )
+}
+
+pub fn verify_apigee_trusted_identity_with_context(
+    identity_header: Option<&str>,
+    signature_header: Option<&str>,
+    config: &ApigeeTrustedHeaderConfig,
+    context: EntraAuthDebugContext<'_>,
+) -> GatewayResult<EntraIdentityContext> {
     config.validate()?;
-    let identity_header = identity_header.ok_or(GatewayError::UntrustedApigeeIdentity)?;
-    let signature_header = signature_header.ok_or(GatewayError::UntrustedApigeeIdentity)?;
+    let identity_header = identity_header.ok_or_else(|| {
+        apigee_debug(
+            context,
+            config,
+            "trusted_header",
+            "rejected",
+            "identity_header_missing",
+            None,
+            Some(&GatewayError::UntrustedApigeeIdentity),
+        );
+        GatewayError::UntrustedApigeeIdentity
+    })?;
+    let signature_header = signature_header.ok_or_else(|| {
+        apigee_debug(
+            context,
+            config,
+            "trusted_header",
+            "rejected",
+            "signature_header_missing",
+            None,
+            Some(&GatewayError::UntrustedApigeeIdentity),
+        );
+        GatewayError::UntrustedApigeeIdentity
+    })?;
     let expected = hmac_sha256_base64url(config.secret.as_bytes(), identity_header.as_bytes())?;
     if !constant_time_eq(expected.as_bytes(), signature_header.as_bytes()) {
+        apigee_debug(
+            context,
+            config,
+            "trusted_header_signature",
+            "rejected",
+            "signature_mismatch",
+            None,
+            Some(&GatewayError::UntrustedApigeeIdentity),
+        );
         return Err(GatewayError::UntrustedApigeeIdentity);
     }
-    let identity_json = URL_SAFE_NO_PAD
-        .decode(identity_header)
-        .map_err(|_| GatewayError::UntrustedApigeeIdentity)?;
-    let mut identity: EntraIdentityContext = serde_json::from_slice(&identity_json)
-        .map_err(|_| GatewayError::UntrustedApigeeIdentity)?;
+    let identity_json = URL_SAFE_NO_PAD.decode(identity_header).map_err(|_| {
+        apigee_debug(
+            context,
+            config,
+            "trusted_header_payload",
+            "rejected",
+            "identity_base64url_invalid",
+            None,
+            Some(&GatewayError::UntrustedApigeeIdentity),
+        );
+        GatewayError::UntrustedApigeeIdentity
+    })?;
+    let mut identity: EntraIdentityContext =
+        serde_json::from_slice(&identity_json).map_err(|_| {
+            apigee_debug(
+                context,
+                config,
+                "trusted_header_payload",
+                "rejected",
+                "identity_json_invalid",
+                None,
+                Some(&GatewayError::UntrustedApigeeIdentity),
+            );
+            GatewayError::UntrustedApigeeIdentity
+        })?;
     identity.source = EntraIdentitySource::ApigeeTrustedHeader;
-    config.validate_identity_authorization(&identity)?;
+    if let Err(reason) = validate_entra_authorization_detailed(
+        config.required_scope.as_deref(),
+        config.required_role.as_deref(),
+        &config.allowed_groups,
+        &identity.scopes,
+        &identity.roles,
+        &identity.groups,
+    ) {
+        apigee_debug(
+            context,
+            config,
+            "trusted_header_authorization",
+            "rejected",
+            reason,
+            Some(&identity),
+            Some(&GatewayError::InsufficientEntraAuthorization),
+        );
+        return Err(GatewayError::InsufficientEntraAuthorization);
+    }
+    apigee_debug(
+        context,
+        config,
+        "trusted_header_authorization",
+        "accepted",
+        "identity_verified",
+        Some(&identity),
+        None,
+    );
     Ok(identity)
+}
+
+fn apigee_debug(
+    context: EntraAuthDebugContext<'_>,
+    config: &ApigeeTrustedHeaderConfig,
+    phase: &str,
+    outcome: &str,
+    reason: &str,
+    identity: Option<&EntraIdentityContext>,
+    error: Option<&GatewayError>,
+) {
+    if !gateway_telemetry::authorization_debug_enabled() {
+        return;
+    }
+    gateway_telemetry::authorization_debug(
+        context.surface,
+        phase,
+        outcome,
+        reason,
+        context.request_id,
+        json!({
+            "public_error_code": error.map(GatewayError::code),
+            "identity_trust": identity.map(|_| "hmac_verified").unwrap_or("unverified"),
+            "identity": identity.map(authorization_debug_identity),
+            "expected": {
+                "required_scope": config.required_scope,
+                "required_role": config.required_role,
+                "allowed_groups": config.allowed_groups,
+            },
+            "identity_header_logged": false,
+            "signature_header_logged": false,
+        }),
+    );
 }
 
 pub fn sign_apigee_trusted_identity(
@@ -391,22 +981,22 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
-fn validate_entra_authorization(
+fn validate_entra_authorization_detailed(
     required_scope: Option<&str>,
     required_role: Option<&str>,
     allowed_groups: &[String],
     scopes: &[String],
     roles: &[String],
     groups: &[String],
-) -> GatewayResult<()> {
+) -> Result<(), &'static str> {
     if let Some(required_scope) = required_scope {
         if !scopes.iter().any(|scope| scope == required_scope) {
-            return Err(GatewayError::InsufficientEntraAuthorization);
+            return Err("required_scope_missing");
         }
     }
     if let Some(required_role) = required_role {
         if !roles.iter().any(|role| role == required_role) {
-            return Err(GatewayError::InsufficientEntraAuthorization);
+            return Err("required_role_missing");
         }
     }
     if !allowed_groups.is_empty()
@@ -414,7 +1004,7 @@ fn validate_entra_authorization(
             .iter()
             .any(|allowed| groups.iter().any(|group| group == allowed))
     {
-        return Err(GatewayError::InsufficientEntraAuthorization);
+        return Err("allowed_group_missing");
     }
     Ok(())
 }
@@ -686,6 +1276,52 @@ mod tests {
             "scp": "gateway.invoke",
             "groups": ["group-1"]
         })
+    }
+
+    #[test]
+    fn decoded_debug_token_exposes_all_claims_without_compact_credential() {
+        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256","kid":"debug-kid"}"#);
+        let claims = URL_SAFE_NO_PAD.encode(
+            br#"{"tid":"tenant-1","roles":["gateway.invoke"],"nonce":"do-not-log","tenant_extension":{"mode":"custom"}}"#,
+        );
+        let compact = format!("{header}.{claims}.replayable-signature");
+
+        let decoded = decoded_jwt_debug(&compact);
+
+        assert_eq!(decoded["header"]["kid"], "debug-kid");
+        assert_eq!(decoded["claims"]["roles"][0], "gateway.invoke");
+        assert_eq!(decoded["claims"]["nonce"], "[redacted]");
+        assert_eq!(decoded["claims"]["tenant_extension"]["mode"], "custom");
+        let rendered = decoded.to_string();
+        assert!(!rendered.contains(&compact));
+        assert!(!rendered.contains("replayable-signature"));
+        assert!(!rendered.contains("do-not-log"));
+    }
+
+    #[test]
+    fn detailed_authorization_reasons_identify_missing_requirement() {
+        assert_eq!(
+            validate_entra_authorization_detailed(
+                Some("gateway.invoke"),
+                None,
+                &[],
+                &["other.scope".to_owned()],
+                &[],
+                &[],
+            ),
+            Err("required_scope_missing")
+        );
+        assert_eq!(
+            validate_entra_authorization_detailed(
+                None,
+                Some("gateway.monitor.read"),
+                &[],
+                &[],
+                &["other.role".to_owned()],
+                &[],
+            ),
+            Err("required_role_missing")
+        );
     }
 
     fn jwks_json(jwk: &JsonWebKey) -> String {

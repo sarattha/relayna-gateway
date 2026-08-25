@@ -7,7 +7,7 @@ receive least-privilege application roles. Certificate-backed OIDC uses PS256
 `private_key_jwt`, `x5t#S256`, the exact token-endpoint audience, five-minute
 assertions, and overlap certificate rotation.
 
-## DevOps-owned objects
+## Entra application contract
 
 Create one Entra application registration in one tenant:
 
@@ -25,6 +25,109 @@ Human portal sign-in does not require an Entra application role. Human Admin,
 Owner, and Viewer authorization remains stored and enforced by Relayna after
 Entra authenticates the user.
 
+## Entra team checklist
+
+Complete Entra changes plan-first against the exact tenant and application.
+The change record must identify the environment, tenant ID, application ID,
+redirect and logout URIs, public-certificate fingerprint, and affected managed
+identities before anything is applied. Never include private keys, access
+tokens, client assertions, or Kubernetes Secret values in the plan or evidence.
+
+- [ ] Confirm the target tenant ID, shared Relayna Gateway application ID, and
+      production host with DevOps.
+- [ ] Confirm that one existing or new application registration is used as
+      both the confidential Web client and API resource; do not create a second
+      API registration.
+- [ ] Configure the exact Web redirect URI
+      `https://<gateway-host>/admin-ui/auth/callback` and logout return
+      `https://<gateway-host>/admin-ui`.
+- [ ] Enable ID tokens, set the identifier URI to
+      `api://<application-id>`, and request v2 access tokens.
+- [ ] Confirm that the application defines no delegated product scopes and has
+      no client secret.
+- [ ] Register only the approved public certificate and record its SHA-256
+      fingerprint and expiry. Keep the previous public certificate registered
+      during an overlap rotation.
+- [ ] Define `gateway.invoke` and `gateway.monitor.read` as application roles
+      allowed for `Applications`; do not define Relayna's `Admin`, `Owner`, or
+      `Viewer` roles in Entra.
+- [ ] After DevOps supplies each managed identity's immutable service-principal
+      object ID, assign only the required application role or roles.
+- [ ] Verify that the shared application's service principal and every role
+      assignment are in the intended tenant. Allow for managed-identity token
+      caching, then validate with a newly acquired token.
+- [ ] Hand DevOps the tenant ID, application ID, identifier URI, issuer,
+      discovery URL, role values, certificate fingerprint and expiry, and
+      role-assignment evidence. Do not hand off private key material.
+
+Entra sign-off is complete when the application configuration and assignments
+match the handoff values, a fresh `gateway.invoke` token and a fresh
+`gateway.monitor.read` token have the application ID GUID as `aud`, and each
+token contains only the role assigned to that identity.
+
+## DevOps team checklist
+
+DevOps owns the environment-specific runtime, managed identities, federation,
+plain Kubernetes ConfigMap and Secret objects, network boundary, deployment,
+and rollback evidence. Entra application and role mutations remain with the
+Entra team. This handoff does not use Helm values or templates.
+
+- [ ] Give the Entra team the exact environment, tenant ID, production host,
+      callback/logout URIs, and approved public certificate. Never send the
+      private key.
+- [ ] Create one user-assigned managed identity per approved environment,
+      workload, team, and capability boundary. Do not share identities merely
+      to reduce their count.
+- [ ] Configure AKS workload-identity federation for each exact Kubernetes
+      service account and provide the Entra team with the identity's client ID,
+      immutable service-principal object ID, display name, and required app
+      role.
+- [ ] Obtain the Entra handoff values and role-assignment evidence before
+      creating or updating the Gateway's Kubernetes objects.
+- [ ] Create or update the normal `v1/ConfigMap` named
+      `relayna-gateway-config` with the values in [Kubernetes ConfigMap and
+      Secrets](#kubernetes-configmap-and-secrets). Use the one handed-off
+      `ENTRA_APPLICATION_ID` for portal, request-plane, and monitoring modes;
+      do not put credentials or private key material in the ConfigMap.
+- [ ] Create or update the normal `v1/Secret` named
+      `relayna-gateway-secrets` for database, Redis, LiteLLM, Entra verifier,
+      and other application secrets.
+- [ ] Create or update the normal `v1/Secret` named
+      `relayna-gateway-portal-oidc` with the matching
+      `portal-private-key.pem` and `portal-certificate.pem` files. Keep the
+      previous Secret version recoverable for the rollback window; do not
+      commit Secret values to Git or package them as Helm values.
+- [ ] Apply the ConfigMap, Secrets, and raw Deployment independently with the
+      environment's normal `kubectl` or raw-manifest workflow. Confirm the
+      Deployment uses `configMapRef`, `secretRef`, and the read-only portal
+      certificate Secret volume shown in
+      `deploy/kubernetes/relayna-gateway.yaml`.
+- [ ] Configure initial administrator email and immutable object-ID allowlists
+      together. Require every intended bootstrap administrator to sign in and
+      verify each persisted Admin role before clearing both bootstrap values
+      and rolling the Deployment.
+- [ ] Ask a Relayna administrator to create each required service or project
+      managed-identity binding. Record the exact Relayna resource name and
+      required `gateway.monitor.read` role; an Entra assignment alone grants no
+      monitoring access.
+- [ ] Keep `/admin-ui` and `/owner/v1` behind the approved internal ingress and
+      ensure its namespace has `relayna.io/control-plane-access=true`.
+- [ ] Run the raw-manifest dry run and
+      `scripts/entra/verify-deployment.sh`, then execute every check in
+      [Network and verification contract](#network-and-verification-contract).
+- [ ] Record the deployed image digest, ConfigMap revision, non-secret Secret
+      version identifiers, certificate fingerprint, Deployment revision, and
+      rollback owner. Do not capture Secret contents or tokens.
+- [ ] During certificate rotation, require Entra to register the new public
+      certificate first; then roll the matching Secret, verify the deployment,
+      and remove the old certificate only after the observation window.
+
+DevOps sign-off is complete when the verifier passes, browser sign-in and
+logout pass, first-admin bootstrap has been removed, an allowed monitoring
+resource returns HTTP 200, an unbound resource is denied, request-plane policy
+still requires a Relayna virtual key, and the previous deployment and Secret
+versions remain recoverable.
+
 Create one user-assigned managed identity per approved workload security
 boundary. A deployment that uses both service-to-service surfaces should start
 with two identities:
@@ -40,16 +143,16 @@ boundaries merely to reduce the count. Assigning both roles to one identity is
 allowed only when the combined blast radius is an explicit least-privilege
 decision. Create one Relayna binding per monitored service.
 
-For every managed identity, DevOps must:
+For every managed identity, the teams must:
 
-1. Assign only the shared application's role or roles required by that managed
-   identity service principal.
-2. Configure AKS workload-identity federation for the intended Kubernetes
-   service account outside this repository.
-3. Give the Relayna administrator the tenant ID, managed-identity client ID,
-   immutable service-principal object ID, display name, and exact Relayna
-   service name.
-4. For monitoring identities, create an enabled managed-identity binding in
+1. The Entra team assigns only the shared application's role or roles required
+   by that managed identity service principal.
+2. DevOps configures AKS workload-identity federation for the intended
+   Kubernetes service account outside this repository.
+3. DevOps gives the Relayna administrator the tenant ID, managed-identity
+   client ID, immutable service-principal object ID, display name, and exact
+   Relayna service or project name.
+4. The Relayna administrator creates an enabled managed-identity binding in
    **Members** for each allowed service or project, with required role
    `gateway.monitor.read`.
 
@@ -112,6 +215,12 @@ supplied, immutable object ID against the enabled service binding.
 
 ## Kubernetes ConfigMap and Secrets
 
+Use ordinary Kubernetes `v1/ConfigMap` and `v1/Secret` objects, applied through
+the environment's normal `kubectl` or raw-manifest workflow. Do not move these
+values into a Helm chart. The checked-in
+`deploy/kubernetes/relayna-gateway.yaml` shows the required object names and
+Deployment references; DevOps replaces every placeholder before deployment.
+
 Set these portal values in `relayna-gateway-config`:
 
 ```text
@@ -127,11 +236,19 @@ PORTAL_OIDC_POST_LOGOUT_REDIRECT_URI=https://<gateway-host>/admin-ui
 PORTAL_ADMIN_EMAILS=<comma-separated initial admin emails>
 PORTAL_ADMIN_OBJECT_IDS=<comma-separated immutable Entra user object IDs>
 PORTAL_SESSION_COOKIE_SECURE=true
+ENTRA_AUTH_DEBUG=false
 ```
 
+Keep `ENTRA_AUTH_DEBUG=false` during normal operation. During a controlled
+incident, it can be set to `true` temporarily to record every Entra validation,
+portal login, and cookie-session decision. The logs may contain decoded claims;
+follow the retention and access controls in the
+[debug-mode runbook](entra-authorization-debug.md).
+
 Every initial admin must be represented in both allowlists. Gateway requires a
-verified tenant, object ID, and email match. After sign-in and persisted Admin
-role verification, clear both bootstrap values and roll the Deployment.
+verified tenant, object ID, and email match. Require every intended bootstrap
+administrator to sign in and verify each persisted Admin role before clearing
+both bootstrap values and rolling the Deployment.
 
 For provider/request-plane authorization, set `ENTRA_AUTH_ENABLED=true`,
 `ENTRA_TENANT_ID`, issuer/discovery values, and
@@ -162,7 +279,7 @@ Then set `ENTRA_APPLICATION_ID` to the shared application ID GUID and remove:
 Existing browser sessions may be invalid after the application-ID cutover; ask
 users to sign in again. Existing Relayna members, service memberships, managed
 identity service bindings, virtual keys, and usage data do not require data
-rewrites. Release `0.1.28` creates separate project membership and project
+rewrites. Release `0.1.29` retains the separate project membership and project
 managed-identity binding tables.
 
 ## Certificate standard and lifecycle
@@ -197,6 +314,8 @@ Before production sign-off:
 5. Verify certificate fingerprint, expiry, Deployment availability, and both
    private Ingress paths.
 
-Helm templates, tenant provisioning, managed-identity creation, app-role
-assignment automation, and AKS workload-identity automation are intentionally
-outside this repository change and remain DevOps responsibilities.
+Entra tenant/application provisioning and app-role assignment automation remain
+Entra-team responsibilities. Managed-identity creation, AKS workload-identity
+automation, and the plain Kubernetes ConfigMap, Secrets, and Deployment remain
+DevOps responsibilities. Helm is not part of this handoff. All environment
+values and identity mutations remain outside this repository.

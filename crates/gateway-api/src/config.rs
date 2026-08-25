@@ -25,6 +25,7 @@ pub struct Config {
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
     pub portal_oidc: Option<PortalOidcConfig>,
     pub owner_entra_auth: Option<EntraAuthConfig>,
+    pub entra_auth_debug: bool,
     pub gateway_bind_addr: SocketAddr,
     pub gateway_control_bind_addr: SocketAddr,
     pub gateway_max_buffered_requests: usize,
@@ -149,6 +150,7 @@ impl Config {
         } else {
             None
         };
+        let entra_auth_debug = optional_bool("ENTRA_AUTH_DEBUG")?.unwrap_or(false);
         let gateway_bind_addr = required("GATEWAY_BIND_ADDR")?
             .parse()
             .map_err(|_| GatewayError::InvalidConfiguration)?;
@@ -183,6 +185,7 @@ impl Config {
             apigee_trusted_header,
             portal_oidc,
             owner_entra_auth,
+            entra_auth_debug,
             gateway_bind_addr,
             gateway_control_bind_addr,
             gateway_max_buffered_requests,

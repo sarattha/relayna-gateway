@@ -45,6 +45,21 @@ To request the managed-identity token and inspect the project API:
     curl --header "Authorization: Bearer ${ACCESS_TOKEN}" \
       http://127.0.0.1:18381/owner/v1/projects/10000000-0000-0000-0000-000000000001/dashboard
 
+To test direct request-plane Entra authorization as well, start the stack with
+`ENTRA_AUTH_ENABLED=true`. Request a token for client
+`00000000-0000-0000-0000-000000000101` using secret
+`relayna-development-invoke-secret`; that development identity carries only
+`gateway.invoke`. A request must also supply a valid Relayna virtual key in
+`X-Relayna-Key`.
+
+The Compose file also accepts `APIGEE_TRUSTED_HEADER_ENABLED` and
+`APIGEE_TRUSTED_HEADER_SECRET` overrides for development-only signed trusted
+identity testing. Leave them disabled unless that path is under test.
+
+Set `ENTRA_AUTH_DEBUG=true` only while inspecting the structured authorization
+trail described in
+[`docs/operations/entra-authorization-debug.md`](../../docs/operations/entra-authorization-debug.md).
+
 Stop the stack while preserving its local PostgreSQL volume with:
 
     docker compose -f deploy/local/docker-compose.yml down

@@ -34,6 +34,7 @@ nav:
   - Current Feature Highlights: current-features.md
   - LiteLLM Passthrough: litellm-passthrough.md
   - Entra ID Auth: entra-id-auth.md
+  - Entra Authorization Debug Mode: operations/entra-authorization-debug.md
   - Apigee Gateway Path: apigee-gateway-path.md
   - Guardrails: guardrails.md
   - Provider Intelligence: provider-intelligence.md

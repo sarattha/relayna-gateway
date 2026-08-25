@@ -25,6 +25,7 @@ Optional variables:
 | `RELAYNA_STUDIO_TOKEN` | Optional bearer token used when Gateway fetches the Studio service catalog. |
 | `GATEWAY_MAX_BUFFERED_REQUESTS` | Maximum concurrent managed requests or post-call responses that may retain complete bodies in memory. Defaults to `8`. |
 | `GATEWAY_MAX_INFLIGHT_BUFFER_BYTES` | Maximum aggregate serialized body bytes retained by buffered proxy requests and responses. Defaults to `536870912` (512 MiB). |
+| `ENTRA_AUTH_DEBUG` | Enables the temporary structured Entra, trusted-Apigee, portal-login, and cookie-session decision trail. Defaults to `false`; see [Entra Authorization Debug Mode](operations/entra-authorization-debug.md). |
 
 Body admission limits are process-wide and complement per-route request limits.
 When a valid request cannot acquire process body capacity, Gateway returns
@@ -228,6 +229,12 @@ points. Configure `LOG_LEVEL` with standard Rust tracing filters, for example:
 LOG_LEVEL=info,gateway_proxy=debug,gateway_api=info
 ```
 
+`ENTRA_AUTH_DEBUG=true` enables its dedicated warning-level diagnostic target
+even when `LOG_LEVEL` would normally hide debug events. Do not use it as a
+general verbosity switch: decoded Entra claims can contain personal data. Use
+the [Entra Authorization Debug Mode](operations/entra-authorization-debug.md)
+runbook to enable, interpret, and disable it.
+
 If logs are shipped to an OpenTelemetry collector through the deployment
 platform, map the `otel.trace_id` field and `traceparent` header to the same
 trace context. The gateway does not use request IDs or trace IDs as Prometheus
@@ -291,7 +298,7 @@ Before deploying a new release:
    For `0.1.26`, verify existing operator-token access remains available, new
    Entra identities start pending, exact service and project memberships scope owner data,
    and unmanaged workload identities are denied.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.28`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.29`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
 
 ## Supply Chain and Runtime Hardening

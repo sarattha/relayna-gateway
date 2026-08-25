@@ -99,6 +99,7 @@ The environment variables are listed below. Empty strings are treated as unset.
 | --- | --- | --- | --- |
 | `ENTRA_APPLICATION_ID` | When any Entra mode is enabled | none | One Entra application ID GUID shared by portal OIDC, request-plane access-token validation, and owner monitoring. For v2 access tokens this is the expected `aud`; managed identities request `api://<application-id>/.default`. |
 | `ENTRA_AUTH_ENABLED` | No | `false` | Enables direct Entra JWT validation for proxy traffic. |
+| `ENTRA_AUTH_DEBUG` | No | `false` | Emits a structured, high-detail authorization decision trail for all Entra surfaces and portal cookie sessions. This can include decoded token claims and must be enabled only for controlled diagnostics. See [Entra Authorization Debug Mode](operations/entra-authorization-debug.md). |
 | `ENTRA_TENANT_ID` | When enabled | none | Expected `tid` claim. Use the tenant GUID or tenant identifier your app tokens carry. |
 | `ENTRA_ISSUER` | When enabled | none | Expected token issuer. For v2 tokens this is usually `https://login.microsoftonline.com/<tenant-id>/v2.0`. |
 | `ENTRA_OIDC_DISCOVERY_URL` | When enabled | none | OIDC metadata URL that returns `issuer` and `jwks_uri`. |
@@ -271,7 +272,7 @@ empty placeholders for required Entra values.
 Useful local checks after changing Entra configuration or code:
 
 ```bash
-python3 scripts/validate-release-metadata.py v0.1.28
+python3 scripts/validate-release-metadata.py v0.1.29
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
 cargo test --workspace --all-features

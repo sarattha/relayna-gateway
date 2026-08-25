@@ -1,10 +1,65 @@
+use serde_json::{json, Value};
 use tracing::{field, Span};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{filter::Directive, fmt, EnvFilter};
 
-pub fn init(log_level: &str) {
-    let filter =
+const AUTHORIZATION_DEBUG_TARGET: &str = "relayna_authorization_debug";
+const AUTHORIZATION_DEBUG_MAX_DETAILS_BYTES: usize = 65_536;
+static AUTHORIZATION_DEBUG_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn init(log_level: &str, authorization_debug: bool) {
+    AUTHORIZATION_DEBUG_ENABLED.store(authorization_debug, std::sync::atomic::Ordering::Relaxed);
+    let mut filter =
         EnvFilter::try_new(log_level).unwrap_or_else(|_| EnvFilter::new("gateway_api=info"));
+    if authorization_debug {
+        filter = filter.add_directive(
+            "relayna_authorization_debug=warn"
+                .parse::<Directive>()
+                .expect("valid authorization debug tracing directive"),
+        );
+    }
     let _ = fmt().with_env_filter(filter).json().try_init();
+}
+
+pub fn authorization_debug_enabled() -> bool {
+    AUTHORIZATION_DEBUG_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn authorization_debug(
+    surface: &str,
+    phase: &str,
+    outcome: &str,
+    reason: &str,
+    request_id: Option<&str>,
+    details: Value,
+) {
+    if !authorization_debug_enabled() {
+        return;
+    }
+    let details = bounded_authorization_debug_details(details);
+    tracing::warn!(
+        target: AUTHORIZATION_DEBUG_TARGET,
+        event = "relayna.authorization_debug",
+        surface,
+        phase,
+        outcome,
+        reason,
+        request_id = request_id.unwrap_or("unknown"),
+        details = %details,
+        "Entra authorization debug"
+    );
+}
+
+fn bounded_authorization_debug_details(details: Value) -> Value {
+    match serde_json::to_vec(&details) {
+        Ok(serialized) if serialized.len() <= AUTHORIZATION_DEBUG_MAX_DETAILS_BYTES => details,
+        Ok(serialized) => json!({
+            "truncated": true,
+            "serialized_bytes": serialized.len(),
+            "maximum_bytes": AUTHORIZATION_DEBUG_MAX_DETAILS_BYTES,
+        }),
+        Err(_) => json!({"serialization_failed": true}),
+    }
 }
 
 use std::{
@@ -614,6 +669,23 @@ pub fn is_sensitive_field(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
+    #[test]
+    fn authorization_debug_details_are_bounded() {
+        let small = json!({"roles": ["gateway.invoke"]});
+        assert_eq!(
+            super::bounded_authorization_debug_details(small.clone()),
+            small
+        );
+
+        let large = json!({"claim": "x".repeat(super::AUTHORIZATION_DEBUG_MAX_DETAILS_BYTES)});
+        let bounded = super::bounded_authorization_debug_details(large);
+        assert_eq!(bounded["truncated"], true);
+        assert!(bounded["serialized_bytes"].as_u64().unwrap_or_default() > 65_536);
+        assert_eq!(bounded["maximum_bytes"], 65_536);
+    }
+
     #[test]
     fn renders_expected_metric_names() {
         super::record_request_with_dimensions("chat_completions", "litellm", 200, 42, false);

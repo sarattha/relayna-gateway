@@ -22,7 +22,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.28` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
+The `v0.1.29` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
 operator work into Monitor, Discover, and Govern navigation domains. Monitor
 contains the live operational Overview, health, usage, and debug workflows;
 Discover contains providers, services, routes, and projects; Govern contains

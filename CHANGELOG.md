@@ -2,6 +2,56 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.29 - 2026-08-26
+
+### Added
+
+- Added the opt-in `ENTRA_AUTH_DEBUG` structured incident trail for direct
+  request-plane Entra JWTs, trusted Apigee identity, browser portal OIDC,
+  service/project owner managed identities, and portal cookie sessions.
+- Added precise discovery, JWKS, key selection, signature, issuer, tenant,
+  audience, timestamp, scope, role, group, binding, session-persistence,
+  cookie-emission, browser-return, membership, CSRF, logout, and Relayna-key
+  phase/reason diagnostics correlated by Gateway request ID.
+- Added a full operator runbook with event schemas, all emitted evidence,
+  Docker and Kubernetes procedures, cookie-failure interpretation, sensitive
+  data boundaries, retention guidance, and local request examples.
+
+### Changed
+
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.29` and `v0.1.29`.
+- Local Compose accepts explicit debug, direct request-plane Entra, and trusted
+  Apigee overrides so all authorization surfaces can be exercised against the
+  development issuer.
+- Clarified the Entra/DevOps handoff checklist so every bootstrap administrator
+  must match both the verified email and immutable object-ID allowlists before
+  those temporary values are removed.
+
+### Fixed
+
+- Portal session and CSRF cookie headers are now constructed atomically and
+  fail closed instead of silently creating a durable server session with
+  missing or partially emitted browser credentials.
+- Portal diagnostics now distinguish database-session creation, header
+  construction, header emission, browser return, session resolution, stale or
+  mixed cookies, and CSRF failures.
+
+### Security
+
+- Debug mode defaults off and is enabled only by the process environment. Its
+  dedicated warning-level target works independently of ordinary `LOG_LEVEL`
+  filtering, while startup logs warn that decoded claims can contain personal
+  data.
+- Compact access/ID tokens and client assertions, signature bytes, OAuth codes,
+  state, nonce values, PKCE material, cookie/CSRF values and hashes, private
+  keys, trusted Apigee headers/signatures, raw Relayna keys, credentials,
+  prompts, and bodies are never logged. OAuth transaction claim values are
+  redacted, and Entra provider errors use an explicit safe-field allowlist.
+- Authorization-debug detail payloads are bounded to 64 KiB, public error
+  responses remain stable, and no diagnostic field is added to Prometheus
+  labels or browser-visible session responses.
+
 ## 0.1.28 - 2026-08-18
 
 ### Added

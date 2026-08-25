@@ -14,7 +14,6 @@ use axum::{
 use bytes::Bytes;
 use chrono::{Duration as ChronoDuration, Utc};
 use gateway_core::CircuitBreakerState;
-use gateway_core::EntraJwtVerifier;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
     default_operator_scopes, evaluate_policy, evaluate_policy_limits, extract_generation_features,
@@ -51,6 +50,7 @@ use gateway_core::{
     SCOPE_OPERATORS_MANAGE, SCOPE_POLICIES_UPDATE, SCOPE_PROVIDERS_UPDATE, SCOPE_SERVICES_UPDATE,
     SCOPE_SETTINGS_UPDATE, SCOPE_USAGE_EXPORT, SCOPE_USAGE_READ,
 };
+use gateway_core::{authorization_debug_identity, EntraAuthDebugContext, EntraJwtVerifier};
 use gateway_store::{PostgresStore, RedisReadiness};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -772,14 +772,24 @@ async fn portal_auth_login(
     Query(query): Query<PortalLoginQuery>,
 ) -> Response {
     let Some(oidc) = state.portal_oidc.as_ref() else {
+        authorization_debug(
+            &headers,
+            "portal_oidc",
+            "login_initialization",
+            "rejected",
+            "portal_oidc_disabled",
+            serde_json::Value::Null,
+        );
         return error_response(&headers, GatewayError::OidcUnavailable);
     };
+    let request_id = request_id_from_headers(&headers);
+    let context = EntraAuthDebugContext::new("portal_oidc", Some(&request_id));
     let raw_state = random_opaque_token();
     let raw_binding = random_opaque_token();
     let nonce = random_opaque_token();
     let verifier = random_opaque_token();
     let authorization_url = match oidc
-        .authorization_url(&raw_state, &nonce, &pkce_challenge(&verifier))
+        .authorization_url_with_context(&raw_state, &nonce, &pkce_challenge(&verifier), context)
         .await
     {
         Ok(url) => url,
@@ -794,14 +804,71 @@ async fn portal_auth_login(
         expires_at: Utc::now() + ChronoDuration::seconds(oidc.config.login_ttl_seconds),
     };
     if let Err(error) = state.store.create_oidc_login_transaction(transaction).await {
+        authorization_debug(
+            &headers,
+            "portal_oidc",
+            "login_transaction",
+            "rejected",
+            "login_transaction_store_failed",
+            serde_json::json!({"public_error_code": error.code()}),
+        );
         return error_response(&headers, error);
     }
+    authorization_debug(
+        &headers,
+        "portal_oidc",
+        "login_transaction",
+        "accepted",
+        "login_transaction_stored",
+        serde_json::json!({
+            "ttl_seconds": oidc.config.login_ttl_seconds,
+            "return_to_present": query.return_to.is_some(),
+            "return_to_logged": false,
+            "state_logged": false,
+            "binding_logged": false,
+            "nonce_logged": false,
+            "pkce_logged": false,
+        }),
+    );
     let mut response = Redirect::temporary(&authorization_url).into_response();
-    append_portal_login_cookie(
+    let emission = match append_portal_login_cookie(
         response.headers_mut(),
         &raw_binding,
         oidc.config.login_ttl_seconds,
         oidc.config.cookie_secure,
+    ) {
+        Ok(emission) => emission,
+        Err(error) => {
+            authorization_debug(
+                &headers,
+                "portal_oidc",
+                "login_cookie",
+                "rejected",
+                "login_cookie_header_invalid",
+                serde_json::json!({"public_error_code": error.code()}),
+            );
+            return error_response(&headers, error);
+        }
+    };
+    authorization_debug(
+        &headers,
+        "portal_oidc",
+        "login_cookie",
+        "accepted",
+        "login_cookie_emitted",
+        portal_cookie_debug_details(
+            &headers,
+            oidc,
+            serde_json::json!({
+                "cookie": "login_binding",
+                "header_bytes": emission.header_bytes,
+                "value_bytes": emission.value_bytes,
+                "http_only": true,
+                "same_site": "Lax",
+                "path": "/admin-ui/auth",
+                "max_age_seconds": oidc.config.login_ttl_seconds,
+            }),
+        ),
     );
     response
 }
@@ -811,6 +878,10 @@ struct PortalCallbackQuery {
     code: Option<String>,
     state: Option<String>,
     error: Option<String>,
+    error_codes: Option<String>,
+    trace_id: Option<String>,
+    correlation_id: Option<String>,
+    timestamp: Option<String>,
 }
 
 async fn portal_auth_callback(
@@ -819,15 +890,56 @@ async fn portal_auth_callback(
     Query(query): Query<PortalCallbackQuery>,
 ) -> Response {
     let Some(oidc) = state.portal_oidc.as_ref() else {
+        authorization_debug(
+            &headers,
+            "portal_oidc",
+            "callback",
+            "rejected",
+            "portal_oidc_disabled",
+            serde_json::Value::Null,
+        );
         return error_response(&headers, GatewayError::OidcUnavailable);
     };
-    if query.error.is_some() {
+    if let Some(provider_error) = query.error.as_deref() {
+        authorization_debug(
+            &headers,
+            "portal_oidc",
+            "callback",
+            "rejected",
+            "identity_provider_returned_error",
+            serde_json::json!({
+                "provider_error": provider_error,
+                "error_codes": query.error_codes,
+                "trace_id": query.trace_id,
+                "correlation_id": query.correlation_id,
+                "timestamp": query.timestamp,
+            }),
+        );
         return error_response(&headers, GatewayError::InvalidOidcTransaction);
     }
     let (Some(code), Some(raw_state)) = (query.code.as_deref(), query.state.as_deref()) else {
+        authorization_debug(
+            &headers,
+            "portal_oidc",
+            "callback",
+            "rejected",
+            "authorization_code_or_state_missing",
+            serde_json::json!({
+                "authorization_code_present": query.code.is_some(),
+                "state_present": query.state.is_some(),
+            }),
+        );
         return error_response(&headers, GatewayError::InvalidOidcTransaction);
     };
     let Some(raw_binding) = cookie_value(&headers, PORTAL_LOGIN_COOKIE) else {
+        authorization_debug(
+            &headers,
+            "portal_oidc",
+            "callback_cookie_observation",
+            "rejected",
+            "login_cookie_not_returned",
+            portal_cookie_debug_details(&headers, oidc, serde_json::Value::Null),
+        );
         return error_response(&headers, GatewayError::InvalidOidcTransaction);
     };
     let transaction = match state
@@ -840,27 +952,121 @@ async fn portal_auth_callback(
         .await
     {
         Ok(Some(transaction)) => transaction,
-        Ok(None) => return error_response(&headers, GatewayError::InvalidOidcTransaction),
-        Err(error) => return error_response(&headers, error),
+        Ok(None) => {
+            authorization_debug(
+                &headers,
+                "portal_oidc",
+                "login_transaction",
+                "rejected",
+                "transaction_missing_expired_used_or_binding_mismatch",
+                serde_json::json!({
+                    "state_present": true,
+                    "login_cookie_present": true,
+                    "state_or_cookie_values_logged": false,
+                }),
+            );
+            return error_response(&headers, GatewayError::InvalidOidcTransaction);
+        }
+        Err(error) => {
+            authorization_debug(
+                &headers,
+                "portal_oidc",
+                "login_transaction",
+                "rejected",
+                "transaction_consume_store_failed",
+                serde_json::json!({"public_error_code": error.code()}),
+            );
+            return error_response(&headers, error);
+        }
     };
+    authorization_debug(
+        &headers,
+        "portal_oidc",
+        "login_transaction",
+        "accepted",
+        "transaction_consumed",
+        serde_json::json!({"expires_at": transaction.expires_at}),
+    );
+    let request_id = request_id_from_headers(&headers);
     let identity = match oidc
-        .exchange_code(code, &transaction.pkce_verifier, Utc::now())
+        .exchange_code_with_context(
+            code,
+            &transaction.pkce_verifier,
+            Utc::now(),
+            EntraAuthDebugContext::new("portal_oidc", Some(&request_id)),
+        )
         .await
     {
         Ok(identity) => identity,
-        Err(error) => return error_response(&headers, error),
+        Err(error) => {
+            authorization_debug(
+                &headers,
+                "portal_oidc",
+                "token_exchange",
+                "rejected",
+                "token_exchange_or_id_token_validation_failed",
+                serde_json::json!({"public_error_code": error.code()}),
+            );
+            return error_response(&headers, error);
+        }
     };
     if identity.nonce.as_deref() != Some(transaction.nonce.as_str()) {
+        authorization_debug(
+            &headers,
+            "portal_oidc",
+            "nonce_validation",
+            "rejected",
+            "nonce_mismatch",
+            serde_json::json!({
+                "token_nonce_present": identity.nonce.is_some(),
+                "nonce_values_logged": false,
+            }),
+        );
         return error_response(&headers, GatewayError::InvalidOidcTransaction);
     }
+    authorization_debug(
+        &headers,
+        "portal_oidc",
+        "nonce_validation",
+        "accepted",
+        "nonce_verified",
+        serde_json::json!({"nonce_values_logged": false}),
+    );
+    let bootstrap_match = oidc.admin_bootstrap_policy.authorizes(&identity);
     let member = match state
         .store
         .upsert_oidc_member(&identity, &oidc.admin_bootstrap_policy, Utc::now())
         .await
     {
         Ok(member) => member,
-        Err(error) => return error_response(&headers, error),
+        Err(error) => {
+            authorization_debug(
+                &headers,
+                "portal_oidc",
+                "member_resolution",
+                "rejected",
+                "member_upsert_failed",
+                serde_json::json!({
+                    "public_error_code": error.code(),
+                    "bootstrap_admin_match": bootstrap_match,
+                }),
+            );
+            return error_response(&headers, error);
+        }
     };
+    authorization_debug(
+        &headers,
+        "portal_oidc",
+        "member_resolution",
+        "accepted",
+        "member_resolved",
+        serde_json::json!({
+            "member_id": member.id,
+            "member_status": member.status.as_str(),
+            "member_roles": member.roles,
+            "bootstrap_admin_match": bootstrap_match,
+        }),
+    );
     let raw_session = random_opaque_token();
     let raw_csrf = random_opaque_token();
     if let Err(error) = state
@@ -873,17 +1079,98 @@ async fn portal_auth_callback(
         })
         .await
     {
+        authorization_debug(
+            &headers,
+            "portal_session",
+            "session_persistence",
+            "rejected",
+            "session_database_create_failed",
+            serde_json::json!({
+                "public_error_code": error.code(),
+                "member_id": member.id,
+            }),
+        );
         return error_response(&headers, error);
     }
+    authorization_debug(
+        &headers,
+        "portal_session",
+        "session_persistence",
+        "accepted",
+        "session_database_created",
+        serde_json::json!({
+            "member_id": member.id,
+            "ttl_seconds": oidc.config.session_ttl_seconds,
+            "session_value_logged": false,
+            "csrf_value_logged": false,
+        }),
+    );
     let mut response = Redirect::to(&transaction.return_to).into_response();
-    append_portal_cookies(
+    let emission = match append_portal_cookies(
         response.headers_mut(),
         &raw_session,
         &raw_csrf,
         oidc.config.session_ttl_seconds,
         oidc.config.cookie_secure,
+    ) {
+        Ok(emission) => emission,
+        Err(error) => {
+            authorization_debug(
+                &headers,
+                "portal_session",
+                "cookie_emission",
+                "rejected",
+                "session_or_csrf_cookie_header_invalid",
+                serde_json::json!({
+                    "public_error_code": error.code(),
+                    "database_session_already_created": true,
+                }),
+            );
+            return error_response(&headers, error);
+        }
+    };
+    authorization_debug(
+        &headers,
+        "portal_session",
+        "cookie_emission",
+        "accepted",
+        "session_and_csrf_cookies_emitted",
+        portal_cookie_debug_details(
+            &headers,
+            oidc,
+            serde_json::json!({
+                "set_cookie_header_count": 2,
+                "session_cookie": {
+                    "header_bytes": emission.session.header_bytes,
+                    "value_bytes": emission.session.value_bytes,
+                    "http_only": true,
+                    "same_site": "Lax",
+                    "path": "/",
+                },
+                "csrf_cookie": {
+                    "header_bytes": emission.csrf.header_bytes,
+                    "value_bytes": emission.csrf.value_bytes,
+                    "http_only": false,
+                    "same_site": "Lax",
+                    "path": "/",
+                },
+                "max_age_seconds": oidc.config.session_ttl_seconds,
+                "cookie_values_logged": false,
+            }),
+        ),
     );
     clear_portal_login_cookie(response.headers_mut(), oidc.config.cookie_secure);
+    authorization_debug(
+        &headers,
+        "portal_oidc",
+        "callback",
+        "accepted",
+        "login_completed",
+        serde_json::json!({
+            "member_id": member.id,
+            "member_status": member.status.as_str(),
+        }),
+    );
     response
 }
 
@@ -900,6 +1187,28 @@ struct PortalSessionBody {
 
 async fn portal_auth_session(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(raw_session) = cookie_value(&headers, PORTAL_SESSION_COOKIE) else {
+        let csrf_cookie_present = cookie_value(&headers, PORTAL_CSRF_COOKIE).is_some();
+        authorization_debug(
+            &headers,
+            "portal_session",
+            "cookie_observation",
+            if csrf_cookie_present {
+                "rejected"
+            } else {
+                "not_authenticated"
+            },
+            if csrf_cookie_present {
+                "session_cookie_not_returned"
+            } else {
+                "session_and_csrf_cookies_not_returned"
+            },
+            serde_json::json!({
+                "session_cookie_present": false,
+                "csrf_cookie_present": csrf_cookie_present,
+                "likely_cause": "browser_or_intermediary_did_not_return_an_emitted_cookie_or_no_session_was_established",
+                "cookie_values_logged": false,
+            }),
+        );
         return Json(PortalSessionBody {
             authenticated: false,
             member: None,
@@ -910,6 +1219,18 @@ async fn portal_auth_session(State(state): State<AppState>, headers: HeaderMap) 
         .into_response();
     };
     let Some(raw_csrf) = cookie_value(&headers, PORTAL_CSRF_COOKIE) else {
+        authorization_debug(
+            &headers,
+            "portal_session",
+            "cookie_observation",
+            "rejected",
+            "csrf_cookie_not_returned",
+            serde_json::json!({
+                "session_cookie_present": true,
+                "csrf_cookie_present": false,
+                "cookie_values_logged": false,
+            }),
+        );
         return error_response(&headers, GatewayError::InvalidPortalSession);
     };
     let session = match state
@@ -917,9 +1238,70 @@ async fn portal_auth_session(State(state): State<AppState>, headers: HeaderMap) 
         .resolve_portal_session(&token_hash(raw_session), Utc::now())
         .await
     {
-        Ok(Some(session)) if constant_time_eq(&session.csrf_hash, &token_hash(raw_csrf)) => session,
-        Ok(_) => return error_response(&headers, GatewayError::InvalidPortalSession),
-        Err(error) => return error_response(&headers, error),
+        Ok(Some(session)) if constant_time_eq(&session.csrf_hash, &token_hash(raw_csrf)) => {
+            authorization_debug(
+                &headers,
+                "portal_session",
+                "cookie_observation",
+                "accepted",
+                "session_and_csrf_cookies_resolved",
+                serde_json::json!({
+                    "session_cookie_present": true,
+                    "csrf_cookie_present": true,
+                    "session_lookup": "active",
+                    "csrf_cookie_match": true,
+                    "member_id": session.member.id,
+                    "member_status": session.member.status.as_str(),
+                    "cookie_values_or_hashes_logged": false,
+                }),
+            );
+            session
+        }
+        Ok(Some(session)) => {
+            authorization_debug(
+                &headers,
+                "portal_session",
+                "cookie_observation",
+                "rejected",
+                "stale_or_mixed_cookie_pair",
+                serde_json::json!({
+                    "session_cookie_present": true,
+                    "csrf_cookie_present": true,
+                    "session_lookup": "active",
+                    "csrf_cookie_match": false,
+                    "member_id": session.member.id,
+                    "cookie_values_or_hashes_logged": false,
+                }),
+            );
+            return error_response(&headers, GatewayError::InvalidPortalSession);
+        }
+        Ok(None) => {
+            authorization_debug(
+                &headers,
+                "portal_session",
+                "cookie_observation",
+                "rejected",
+                "session_not_found_or_expired",
+                serde_json::json!({
+                    "session_cookie_present": true,
+                    "csrf_cookie_present": true,
+                    "session_lookup": "not_found_or_expired",
+                    "cookie_values_or_hashes_logged": false,
+                }),
+            );
+            return error_response(&headers, GatewayError::InvalidPortalSession);
+        }
+        Err(error) => {
+            authorization_debug(
+                &headers,
+                "portal_session",
+                "session_resolution",
+                "rejected",
+                "session_store_unavailable",
+                serde_json::json!({"public_error_code": error.code()}),
+            );
+            return error_response(&headers, error);
+        }
     };
     let service_memberships = match state
         .store
@@ -927,22 +1309,58 @@ async fn portal_auth_session(State(state): State<AppState>, headers: HeaderMap) 
         .await
     {
         Ok(service_memberships) => service_memberships,
-        Err(error) => return error_response(&headers, error),
+        Err(error) => {
+            authorization_debug(
+                &headers,
+                "portal_session",
+                "membership_resolution",
+                "rejected",
+                "service_membership_lookup_failed",
+                serde_json::json!({"public_error_code": error.code()}),
+            );
+            return error_response(&headers, error);
+        }
     };
     match state
         .store
         .list_project_memberships(session.member.id)
         .await
     {
-        Ok(project_memberships) => Json(PortalSessionBody {
-            authenticated: true,
-            member: Some(session.member),
-            service_memberships,
-            project_memberships,
-            csrf_token: Some(raw_csrf.to_owned()),
-        })
-        .into_response(),
-        Err(error) => error_response(&headers, error),
+        Ok(project_memberships) => {
+            authorization_debug(
+                &headers,
+                "portal_session",
+                "membership_resolution",
+                "accepted",
+                "session_authorization_loaded",
+                serde_json::json!({
+                    "member_id": session.member.id,
+                    "member_status": session.member.status.as_str(),
+                    "member_roles": session.member.roles,
+                    "service_membership_count": service_memberships.len(),
+                    "project_membership_count": project_memberships.len(),
+                }),
+            );
+            Json(PortalSessionBody {
+                authenticated: true,
+                member: Some(session.member),
+                service_memberships,
+                project_memberships,
+                csrf_token: Some(raw_csrf.to_owned()),
+            })
+            .into_response()
+        }
+        Err(error) => {
+            authorization_debug(
+                &headers,
+                "portal_session",
+                "membership_resolution",
+                "rejected",
+                "project_membership_lookup_failed",
+                serde_json::json!({"public_error_code": error.code()}),
+            );
+            error_response(&headers, error)
+        }
     }
 }
 
@@ -951,20 +1369,78 @@ async fn portal_auth_logout(State(state): State<AppState>, headers: HeaderMap) -
         Ok(session) => session,
         Err(response) => return response,
     };
+    authorization_debug(
+        &headers,
+        "portal_browser",
+        "logout_session",
+        "started",
+        "authenticated_session_resolved",
+        serde_json::json!({"member_id": session.member.id}),
+    );
     if let Err(error) = state
         .store
         .delete_portal_session(&session.session_hash)
         .await
     {
+        authorization_debug(
+            &headers,
+            "portal_browser",
+            "logout_session",
+            "rejected",
+            "session_delete_failed",
+            serde_json::json!({"public_error_code": error.code()}),
+        );
         return error_response(&headers, error);
     }
+    authorization_debug(
+        &headers,
+        "portal_browser",
+        "logout_session",
+        "accepted",
+        "server_session_deleted",
+        serde_json::Value::Null,
+    );
     let (secure, logout_url) = match state.portal_oidc.as_ref() {
-        Some(oidc) => (oidc.config.cookie_secure, oidc.end_session_url().await.ok()),
+        Some(oidc) => match oidc.end_session_url().await {
+            Ok(url) => {
+                authorization_debug(
+                    &headers,
+                    "portal_browser",
+                    "logout_redirect",
+                    "accepted",
+                    "provider_end_session_url_created",
+                    serde_json::Value::Null,
+                );
+                (oidc.config.cookie_secure, Some(url))
+            }
+            Err(error) => {
+                authorization_debug(
+                    &headers,
+                    "portal_browser",
+                    "logout_redirect",
+                    "rejected",
+                    "provider_end_session_url_unavailable",
+                    serde_json::json!({"public_error_code": error.code()}),
+                );
+                (oidc.config.cookie_secure, None)
+            }
+        },
         None => (true, None),
     };
     let mut response = Json(serde_json::json!({ "logout_url": logout_url })).into_response();
     clear_portal_cookies(response.headers_mut(), secure);
     clear_portal_login_cookie(response.headers_mut(), secure);
+    authorization_debug(
+        &headers,
+        "portal_browser",
+        "logout_cookie",
+        "accepted",
+        "browser_cookie_clear_headers_emitted",
+        serde_json::json!({
+            "secure": secure,
+            "set_cookie_header_count": response.headers().get_all(header::SET_COOKIE).iter().count(),
+        }),
+    );
     response
 }
 
@@ -5107,12 +5583,29 @@ async fn effective_studio_client(state: &AppState) -> GatewayResult<StudioCatalo
     Ok(StudioCatalogClient::new(base_url, connection.token))
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_portal_session(
     state: &AppState,
     headers: &HeaderMap,
     require_csrf: bool,
 ) -> Result<gateway_core::StoredPortalSession, Response> {
     let Some(raw_session) = cookie_value(headers, PORTAL_SESSION_COOKIE) else {
+        authorization_debug(
+            headers,
+            "portal_session",
+            "cookie_observation",
+            "rejected",
+            "session_cookie_missing",
+            serde_json::json!({
+                "session_cookie_present": false,
+                "csrf_cookie_present": cookie_value(headers, PORTAL_CSRF_COOKIE).is_some(),
+                "csrf_header_present": headers.contains_key("x-csrf-token"),
+                "cookie_values_logged": false,
+            }),
+        );
         return Err(error_response(headers, GatewayError::InvalidPortalSession));
     };
     let session = match state
@@ -5121,8 +5614,32 @@ async fn require_portal_session(
         .await
     {
         Ok(Some(session)) => session,
-        Ok(None) => return Err(error_response(headers, GatewayError::InvalidPortalSession)),
-        Err(error) => return Err(error_response(headers, error)),
+        Ok(None) => {
+            authorization_debug(
+                headers,
+                "portal_session",
+                "session_resolution",
+                "rejected",
+                "session_not_found_or_expired",
+                serde_json::json!({
+                    "session_cookie_present": true,
+                    "session_lookup": "not_found_or_expired",
+                    "cookie_value_or_hash_logged": false,
+                }),
+            );
+            return Err(error_response(headers, GatewayError::InvalidPortalSession));
+        }
+        Err(error) => {
+            authorization_debug(
+                headers,
+                "portal_session",
+                "session_resolution",
+                "rejected",
+                "session_store_unavailable",
+                serde_json::json!({"public_error_code": error.code()}),
+            );
+            return Err(error_response(headers, error));
+        }
     };
     if require_csrf {
         let csrf = headers
@@ -5130,12 +5647,52 @@ async fn require_portal_session(
             .and_then(|value| value.to_str().ok())
             .filter(|value| !value.is_empty());
         if csrf.is_none_or(|csrf| !constant_time_eq(&session.csrf_hash, &token_hash(csrf))) {
+            authorization_debug(
+                headers,
+                "portal_session",
+                "csrf_validation",
+                "rejected",
+                if csrf.is_some() {
+                    "csrf_hash_mismatch"
+                } else {
+                    "csrf_header_missing"
+                },
+                serde_json::json!({
+                    "csrf_header_present": csrf.is_some(),
+                    "csrf_value_or_hash_logged": false,
+                    "member_id": session.member.id,
+                }),
+            );
             return Err(error_response(headers, GatewayError::InvalidCsrfToken));
         }
     }
+    authorization_debug(
+        headers,
+        "portal_session",
+        if require_csrf {
+            "csrf_validation"
+        } else {
+            "session_resolution"
+        },
+        "accepted",
+        if require_csrf {
+            "session_and_csrf_verified"
+        } else {
+            "session_verified"
+        },
+        serde_json::json!({
+            "member_id": session.member.id,
+            "member_status": session.member.status.as_str(),
+            "csrf_required": require_csrf,
+        }),
+    );
     Ok(session)
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_active_portal_session(
     state: &AppState,
     headers: &HeaderMap,
@@ -5143,11 +5700,35 @@ async fn require_active_portal_session(
     let session = require_portal_session(state, headers, false).await?;
     match session.member.status {
         MemberStatus::Active => Ok(session),
-        MemberStatus::Pending => Err(error_response(headers, GatewayError::PendingPortalMember)),
-        MemberStatus::Blocked => Err(error_response(headers, GatewayError::BlockedPortalMember)),
+        MemberStatus::Pending => {
+            authorization_debug(
+                headers,
+                "portal_session",
+                "member_authorization",
+                "rejected",
+                "member_pending",
+                serde_json::json!({"member_id": session.member.id}),
+            );
+            Err(error_response(headers, GatewayError::PendingPortalMember))
+        }
+        MemberStatus::Blocked => {
+            authorization_debug(
+                headers,
+                "portal_session",
+                "member_authorization",
+                "rejected",
+                "member_blocked",
+                serde_json::json!({"member_id": session.member.id}),
+            );
+            Err(error_response(headers, GatewayError::BlockedPortalMember))
+        }
     }
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_owner_service_access(
     state: &AppState,
     headers: &HeaderMap,
@@ -5160,16 +5741,61 @@ async fn require_owner_service_access(
             .member_service_role(session.member.id, service_name)
             .await
         {
-            Ok(Some(role)) => Ok(role),
-            Ok(None) => Err(error_response(
-                headers,
-                GatewayError::InsufficientPortalAccess,
-            )),
-            Err(error) => Err(error_response(headers, error)),
+            Ok(Some(role)) => {
+                authorization_debug(
+                    headers,
+                    "owner_service",
+                    "portal_membership",
+                    "accepted",
+                    "service_membership_resolved",
+                    serde_json::json!({
+                        "member_id": session.member.id,
+                        "service_name": service_name,
+                        "role": role.as_str(),
+                    }),
+                );
+                Ok(role)
+            }
+            Ok(None) => {
+                authorization_debug(
+                    headers,
+                    "owner_service",
+                    "portal_membership",
+                    "rejected",
+                    "service_membership_missing",
+                    serde_json::json!({
+                        "member_id": session.member.id,
+                        "service_name": service_name,
+                    }),
+                );
+                Err(error_response(
+                    headers,
+                    GatewayError::InsufficientPortalAccess,
+                ))
+            }
+            Err(error) => {
+                authorization_debug(
+                    headers,
+                    "owner_service",
+                    "portal_membership",
+                    "rejected",
+                    "service_membership_store_failed",
+                    serde_json::json!({"public_error_code": error.code()}),
+                );
+                Err(error_response(headers, error))
+            }
         };
     }
 
     let Some(verifier) = state.owner_entra_verifier.as_ref() else {
+        authorization_debug(
+            headers,
+            "owner_service",
+            "managed_identity",
+            "rejected",
+            "owner_entra_verifier_disabled",
+            serde_json::Value::Null,
+        );
         return Err(error_response(
             headers,
             GatewayError::MissingEntraAuthorization,
@@ -5178,8 +5804,13 @@ async fn require_owner_service_access(
     let authorization = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok());
+    let request_id = request_id_from_headers(headers);
     let identity = match verifier
-        .verify_authorization(authorization, Utc::now())
+        .verify_authorization_with_context(
+            authorization,
+            Utc::now(),
+            EntraAuthDebugContext::new("owner_service", Some(&request_id)),
+        )
         .await
     {
         Ok(identity) => identity,
@@ -5190,6 +5821,14 @@ async fn require_owner_service_access(
         .as_deref()
         .or(identity.authorized_party.as_deref())
     else {
+        authorization_debug(
+            headers,
+            "owner_service",
+            "client_identity",
+            "rejected",
+            "appid_or_azp_missing",
+            serde_json::json!({"identity": authorization_debug_identity(&identity)}),
+        );
         return Err(error_response(headers, GatewayError::InvalidEntraToken));
     };
     match state
@@ -5203,15 +5842,57 @@ async fn require_owner_service_access(
         )
         .await
     {
-        Ok(Some(_)) => Ok(ServiceMemberRole::Viewer),
-        Ok(None) => Err(error_response(
-            headers,
-            GatewayError::InsufficientPortalAccess,
-        )),
-        Err(error) => Err(error_response(headers, error)),
+        Ok(Some(binding)) => {
+            authorization_debug(
+                headers,
+                "owner_service",
+                "managed_identity_binding",
+                "accepted",
+                "exact_service_binding_resolved",
+                serde_json::json!({
+                    "service_name": service_name,
+                    "identity": authorization_debug_identity(&identity),
+                    "binding_id": binding.id,
+                    "required_role": binding.required_role,
+                }),
+            );
+            Ok(ServiceMemberRole::Viewer)
+        }
+        Ok(None) => {
+            authorization_debug(
+                headers,
+                "owner_service",
+                "managed_identity_binding",
+                "rejected",
+                "binding_missing_disabled_object_mismatch_or_role_missing",
+                serde_json::json!({
+                    "service_name": service_name,
+                    "identity": authorization_debug_identity(&identity),
+                }),
+            );
+            Err(error_response(
+                headers,
+                GatewayError::InsufficientPortalAccess,
+            ))
+        }
+        Err(error) => {
+            authorization_debug(
+                headers,
+                "owner_service",
+                "managed_identity_binding",
+                "rejected",
+                "binding_store_failed",
+                serde_json::json!({"public_error_code": error.code()}),
+            );
+            Err(error_response(headers, error))
+        }
     }
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_owner_project_access(
     state: &AppState,
     headers: &HeaderMap,
@@ -5224,16 +5905,61 @@ async fn require_owner_project_access(
             .member_project_role(session.member.id, project_id)
             .await
         {
-            Ok(Some(role)) => Ok(role),
-            Ok(None) => Err(error_response(
-                headers,
-                GatewayError::InsufficientPortalAccess,
-            )),
-            Err(error) => Err(error_response(headers, error)),
+            Ok(Some(role)) => {
+                authorization_debug(
+                    headers,
+                    "owner_project",
+                    "portal_membership",
+                    "accepted",
+                    "project_membership_resolved",
+                    serde_json::json!({
+                        "member_id": session.member.id,
+                        "project_id": project_id,
+                        "role": role.as_str(),
+                    }),
+                );
+                Ok(role)
+            }
+            Ok(None) => {
+                authorization_debug(
+                    headers,
+                    "owner_project",
+                    "portal_membership",
+                    "rejected",
+                    "project_membership_missing",
+                    serde_json::json!({
+                        "member_id": session.member.id,
+                        "project_id": project_id,
+                    }),
+                );
+                Err(error_response(
+                    headers,
+                    GatewayError::InsufficientPortalAccess,
+                ))
+            }
+            Err(error) => {
+                authorization_debug(
+                    headers,
+                    "owner_project",
+                    "portal_membership",
+                    "rejected",
+                    "project_membership_store_failed",
+                    serde_json::json!({"public_error_code": error.code()}),
+                );
+                Err(error_response(headers, error))
+            }
         };
     }
 
     let Some(verifier) = state.owner_entra_verifier.as_ref() else {
+        authorization_debug(
+            headers,
+            "owner_project",
+            "managed_identity",
+            "rejected",
+            "owner_entra_verifier_disabled",
+            serde_json::Value::Null,
+        );
         return Err(error_response(
             headers,
             GatewayError::MissingEntraAuthorization,
@@ -5242,8 +5968,13 @@ async fn require_owner_project_access(
     let authorization = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok());
+    let request_id = request_id_from_headers(headers);
     let identity = match verifier
-        .verify_authorization(authorization, Utc::now())
+        .verify_authorization_with_context(
+            authorization,
+            Utc::now(),
+            EntraAuthDebugContext::new("owner_project", Some(&request_id)),
+        )
         .await
     {
         Ok(identity) => identity,
@@ -5254,6 +5985,14 @@ async fn require_owner_project_access(
         .as_deref()
         .or(identity.authorized_party.as_deref())
     else {
+        authorization_debug(
+            headers,
+            "owner_project",
+            "client_identity",
+            "rejected",
+            "appid_or_azp_missing",
+            serde_json::json!({"identity": authorization_debug_identity(&identity)}),
+        );
         return Err(error_response(headers, GatewayError::InvalidEntraToken));
     };
     match state
@@ -5267,12 +6006,50 @@ async fn require_owner_project_access(
         )
         .await
     {
-        Ok(Some(_)) => Ok(ServiceMemberRole::Viewer),
-        Ok(None) => Err(error_response(
-            headers,
-            GatewayError::InsufficientPortalAccess,
-        )),
-        Err(error) => Err(error_response(headers, error)),
+        Ok(Some(binding)) => {
+            authorization_debug(
+                headers,
+                "owner_project",
+                "managed_identity_binding",
+                "accepted",
+                "exact_project_binding_resolved",
+                serde_json::json!({
+                    "project_id": project_id,
+                    "identity": authorization_debug_identity(&identity),
+                    "binding_id": binding.id,
+                    "required_role": binding.required_role,
+                }),
+            );
+            Ok(ServiceMemberRole::Viewer)
+        }
+        Ok(None) => {
+            authorization_debug(
+                headers,
+                "owner_project",
+                "managed_identity_binding",
+                "rejected",
+                "binding_missing_disabled_object_mismatch_or_role_missing",
+                serde_json::json!({
+                    "project_id": project_id,
+                    "identity": authorization_debug_identity(&identity),
+                }),
+            );
+            Err(error_response(
+                headers,
+                GatewayError::InsufficientPortalAccess,
+            ))
+        }
+        Err(error) => {
+            authorization_debug(
+                headers,
+                "owner_project",
+                "managed_identity_binding",
+                "rejected",
+                "binding_store_failed",
+                serde_json::json!({"public_error_code": error.code()}),
+            );
+            Err(error_response(headers, error))
+        }
     }
 }
 
@@ -5288,13 +6065,25 @@ fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
         })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CookieEmission {
+    value_bytes: usize,
+    header_bytes: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PortalCookieEmission {
+    session: CookieEmission,
+    csrf: CookieEmission,
+}
+
 fn append_portal_cookies(
     headers: &mut HeaderMap,
     raw_session: &str,
     raw_csrf: &str,
     max_age_seconds: i64,
     secure: bool,
-) {
+) -> GatewayResult<PortalCookieEmission> {
     let secure = if secure { "; Secure" } else { "" };
     let session = format!(
         "{PORTAL_SESSION_COOKIE}={raw_session}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age_seconds}{secure}"
@@ -5302,12 +6091,22 @@ fn append_portal_cookies(
     let csrf = format!(
         "{PORTAL_CSRF_COOKIE}={raw_csrf}; SameSite=Lax; Path=/; Max-Age={max_age_seconds}{secure}"
     );
-    if let Ok(value) = HeaderValue::from_str(&session) {
-        headers.append(header::SET_COOKIE, value);
-    }
-    if let Ok(value) = HeaderValue::from_str(&csrf) {
-        headers.append(header::SET_COOKIE, value);
-    }
+    let session_value =
+        HeaderValue::from_str(&session).map_err(|_| GatewayError::InvalidConfiguration)?;
+    let csrf_value =
+        HeaderValue::from_str(&csrf).map_err(|_| GatewayError::InvalidConfiguration)?;
+    headers.append(header::SET_COOKIE, session_value);
+    headers.append(header::SET_COOKIE, csrf_value);
+    Ok(PortalCookieEmission {
+        session: CookieEmission {
+            value_bytes: raw_session.len(),
+            header_bytes: session.len(),
+        },
+        csrf: CookieEmission {
+            value_bytes: raw_csrf.len(),
+            header_bytes: csrf.len(),
+        },
+    })
 }
 
 fn append_portal_login_cookie(
@@ -5315,14 +6114,57 @@ fn append_portal_login_cookie(
     raw_binding: &str,
     max_age_seconds: i64,
     secure: bool,
-) {
+) -> GatewayResult<CookieEmission> {
     let secure = if secure { "; Secure" } else { "" };
     let cookie = format!(
         "{PORTAL_LOGIN_COOKIE}={raw_binding}; HttpOnly; SameSite=Lax; Path=/admin-ui/auth; Max-Age={max_age_seconds}{secure}"
     );
-    if let Ok(value) = HeaderValue::from_str(&cookie) {
-        headers.append(header::SET_COOKIE, value);
-    }
+    let value = HeaderValue::from_str(&cookie).map_err(|_| GatewayError::InvalidConfiguration)?;
+    headers.append(header::SET_COOKIE, value);
+    Ok(CookieEmission {
+        value_bytes: raw_binding.len(),
+        header_bytes: cookie.len(),
+    })
+}
+
+fn portal_cookie_debug_details(
+    headers: &HeaderMap,
+    oidc: &PortalOidcRuntime,
+    details: serde_json::Value,
+) -> serde_json::Value {
+    let external_scheme = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let request_host = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<http::uri::Authority>().ok())
+        .map(|authority| authority.host().to_ascii_lowercase());
+    let redirect_host = url::Url::parse(&oidc.config.redirect_uri)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase));
+    let host_matches_redirect = request_host
+        .as_deref()
+        .zip(redirect_host.as_deref())
+        .map(|(request, redirect)| request == redirect);
+    let likely_cause = if oidc.config.cookie_secure && external_scheme == Some("http") {
+        Some("secure_cookie_over_http")
+    } else if host_matches_redirect == Some(false) {
+        Some("callback_host_differs_from_registered_redirect_host")
+    } else {
+        None
+    };
+    serde_json::json!({
+        "configured_secure": oidc.config.cookie_secure,
+        "external_scheme": external_scheme.unwrap_or("unknown"),
+        "request_host_matches_redirect_host": host_matches_redirect,
+        "known_configuration_warning": likely_cause,
+        "server_can_observe_browser_acceptance": false,
+        "details": details,
+    })
 }
 
 fn clear_portal_login_cookie(headers: &mut HeaderMap, secure: bool) {
@@ -5347,6 +6189,10 @@ fn clear_portal_cookies(headers: &mut HeaderMap, secure: bool) {
     }
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_admin_scope(
     state: &AppState,
     headers: &HeaderMap,
@@ -5355,6 +6201,10 @@ async fn require_admin_scope(
     require_admin_scopes(state, headers, &[required_scope]).await
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_admin_scopes(
     state: &AppState,
     headers: &HeaderMap,
@@ -5407,6 +6257,10 @@ async fn require_admin_scopes(
     })
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_litellm_ui_operator_scope(
     state: &AppState,
     headers: &HeaderMap,
@@ -5505,6 +6359,25 @@ fn error_response(headers: &HeaderMap, error: GatewayError) -> Response {
         Json(error.body(request_id_from_headers(headers))),
     )
         .into_response()
+}
+
+fn authorization_debug(
+    headers: &HeaderMap,
+    surface: &str,
+    phase: &str,
+    outcome: &str,
+    reason: &str,
+    details: serde_json::Value,
+) {
+    let request_id = request_id_from_headers(headers);
+    gateway_telemetry::authorization_debug(
+        surface,
+        phase,
+        outcome,
+        reason,
+        Some(&request_id),
+        details,
+    );
 }
 
 fn request_id_from_headers(headers: &HeaderMap) -> String {
@@ -6111,6 +6984,28 @@ mod tests {
     };
     use tower::ServiceExt;
     use uuid::Uuid;
+
+    #[test]
+    fn portal_cookie_headers_fail_closed_without_partial_emission() {
+        let mut headers = HeaderMap::new();
+        let result = append_portal_cookies(&mut headers, "invalid\nsession", "csrf", 300, true);
+
+        assert_eq!(result.unwrap_err(), GatewayError::InvalidConfiguration);
+        assert_eq!(headers.get_all(header::SET_COOKIE).iter().count(), 0);
+    }
+
+    #[test]
+    fn portal_cookie_headers_report_safe_emission_metadata() {
+        let mut headers = HeaderMap::new();
+        let emitted = append_portal_cookies(&mut headers, "session-value", "csrf-value", 300, true)
+            .expect("valid portal cookies");
+
+        assert_eq!(emitted.session.value_bytes, "session-value".len());
+        assert_eq!(emitted.csrf.value_bytes, "csrf-value".len());
+        assert_eq!(headers.get_all(header::SET_COOKIE).iter().count(), 2);
+        assert!(emitted.session.header_bytes > emitted.session.value_bytes);
+        assert!(emitted.csrf.header_bytes > emitted.csrf.value_bytes);
+    }
 
     #[derive(Clone)]
     struct MemoryStore {
