@@ -2,6 +2,48 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.30 - 2026-08-28
+
+### Added
+
+- Added governed LiteLLM reranking for `POST /rerank`, `POST /v1/rerank`, and
+  `POST /v2/rerank`. All aliases share the canonical `/v1/rerank` policy and
+  operator route setting while preserving the requested path upstream.
+- Added exact export-only start and end timestamps to the Admin UI Usage view.
+- Added bounded **All rows** CSV and JSON downloads that retrieve matching
+  usage events in ordered 10,000-row API batches without raising the released
+  server-side maximum.
+
+### Changed
+
+- Workspace crate versions, Admin UI release indicators, deployment examples,
+  and release documentation now target `0.1.30` and `v0.1.30`.
+- Usage exports now use a total PostgreSQL order of creation time, request ID,
+  and internal unique usage-event ID so repeated offset batches cannot omit or
+  duplicate tied rows.
+- All-row export mode requires a bounded time window and is download-only;
+  Preview, Copy URL, and Copy curl remain single-request operations.
+
+### Fixed
+
+- Entra-authenticated Admin UI sessions now send their session CSRF token on
+  usage export requests, while break-glass sessions continue to send the
+  operator bearer token.
+- Export-specific timestamps are validated before inherited Usage timestamps,
+  so a valid export override is independent of stale or invalid custom Usage
+  fields.
+- Usage export controls now use a responsive desktop and narrow-screen layout,
+  and incompatible controls are disabled when All rows is selected.
+
+### Security
+
+- Client and provider credential handling is unchanged for rerank aliases;
+  governed requests retain policy, rate-limit, budget, guardrail, credential
+  stripping/injection, and usage-accounting boundaries.
+- Each all-row export request remains capped at 10,000 rows, and the browser
+  requires an explicit bounded start and end time before issuing repeated
+  requests.
+
 ## 0.1.29 - 2026-08-26
 
 ### Added

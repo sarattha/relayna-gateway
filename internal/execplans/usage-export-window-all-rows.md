@@ -37,11 +37,14 @@ the existing GitHub pull request, and included in the next release metadata.
   Gitleaks passed. Semgrep is environment-blocked because its runtime cannot
   initialize the sandboxed macOS trust store, and escalation was rejected to
   avoid enabling unapproved source or telemetry transmission.
-- [ ] Commit, push, update the pull request, mark it ready, and request Codex
-  review.
-- [ ] Address the first Codex review with replies and resolved threads.
-- [ ] Bump the release target, changelog, and release-facing documentation;
-  re-verify, commit, and push.
+- [x] (2026-08-27 23:04Z) Committed, pushed, updated PR #108, marked it ready,
+  and requested Codex review.
+- [x] (2026-08-27 23:14Z) Addressed both P2 findings from the first Codex
+  review in commit `9cfad3a`, replied with evidence, and resolved both threads.
+- [x] (2026-08-28 06:24Z) Finished verification for the `0.1.30` release
+  target, refreshed the yanked transitive `chacha20` lockfile entry to 0.10.2,
+  and finalized the changelog and release-facing documentation for commit and
+  push.
 
 ## Surprises & Discoveries
 
@@ -85,6 +88,11 @@ the existing GitHub pull request, and included in the next release metadata.
   not a total database order because request IDs are client controlled.
   Evidence: review threads on PR #108 against `main.ts` and the PostgreSQL
   export query.
+- Observation: GitHub's dependency policy began rejecting the transitive
+  `chacha20` 0.10.0 lockfile entry after that release was yanked.
+  Evidence: the PR security job and local `cargo deny check` both identified
+  the yanked version; refreshing the lock selected 0.10.2 and cleared Cargo
+  Deny and Trivy.
 
 ## Decision Log
 
@@ -132,10 +140,25 @@ the existing GitHub pull request, and included in the next release metadata.
   Rationale: repeated OFFSET batches need a total order, while the released
   JSON and CSV response shapes remain unchanged.
   Date/Author: 2026-08-27 / Codex review follow-up.
+- Decision: accept Cargo's patch-only refresh of transitive `chacha20` from
+  0.10.0 to 0.10.2 in the `0.1.30` release lockfile.
+  Rationale: the old version is yanked, the replacement stays within the
+  dependency's existing semver range, and the complete Rust verification and
+  security gates pass with it.
+  Date/Author: 2026-08-28 / Codex with user approval.
 
 ## Outcomes & Retrospective
 
-Implementation and verification are pending.
+The export workflow is implemented and verified in the real Entra-authenticated
+Safari UI. The first Codex review found two pagination/override edge cases;
+both are fixed, tested, pushed, replied to, and resolved. Release `0.1.30`
+metadata and documentation are finalized. The Admin UI build and tests,
+release-metadata validator, strict documentation build, Rust format/clippy/test
+stack, clean RustSec audit, Cargo Deny, Cargo Machete, all 315 nextest cases,
+Trivy, and Gitleaks pass. The repository script's shared RustSec cache and the
+local Semgrep trust-store initialization remain environment-specific issues;
+the clean advisory checkout completed the audit, and GitHub CI provides the
+clean-runner Semgrep gate.
 
 ## Context and Orientation
 
