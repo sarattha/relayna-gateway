@@ -696,6 +696,18 @@ Supported filters match the usage dashboard query model: `from`, `to`,
 creation time and request ID. `limit` defaults to `1000`, is clamped to
 `10000`, and `offset` can be used for pagination.
 
+The Admin UI export panel accepts an exact **Export from** and **Export to**
+window. When either value is set, the export-specific values replace the Usage
+page time window; when both are blank, the active Usage time filter is reused.
+Timestamps entered in the browser are sent as ISO 8601 instants, and the end of
+the interval is exclusive.
+
+Selecting **All rows (download)** downloads every matching row in ordered
+10,000-row batches. A bounded start and end time is required. This mode is
+available only for downloads because Preview, Copy URL, and Copy curl each
+represent one bounded API request. The server-side maximum remains 10,000 rows
+per request; direct API clients should continue paginating with `offset`.
+
 JSON exports include a `summary` object plus `rows`. CSV exports include the row
 fields directly and neutralize spreadsheet formula prefixes before escaping
 cells. Summary responses include request, success, failure, token, cost,

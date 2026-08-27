@@ -73,6 +73,7 @@ const login = document.querySelector("#login");
 const app = document.querySelector("#app");
 const content = document.querySelector("#content");
 const requestTimeoutMs = 8000;
+const usageExportBatchSize = 10_000;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let dialogCounter = 0;
 let overviewChart: Chart | null = null;
@@ -2677,14 +2678,19 @@ async function usage() {
     </section>
     <section class="panel">
       <div class="panel-heading"><h3>Export options</h3></div>
-      <form id="usage-export-form" class="inline-form">
-        <select name="export_format"><option value="csv">CSV</option><option value="json">JSON</option></select>
-        <select name="export_limit"><option value="1000">1,000</option><option value="100">100</option><option value="5000">5,000</option><option value="10000">10,000</option></select>
-        <input name="export_offset" type="number" min="0" value="0" aria-label="Export offset">
-        <button type="button" data-usage-export-action="preview">Preview</button>
-        <button type="button" data-usage-export-action="download">Download</button>
-        <button type="button" data-usage-export-action="copy-url">Copy URL</button>
-        <button type="button" data-usage-export-action="copy-curl">Copy curl</button>
+      <form id="usage-export-form" class="usage-export-form">
+        <select name="export_format" aria-label="Export format" aria-describedby="usage-export-help"><option value="csv">CSV</option><option value="json">JSON</option></select>
+        <select name="export_limit" aria-label="Export row count" aria-describedby="usage-export-help"><option value="1000">1,000</option><option value="100">100</option><option value="5000">5,000</option><option value="10000">10,000</option><option value="all">All rows (download)</option></select>
+        <label>Export from<input name="export_from" type="datetime-local" aria-describedby="usage-export-help"></label>
+        <label>Export to<input name="export_to" type="datetime-local" aria-describedby="usage-export-help"></label>
+        <input name="export_offset" type="number" min="0" value="0" aria-label="Export offset" aria-describedby="usage-export-help">
+        <div class="actions usage-export-actions">
+          <button type="button" data-usage-export-action="preview">Preview</button>
+          <button type="button" data-usage-export-action="download">Download</button>
+          <button type="button" data-usage-export-action="copy-url">Copy URL</button>
+          <button type="button" data-usage-export-action="copy-curl">Copy curl</button>
+        </div>
+        <div id="usage-export-help" class="help">Export dates override the Usage time filter. Leave both blank to inherit it. All rows requires a start and end time and is available for Download only.</div>
       </form>
     </section>
     <section class="panel">
@@ -2702,6 +2708,8 @@ async function usage() {
   document.querySelectorAll("[data-usage-export-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(usageExportAction));
   });
+  document.querySelector("#usage-export-form [name=export_limit]")?.addEventListener("change", syncUsageExportControls);
+  syncUsageExportControls();
   await loadUsage();
 }
 
@@ -2886,7 +2894,15 @@ async function usageExportAction(event) {
   const action = event.currentTarget.dataset.usageExportAction;
   const exportForm = document.querySelector("#usage-export-form");
   const format = exportForm ? new FormData(exportForm).get("export_format") || "csv" : "csv";
-  const path = usageExportPath(format);
+  const { query, allRows } = usageExportQuery();
+  if (allRows) {
+    if (action !== "download") {
+      throw new Error("All rows is available for Download only. Preview, URL, and curl exports remain limited to one request.");
+    }
+    await downloadAllUsageExport(format, query);
+    return;
+  }
+  const path = usageExportPath(format, query);
   if (action === "copy-url") {
     await navigator.clipboard.writeText(path);
     setNotice("Export URL copied.", "success");
@@ -2898,7 +2914,7 @@ async function usageExportAction(event) {
     return;
   }
   const response = await fetchWithTimeout(path, {
-    headers: { authorization: `Bearer ${token()}` },
+    headers: usageExportHeaders(),
   });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   if (action === "download") {
@@ -2915,15 +2931,158 @@ async function usageExportAction(event) {
   showTextModal(`Usage export ${format.toUpperCase()}`, text);
 }
 
-function usageExportPath(format) {
+function usageExportQuery() {
   const query = usageQueryFromForm();
   const form = document.querySelector("#usage-export-form");
+  let allRows = false;
   if (form) {
     const data = new FormData(form);
-    if (data.get("export_limit")) query.set("limit", data.get("export_limit"));
-    if (data.get("export_offset")) query.set("offset", data.get("export_offset"));
+    const exportLimit = data.get("export_limit");
+    allRows = exportLimit === "all";
+    query.set("limit", allRows ? String(usageExportBatchSize) : exportLimit || "1000");
+    query.set("offset", allRows ? "0" : data.get("export_offset") || "0");
+
+    const range = usageExportDateRange(data);
+    if (range) {
+      query.delete("from");
+      query.delete("to");
+      if (range.from) query.set("from", range.from);
+      if (range.to) query.set("to", range.to);
+    }
   }
+  return { query, allRows };
+}
+
+function usageExportDateRange(form) {
+  const fromInput = String(form.get("export_from") || "").trim();
+  const toInput = String(form.get("export_to") || "").trim();
+  if (!fromInput && !toInput) return null;
+
+  const from = fromInput ? new Date(fromInput) : null;
+  const to = toInput ? new Date(toInput) : null;
+  if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+    throw new Error("Use valid export dates.");
+  }
+  if (from && to && from >= to) {
+    throw new Error("Export start time must be before the end time.");
+  }
+  return {
+    from: from ? from.toISOString() : "",
+    to: to ? to.toISOString() : "",
+  };
+}
+
+function usageExportPath(format, query = usageExportQuery().query) {
   return `/admin-ui/admin/usage/export.${format}?${query}`;
+}
+
+function usageExportHeaders() {
+  if (token()) return { authorization: `Bearer ${token()}` };
+  if (state.session?.csrf_token) return { "x-csrf-token": state.session.csrf_token };
+  return {};
+}
+
+function syncUsageExportControls() {
+  const form = document.querySelector("#usage-export-form");
+  if (!form) return;
+  const allRows = new FormData(form).get("export_limit") === "all";
+  form.querySelector("[name=export_offset]").disabled = allRows;
+  form.querySelectorAll("[data-usage-export-action]").forEach((button) => {
+    button.disabled = allRows && button.dataset.usageExportAction !== "download";
+  });
+}
+
+async function downloadAllUsageExport(format, baseQuery) {
+  if (!baseQuery.get("from") || !baseQuery.get("to")) {
+    throw new Error("All rows requires a bounded start and end time. Set Export from and Export to, or apply a bounded Usage time filter.");
+  }
+
+  const parts = [];
+  let csvHeader = "";
+  let jsonStarted = false;
+  let rowCount = 0;
+  let offset = 0;
+
+  while (true) {
+    const query = new URLSearchParams(baseQuery);
+    query.set("limit", String(usageExportBatchSize));
+    query.set("offset", String(offset));
+    const response = await fetchWithTimeout(usageExportPath(format, query), {
+      headers: usageExportHeaders(),
+    });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+
+    let pageRows;
+    if (format === "json") {
+      const page = await response.json();
+      const rows = Array.isArray(page.rows) ? page.rows : [];
+      if (!jsonStarted) {
+        parts.push(`{"summary":${JSON.stringify(page.summary)},"rows":[`);
+        jsonStarted = true;
+      }
+      if (rows.length) {
+        if (rowCount) parts.push(",");
+        parts.push(rows.map((row) => JSON.stringify(row)).join(","));
+      }
+      pageRows = rows.length;
+    } else {
+      const page = splitUsageCsvPage(await response.text());
+      if (!csvHeader) {
+        csvHeader = page.header;
+        parts.push(csvHeader);
+      } else if (page.header !== csvHeader) {
+        throw new Error("Usage export columns changed while the download was running.");
+      }
+      parts.push(page.body);
+      pageRows = countCsvRecords(page.body);
+    }
+
+    rowCount += pageRows;
+    if (pageRows < usageExportBatchSize) break;
+    offset += pageRows;
+  }
+
+  if (format === "json") parts.push(jsonStarted ? "]}" : '{"summary":null,"rows":[]}');
+  downloadUsageExport(parts, format);
+  setNotice(`Downloaded ${rowCount.toLocaleString()} usage rows.`, "success");
+}
+
+function splitUsageCsvPage(csv) {
+  const headerEnd = csv.indexOf("\n");
+  if (headerEnd === -1) return { header: csv, body: "" };
+  return {
+    header: csv.slice(0, headerEnd + 1),
+    body: csv.slice(headerEnd + 1),
+  };
+}
+
+function countCsvRecords(csv) {
+  if (!csv) return 0;
+  let rows = 0;
+  let quoted = false;
+  for (let index = 0; index < csv.length; index += 1) {
+    if (csv[index] === '"') {
+      if (quoted && csv[index + 1] === '"') {
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (csv[index] === "\n" && !quoted) {
+      rows += 1;
+    }
+  }
+  return rows + (csv.endsWith("\n") ? 0 : 1);
+}
+
+function downloadUsageExport(parts, format) {
+  const type = format === "json" ? "application/json" : "text/csv;charset=utf-8";
+  const blob = new Blob(parts, { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `relayna-usage-${new Date().toISOString()}.${format}`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 async function loadTaskUsage(event) {

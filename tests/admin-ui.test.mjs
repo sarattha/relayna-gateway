@@ -504,6 +504,28 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /value="csv">CSV/);
   assert.match(js, /\/admin-ui\/admin\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/usage/);
   assert.match(js, /async function usageExportAction\(event\)/);
+  for (const field of ["export_limit", "export_from", "export_to", "export_offset"]) {
+    assert.match(sourceJs, new RegExp(`name="${field}"`));
+  }
+  assert.match(sourceJs, /value="all">All rows \(download\)/);
+  assert.match(sourceJs, /const usageExportBatchSize = 10_000/);
+  assert.match(sourceJs, /function usageExportDateRange\(form\)/);
+  assert.match(sourceJs, /function usageExportHeaders\(\)/);
+  assert.match(sourceJs, /state\.session\?\.csrf_token/);
+  assert.match(sourceJs, /headers: usageExportHeaders\(\)/);
+  assert.match(sourceJs, /function syncUsageExportControls\(\)/);
+  assert.match(sourceJs, /button\.dataset\.usageExportAction !== "download"/);
+  assert.match(sourceJs, /Export start time must be before the end time/);
+  assert.match(sourceJs, /All rows requires a bounded start and end time/);
+  assert.match(sourceJs, /query\.set\("limit", String\(usageExportBatchSize\)\)/);
+  assert.match(sourceJs, /query\.set\("offset", String\(offset\)\)/);
+  assert.match(sourceJs, /offset \+= pageRows/);
+  assert.match(sourceJs, /function splitUsageCsvPage\(csv\)/);
+  assert.match(sourceJs, /function countCsvRecords\(csv\)/);
+  assert.match(sourceJs, /page\.header !== csvHeader/);
+  assert.match(sourceJs, /class="actions usage-export-actions"/);
+  assert.match(css, /\.usage-export-form/);
+  assert.match(css, /\.usage-export-actions/);
   assert.match(js, /GATEWAY_OPERATOR_TOKEN/);
   assert.match(js, /data-debug-request/);
   assert.match(js, /dashboard\.breakdowns\.endpoints \|\| \[\]/);
@@ -531,6 +553,19 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(css, /\.table-pager/);
   assert.match(css, /\.usage-hierarchy-project/);
   assert.match(css, /\.usage-hierarchy-key/);
+});
+
+test("all-rows CSV pagination counts quoted multiline records", () => {
+  const countCsvRecords = Function(`return (${sourceFunction("countCsvRecords")})`)();
+  const splitUsageCsvPage = Function(`return (${sourceFunction("splitUsageCsvPage")})`)();
+  const csv = 'request_id,status\nreq-1,success\nreq-2,"failed\nwith detail"\n';
+  const page = splitUsageCsvPage(csv);
+
+  assert.equal(page.header, "request_id,status\n");
+  assert.equal(page.body, 'req-1,success\nreq-2,"failed\nwith detail"\n');
+  assert.equal(countCsvRecords(page.body), 2);
+  assert.equal(countCsvRecords("req-3,success"), 1);
+  assert.equal(countCsvRecords(""), 0);
 });
 
 test("audit view exposes read-only operator event filters and redacted snapshots", () => {

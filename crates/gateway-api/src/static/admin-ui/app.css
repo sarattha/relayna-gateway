@@ -609,6 +609,22 @@ td code {
   grid-column: 1 / -1;
 }
 
+.usage-export-form {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(170px, 1fr) repeat(2, minmax(180px, 1.15fr)) minmax(110px, 0.7fr);
+  gap: 11px;
+  align-items: end;
+}
+
+.usage-export-actions,
+.usage-export-form .help {
+  grid-column: 1 / -1;
+}
+
+.usage-export-actions {
+  justify-content: flex-start;
+}
+
 .pricing-rule-editor {
   align-self: stretch;
 }
@@ -1125,6 +1141,10 @@ tr:last-child td {
   .guardrail-workspace {
     grid-template-columns: 1fr;
   }
+
+  .usage-export-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 520px) {
@@ -1133,6 +1153,10 @@ tr:last-child td {
     left: var(--rg-space-3);
     width: auto;
     grid-template-columns: 1fr;
+  }
+
+  .usage-export-form {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .workspace,
