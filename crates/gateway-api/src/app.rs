@@ -3330,6 +3330,7 @@ fn apply_simulation_policy_patch(
                 "/v1/chat/completions" => Ok(Route::ChatCompletions),
                 "/v1/responses" => Ok(Route::Responses),
                 "/v1/embeddings" => Ok(Route::LiteLlmEmbeddings),
+                "/v1/rerank" => Ok(Route::LiteLlmRerank),
                 "/v1/messages" => Ok(Route::AnthropicMessages),
                 "/v1/messages/count_tokens" => Ok(Route::AnthropicMessagesCountTokens),
                 "/v1/messages/batches" => Ok(Route::AnthropicMessageBatches),
@@ -7753,6 +7754,7 @@ mod tests {
                         "/v1/chat/completions" => Some(Route::ChatCompletions),
                         "/v1/responses" => Some(Route::Responses),
                         "/v1/embeddings" => Some(Route::LiteLlmEmbeddings),
+                        "/v1/rerank" => Some(Route::LiteLlmRerank),
                         "/v1/messages" => Some(Route::AnthropicMessages),
                         "/v1/messages/count_tokens" => Some(Route::AnthropicMessagesCountTokens),
                         "/v1/messages/batches" => Some(Route::AnthropicMessageBatches),
@@ -9749,6 +9751,7 @@ mod tests {
             test_route_setting("chat-completions", "/v1/chat/completions", now),
             test_route_setting("responses", "/v1/responses", now),
             test_route_setting("embeddings", "/v1/embeddings", now),
+            test_route_setting("rerank", "/v1/rerank", now),
         ]
     }
 
@@ -13643,8 +13646,16 @@ mod tests {
             .await
             .expect("body");
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
-        assert_eq!(value.as_array().expect("routes").len(), 3);
+        assert_eq!(value.as_array().expect("routes").len(), 4);
         assert_eq!(value[0]["mode"], "managed_by_gateway");
+        let rerank = value
+            .as_array()
+            .expect("routes")
+            .iter()
+            .find(|route| route["route_id"] == "rerank")
+            .expect("rerank route");
+        assert_eq!(rerank["route"], "/v1/rerank");
+        assert_eq!(rerank["enabled"], true);
 
         let response = admin_post(
             app.clone(),
@@ -14490,6 +14501,7 @@ mod tests {
             "/v1/chat/completions",
             "/v1/responses",
             "/v1/embeddings",
+            "/v1/rerank",
             "/v1/messages",
             "/v1/messages/count_tokens",
             "/v1/messages/batches",
@@ -14540,7 +14552,7 @@ mod tests {
         let policy = apply_simulation_policy_patch(KeyPolicy::default(), patch)
             .expect("complete policy patch");
         assert!(policy.deny);
-        assert_eq!(policy.allowed_routes.len(), 16);
+        assert_eq!(policy.allowed_routes.len(), 17);
         assert_eq!(policy.allowed_providers.len(), 3);
         assert_eq!(policy.max_tool_schema_bytes, Some(8_192));
 

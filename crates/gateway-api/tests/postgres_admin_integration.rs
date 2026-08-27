@@ -605,6 +605,13 @@ async fn postgres_admin_api_workflow_covers_registered_control_plane() {
             ),
         ),
         (
+            Method::PATCH,
+            "/admin-ui/admin/openai-routes/rerank/config",
+            Some(
+                json!({"mode": "managed_by_gateway", "timeout_ms": 45000, "max_request_body_bytes": 2000000, "max_response_body_bytes": 2000000}),
+            ),
+        ),
+        (
             Method::POST,
             "/admin-ui/admin/anthropic-routes/messages/disable",
             None,

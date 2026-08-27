@@ -9,6 +9,7 @@ const gatewayControlUrl = process.env.GATEWAY_CONTROL_URL || "http://gateway:808
 const adminToken = process.env.GATEWAY_ADMIN_TOKEN;
 const apigeeSecret = process.env.APIGEE_TRUSTED_HEADER_SECRET || "apigee-secret";
 const litellmDirectUrl = process.env.LITELLM_DIRECT_URL || "http://litellm:4000";
+const gatewayLiteLlmBaseUrl = process.env.GATEWAY_LITELLM_BASE_URL || litellmDirectUrl;
 const litellmMasterKey = process.env.LITELLM_MASTER_KEY || "sk-ci";
 
 const issuer = `${dockerBaseUrl}/oauth`;
@@ -261,7 +262,7 @@ async function setupGatewayData() {
       project_id: project.id,
       preset: "developer",
       policy: {
-        allowed_routes: ["/v1/chat/completions", "/v1/responses", "/v1/embeddings"],
+        allowed_routes: ["/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/rerank"],
         allowed_providers: ["litellm"],
         allow_streaming: false,
       },
@@ -284,7 +285,7 @@ async function setupGatewayData() {
   const providerPayload = {
     provider: "litellm",
     name: `LiteLLM Direct ${Date.now()}`,
-    base_url: litellmDirectUrl,
+    base_url: gatewayLiteLlmBaseUrl,
     credential: providerDefaultCredential,
     credential_header_mode: "custom_header",
     credential_header_name: "x-litellm-key",
@@ -484,6 +485,10 @@ async function runTests() {
     method: "PATCH",
     body: JSON.stringify({ mode: "managed_by_gateway" }),
   });
+  await adminJson("/admin-ui/admin/openai-routes/rerank/config", {
+    method: "PATCH",
+    body: JSON.stringify({ mode: "managed_by_gateway" }),
+  });
   await adminJson("/admin-ui/admin/providers/litellm-passthrough", {
     method: "PATCH",
     body: JSON.stringify({
@@ -578,7 +583,12 @@ async function runTests() {
   const chatLiteral = await gatewayCall("/v1/chatcompletion", validToken, relaynaKey, chatPayload);
   const responseLiteral = await gatewayCall("/v1/response", validToken, relaynaKey, responsePayload);
   const embeddingLiteral = await gatewayCall("/v1/embedding", validToken, relaynaKey, embeddingPayload);
-  const rerank = await gatewayCall("/v1/rerank", validToken, relaynaKey, rerankPayload);
+  const rerankAliases = await Promise.all(
+    ["/rerank", "/v1/rerank", "/v2/rerank"].map(async (path) => ({
+      path,
+      result: await gatewayCall(path, validToken, relaynaKey, rerankPayload),
+    })),
+  );
   const litellmUiUnauthenticated = await fetch(`${gatewayControlUrl}/admin-ui/litellm-ui/`);
   const litellmUiProxiedResponse = await fetch(`${gatewayControlUrl}/admin-ui/litellm-ui/`, {
     headers: {
@@ -674,6 +684,20 @@ async function runTests() {
     input: `long codex context ${"x".repeat(1_100_000)}`,
   };
   const directResponsesLongContext = await gatewayBearerCall("/v1/responses", litellmMasterKey, longResponsePayload);
+  const rerankRouteModeUpdate = await adminJson("/admin-ui/admin/openai-routes/rerank/config", {
+    method: "PATCH",
+    body: JSON.stringify({
+      mode: "direct_litellm_passthrough",
+      timeout_ms: 180000,
+      max_request_body_bytes: 2097152,
+      max_response_body_bytes: 2097152,
+    }),
+  });
+  const directRerankWithLiteLlmBearer = await gatewayBearerCall(
+    "/v2/rerank",
+    litellmMasterKey,
+    rerankPayload,
+  );
   const anthropicRouteModeUpdate = await adminJson("/admin-ui/admin/anthropic-routes/messages/config", {
     method: "PATCH",
     body: JSON.stringify({
@@ -698,6 +722,7 @@ async function runTests() {
   const anthropicMessagesForwardedToLiteLlm = state.providerRequests.some((request) =>
     request.path.includes("/messages"),
   );
+  const rerankForwardedToLiteLlm = state.providerRequests.some((request) => request.path.includes("/rerank"));
   const routeMode = routesAfterMode.body.find?.((route) => route.route_id === "chat-completions")?.mode;
 
   const checks = {
@@ -824,6 +849,17 @@ async function runTests() {
         anthropicMessagesForwardedToLiteLlm,
       },
     ),
+    canonical_rerank_aliases_pass_to_litellm: pass(
+      rerankAliases.every(({ result }) => result.status === 200) && rerankForwardedToLiteLlm,
+      { rerankAliases, rerankForwardedToLiteLlm },
+    ),
+    direct_rerank_accepts_litellm_bearer_without_relayna_key: pass(
+      rerankRouteModeUpdate.status === 200 &&
+        rerankRouteModeUpdate.body?.route_id === "rerank" &&
+        rerankRouteModeUpdate.body?.mode === "direct_litellm_passthrough" &&
+        directRerankWithLiteLlmBearer.status === 200,
+      { rerankRouteModeUpdate, directRerankWithLiteLlmBearer },
+    ),
     wildcard_literal_chatcompletion_reaches_litellm: pass(
       chatLiteral.status === 404 &&
         chatLiteral.body?.detail === "Not Found",
@@ -839,23 +875,19 @@ async function runTests() {
         embeddingLiteral.body?.detail === "Not Found",
       embeddingLiteral,
     ),
-    wildcard_rerank_reaches_litellm: pass(
-      rerank.status === 400 &&
-        codeOf(rerank) === "400",
-      rerank,
-    ),
   };
 
   const requestedLiteLlmPathsPassThrough =
     chat.status === 200 &&
     responses.status === 200 &&
     embeddings.status === 200 &&
+    rerankAliases.every(({ result }) => result.status === 200) &&
     directAnthropicMessagesWithLiteLlmBearer.status === 200;
   state.results = {
     ok: Object.values(checks).every((check) => check.ok),
     requestedLiteLlmPathsPassThrough,
     overallOutcome:
-      "PASS: canonical managed and direct route modes reach LiteLLM, configurable route limits accept long-context /v1/responses payloads, Anthropic /v1/messages direct passthrough reaches LiteLLM, canonical /v1/models takes precedence over wildcard passthrough, raw /ui remains blocked by default, /admin-ui/litellm-ui reaches real LiteLLM with operator auth, trusted-ingress UI and explicitly exposed admin API paths work without Relayna auth when Entra is disabled, direct /v1/responses accepts a LiteLLM bearer key, and credential translation strips client secrets.",
+      "PASS: canonical managed and direct route modes reach LiteLLM, all three rerank aliases succeed under one governed route, configurable route limits accept long-context requests, Anthropic /v1/messages direct passthrough reaches LiteLLM, canonical routes take precedence over wildcard passthrough, operator and trusted-ingress UI paths work as configured, and credential translation strips client secrets.",
     generatedAt: new Date().toISOString(),
     environment: {
       gatewayProxyUrl,
@@ -867,11 +899,12 @@ async function runTests() {
       relaynaKeyHeader: "X-Relayna-Key",
       apigeeTrustedHeader: true,
     },
-    requestedPaths: ["/v1/chatcompletion", "/v1/response", "/v1/embedding", "/v1/rerank"],
+    requestedPaths: ["/v1/chatcompletion", "/v1/response", "/v1/embedding"],
     canonicalGatewayLiteLlmPaths: [
       "/v1/chat/completions",
       "/v1/responses",
       "/v1/embeddings",
+      "/v1/rerank",
       "/v1/messages",
       "/v1/models",
     ],
@@ -1021,7 +1054,7 @@ const server = http.createServer(async (req, res) => {
       htmlResponse(res, 200, dashboardHtml());
       return;
     }
-    if (req.method === "POST" && req.url.startsWith("/v1/")) {
+    if (req.method === "POST" && (req.url.startsWith("/v1/") || req.url.includes("/rerank"))) {
       const body = await readBody(req);
       jsonResponse(res, 200, providerResponse(req, body));
       return;

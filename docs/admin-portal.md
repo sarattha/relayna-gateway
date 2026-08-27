@@ -329,13 +329,15 @@ Studio imports, preview changes before importing or syncing.
 
 ### 6. Confirm exposed routes
 
-Open Routes. Confirm the OpenAI-compatible routes, Anthropic Claude routes, and
-registered service routes that clients will call.
+Open Routes. Confirm the OpenAI-compatible and rerank routes, Anthropic Claude
+routes, and registered service routes that clients will call.
 
 ![Routes confirmation view](assets/screenshots/admin-first-time-setup/06-routes-confirmation.png)
 
-What to check: `/v1/chat/completions` and `/v1/responses` should be enabled
-when clients need OpenAI-compatible traffic. `/v1/messages`,
+What to check: `/v1/chat/completions`, `/v1/responses`, and the canonical
+`/v1/rerank` setting should be enabled when clients need OpenAI-compatible or
+rerank traffic. The rerank setting also governs `/rerank` and `/v2/rerank`.
+`/v1/messages`,
 `/v1/messages/count_tokens`, and `/v1/messages/batches` should be enabled when
 clients need Claude or Claude Code traffic. Registered service routes should
 show the expected route pattern, allowed methods, upstream, and credential

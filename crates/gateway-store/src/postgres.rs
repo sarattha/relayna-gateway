@@ -5288,6 +5288,7 @@ fn parse_routes(values: &[String]) -> GatewayResult<Vec<Route>> {
             "/v1/chat/completions" => Ok(Route::ChatCompletions),
             "/v1/responses" => Ok(Route::Responses),
             "/v1/embeddings" => Ok(Route::LiteLlmEmbeddings),
+            "/v1/rerank" => Ok(Route::LiteLlmRerank),
             "/v1/messages" => Ok(Route::AnthropicMessages),
             "/v1/messages/count_tokens" => Ok(Route::AnthropicMessagesCountTokens),
             "/v1/messages/batches" => Ok(Route::AnthropicMessageBatches),
@@ -8502,10 +8503,13 @@ mod tests {
             .await
             .expect("enable mapping");
 
-        store
+        let openai_routes = store
             .list_openai_route_settings()
             .await
             .expect("list OpenAI routes");
+        assert!(openai_routes.iter().any(|route| {
+            route.route_id == "rerank" && route.route == "/v1/rerank" && route.enabled
+        }));
         store
             .list_anthropic_route_settings()
             .await
@@ -8570,6 +8574,10 @@ mod tests {
             .openai_route_limits(Route::LiteLlmEmbeddings)
             .await
             .expect("OpenAI limits lookup");
+        store
+            .openai_route_limits(Route::LiteLlmRerank)
+            .await
+            .expect("rerank limits lookup");
         store
             .anthropic_route_enabled(Route::AnthropicMessages)
             .await

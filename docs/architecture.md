@@ -131,8 +131,9 @@ PostgreSQL is the source of truth for durable state:
 - Usage events consumed by Relayna Studio and operators.
 - Service registrations, Studio sync state, durable OpenAPI endpoint catalogs,
   and per-endpoint pricing rules.
-- Global OpenAI route enablement and mode selection for `/v1/chat/completions`,
-  `/v1/responses`, and `/v1/embeddings`.
+- Global LiteLLM route enablement and mode selection for
+  `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, and the canonical
+  `/v1/rerank` identity shared by `/rerank`, `/v1/rerank`, and `/v2/rerank`.
 - LiteLLM wildcard passthrough settings for enablement, path/method
   allowlists, `/ui` exposure, and LiteLLM admin API exposure.
 - Operator token hashes, roles, scopes, and append-only admin audit events.
@@ -141,7 +142,7 @@ PostgreSQL is the source of truth for durable state:
   and project bindings.
 - Provider health state, request debug bundles, and service import snapshots.
 
-Registered service routes support wildcard paths under `/services/<service-name>/*`. The route resolver can match `GET` for service wildcard traffic, but forwarding still requires the service registration to include `GET` in its allowed method set. OpenAI-compatible routes, direct provider routes, and legacy named service routes remain `POST` routes.
+Registered service routes support wildcard paths under `/services/<service-name>/*`. The route resolver can match `GET` for service wildcard traffic, but forwarding still requires the service registration to include `GET` in its allowed method set. OpenAI-compatible routes, LiteLLM rerank aliases, direct provider routes, and legacy named service routes remain `POST` routes.
 
 Redis is the fast mutable state layer:
 

@@ -244,6 +244,14 @@ Canonical OpenAI-compatible routes are still first-class Gateway routes:
 - `POST /v1/responses`
 - `POST /v1/embeddings`
 
+LiteLLM reranking is also a first-class governed route. One canonical
+`/v1/rerank` policy and route setting covers all supported aliases while the
+original request path is preserved upstream:
+
+- `POST /rerank`
+- `POST /v1/rerank`
+- `POST /v2/rerank`
+
 Canonical Anthropic-compatible routes are also first-class Gateway routes for
 Claude and Claude Code clients:
 
