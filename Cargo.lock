@@ -402,9 +402,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chacha20"
-version = "0.10.0"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
+checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-api"
-version = "0.1.29"
+version = "0.1.30"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -992,7 +992,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "0.1.29"
+version = "0.1.30"
 dependencies = [
  "argon2",
  "async-trait",
@@ -1015,7 +1015,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-proxy"
-version = "0.1.29"
+version = "0.1.30"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "0.1.29"
+version = "0.1.30"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1053,7 +1053,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-telemetry"
-version = "0.1.29"
+version = "0.1.30"
 dependencies = [
  "serde_json",
  "tracing",

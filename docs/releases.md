@@ -1,15 +1,14 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.29` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.30` is the
 current release target.
 
-Version `0.1.29` adds the opt-in `ENTRA_AUTH_DEBUG` incident mode across direct
-Entra JWTs, trusted Apigee identity, portal OIDC/cookie sessions, and service or
-project owner managed identities. Structured logs expose the exact accepted or
-rejected phase and safe reason, including decoded claims when explicitly
-enabled. Compact credentials, OAuth transaction values, cookie values/hashes,
-and raw Relayna keys remain excluded. No migration or public response change is
-required.
+Version `0.1.30` adds governed LiteLLM rerank aliases backed by one canonical
+policy and route setting, plus exact export-only time windows and bounded
+all-row usage downloads in the Admin UI. The forward migration seeds the
+canonical rerank setting. Export route shapes and the 10,000-row server maximum
+remain unchanged; the browser composes ordered batches and requires explicit
+start and end timestamps for all-row downloads.
 
 It retains the `0.1.26` single-application Entra contract,
 Entra-authenticated browser sessions for administrators
@@ -42,7 +41,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.29
+   python3 scripts/validate-release-metadata.py v0.1.30
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -60,15 +59,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.29 .
+   docker build -t relayna-gateway:0.1.30 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.29 -m "Release v0.1.29"
-   git push origin v0.1.29
+   git tag -a v0.1.30 -m "Release v0.1.30"
+   git push origin v0.1.30
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -78,10 +77,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.29`, the workflow publishes:
+For `v0.1.30`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.29
+ghcr.io/sarattha/relayna-gateway:0.1.30
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```
