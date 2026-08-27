@@ -4353,7 +4353,7 @@ impl UsageQueryStore for PostgresStore {
             "#,
         );
         append_usage_filters_with_alias(&mut builder, &query, "u");
-        builder.push(" ORDER BY u.created_at ASC, u.request_id ASC");
+        append_usage_export_order(&mut builder);
         builder.push(" LIMIT ");
         builder.push_bind(query.limit.unwrap_or(1_000).clamp(1, 10_000));
         builder.push(" OFFSET ");
@@ -6262,6 +6262,10 @@ fn append_usage_filters_with_alias<'a>(
     }
 }
 
+fn append_usage_export_order(builder: &mut QueryBuilder<'_, Postgres>) {
+    builder.push(" ORDER BY u.created_at ASC, u.request_id ASC, u.id ASC");
+}
+
 async fn usage_export_rows_from_query(
     pool: &PgPool,
     mut builder: QueryBuilder<'_, Postgres>,
@@ -7914,6 +7918,17 @@ mod tests {
         ));
         assert!(!sql.contains("u.project_id AND  ="));
         assert!(!sql.contains("u.route AND  ="));
+    }
+
+    #[test]
+    fn usage_export_order_has_a_unique_tie_breaker() {
+        let mut builder = QueryBuilder::<Postgres>::new("SELECT * FROM usage_events u");
+        append_usage_export_order(&mut builder);
+
+        assert!(builder
+            .build()
+            .sql()
+            .ends_with("ORDER BY u.created_at ASC, u.request_id ASC, u.id ASC"));
     }
 
     #[test]

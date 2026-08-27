@@ -692,8 +692,8 @@ curl -sS \
 Supported filters match the usage dashboard query model: `from`, `to`,
 `project_id`, `key_id`, `route`, `provider`, `service`, `task_id`, `run_id`,
 `method`, `endpoint`, `status_code`, `model`, `status`, `trace_id`, and
-`min_cost_usd`. Export rows are ordered by
-creation time and request ID. `limit` defaults to `1000`, is clamped to
+`min_cost_usd`. Export rows are ordered by creation time, request ID, and the
+internal unique usage-event ID so paginated exports have a total order. `limit` defaults to `1000`, is clamped to
 `10000`, and `offset` can be used for pagination.
 
 The Admin UI export panel accepts an exact **Export from** and **Export to**

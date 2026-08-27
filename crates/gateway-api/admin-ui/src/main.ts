@@ -2802,16 +2802,18 @@ function usagePaginationKey(section) {
   return "";
 }
 
-function usageQueryFromForm(formElement = document.querySelector("#usage-form")) {
+function usageQueryFromForm(formElement = document.querySelector("#usage-form"), { includeDateRange = true } = {}) {
   const form = formElement ? new FormData(formElement) : new FormData();
   const query = new URLSearchParams();
   for (const key of ["project_id", "key_id", "service", "route", "method", "endpoint", "provider", "model", "task_id", "run_id", "trace_id", "status", "status_code", "min_cost_usd", "breakdown_limit", "sort_by", "limit"]) {
     const value = form.get(key);
     if (value) query.set(key, value);
   }
-  const range = usageDateRange(form);
-  if (range.from) query.set("from", range.from);
-  if (range.to) query.set("to", range.to);
+  if (includeDateRange) {
+    const range = usageDateRange(form);
+    if (range.from) query.set("from", range.from);
+    if (range.to) query.set("to", range.to);
+  }
   const interval = form.get("interval");
   if (interval) query.set("interval", interval);
   return query;
@@ -2932,22 +2934,22 @@ async function usageExportAction(event) {
 }
 
 function usageExportQuery() {
-  const query = usageQueryFromForm();
   const form = document.querySelector("#usage-export-form");
+  const data = form ? new FormData(form) : null;
+  const exportRange = data ? usageExportDateRange(data) : null;
+  const query = usageQueryFromForm(undefined, { includeDateRange: !exportRange });
   let allRows = false;
-  if (form) {
-    const data = new FormData(form);
+  if (data) {
     const exportLimit = data.get("export_limit");
     allRows = exportLimit === "all";
     query.set("limit", allRows ? String(usageExportBatchSize) : exportLimit || "1000");
     query.set("offset", allRows ? "0" : data.get("export_offset") || "0");
 
-    const range = usageExportDateRange(data);
-    if (range) {
+    if (exportRange) {
       query.delete("from");
       query.delete("to");
-      if (range.from) query.set("from", range.from);
-      if (range.to) query.set("to", range.to);
+      if (exportRange.from) query.set("from", exportRange.from);
+      if (exportRange.to) query.set("to", exportRange.to);
     }
   }
   return { query, allRows };

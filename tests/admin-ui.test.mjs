@@ -510,6 +510,8 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(sourceJs, /value="all">All rows \(download\)/);
   assert.match(sourceJs, /const usageExportBatchSize = 10_000/);
   assert.match(sourceJs, /function usageExportDateRange\(form\)/);
+  assert.match(sourceJs, /function usageQueryFromForm\(formElement = document\.querySelector\("#usage-form"\), \{ includeDateRange = true \} = \{\}\)/);
+  assert.match(sourceJs, /const exportRange = data \? usageExportDateRange\(data\) : null;\s+const query = usageQueryFromForm\(undefined, \{ includeDateRange: !exportRange \}\);/);
   assert.match(sourceJs, /function usageExportHeaders\(\)/);
   assert.match(sourceJs, /state\.session\?\.csrf_token/);
   assert.match(sourceJs, /headers: usageExportHeaders\(\)/);
