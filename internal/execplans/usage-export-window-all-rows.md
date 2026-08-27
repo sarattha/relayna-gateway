@@ -80,6 +80,11 @@ the existing GitHub pull request, and included in the next release metadata.
   dialog.
   Evidence: accepting Safari's explicit 127.0.0.1 download prompt produced the
   expected 169-line CSV without another export request.
+- Observation: the first Codex review found that export-range replacement ran
+  after inherited Usage-range validation and that `created_at, request_id` was
+  not a total database order because request IDs are client controlled.
+  Evidence: review threads on PR #108 against `main.ts` and the PostgreSQL
+  export query.
 
 ## Decision Log
 
@@ -116,6 +121,17 @@ the existing GitHub pull request, and included in the next release metadata.
   Rationale: both supported administrator authentication modes must be able to
   use the export workflow.
   Date/Author: 2026-08-27 / Codex.
+- Decision: determine whether an export-specific range exists before building
+  the inherited Usage query, and omit inherited date validation when the
+  export range replaces it.
+  Rationale: an explicit export override must be independent of stale or
+  invalid custom Usage timestamps, as promised by the panel.
+  Date/Author: 2026-08-27 / Codex review follow-up.
+- Decision: add the unique `usage_events.id` as the final PostgreSQL export
+  ordering key without exposing it in the export schema.
+  Rationale: repeated OFFSET batches need a total order, while the released
+  JSON and CSV response shapes remain unchanged.
+  Date/Author: 2026-08-27 / Codex review follow-up.
 
 ## Outcomes & Retrospective
 
