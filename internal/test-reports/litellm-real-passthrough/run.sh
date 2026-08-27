@@ -98,13 +98,15 @@ Apigee checks disabled: unauthenticated \`/ui/\` and the UI support endpoint
 \`/user/info\` reach real LiteLLM. The model endpoint \`/v1/models\` remains a
 canonical Anthropic route and still requires normal Gateway route authentication.
 
-The literal alias probes below reached real LiteLLM and were rejected there with
-404 or 400 responses, proving they were not stopped by the Gateway router:
+The literal unsupported probes below reached real LiteLLM and were rejected
+there with 404 responses, proving they were not stopped by the Gateway router:
 
 - \`/v1/chatcompletion\`
 - \`/v1/response\`
 - \`/v1/embedding\`
-- \`/v1/rerank\`
+
+The governed rerank route separately verifies successful requests through all
+LiteLLM aliases: \`/rerank\`, \`/v1/rerank\`, and \`/v2/rerank\`.
 
 ## Screenshot Artifacts
 

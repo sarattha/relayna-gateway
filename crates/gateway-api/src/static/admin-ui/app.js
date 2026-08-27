@@ -16278,7 +16278,7 @@ async function routes() {
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading">
-        <h3>${routeFamilyLogo("openai")} OpenAI-compatible routes</h3>
+        <h3>${routeFamilyLogo("openai")} OpenAI-compatible and rerank routes</h3>
         <span class="subtle">${state.openaiRoutes.length} total</span>
       </div>
       ${providerRouteTable(state.openaiRoutes, "openai")}
@@ -17334,7 +17334,7 @@ function usageFilterValuesQueryFromForm(formElement = document.querySelector("#u
   return query;
 }
 function updateUsageDatalists(routes2 = [], endpoints = [], models = []) {
-  const routeDefaults2 = ["/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/messages", "/summary", "/translation", "/ocr", "/embeddings", "/services/*", "/providers/openai/*"];
+  const routeDefaults2 = ["/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/rerank", "/v1/messages", "/summary", "/translation", "/ocr", "/embeddings", "/services/*", "/providers/openai/*"];
   const routeList = document.querySelector("#usage-route-options");
   const endpointList = document.querySelector("#usage-endpoint-options");
   const modelList = document.querySelector("#usage-model-options");

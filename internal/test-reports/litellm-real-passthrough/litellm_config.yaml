@@ -14,6 +14,11 @@ model_list:
       model: anthropic/claude-review
       api_key: sk-upstream
       api_base: http://mock-provider:4000
+  - model_name: rerank-review
+    litellm_params:
+      model: cohere/rerank-english-v3.0
+      api_key: sk-upstream
+      api_base: http://mock-provider:4000
 
 litellm_settings:
   drop_params: true

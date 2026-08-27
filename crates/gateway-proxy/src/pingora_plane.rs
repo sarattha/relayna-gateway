@@ -4085,6 +4085,13 @@ mod tests {
         );
         assert_eq!(
             proxy
+                .ensure_litellm_canonical_route_enabled(Route::LiteLlmRerank)
+                .await
+                .unwrap_err(),
+            GatewayError::DisabledRoute
+        );
+        assert_eq!(
+            proxy
                 .ensure_litellm_canonical_route_enabled(Route::AnthropicMessages)
                 .await
                 .unwrap_err(),
@@ -4165,6 +4172,10 @@ mod tests {
         ));
         assert!(!bypass_gateway_governance_for_passthrough(
             Route::LiteLlmEmbeddings,
+            true
+        ));
+        assert!(!bypass_gateway_governance_for_passthrough(
+            Route::LiteLlmRerank,
             true
         ));
     }

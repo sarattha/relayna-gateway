@@ -84,7 +84,12 @@ When a request reaches the proxy listener, routing is evaluated in this order:
    - `POST /v1/chat/completions`
    - `POST /v1/responses`
    - `POST /v1/embeddings`
-4. Canonical Anthropic-compatible routes:
+4. Canonical LiteLLM rerank aliases, governed by one `/v1/rerank` route
+   setting:
+   - `POST /rerank`
+   - `POST /v1/rerank`
+   - `POST /v2/rerank`
+5. Canonical Anthropic-compatible routes:
    - `POST /v1/messages`
    - `POST /v1/messages/count_tokens`
    - `GET` and `POST /v1/messages/batches`
@@ -92,7 +97,7 @@ When a request reaches the proxy listener, routing is evaluated in this order:
    - `GET /v1/messages/batches/*/results`
    - `POST /v1/messages/batches/*/cancel`
    - `GET /v1/models`
-5. LiteLLM wildcard passthrough for remaining allowed paths.
+6. LiteLLM wildcard passthrough for remaining allowed paths.
 
 This means `/services/*` and the Admin/control API cannot accidentally fall
 through to LiteLLM wildcard passthrough.

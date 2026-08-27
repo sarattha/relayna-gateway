@@ -14,6 +14,7 @@ pub enum Route {
     ChatCompletions,
     Responses,
     LiteLlmEmbeddings,
+    LiteLlmRerank,
     AnthropicMessages,
     AnthropicMessagesCountTokens,
     AnthropicMessageBatches,
@@ -62,6 +63,9 @@ impl Route {
             "/v1/responses" if method == Method::POST => Ok(RouteMatch::litellm(Self::Responses)),
             "/v1/embeddings" if method == Method::POST => {
                 Ok(RouteMatch::litellm(Self::LiteLlmEmbeddings))
+            }
+            "/rerank" | "/v1/rerank" | "/v2/rerank" if method == Method::POST => {
+                Ok(RouteMatch::litellm(Self::LiteLlmRerank))
             }
             "/v1/messages" if method == Method::POST => {
                 Ok(RouteMatch::litellm(Self::AnthropicMessages))
@@ -128,6 +132,7 @@ impl Route {
             Self::ChatCompletions => "/v1/chat/completions",
             Self::Responses => "/v1/responses",
             Self::LiteLlmEmbeddings => "/v1/embeddings",
+            Self::LiteLlmRerank => "/v1/rerank",
             Self::AnthropicMessages => "/v1/messages",
             Self::AnthropicMessagesCountTokens => "/v1/messages/count_tokens",
             Self::AnthropicMessageBatches => "/v1/messages/batches",
@@ -206,6 +211,14 @@ mod tests {
         assert_eq!(embeddings.route, Route::LiteLlmEmbeddings);
         assert_eq!(embeddings.backend, BackendType::LiteLlm);
         assert_eq!(embeddings.provider, Provider::LiteLlm);
+
+        for path in ["/rerank", "/v1/rerank", "/v2/rerank"] {
+            let rerank = Route::resolve_match(&Method::POST, path).expect("rerank");
+            assert_eq!(rerank.route, Route::LiteLlmRerank, "rerank path {path}");
+            assert_eq!(rerank.backend, BackendType::LiteLlm);
+            assert_eq!(rerank.provider, Provider::LiteLlm);
+        }
+        assert_eq!(Route::LiteLlmRerank.as_str(), "/v1/rerank");
     }
 
     #[test]
@@ -265,6 +278,13 @@ mod tests {
             Route::resolve(&Method::GET, "/v1/embeddings").unwrap_err(),
             GatewayError::UnsupportedRoute
         );
+        for path in ["/rerank", "/v1/rerank", "/v2/rerank"] {
+            assert_eq!(
+                Route::resolve(&Method::GET, path).unwrap_err(),
+                GatewayError::UnsupportedRoute,
+                "rerank path {path}"
+            );
+        }
         assert_eq!(
             Route::resolve(&Method::GET, "/v1/messages").unwrap_err(),
             GatewayError::UnsupportedRoute

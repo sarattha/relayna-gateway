@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 pub const CHAT_COMPLETIONS_ROUTE_ID: &str = "chat-completions";
 pub const EMBEDDINGS_ROUTE_ID: &str = "embeddings";
+pub const RERANK_ROUTE_ID: &str = "rerank";
 pub const RESPONSES_ROUTE_ID: &str = "responses";
 pub const ANTHROPIC_MESSAGES_ROUTE_ID: &str = "messages";
 pub const ANTHROPIC_MESSAGES_COUNT_TOKENS_ROUTE_ID: &str = "messages-count-tokens";
@@ -266,6 +267,7 @@ pub fn openai_route_id(route: Route) -> Option<&'static str> {
         Route::ChatCompletions => Some(CHAT_COMPLETIONS_ROUTE_ID),
         Route::Responses => Some(RESPONSES_ROUTE_ID),
         Route::LiteLlmEmbeddings => Some(EMBEDDINGS_ROUTE_ID),
+        Route::LiteLlmRerank => Some(RERANK_ROUTE_ID),
         _ => None,
     }
 }
@@ -275,6 +277,7 @@ pub fn openai_route_from_id(route_id: &str) -> Option<Route> {
         CHAT_COMPLETIONS_ROUTE_ID => Some(Route::ChatCompletions),
         RESPONSES_ROUTE_ID => Some(Route::Responses),
         EMBEDDINGS_ROUTE_ID => Some(Route::LiteLlmEmbeddings),
+        RERANK_ROUTE_ID => Some(Route::LiteLlmRerank),
         _ => None,
     }
 }
@@ -630,6 +633,16 @@ fn is_litellm_admin_path(path: &str) -> bool {
 mod tests {
     use super::*;
     use chrono::Utc;
+
+    #[test]
+    fn rerank_is_a_canonical_litellm_route_setting() {
+        assert_eq!(openai_route_id(Route::LiteLlmRerank), Some(RERANK_ROUTE_ID));
+        assert_eq!(
+            openai_route_from_id(RERANK_ROUTE_ID),
+            Some(Route::LiteLlmRerank)
+        );
+        assert!(is_litellm_canonical_route(Route::LiteLlmRerank));
+    }
 
     #[test]
     fn operator_only_sensitive_paths_are_routeable_but_classified() {

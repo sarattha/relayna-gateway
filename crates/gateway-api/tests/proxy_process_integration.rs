@@ -1,5 +1,6 @@
 use axum::{
     body::Bytes,
+    extract::OriginalUri,
     http::StatusCode,
     routing::{any, post},
     Json, Router,
@@ -34,11 +35,12 @@ async fn mock_upstream() -> (String, JoinHandle<()>) {
             "/large-response",
             post(|| async { Json(json!({"payload": "x".repeat(2048)})) }),
         )
-        .fallback(any(|| async {
+        .fallback(any(|OriginalUri(uri): OriginalUri| async move {
             (
                 StatusCode::OK,
                 Json(json!({
                     "id": "mock-response",
+                    "path": uri.path(),
                     "model": "coverage-model",
                     "choices": [],
                     "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
@@ -173,6 +175,7 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
                         "/v1/chat/completions".to_owned(),
                         "/v1/responses".to_owned(),
                         "/v1/embeddings".to_owned(),
+                        "/v1/rerank".to_owned(),
                         "/v1/messages".to_owned(),
                         "/providers/openai/*".to_owned(),
                         "/services/*".to_owned(),
@@ -317,6 +320,18 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
             json!({"model": "coverage-model", "input": "hello"}),
         ),
         (
+            "/rerank",
+            json!({"model": "coverage-model", "query": "hello", "documents": ["one", "two"]}),
+        ),
+        (
+            "/v1/rerank",
+            json!({"model": "coverage-model", "query": "hello", "documents": ["one", "two"]}),
+        ),
+        (
+            "/v2/rerank",
+            json!({"model": "coverage-model", "query": "hello", "documents": ["one", "two"]}),
+        ),
+        (
             "/v1/messages",
             json!({"model": "coverage-model", "messages": [{"role": "user", "content": "hello"}], "max_tokens": 8}),
         ),
@@ -331,7 +346,10 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     ] {
         let response = send_json(&client, &proxy_url, path, Some(&material.raw_key), body).await;
         assert_eq!(response.status(), StatusCode::OK, "proxy path {path}");
-        let _ = response.bytes().await.expect("consume proxy response");
+        let response_body: Value = response.json().await.expect("proxy response body");
+        if path.ends_with("/rerank") {
+            assert_eq!(response_body["path"], path, "preserve rerank path {path}");
+        }
     }
 
     let service_url = format!("{proxy_url}/services/{service_name}/status");

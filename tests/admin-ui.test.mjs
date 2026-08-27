@@ -364,7 +364,8 @@ test("providers view configures LiteLLM credential headers and mappings without 
 test("routes view exposes canonical provider route modes", () => {
   assert.match(js, /managed_by_gateway/);
   assert.match(js, /direct_litellm_passthrough/);
-  assert.match(js, /OpenAI-compatible routes/);
+  assert.match(js, /OpenAI-compatible and rerank routes/);
+  assert.match(js, /"\/v1\/rerank"/);
   assert.match(js, /Anthropic Claude routes/);
   assert.match(css, /\.route-logo\.openai/);
   assert.match(css, /\.route-logo\.anthropic/);
