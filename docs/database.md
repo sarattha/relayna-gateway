@@ -34,6 +34,7 @@ of that schema.
 | Audit | `audit_events` | Stores append-only operator mutation records with redacted snapshots. |
 | Provider intelligence | `provider_health_states`, `request_debug_bundles`, `service_registry_snapshots` | Stores health/circuit state, sanitized request debug bundles with optional project attribution, and import version history. |
 | Usage | `usage_events` | Stores request accounting for admin usage views, exports, budget rehydration, Relayna Studio consumption, and trace-aware analytics. |
+| Traffic diagnostics | `request_traffic` | Stores completed metadata diagnostics, including requests without authenticated identity or a resolved route. |
 
 ## Required Operational Data
 
@@ -325,6 +326,28 @@ plus row details. Summary and time-series queries derive P95 latency directly
 from the matching event set. CSV exports append the service version and
 method/path/template fields and neutralize spreadsheet formula prefixes before
 sending the response.
+
+### `request_traffic`
+
+Introduced in `0.1.31`, this table holds completed request diagnostics for
+Monitor → Traffic. An internal `id uuid` distinguishes requests even when clients
+reuse `request_id`. `instance_id` identifies the gateway process that observed the
+request. `key_id`, `project_id`, `service`, and `client_status` may be null when
+identity, routing or response delivery was not established.
+
+`record jsonb` contains the metadata timeline, upstream attempts/status, failure
+stage/code/source, stream outcome, and reported recording failures. It contains no
+bodies, credentials, query strings or raw unresolved paths. Time, request-ID and
+failure indexes support history queries; repeated writes update the same
+internal diagnostic ID. Retention is operator-managed. See
+[Traffic Monitor](operations/traffic-monitor.md) for bounds, deletion examples and
+database-outage behavior.
+
+The same release adds `usage_events.diagnostics jsonb NOT NULL DEFAULT '{}'`,
+holding optional failure stage/code/source, outcome, upstream status and instance
+ID. Existing usage rows read with empty diagnostics. A failed stream can retain
+HTTP 200 while its usage status is failure. Anonymous traffic diagnostics do not
+create usage rows with fabricated key identities.
 
 ### `guardrail_definitions`
 

@@ -20,6 +20,8 @@ All notable changes to Relayna Gateway are documented in this file.
 - Failed or timed-out usage, debug-bundle and diagnostic writes emit structured
   errors and appear in live recording status. Failure logs precede database writes.
 - Interrupted streams remain failures even when HTTP 200 was already delivered.
+- Body-processing rejections finish promptly and close non-reusable HTTP/1
+  connections before the client sends its next request.
 - Gateway errors include request-ID headers and generic proxy failures use a
   correlated JSON envelope; upstream bodies remain passthrough.
 

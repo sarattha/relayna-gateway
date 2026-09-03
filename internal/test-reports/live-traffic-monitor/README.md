@@ -29,3 +29,10 @@ unresolved routes, Redis failures before forwarding, body admission 503s,
 upstream 503 passthrough, stream interruption after HTTP 200, independent failures
 of usage/debug/traffic persistence, access scopes and CSRF, bounded retention,
 cursor gaps, duplicate correlation IDs, and split SSE frames.
+
+The mandatory verification script passed on the committed runtime in an isolated
+worktree using the committed dependency lock. Nextest ran 325 tests with zero
+failures or skips; one existing catalog test had a non-failing process-exit
+warning. Audit used a clean advisory database path after an untracked duplicate
+advisory made the default local cache unreadable. No exclusions were added.
+Workspace build, Admin UI build/tests and release metadata validation passed.
