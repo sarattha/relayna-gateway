@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "build:admin-ui": "vite build --config crates/gateway-api/admin-ui/vite.config.ts",
-    "test": "node tests/admin-ui.test.mjs && node tests/admin-ui-design-system.test.mjs"
+    "test": "node tests/admin-ui.test.mjs && node tests/admin-ui-design-system.test.mjs && node tests/admin-ui-traffic.test.mjs"
   },
   "devDependencies": {
     "@tabler/icons-webfont": "^3.44.0",

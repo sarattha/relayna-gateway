@@ -1,3 +1,4 @@
+import { mountTraffic } from "./traffic";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 import Chart from "chart.js/auto";
 import "./app.css";
@@ -79,6 +80,7 @@ let dialogCounter = 0;
 let overviewChart: Chart | null = null;
 let ownerDashboardChart: Chart | null = null;
 let ownerDashboardGeneration = 0;
+let stopTraffic = null;
 
 function token() {
   return sessionStorage.getItem(tokenKey);
@@ -500,6 +502,8 @@ document.querySelector("#login-form").addEventListener("submit", async (event) =
 });
 
 async function signOut() {
+  stopTraffic?.();
+  stopTraffic = null;
   let logoutUrl = null;
   if (!token() && state.session) {
     try {
@@ -566,6 +570,8 @@ window.addEventListener("hashchange", () => {
 });
 
 async function refresh({ focus = false } = {}) {
+  stopTraffic?.();
+  stopTraffic = null;
   setNotice("");
   destroyOverviewChart();
   destroyOwnerDashboardChart();
@@ -585,6 +591,7 @@ async function refresh({ focus = false } = {}) {
     if (state.view === "providers") await providers();
     if (state.view === "routes") await routes();
     if (state.view === "services") await services();
+    if (state.view === "traffic") stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time });
     if (state.view === "usage") await usage();
     if (state.view === "health") await health();
     if (state.view === "settings") await settings();
@@ -2269,7 +2276,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.30")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.31")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>

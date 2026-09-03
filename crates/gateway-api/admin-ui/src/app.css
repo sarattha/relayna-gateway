@@ -2622,3 +2622,17 @@ tbody tr:hover td {
     animation-duration: 0.01ms !important;
   }
 }
+
+.traffic-facts {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(0, 3fr);
+  gap: var(--rg-space-2);
+  overflow-wrap: anywhere;
+}
+.traffic-facts dt { font-weight: 600; }
+.traffic-facts dd { margin: 0; }
+#traffic-connection, #traffic-detail code { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .traffic-facts { grid-template-columns: 1fr; }
+  #traffic-filters .form-actions { grid-column: 1; }
+}

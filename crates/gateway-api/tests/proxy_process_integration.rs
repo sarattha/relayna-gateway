@@ -87,6 +87,7 @@ async fn send_json(
 
 #[tokio::test]
 async fn gateway_process_proxies_generation_direct_and_registered_service_routes() {
+    gateway_telemetry::init("gateway_proxy=warn", false);
     let database_url = match std::env::var("DATABASE_URL") {
         Ok(value) => value,
         Err(_) => {
@@ -449,6 +450,13 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     )
     .await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .headers()
+            .get("connection")
+            .and_then(|v| v.to_str().ok()),
+        Some("close")
+    );
     let error: Value = response.json().await.expect("overload response body");
     assert_eq!(error["error"]["code"], "gateway_overloaded");
     assert_eq!(error["error"]["retry_after_seconds"], 1);

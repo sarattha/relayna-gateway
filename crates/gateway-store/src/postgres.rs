@@ -929,9 +929,10 @@ impl PostgresStore {
                 run_id,
                 trace_id,
                 fallback_count,
-                created_at
+                created_at,
+                diagnostics
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
             "#,
         )
         .bind(&event.request_id)
@@ -960,6 +961,7 @@ impl PostgresStore {
         .bind(&event.trace_id)
         .bind(event.fallback_count)
         .bind(event.created_at)
+        .bind(sqlx::types::Json(&event.diagnostics))
         .execute(&self.pool)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
@@ -4338,6 +4340,7 @@ impl UsageQueryStore for PostgresStore {
                 u.task_id,
                 u.run_id,
                 u.trace_id,
+                u.diagnostics,
                 u.fallback_count,
                 COALESCE(g.guardrail_action_count, 0)::bigint AS guardrail_action_count,
                 u.created_at
@@ -4367,6 +4370,11 @@ impl UsageQueryStore for PostgresStore {
             .into_iter()
             .map(|row| {
                 Ok(UsageExportRow {
+                    diagnostics: row
+                        .try_get::<sqlx::types::Json<gateway_core::traffic::RequestDiagnostics>, _>(
+                            "diagnostics",
+                        )?
+                        .0,
                     request_id: row.try_get("request_id")?,
                     key_id: row.try_get("key_id")?,
                     project_id: row.try_get("project_id")?,
@@ -4469,6 +4477,7 @@ impl UsageQueryStore for PostgresStore {
                 u.task_id,
                 u.run_id,
                 u.trace_id,
+                u.diagnostics,
                 u.fallback_count,
                 COALESCE(g.guardrail_action_count, 0)::bigint AS guardrail_action_count,
                 u.created_at
@@ -6278,6 +6287,11 @@ async fn usage_export_rows_from_query(
         .into_iter()
         .map(|row| {
             Ok(UsageExportRow {
+                diagnostics: row
+                    .try_get::<sqlx::types::Json<gateway_core::traffic::RequestDiagnostics>, _>(
+                        "diagnostics",
+                    )?
+                    .0,
                 request_id: row.try_get("request_id")?,
                 key_id: row.try_get("key_id")?,
                 project_id: row.try_get("project_id")?,
@@ -7870,6 +7884,85 @@ fn validate_managed_identity_project_fields(
     Ok(())
 }
 
+#[async_trait]
+impl gateway_core::traffic::TrafficStore for PostgresStore {
+    async fn insert_traffic(
+        &self,
+        request: &gateway_core::traffic::TrafficRequest,
+    ) -> GatewayResult<()> {
+        sqlx::query("INSERT INTO request_traffic (id, instance_id, request_id, started_at, project_id, key_id, service, client_status, failed, record) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO UPDATE SET record = EXCLUDED.record, failed = EXCLUDED.failed, client_status = EXCLUDED.client_status")
+            .bind(request.id).bind(&request.instance_id).bind(&request.request_id)
+            .bind(request.started_at).bind(request.project_id).bind(request.key_id)
+            .bind(&request.service).bind(request.client_status.map(i32::from))
+            .bind(request.diagnostics.failure_code.is_some())
+            .bind(sqlx::types::Json(request)).execute(&self.pool).await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(())
+    }
+
+    async fn traffic_history(
+        &self,
+        query: gateway_core::traffic::TrafficQuery,
+    ) -> GatewayResult<Vec<gateway_core::traffic::TrafficRequest>> {
+        query.validate()?;
+        let mut sql =
+            QueryBuilder::<Postgres>::new("SELECT record FROM request_traffic WHERE TRUE");
+        if let Some(value) = query.request_id {
+            sql.push(" AND request_id = ").push_bind(value);
+        }
+        if let Some(value) = query.service {
+            sql.push(" AND service = ").push_bind(value);
+        }
+        if let Some(value) = query.project_id {
+            sql.push(" AND project_id = ").push_bind(value);
+        }
+        if let Some(value) = query.key_id {
+            sql.push(" AND key_id = ").push_bind(value);
+        }
+        if let Some(value) = query.status {
+            sql.push(" AND client_status = ")
+                .push_bind(i32::from(value));
+        }
+        if let Some(value) = query.failure_code {
+            sql.push(" AND record #>> '{diagnostics,failure_code}' = ")
+                .push_bind(value);
+        }
+        if query.failures_only == Some(true) {
+            sql.push(" AND failed");
+        }
+        // Default lookback bounds ordinary queries; operators can specify a range.
+        sql.push(" AND started_at >= ").push_bind(
+            query
+                .from
+                .unwrap_or_else(|| chrono::Utc::now() - chrono::Duration::days(1)),
+        );
+        if let Some(value) = query.to {
+            sql.push(" AND started_at <= ").push_bind(value);
+        }
+        if let Some((time, id)) = query.before.zip(query.before_id) {
+            sql.push(" AND (started_at, id) < (")
+                .push_bind(time)
+                .push(",")
+                .push_bind(id)
+                .push(")");
+        }
+        sql.push(" ORDER BY started_at DESC, id DESC LIMIT ")
+            .push_bind(query.limit.unwrap_or(100));
+        let rows = sql
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        rows.into_iter()
+            .map(|row| {
+                row.try_get::<sqlx::types::Json<gateway_core::traffic::TrafficRequest>, _>("record")
+                    .map(|value| value.0)
+                    .map_err(|_| GatewayError::StoreUnavailable)
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -8768,6 +8861,7 @@ mod tests {
             .expect("guardrail summary");
 
         let usage = UsageEvent {
+            diagnostics: Default::default(),
             request_id: format!("usage-{suffix}"),
             key_id: key.id,
             project_id: Some(project.id),
@@ -8872,6 +8966,7 @@ mod tests {
         assert_eq!(endpoint_breakdown[0].name, "POST /jobs/{job_id}");
         store
             .insert_usage_event(&UsageEvent {
+                diagnostics: Default::default(),
                 request_id: format!("usage-none-service-{suffix}"),
                 service_name: Some("none".to_owned()),
                 service_version: None,
@@ -8882,6 +8977,7 @@ mod tests {
             .expect("insert literal none service usage");
         store
             .insert_usage_event(&UsageEvent {
+                diagnostics: Default::default(),
                 request_id: format!("usage-unattributed-{suffix}"),
                 service_name: None,
                 service_version: None,

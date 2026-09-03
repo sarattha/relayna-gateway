@@ -14,6 +14,7 @@ pub enum UsageStatus {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UsageEvent {
+    pub diagnostics: crate::traffic::RequestDiagnostics,
     pub request_id: String,
     pub key_id: Uuid,
     pub project_id: Option<Uuid>,
@@ -48,6 +49,14 @@ pub trait UsageRecorder: Send + Sync {
 }
 
 impl UsageEvent {
+    pub fn with_diagnostics(mut self, diagnostics: crate::traffic::RequestDiagnostics) -> Self {
+        if diagnostics.failure_code.is_some() {
+            self.status = UsageStatus::Failure;
+        }
+        self.diagnostics = diagnostics;
+        self
+    }
+
     pub fn new(
         request_id: impl Into<String>,
         key: &AuthenticatedKey,
@@ -64,6 +73,7 @@ impl UsageEvent {
         };
 
         Self {
+            diagnostics: Default::default(),
             request_id: request_id.into(),
             key_id: key.key_id,
             project_id: key.project_id,

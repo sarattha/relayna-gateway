@@ -105,6 +105,7 @@ pub struct UsageProjectKeyServiceBreakdown {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct UsageExportRow {
+    pub diagnostics: crate::traffic::RequestDiagnostics,
     pub request_id: String,
     pub key_id: Uuid,
     pub project_id: Option<Uuid>,

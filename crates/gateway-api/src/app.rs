@@ -13,6 +13,7 @@ use axum::{
 };
 use bytes::Bytes;
 use chrono::{Duration as ChronoDuration, Utc};
+use gateway_core::traffic::{self, TrafficQuery, TrafficStore};
 use gateway_core::CircuitBreakerState;
 use gateway_core::{
     auth::{Authenticator, VirtualKeyLookup},
@@ -80,6 +81,7 @@ pub trait GatewayData:
     + OperatorTokenStore
     + AdminAuditStore
     + UsageQueryStore
+    + TrafficStore
     + PortalAccessStore
     + Send
     + Sync
@@ -666,6 +668,8 @@ pub fn router_with_state(state: AppState) -> Router {
             "/admin-ui/admin/projects/{project_id}/usage",
             get(project_usage),
         )
+        .route("/admin-ui/admin/traffic/live", get(traffic_live))
+        .route("/admin-ui/admin/traffic/history", get(traffic_history))
         .route("/admin-ui/admin/usage/summary", get(usage_summary))
         .route("/admin-ui/admin/usage/dashboard", get(usage_dashboard))
         .route("/admin-ui/admin/usage/timeseries", get(usage_timeseries))
@@ -4736,6 +4740,79 @@ async fn service_sync_status(
     }
 }
 
+// Each stream reauthorizes after at most 30 seconds. Admission bounds concurrent
+// viewers and disconnecting drops the permit without spawning background tasks.
+async fn traffic_live(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    use axum::response::sse::{Event, Sse};
+    use std::{convert::Infallible, sync::OnceLock, time::Instant};
+    static VIEWERS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_USAGE_READ).await {
+        return response;
+    }
+    let Ok(permit) = VIEWERS
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(32)))
+        .clone()
+        .try_acquire_owned()
+    else {
+        return error_response(&headers, GatewayError::GatewayOverloaded);
+    };
+    let cursor = headers
+        .get("last-event-id")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| value.len() <= 192)
+        .map(str::to_owned);
+    let stream = futures_util::stream::unfold(
+        (cursor, Instant::now(), permit),
+        |(cursor, started, permit)| async move {
+            if started.elapsed() >= Duration::from_secs(30) {
+                return None;
+            }
+            let batch = traffic::monitor().batch(cursor.as_deref());
+            let next = batch.cursor.clone();
+            let event = Event::default()
+                .event("traffic")
+                .id(&next)
+                .json_data(batch)
+                .expect("traffic serialization");
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            Some((Ok::<_, Infallible>(event), (Some(next), started, permit)))
+        },
+    );
+    let mut response = Sse::new(stream).into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    response
+        .headers_mut()
+        .insert("x-accel-buffering", HeaderValue::from_static("no"));
+    response
+}
+
+async fn traffic_history(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TrafficQuery>,
+) -> Response {
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_USAGE_READ).await {
+        return response;
+    }
+    if let Err(error) = query.validate() {
+        return error_response(&headers, error);
+    }
+    match state.store.traffic_history(query).await {
+        Ok(rows) => {
+            let mut response = Json(rows).into_response();
+            response.headers_mut().insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, no-store"),
+            );
+            response
+        }
+        Err(error) => error_response(&headers, error),
+    }
+}
+
 async fn usage_summary(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -7040,6 +7117,19 @@ mod tests {
     }
 
     #[async_trait]
+    impl TrafficStore for MemoryStore {
+        async fn insert_traffic(&self, _request: &traffic::TrafficRequest) -> GatewayResult<()> {
+            Ok(())
+        }
+        async fn traffic_history(
+            &self,
+            _query: TrafficQuery,
+        ) -> GatewayResult<Vec<traffic::TrafficRequest>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[async_trait]
     impl GatewayData for MemoryStore {
         async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()> {
             self.events
@@ -8910,6 +9000,7 @@ mod tests {
                 .iter()
                 .filter(|event| usage_event_matches_query(event, &query))
                 .map(|event| UsageExportRow {
+                    diagnostics: event.diagnostics.clone(),
                     request_id: event.request_id.clone(),
                     key_id: event.key_id,
                     project_id: event.project_id,
@@ -9554,6 +9645,7 @@ mod tests {
 
     fn test_usage_event_for_project(request_id: &str, project_id: Uuid) -> UsageEvent {
         UsageEvent {
+            diagnostics: Default::default(),
             request_id: request_id.to_owned(),
             key_id: Uuid::new_v4(),
             project_id: Some(project_id),
@@ -10676,6 +10768,7 @@ mod tests {
         store.services.lock().expect("lock poisoned").push(service);
         store.events.lock().expect("lock poisoned").extend([
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "req-orders-ok".to_owned(),
                 key_id: Uuid::new_v4(),
                 project_id: Some(Uuid::new_v4()),
@@ -10704,6 +10797,7 @@ mod tests {
                 created_at: Utc::now(),
             },
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "req-orders-failed-debug".to_owned(),
                 key_id: Uuid::new_v4(),
                 project_id: None,
@@ -10732,6 +10826,7 @@ mod tests {
                 created_at: Utc::now(),
             },
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "req-payments-cross-service".to_owned(),
                 key_id: Uuid::new_v4(),
                 project_id: None,
@@ -12073,6 +12168,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn traffic_requires_usage_scope_or_admin_session_with_csrf() {
+        let store = MemoryStore {
+            operator_tokens: Arc::new(Mutex::new(vec![
+                TEST_USAGE_OPERATOR_TOKEN.to_owned(),
+                TEST_POLICY_OPERATOR_TOKEN.to_owned(),
+            ])),
+            ..default_store()
+        };
+        let (owner, owner_csrf) = seed_portal_session(&store, active_portal_member(false));
+        let (admin, admin_csrf) = seed_portal_session(&store, active_portal_member(true));
+        let app = router_with_state(test_state(store));
+        for route in [
+            "/admin-ui/admin/traffic/live",
+            "/admin-ui/admin/traffic/history",
+        ] {
+            assert_eq!(
+                admin_get(app.clone(), route, Some(TEST_POLICY_OPERATOR_TOKEN))
+                    .await
+                    .status(),
+                StatusCode::FORBIDDEN
+            );
+            assert_eq!(
+                admin_get(app.clone(), route, Some(TEST_USAGE_OPERATOR_TOKEN))
+                    .await
+                    .status(),
+                StatusCode::OK
+            );
+            assert_eq!(
+                portal_request(
+                    app.clone(),
+                    axum::http::Method::GET,
+                    route,
+                    &owner,
+                    &owner_csrf,
+                    Some(&owner_csrf),
+                    ""
+                )
+                .await
+                .status(),
+                StatusCode::FORBIDDEN
+            );
+            assert_eq!(
+                portal_request(
+                    app.clone(),
+                    axum::http::Method::GET,
+                    route,
+                    &admin,
+                    &admin_csrf,
+                    None,
+                    ""
+                )
+                .await
+                .status(),
+                StatusCode::FORBIDDEN
+            );
+            assert_eq!(
+                portal_request(
+                    app.clone(),
+                    axum::http::Method::GET,
+                    route,
+                    &admin,
+                    &admin_csrf,
+                    Some(&admin_csrf),
+                    ""
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn admin_create_key_denies_operator_without_key_scope() {
         let store = MemoryStore {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_USAGE_OPERATOR_TOKEN.to_owned()])),
@@ -12804,6 +12972,7 @@ mod tests {
         let project_id = Uuid::new_v4();
         store.events.lock().expect("events lock").extend([
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "req-success".to_owned(),
                 key_id,
                 project_id: Some(project_id),
@@ -12832,6 +13001,7 @@ mod tests {
                 created_at: Utc::now(),
             },
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "=req-failure".to_owned(),
                 key_id,
                 project_id: Some(project_id),
@@ -12961,6 +13131,7 @@ mod tests {
             .with_timezone(&Utc);
         store.events.lock().expect("events lock").extend([
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "svc-fixed".to_owned(),
                 key_id,
                 project_id: Some(project_id),
@@ -12989,6 +13160,7 @@ mod tests {
                 created_at: bucket,
             },
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "svc-rule".to_owned(),
                 key_id,
                 project_id: Some(project_id),
@@ -13066,6 +13238,7 @@ mod tests {
             .expect("time")
             .with_timezone(&Utc);
         let base = UsageEvent {
+            diagnostics: Default::default(),
             request_id: "project-a-key-a-summarizer-1".to_owned(),
             key_id: key_a,
             project_id: Some(project_a),
@@ -13096,6 +13269,7 @@ mod tests {
         store.events.lock().expect("events lock").extend([
             base.clone(),
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "project-a-key-a-summarizer-2".to_owned(),
                 status: UsageStatus::Failure,
                 status_code: 500,
@@ -13107,6 +13281,7 @@ mod tests {
                 ..base.clone()
             },
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "project-a-key-b-translation".to_owned(),
                 key_id: key_b,
                 service_name: Some("translation".to_owned()),
@@ -13114,6 +13289,7 @@ mod tests {
                 ..base.clone()
             },
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "project-b-key-c-summarizer".to_owned(),
                 key_id: key_c,
                 project_id: Some(project_b),
@@ -13121,6 +13297,7 @@ mod tests {
                 ..base.clone()
             },
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "project-a-key-a-none-service".to_owned(),
                 key_id: key_a,
                 project_id: Some(project_a),
@@ -13128,6 +13305,7 @@ mod tests {
                 ..base.clone()
             },
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "project-a-key-a-unattributed".to_owned(),
                 key_id: key_a,
                 project_id: Some(project_a),
@@ -13205,6 +13383,7 @@ mod tests {
             .with_timezone(&Utc);
         store.events.lock().expect("events lock").extend([
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "svc-fixed".to_owned(),
                 key_id,
                 project_id: Some(project_id),
@@ -13233,6 +13412,7 @@ mod tests {
                 created_at: first_bucket,
             },
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "svc-rule".to_owned(),
                 key_id,
                 project_id: Some(project_id),
@@ -13261,6 +13441,7 @@ mod tests {
                 created_at: first_bucket,
             },
             UsageEvent {
+                diagnostics: Default::default(),
                 request_id: "svc-next".to_owned(),
                 key_id,
                 project_id: Some(project_id),
@@ -14319,6 +14500,7 @@ mod tests {
         created_at: chrono::DateTime<Utc>,
     ) -> UsageExportRow {
         UsageExportRow {
+            diagnostics: Default::default(),
             request_id: request_id.to_owned(),
             key_id: Uuid::new_v4(),
             project_id: Some(Uuid::new_v4()),
