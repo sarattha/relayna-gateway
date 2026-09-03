@@ -32,7 +32,11 @@ cursor gaps, duplicate correlation IDs, and split SSE frames.
 
 The mandatory verification script passed on the committed runtime in an isolated
 worktree using the committed dependency lock. Nextest ran 325 tests with zero
-failures or skips; one existing catalog test had a non-failing process-exit
-warning. Audit used a clean advisory database path after an untracked duplicate
+failures or skips. An earlier run had a non-failing process-exit warning in an
+existing catalog test; the final rerun on `b8e82b6` did not. Audit used a clean advisory database path after an untracked duplicate
 advisory made the default local cache unreadable. No exclusions were added.
 Workspace build, Admin UI build/tests and release metadata validation passed.
+
+The first Codex review of PR #110 completed with no findings and a thumbs-up.
+The subsequent test update covers adjacent Redis minute buckets and checks both
+live records and process logs for all three generated credential types.
