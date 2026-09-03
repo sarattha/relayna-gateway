@@ -300,16 +300,21 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
         .get_multiplexed_async_connection()
         .await
         .unwrap();
-    let rate_key =
-        gateway_core::rate_limits::request_rate_limit_key(key_record.id, chrono::Utc::now());
-    redis::cmd("SET")
-        .arg(&rate_key)
-        .arg("not-an-integer")
-        .arg("EX")
-        .arg(120)
-        .query_async::<()>(&mut redis)
-        .await
-        .unwrap();
+    // Authentication can cross a minute boundary before the rate check. Cover
+    // both buckets so this failure injection does not depend on wall-clock timing.
+    let now = chrono::Utc::now();
+    let rate_keys = [now, now + chrono::Duration::minutes(1)]
+        .map(|time| gateway_core::rate_limits::request_rate_limit_key(key_record.id, time));
+    for rate_key in &rate_keys {
+        redis::cmd("SET")
+            .arg(rate_key)
+            .arg("not-an-integer")
+            .arg("EX")
+            .arg(120)
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+    }
     let response = client
         .post(format!("{proxy}/v1/chat/completions"))
         .bearer_auth(&key.raw_key)
@@ -328,7 +333,7 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
     );
     assert_eq!(row.diagnostics.failure_stage.as_deref(), Some("rate_limit"));
     redis::cmd("DEL")
-        .arg(&rate_key)
+        .arg(rate_keys.as_slice())
         .query_async::<()>(&mut redis)
         .await
         .unwrap();
@@ -401,6 +406,14 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
     let logs = std::fs::read_to_string(&log_path).unwrap();
     assert!(logs.contains("gateway diagnostic recording failed"));
     assert!(logs.contains("recording-failure"));
+    for secret in [
+        "traffic-test-provider-credential",
+        key.raw_key.as_str(),
+        operator.raw_token.as_str(),
+    ] {
+        assert!(!text.contains(secret));
+        assert!(!logs.contains(secret));
+    }
     drop(live);
     drop(process);
     upstream_task.abort();
