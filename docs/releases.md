@@ -13,8 +13,8 @@ for retention, multi-instance scope and database outage behavior.
 It retains the `0.1.26` single-application Entra contract,
 Entra-authenticated browser sessions for administrators
 and registered owners, exact Owner and Viewer service memberships, scoped
-service monitoring APIs, and managed-identity workload bindings. It also
-adds owner incident charts for error rate and P95 latency, validated service-
+service monitoring APIs, and managed-identity workload bindings. The portal includes
+owner incident charts for error rate and P95 latency, validated service-
 version observations, all-request filtering and pagination, and exact-service
 sanitized request details with optional debug bundles.
 The portal confidential client uses certificate-backed PS256

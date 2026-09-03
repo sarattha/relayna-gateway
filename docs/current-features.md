@@ -22,7 +22,7 @@ in `crates/gateway-api/admin-ui`.
 
 Administrator navigation is grouped by the operator jobs it supports:
 
-- Monitor: overview, health, usage, debug bundles, and operational status.
+- Monitor: overview, health, traffic, usage, debug bundles, and operational status.
 - Discover: providers, services, routes, and projects.
 - Govern: keys, guardrails, audit, and settings.
 
