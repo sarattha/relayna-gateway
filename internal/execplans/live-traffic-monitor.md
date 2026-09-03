@@ -18,7 +18,7 @@ raw transport error messages are captured.
 - [x] (2026-09-03) Added authorized live/history APIs and responsive Traffic page.
 - [x] (2026-09-03) Added passing real-process regression coverage; Computer Use confirmed desktop table, details, pause/resume, disconnect, mobile layout, saved history across restart and request-ID filtering.
 - [x] (2026-09-03) Bumped to 0.1.31, updated changelog/docs, passed the full mandatory verification stack and workspace build on the committed runtime snapshot.
-- [ ] Open PR, wait for first Codex review, fix findings, reply and resolve threads.
+- [x] (2026-09-03) Opened PR #110. The first Codex review completed at 16:34:58 UTC with a thumbs-up and no findings; there were no threads requiring fixes, replies or resolution.
 
 ## Surprises & Discoveries
 
@@ -51,7 +51,10 @@ databases rather than isolated schemas (test PostgreSQL role needs CREATEDB).
 
 Implementation and local verification are complete. The committed runtime was
 verified in an isolated worktree so the pre-existing local Cargo.lock downgrade
-could remain untouched and excluded from the PR. PR review follow-up remains.
+could remain untouched and excluded from the PR. All GitHub checks passed for
+the reviewed commit. The first Codex review reported no findings. A subsequent
+test-only update covers Redis minute-boundary timing and explicitly checks live
+records and process logs for client/operator/provider credential leakage.
 
 ## Context and Orientation
 
@@ -104,11 +107,16 @@ verification results, PR URL and review outcome here as completed.
 
 The full verification script passed: fmt, Clippy, cargo test, audit, deny,
 machete, Nextest (325 passed, zero skipped), Trivy, Gitleaks and Semgrep.
-Nextest reported one non-failing process-exit warning in the existing
-`admin_guardrail_catalog_requires_operator_token` test. The audit command used
+An earlier Nextest run reported one non-failing process-exit warning in the existing
+`admin_guardrail_catalog_requires_operator_token` test; the final rerun on `b8e82b6`
+passed all 325 tests without that warning. The audit command used
 a clean `--db` path because the default local advisory cache contained an
 untracked duplicate advisory; exclusions were not expanded. Workspace build,
 Admin UI build/tests and release metadata validation passed as well.
+
+PR: https://github.com/sarattha/relayna-gateway/pull/110. Codex reviewed `a6654e2`;
+GitHub's review-thread query returned no threads and the Codex connector added a
+thumbs-up. The review follow-up automation was paused after this result.
 
 ## Interfaces and Dependencies
 
