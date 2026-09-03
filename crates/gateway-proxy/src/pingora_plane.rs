@@ -4459,6 +4459,33 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn unversioned_openai_aliases_use_canonical_direct_litellm_route_mode() {
+        let store = Arc::new(MemoryUsageStore::default());
+        *store.openai_route_mode.lock().expect("route mode lock") =
+            OpenAiRouteMode::DirectLiteLlmPassthrough;
+        let proxy = RelaynaPingoraProxy {
+            store,
+            control_state: Arc::new(MemoryControlState::default()),
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
+                .expect("config"),
+            auth_runtime: default_auth_runtime_for_tests(),
+        };
+
+        for (path, expected_route) in [
+            ("/chat/completions", Route::ChatCompletions),
+            ("/responses", Route::Responses),
+        ] {
+            let matched = Route::resolve_match(&http::Method::POST, path).expect("alias route");
+            assert_eq!(matched.route, expected_route, "alias path {path}");
+            assert_eq!(
+                proxy.route_mode(matched.route).await.expect("route mode"),
+                OpenAiRouteMode::DirectLiteLlmPassthrough,
+                "alias path {path}"
+            );
+        }
+    }
+
     #[async_trait]
     impl UsageRecorder for MemoryUsageStore {
         async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()> {

@@ -244,9 +244,13 @@ precedence before wildcard passthrough.
 Only unmatched paths that pass the configured LiteLLM passthrough allowlist are
 forwarded to LiteLLM.
 
-Canonical OpenAI-compatible routes are still first-class Gateway routes:
+Canonical OpenAI-compatible routes are still first-class Gateway routes. The
+chat-completions and responses aliases share their canonical `/v1/...` policy
+and route settings while preserving the requested path upstream:
 
+- `POST /chat/completions`
 - `POST /v1/chat/completions`
+- `POST /responses`
 - `POST /v1/responses`
 - `POST /v1/embeddings`
 

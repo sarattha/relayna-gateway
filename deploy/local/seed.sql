@@ -16,14 +16,14 @@ VALUES
         'analytics-api', '/internal/analytics/*', 'http://mock-upstream:4000', true,
         ARRAY['GET', 'POST'], 'fixed', 0.0025, 'gateway', 'local',
         '10000000-0000-0000-0000-000000000001', '/health',
-        '[{"name":"analytics-default","cost_usd":0.0025}]'::jsonb,
-        '[{"name":"query-report","method":"POST","path":"/v1/reports/query","cost_usd":0.0035}]'::jsonb
+        '[{"name":"analytics-default","json_pointer":"/engine","equals":"analytics","cost_mode":"fixed","estimated_cost_usd":0.0025}]'::jsonb,
+        '[{"method":"POST","path_template":"/v1/reports/query","cost_mode":"fixed","estimated_cost_usd":0.0035}]'::jsonb
     ),
     (
         'document-search', '/internal/search/*', 'http://mock-upstream:4000', true,
         ARRAY['GET', 'POST'], 'fixed', 0.0015, 'gateway', 'local',
         '10000000-0000-0000-0000-000000000001', '/health',
-        '[{"name":"search-default","cost_usd":0.0015}]'::jsonb,
+        '[{"name":"search-default","json_pointer":"/engine","equals":"search","cost_mode":"fixed","estimated_cost_usd":0.0015}]'::jsonb,
         '[]'::jsonb
     ),
     (

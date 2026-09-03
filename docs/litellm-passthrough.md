@@ -81,8 +81,8 @@ When a request reaches the proxy listener, routing is evaluated in this order:
 1. Relayna service/control/operational routes, where applicable.
 2. Registered service routes such as `/services/<service-name>/*`.
 3. Canonical OpenAI-compatible routes:
-   - `POST /v1/chat/completions`
-   - `POST /v1/responses`
+   - `POST /chat/completions` and `POST /v1/chat/completions`
+   - `POST /responses` and `POST /v1/responses`
    - `POST /v1/embeddings`
 4. Canonical LiteLLM rerank aliases, governed by one `/v1/rerank` route
    setting:
@@ -116,10 +116,15 @@ Use direct mode when a canonical route must behave closest to LiteLLM. Relayna
 keys still preserve Relayna access control and credential isolation; non-Relayna
 bearer credentials leave authentication and authorization to LiteLLM.
 
+The unversioned `/chat/completions` and `/responses` aliases share the same
+canonical route settings, policy paths, runtime limits, and usage identities as
+their `/v1/...` counterparts. As with the rerank aliases, Gateway preserves the
+path selected by the client when forwarding the request to LiteLLM.
+
 Example direct LiteLLM bearer call:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8080/v1/responses \
+curl -sS -X POST http://127.0.0.1:8080/responses \
   -H "Authorization: Bearer $LITELLM_VIRTUAL_KEY" \
   -H "Content-Type: application/json" \
   --data '{"model":"gpt-4o-mini","input":"hello"}'

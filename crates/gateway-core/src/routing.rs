@@ -57,10 +57,12 @@ impl Route {
 
     pub fn resolve_match(method: &Method, path: &str) -> GatewayResult<RouteMatch> {
         match path {
-            "/v1/chat/completions" if method == Method::POST => {
+            "/chat/completions" | "/v1/chat/completions" if method == Method::POST => {
                 Ok(RouteMatch::litellm(Self::ChatCompletions))
             }
-            "/v1/responses" if method == Method::POST => Ok(RouteMatch::litellm(Self::Responses)),
+            "/responses" | "/v1/responses" if method == Method::POST => {
+                Ok(RouteMatch::litellm(Self::Responses))
+            }
             "/v1/embeddings" if method == Method::POST => {
                 Ok(RouteMatch::litellm(Self::LiteLlmEmbeddings))
             }
@@ -199,14 +201,24 @@ mod tests {
 
     #[test]
     fn resolves_phase_one_generation_routes() {
-        assert_eq!(
-            Route::resolve(&Method::POST, "/v1/chat/completions").expect("route"),
-            Route::ChatCompletions
-        );
-        assert_eq!(
-            Route::resolve(&Method::POST, "/v1/responses").expect("route"),
-            Route::Responses
-        );
+        for path in ["/chat/completions", "/v1/chat/completions"] {
+            assert_eq!(
+                Route::resolve(&Method::POST, path).expect("chat completions route"),
+                Route::ChatCompletions,
+                "chat completions path {path}"
+            );
+        }
+        assert_eq!(Route::ChatCompletions.as_str(), "/v1/chat/completions");
+
+        for path in ["/responses", "/v1/responses"] {
+            assert_eq!(
+                Route::resolve(&Method::POST, path).expect("responses route"),
+                Route::Responses,
+                "responses path {path}"
+            );
+        }
+        assert_eq!(Route::Responses.as_str(), "/v1/responses");
+
         let embeddings = Route::resolve_match(&Method::POST, "/v1/embeddings").expect("embeddings");
         assert_eq!(embeddings.route, Route::LiteLlmEmbeddings);
         assert_eq!(embeddings.backend, BackendType::LiteLlm);
@@ -262,14 +274,18 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_routes() {
-        assert_eq!(
-            Route::resolve(&Method::GET, "/v1/responses").unwrap_err(),
-            GatewayError::UnsupportedRoute
-        );
-        assert_eq!(
-            Route::resolve(&Method::GET, "/v1/chat/completions").unwrap_err(),
-            GatewayError::UnsupportedRoute
-        );
+        for path in [
+            "/chat/completions",
+            "/v1/chat/completions",
+            "/responses",
+            "/v1/responses",
+        ] {
+            assert_eq!(
+                Route::resolve(&Method::GET, path).unwrap_err(),
+                GatewayError::UnsupportedRoute,
+                "generation path {path}"
+            );
+        }
         assert_eq!(
             Route::resolve(&Method::POST, "/v1/completions").unwrap_err(),
             GatewayError::UnsupportedRoute
