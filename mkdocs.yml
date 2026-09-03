@@ -28,6 +28,7 @@ nav:
   - Redis Keys: redis.md
   - Getting Started: getting-started.md
   - Admin Portal: admin-portal.md
+  - Traffic Monitor: operations/traffic-monitor.md
   - Entra Portal and Service-owner Monitoring: operations/entra-portal-and-owner-monitoring.md
   - Entra Integration Requirements: operations/entra-integration-requirements.md
   - OpenAPI Service Pricing: openapi-service-pricing.md

@@ -2,6 +2,34 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.31 - 2026-09-03
+
+### Added
+
+- Admin UI Monitor → Traffic with authenticated live updates, pause/resume,
+  filters, failure reason counts, request/attempt timelines, and saved history.
+- Bounded metadata diagnostics from request arrival, including anonymous and
+  unresolved-route failures, per-process identity, replay gaps and disconnections.
+- Additive request history storage and usage failure stage/code/source, outcome,
+  upstream status and instance attribution.
+
+### Fixed
+
+- Early proxy failures no longer disappear from diagnostics when no route or
+  virtual key is available.
+- Failed or timed-out usage, debug-bundle and diagnostic writes emit structured
+  errors and appear in live recording status. Failure logs precede database writes.
+- Interrupted streams remain failures even when HTTP 200 was already delivered.
+- Gateway errors include request-ID headers and generic proxy failures use a
+  correlated JSON envelope; upstream bodies remain passthrough.
+
+### Changed
+
+- Release metadata and deployment examples target `0.1.31`.
+- Live diagnostics are instance-scoped and bounded; database history spans
+  instances and uses operator-managed retention. No credentials or bodies are
+  captured by the monitor.
+
 ## 0.1.30 - 2026-08-28
 
 ### Added

@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-api"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -967,6 +967,7 @@ dependencies = [
  "base64",
  "bytes",
  "chrono",
+ "futures-util",
  "gateway-core",
  "gateway-proxy",
  "gateway-store",
@@ -977,6 +978,7 @@ dependencies = [
  "pem",
  "pingora-core",
  "pingora-proxy",
+ "redis",
  "reqwest",
  "serde",
  "serde_json",
@@ -992,7 +994,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "argon2",
  "async-trait",
@@ -1009,13 +1011,14 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
  "url",
  "uuid",
 ]
 
 [[package]]
 name = "gateway-proxy"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1036,7 +1039,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1053,7 +1056,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-telemetry"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "serde_json",
  "tracing",

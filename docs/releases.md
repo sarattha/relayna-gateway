@@ -1,14 +1,14 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.30` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.31` is the
 current release target.
 
-Version `0.1.30` adds governed LiteLLM rerank aliases backed by one canonical
-policy and route setting, plus exact export-only time windows and bounded
-all-row usage downloads in the Admin UI. The forward migration seeds the
-canonical rerank setting. Export route shapes and the 10,000-row server maximum
-remain unchanged; the browser composes ordered batches and requires explicit
-start and end timestamps for all-row downloads.
+Version `0.1.31` adds Monitor → Traffic, authenticated live SSE, saved request
+history, upstream attempt timelines and metadata-only failure diagnostics.
+The additive migration creates `request_traffic` and adds usage `diagnostics`.
+Gateway-generated errors gain correlation headers; upstream response bodies and
+existing CSV columns stay compatible. See [Traffic Monitor](operations/traffic-monitor.md)
+for retention, multi-instance scope and database outage behavior.
 
 It retains the `0.1.26` single-application Entra contract,
 Entra-authenticated browser sessions for administrators
@@ -41,7 +41,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.30
+   python3 scripts/validate-release-metadata.py v0.1.31
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -59,15 +59,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.30 .
+   docker build -t relayna-gateway:0.1.31 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.30 -m "Release v0.1.30"
-   git push origin v0.1.30
+   git tag -a v0.1.31 -m "Release v0.1.31"
+   git push origin v0.1.31
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -77,10 +77,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.30`, the workflow publishes:
+For `v0.1.31`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.30
+ghcr.io/sarattha/relayna-gateway:0.1.31
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

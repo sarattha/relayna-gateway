@@ -8,6 +8,7 @@ use crate::{
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::Utc;
+use gateway_core::traffic::{self, TrafficRequest, TrafficStore};
 use gateway_core::{
     analyze_generation_request,
     auth::{Authenticator, VirtualKeyLookup},
@@ -219,6 +220,7 @@ impl<S, R> RelaynaPingoraProxy<S, R>
 where
     S: VirtualKeyLookup
         + UsageRecorder
+        + TrafficStore
         + PolicyLookup
         + ServiceRegistryLookup
         + ServiceRouteLookup
@@ -280,6 +282,7 @@ impl<S, R> RelaynaPingoraProxy<S, R> {
 
 #[derive(Debug)]
 pub struct PingoraContext {
+    traffic: TrafficRequest,
     started: Instant,
     request_id: String,
     route: Option<Route>,
@@ -341,6 +344,7 @@ impl<S, R> ProxyHttp for RelaynaPingoraProxy<S, R>
 where
     S: VirtualKeyLookup
         + UsageRecorder
+        + TrafficStore
         + PolicyLookup
         + ServiceRegistryLookup
         + ServiceRouteLookup
@@ -357,6 +361,7 @@ where
 
     fn new_ctx(&self) -> Self::CTX {
         Self::CTX {
+            traffic: TrafficRequest::default(),
             started: Instant::now(),
             request_id: uuid::Uuid::new_v4().to_string(),
             route: None,
@@ -414,6 +419,39 @@ where
         }
     }
 
+    fn request_summary(&self, _session: &Session, ctx: &Self::CTX) -> String {
+        format!(
+            "request_id={} route={}",
+            ctx.request_id,
+            ctx.route
+                .map(|route| route.as_str())
+                .unwrap_or("unresolved")
+        )
+    }
+
+    async fn early_request_filter(
+        &self,
+        session: &mut Session,
+        ctx: &mut Self::CTX,
+    ) -> PingoraResult<()> {
+        ctx.request_id =
+            traffic::correlation_id(header_value(session.req_header(), "x-request-id"));
+        ctx.traffic.request_id = ctx.request_id.clone();
+        ctx.traffic.started_at = Utc::now();
+        ctx.traffic.method = session
+            .req_header()
+            .method
+            .as_str()
+            .chars()
+            .take(32)
+            .collect();
+        gateway_telemetry::request_started();
+        traffic_step(ctx, "received");
+        tracing::info!(request_id = %ctx.request_id, diagnostic_id = %ctx.traffic.id,
+            instance_id = %ctx.traffic.instance_id, "gateway request arrived");
+        Ok(())
+    }
+
     async fn request_filter(
         &self,
         session: &mut Session,
@@ -425,14 +463,8 @@ where
         let req = session.req_header();
         ctx.request_content_type =
             header_value(req, header::CONTENT_TYPE.as_str()).map(ToOwned::to_owned);
-        ctx.request_id = req
-            .headers
-            .get("x-request-id")
-            .and_then(|value| value.to_str().ok())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        gateway_telemetry::request_started();
 
+        traffic_step(ctx, "routing");
         let persisted_service = if should_check_service_routes(req.uri.path()) {
             match self
                 .store
@@ -441,7 +473,7 @@ where
             {
                 Ok(registration) => registration,
                 Err(error) => {
-                    respond_error(session, error, &ctx.request_id).await?;
+                    respond_error(session, error, ctx).await?;
                     return Ok(true);
                 }
             }
@@ -453,7 +485,7 @@ where
             let upstream = match service_upstream_from_registration(&registration) {
                 Ok(upstream) => upstream,
                 Err(error) => {
-                    respond_error(session, error, &ctx.request_id).await?;
+                    respond_error(session, error, ctx).await?;
                     return Ok(true);
                 }
             };
@@ -496,11 +528,11 @@ where
                         }
                     }
                     Ok(_) => {
-                        respond_error(session, error, &ctx.request_id).await?;
+                        respond_error(session, error, ctx).await?;
                         return Ok(true);
                     }
                     Err(error) => {
-                        respond_error(session, error, &ctx.request_id).await?;
+                        respond_error(session, error, ctx).await?;
                         return Ok(true);
                     }
                 },
@@ -510,7 +542,7 @@ where
             match self.apply_litellm_route_limits(&mut matched).await {
                 Ok(()) => {}
                 Err(error) => {
-                    respond_error(session, error, &ctx.request_id).await?;
+                    respond_error(session, error, ctx).await?;
                     return Ok(true);
                 }
             }
@@ -518,7 +550,7 @@ where
             match self.apply_litellm_passthrough_limits(&mut matched).await {
                 Ok(()) => {}
                 Err(error) => {
-                    respond_error(session, error, &ctx.request_id).await?;
+                    respond_error(session, error, ctx).await?;
                     return Ok(true);
                 }
             }
@@ -546,10 +578,11 @@ where
             ctx.run_id = header_value(req, "x-relayna-run-id").map(ToOwned::to_owned);
         }
 
+        traffic_step(ctx, "authentication");
         let auth = match self.auth_runtime.snapshot() {
             Ok(auth) => auth,
             Err(error) => {
-                respond_error(session, error, &ctx.request_id).await?;
+                respond_error(session, error, ctx).await?;
                 return Ok(true);
             }
         };
@@ -563,7 +596,7 @@ where
                         .trusted_ingress_passthrough_path_allowed(&req.method, req.uri.path()) =>
                 {
                     if let Err(error) = self.configure_litellm_upstream(ctx, None).await {
-                        respond_error(session, error, &ctx.request_id).await?;
+                        respond_error(session, error, ctx).await?;
                         return Ok(true);
                     }
                     ctx.trusted_ingress_passthrough = true;
@@ -572,7 +605,7 @@ where
                 }
                 Ok(_) => {}
                 Err(error) => {
-                    respond_error(session, error, &ctx.request_id).await?;
+                    respond_error(session, error, ctx).await?;
                     return Ok(true);
                 }
             }
@@ -586,14 +619,14 @@ where
                         .ensure_litellm_canonical_route_enabled(matched.route)
                         .await
                     {
-                        respond_error(session, error, &ctx.request_id).await?;
+                        respond_error(session, error, ctx).await?;
                         return Ok(true);
                     }
                     let credential = match litellm_bearer_credential(authorization) {
                         Ok(credential) => credential,
                         Err(error) => {
                             gateway_telemetry::record_auth_failure(error.code());
-                            respond_error(session, error, &ctx.request_id).await?;
+                            respond_error(session, error, ctx).await?;
                             return Ok(true);
                         }
                     };
@@ -601,7 +634,7 @@ where
                         .configure_litellm_upstream_with_credential(ctx, credential)
                         .await
                     {
-                        respond_error(session, error, &ctx.request_id).await?;
+                        respond_error(session, error, ctx).await?;
                         return Ok(true);
                     }
                     ctx.litellm_passthrough = true;
@@ -612,7 +645,7 @@ where
                 Ok(OpenAiRouteMode::DirectLiteLlmPassthrough) => {}
                 Ok(OpenAiRouteMode::ManagedByGateway) => {}
                 Err(error) => {
-                    respond_error(session, error, &ctx.request_id).await?;
+                    respond_error(session, error, ctx).await?;
                     return Ok(true);
                 }
             }
@@ -629,7 +662,7 @@ where
                 }
                 Err(error) => {
                     gateway_telemetry::record_auth_failure(error.code());
-                    respond_error(session, error, &ctx.request_id).await?;
+                    respond_error(session, error, ctx).await?;
                     return Ok(true);
                 }
             }
@@ -658,10 +691,12 @@ where
                 }
                 gateway_telemetry::phase_span("gateway.auth.verify", &ctx.request_id)
                     .in_scope(|| tracing::info!("virtual key authenticated"));
+                ctx.key = Some(key.clone());
+                traffic_step(ctx, "configuration");
                 match self.store.list_guardrail_definitions().await {
                     Ok(definitions) => ctx.guardrail_definitions = definitions,
                     Err(error) => {
-                        respond_error(session, error, &ctx.request_id).await?;
+                        respond_error(session, error, ctx).await?;
                         return Ok(true);
                     }
                 }
@@ -674,12 +709,11 @@ where
                     let registration = match self.store.service_registration(service_name).await {
                         Ok(Some(registration)) => registration,
                         Ok(None) => {
-                            respond_error(session, GatewayError::MissingService, &ctx.request_id)
-                                .await?;
+                            respond_error(session, GatewayError::MissingService, ctx).await?;
                             return Ok(true);
                         }
                         Err(error) => {
-                            respond_error(session, error, &ctx.request_id).await?;
+                            respond_error(session, error, ctx).await?;
                             return Ok(true);
                         }
                     };
@@ -688,14 +722,13 @@ where
                         .iter()
                         .any(|method| method.eq_ignore_ascii_case(req.method.as_str()))
                     {
-                        respond_error(session, GatewayError::UnsupportedRoute, &ctx.request_id)
-                            .await?;
+                        respond_error(session, GatewayError::UnsupportedRoute, ctx).await?;
                         return Ok(true);
                     }
                     let upstream = match service_upstream_from_registration(&registration) {
                         Ok(upstream) => upstream,
                         Err(error) => {
-                            respond_error(session, error, &ctx.request_id).await?;
+                            respond_error(session, error, ctx).await?;
                             return Ok(true);
                         }
                     };
@@ -721,7 +754,7 @@ where
                         }
                         Ok(OpenAiRouteMode::ManagedByGateway) => {}
                         Err(error) => {
-                            respond_error(session, error, &ctx.request_id).await?;
+                            respond_error(session, error, ctx).await?;
                             return Ok(true);
                         }
                     }
@@ -736,21 +769,21 @@ where
                                 respond_error(
                                     session,
                                     GatewayError::InsufficientEntraAuthorization,
-                                    &ctx.request_id,
+                                    ctx,
                                 )
                                 .await?;
                                 return Ok(true);
                             }
                         }
                         Err(error) => {
-                            respond_error(session, error, &ctx.request_id).await?;
+                            respond_error(session, error, ctx).await?;
                             return Ok(true);
                         }
                     }
                 }
                 if matched.provider == Provider::LiteLlm {
                     if let Err(error) = self.configure_litellm_upstream(ctx, Some(&key)).await {
-                        respond_error(session, error, &ctx.request_id).await?;
+                        respond_error(session, error, ctx).await?;
                         return Ok(true);
                     }
                 }
@@ -773,7 +806,7 @@ where
                     );
                 }
                 gateway_telemetry::record_auth_failure(error.code());
-                respond_error(session, error, &ctx.request_id).await?;
+                respond_error(session, error, ctx).await?;
                 Ok(true)
             }
         }
@@ -791,7 +824,7 @@ where
     {
         if ctx.guardrail_error.is_some() {
             *body = Some(Bytes::new());
-            return Ok(());
+            return Err(PingoraError::new(ErrorType::InternalError));
         }
         if let Some(chunk) = body.as_ref() {
             ctx.body_bytes_seen = ctx.body_bytes_seen.saturating_add(chunk.len());
@@ -805,8 +838,8 @@ where
                     let error = GatewayError::RequestBodyTooLarge;
                     ctx.guardrail_error = Some(error.clone());
                     *body = Some(Bytes::new());
-                    respond_error(session, error, &ctx.request_id).await?;
-                    return Ok(());
+                    respond_error(session, error, ctx).await?;
+                    return Err(PingoraError::new(ErrorType::InternalError));
                 }
             }
             if let Some(policy) = &ctx.policy {
@@ -821,8 +854,8 @@ where
                 ) {
                     ctx.guardrail_error = Some(error.clone());
                     *body = Some(Bytes::new());
-                    respond_error(session, error, &ctx.request_id).await?;
-                    return Ok(());
+                    respond_error(session, error, ctx).await?;
+                    return Err(PingoraError::new(ErrorType::InternalError));
                 }
             }
         }
@@ -841,8 +874,8 @@ where
                     Err(error) => {
                         ctx.guardrail_error = Some(error.clone());
                         *body = Some(Bytes::new());
-                        respond_error(session, error, &ctx.request_id).await?;
-                        return Ok(());
+                        respond_error(session, error, ctx).await?;
+                        return Err(PingoraError::new(ErrorType::InternalError));
                     }
                 }
             }
@@ -852,8 +885,8 @@ where
                     drop(rewriter.take_buffer());
                     ctx.guardrail_error = Some(error.clone());
                     *body = Some(Bytes::new());
-                    respond_error(session, error, &ctx.request_id).await?;
-                    return Ok(());
+                    respond_error(session, error, ctx).await?;
+                    return Err(PingoraError::new(ErrorType::InternalError));
                 }
             }
         }
@@ -862,7 +895,7 @@ where
             drop(rewriter.take_buffer());
             ctx.guardrail_error = Some(error);
             *body = Some(Bytes::new());
-            return Ok(());
+            return Err(PingoraError::new(ErrorType::InternalError));
         }
         *body = Some(Bytes::new());
         if !end_of_stream {
@@ -913,7 +946,7 @@ where
                 }
                 Err(error) => {
                     ctx.guardrail_error = Some(error);
-                    return Ok(());
+                    return Err(PingoraError::new(ErrorType::InternalError));
                 }
             }
         }
@@ -925,7 +958,7 @@ where
             Ok(client_requested) => client_requested,
             Err(error) => {
                 ctx.guardrail_error = Some(error);
-                return Ok(());
+                return Err(PingoraError::new(ErrorType::InternalError));
             }
         };
         let mut guardrail_context = ctx.guardrail_context.clone();
@@ -942,7 +975,7 @@ where
             Ok(plan) => plan,
             Err(error) => {
                 ctx.guardrail_error = Some(error);
-                return Ok(());
+                return Err(PingoraError::new(ErrorType::InternalError));
             }
         };
         let post_call_plan = match resolve_guardrail_plan(GuardrailPlanRequest {
@@ -957,7 +990,7 @@ where
             Ok(plan) => plan,
             Err(error) => {
                 ctx.guardrail_error = Some(error);
-                return Ok(());
+                return Err(PingoraError::new(ErrorType::InternalError));
             }
         };
         let response_plan = if features.stream {
@@ -973,13 +1006,13 @@ where
                 Ok(during_call_plan) => {
                     if !guardrail_plan_names_match(&post_call_plan, &during_call_plan) {
                         ctx.guardrail_error = Some(GatewayError::GuardrailUnavailable);
-                        return Ok(());
+                        return Err(PingoraError::new(ErrorType::InternalError));
                     }
                     during_call_plan
                 }
                 Err(error) => {
                     ctx.guardrail_error = Some(error);
-                    return Ok(());
+                    return Err(PingoraError::new(ErrorType::InternalError));
                 }
             }
         } else {
@@ -1044,7 +1077,7 @@ where
             Err(error) => {
                 ctx.guardrail_error = Some(error);
                 *body = Some(Bytes::new());
-                return Ok(());
+                return Err(PingoraError::new(ErrorType::InternalError));
             }
         }
         ctx.pre_guardrail_plan = Some(plan);
@@ -1074,12 +1107,12 @@ where
         Self::CTX: Send + Sync,
     {
         let Some(mut matched) = ctx.route_match.clone() else {
-            respond_error(session, GatewayError::UnsupportedRoute, &ctx.request_id).await?;
+            respond_error(session, GatewayError::UnsupportedRoute, ctx).await?;
             return Ok(false);
         };
         let route = matched.route;
         if self.upstream_for(ctx).is_none() {
-            respond_error(session, GatewayError::InvalidConfiguration, &ctx.request_id).await?;
+            respond_error(session, GatewayError::InvalidConfiguration, ctx).await?;
             return Ok(false);
         }
         if ctx.trusted_ingress_passthrough {
@@ -1088,20 +1121,20 @@ where
         }
         if ctx.direct_litellm_passthrough {
             if let Err(error) = self.ensure_litellm_canonical_route_enabled(route).await {
-                respond_error(session, error, &ctx.request_id).await?;
+                respond_error(session, error, ctx).await?;
                 return Ok(false);
             }
             gateway_telemetry::record_provider_selection();
             return Ok(true);
         }
         let Some(key) = ctx.key.clone() else {
-            respond_error(session, GatewayError::MissingAuthorization, &ctx.request_id).await?;
+            respond_error(session, GatewayError::MissingAuthorization, ctx).await?;
             return Ok(false);
         };
         if let Some(error) = ctx.guardrail_error.clone() {
-            self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), Utc::now())
+            self.record_terminal_usage(ctx, &key, route, &error, Utc::now())
                 .await;
-            respond_error(session, error, &ctx.request_id).await?;
+            respond_error(session, error, ctx).await?;
             return Ok(false);
         }
         // Body selectors are unavailable at this lifecycle stage. Reserve a
@@ -1113,9 +1146,9 @@ where
 
         let now = Utc::now();
         if let Err(error) = self.ensure_litellm_canonical_route_enabled(route).await {
-            self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+            self.record_terminal_usage(ctx, &key, route, &error, now)
                 .await;
-            respond_error(session, error, &ctx.request_id).await?;
+            respond_error(session, error, ctx).await?;
             return Ok(false);
         }
         if bypass_gateway_governance_for_passthrough(route, ctx.litellm_passthrough) {
@@ -1128,6 +1161,7 @@ where
             features.service_name = matched.service_name.clone();
         }
         ctx.is_streaming = features.stream;
+        traffic_step(ctx, "policy");
         let effective_policy = match self
             .store
             .effective_policy_for_context(
@@ -1141,9 +1175,9 @@ where
         {
             Ok(policy) => policy,
             Err(error) => {
-                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                self.record_terminal_usage(ctx, &key, route, &error, now)
                     .await;
-                respond_error(session, error, &ctx.request_id).await?;
+                respond_error(session, error, ctx).await?;
                 return Ok(false);
             }
         };
@@ -1152,9 +1186,9 @@ where
 
         if let Err(error) = evaluate_policy(&policy, route, matched.provider, &features) {
             gateway_telemetry::record_policy_denial(route.as_str(), error.code());
-            self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+            self.record_terminal_usage(ctx, &key, route, &error, now)
                 .await;
-            respond_error(session, error, &ctx.request_id).await?;
+            respond_error(session, error, ctx).await?;
             return Ok(false);
         }
         let estimated_tokens = estimate_generation_tokens(&ctx.body_prefix);
@@ -1168,13 +1202,14 @@ where
             matched.estimated_cost_usd,
         ) {
             gateway_telemetry::record_policy_denial(route.as_str(), error.code());
-            self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+            self.record_terminal_usage(ctx, &key, route, &error, now)
                 .await;
-            respond_error(session, error, &ctx.request_id).await?;
+            respond_error(session, error, ctx).await?;
             return Ok(false);
         }
         ctx.policy = Some(policy.clone());
 
+        traffic_step(ctx, "rate_limit");
         match self
             .control_state
             .check_request_rate_limit(key.key_id, policy.rpm_limit, now)
@@ -1189,15 +1224,15 @@ where
                 let error = GatewayError::RateLimitExceeded {
                     retry_after_seconds,
                 };
-                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                self.record_terminal_usage(ctx, &key, route, &error, now)
                     .await;
-                respond_error(session, error, &ctx.request_id).await?;
+                respond_error(session, error, ctx).await?;
                 return Ok(false);
             }
             Err(error) => {
-                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                self.record_terminal_usage(ctx, &key, route, &error, now)
                     .await;
-                respond_error(session, error, &ctx.request_id).await?;
+                respond_error(session, error, ctx).await?;
                 return Ok(false);
             }
         }
@@ -1216,19 +1251,20 @@ where
                 let error = GatewayError::TokenRateLimitExceeded {
                     retry_after_seconds,
                 };
-                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                self.record_terminal_usage(ctx, &key, route, &error, now)
                     .await;
-                respond_error(session, error, &ctx.request_id).await?;
+                respond_error(session, error, ctx).await?;
                 return Ok(false);
             }
             Err(error) => {
-                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                self.record_terminal_usage(ctx, &key, route, &error, now)
                     .await;
-                respond_error(session, error, &ctx.request_id).await?;
+                respond_error(session, error, ctx).await?;
                 return Ok(false);
             }
         }
 
+        traffic_step(ctx, "budget");
         match self
             .control_state
             .check_budget(
@@ -1246,15 +1282,9 @@ where
                         .reserve_budget(key.key_id, &ctx.request_id, estimated_cost_usd, now)
                         .await
                     {
-                        self.record_terminal_usage(
-                            ctx,
-                            &key,
-                            route,
-                            error.status_code().as_u16(),
-                            now,
-                        )
-                        .await;
-                        respond_error(session, error, &ctx.request_id).await?;
+                        self.record_terminal_usage(ctx, &key, route, &error, now)
+                            .await;
+                        respond_error(session, error, ctx).await?;
                         return Ok(false);
                     }
                     ctx.budget_reserved = true;
@@ -1268,15 +1298,15 @@ where
             Ok(BudgetDecision::Exceeded(_)) => {
                 gateway_telemetry::record_budget_rejection(route.as_str(), "spend");
                 let error = GatewayError::BudgetExceeded;
-                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                self.record_terminal_usage(ctx, &key, route, &error, now)
                     .await;
-                respond_error(session, error, &ctx.request_id).await?;
+                respond_error(session, error, ctx).await?;
                 Ok(false)
             }
             Err(error) => {
-                self.record_terminal_usage(ctx, &key, route, error.status_code().as_u16(), now)
+                self.record_terminal_usage(ctx, &key, route, &error, now)
                     .await;
-                respond_error(session, error, &ctx.request_id).await?;
+                respond_error(session, error, ctx).await?;
                 Ok(false)
             }
         }
@@ -1287,6 +1317,9 @@ where
         _session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<Box<HttpPeer>> {
+        ctx.traffic.attempts += 1;
+        ctx.traffic.diagnostics.upstream_status = None;
+        traffic_step(ctx, "upstream_connect");
         let upstream = self.upstream_for(ctx).unwrap_or(&self.config.litellm);
         let addr = format!("{}:{}", upstream.host, upstream.port);
         let mut peer = HttpPeer::new(addr, upstream.tls, upstream.sni.clone());
@@ -1298,6 +1331,20 @@ where
             peer.options.write_timeout = Some(timeout);
         }
         Ok(Box::new(peer))
+    }
+
+    async fn connected_to_upstream(
+        &self,
+        _session: &mut Session,
+        _reused: bool,
+        _peer: &HttpPeer,
+        #[cfg(unix)] _fd: std::os::unix::io::RawFd,
+        #[cfg(windows)] _sock: std::os::windows::io::RawSocket,
+        _digest: Option<&pingora_core::protocols::Digest>,
+        ctx: &mut Self::CTX,
+    ) -> PingoraResult<()> {
+        traffic_step(ctx, "upstream_connected");
+        Ok(())
     }
 
     async fn upstream_request_filter(
@@ -1365,6 +1412,8 @@ where
             }
         }
 
+        // This callback prepares headers; it does not prove upstream application receipt.
+        traffic_step(ctx, "upstream_request_prepared");
         Ok(())
     }
 
@@ -1382,10 +1431,24 @@ where
         // released before any post-call response buffering begins.
         ctx.request_body_lease.take();
         let status_code = upstream_response.status.as_u16();
+        ctx.traffic.diagnostics.upstream_status = Some(status_code);
+        ctx.traffic.streaming = ctx.is_streaming
+            || upstream_response
+                .headers
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("text/event-stream"));
+        traffic_step(ctx, "upstream_response");
         if is_retry_safe_status(status_code) && self.activate_provider_fallback(ctx) {
             let mut error = PingoraError::new_up(ErrorType::HTTPStatus(status_code));
             error.set_retry(true);
             return Err(error);
+        }
+        if status_code >= 400 {
+            ctx.traffic.fail("upstream", "upstream_http_error");
+            if let Some(step) = ctx.traffic.timeline.last_mut() {
+                step.code = Some("upstream_http_error".into());
+            }
         }
         capture_service_version(upstream_response, ctx);
         Ok(())
@@ -1400,6 +1463,8 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        upstream_response.insert_header("x-request-id", &ctx.request_id)?;
+        upstream_response.insert_header("x-relayna-request-id", &ctx.request_id)?;
         upstream_response.remove_header("alt-svc");
         if ctx.trusted_ingress_passthrough {
             rewrite_trusted_ingress_location(upstream_response, ctx)?;
@@ -1455,6 +1520,9 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        if !ctx.first_chunk_recorded && body.as_ref().is_some_and(|value| !value.is_empty()) {
+            traffic_step(ctx, "response_body");
+        }
         if ctx
             .during_guardrail_plan
             .as_ref()
@@ -1544,123 +1612,161 @@ where
         ctx: &mut Self::CTX,
     ) {
         gateway_telemetry::request_finished();
-        let Some(route) = ctx.route else {
-            return;
-        };
-        let Some(key) = &ctx.key else {
-            return;
-        };
-        if ctx.terminal_usage_recorded {
-            return;
-        }
+        finish_traffic(
+            ctx,
+            session
+                .response_written()
+                .map(|response| response.status.as_u16()),
+            error,
+        );
+        async {
+            let Some(route) = ctx.route else {
+                return;
+            };
+            let Some(key) = &ctx.key else {
+                return;
+            };
+            if ctx.terminal_usage_recorded {
+                return;
+            }
 
-        let status_code = session
-            .response_written()
-            .map(|response| response.status.as_u16())
-            .or(ctx.terminal_status_code)
-            .unwrap_or_else(|| if error.is_some() { 502 } else { 500 });
-        let usage_cost = resolved_usage_cost(ctx);
-        let estimated_cost_usd = usage_cost.estimated_cost_usd;
-        let (input_tokens, output_tokens, total_tokens) = if ctx.litellm_passthrough {
-            (None, None, None)
-        } else {
-            extract_usage_tokens(&ctx.response_body_prefix)
-        };
-        let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        let provider = provider_for_usage(ctx);
-        let event = UsageEvent::new(
-            &ctx.request_id,
-            key,
-            route,
-            extract_model(&ctx.body_prefix),
-            status_code,
-            latency_ms,
-            Utc::now(),
-        )
-        .with_provider(provider)
-        .with_usage_tokens(input_tokens, output_tokens, total_tokens)
-        .with_estimated_cost_usd(estimated_cost_usd)
-        .with_cost_metadata(
-            usage_cost.cost_source,
-            usage_cost.cost_mode,
-            usage_cost.pricing_rule_name,
-        )
-        .with_service_name(
-            ctx.route_match
-                .as_ref()
-                .and_then(|matched| matched.service_name.clone()),
-        )
-        .with_service_version(ctx.service_version.clone())
-        .with_endpoint_context(
-            ctx.http_method.clone(),
-            ctx.endpoint_path.clone(),
-            ctx.endpoint_template.clone(),
-        )
-        .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
-        .with_trace_id(ctx.trace_id.clone())
-        .with_fallback_count(ctx.fallback_count);
-        ctx.terminal_usage_recorded = true;
-        let _ = self.store.insert_usage_event(&event).await;
-        let _ = self
-            .store
-            .insert_debug_bundle(debug_bundle_for_ctx(ctx, status_code))
-            .await;
-        gateway_telemetry::record_request_with_dimensions(
-            route.as_str(),
-            provider.as_str(),
-            status_code,
-            u64::try_from(latency_ms.max(0)).unwrap_or(u64::MAX),
-            ctx.is_streaming,
-        );
-        gateway_telemetry::record_upstream_duration_ms(
-            route.as_str(),
-            provider.as_str(),
-            ctx.is_streaming,
-            u64::try_from(latency_ms.max(0)).unwrap_or(u64::MAX),
-        );
-        if let Some(tokens) = event.total_tokens {
-            gateway_telemetry::record_tokens(tokens);
-        }
-        if let Some(estimated_cost_usd) = estimated_cost_usd {
-            gateway_telemetry::record_estimated_cost_usd(estimated_cost_usd);
-        }
-        if let Some(estimated_cost_usd) = estimated_cost_usd {
-            if ctx.budget_reserved {
-                let _ = self
-                    .control_state
-                    .reconcile_budget_reservation(
-                        key.key_id,
-                        &ctx.request_id,
-                        estimated_cost_usd,
-                        Utc::now(),
-                    )
-                    .await;
+            let status_code = session
+                .response_written()
+                .map(|response| response.status.as_u16())
+                .or(ctx.terminal_status_code)
+                .unwrap_or_else(|| if error.is_some() { 502 } else { 500 });
+            let usage_cost = resolved_usage_cost(ctx);
+            let estimated_cost_usd = usage_cost.estimated_cost_usd;
+            let (input_tokens, output_tokens, total_tokens) = if ctx.litellm_passthrough {
+                (None, None, None)
             } else {
+                extract_usage_tokens(&ctx.response_body_prefix)
+            };
+            let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
+            let provider = provider_for_usage(ctx);
+            let event = UsageEvent::new(
+                &ctx.request_id,
+                key,
+                route,
+                extract_model(&ctx.body_prefix),
+                status_code,
+                latency_ms,
+                Utc::now(),
+            )
+            .with_provider(provider)
+            .with_usage_tokens(input_tokens, output_tokens, total_tokens)
+            .with_estimated_cost_usd(estimated_cost_usd)
+            .with_cost_metadata(
+                usage_cost.cost_source,
+                usage_cost.cost_mode,
+                usage_cost.pricing_rule_name,
+            )
+            .with_service_name(
+                ctx.route_match
+                    .as_ref()
+                    .and_then(|matched| matched.service_name.clone()),
+            )
+            .with_service_version(ctx.service_version.clone())
+            .with_endpoint_context(
+                ctx.http_method.clone(),
+                ctx.endpoint_path.clone(),
+                ctx.endpoint_template.clone(),
+            )
+            .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
+            .with_trace_id(ctx.trace_id.clone())
+            .with_fallback_count(ctx.fallback_count)
+            .with_diagnostics(ctx.traffic.diagnostics.clone());
+            ctx.terminal_usage_recorded = true;
+            if !matches!(
+                tokio::time::timeout(
+                    Duration::from_secs(2),
+                    self.store.insert_usage_event(&event)
+                )
+                .await,
+                Ok(Ok(()))
+            ) {
+                ctx.traffic.recording_failed("usage_events");
+            }
+            if !matches!(
+                tokio::time::timeout(
+                    Duration::from_secs(2),
+                    self.store
+                        .insert_debug_bundle(debug_bundle_for_ctx(ctx, status_code))
+                )
+                .await,
+                Ok(Ok(()))
+            ) {
+                ctx.traffic.recording_failed("debug_bundles");
+            }
+            gateway_telemetry::record_request_with_dimensions(
+                route.as_str(),
+                provider.as_str(),
+                status_code,
+                u64::try_from(latency_ms.max(0)).unwrap_or(u64::MAX),
+                ctx.is_streaming,
+            );
+            gateway_telemetry::record_upstream_duration_ms(
+                route.as_str(),
+                provider.as_str(),
+                ctx.is_streaming,
+                u64::try_from(latency_ms.max(0)).unwrap_or(u64::MAX),
+            );
+            if let Some(tokens) = event.total_tokens {
+                gateway_telemetry::record_tokens(tokens);
+            }
+            if let Some(estimated_cost_usd) = estimated_cost_usd {
+                gateway_telemetry::record_estimated_cost_usd(estimated_cost_usd);
+            }
+            if let Some(estimated_cost_usd) = estimated_cost_usd {
+                if ctx.budget_reserved {
+                    let _ = self
+                        .control_state
+                        .reconcile_budget_reservation(
+                            key.key_id,
+                            &ctx.request_id,
+                            estimated_cost_usd,
+                            Utc::now(),
+                        )
+                        .await;
+                } else {
+                    let _ = self
+                        .control_state
+                        .add_budget_spend(key.key_id, estimated_cost_usd, Utc::now())
+                        .await;
+                }
+            } else if ctx.budget_reserved {
                 let _ = self
                     .control_state
-                    .add_budget_spend(key.key_id, estimated_cost_usd, Utc::now())
+                    .release_budget_reservation(key.key_id, &ctx.request_id)
                     .await;
             }
-        } else if ctx.budget_reserved {
-            let _ = self
-                .control_state
-                .release_budget_reservation(key.key_id, &ctx.request_id)
-                .await;
+            for event in &ctx.guardrail_events {
+                gateway_telemetry::record_guardrail_execution(
+                    &event.guardrail_name,
+                    event.mode.as_str(),
+                    event.action.as_str(),
+                    event.failure_policy.as_str(),
+                    u64::try_from(event.latency_ms.max(0)).unwrap_or(u64::MAX),
+                    event.reason.is_some(),
+                );
+                let _ = self.store.insert_guardrail_execution_event(event).await;
+            }
+            if ctx.is_streaming {
+                gateway_telemetry::stream_finished(error.is_some() || status_code >= 500);
+            }
         }
-        for event in &ctx.guardrail_events {
-            gateway_telemetry::record_guardrail_execution(
-                &event.guardrail_name,
-                event.mode.as_str(),
-                event.action.as_str(),
-                event.failure_policy.as_str(),
-                u64::try_from(event.latency_ms.max(0)).unwrap_or(u64::MAX),
-                event.reason.is_some(),
-            );
-            let _ = self.store.insert_guardrail_execution_event(event).await;
+        .await;
+        if !matches!(
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                self.store.insert_traffic(&ctx.traffic)
+            )
+            .await,
+            Ok(Ok(()))
+        ) {
+            ctx.traffic.recording_failed("request_traffic");
         }
-        if ctx.is_streaming {
-            gateway_telemetry::stream_finished(error.is_some() || status_code >= 500);
-        }
+        traffic::monitor().publish(ctx.traffic.clone());
     }
 
     fn fail_to_connect(
@@ -1670,6 +1776,7 @@ where
         ctx: &mut Self::CTX,
         mut error: Box<PingoraError>,
     ) -> Box<PingoraError> {
+        traffic_attempt_error(ctx, &error);
         if self.activate_provider_fallback(ctx) {
             error.set_retry(true);
         }
@@ -1684,6 +1791,7 @@ where
         ctx: &mut Self::CTX,
         _client_reused: bool,
     ) -> Box<PingoraError> {
+        traffic_attempt_error(ctx, &error);
         if is_retry_safe_proxy_error(&error) && self.activate_provider_fallback(ctx) {
             error.set_retry(true);
         }
@@ -1699,13 +1807,15 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        if ctx.guardrail_error.is_none() {
+            let (source, code) = traffic_transport_error(error);
+            ctx.traffic.fail(source, code);
+        }
         if let Some(gateway_error) = ctx.guardrail_error.clone() {
             let status_code = gateway_error.status_code().as_u16();
             ctx.terminal_status_code = Some(status_code);
             if session.response_written().is_none() {
-                if let Err(write_error) =
-                    respond_error(session, gateway_error, &ctx.request_id).await
-                {
+                if let Err(write_error) = respond_error(session, gateway_error, ctx).await {
                     tracing::error!(
                         request_id = %ctx.request_id,
                         error = %write_error,
@@ -1723,9 +1833,7 @@ where
             if session.response_written().is_none() {
                 let gateway_error = GatewayError::UpstreamTimeout;
                 ctx.terminal_status_code = Some(gateway_error.status_code().as_u16());
-                if let Err(write_error) =
-                    respond_error(session, gateway_error, &ctx.request_id).await
-                {
+                if let Err(write_error) = respond_error(session, gateway_error, ctx).await {
                     tracing::error!(
                         request_id = %ctx.request_id,
                         error = %write_error,
@@ -1740,17 +1848,24 @@ where
         }
 
         let error_code = default_proxy_failure_status(error);
-        if error_code > 0 {
-            session
-                .respond_error(error_code)
+        ctx.terminal_status_code = Some(error_code);
+        if error_code > 0 && session.response_written().is_none() {
+            let public_error = if error.esource() == &ErrorSource::Upstream {
+                GatewayError::UpstreamConnection
+            } else {
+                GatewayError::InvalidConfiguration
+            };
+            let (mut response, body) = gateway_error_response(public_error, &ctx.request_id)
+                .expect("static gateway error response");
+            response.set_status(error_code).expect("proxy status");
+            session.as_downstream_mut().set_keepalive(None);
+            if session
+                .write_response_header(Box::new(response), false)
                 .await
-                .unwrap_or_else(|write_error| {
-                    tracing::error!(
-                        request_id = %ctx.request_id,
-                        error = %write_error,
-                        "failed to write proxy error response"
-                    );
-                });
+                .is_ok()
+            {
+                let _ = session.write_response_body(Some(body), true).await;
+            }
         }
         FailToProxy {
             error_code,
@@ -1945,9 +2060,11 @@ where
         ctx: &mut PingoraContext,
         key: &AuthenticatedKey,
         route: Route,
-        status_code: u16,
+        error: &GatewayError,
         now: chrono::DateTime<Utc>,
     ) {
+        traffic_gateway_error(ctx, error);
+        let status_code = error.status_code().as_u16();
         if ctx.terminal_usage_recorded {
             return;
         }
@@ -1985,12 +2102,29 @@ where
         )
         .with_task_context(ctx.task_id.clone(), ctx.run_id.clone())
         .with_trace_id(ctx.trace_id.clone())
-        .with_fallback_count(ctx.fallback_count);
-        let _ = self.store.insert_usage_event(&event).await;
-        let _ = self
-            .store
-            .insert_debug_bundle(debug_bundle_for_ctx(ctx, status_code))
-            .await;
+        .with_fallback_count(ctx.fallback_count)
+        .with_diagnostics(ctx.traffic.diagnostics.clone());
+        if !matches!(
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                self.store.insert_usage_event(&event)
+            )
+            .await,
+            Ok(Ok(()))
+        ) {
+            ctx.traffic.recording_failed("usage_events");
+        }
+        if !matches!(
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                self.store
+                    .insert_debug_bundle(debug_bundle_for_ctx(ctx, status_code))
+            )
+            .await,
+            Ok(Ok(()))
+        ) {
+            ctx.traffic.recording_failed("debug_bundles");
+        }
         gateway_telemetry::record_request_with_dimensions(
             route.as_str(),
             provider.as_str(),
@@ -2792,6 +2926,12 @@ fn debug_bundle_for_ctx(ctx: &PingoraContext, status_code: u16) -> gateway_core:
     if ctx.upstream_timeout {
         selection_trace.push("terminal_error=upstream_timeout".to_owned());
     }
+    if let Some(code) = &ctx.traffic.diagnostics.failure_code {
+        selection_trace.push(format!("failure_code={code}"));
+    }
+    if let Some(stage) = &ctx.traffic.diagnostics.failure_stage {
+        selection_trace.push(format!("failure_stage={stage}"));
+    }
     let fallback_history = if ctx.fallback_count > 0 {
         vec![gateway_core::FallbackAttempt {
             from_provider: Provider::OpenAiCompatible.as_str().to_owned(),
@@ -2916,6 +3056,7 @@ fn default_proxy_failure_status(error: &PingoraError) -> u16 {
 #[cfg(test)]
 fn new_pingora_context_for_tests() -> PingoraContext {
     PingoraContext {
+        traffic: TrafficRequest::default(),
         started: Instant::now(),
         request_id: uuid::Uuid::new_v4().to_string(),
         route: None,
@@ -2981,9 +3122,19 @@ fn default_auth_runtime_for_tests() -> SharedGatewayAuthRuntime {
 async fn respond_error(
     session: &mut Session,
     error: GatewayError,
-    request_id: &str,
+    ctx: &mut PingoraContext,
 ) -> PingoraResult<()> {
-    let (response, body) = gateway_error_response(error, request_id)?;
+    traffic_gateway_error(ctx, &error);
+    let close_connection = ctx.guardrail_error.is_some()
+        || matches!(
+            error,
+            GatewayError::UpstreamTimeout | GatewayError::UpstreamConnection
+        );
+    let (response, body) = gateway_error_response(error, &ctx.request_id)?;
+    if close_connection {
+        // Pingora derives the HTTP/1 Connection header from session reuse state.
+        session.as_downstream_mut().set_keepalive(None);
+    }
     session
         .write_response_header(Box::new(response), false)
         .await?;
@@ -2999,7 +3150,151 @@ fn gateway_error_response(
     response.insert_header(header::CONTENT_TYPE, "application/json")?;
     response.insert_header(header::CONTENT_LENGTH, body.len().to_string())?;
     response.insert_header(header::CACHE_CONTROL, "private, no-store")?;
+    response.insert_header("x-request-id", request_id)?;
+    response.insert_header("x-relayna-request-id", request_id)?;
     Ok((response, Bytes::from(body)))
+}
+
+fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
+    ctx.traffic.endpoint = ctx
+        .endpoint_template
+        .clone()
+        .or_else(|| ctx.route.map(|route| route.as_str().into()))
+        .map(|value| value.chars().take(256).collect());
+    ctx.traffic.service = ctx.route_match.as_ref().and_then(|matched| {
+        matched
+            .service_name
+            .as_ref()
+            .map(|name| name.chars().take(256).collect())
+    });
+    ctx.traffic.provider = ctx
+        .route_match
+        .as_ref()
+        .map(|_| provider_for_usage(ctx).as_str().into());
+    ctx.traffic.key_id = ctx.key.as_ref().map(|key| key.key_id);
+    ctx.traffic.project_id = ctx.key.as_ref().and_then(|key| key.project_id);
+    let elapsed = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
+    ctx.traffic.step(stage, elapsed, None);
+}
+
+fn traffic_gateway_error(ctx: &mut PingoraContext, error: &GatewayError) {
+    // Body filters may run after peer selection; classify their actual failure stage.
+    let stage = match error {
+        GatewayError::GatewayOverloaded | GatewayError::RequestBodyTooLarge => {
+            Some("body_admission")
+        }
+        GatewayError::ResponseBodyTooLarge => Some("response_body"),
+        GatewayError::GuardrailBlocked
+        | GatewayError::GuardrailUnavailable
+        | GatewayError::GuardrailForbidden
+        | GatewayError::InvalidGuardrailRequest => Some("guardrail"),
+        _ => None,
+    };
+    if let Some(stage) = stage {
+        traffic_step(ctx, stage);
+    }
+    ctx.terminal_status_code = Some(error.status_code().as_u16());
+    ctx.traffic.fail("gateway", error.code());
+    ctx.traffic.diagnostics.outcome = Some("failed".into());
+    ctx.traffic.diagnostics.instance_id = Some(ctx.traffic.instance_id.clone());
+    ctx.traffic.step(
+        &ctx.traffic.stage.clone(),
+        ctx.traffic.elapsed_ms,
+        Some(error.code()),
+    );
+}
+
+fn traffic_transport_error(error: &PingoraError) -> (&'static str, &'static str) {
+    match error.esource() {
+        ErrorSource::Downstream => ("client", "client_disconnected"),
+        ErrorSource::Upstream if is_upstream_timeout_error(error) => {
+            ("upstream", "upstream_timeout")
+        }
+        ErrorSource::Upstream => (
+            "upstream",
+            match error.etype() {
+                ErrorType::ConnectRefused => "upstream_connection_refused",
+                ErrorType::ConnectNoRoute => "upstream_no_route",
+                ErrorType::TLSHandshakeFailure
+                | ErrorType::TLSWantX509Lookup
+                | ErrorType::HandshakeError => "upstream_tls_handshake_failed",
+                ErrorType::InvalidCert => "upstream_certificate_invalid",
+                ErrorType::ReadError | ErrorType::ConnectionClosed => "upstream_connection_closed",
+                ErrorType::WriteError => "upstream_write_failed",
+                ErrorType::InvalidHTTPHeader
+                | ErrorType::H1Error
+                | ErrorType::H2Error
+                | ErrorType::InvalidH2 => "upstream_protocol_error",
+                _ => "upstream_transport_error",
+            },
+        ),
+        _ => ("gateway", "proxy_internal_error"),
+    }
+}
+
+fn traffic_attempt_error(ctx: &mut PingoraContext, error: &PingoraError) {
+    let (_, code) = traffic_transport_error(error);
+    ctx.traffic.step(
+        &ctx.traffic.stage.clone(),
+        i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX),
+        Some(code),
+    );
+}
+
+fn finish_traffic(
+    ctx: &mut PingoraContext,
+    client_status: Option<u16>,
+    error: Option<&PingoraError>,
+) {
+    if let Some(error) = ctx.guardrail_error.clone() {
+        traffic_gateway_error(ctx, &error);
+    }
+    if let Some(error) = error {
+        let (source, code) = traffic_transport_error(error);
+        ctx.traffic.fail(source, code);
+    }
+    // Never claim a status was delivered unless Pingora observed response headers.
+    ctx.traffic.client_status = client_status;
+    if ctx.traffic.diagnostics.failure_code.is_none() {
+        if ctx
+            .traffic
+            .diagnostics
+            .upstream_status
+            .is_some_and(|code| code >= 400)
+        {
+            ctx.traffic.fail("upstream", "upstream_http_error");
+        } else if client_status.is_some_and(|code| code >= 400) {
+            ctx.traffic.fail("gateway", "gateway_http_error");
+        } else if client_status.is_none() {
+            ctx.traffic.fail("gateway", "response_not_delivered");
+        }
+    }
+    ctx.traffic.completed = true;
+    ctx.traffic.diagnostics.outcome = Some(
+        if ctx.traffic.diagnostics.failure_code.is_some() {
+            if ctx.traffic.streaming && client_status.is_some_and(|code| code < 400) {
+                "stream_interrupted"
+            } else {
+                "failed"
+            }
+        } else {
+            "completed"
+        }
+        .into(),
+    );
+    ctx.traffic.diagnostics.instance_id = Some(ctx.traffic.instance_id.clone());
+    traffic_step(ctx, "finished");
+    // Terminal evidence is independent of PostgreSQL and the live journal.
+    if ctx.traffic.diagnostics.failure_code.is_some() {
+        tracing::warn!(request_id = %ctx.request_id, diagnostic_id = %ctx.traffic.id,
+            instance_id = %ctx.traffic.instance_id, client_status = ?ctx.traffic.client_status,
+            upstream_status = ?ctx.traffic.diagnostics.upstream_status,
+            failure_code = ?ctx.traffic.diagnostics.failure_code,
+            failure_stage = ?ctx.traffic.diagnostics.failure_stage,
+            failure_source = ?ctx.traffic.diagnostics.failure_source,
+            outcome = ?ctx.traffic.diagnostics.outcome, attempts = ctx.traffic.attempts,
+            "gateway request failed");
+    }
 }
 
 #[cfg(test)]
@@ -4420,7 +4715,13 @@ mod tests {
         ctx.key = Some(key.clone());
 
         proxy
-            .record_terminal_usage(&mut ctx, &key, Route::ChatCompletions, 502, Utc::now())
+            .record_terminal_usage(
+                &mut ctx,
+                &key,
+                Route::ChatCompletions,
+                &GatewayError::UpstreamConnection,
+                Utc::now(),
+            )
             .await;
 
         let events = store.events.lock().expect("events lock");
@@ -4440,6 +4741,19 @@ mod tests {
         litellm_passthrough_settings: Mutex<LiteLlmPassthroughSettings>,
         active_litellm_config: Mutex<Option<gateway_core::ProviderRuntimeConfig>>,
         litellm_credential_mapping: Mutex<Option<gateway_core::LiteLlmCredentialMappingRuntime>>,
+    }
+
+    #[async_trait]
+    impl TrafficStore for MemoryUsageStore {
+        async fn insert_traffic(&self, _request: &TrafficRequest) -> GatewayResult<()> {
+            Ok(())
+        }
+        async fn traffic_history(
+            &self,
+            _query: traffic::TrafficQuery,
+        ) -> GatewayResult<Vec<TrafficRequest>> {
+            Ok(Vec::new())
+        }
     }
 
     impl Default for MemoryUsageStore {
@@ -4910,7 +5224,13 @@ mod tests {
         ctx.budget_reserved = true;
 
         proxy
-            .record_terminal_usage(&mut ctx, &key, Route::ChatCompletions, 502, Utc::now())
+            .record_terminal_usage(
+                &mut ctx,
+                &key,
+                Route::ChatCompletions,
+                &GatewayError::UpstreamConnection,
+                Utc::now(),
+            )
             .await;
 
         let events = store.events.lock().expect("events lock");
@@ -4956,7 +5276,13 @@ mod tests {
         ctx.fallback_count = 1;
 
         proxy
-            .record_terminal_usage(&mut ctx, &key, Route::DirectOpenAi, 502, Utc::now())
+            .record_terminal_usage(
+                &mut ctx,
+                &key,
+                Route::DirectOpenAi,
+                &GatewayError::UpstreamConnection,
+                Utc::now(),
+            )
             .await;
 
         let events = store.events.lock().expect("events lock");
@@ -5064,5 +5390,88 @@ mod tests {
                 Some(invalid)
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod traffic_regressions {
+    use super::*;
+
+    #[test]
+    fn terminal_capture_needs_neither_route_nor_key() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.traffic.request_id = ctx.request_id.clone();
+        traffic_step(&mut ctx, "authentication");
+        traffic_gateway_error(&mut ctx, &GatewayError::InvalidVirtualKey);
+        finish_traffic(&mut ctx, Some(401), None);
+        let snapshot = traffic::monitor().batch(None);
+        let record = snapshot
+            .rows
+            .iter()
+            .find(|row| row.id == ctx.traffic.id)
+            .unwrap();
+        assert!(record.completed);
+        assert!(record.key_id.is_none());
+        assert!(record.endpoint.is_none());
+        assert_eq!(
+            record.diagnostics.failure_code.as_deref(),
+            Some("invalid_virtual_key")
+        );
+    }
+
+    #[test]
+    fn control_state_error_keeps_budget_stage_and_no_upstream_attempt() {
+        let mut ctx = new_pingora_context_for_tests();
+        traffic_step(&mut ctx, "budget");
+        traffic_gateway_error(&mut ctx, &GatewayError::ControlStateUnavailable);
+        finish_traffic(&mut ctx, Some(503), None);
+        assert_eq!(
+            ctx.traffic.diagnostics.failure_stage.as_deref(),
+            Some("budget")
+        );
+        assert_eq!(
+            ctx.traffic.diagnostics.failure_code.as_deref(),
+            Some("control_state_unavailable")
+        );
+        assert_eq!(ctx.traffic.attempts, 0);
+    }
+
+    #[test]
+    fn stream_failure_does_not_overwrite_delivered_http_status() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.traffic.streaming = true;
+        ctx.traffic.diagnostics.upstream_status = Some(200);
+        traffic_step(&mut ctx, "response_body");
+        let error = PingoraError::new_up(ErrorType::ConnectionClosed);
+        finish_traffic(&mut ctx, Some(200), Some(&error));
+        assert_eq!(ctx.traffic.client_status, Some(200));
+        assert_eq!(
+            ctx.traffic.diagnostics.outcome.as_deref(),
+            Some("stream_interrupted")
+        );
+        assert_eq!(
+            ctx.traffic.diagnostics.failure_code.as_deref(),
+            Some("upstream_connection_closed")
+        );
+    }
+
+    #[test]
+    fn upstream_http_failure_and_tls_failure_are_distinct() {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.traffic.diagnostics.upstream_status = Some(503);
+        traffic_step(&mut ctx, "upstream_response");
+        finish_traffic(&mut ctx, Some(503), None);
+        assert_eq!(
+            ctx.traffic.diagnostics.failure_source.as_deref(),
+            Some("upstream")
+        );
+        assert_eq!(
+            ctx.traffic.diagnostics.failure_code.as_deref(),
+            Some("upstream_http_error")
+        );
+        assert_eq!(
+            traffic_transport_error(&PingoraError::new_up(ErrorType::InvalidCert)),
+            ("upstream", "upstream_certificate_invalid")
+        );
     }
 }

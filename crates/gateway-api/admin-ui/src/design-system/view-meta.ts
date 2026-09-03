@@ -1,6 +1,7 @@
 export type ViewId =
   | "overview"
   | "health"
+  | "traffic"
   | "usage"
   | "providers"
   | "services"
@@ -28,6 +29,11 @@ export const viewMeta: Record<ViewId, ViewMeta> = {
     title: "Overview",
     domain: "Monitor",
     summary: "Gateway posture, traffic, and service availability.",
+  },
+  traffic: {
+    title: "Traffic",
+    domain: "Monitor",
+    summary: "Live requests, upstream attempts, failure reasons, and saved diagnostics.",
   },
   health: {
     title: "Health",
