@@ -49,9 +49,10 @@ path when forwarding to LiteLLM.
   verification stack against the final patch and released lockfile.
 - [x] (2026-09-03 13:48Z) Committed and pushed the feature without the
   unrelated `Cargo.lock` edit and opened pull request #109.
-- [ ] Monitor pull request #109 checks and its first Codex review.
-- [ ] Address all actionable Codex review comments, reply inline, resolve the
-  review threads, and rerun verification.
+- [x] (2026-09-03 13:55Z) Monitored pull request #109 through green GitHub CI
+  and completion of its first Codex code review.
+- [x] (2026-09-03 13:55Z) Confirmed the Codex review produced no review or
+  inline threads, so no fixes, replies, or thread resolutions were necessary.
 
 ## Surprises & Discoveries
 
@@ -130,6 +131,10 @@ updated to current pricing-rule shapes so this Admin UI workflow is repeatable.
 The instrumented workspace suite passed all 316 tests serially. LLVM reports
 100% changed runtime executable line coverage (43/43), exceeding the 95% gate;
 the broader pre-existing workspace baseline is 92.11% line coverage.
+
+Pull request #109 was opened from
+`feat/litellm-unversioned-openai-routes`. All GitHub CI jobs passed, and the
+first Codex code review completed without findings or review threads.
 
 The mandatory verifier passed formatting, Clippy, workspace tests and doc tests,
 cargo-audit, cargo-deny, cargo-machete, 316 Nextest tests, Trivy, Gitleaks, and
