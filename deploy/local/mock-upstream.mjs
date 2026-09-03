@@ -41,7 +41,7 @@ const server = http.createServer(async (request, response) => {
       { id: "gpt-4.1", object: "model", owned_by: "relayna-local" },
     ],
   });
-  if (url.pathname === "/v1/chat/completions" && request.method === "POST") {
+  if (["/chat/completions", "/v1/chat/completions"].includes(url.pathname) && request.method === "POST") {
     let body;
     try {
       body = await readJson(request);
@@ -57,6 +57,24 @@ const server = http.createServer(async (request, response) => {
       model,
       choices: [{ index: 0, message: { role: "assistant", content: "Hello from the Relayna local mock upstream." }, finish_reason: "stop" }],
       usage: { prompt_tokens: 12, completion_tokens: 10, total_tokens: 22 },
+      relayna_mock_path: url.pathname,
+    });
+  }
+  if (["/responses", "/v1/responses"].includes(url.pathname) && request.method === "POST") {
+    let body;
+    try {
+      body = await readJson(request);
+    } catch {
+      return json(response, 400, { error: { message: "Request body must be valid JSON.", type: "invalid_request_error" } });
+    }
+    return json(response, 200, {
+      id: `resp-${randomUUID()}`,
+      object: "response",
+      status: "completed",
+      model: body.model ?? "gpt-4.1-mini",
+      output: [],
+      usage: { input_tokens: 12, output_tokens: 10, total_tokens: 22 },
+      relayna_mock_path: url.pathname,
     });
   }
   json(response, 404, { error: { message: "Mock endpoint not found.", type: "not_found" } });

@@ -7,9 +7,9 @@ use axum::{
 };
 use gateway_api::app;
 use gateway_core::{
-    admin::KeyPolicyPatch, AdminKeyCreate, AdminKeyOwnerType, AdminKeyStore, AdminProjectStore,
-    AdminServiceStore, GuardrailPolicy, ProjectCreateRequest, ServiceCreateRequest,
-    VirtualKeyMaterial,
+    admin::KeyPolicyPatch, AdminKeyCreate, AdminKeyOwnerType, AdminKeyStore, AdminPolicyLayerStore,
+    AdminPolicyLayerUpsert, AdminProjectStore, AdminServiceStore, GuardrailPolicy, PolicyLayerKind,
+    ProjectCreateRequest, ServiceCreateRequest, VirtualKeyMaterial,
 };
 use gateway_proxy::{PingoraLiteLlmConfig, PingoraUpstreamConfig, RelaynaPingoraProxy};
 use gateway_store::{PostgresStore, RedisControlState, RedisReadiness};
@@ -129,6 +129,17 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     .execute(store.pool())
     .await
     .expect("point persisted LiteLLM config at mock upstream");
+    sqlx::query(
+        r#"
+        UPDATE openai_route_settings
+        SET mode = 'managed_by_gateway',
+            updated_at = now()
+        WHERE route_id IN ('chat-completions', 'responses')
+        "#,
+    )
+    .execute(store.pool())
+    .await
+    .expect("establish managed routes for virtual-key proxy coverage");
     let suffix = Uuid::new_v4().simple().to_string();
     let project = store
         .create_project(ProjectCreateRequest {
@@ -136,6 +147,15 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
         })
         .await
         .expect("create proxy project");
+    store
+        .upsert_policy_layer(AdminPolicyLayerUpsert {
+            kind: PolicyLayerKind::Project,
+            scope_id: Some(project.id.to_string()),
+            policy: KeyPolicyPatch::default(),
+            guardrail_policy: Default::default(),
+        })
+        .await
+        .expect("create neutral project policy layer");
     let service_name = format!("proxy-coverage-{suffix}");
     store
         .create_service(
@@ -312,7 +332,15 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
             json!({"model": "coverage-model", "messages": [{"role": "user", "content": "hello"}]}),
         ),
         (
+            "/chat/completions",
+            json!({"model": "coverage-model", "messages": [{"role": "user", "content": "hello"}]}),
+        ),
+        (
             "/v1/responses",
+            json!({"model": "coverage-model", "input": "hello"}),
+        ),
+        (
+            "/responses",
             json!({"model": "coverage-model", "input": "hello"}),
         ),
         (
@@ -345,10 +373,11 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
         ),
     ] {
         let response = send_json(&client, &proxy_url, path, Some(&material.raw_key), body).await;
-        assert_eq!(response.status(), StatusCode::OK, "proxy path {path}");
+        let status = response.status();
         let response_body: Value = response.json().await.expect("proxy response body");
-        if path.ends_with("/rerank") {
-            assert_eq!(response_body["path"], path, "preserve rerank path {path}");
+        assert_eq!(status, StatusCode::OK, "proxy path {path}: {response_body}");
+        if matches!(path, "/chat/completions" | "/responses") || path.ends_with("/rerank") {
+            assert_eq!(response_body["path"], path, "preserve alias path {path}");
         }
     }
 
