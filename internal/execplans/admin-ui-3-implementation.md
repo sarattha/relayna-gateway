@@ -15,9 +15,12 @@ Migrate the production Vite/TypeScript console to the approved design in `intern
 - [x] Build isolated gateway environment and record admin/owner and responsive Chrome coverage; Computer Use blocked by locked Mac. Additional interaction matrix gaps are explicitly tracked in the QA report.
 - [x] Regenerate assets; frontend, format, Clippy, workspace tests and independent remaining checks pass.
 - [ ] Full verification script completion blocked by upstream RustSec duplicate advisory ID RUSTSEC-2026-0244.
-- [ ] Commit, push, open PR; address Codex review with evidence, replies and resolution; maintain heartbeat while open. Do not merge.
+- [x] Commit 03cd5f3 pushed; draft PR #111 opened, Codex review requested. Dedicated 10-minute heartbeat owns remaining verification and review.
+- [ ] Address Codex review with evidence, replies and resolution; keep PR draft while material verification gaps remain. Do not merge.
 
 ## Surprises & Discoveries
+
+- Initial PR CI caught an unnecessary TypeScript package import in the new test harness. The production helper is JavaScript-compatible; load its actual source directly to preserve dependency-free CI testing.
 
 - Computer Use first timed out, then reported the Mac locked; authorized Chrome verification continued.
 - The older local image lacked current Traffic endpoints. Switched to the current native gateway binary for Live/History verification, reusing only isolated development dependencies.

@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
-import ts from 'typescript';
 const source = readFileSync(new URL('../crates/gateway-api/admin-ui/src/monitoring.ts', import.meta.url), 'utf8');
-const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText;
-export const { keyLifecycle, reliability, fetchComplete } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+// This helper intentionally uses JavaScript syntax so CI can test it without npm dependencies.
+export const { keyLifecycle, reliability, fetchComplete } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const now = Date.parse('2026-09-05T00:00:00Z');
 assert.equal(keyLifecycle({expires_at:'2026-09-05T00:00:00Z'},now),'expired');
 assert.equal(keyLifecycle({expires_at:'2026-09-05T00:00:00.001Z'},now),'active');
