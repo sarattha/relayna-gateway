@@ -807,6 +807,8 @@ td {
 }
 
 th {
+  /* Keep text aligned when a neighboring heading contains a taller help button. */
+  vertical-align: baseline;
   color: #536276;
   background: #f3f6f8;
   font-weight: 800;
