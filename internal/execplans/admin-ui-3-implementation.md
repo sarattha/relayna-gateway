@@ -8,6 +8,8 @@ Migrate the production Vite/TypeScript console to the approved design in `intern
 
 ## Progress
 
+- [x] (2026-09-05) Final chart/accessibility review addressed owner-selected label granularity, preserved modal inert baselines and live Traffic focus after table replacement. Unit tests and real mobile/live-request browser regressions pass; full mandatory verification passes again.
+
 - [x] (2026-09-05) Prepared 0.1.32 metadata, changelog, current UI docs/screenshots and contributor guidance. All major remaining workflow checks completed through authorized Chrome; Computer Use retry timed out. Full mandatory script and release build pass.
 - [ ] Verify final PR head and fresh Codex review, then merge under explicit user authorization and pause monitoring.
 

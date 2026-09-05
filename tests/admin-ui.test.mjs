@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./admin-ui-dialog.test.mjs";
 import { reliability } from "./admin-ui-monitoring.test.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -814,3 +815,14 @@ assert.equal(sharedScope.trafficFilters.project_id,'created-project');
 assert.equal(sharedScope.usageFilters.key_id,'');
 assert.equal(sharedScope.trafficFilters.key_id,'');
 console.log('ok - shared project changes clear stale keys in both monitoring views');
+
+const ownerChartState = {overviewWindow:'7d',ownerDashboardFilters:{range:'6h'}};
+const ownerLabel = new Function('state', `${sourceFunction('ownerChartLabel')}; return ownerChartLabel;`)(ownerChartState);
+const ownerBuckets = [{bucket_start:'2026-09-05T08:00:00Z'},{bucket_start:'2026-09-05T09:00:00Z'}];
+assert.notEqual(ownerLabel(ownerBuckets[0]),ownerLabel(ownerBuckets[1]));
+ownerChartState.ownerDashboardFilters.range = '24h';
+assert.notEqual(ownerLabel(ownerBuckets[0]),ownerLabel(ownerBuckets[1]));
+ownerChartState.ownerDashboardFilters.range = '7d';
+ownerChartState.overviewWindow = '24h';
+assert.equal(ownerLabel(ownerBuckets[0]),ownerLabel(ownerBuckets[1]));
+console.log('ok - owner chart label granularity follows the owner range independently of admin range');

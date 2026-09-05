@@ -130,7 +130,8 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
       detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-label="Request investigation"><div class="drawer-body"></div></div>`;
       detailBackdrop.querySelector(".drawer-body").appendChild(detail);
       document.body.appendChild(detailBackdrop);
-      closeDetail = mountDialog(detailBackdrop, { onClose: () => {
+      closeDetail = mountDialog(detailBackdrop, { restoreFocus: () =>
+        [...content.querySelectorAll("[data-traffic-id]")].find((button) => button.dataset.trafficId === selected) || element("traffic-mode"), onClose: () => {
         selected = null; detail.classList.add("hidden"); content.appendChild(detail); detailBackdrop = null; closeDetail = null;
       } });
     }

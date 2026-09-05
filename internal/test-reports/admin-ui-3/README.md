@@ -79,3 +79,14 @@ clears stale key filters in both Usage and Traffic; explicit filter submissions
 retain their supplied criteria. Unit coverage checks both views. Browser
 verification drilled into a key, created a new project, and confirmed its new
 scope URL contained no inherited key filter before deleting the fixture.
+
+Final chart/accessibility review: owner label granularity now follows the owner
+6h/24h/7d selection independently of the admin Overview range. Tests compare
+hourly versus daily labels. Dialogs retain original inert states across nested
+and out-of-order closes; tests preserve a pre-inert root, and the phone sidebar
+kept its inert attribute before and after a creation drawer. Traffic resolves
+focus against the current request table on close. Two real local requests
+verified this: ui3-focus-origin stayed selected while ui3-focus-update replaced
+the table, and closing the drawer focused the new Inspect button in the
+originating row. Both temporary request keys were revoked. The complete
+mandatory script passed again after these fixes.

@@ -82,6 +82,7 @@ const requestTimeoutMs = 8000;
 const usageExportBatchSize = 10_000;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let dialogCounter = 0;
+const dialogInertRoots = new Map();
 let overviewChart: Chart | null = null;
 let ownerDashboardChart: Chart | null = null;
 let ownerDashboardGeneration = 0;
@@ -312,8 +313,11 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {}, re
   const previousFocus = restoreFocus instanceof HTMLElement
     ? restoreFocus
     : document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const inertRoots = [...document.body.children].filter((node) => node instanceof HTMLElement && node !== backdrop && !node.inert);
-  inertRoots.forEach((node) => { node.inert = true; });
+  for (const node of document.body.children) {
+    if (!(node instanceof HTMLElement) || node === backdrop) continue;
+    if (!node.matches(".modal-backdrop") && !dialogInertRoots.has(node)) dialogInertRoots.set(node, node.inert);
+    node.inert = true;
+  }
   let closed = false;
   const focusableSelector = [
     "button:not([disabled])",
@@ -329,8 +333,14 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {}, re
     backdrop.removeEventListener("keydown", onKeyDown);
     backdrop.remove();
     const top = [...document.querySelectorAll(".modal-backdrop")].at(-1);
-    [...document.body.children].forEach((node) => { if (node instanceof HTMLElement) node.inert = Boolean(top && node !== top); });
-    previousFocus?.focus();
+    for (const node of document.body.children) {
+      if (!(node instanceof HTMLElement)) continue;
+      if (top) node.inert = node !== top;
+      else if (dialogInertRoots.has(node)) node.inert = dialogInertRoots.get(node);
+    }
+    if (!top) dialogInertRoots.clear();
+    const focusTarget = typeof restoreFocus === "function" ? restoreFocus() : previousFocus;
+    if (focusTarget?.isConnected) focusTarget.focus();
     onClose(value);
   };
   const onKeyDown = (event) => {
@@ -4524,10 +4534,15 @@ function ownerIncidentSummary(rows, markers) {
   return `Latest bucket: ${errorRate.toFixed(1)} percent errors and ${p95}.${versions}`;
 }
 
+function ownerChartLabel(row) {
+  const hourly = ["6h", "24h"].includes(state.ownerDashboardFilters.range);
+  return new Date(row.bucket_start || row.bucket || row.name).toLocaleString([], { month: "short", day: "numeric", ...(hourly ? { hour: "2-digit" } : {}) });
+}
+
 function renderOwnerIncidentChart(rows, markers) {
   const canvas = document.querySelector("#owner-incident-chart");
   if (!(canvas instanceof HTMLCanvasElement)) return;
-  const labels = rows.map((row) => new Date(row.bucket_start || row.bucket || row.name).toLocaleString([], { month: "short", day: "numeric", ...(state.overviewWindow === "24h" ? { hour: "2-digit" } : {}) }));
+  const labels = rows.map(ownerChartLabel);
   const bucketTimes = rows.map((row) => new Date(row.bucket_start || row.bucket || row.name).getTime());
   const markerLabels = Array.from({ length: rows.length }, () => []);
   for (const marker of markers) {
