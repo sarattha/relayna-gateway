@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { reliability } from "./admin-ui-monitoring.test.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -44,7 +45,7 @@ test("admin portal shell exposes all release-critical views", () => {
   }
   assert.match(
     html,
-    /data-view="overview"[\s\S]*data-view="health"[\s\S]*data-view="usage"[\s\S]*data-view="providers"[\s\S]*data-view="services"[\s\S]*data-view="routes"[\s\S]*data-view="projects"[\s\S]*data-view="keys"[\s\S]*data-view="guardrails"[\s\S]*data-view="audit"[\s\S]*data-view="settings"/,
+    /data-view="overview"[\s\S]*data-view="traffic"[\s\S]*data-view="usage"[\s\S]*data-view="health"[\s\S]*data-view="projects"[\s\S]*data-view="services"[\s\S]*data-view="providers"[\s\S]*data-view="routes"[\s\S]*data-view="keys"[\s\S]*data-view="guardrails"[\s\S]*data-view="audit"[\s\S]*data-view="settings"/,
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
@@ -666,7 +667,7 @@ test("global overlays stay above sticky shell chrome on every view", () => {
 });
 
 test("overview ignores clean provider health rows without a status field", () => {
-  const overviewRisks = Function(`return (${sourceFunction("overviewRisks")})`)();
+  const overviewRisks = Function("reliability", `return (${sourceFunction("overviewRisks")})`)(reliability);
   const cleanRow = {
     name: "clean-provider",
     request_count: 10,
@@ -675,7 +676,8 @@ test("overview ignores clean provider health rows without a status field", () =>
     fallback_count: 0,
   };
   assert.deepEqual(overviewRisks([cleanRow]), []);
-  assert.equal(overviewRisks([{ ...cleanRow, error_count: 1 }]).length, 1);
+  assert.equal(overviewRisks([{ ...cleanRow, error_count: 1 }]).length, 0);
+  assert.equal(overviewRisks([{ ...cleanRow, request_count: 20, error_count: 1 }]).length, 1);
 });
 
 test("top dialog selection is independent of later section elements", () => {

@@ -2636,3 +2636,131 @@ tbody tr:hover td {
   .traffic-facts { grid-template-columns: 1fr; }
   #traffic-filters .form-actions { grid-column: 1; }
 }
+
+/* Admin UI 3.0: approved calm workspace, contextual workflows and drawers. */
+.app-shell { grid-template-columns: 210px minmax(0, 1fr); }
+.sidebar { padding: 24px 14px 14px; }
+.brand-copy > small { display: block; color: #8eb4a8; font-size: 10px; letter-spacing: .8px; text-transform: uppercase; }
+.sidebar button.active { background: #2a5246; border-color: transparent; color: #fff; }
+.workspace { padding: 0 34px 40px; }
+.global-toolbar { margin: 0 -34px; padding: 12px 34px; min-height: 64px; grid-template-columns: minmax(220px, 1fr) 230px auto; background: #fff; backdrop-filter: none; }
+.global-start { min-width: 0; gap: 10px; font-size: 12px; }
+.project-scope-control { max-width: 240px; }
+#project-scope { background: transparent; border-color: transparent; font-size: 13px; }
+#scope-context { color: var(--rg-color-muted); white-space: nowrap; }
+.command-trigger { background: #f8faf7; min-width: 0; font-size: 12px; }
+.view-toolbar { padding: 30px 0 24px; align-items: center; }
+.view-toolbar h2 { font-size: 30px; letter-spacing: -1px; font-weight: 650; }
+.view-summary { font-size: 13px; margin-top: 7px; }
+#content { gap: 22px; }
+.panel { border: 1px solid var(--rg-color-border); border-radius: 12px; box-shadow: none; padding: 22px; }
+.panel-heading { margin-bottom: 18px; }
+.panel-heading h3 { font-size: 16px; font-weight: 650; letter-spacing: -.3px; }
+button, input, select { min-height: 38px; border-radius: 7px; }
+button { font-weight: 550; }
+label { font-weight: 550; }
+th, td { padding: 14px 18px; }
+th { font-size: 11px; letter-spacing: .3px; background: #f8faf7; }
+td { font-size: 13px; }
+.stat strong, .posture-fact strong { font-variant-numeric: tabular-nums; font-size: clamp(23px, 2.5vw, 34px); letter-spacing: -.8px; overflow-wrap: anywhere; }
+.scope-caption { margin: 0; font-size: 12px; color: var(--rg-color-muted); }
+.overview-top { grid-template-columns: minmax(0, 1fr); }
+.posture-panel { padding: 0; grid-template-columns: minmax(200px, .9fr) minmax(0, 3fr); }
+.posture-state { border-right: 1px solid var(--rg-color-border); }
+.posture-state.bad { background: var(--rg-status-bad-bg); color: var(--rg-status-bad); }
+.posture-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.posture-fact { padding: 22px; }
+.overview-insights { grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 22px; }
+.overview-chart-wrap { height: 250px; }
+.attention-row { grid-template-columns: auto minmax(0, 1fr); padding: 16px 0; }
+.attention-row > button { grid-column: 2; justify-self: start; }
+.contextual-stack { display: block; }
+.contextual-stack > .panel { margin-bottom: 20px; }
+.inventory-search { display: flex; gap: 12px; align-items: center; margin: 0 0 18px; }
+.inventory-search input { max-width: 350px; }
+.search-count { font-size: 12px; font-weight: 400; }
+.workflow-disclosure { border: 1px solid var(--rg-color-border); border-radius: 10px; background: #fff; }
+.workflow-disclosure > summary { padding: 16px 20px; cursor: pointer; font-size: 13px; font-weight: 550; }
+.workflow-disclosure > .panel { border: 0; margin: 0; }
+.result-tabs { display: flex; overflow-x: auto; gap: 6px; border-bottom: 1px solid var(--rg-color-border); padding: 12px 0; margin: 16px 0; }
+.result-tabs button { border-color: transparent; background: transparent; }
+.result-tabs button[aria-pressed="true"] { background: var(--rg-status-good-bg); color: var(--rg-color-control); }
+.drawer-backdrop { justify-content: flex-end; padding: 0; }
+.resource-drawer { width: min(720px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.drawer-heading { padding: 22px 24px; border-bottom: 1px solid var(--rg-color-border); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.drawer-heading h3 { margin: 0; }
+.drawer-body { padding: 24px; overflow: auto; min-height: 0; }
+.drawer-body > .panel { padding: 0; border: 0; }
+.drawer-body > .panel > .panel-heading > h3 { display: none; }
+.drawer-body .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.drawer-body .table-wrap { max-width: 100%; }
+.table-wrap:focus-visible, summary:focus-visible { outline: 3px solid #54a891; outline-offset: 3px; }
+@media (max-width: 1120px) {
+  .global-toolbar { grid-template-columns: minmax(190px, 1fr) 190px auto; gap: 12px; }
+  .last-refreshed { display: none; }
+  .workspace { padding: 0 24px 32px; }
+  .global-toolbar { margin: 0 -24px; padding-inline: 24px; }
+  .posture-panel { grid-template-columns: 1fr; }
+  .posture-state { border-right: 0; border-bottom: 1px solid var(--rg-color-border); }
+}
+@media (max-width: 920px) {
+  .app-shell { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { width: 240px; }
+  .overview-insights { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .workspace { padding: 0 16px 28px; }
+  .global-toolbar { display: flex; justify-content: space-between; flex-wrap: nowrap; margin: 0 -16px; padding: 10px 16px; min-height: 58px; gap: 8px; }
+  .global-start { flex: 1; }
+  #scope-context, .command-trigger span, .command-trigger kbd { display: none; }
+  .command-trigger { width: 38px; padding: 8px; flex: 0 0 38px; }
+  .project-scope-control { max-width: 160px; }
+  .global-end { width: auto; flex: 0 0 auto; }
+  .view-toolbar { padding: 23px 0 21px; align-items: flex-start; }
+  .view-toolbar h2 { font-size: 26px; }
+  .view-summary { font-size: 12px; }
+  #page-actions button { white-space: normal; font-size: 12px; }
+  #content { gap: 18px; }
+  .panel { padding: 18px; }
+  .posture-panel { padding: 0; }
+  .posture-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .posture-fact { padding: 17px; }
+  .drawer-body { padding: 20px; }
+  .drawer-body .form-grid { grid-template-columns: 1fr; }
+  .drawer-body .wide-field { grid-column: 1; }
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 12px 22px; }
+.brand::after { content: none; }
+.brand > .ti { font-size: 29px; color: #83c2ab; }
+.brand-title { display: block; }
+.brand-title strong { font-size: 22px; font-weight: 650; letter-spacing: -.7px; }
+.brand-title > small { display: block; color: #8eb4a8; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; margin-top: 3px; }
+.version-indicator { display: inline-block; font-size: 9px; margin-top: 6px; background: transparent; color: #8eb4a8; border-color: transparent; padding: 0; }
+.sidebar button { font-size: 13px; min-height: 37px; padding: 8px 12px; font-weight: 500; box-shadow: none; gap: 10px; }
+.sidebar button .ti { font-size: 18px; width: 18px; }
+.sidebar button > span { min-width: 0; white-space: normal; text-align: left; }
+.nav-groups { gap: 24px; }
+.nav-group { gap: 2px; }
+.nav-group > span { letter-spacing: 1.3px; font-weight: 400; padding: 0 12px 4px; }
+.overview-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--rg-color-border); border-radius: 12px; background: #fff; }
+.overview-metrics .posture-fact { border-right: 1px solid var(--rg-color-border); padding: 24px; gap: 12px; }
+.overview-metrics .posture-fact:last-child { border-right: 0; }
+.overview-metrics .posture-fact > span { font-weight: 400; font-size: 12px; }
+.overview-metrics .posture-fact > strong { font-weight: 650; font-size: 30px; }
+.overview-metrics .posture-fact small { font-size: 11px; }
+.readiness-banner { display: flex; align-items: center; gap: 12px; padding: 15px 18px; border: 1px solid var(--rg-color-border); border-radius: 8px; font-size: 12px; background: var(--rg-status-good-bg); }
+.readiness-banner > button { margin-left: auto; }
+.readiness-banner.bad { background: var(--rg-status-bad-bg); border-color: var(--rg-status-bad); }
+@media (max-width: 640px) {
+  .overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-metrics .posture-fact { padding: 17px; }
+  .overview-metrics .posture-fact:nth-child(2) { border-right: 0; }
+  .overview-metrics .posture-fact:nth-child(-n+2) { border-bottom: 1px solid var(--rg-color-border); }
+  .overview-metrics .posture-fact > strong { font-size: 27px; }
+  .readiness-banner { flex-wrap: wrap; }
+}
+@media (max-width: 640px) {
+  .command-trigger { display: flex; }
+  .result-tabs { margin-block: 0 8px; }
+  .applied-filters { font-size: 11px; overflow-wrap: anywhere; }
+}

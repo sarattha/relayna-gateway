@@ -39,6 +39,47 @@ var _a;
     fetch(link.href, fetchOpts);
   }
 })();
+function keyLifecycle(key, now = Date.now()) {
+  if (key.revoked_at) return "revoked";
+  if (key.disabled) return "disabled";
+  if (key.expires_at && Date.parse(key.expires_at) <= now) return "expired";
+  return key.expires_at ? "active" : "non-expiring";
+}
+function reliability(row) {
+  const count = Number(row.request_count || 0);
+  if (count < 20) return { label: "Insufficient sample", tone: "neutral", signal: null, score: 0 };
+  for (const [field, label] of [["timeout_count", "Timeout rate"], ["error_count", "Error rate"], ["fallback_count", "Fallback rate"]]) {
+    const signal = Number(row[field] || 0) / count;
+    if (signal >= 0.05) return { label: `${label} elevated`, tone: signal >= 0.1 ? "bad" : "warn", signal, score: signal };
+  }
+  return { label: "Within thresholds", tone: "good", signal: null, score: 0 };
+}
+async function fetchComplete(path, options = {}, { timeoutMs = 8e3, signal } = {}) {
+  const controller = new AbortController();
+  const sources = [options.signal, signal].filter(Boolean);
+  const abort = () => controller.abort();
+  sources.forEach((source) => {
+    source.addEventListener("abort", abort, { once: true });
+    if (source.aborted) abort();
+  });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const response = await fetch(path, { ...options, signal: controller.signal });
+    const body = response.status === 204 || response.status === 205 || response.status === 304 ? null : await response.arrayBuffer();
+    if (controller.signal.aborted) throw new DOMException("Request superseded", "AbortError");
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  } catch (error) {
+    if (timedOut) throw new Error("request_timeout");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    sources.forEach((source) => source.removeEventListener("abort", abort));
+  }
+}
 function parseTrafficFrames(buffer) {
   const normalized = buffer.replace(/\r\n/g, "\n");
   const frames = normalized.split("\n\n");
@@ -79,8 +120,9 @@ const reasons = {
   missing_authorization: "The request did not include the required authorization.",
   invalid_virtual_key: "The virtual key could not be authenticated."
 };
-function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: attr2, table: table2, badge: badge2, time: time2 }) {
-  let rows = [], cursor = null, instance = "Connecting", selected = null, filters = {};
+function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: attr2, table: table2, badge: badge2, time: time2, mountDialog: mountDialog2, initialFilters = {}, onFilters = () => {
+} }) {
+  let rows = [], cursor = null, instance = "Connecting", selected = null, filters = { ...initialFilters };
   let mode = "live", paused = false, disposed = false, controller = null, reconnect = null;
   let warning = "", historyCursor = null, historyGeneration = 0, connectionGeneration = 0;
   content2.innerHTML = `
@@ -107,7 +149,12 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
     <section class="panel"><div class="panel-heading"><h3>Requests</h3><div id="traffic-pages" class="actions hidden"><button id="traffic-newest">Newest</button><button id="traffic-older">Older</button></div></div>
       <p id="traffic-summary" class="help"></p><div id="traffic-failure-groups" class="actions"></div><div id="traffic-rows"></div></section>
     <section id="traffic-detail" class="panel hidden" tabindex="-1"></section>`;
-  const element = (id) => content2.querySelector(`#${id}`);
+  let detailBackdrop = null, closeDetail = null;
+  const element = (id) => content2.querySelector(`#${id}`) || (detailBackdrop == null ? void 0 : detailBackdrop.querySelector(`#${id}`));
+  for (const [name, value] of Object.entries(filters)) {
+    const field = element("traffic-filters").elements.namedItem(name);
+    if (field) field.value = value;
+  }
   const label = (value) => (value || "unknown").replaceAll("_", " ");
   function connection(message) {
     if (disposed) return;
@@ -147,16 +194,38 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
     );
     element("traffic-rows").querySelectorAll("[data-traffic-id]").forEach((button) => button.addEventListener("click", () => {
       selected = button.dataset.trafficId;
-      renderDetail();
-      element("traffic-detail").focus({ preventScroll: true });
+      openDetail();
     }));
     renderDetail();
   }
+  function openDetail() {
+    if (!detailBackdrop) {
+      const detail = element("traffic-detail");
+      detailBackdrop = document.createElement("section");
+      detailBackdrop.className = "modal-backdrop drawer-backdrop";
+      detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-label="Request investigation"><div class="drawer-body"></div></div>`;
+      detailBackdrop.querySelector(".drawer-body").appendChild(detail);
+      document.body.appendChild(detailBackdrop);
+      closeDetail = mountDialog2(detailBackdrop, { onClose: () => {
+        selected = null;
+        detail.classList.add("hidden");
+        content2.appendChild(detail);
+        detailBackdrop = null;
+        closeDetail = null;
+      } });
+    }
+    renderDetail();
+  }
   function renderDetail() {
+    var _a2;
     const row = rows.find((value) => value.id === selected);
     const detail = element("traffic-detail");
     detail.classList.toggle("hidden", !row);
-    if (!row) return;
+    if (!row) {
+      closeDetail == null ? void 0 : closeDetail();
+      return;
+    }
+    const restoreCloseFocus = ((_a2 = document.activeElement) == null ? void 0 : _a2.id) === "traffic-close";
     const d = row.diagnostics;
     detail.innerHTML = `<div class="panel-heading"><h3>Request details</h3><button type="button" id="traffic-close">Close</button></div>
       <p><code>${esc2(row.request_id)}</code> · Instance <code>${esc2(row.instance_id)}</code></p>
@@ -169,10 +238,8 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
       <dt>Recording failures</dt><dd>${esc2(row.recording_failures.join(", ") || "None reported")}</dd></dl>
       ${row.timeline_truncated ? '<p class="notice">Earlier timeline steps were discarded at the retention limit.</p>' : ""}
       ${table2(["Elapsed", "Attempt", "Stage", "Reason", "Upstream HTTP"], row.timeline.map((step) => [`${esc2(step.elapsed_ms)} ms`, esc2(step.attempt), esc2(label(step.stage)), esc2(step.code || "—"), esc2(step.upstream_status ?? "—")]))}`;
-    element("traffic-close").addEventListener("click", () => {
-      selected = null;
-      renderDetail();
-    });
+    element("traffic-close").addEventListener("click", () => closeDetail == null ? void 0 : closeDetail());
+    if (restoreCloseFocus) element("traffic-close").focus();
   }
   function stopConnection() {
     connectionGeneration++;
@@ -224,6 +291,9 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
   }
   async function history2(older = false) {
     const generation = ++historyGeneration;
+    rows = [];
+    selected = null;
+    render();
     connection("Loading saved history");
     try {
       const query = new URLSearchParams({ limit: "100" });
@@ -255,6 +325,7 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
   element("traffic-filters").addEventListener("submit", (event) => {
     event.preventDefault();
     filters = Object.fromEntries(new FormData(event.currentTarget));
+    onFilters(filters);
     if (mode === "history") history2();
     else render();
   });
@@ -297,6 +368,7 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
   render();
   connect();
   return () => {
+    closeDetail == null ? void 0 : closeDetail();
     disposed = true;
     historyGeneration++;
     clearInterval(elapsedTimer);
@@ -14781,7 +14853,7 @@ const viewMeta = {
     summary: "Provider checks, circuit state, import versions, and debug bundles."
   },
   usage: {
-    title: "Usage",
+    title: "Usage & cost",
     domain: "Monitor",
     summary: "Cost, tokens, denials, fallbacks, guardrail blocks, task drilldowns, and exports."
   },
@@ -14806,17 +14878,17 @@ const viewMeta = {
     summary: "Project ownership and service access boundaries for virtual keys."
   },
   keys: {
-    title: "Keys",
+    title: "Virtual keys",
     domain: "Govern",
     summary: "Virtual key lifecycle, policy layers, simulations, scopes, and guardrail policy."
   },
   guardrails: {
-    title: "Guardrails",
+    title: "Policies & guardrails",
     domain: "Govern",
     summary: "Catalog controls, execution summaries, and sanitized guardrail events."
   },
   audit: {
-    title: "Audit",
+    title: "Audit log",
     domain: "Govern",
     summary: "Operator actions, request metadata, targets, and redacted change snapshots."
   },
@@ -14826,7 +14898,7 @@ const viewMeta = {
     summary: "Studio connection settings, integration token controls, and release posture references."
   },
   members: {
-    title: "Members",
+    title: "People & identities",
     domain: "Govern",
     summary: "Approve portal members and assign exact Owner or Viewer service access."
   },
@@ -14973,6 +15045,10 @@ const state = {
     serviceTimeseriesOffset: 0
   },
   overviewWindow: "7d",
+  projectScope: "",
+  usageFilters: {},
+  usageTab: "Recent requests",
+  trafficFilters: {},
   session: null,
   authConfig: null,
   workspace: "admin",
@@ -15002,6 +15078,11 @@ let overviewChart = null;
 let ownerDashboardChart = null;
 let ownerDashboardGeneration = 0;
 let stopTraffic = null;
+let viewGeneration = 0;
+let viewController = new AbortController();
+let usageGeneration = 0;
+let renderGeneration = 0;
+let pendingWrites = 0;
 function token() {
   return sessionStorage.getItem(tokenKey);
 }
@@ -15052,11 +15133,13 @@ function setNotice(message, kind = "error") {
 }
 function handleAsync(handler) {
   return async (event) => {
+    const generation = viewGeneration;
     const pendingRoot = event.currentTarget || event.target;
     const pendingControls = setPending(pendingRoot, true);
     try {
       await handler(event);
     } catch (error) {
+      if (generation !== viewGeneration || error.name === "AbortError") return;
       setNotice(error.message);
     } finally {
       setPending(pendingRoot, false, pendingControls);
@@ -15088,10 +15171,14 @@ async function api(path, options = {}) {
     ...!token() && ((_a2 = state.session) == null ? void 0 : _a2.csrf_token) ? { "x-csrf-token": state.session.csrf_token } : {},
     ...options.headers || {}
   };
-  const response = await fetchWithTimeout(path, {
-    ...options,
-    headers
-  });
+  const writing = options.method && options.method !== "GET";
+  if (writing) pendingWrites += 1;
+  let response;
+  try {
+    response = await fetchWithTimeout(path, { ...options, headers });
+  } finally {
+    if (writing) pendingWrites -= 1;
+  }
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     try {
@@ -15103,6 +15190,7 @@ async function api(path, options = {}) {
     }
     throw new Error(message);
   }
+  if (options.method && options.method !== "GET") clearDirtyForms();
   if (response.status === 204) return null;
   return response.json();
 }
@@ -15112,20 +15200,43 @@ async function json(path, options = {}) {
   return response.json();
 }
 async function fetchWithTimeout(path, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  const generation = viewGeneration;
+  const response = await fetchComplete(path, options, {
+    timeoutMs: requestTimeoutMs,
+    signal: !options.method || options.method === "GET" ? viewController.signal : void 0
+  });
+  if (generation !== viewGeneration) throw new DOMException("Request superseded", "AbortError");
+  return response;
+}
+const monitoringCache = /* @__PURE__ */ new Map();
+async function monitoringPanel(path, fallback, issues) {
+  const url = new URL(path, location.origin);
+  url.searchParams.delete("from");
+  url.searchParams.delete("to");
+  const cacheKey = `${url.pathname}?${url.searchParams}|${state.overviewWindow}`;
   try {
-    return await fetch(path, {
-      ...options,
-      signal: controller.signal
-    });
+    const data = await api(path);
+    monitoringCache.set(cacheKey, { data, at: (/* @__PURE__ */ new Date()).toLocaleTimeString() });
+    return data;
   } catch (error) {
-    if (error.name === "AbortError") {
-      throw new Error("request_timeout");
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
+    if (error.name === "AbortError") throw error;
+    const previous = monitoringCache.get(cacheKey);
+    issues.push(`${url.pathname.split("/").at(-1)}: ${error.message}${previous ? ` · stale data from ${previous.at}` : " · unavailable"}`);
+    return (previous == null ? void 0 : previous.data) ?? fallback;
+  }
+}
+function monitoringIssues(issues) {
+  return issues.length ? `<div class="notice" role="status"><strong>Some sources could not refresh.</strong><ul>${issues.map((issue) => `<li>${esc(issue)}</li>`).join("")}</ul><button type="button" data-retry-monitoring>Retry sources</button></div>` : "";
+}
+async function readiness() {
+  try {
+    const response = await fetchWithTimeout("/admin-ui/readyz");
+    const body = await response.json();
+    if (response.ok || response.status === 503 && body.status === "not_ready") return body;
+    throw new Error(`Readiness HTTP ${response.status}`);
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+    return { status: "unavailable", detail: error.message };
   }
 }
 function showRawToken(rawToken, label = "Token shown once") {
@@ -15134,7 +15245,7 @@ function showRawToken(rawToken, label = "Token shown once") {
   node.querySelector("h3").textContent = label;
   node.querySelector("textarea").value = rawToken;
   document.body.appendChild(node);
-  const backdrop = document.querySelector(".modal-backdrop:last-of-type");
+  const backdrop = document.body.lastElementChild;
   const close = mountDialog(backdrop, { initialFocus: "[data-copy-token]" });
   backdrop.querySelector("[data-copy-token]").addEventListener("click", async () => {
     await navigator.clipboard.writeText(rawToken);
@@ -15186,6 +15297,10 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {
     };
   }
   const previousFocus = restoreFocus instanceof HTMLElement ? restoreFocus : document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const inertRoots = [...document.body.children].filter((node) => node instanceof HTMLElement && node !== backdrop && !node.inert);
+  inertRoots.forEach((node) => {
+    node.inert = true;
+  });
   let closed = false;
   const focusableSelector = [
     "button:not([disabled])",
@@ -15200,6 +15315,10 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {
     closed = true;
     backdrop.removeEventListener("keydown", onKeyDown);
     backdrop.remove();
+    const top = [...document.querySelectorAll(".modal-backdrop")].at(-1);
+    [...document.body.children].forEach((node) => {
+      if (node instanceof HTMLElement) node.inert = Boolean(top && node !== top);
+    });
     previousFocus == null ? void 0 : previousFocus.focus();
     onClose(value);
   };
@@ -15210,7 +15329,7 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {
       return;
     }
     if (event.key !== "Tab") return;
-    const focusable = [...dialog.querySelectorAll(focusableSelector)].filter((item) => item instanceof HTMLElement && !item.hidden);
+    const focusable = [...dialog.querySelectorAll(focusableSelector)].filter((item) => item instanceof HTMLElement && item.getClientRects().length > 0);
     if (!focusable.length) {
       event.preventDefault();
       dialog.focus();
@@ -15250,12 +15369,13 @@ function signedIn() {
   login.classList.add("hidden");
   app.classList.remove("hidden");
   configurePortalShell();
+  restoreMonitoringHash();
   state.view = viewFromHash();
   syncNavigation();
   refresh();
 }
 function viewFromHash() {
-  const value = location.hash.replace(/^#\/?/, "");
+  const value = location.hash.replace(/^#\/?/, "").split("?")[0];
   if ((viewIds == null ? void 0 : viewIds.has(value)) && viewAllowed(value)) return value;
   return state.workspace === "owner" ? ownerLandingView() : "overview";
 }
@@ -15295,11 +15415,17 @@ function configurePortalShell() {
   if (workspaceSelect) workspaceSelect.value = state.workspace;
   const member = (_c = state.session) == null ? void 0 : _c.member;
   document.querySelector("#session-name").textContent = (member == null ? void 0 : member.display_name) || (member == null ? void 0 : member.email) || (token() ? "Break-glass operator" : "Portal member");
-  document.querySelector("#session-role").textContent = token() ? "Operator token" : admin ? "Admin member" : "Owner member";
+  document.querySelector("#session-role").textContent = token() ? "Operator token" : admin ? "Admin member" : "Scoped member";
 }
-function navigateToView(view, { replace = false, focus = true } = {}) {
+async function navigateToView(view, { replace = false, focus = true } = {}) {
+  if (pendingWrites) {
+    setNotice("Wait for the current change to finish before leaving this view.");
+    return;
+  }
+  if (hasDirtyForms() && !await confirmAction("Discard unsaved changes?", "Leaving this view replaces its forms. Choose Cancel to keep editing.")) return;
+  clearDirtyForms();
   if (!viewIds.has(view) || !viewAllowed(view)) return;
-  const nextHash = `#/${view}`;
+  const nextHash = `#/${view}${monitoringHash()}`;
   const changed = location.hash !== nextHash;
   if (replace) history.replaceState(null, "", nextHash);
   else if (changed) location.hash = nextHash;
@@ -15315,7 +15441,7 @@ function navigateToView(view, { replace = false, focus = true } = {}) {
 }
 function syncNavigation() {
   document.querySelectorAll(".nav").forEach((item) => {
-    const active = item.dataset.view === state.view;
+    const active = item.dataset.view === state.view || item.dataset.view === "members" && state.view === "managed-identities";
     item.classList.toggle("active", active);
     if (active) item.setAttribute("aria-current", "page");
     else item.removeAttribute("aria-current");
@@ -15323,16 +15449,22 @@ function syncNavigation() {
 }
 function openNavigation() {
   var _a2, _b, _c;
+  document.querySelector("#sidebar").inert = false;
+  document.querySelector(".workspace").inert = true;
   document.body.classList.add("nav-open");
   (_a2 = document.querySelector("#nav-backdrop")) == null ? void 0 : _a2.classList.remove("hidden");
   (_b = document.querySelector("#nav-toggle")) == null ? void 0 : _b.setAttribute("aria-expanded", "true");
   (_c = document.querySelector("#nav-close")) == null ? void 0 : _c.focus();
 }
 function closeNavigation() {
-  var _a2, _b;
+  var _a2, _b, _c;
+  const wasOpen = document.body.classList.contains("nav-open");
+  document.querySelector(".workspace").inert = false;
+  document.querySelector("#sidebar").inert = window.matchMedia("(max-width: 920px)").matches;
+  if (wasOpen) (_a2 = document.querySelector("#nav-toggle")) == null ? void 0 : _a2.focus();
   document.body.classList.remove("nav-open");
-  (_a2 = document.querySelector("#nav-backdrop")) == null ? void 0 : _a2.classList.add("hidden");
-  (_b = document.querySelector("#nav-toggle")) == null ? void 0 : _b.setAttribute("aria-expanded", "false");
+  (_b = document.querySelector("#nav-backdrop")) == null ? void 0 : _b.classList.add("hidden");
+  (_c = document.querySelector("#nav-toggle")) == null ? void 0 : _c.setAttribute("aria-expanded", "false");
 }
 function toggleGovernedMenu() {
   var _a2;
@@ -15376,6 +15508,7 @@ function showCommandPalette() {
   input.addEventListener("input", filter);
   input.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
+    event.preventDefault();
     const visible = [...backdrop.querySelectorAll("[data-command-view]")].find((button) => !button.hidden);
     if (visible) visible.click();
   });
@@ -15455,8 +15588,18 @@ document.querySelector("#rotate-token").addEventListener("click", async () => {
 document.querySelectorAll(".nav").forEach((button) => {
   button.addEventListener("click", () => navigateToView(button.dataset.view));
 });
-window.addEventListener("hashchange", () => {
+window.addEventListener("hashchange", async () => {
   if (!token() && !state.session) return;
+  if (pendingWrites) {
+    persistMonitoringHash();
+    return;
+  }
+  if (hasDirtyForms() && !await confirmAction("Discard unsaved changes?", "Leaving this view replaces its forms.")) {
+    persistMonitoringHash();
+    return;
+  }
+  clearDirtyForms();
+  restoreMonitoringHash();
   state.view = viewFromHash();
   syncNavigation();
   closeNavigation();
@@ -15464,121 +15607,152 @@ window.addEventListener("hashchange", () => {
   refresh({ focus: true });
 });
 async function refresh({ focus = false } = {}) {
+  if (pendingWrites) {
+    setNotice("Wait for the current change to finish before refreshing.");
+    return;
+  }
+  if (hasDirtyForms() && !await confirmAction("Discard unsaved changes?", "Refreshing replaces the current forms. Choose Cancel to keep editing.")) return;
+  clearDirtyForms();
+  renderGeneration += 1;
+  const generation = ++viewGeneration;
+  const view = state.view;
+  closeContentDrawer == null ? void 0 : closeContentDrawer();
+  viewController.abort();
+  viewController = new AbortController();
   stopTraffic == null ? void 0 : stopTraffic();
   stopTraffic = null;
+  document.querySelector("#last-refreshed").textContent = "Loading current view…";
   setNotice("");
   destroyOverviewChart();
   destroyOwnerDashboardChart();
   if (state.view !== "service-dashboard" && state.view !== "project-dashboard") ownerDashboardGeneration += 1;
-  applyViewChrome(state.view);
+  applyViewChrome(view);
+  document.querySelector("#page-actions").replaceChildren();
+  syncProjectScope();
   const meta = viewMeta[state.view] || viewMeta.overview;
   document.querySelector("#breadcrumb-domain").textContent = meta.domain;
   document.querySelector("#breadcrumb-title").textContent = meta.title;
   content.innerHTML = panel("", emptyState("Loading..."));
   content.setAttribute("aria-busy", "true");
   try {
-    if (state.view === "overview") await overview();
-    if (state.view === "projects") await projects();
-    if (state.view === "keys") await keys();
-    if (state.view === "guardrails") await guardrails();
-    if (state.view === "audit") await audit();
-    if (state.view === "providers") await providers();
-    if (state.view === "routes") await routes();
-    if (state.view === "services") await services();
-    if (state.view === "traffic") stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time });
-    if (state.view === "usage") await usage();
-    if (state.view === "health") await health();
-    if (state.view === "settings") await settings();
-    if (state.view === "members") await members();
-    if (state.view === "managed-identities") await managedIdentities();
-    if (state.view === "my-services") await myServices();
-    if (state.view === "service-dashboard") await serviceDashboard();
-    if (state.view === "my-projects") await myProjects();
-    if (state.view === "project-dashboard") await projectDashboard();
+    if (view === "overview") await overview();
+    if (view === "projects") await projects();
+    if (view === "keys") await keys();
+    if (view === "guardrails") await guardrails();
+    if (view === "audit") await audit();
+    if (view === "providers") await providers();
+    if (view === "routes") await routes();
+    if (view === "services") await services();
+    if (view === "traffic") {
+      const projects2 = await api("/admin-ui/admin/projects");
+      if (generation !== viewGeneration) return;
+      state.projects = projects2;
+      syncProjectScope();
+      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, mountDialog, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: (filters) => {
+        state.trafficFilters = filters;
+        state.projectScope = filters.project_id || "";
+        syncProjectScope();
+        persistMonitoringHash();
+      } });
+    }
+    if (view === "usage") await usage();
+    if (view === "health") await health();
+    if (view === "settings") await settings();
+    if (view === "members") await members();
+    if (view === "managed-identities") await managedIdentities();
+    if (view === "my-services") await myServices();
+    if (view === "service-dashboard") await serviceDashboard();
+    if (view === "my-projects") await myProjects();
+    if (view === "project-dashboard") await projectDashboard();
+    if (generation !== viewGeneration) return;
     document.querySelector("#last-refreshed").textContent = `Updated ${(/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     if (focus) content.focus({ preventScroll: true });
   } catch (error) {
+    if (generation !== viewGeneration || error.name === "AbortError") return;
+    document.querySelector("#last-refreshed").textContent = "Refresh failed";
     setNotice(error.message);
     content.innerHTML = `<section class="panel"><div class="empty-state"><p>${esc(error.message)}</p></div></section>`;
   } finally {
-    content.setAttribute("aria-busy", "false");
+    if (generation === viewGeneration) content.setAttribute("aria-busy", "false");
   }
 }
 async function overview() {
-  var _a2;
+  var _a2, _b, _c;
+  const renderId = ++renderGeneration;
+  const issues = [];
+  const emptyDashboard = { summary: {}, timeseries: [], breakdowns: { projects: [] } };
   const usageQuery = overviewUsageQuery();
   const [dashboard, healthRows, ready, keysRows, openaiRoutes, anthropicRoutes, servicesRows, projectsRows, auditEvents, policyLayers] = await Promise.all([
-    api(`/admin-ui/admin/usage/dashboard?${usageQuery}`),
-    api("/admin-ui/admin/provider-health"),
-    json("/admin-ui/readyz"),
-    api("/admin-ui/admin/keys"),
-    api("/admin-ui/admin/openai-routes"),
-    api("/admin-ui/admin/anthropic-routes"),
-    api("/admin-ui/admin/services"),
-    api("/admin-ui/admin/projects"),
-    api("/admin-ui/admin/audit-events?limit=8"),
-    api("/admin-ui/admin/policy-layers")
+    monitoringPanel(`/admin-ui/admin/usage/dashboard?${usageQuery}`, emptyDashboard, issues),
+    monitoringPanel(`/admin-ui/admin/provider-health?${usageQuery}`, [], issues),
+    readiness(),
+    monitoringPanel("/admin-ui/admin/keys", [], issues),
+    monitoringPanel("/admin-ui/admin/openai-routes", [], issues),
+    monitoringPanel("/admin-ui/admin/anthropic-routes", [], issues),
+    monitoringPanel("/admin-ui/admin/services", [], issues),
+    monitoringPanel("/admin-ui/admin/projects", [], issues),
+    monitoringPanel("/admin-ui/admin/audit-events?limit=8", [], issues),
+    monitoringPanel("/admin-ui/admin/policy-layers", [], issues)
   ]);
+  if (renderId !== renderGeneration) return;
+  state.projects = projectsRows;
+  syncProjectScope();
+  const scopedKeys = state.projectScope ? keysRows.filter((key) => key.project_id === state.projectScope) : keysRows;
   const summary = dashboard.summary;
-  const activeKeys = keysRows.filter((key) => !key.disabled && !key.revoked_at).length;
+  const activeKeys = scopedKeys.filter((key) => ["active", "non-expiring"].includes(keyLifecycle(key))).length;
   const enabledRoutes = openaiRoutes.filter((route) => route.enabled).length + anthropicRoutes.filter((route) => route.enabled).length;
   const totalRoutes = openaiRoutes.length + anthropicRoutes.length;
   const enabledServices = servicesRows.filter((service) => service.enabled).length;
   const risks = overviewRisks(healthRows);
   const readyState = ready.status === "ready";
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
-    <div class="overview-top">
-      <section class="panel posture-panel">
-        <div class="posture-state ${risks.length ? "warn" : "good"}">
-          <span class="posture-icon" aria-hidden="true"><i class="ti ${readyState ? "ti-check" : "ti-alert-triangle"}"></i></span>
-          <div><strong>${readyState ? "Ready" : esc(ready.status)}</strong><span>${risks.length ? `${risks.length} risk${risks.length === 1 ? "" : "s"} require attention` : "No active risks"}</span></div>
-          <button type="button" class="link-button" data-overview-nav="health">View details <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
-        </div>
-        <div class="posture-facts">
-          ${overviewFact("Requests", summary.request_count, overviewWindowLabel())}
-          ${overviewFact("Failures", summary.failure_count, overviewWindowLabel(), "bad")}
-          ${overviewFact("Cost", money(summary.estimated_cost_usd), overviewWindowLabel(), "good")}
-          ${overviewFact("Active keys", activeKeys, `${projectsRows.length} project${projectsRows.length === 1 ? "" : "s"}`)}
-        </div>
-      </section>
-      <section class="panel change-center">
-        <div class="panel-heading"><h3>Change center</h3></div>
-        <button type="button" class="change-row" data-overview-nav="audit"><i class="ti ti-history" aria-hidden="true"></i><span><strong>Recent governed changes</strong><small>Operator audit history</small></span><b>${auditEvents.length}</b><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
-        <button type="button" class="change-row" data-overview-nav="keys"><i class="ti ti-layers-subtract" aria-hidden="true"></i><span><strong>Policy layers</strong><small>Inherited governance</small></span><b>${policyLayers.length}</b><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
-        <div class="change-divider"></div>
-        <button type="button" class="change-row" data-overview-nav="keys"><i class="ti ti-plus" aria-hidden="true"></i><span><strong>Create key</strong><small>Issue a virtual key with policy</small></span><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
-        <button type="button" class="change-row" data-overview-nav="services"><i class="ti ti-plus" aria-hidden="true"></i><span><strong>Register service</strong><small>Add an upstream service</small></span><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
-        <button type="button" class="change-row" data-overview-nav="providers"><i class="ti ti-plus" aria-hidden="true"></i><span><strong>Add provider</strong><small>Connect a model provider</small></span><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
-      </section>
+    ${monitoringIssues(issues)}
+    <div class="readiness-banner ${readyState ? "good" : "bad"}" role="status"><i class="ti ${readyState ? "ti-circle-check" : "ti-alert-triangle"}" aria-hidden="true"></i><span><strong>Gateway ${esc(ready.status.replaceAll("_", " "))}.</strong> ${ready.detail ? esc(ready.detail) : "Current readiness · gateway-wide"}</span><button type="button" class="link-button" data-overview-nav="health">View health →</button></div>
+    <div class="overview-metrics">
+      ${overviewFact("Requests", ((_a2 = summary.request_count) == null ? void 0 : _a2.toLocaleString()) ?? "—", overviewWindowLabel())}
+      ${overviewFact("Success rate", summary.request_count ? percent(1 - summary.failure_count / summary.request_count) : "—", `${summary.failure_count ?? "Unknown"} failed requests`)}
+      ${overviewFact("Average latency", summary.average_latency_ms == null ? "—" : `${Math.round(summary.average_latency_ms)} ms`, "Across recorded requests")}
+      ${overviewFact("Estimated cost", summary.estimated_cost_usd == null ? "—" : money(summary.estimated_cost_usd), "Usage estimate · USD")}
     </div>
     <div class="overview-insights">
       <section class="panel chart-panel">
-        <div class="panel-heading chart-heading">
-          <div><h3>Traffic, failures & latency</h3><span class="subtle">Real usage events grouped by ${state.overviewWindow === "30d" ? "day" : "hour"}</span></div>
-          <label class="compact-field"><span class="sr-only">Overview time range</span><select id="overview-window">
-            ${option("24h", state.overviewWindow).replace(">24h<", ">Last 24 hours<")}
-            ${option("7d", state.overviewWindow).replace(">7d<", ">Last 7 days<")}
-            ${option("30d", state.overviewWindow).replace(">30d<", ">Last 30 days<")}
-          </select></label>
-        </div>
-        <div class="overview-chart-wrap"><canvas id="overview-chart" role="img" aria-label="Requests, failures, and average latency over ${overviewWindowLabel().toLowerCase()}"></canvas></div>
+        <div class="panel-heading chart-heading"><div><h3>Request volume</h3><span class="subtle">${esc(scopeLabel())} · ${esc(overviewWindowLabel())}</span></div></div>
+        <div class="overview-chart-wrap"><canvas id="overview-chart" role="img" aria-label="Requests and failures over ${overviewWindowLabel().toLowerCase()}"></canvas></div>
         <p class="sr-only">${esc(overviewChartSummary(dashboard.timeseries || []))}</p>
+        <button type="button" class="link-button" data-overview-nav="usage">Explore requests →</button>
       </section>
       <section class="panel attention-panel">
-        <div class="panel-heading"><h3><i class="ti ti-alert-triangle" aria-hidden="true"></i>Attention and recommendations</h3><span class="badge warn">${risks.length}</span></div>
-        <div class="attention-list">${risks.length ? risks.slice(0, 3).map(overviewRiskRow).join("") : emptyState("No provider or service risks in this window.")}</div>
-        <button type="button" class="link-button panel-link" data-overview-nav="health">View all health signals <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
+        <div class="panel-heading"><h3>Gateway attention</h3><span class="badge warn">${issues.some((issue) => issue.startsWith("provider-health:") && issue.endsWith("unavailable")) ? "Unavailable" : `${risks.length} elevated rates`}</span></div>
+        <p class="help">${esc(overviewWindowLabel())} · minimum 20 requests · elevated at 5%</p>
+        <div class="attention-list">${issues.some((issue) => issue.startsWith("provider-health:") && issue.endsWith("unavailable")) ? emptyState("Reliability observations are unavailable.") : risks.length ? risks.slice(0, 3).map(overviewRiskRow).join("") : emptyState("No elevated rates in the recorded sample.")}</div>
+        <p class="help">${issues.some((issue) => issue.startsWith("keys:") && issue.endsWith("unavailable")) ? "Key inventory is unavailable." : `${activeKeys} active keys in ${esc(scopeLabel())}. ${scopedKeys.filter((key) => keyLifecycle(key) === "expired").length} expired.`}</p>
+        <button type="button" class="link-button" data-overview-nav="keys">Review virtual keys →</button>
       </section>
     </div>
-    <section class="panel operations-panel">
-      <div class="panel-heading"><div><h3>Gateway operations</h3><span class="subtle">Live provider, service, route, and key posture</span></div><span class="subtle">${enabledRoutes}/${totalRoutes} routes · ${enabledServices} services</span></div>
-      ${overviewOperationsTable(healthRows, keysRows)}
+    <section class="panel">
+      <div class="panel-heading"><div><h3>Project activity</h3><span class="subtle">${esc(overviewWindowLabel())} · top ${dashboard.breakdowns.projects.length} recorded projects · ${esc(scopeLabel())}</span></div></div>
+      ${table(["Project", "Requests", "Failures", "Estimated cost", "Explore"], dashboard.breakdowns.projects.map((row) => {
+    var _a3;
+    return [esc(((_a3 = projectsRows.find((project) => project.id === row.name)) == null ? void 0 : _a3.name) || row.name), esc(row.summary.request_count), esc(row.summary.failure_count), money(row.summary.estimated_cost_usd), `<button type="button" data-overview-project="${attr(row.name)}">View usage</button>`];
+  }))}
     </section>
+    <details class="workflow-disclosure"><summary>Gateway inventory · ${enabledRoutes}/${totalRoutes} routes · ${enabledServices} services</summary><section class="panel">${overviewOperationsTable(healthRows, scopedKeys)}</section></details>
   `;
+  document.querySelector("#page-actions").innerHTML = `<label class="compact-field"><span class="sr-only">Overview time range</span><select id="overview-window">${option("24h", state.overviewWindow, "Last 24 hours")}${option("7d", state.overviewWindow, "Last 7 days")}${option("30d", state.overviewWindow, "Last 30 days")}</select></label>`;
+  content.querySelectorAll("[data-overview-project]").forEach((button) => button.addEventListener("click", () => {
+    state.projectScope = button.dataset.overviewProject;
+    state.usageFilters = { time_preset: state.overviewWindow === "30d" ? "last_30d" : state.overviewWindow === "24h" ? "last_24h" : "last_7d" };
+    resetUsagePagination();
+    navigateToView("usage");
+  }));
+  (_b = content.querySelector("[data-retry-monitoring]")) == null ? void 0 : _b.addEventListener("click", () => refresh());
   renderOverviewChart(dashboard.timeseries || []);
-  (_a2 = document.querySelector("#overview-window")) == null ? void 0 : _a2.addEventListener("change", (event) => {
+  content.insertAdjacentHTML("beforeend", panel("Latest changes", `<p class="help">Latest sample of up to 8 audit entries · gateway-wide</p>${auditEventTable(auditEvents)}`));
+  (_c = document.querySelector("#overview-window")) == null ? void 0 : _c.addEventListener("change", (event) => {
     state.overviewWindow = event.currentTarget.value;
-    overview();
+    persistMonitoringHash();
+    refresh();
   });
   document.querySelectorAll("[data-overview-nav]").forEach((button) => {
     button.addEventListener("click", () => navigateToView(button.dataset.overviewNav));
@@ -15597,6 +15771,7 @@ function overviewUsageQuery() {
     timeseries_limit: state.overviewWindow === "30d" ? "31" : state.overviewWindow === "7d" ? "168" : "24",
     service_timeseries_limit: "1"
   });
+  if (state.projectScope) query.set("project_id", state.projectScope);
   return query.toString();
 }
 function overviewWindowLabel() {
@@ -15605,49 +15780,16 @@ function overviewWindowLabel() {
   return "Last 7 days";
 }
 function overviewFact(label, value, detail, tone = "") {
-  return `<div class="posture-fact ${tone}"><strong>${esc(value)}</strong><span>${esc(label)}</span><small>${esc(detail)}</small></div>`;
+  return `<div class="posture-fact ${tone}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)}</small></div>`;
 }
 function overviewRisks(rows) {
-  return rows.map((row) => {
-    const requests = Math.max(Number(row.request_count || 0), 1);
-    const errors = Number(row.error_count || 0);
-    const timeouts = Number(row.timeout_count || 0);
-    const fallbacks = Number(row.fallback_count || 0);
-    const errorRate = errors / requests;
-    const timeoutRate = timeouts / requests;
-    const fallbackRate = fallbacks / requests;
-    let severity = "low";
-    let issue = "Provider signal requires review";
-    let score = errorRate + timeoutRate + fallbackRate;
-    if (String(row.status).toLowerCase().includes("timeout") || timeoutRate >= 0.05) {
-      severity = timeoutRate >= 0.1 ? "high" : "medium";
-      issue = "Timeout rate elevated";
-      score += 2;
-    } else if (errorRate >= 0.05) {
-      severity = errorRate >= 0.1 ? "high" : "medium";
-      issue = "Error rate elevated";
-      score += 1.5;
-    } else if (fallbackRate > 0) {
-      severity = fallbackRate >= 0.1 ? "medium" : "low";
-      issue = "Fallback activity detected";
-      score += 1;
-    } else if (["unhealthy", "degraded", "open"].includes(String(row.status).toLowerCase())) {
-      severity = row.status === "unhealthy" ? "high" : "medium";
-      issue = `${row.status} health state`;
-      score += 1;
-    }
-    return { ...row, severity, issue, score, errorRate, timeoutRate, fallbackRate };
-  }).filter((row) => {
-    const status = String(row.status || "").trim().toLowerCase();
-    return row.score > 0 || status.length > 0 && !["healthy", "ready", "ok"].includes(status);
-  }).sort((a, b) => b.score - a.score);
+  return rows.map((row) => ({ ...row, ...reliability(row) })).filter((row) => row.score > 0).sort((a, b) => b.score - a.score);
 }
 function overviewRiskRow(row) {
-  const signal = row.issue.startsWith("Timeout") ? row.timeoutRate : row.issue.startsWith("Error") ? row.errorRate : row.fallbackRate;
   return `<div class="attention-row">
-    ${badge(row.severity, row.severity === "high" ? "bad" : "warn")}
-    <span><strong>${esc(row.issue)}</strong><small>${esc(row.name)} · ${percent(signal)}</small></span>
-    <button type="button" class="primary" data-overview-nav="health" aria-label="Open health investigation for ${attr(row.name)}">Open investigation</button>
+    ${badge(row.tone === "bad" ? "High" : "Review", row.tone)}
+    <span><strong>${esc(row.label)}</strong><small>${esc(row.name)} · ${percent(row.signal)}</small></span>
+    <button type="button" data-overview-nav="health">View reliability</button>
   </div>`;
 }
 function overviewOperationsTable(healthRows, keysRows) {
@@ -15656,7 +15798,7 @@ function overviewOperationsTable(healthRows, keysRows) {
     esc(row.provider || row.provider_kind || "Service"),
     healthBadge(row),
     `<strong>${esc(row.error_count || 0)} errors · ${esc(row.fallback_count || 0)} fallbacks</strong><div class="subtle">${averageLatency(row)}</div>`,
-    "Live",
+    "Recorded usage",
     `<button type="button" class="icon-button" data-overview-nav="health" aria-label="Inspect health for ${attr(row.name)}"><i class="ti ti-dots" aria-hidden="true"></i></button>`
   ]);
   const key = keysRows.find((row) => !row.revoked_at) || keysRows[0];
@@ -15681,7 +15823,7 @@ function overviewChartSummary(rows) {
 function renderOverviewChart(rows) {
   const canvas = document.querySelector("#overview-chart");
   if (!(canvas instanceof HTMLCanvasElement)) return;
-  const labels = rows.map((row) => time(row.bucket_start || row.bucket || row.name));
+  const labels = rows.map((row) => new Date(row.bucket_start || row.bucket || row.name).toLocaleString([], { month: "short", day: "numeric", ...state.overviewWindow === "24h" ? { hour: "2-digit" } : {} }));
   const values = (key) => rows.map((row) => {
     var _a2;
     return Number(((_a2 = row.summary) == null ? void 0 : _a2[key]) ?? row[key] ?? 0);
@@ -15691,9 +15833,8 @@ function renderOverviewChart(rows) {
     data: {
       labels,
       datasets: [
-        { label: "Requests", data: values("request_count"), borderColor: "#087b60", backgroundColor: "#087b60", yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
-        { label: "Failures", data: values("failure_count"), borderColor: "#d9474f", backgroundColor: "#d9474f", yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
-        { label: "Latency (ms)", data: values("average_latency_ms"), borderColor: "#0ea5a0", backgroundColor: "#0ea5a0", yAxisID: "latency", tension: 0.32, pointRadius: 0, borderWidth: 2 }
+        { label: "Requests", order: 1, data: values("request_count"), borderColor: "#087b60", backgroundColor: "#e9f3ed", fill: true, yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
+        { label: "Failures", data: values("failure_count"), borderColor: "#d9474f", backgroundColor: "#d9474f", yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 }
       ]
     },
     options: {
@@ -15707,8 +15848,7 @@ function renderOverviewChart(rows) {
       },
       scales: {
         x: { grid: { display: false }, ticks: { color: "#58736e", maxTicksLimit: 7, font: { size: 10 } } },
-        y: { beginAtZero: true, grid: { color: "#dcebe7" }, ticks: { color: "#58736e", precision: 0, font: { size: 10 } } },
-        latency: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, ticks: { color: "#58736e", font: { size: 10 } } }
+        y: { beginAtZero: true, grid: { color: "#dcebe7" }, ticks: { color: "#58736e", precision: 0, font: { size: 10 } } }
       }
     }
   });
@@ -15727,7 +15867,11 @@ function stat(label, value) {
   return metricTile(label, value);
 }
 async function projects() {
-  [state.projects, state.services] = await Promise.all([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services")]);
+  const renderId = ++renderGeneration;
+  const loaded = await Promise.all([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services")]);
+  if (renderId !== renderGeneration) return;
+  [state.projects, state.services] = loaded;
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Create project</h3></div>
@@ -15749,6 +15893,7 @@ async function projects() {
   document.querySelectorAll("[data-project-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(projectAction));
   });
+  organizeView("projects");
 }
 function projectTable(rows) {
   return table(
@@ -15774,15 +15919,19 @@ function projectServiceForm(project) {
 async function createProject(event) {
   event.preventDefault();
   const form = new FormData(event.target);
-  await api("/admin-ui/admin/projects", { method: "POST", body: JSON.stringify({ name: form.get("name") }) });
+  const project = await api("/admin-ui/admin/projects", { method: "POST", body: JSON.stringify({ name: form.get("name") }) });
+  state.projectScope = project.id;
+  persistMonitoringHash();
   setNotice("Project created.", "success");
   await projects();
 }
 async function projectAction(event) {
   const { projectAction: action, projectId } = event.currentTarget.dataset;
   if (action === "usage") {
-    const summary = await api(`/admin-ui/admin/projects/${projectId}/usage`);
-    setNotice(`Project usage: ${summary.request_count} requests, ${money(summary.estimated_cost_usd)} cost.`, "success");
+    state.projectScope = projectId;
+    state.usageFilters = { ...state.usageFilters, project_id: projectId, key_id: "" };
+    resetUsagePagination();
+    navigateToView("usage");
     return;
   }
   if (!await confirmAction("Delete project", "Projects with linked keys, services, or usage cannot be deleted.")) return;
@@ -15802,14 +15951,18 @@ async function patchProjectServices(event) {
 }
 async function keys() {
   var _a2;
-  [state.keys, state.projects, state.services, state.guardrails, state.policyLayers] = await Promise.all([
+  const renderId = ++renderGeneration;
+  const loaded = await Promise.all([
     api("/admin-ui/admin/keys"),
     api("/admin-ui/admin/projects"),
     api("/admin-ui/admin/services"),
     api("/admin-ui/admin/guardrails"),
     api("/admin-ui/admin/policy-layers")
   ]);
+  if (renderId !== renderGeneration) return;
+  [state.keys, state.projects, state.services, state.guardrails, state.policyLayers] = loaded;
   const editing = state.keys.find((key) => key.id === state.editingKeyId);
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <div class="split">
       <section class="panel">
@@ -15920,6 +16073,7 @@ async function keys() {
   document.querySelectorAll("[data-key-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(keyAction));
   });
+  organizeView("keys");
 }
 function policyFields(key = null, neutral = false) {
   const policy = (key == null ? void 0 : key.policy) || {};
@@ -16084,11 +16238,17 @@ async function createKey(event) {
   };
   if (!form.has("no_expires_at") && !body.expires_at) delete body.expires_at;
   if (!body.rotation_due_at) delete body.rotation_due_at;
+  if (!await confirmAction("Review virtual key", `Issue a ${body.preset || "custom"} key for ${body.project_id ? projectName(body.project_id) : "the selected individual services"}? Expiration: ${body.expires_at === null ? "none" : body.expires_at || "server default (may be non-expiring)"}. The credential will be shown once after creation.`)) return;
   const response = await api("/admin-ui/admin/keys", { method: "POST", body: JSON.stringify(body) });
-  showRawToken(response.raw_key, "Virtual key shown once");
-  state.editingKeyId = response.key.id;
+  closeContentDrawer == null ? void 0 : closeContentDrawer();
+  state.editingKeyId = null;
   setNotice("Virtual key created.", "success");
-  await keys();
+  try {
+    await keys();
+  } catch (error) {
+    if (error.name !== "AbortError") setNotice(`Key created; inventory refresh failed: ${error.message}`);
+  }
+  showRawToken(response.raw_key, "Virtual key shown once");
 }
 async function patchKey(event) {
   event.preventDefault();
@@ -16116,6 +16276,7 @@ async function patchKey(event) {
     body.expires_at = isoDate(form.get("expires_at"));
   }
   await api(`/admin-ui/admin/keys/${keyId}`, { method: "PATCH", body: JSON.stringify(body) });
+  state.editingKeyId = null;
   setNotice("Virtual key updated.", "success");
   await keys();
 }
@@ -16220,6 +16381,7 @@ async function policyLayerAction(event) {
   await keys();
 }
 async function audit() {
+  const renderId = ++renderGeneration;
   const formMarkup = `
     <label>Action<input name="action" placeholder="operator_token.rotate"></label>
     <label>Target type<input name="target_type" placeholder="key, policy_layer, provider"></label>
@@ -16229,9 +16391,11 @@ async function audit() {
     <label>Limit<input name="limit" type="number" min="1" max="500" value="100"></label>
     <div class="form-actions"><button class="primary">Apply</button></div>
   `;
+  if (renderId !== renderGeneration) return;
   content.innerHTML = auditLogTemplate(formMarkup, '<div id="audit-results"></div>');
   document.querySelector("[data-filter-form]").addEventListener("submit", handleAsync(loadAuditEvents));
   await loadAuditEvents();
+  organizeView("audit");
 }
 async function loadAuditEvents(event) {
   event == null ? void 0 : event.preventDefault();
@@ -16265,6 +16429,7 @@ function keyOwnerLabel(key) {
   return `<strong>${esc(projectName(key.project_id))}</strong><div class="subtle"><code>${esc(key.project_id || "")}</code></div>`;
 }
 async function keyAction(event) {
+  var _a2;
   const { keyAction: action, keyId } = event.currentTarget.dataset;
   if (action === "edit") {
     state.editingKeyId = keyId;
@@ -16277,11 +16442,10 @@ async function keyAction(event) {
     return;
   }
   if (action === "usage") {
-    const summary = await api(`/admin-ui/admin/keys/${keyId}/usage`);
-    setNotice(
-      `Key usage: ${summary.request_count} requests, ${summary.failure_count} failures, ${money(summary.estimated_cost_usd)} cost.`,
-      "success"
-    );
+    state.projectScope = ((_a2 = state.keys.find((key) => key.id === keyId)) == null ? void 0 : _a2.project_id) || "";
+    state.usageFilters = { ...state.usageFilters, project_id: state.projectScope, key_id: keyId };
+    resetUsagePagination();
+    navigateToView("usage");
     return;
   }
   if (!await confirmAction(`${action} virtual key`, "This lifecycle change is written to the database.")) return;
@@ -16290,13 +16454,17 @@ async function keyAction(event) {
   await keys();
 }
 async function providers() {
-  [state.providers, state.litellmCredentialMappings, state.litellmPassthroughSettings, state.keys, state.projects] = await Promise.all([
+  const renderId = ++renderGeneration;
+  const loaded = await Promise.all([
     api("/admin-ui/admin/providers"),
     api("/admin-ui/admin/providers/litellm-credentials"),
     api("/admin-ui/admin/providers/litellm-passthrough"),
     api("/admin-ui/admin/keys"),
     api("/admin-ui/admin/projects")
   ]);
+  if (renderId !== renderGeneration) return;
+  [state.providers, state.litellmCredentialMappings, state.litellmPassthroughSettings, state.keys, state.projects] = loaded;
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Create provider</h3></div>
@@ -16358,6 +16526,7 @@ async function providers() {
   document.querySelectorAll("[data-litellm-mapping-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(liteLlmCredentialMappingAction));
   });
+  organizeView("providers");
 }
 function litellmPassthroughForm(settings2) {
   const current = settings2 || {};
@@ -16546,11 +16715,15 @@ function updateLiteLlmMappingTargetVisibility() {
   (_e = (_d = document.querySelector("[data-litellm-project-target]")) == null ? void 0 : _d.closest("label")) == null ? void 0 : _e.toggleAttribute("hidden", scope !== "project");
 }
 async function routes() {
-  [state.openaiRoutes, state.anthropicRoutes, state.services] = await Promise.all([
+  const renderId = ++renderGeneration;
+  const loaded = await Promise.all([
     api("/admin-ui/admin/openai-routes"),
     api("/admin-ui/admin/anthropic-routes"),
     api("/admin-ui/admin/services")
   ]);
+  if (renderId !== renderGeneration) return;
+  [state.openaiRoutes, state.anthropicRoutes, state.services] = loaded;
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading">
@@ -16586,6 +16759,7 @@ async function routes() {
   document.querySelectorAll("[data-service-route-timeout-form]").forEach((form) => {
     form.addEventListener("submit", handleAsync(saveServiceRouteTimeout));
   });
+  organizeView("routes");
 }
 function routeFamilyLogo(family) {
   const label = family === "anthropic" ? "A" : "OA";
@@ -16711,8 +16885,12 @@ function routeConfigPayload(form) {
 }
 async function services() {
   var _a2;
-  [state.services, state.projects] = await Promise.all([api("/admin-ui/admin/services"), api("/admin-ui/admin/projects")]);
+  const renderId = ++renderGeneration;
+  const loaded = await Promise.all([api("/admin-ui/admin/services"), api("/admin-ui/admin/projects")]);
+  if (renderId !== renderGeneration) return;
+  [state.services, state.projects] = loaded;
   const editing = state.services.find((service) => service.name === state.editingServiceName);
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <div class="service-stack">
       <section class="panel">
@@ -16722,7 +16900,7 @@ async function services() {
         </div>
         <form id="service-form" class="form-grid">
           ${formSection("Identity and routing", "Name the service and define its public route and upstream.", `
-            <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
+            <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9\\x2d]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
             <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
             <label>Upstream URL<input name="upstream_base_url"></label>
             <div class="field"><span>Methods</span>${methodSelect(["POST"])}</div>
@@ -16764,6 +16942,7 @@ async function services() {
   document.querySelectorAll("[data-service-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(serviceAction));
   });
+  organizeView("services");
 }
 function pricingRulesEditor(rules) {
   return `
@@ -17040,10 +17219,14 @@ async function openStudioImportPicker() {
   }
 }
 async function settings() {
-  [state.studioConnection, state.authSettings] = await Promise.all([
+  const renderId = ++renderGeneration;
+  const loaded = await Promise.all([
     api("/admin-ui/admin/studio/connection"),
     api("/admin-ui/admin/auth/front-door")
   ]);
+  if (renderId !== renderGeneration) return;
+  [state.studioConnection, state.authSettings] = loaded;
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <div class="grid stats">
       ${stat("Studio source", state.studioConnection.source)}
@@ -17113,6 +17296,7 @@ async function settings() {
   document.querySelectorAll("[data-auth-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(authSettingsAction));
   });
+  organizeView("settings");
 }
 async function saveStudioConnection(event) {
   var _a2, _b;
@@ -17421,7 +17605,11 @@ function healthCheckLabel(row) {
 }
 async function usage() {
   var _a2;
-  [state.projects, state.services, state.keys] = await Promise.all([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services"), api("/admin-ui/admin/keys")]);
+  const renderId = ++renderGeneration;
+  const loaded = await Promise.all([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services"), api("/admin-ui/admin/keys")]);
+  if (renderId !== renderGeneration) return;
+  [state.projects, state.services, state.keys] = loaded;
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Usage filters</h3></div>
@@ -17499,6 +17687,11 @@ async function usage() {
     </section>
     <section class="panel"><div class="panel-heading"><h3>Usage breakdown</h3></div><div id="usage-results"></div></section>
   `;
+  const usageForm = document.querySelector("#usage-form");
+  for (const [name, value] of Object.entries({ ...state.usageFilters, project_id: state.projectScope })) {
+    const field = usageForm.elements.namedItem(name);
+    if (field) field.value = value;
+  }
   document.querySelector("#usage-form").addEventListener("submit", handleAsync(applyUsageFilters));
   document.querySelector("#task-usage-form").addEventListener("submit", handleAsync(loadTaskUsage));
   document.querySelectorAll("[data-usage-export-action]").forEach((button) => {
@@ -17506,10 +17699,17 @@ async function usage() {
   });
   (_a2 = document.querySelector("#usage-export-form [name=export_limit]")) == null ? void 0 : _a2.addEventListener("change", syncUsageExportControls);
   syncUsageExportControls();
+  organizeView("usage");
   await loadUsage();
 }
 async function loadUsage(event) {
   event == null ? void 0 : event.preventDefault();
+  const generation = ++usageGeneration;
+  const root = document.querySelector("#usage-results");
+  if (root) {
+    root.innerHTML = emptyState("Loading usage for the applied filters…");
+    root.setAttribute("aria-busy", "true");
+  }
   const query = usageQueryFromForm(event == null ? void 0 : event.target);
   const filterQuery = usageFilterValuesQueryFromForm(event == null ? void 0 : event.target);
   const pageSize = usagePageSize();
@@ -17518,18 +17718,33 @@ async function loadUsage(event) {
   query.set("timeseries_offset", String(state.usagePagination.timeseriesOffset));
   query.set("service_timeseries_limit", String(pageSize));
   query.set("service_timeseries_offset", String(state.usagePagination.serviceTimeseriesOffset));
-  const [dashboard, events, routeOptions, endpointOptions, modelOptions] = await Promise.all([
-    api(`/admin-ui/admin/usage/dashboard?${query}`),
-    api(`/admin-ui/admin/usage/events?${query}`),
-    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=route`),
-    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=endpoint`),
-    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=model`)
-  ]);
+  let loaded;
+  try {
+    loaded = await Promise.all([
+      api(`/admin-ui/admin/usage/dashboard?${query}`),
+      api(`/admin-ui/admin/usage/events?${query}`),
+      api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=route`),
+      api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=endpoint`),
+      api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=model`)
+    ]);
+  } catch (error) {
+    if (generation !== usageGeneration || root !== document.querySelector("#usage-results") || error.name === "AbortError") return;
+    if (root) {
+      root.setAttribute("aria-busy", "false");
+      root.innerHTML = `<div class="notice" role="alert">Usage could not load: ${esc(error.message)} <button type="button" data-retry-usage>Retry</button></div>`;
+      root.querySelector("[data-retry-usage]").addEventListener("click", handleAsync(() => loadUsage()));
+    }
+    return;
+  }
+  const [dashboard, events, routeOptions, endpointOptions, modelOptions] = loaded;
+  if (generation !== usageGeneration || root !== document.querySelector("#usage-results")) return;
+  root == null ? void 0 : root.setAttribute("aria-busy", "false");
   const summary = dashboard.summary;
   updateUsageDatalists(routeOptions.values, endpointOptions.values, modelOptions.values);
   const results = document.querySelector("#usage-results");
   if (!results) return;
   results.innerHTML = `
+    <p class="applied-filters">Applied filters: ${esc([...query].filter(([key]) => !["offset", "limit", "timeseries_limit", "timeseries_offset", "service_timeseries_limit", "service_timeseries_offset", "breakdown_limit", "sort_by", "interval"].includes(key)).map(([key, value]) => `${key}: ${value}`).join(" · ") || "All recorded usage")}</p>
     <div class="grid stats">
       ${stat("Requests", summary.request_count)}
       ${stat("Failures", summary.failure_count)}
@@ -17553,6 +17768,7 @@ async function loadUsage(event) {
     ${usagePagedTable("Service timeseries", "service-timeseries", usageServiceTimeseriesTable(dashboard.service_timeseries || []), dashboard.service_timeseries_page, (dashboard.service_timeseries || []).length)}
     <h4>Unused keys</h4>${unusedKeysTable(dashboard.unused_keys)}
   `;
+  tabulateUsage(results);
   results.querySelectorAll("[data-debug-request]").forEach((button) => {
     button.addEventListener("click", handleAsync(openDebugRequest));
   });
@@ -17561,6 +17777,11 @@ async function loadUsage(event) {
   });
 }
 async function applyUsageFilters(event) {
+  event.preventDefault();
+  state.usageFilters = Object.fromEntries(new FormData(event.currentTarget));
+  state.projectScope = state.usageFilters.project_id || "";
+  persistMonitoringHash();
+  syncProjectScope();
   resetUsagePagination();
   await loadUsage(event);
 }
@@ -17598,6 +17819,7 @@ function usageQueryFromForm(formElement = document.querySelector("#usage-form"),
     const value = form.get(key);
     if (value) query.set(key, value);
   }
+  if (state.projectScope) query.set("project_id", state.projectScope);
   if (includeDateRange) {
     const range = usageDateRange(form);
     if (range.from) query.set("from", range.from);
@@ -17965,13 +18187,11 @@ function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {
   );
 }
 async function openDebugRequest(event) {
-  const requestId = event.currentTarget.dataset.debugRequest;
-  state.view = "health";
-  await refresh();
-  const input = document.querySelector("#debug-bundle-form input[name='request_id']");
-  if (input) input.value = requestId;
-  await loadDebugBundle({ preventDefault() {
-  }, target: document.querySelector("#debug-bundle-form") });
+  const trigger = event.currentTarget;
+  const requestId = trigger.dataset.debugRequest;
+  const bundle = await api(`/admin-ui/admin/debug-bundles/${encodeURIComponent(requestId)}`);
+  showContentDrawer("Request investigation", debugBundleView(bundle), () => {
+  }, trigger);
 }
 function unusedKeysTable(rows) {
   return table(
@@ -18022,11 +18242,14 @@ function usageServiceTimeseriesTable(rows) {
   );
 }
 async function health() {
+  var _a2;
+  const renderId = ++renderGeneration;
+  const issues = [];
   const [ready, rows, healthState, importVersions] = await Promise.all([
-    json("/admin-ui/readyz"),
-    api("/admin-ui/admin/provider-health"),
-    api("/admin-ui/admin/provider-health/state"),
-    api("/admin-ui/admin/services/import/versions")
+    readiness(),
+    monitoringPanel("/admin-ui/admin/provider-health", [], issues),
+    monitoringPanel("/admin-ui/admin/provider-health/state", [], issues),
+    monitoringPanel("/admin-ui/admin/services/import/versions", [], issues)
   ]);
   state.providerHealthState = healthState;
   state.serviceImportVersions = importVersions;
@@ -18034,7 +18257,9 @@ async function health() {
   const errorCount = rows.reduce((sum, row) => sum + row.error_count, 0);
   const fallbackCount = rows.reduce((sum, row) => sum + row.fallback_count, 0);
   const errorRate = requestCount ? `${(errorCount / requestCount * 100).toFixed(1)}%` : "0.0%";
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
+    ${monitoringIssues(issues)}
     <div class="grid stats">
       ${stat("Gateway", ready.status)}
       ${stat("Routes observed", rows.length)}
@@ -18042,12 +18267,12 @@ async function health() {
       ${stat("Fallbacks", fallbackCount)}
     </div>
     <section class="panel">
-      <div class="panel-heading"><h3>Provider and service health</h3></div>
+      <div class="panel-heading"><h3>Recorded reliability</h3><span class="subtle">All recorded usage · minimum 20 requests · elevated at 5%</span></div>
       ${healthTable(rows)}
     </section>
     <section class="panel">
       <div class="panel-heading">
-        <h3>Health state</h3>
+        <h3>Current availability & circuit state</h3>
         <button type="button" data-health-action="check">Run checks</button>
       </div>
       ${healthStateTable(healthState)}
@@ -18108,6 +18333,8 @@ async function health() {
   document.querySelectorAll("[data-import-rollback]").forEach((button) => {
     button.addEventListener("click", handleAsync(rollbackImportVersion));
   });
+  organizeView("health");
+  (_a2 = content.querySelector("[data-retry-monitoring]")) == null ? void 0 : _a2.addEventListener("click", () => refresh());
 }
 function healthTable(rows) {
   return table(
@@ -18124,9 +18351,8 @@ function healthTable(rows) {
   );
 }
 function healthBadge(row) {
-  if (row.timeout_count > 0) return '<span class="badge bad">timeout</span>';
-  if (row.error_count > 0 || row.fallback_count > 0) return '<span class="badge bad">degraded</span>';
-  return '<span class="badge good">healthy</span>';
+  const signal = reliability(row);
+  return badge(signal.label, signal.tone);
 }
 function averageLatency(row) {
   if (!row.request_count) return 0;
@@ -18304,12 +18530,14 @@ function guardrailPolicyBody(form) {
 }
 async function guardrails() {
   var _a2, _b, _c, _d;
+  const renderId = ++renderGeneration;
   [state.guardrails, state.guardrailExecutions, state.guardrailSummary] = await Promise.all([
     api("/admin-ui/admin/guardrails"),
     api("/admin-ui/admin/guardrails/executions?limit=50"),
     api("/admin-ui/admin/guardrails/summary")
   ]);
   const selected = state.guardrails.guardrails.find((guardrail) => guardrail.name === state.editingGuardrailName);
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <div class="split guardrail-workspace">
       <section class="panel">
@@ -18351,6 +18579,7 @@ async function guardrails() {
       guardrails();
     });
   });
+  organizeView("guardrails");
 }
 function guardrailCatalogTable(rows) {
   return table(
@@ -18537,11 +18766,8 @@ function endpointPricingRulesFromForm(form) {
   return parsed;
 }
 function keyStatus(key) {
-  if (key.revoked_at) return '<span class="badge bad">revoked</span>';
-  if (key.disabled) return '<span class="badge bad">disabled</span>';
-  if (key.expires_at && new Date(key.expires_at) <= /* @__PURE__ */ new Date()) return '<span class="badge bad">expired</span>';
-  if (!key.expires_at) return '<span class="badge good">non-expiring</span>';
-  return '<span class="badge good">active</span>';
+  const status = keyLifecycle(key);
+  return badge(status, ["active", "non-expiring"].includes(status) ? "good" : "bad");
 }
 function keyExpiry(key) {
   return key.expires_at ? time(key.expires_at) : "No expiration";
@@ -18746,11 +18972,15 @@ function serviceRouteOptions() {
   return routes2.map((route) => `<option value="${attr(route)}"></option>`).join("");
 }
 async function members() {
-  [state.members, state.services, state.projects] = await Promise.all([
+  const renderId = ++renderGeneration;
+  const loaded = await Promise.all([
     api("/admin-ui/admin/members"),
     api("/admin-ui/admin/services"),
     api("/admin-ui/admin/projects")
   ]);
+  if (renderId !== renderGeneration) return;
+  [state.members, state.services, state.projects] = loaded;
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><div><h3>Portal members</h3><p>Entra proves identity. Relayna approval and exact service membership grant access.</p></div><span class="badge">${state.members.length} members</span></div>
@@ -18762,6 +18992,7 @@ async function members() {
   content.querySelectorAll("[data-membership-delete]").forEach((button) => button.addEventListener("click", handleAsync(deleteServiceMembership)));
   content.querySelectorAll("[data-project-membership-form]").forEach((form) => form.addEventListener("submit", handleAsync(saveProjectMembership)));
   content.querySelectorAll("[data-project-membership-delete]").forEach((button) => button.addEventListener("click", handleAsync(deleteProjectMembership)));
+  organizeView("members");
 }
 function memberAccessCard(item) {
   var _a2, _b, _c;
@@ -18855,12 +19086,16 @@ async function deleteProjectMembership(event) {
   await members();
 }
 async function managedIdentities() {
-  [state.managedIdentities, state.managedIdentityProjects, state.services, state.projects] = await Promise.all([
+  const renderId = ++renderGeneration;
+  const loaded = await Promise.all([
     api("/admin-ui/admin/managed-identities"),
     api("/admin-ui/admin/managed-identity-projects"),
     api("/admin-ui/admin/services"),
     api("/admin-ui/admin/projects")
   ]);
+  if (renderId !== renderGeneration) return;
+  [state.managedIdentities, state.managedIdentityProjects, state.services, state.projects] = loaded;
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><div><h3>Register managed identity</h3><p>A token must have the monitoring audience, required app role, and this exact service binding.</p></div></div>
@@ -18900,6 +19135,7 @@ async function managedIdentities() {
   document.querySelector("#managed-identity-project-form").addEventListener("submit", handleAsync(createManagedIdentityProject));
   content.querySelectorAll("[data-managed-project-toggle]").forEach((button) => button.addEventListener("click", handleAsync(toggleManagedIdentityProject)));
   content.querySelectorAll("[data-managed-project-delete]").forEach((button) => button.addEventListener("click", handleAsync(deleteManagedIdentityProject)));
+  organizeView("managedIdentities");
 }
 function managedIdentityProjectTable(rows) {
   if (!rows.length) return emptyState("No project managed identities registered.");
@@ -18984,8 +19220,10 @@ async function deleteManagedIdentityProject(event) {
   await managedIdentities();
 }
 async function myServices() {
+  const renderId = ++renderGeneration;
   state.ownerServices = await api("/owner/v1/services");
   if (!state.selectedOwnerService && state.ownerServices.length) state.selectedOwnerService = state.ownerServices[0].service.name;
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `<section class="panel">
     <div class="panel-heading"><div><h3>My registered services</h3><p>Only Relayna assignments shown here are available through the dashboard and owner API.</p></div><span class="badge">${state.ownerServices.length}</span></div>
     <div class="owner-service-grid">${state.ownerServices.map(ownerServiceCard).join("") || emptyState("No service access has been assigned to this member.")}</div>
@@ -18994,6 +19232,7 @@ async function myServices() {
     state.selectedOwnerService = button.dataset.openOwnerService;
     navigateToView("service-dashboard");
   }));
+  organizeView("myServices");
 }
 function ownerServiceCard(item) {
   var _a2;
@@ -19005,8 +19244,10 @@ function ownerServiceCard(item) {
   </article>`;
 }
 async function myProjects() {
+  const renderId = ++renderGeneration;
   state.ownerProjects = await api("/owner/v1/projects");
   if (!state.selectedOwnerProject && state.ownerProjects.length) state.selectedOwnerProject = state.ownerProjects[0].project.id;
+  if (renderId !== renderGeneration) return;
   content.innerHTML = `<section class="panel">
     <div class="panel-heading"><div><h3>My projects</h3><p>Only exact Relayna project assignments shown here are available through the dashboard and owner API.</p></div><span class="badge">${state.ownerProjects.length}</span></div>
     <div class="owner-service-grid">${state.ownerProjects.map(ownerProjectCard).join("") || emptyState("No project access has been assigned to this member.")}</div>
@@ -19015,6 +19256,7 @@ async function myProjects() {
     state.selectedOwnerProject = button.dataset.openOwnerProject;
     navigateToView("project-dashboard");
   }));
+  organizeView("myProjects");
 }
 function ownerProjectCard(item) {
   var _a2;
@@ -19045,7 +19287,7 @@ function ownerIncidentSummary(rows, markers) {
 function renderOwnerIncidentChart(rows, markers) {
   const canvas = document.querySelector("#owner-incident-chart");
   if (!(canvas instanceof HTMLCanvasElement)) return;
-  const labels = rows.map((row) => time(row.bucket_start || row.bucket || row.name));
+  const labels = rows.map((row) => new Date(row.bucket_start || row.bucket || row.name).toLocaleString([], { month: "short", day: "numeric", ...state.overviewWindow === "24h" ? { hour: "2-digit" } : {} }));
   const bucketTimes = rows.map((row) => new Date(row.bucket_start || row.bucket || row.name).getTime());
   const markerLabels = Array.from({ length: rows.length }, () => []);
   for (const marker of markers) {
@@ -19318,6 +19560,7 @@ async function serviceDashboard() {
     serviceDashboard().catch((error) => setNotice(error.message));
   }));
   content.querySelectorAll("[data-owner-request]").forEach((button) => button.addEventListener("click", handleAsync(openOwnerRequestDetails)));
+  organizeView("serviceDashboard");
 }
 async function projectDashboard() {
   var _a2, _b, _c, _d;
@@ -19438,6 +19681,7 @@ async function projectDashboard() {
     projectDashboard().catch((error) => setNotice(error.message));
   }));
   content.querySelectorAll("[data-owner-request]").forEach((button) => button.addEventListener("click", handleAsync(openOwnerRequestDetails)));
+  organizeView("projectDashboard");
 }
 function blankToUndefined(value) {
   return value === null || String(value).trim() === "" ? void 0 : String(value).trim();
@@ -19477,7 +19721,7 @@ function time(value) {
   return value ? new Date(value).toLocaleString() : "n/a";
 }
 function money(value) {
-  return value == null ? "n/a" : `$${Number(value).toFixed(4)}`;
+  return value == null ? "n/a" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: Number(value) > 0 && Number(value) < 0.01 ? 4 : 2 }).format(Number(value));
 }
 function percent(value) {
   return value == null ? "0.0%" : `${(Number(value) * 100).toFixed(1)}%`;
@@ -19488,6 +19732,295 @@ function esc(value) {
 function attr(value) {
   return esc(value);
 }
+function hasDirtyForms() {
+  return Boolean(document.querySelector('form[data-dirty="true"]'));
+}
+function clearDirtyForms() {
+  document.querySelectorAll("form[data-dirty]").forEach((form) => {
+    delete form.dataset.dirty;
+  });
+}
+document.addEventListener("input", (event) => {
+  var _a2, _b;
+  const form = (_b = (_a2 = event.target).closest) == null ? void 0 : _b.call(_a2, "form");
+  if (!form || ["login-form", "usage-form", "usage-export-form", "traffic-filters", "task-usage-form", "debug-bundle-form", "audit-form", "policy-sim-form"].includes(form.id)) return;
+  form.dataset.dirty = "true";
+});
+window.addEventListener("beforeunload", (event) => {
+  if (hasDirtyForms()) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
+let closeContentDrawer = null;
+const scopedViews = /* @__PURE__ */ new Set(["overview", "usage", "traffic", "keys", "projects"]);
+function scopeLabel() {
+  var _a2;
+  if (!state.projectScope) return "All projects";
+  return ((_a2 = state.projects.find((project) => project.id === state.projectScope)) == null ? void 0 : _a2.name) || `Project ${state.projectScope}`;
+}
+function monitoringHash() {
+  const query = new URLSearchParams();
+  if (state.projectScope) query.set("project", state.projectScope);
+  if (state.overviewWindow !== "7d") query.set("range", state.overviewWindow);
+  for (const [name, value] of Object.entries(state.usageFilters)) {
+    if (value && name !== "project_id") query.set(`usage.${name}`, String(value));
+  }
+  return query.size ? `?${query}` : "";
+}
+function persistMonitoringHash() {
+  history.replaceState(null, "", `#/${state.view}${monitoringHash()}`);
+}
+function restoreMonitoringHash() {
+  const query = new URLSearchParams(location.hash.split("?")[1] || "");
+  state.projectScope = query.get("project") || "";
+  state.overviewWindow = ["24h", "7d", "30d"].includes(query.get("range")) ? query.get("range") : "7d";
+  state.usageFilters = Object.fromEntries([...query].filter(([key]) => key.startsWith("usage.")).map(([key, value]) => [key.slice(6), value]));
+  resetUsagePagination();
+}
+function syncProjectScope() {
+  const control = document.querySelector("#project-scope");
+  const scoped = scopedViews.has(state.view) && state.workspace === "admin";
+  control.closest("label").classList.toggle("hidden", !scoped);
+  document.querySelector("#scope-context").textContent = state.workspace === "owner" ? "Membership scope" : scoped ? "Workspace" : "Gateway-wide";
+  const projects2 = state.projects;
+  control.innerHTML = `<option value="">All projects</option>${projects2.map((project) => option(project.id, state.projectScope, project.name)).join("")}${state.projectScope && !projects2.some((project) => project.id === state.projectScope) ? `<option value="${attr(state.projectScope)}" selected>Unknown project · ${esc(state.projectScope)}</option>` : ""}`;
+  control.value = state.projectScope;
+}
+function showContentDrawer(title, markupOrNode, onClose = () => {
+}, restoreFocus = null) {
+  closeContentDrawer == null ? void 0 : closeContentDrawer();
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop drawer-backdrop";
+  const id = `drawer-title-${++dialogCounter}`;
+  backdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="${id}"><div class="drawer-heading"><h3 id="${id}">${esc(title)}</h3><button type="button" data-drawer-close aria-label="Close ${attr(title)}">Close</button></div><div class="drawer-body"></div></div>`;
+  const body = backdrop.querySelector(".drawer-body");
+  if (markupOrNode instanceof Node) body.appendChild(markupOrNode);
+  else body.innerHTML = markupOrNode;
+  document.body.appendChild(backdrop);
+  const close = mountDialog(backdrop, { restoreFocus, onClose: () => {
+    closeContentDrawer = null;
+    onClose();
+  } });
+  closeContentDrawer = close;
+  backdrop.querySelector("[data-drawer-close]").addEventListener("click", () => close());
+  return close;
+}
+function organizeView(view) {
+  var _a2, _b, _c, _d, _e, _f, _g;
+  closeContentDrawer == null ? void 0 : closeContentDrawer();
+  const actions = document.querySelector("#page-actions");
+  actions.replaceChildren();
+  syncProjectScope();
+  const createForms = { projects: "project-form", keys: "key-form", services: "service-form", providers: "provider-form", managedIdentities: "managed-identity-form" };
+  const id = createForms[view];
+  const create = id && ((_a2 = content.querySelector(`#${id}`)) == null ? void 0 : _a2.closest(".panel"));
+  if (create) {
+    const title = ((_b = create.querySelector("h3")) == null ? void 0 : _b.textContent) || "Create";
+    const placeholder = document.createElement("div");
+    placeholder.hidden = true;
+    create.before(placeholder);
+    placeholder.appendChild(create);
+    const project = create.querySelector("select[name=project_id]");
+    if (project && state.projectScope && [...project.options].some((option2) => option2.value === state.projectScope)) project.value = state.projectScope;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "primary";
+    button.textContent = title;
+    actions.appendChild(button);
+    button.addEventListener("click", () => showContentDrawer(title, create, () => placeholder.appendChild(create)));
+  }
+  content.querySelectorAll(".muted-panel").forEach((panel2) => {
+    panel2.hidden = true;
+  });
+  content.querySelectorAll(".split, .service-stack").forEach((wrapper) => {
+    const visible = [...wrapper.children].filter((child) => !child.hidden);
+    if (!visible.length) wrapper.hidden = true;
+    else wrapper.classList.add("contextual-stack");
+  });
+  const inventoryTitles = { projects: "Projects", keys: "Virtual keys", services: "Registered services", providers: "Provider configuration", managedIdentities: "Service bindings" };
+  const inventory = inventoryTitles[view] && [...content.querySelectorAll(".panel")].find((panel2) => {
+    var _a3;
+    return ((_a3 = panel2.querySelector("h3")) == null ? void 0 : _a3.textContent) === inventoryTitles[view];
+  });
+  if (inventory) {
+    content.prepend(inventory);
+    addInventorySearch(inventory);
+  }
+  if (view === "keys" || view === "projects") {
+    const rows = view === "keys" ? state.keys : state.projects;
+    const scoped = state.projectScope ? rows.filter((row) => (view === "keys" ? row.project_id : row.id) === state.projectScope) : rows;
+    const tableRows = [...inventory.querySelectorAll("tbody > tr")];
+    tableRows.forEach((row, index2) => {
+      row.dataset.outOfScope = String(!scoped.includes(rows[index2]));
+      row.hidden = row.dataset.outOfScope === "true";
+    });
+    const count = inventory.querySelector(".panel-heading .subtle");
+    if (count) count.textContent = `${scoped.length} in ${scopeLabel()}`;
+    if (!scoped.length && state.projectScope) inventory.insertAdjacentHTML("beforeend", emptyState(`No ${view === "keys" ? "virtual keys" : "projects"} in ${scopeLabel()}.`));
+  }
+  if (view === "keys") {
+    for (const title of ["Inherited policy layers", "Policy simulator"]) {
+      const panel2 = [...content.querySelectorAll(".panel")].find((item) => {
+        var _a3;
+        return ((_a3 = item.querySelector("h3")) == null ? void 0 : _a3.textContent) === title;
+      });
+      if (panel2) disclosePanel(panel2, title);
+    }
+  }
+  if (view === "usage") {
+    const results = (_c = content.querySelector("#usage-results")) == null ? void 0 : _c.closest(".panel");
+    if (results) content.prepend(results);
+    const filters = (_d = content.querySelector("#usage-form")) == null ? void 0 : _d.closest(".panel");
+    if (filters) {
+      content.prepend(filters);
+      disclosePanel(filters, "Filter usage & cost");
+    }
+    for (const formId of ["usage-export-form", "task-usage-form"]) {
+      const panel2 = (_e = content.querySelector(`#${formId}`)) == null ? void 0 : _e.closest(".panel");
+      if (panel2) disclosePanel(panel2, panel2.querySelector("h3").textContent);
+    }
+    const resultsBody = content.querySelector("#usage-results");
+    if (resultsBody) tabulateUsage(resultsBody);
+  }
+  if (view === "members" || view === "managedIdentities") {
+    const tabs = document.createElement("div");
+    tabs.className = "result-tabs";
+    tabs.innerHTML = `<button type="button" data-identity-view="members" aria-pressed="${view === "members"}">People</button><button type="button" data-identity-view="managed-identities" aria-pressed="${view === "managedIdentities"}">Workload identities</button>`;
+    content.prepend(tabs);
+    tabs.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => navigateToView(button.dataset.identityView)));
+    const projectForm = (_f = content.querySelector("#managed-identity-project-form")) == null ? void 0 : _f.closest(".panel");
+    if (projectForm) disclosePanel(projectForm, "Register project monitoring identity");
+  }
+  if (view === "guardrails") {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Key policies & simulator";
+    button.addEventListener("click", () => navigateToView("keys"));
+    actions.appendChild(button);
+  }
+  if (view === "health") {
+    for (const formId of ["provider-health-state-form", "debug-bundle-form"]) {
+      const panel2 = (_g = content.querySelector(`#${formId}`)) == null ? void 0 : _g.closest(".panel");
+      if (panel2) disclosePanel(panel2, panel2.querySelector("h3").textContent);
+    }
+  }
+  const editForm = content.querySelector(view === "keys" ? "#key-edit-form" : view === "services" ? "#service-edit-form" : "#no-edit-form");
+  if (editForm) {
+    const panel2 = editForm.closest(".panel");
+    const placeholder = document.createElement("div");
+    placeholder.hidden = true;
+    panel2.before(placeholder);
+    showContentDrawer(view === "keys" ? "Edit virtual key" : "Edit service", panel2, () => {
+      placeholder.appendChild(panel2);
+      if (view === "keys") state.editingKeyId = null;
+      else state.editingServiceName = null;
+    });
+  }
+  content.querySelectorAll(".table-wrap").forEach((wrapper) => {
+    wrapper.tabIndex = 0;
+    wrapper.setAttribute("role", "region");
+    wrapper.setAttribute("aria-label", "Scrollable results table");
+  });
+}
+function disclosePanel(panel2, title) {
+  var _a2;
+  if ((_a2 = panel2.parentElement) == null ? void 0 : _a2.matches("details")) return;
+  const details = document.createElement("details");
+  details.className = "workflow-disclosure";
+  const summary = document.createElement("summary");
+  summary.textContent = title;
+  details.appendChild(summary);
+  panel2.before(details);
+  details.appendChild(panel2);
+}
+function addInventorySearch(panel2) {
+  if (panel2.querySelector("[data-inventory-search]")) return;
+  const label = document.createElement("label");
+  label.className = "inventory-search";
+  label.innerHTML = `<span class="sr-only">Search inventory</span><input type="search" data-inventory-search placeholder="Search this inventory…"><span class="search-count" role="status"></span>`;
+  panel2.querySelector(".panel-heading").after(label);
+  const rows = [...panel2.querySelectorAll("tbody > tr")];
+  label.querySelector("input").addEventListener("input", (event) => {
+    const query = event.target.value.trim().toLowerCase();
+    rows.forEach((row) => {
+      row.hidden = row.dataset.outOfScope === "true" || !row.textContent.toLowerCase().includes(query);
+    });
+    label.querySelector(".search-count").textContent = `${rows.filter((row) => !row.hidden).length} matching rows`;
+  });
+}
+function tabulateUsage(root) {
+  if (root.querySelector(".result-tabs")) return;
+  const headings = [...root.querySelectorAll(":scope > h4, :scope > .usage-section-heading")];
+  if (!headings.length) return;
+  const nav = document.createElement("div");
+  nav.className = "result-tabs";
+  nav.setAttribute("role", "group");
+  nav.setAttribute("aria-label", "Usage breakdown");
+  headings[0].before(nav);
+  const sections = headings.map((heading) => {
+    const section = document.createElement("section");
+    section.className = "breakdown-section";
+    const nodes = [heading];
+    let next = heading.nextElementSibling;
+    while (next && !headings.includes(next)) {
+      nodes.push(next);
+      next = next.nextElementSibling;
+    }
+    heading.before(section);
+    nodes.forEach((node) => section.appendChild(node));
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = heading.matches("h4") ? heading.textContent : heading.querySelector("h4").textContent;
+    nav.appendChild(button);
+    return { section, button };
+  });
+  const select = (chosen) => sections.forEach(({ section, button }, index2) => {
+    section.hidden = index2 !== chosen;
+    button.setAttribute("aria-pressed", String(index2 === chosen));
+  });
+  sections.forEach(({ button }, index2) => button.addEventListener("click", () => {
+    state.usageTab = button.textContent;
+    select(index2);
+  }));
+  select(Math.max(0, sections.findIndex(({ button }) => button.textContent === state.usageTab)));
+}
+window.matchMedia("(max-width: 920px)").addEventListener("change", closeNavigation);
+document.querySelector("#sidebar").addEventListener("keydown", (event) => {
+  if (!document.body.classList.contains("nav-open")) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeNavigation();
+  }
+  if (event.key !== "Tab") return;
+  const buttons = [...document.querySelectorAll("#sidebar button")].filter((button) => button.getClientRects().length && !button.disabled);
+  const first = buttons[0], last = buttons.at(-1);
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  }
+  if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+document.querySelector("#project-scope").addEventListener("change", async (event) => {
+  if (pendingWrites) {
+    syncProjectScope();
+    return;
+  }
+  if (hasDirtyForms() && !await confirmAction("Discard unsaved changes?", "Changing project scope replaces the current forms.")) {
+    syncProjectScope();
+    return;
+  }
+  clearDirtyForms();
+  state.projectScope = event.target.value;
+  state.usageFilters = { ...state.usageFilters, project_id: state.projectScope, key_id: "" };
+  resetUsagePagination();
+  persistMonitoringHash();
+  refresh();
+});
+closeNavigation();
 async function initializePortal() {
   var _a2;
   if (token()) {

@@ -41,7 +41,7 @@ export const viewMeta: Record<ViewId, ViewMeta> = {
     summary: "Provider checks, circuit state, import versions, and debug bundles.",
   },
   usage: {
-    title: "Usage",
+    title: "Usage & cost",
     domain: "Monitor",
     summary: "Cost, tokens, denials, fallbacks, guardrail blocks, task drilldowns, and exports.",
   },
@@ -66,17 +66,17 @@ export const viewMeta: Record<ViewId, ViewMeta> = {
     summary: "Project ownership and service access boundaries for virtual keys.",
   },
   keys: {
-    title: "Keys",
+    title: "Virtual keys",
     domain: "Govern",
     summary: "Virtual key lifecycle, policy layers, simulations, scopes, and guardrail policy.",
   },
   guardrails: {
-    title: "Guardrails",
+    title: "Policies & guardrails",
     domain: "Govern",
     summary: "Catalog controls, execution summaries, and sanitized guardrail events.",
   },
   audit: {
-    title: "Audit",
+    title: "Audit log",
     domain: "Govern",
     summary: "Operator actions, request metadata, targets, and redacted change snapshots.",
   },
@@ -86,7 +86,7 @@ export const viewMeta: Record<ViewId, ViewMeta> = {
     summary: "Studio connection settings, integration token controls, and release posture references.",
   },
   members: {
-    title: "Members",
+    title: "People & identities",
     domain: "Govern",
     summary: "Approve portal members and assign exact Owner or Viewer service access.",
   },

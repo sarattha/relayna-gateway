@@ -1,0 +1,84 @@
+[
+  {
+    "surface": "Overview",
+    "title": "Overview",
+    "bodyLength": 927,
+    "width": 1440
+  },
+  {
+    "surface": "Traffic",
+    "title": "Traffic",
+    "bodyLength": 648,
+    "width": 1440
+  },
+  {
+    "surface": "Usage & cost",
+    "title": "Usage & cost",
+    "bodyLength": 612,
+    "width": 1440
+  },
+  {
+    "surface": "Health",
+    "title": "Health",
+    "bodyLength": 437,
+    "width": 1440
+  },
+  {
+    "surface": "Projects",
+    "title": "Projects",
+    "bodyLength": 396,
+    "width": 1440
+  },
+  {
+    "surface": "Services",
+    "title": "Services",
+    "bodyLength": 542,
+    "width": 1440
+  },
+  {
+    "surface": "Providers",
+    "title": "Providers",
+    "bodyLength": 583,
+    "width": 1440
+  },
+  {
+    "surface": "Routes",
+    "title": "Routes",
+    "bodyLength": 2643,
+    "width": 1440
+  },
+  {
+    "surface": "Virtual keys",
+    "title": "Virtual keys",
+    "bodyLength": 728,
+    "width": 1440
+  },
+  {
+    "surface": "Policies & guardrails",
+    "title": "Policies & guardrails",
+    "bodyLength": 2948,
+    "width": 1440
+  },
+  {
+    "surface": "People & identities",
+    "title": "People & identities",
+    "bodyLength": 1288,
+    "width": 1440
+  },
+  {
+    "surface": "Audit log",
+    "title": "Audit log",
+    "bodyLength": 105,
+    "width": 1440
+  },
+  {
+    "surface": "Settings",
+    "title": "Settings",
+    "bodyLength": 905,
+    "width": 1440
+  },
+  {
+    "surface": "Managed identities",
+    "reachable": "People → Workload identities"
+  }
+]
