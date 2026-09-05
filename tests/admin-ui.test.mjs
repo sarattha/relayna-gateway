@@ -748,3 +748,44 @@ for (const [handlerName, path] of [["deleteManagedIdentity", "managed-identities
   }
   console.log(`ok - ${handlerName} retains identity across confirmation and respects cancellation`);
 }
+
+const navigationSource = sourceJs.slice(sourceJs.indexOf('async function navigateToView('), sourceJs.indexOf('\nfunction syncNavigation('));
+for (const outcome of ['cancel', 'pending', 'accept']) {
+  const navState = {workspace:'admin',view:'projects',projectScope:'original',usageFilters:{project_id:'original',key_id:'original-key'}};
+  const oldState = structuredClone(navState);
+  const loc = {hash:'#/projects?project=original'};
+  let shellChanges = 0;
+  const env = {
+    state:navState, pendingWrites:outcome === 'pending' ? 1 : 0,
+    setNotice(){}, hasDirtyForms:()=>true, confirmAction:async()=>outcome === 'accept', clearDirtyForms(){},
+    viewIds:new Set(['usage']), viewAllowed:()=>true, resetUsagePagination(){}, configurePortalShell(){shellChanges++;},
+    monitoringHash:()=>`?project=${navState.projectScope}`, location:loc, history:{replaceState(){}},
+    syncNavigation(){}, closeNavigation(){}, closeGovernedMenu(){}, window:{scrollTo(){}}, refresh(){},
+  };
+  const navigate = new Function('env', `const {${Object.keys(env).join(',')}} = env; ${navigationSource}; return navigateToView;`)(env);
+  await navigate('usage',{monitoring:{projectScope:'requested',usageFilters:{project_id:'requested',key_id:'requested-key'}}});
+  if (outcome === 'accept') {
+    assert.equal(navState.projectScope,'requested');
+    assert.equal(navState.usageFilters.key_id,'requested-key');
+    assert.equal(loc.hash,'#/usage?project=requested');
+    assert.equal(shellChanges,1);
+  } else {
+    assert.deepEqual(navState,oldState);
+    assert.equal(loc.hash,'#/projects?project=original');
+    assert.equal(shellChanges,0);
+  }
+}
+console.log('ok - usage drilldown scope commits only after accepted navigation');
+
+for (const selected of ['deleted-project','another-project']) {
+  const projectState = {projectScope:selected,usageFilters:{project_id:selected,key_id:'key-filter'}};
+  const calls = [];
+  const action = new Function('state','confirmAction','api','setNotice','projects','resetUsagePagination','persistMonitoringHash','navigateToView', `return async ${sourceFunction('projectAction')}`)(
+    projectState, async()=>true, async(path)=>calls.push(path), ()=>{}, async()=>{}, ()=>{}, ()=>{}, async()=>{},
+  );
+  await action({currentTarget:{dataset:{projectAction:'delete',projectId:'deleted-project'}}});
+  assert.deepEqual(calls,['/admin-ui/admin/projects/deleted-project']);
+  assert.equal(projectState.projectScope,selected === 'deleted-project' ? '' : selected);
+  assert.equal(projectState.usageFilters.key_id,selected === 'deleted-project' ? '' : 'key-filter');
+}
+console.log('ok - successful selected-project deletion clears its scope without clearing other selections');

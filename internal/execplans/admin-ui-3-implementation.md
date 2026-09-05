@@ -8,6 +8,8 @@ Migrate the production Vite/TypeScript console to the approved design in `intern
 
 ## Progress
 
+- [x] (2026-09-05) Second review: defer Usage drilldown filters until accepted navigation; clear scope after deleting its selected project. Unit tests cover cancel/pending/accept and unrelated project selection; real browser reproductions pass. Required format/Clippy/workspace tests pass; upstream audit blocker unchanged.
+
 - [x] (2026-09-05) Extended browser testing uncovered lost DOM currentTarget after identity-delete confirmation. Captured binding IDs before awaiting; service/project confirmation and cancellation tests pass, with browser readback. Frontend and required format/Clippy/workspace tests pass; upstream audit blocker remains.
 
 - [x] (2026-09-05) Review fixes pushed at 932c282, both addressed threads resolved with evidence and fresh review requested; all CI checks pass. Extended guardrail, Settings, Studio import/sync and service-workload lifecycle coverage. Remaining matrix items stay in the QA report.

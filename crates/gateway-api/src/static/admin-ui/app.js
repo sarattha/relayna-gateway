@@ -15416,7 +15416,7 @@ function configurePortalShell() {
   document.querySelector("#session-name").textContent = (member == null ? void 0 : member.display_name) || (member == null ? void 0 : member.email) || (token() ? "Break-glass operator" : "Portal member");
   document.querySelector("#session-role").textContent = token() ? "Operator token" : admin ? "Admin member" : "Scoped member";
 }
-async function navigateToView(view, { replace = false, focus = true, workspace = state.workspace } = {}) {
+async function navigateToView(view, { replace = false, focus = true, workspace = state.workspace, monitoring = null } = {}) {
   if (pendingWrites) {
     setNotice("Wait for the current change to finish before leaving this view.");
     return;
@@ -15425,6 +15425,11 @@ async function navigateToView(view, { replace = false, focus = true, workspace =
   clearDirtyForms();
   if (!viewIds.has(view) || !viewAllowed(view)) return;
   state.workspace = workspace;
+  if (monitoring) {
+    state.projectScope = monitoring.projectScope;
+    state.usageFilters = monitoring.usageFilters;
+    resetUsagePagination();
+  }
   configurePortalShell();
   const nextHash = `#/${view}${monitoringHash()}`;
   const changed = location.hash !== nextHash;
@@ -15742,10 +15747,7 @@ async function overview() {
   `;
   document.querySelector("#page-actions").innerHTML = `<label class="compact-field"><span class="sr-only">Overview time range</span><select id="overview-window">${option("24h", state.overviewWindow, "Last 24 hours")}${option("7d", state.overviewWindow, "Last 7 days")}${option("30d", state.overviewWindow, "Last 30 days")}</select></label>`;
   content.querySelectorAll("[data-overview-project]").forEach((button) => button.addEventListener("click", () => {
-    state.projectScope = button.dataset.overviewProject;
-    state.usageFilters = { time_preset: state.overviewWindow === "30d" ? "last_30d" : state.overviewWindow === "24h" ? "last_24h" : "last_7d" };
-    resetUsagePagination();
-    navigateToView("usage");
+    navigateToView("usage", { monitoring: { projectScope: button.dataset.overviewProject, usageFilters: { time_preset: state.overviewWindow === "30d" ? "last_30d" : state.overviewWindow === "24h" ? "last_24h" : "last_7d" } } });
   }));
   (_b = content.querySelector("[data-retry-monitoring]")) == null ? void 0 : _b.addEventListener("click", () => refresh());
   renderOverviewChart(dashboard.timeseries || []);
@@ -15929,14 +15931,17 @@ async function createProject(event) {
 async function projectAction(event) {
   const { projectAction: action, projectId } = event.currentTarget.dataset;
   if (action === "usage") {
-    state.projectScope = projectId;
-    state.usageFilters = { ...state.usageFilters, project_id: projectId, key_id: "" };
-    resetUsagePagination();
-    navigateToView("usage");
+    await navigateToView("usage", { monitoring: { projectScope: projectId, usageFilters: { ...state.usageFilters, project_id: projectId, key_id: "" } } });
     return;
   }
   if (!await confirmAction("Delete project", "Projects with linked keys, services, or usage cannot be deleted.")) return;
   await api(`/admin-ui/admin/projects/${projectId}`, { method: "DELETE" });
+  if (state.projectScope === projectId) {
+    state.projectScope = "";
+    state.usageFilters = { ...state.usageFilters, project_id: "", key_id: "" };
+    resetUsagePagination();
+    persistMonitoringHash();
+  }
   setNotice("Project deleted.", "success");
   await projects();
 }
@@ -16443,10 +16448,8 @@ async function keyAction(event) {
     return;
   }
   if (action === "usage") {
-    state.projectScope = ((_a2 = state.keys.find((key) => key.id === keyId)) == null ? void 0 : _a2.project_id) || "";
-    state.usageFilters = { ...state.usageFilters, project_id: state.projectScope, key_id: keyId };
-    resetUsagePagination();
-    navigateToView("usage");
+    const projectScope = ((_a2 = state.keys.find((key) => key.id === keyId)) == null ? void 0 : _a2.project_id) || "";
+    await navigateToView("usage", { monitoring: { projectScope, usageFilters: { ...state.usageFilters, project_id: projectScope, key_id: keyId } } });
     return;
   }
   if (!await confirmAction(`${action} virtual key`, "This lifecycle change is written to the database.")) return;
