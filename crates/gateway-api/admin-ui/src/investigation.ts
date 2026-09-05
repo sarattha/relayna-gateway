@@ -1,3 +1,17 @@
+// Use recorded request metadata, never provider names or today's route settings.
+export function routingModeLabel(diagnostics) {
+  switch (diagnostics?.routing_mode) {
+    case "managed_by_gateway": return "Gateway managed";
+    case "litellm_passthrough": return "LiteLLM passthrough";
+    default: return "Not recorded";
+  }
+}
+
+export function usageValue(diagnostics, value, format = String) {
+  if (diagnostics?.routing_mode === "litellm_passthrough") return "Not metered by gateway";
+  return value == null ? "Not recorded" : format(value);
+}
+
 // Shared presentation for an exact Traffic record, a Usage row, or a legacy debug snapshot.
 export function investigationUsageSnapshot(usage) {
   if (!usage) return null;
@@ -73,6 +87,7 @@ export function requestInvestigationView({ traffic = null, usage = null, bundle 
     ${section("Request context", facts([
       [traffic ? "Started" : "Recorded", (traffic?.started_at || usage?.created_at || bundle?.created_at) ? time(traffic?.started_at || usage?.created_at || bundle?.created_at) : null],
       ["Method / endpoint", [traffic?.method || usage?.http_method, traffic?.endpoint || usage?.endpoint_template || usage?.route || bundle?.route].filter(Boolean).join(" ")],
+      ["Routing mode", routingModeLabel(d)],
       ["Model", usage?.model], ["Provider", traffic ? traffic.provider || "Not selected" : usage?.provider || bundle?.provider],
       ["Project", project ? `${project.name} · ${project.id}` : projectId], ["Service", traffic?.service || usage?.service_name || bundle?.service_name],
       ["Key", traffic?.key_prefix ? `${traffic.key_prefix}… · ${traffic.key_id}` : traffic?.key_id || usage?.key_id || (traffic ? "Unauthenticated or passthrough" : null)],
@@ -89,7 +104,7 @@ export function requestInvestigationView({ traffic = null, usage = null, bundle 
       ["Attempt duration",timingValue(a,"total_ms")], ["Upstream status / failure",[a.upstream_status,a.failure_code].filter(v=>v!=null).join(" / ")],
     ])}</article>`).join("")}${traffic.attempts > attempts.length ? '<p class="notice">Earlier attempt timings were discarded at the retention limit.</p>' : ""}` : `<p class="help">${traffic?.attempts === 0 ? "No upstream connection was attempted." : "Network timings were not recorded for this request. Older records remain available without timing measurements."}</p>`)}
     ${section("Event timeline", traffic?.timeline?.length ? `${traffic.timeline_truncated ? '<p class="notice">Earlier timeline steps were discarded at the retention limit.</p>' : ""}${table(["Elapsed", "Attempt", "Stage", "Reason", "Upstream HTTP"],traffic.timeline.map(step=>[`${text(step.elapsed_ms)} ms`,text(step.attempt),text(label(step.stage)),text(step.code ?? "—"),text(step.upstream_status ?? "—")]))}` : '<p class="help">No event timeline was recorded.</p>')}
-    ${section("Usage & cost", facts([["Input tokens",usage?.input_tokens],["Output tokens",usage?.output_tokens],["Total tokens",usage?.total_tokens],["Estimated cost · USD",usage?.estimated_cost_usd == null ? null : `$${Number(usage.estimated_cost_usd).toFixed(6)}`],["Pricing source",usage?.cost_source],["Pricing rule",usage?.pricing_rule_name]]))}
+    ${section("Usage & cost", facts([["Input tokens",usageValue(d, usage?.input_tokens)],["Output tokens",usageValue(d, usage?.output_tokens)],["Total tokens",usageValue(d, usage?.total_tokens)],["Estimated cost · USD",usageValue(d, usage?.estimated_cost_usd, value => `$${Number(value).toFixed(6)}`)],["Pricing source",usage?.cost_source],["Pricing rule",usage?.pricing_rule_name]]))}
     ${section("Policy & guardrails", `<h5>Policy decisions</h5>${traceList(bundle?.policy_trace,"Policy decisions were not recorded.")}<h5>Guardrail executions</h5>${traceList(bundle?.guardrail_trace,bundle ? "No guardrail executions were recorded in this snapshot." : "Guardrail execution details were not captured.")}`)}
     ${section("Routing decisions", `${traceList(bundle?.selection_trace,"Routing decisions were not recorded.")}${bundle?.fallback_history?.length ? table(["From","To","Reason"],bundle.fallback_history.map(a=>[text(a.from_provider),text(a.to_provider),text(a.reason)])) : '<p class="help">No fallback history was recorded.</p>'}`)}
     ${traffic?.recording_failures?.length ? `<p class="notice">Recording gaps: ${esc(traffic.recording_failures.join(", "))}. This investigation may be incomplete.</p>` : ""}

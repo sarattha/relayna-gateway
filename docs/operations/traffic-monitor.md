@@ -10,6 +10,11 @@ click a reason count to filter its requests. **Pause** freezes the live display;
 
 ## Request investigation
 
+The **Routing mode** column distinguishes gateway-managed requests from LiteLLM
+passthrough using recorded request metadata. Passthrough token/cost details say
+**Not metered by gateway**, including when no Usage row exists. Historical or
+unresolved modes show **Not recorded**. Terminal logs include `relayna.routing_mode`.
+
 **Traffic → Inspect** and **Usage & cost → Debug** share one investigation
 layout: outcome and HTTP statuses, request context, network/response timing,
 event timeline, usage and estimated cost, policy/guardrails, routing decisions,
@@ -181,7 +186,9 @@ DELETE FROM request_traffic WHERE id IN (
   it still requires the same admin authorization.
   Pass both `before` (last row's start time) and `before_id` for stable pagination.
 - Usage JSON responses now include `diagnostics`: `failure_stage`, `failure_code`,
-  `failure_source`, `outcome`, `upstream_status`, `instance_id`, and optional
-  `traffic_id`. Traffic records add defaulted `upstream_timings`, `usage`,
+  `failure_source`, `outcome`, `upstream_status`, `instance_id`, optional
+  `traffic_id`, and optional `routing_mode` (`managed_by_gateway` or
+  `litellm_passthrough`). Missing modes remain unknown. Traffic records add
+  defaulted `upstream_timings`, `usage`,
   `debug_bundle`, and masked `key_prefix` fields inside their existing JSON.
   These additions need no schema migration; older saved records remain readable.

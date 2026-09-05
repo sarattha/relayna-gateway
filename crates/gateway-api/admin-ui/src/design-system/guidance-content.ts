@@ -164,6 +164,7 @@ export function fieldGuidance(name: string, context: string): string | undefined
 }
 
 export const termGuidance: Record<string, string> = {
+  "Routing mode": "Mode recorded for this request. LiteLLM passthrough forwards without gateway token/cost metering. Gateway managed uses the gateway request path. Not recorded means the mode was not captured or routing was unresolved; it does not infer today’s settings.",
   "Requests": "Number of recorded requests in the selected scope and time range. It is not the count of all requests ever received.",
   "Failures": "Recorded failed requests, including failures after streaming headers. It may differ from the count of non-200 HTTP statuses.",
   "Error rate": "Recorded failed requests divided by recorded requests in the selected scope and time range.",
@@ -179,7 +180,7 @@ export const termGuidance: Record<string, string> = {
   "Average latency": "Average recorded request duration in milliseconds for the selected scope and time range.",
   "Avg latency": "Average recorded request duration in milliseconds for this group.",
   "Latency": "Recorded request duration in milliseconds. It can include response streaming and downstream delivery.",
-  "Tokens": "Recorded input and output token usage. Unknown or missing usage is different from zero tokens.",
+  "Tokens": "Recorded input and output token usage. Not metered by gateway identifies LiteLLM passthrough. Not recorded means missing data; neither means zero tokens.",
   "Client HTTP": "HTTP status confirmed for the downstream client. A streamed 200 may still end in failure; check the request outcome.",
   "Upstream HTTP": "HTTP status returned by the upstream provider. No status may mean no response headers were received.",
   "Attempts": "Number of upstream selections, including eligible retries or fallbacks. 0 means no upstream was selected.",

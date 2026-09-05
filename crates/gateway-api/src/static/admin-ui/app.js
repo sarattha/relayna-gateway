@@ -98,7 +98,7 @@ function mergeTrafficRows(rows, batch, limit = 200) {
 function matchesTraffic(row, filters) {
   return (!filters.request_id || row.request_id.includes(filters.request_id)) && (!filters.service || row.service === filters.service) && (!filters.project_id || row.project_id === filters.project_id) && (!filters.key_id || row.key_id === filters.key_id) && (!filters.failure_code || row.diagnostics.failure_code === filters.failure_code) && (!filters.status || String(row.client_status) === filters.status) && (filters.outcome !== "failures" || Boolean(row.diagnostics.failure_code)) && (filters.outcome !== "active" || !row.completed);
 }
-function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: attr2, table: table2, badge: badge2, time: time2, mountDialog: mountDialog2, investigationView: investigationView2, bindInvestigationActions: bindInvestigationActions2, initialFilters = {}, onFilters = () => {
+function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: attr2, table: table2, badge: badge2, time: time2, routingModeLabel: routingModeLabel2, mountDialog: mountDialog2, investigationView: investigationView2, bindInvestigationActions: bindInvestigationActions2, initialFilters = {}, onFilters = () => {
 } }) {
   let rows = [], cursor = null, instance = "Connecting", selected = null, filters = { ...initialFilters };
   let mode = "live", paused = false, disposed = false, controller = null, reconnect = null;
@@ -155,11 +155,12 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
       else render();
     }));
     element("traffic-rows").innerHTML = table2(
-      ["Arrived", "Request", "Endpoint / service", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
+      ["Arrived", "Request", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
       visible.map((row) => [
         time2(row.started_at),
         `<code>${esc2(row.request_id)}</code>`,
         `${esc2(row.method)} ${esc2(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc2(row.service || row.provider || "Not selected")}</span>`,
+        badge2(routingModeLabel2(row.diagnostics), "neutral"),
         badge2(label(row.completed ? row.diagnostics.outcome : row.stage), row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
         esc2(row.client_status ?? "—"),
         esc2(row.diagnostics.upstream_status ?? "—"),
@@ -513,6 +514,7 @@ function fieldGuidance(name, context) {
   return shared[name];
 }
 const termGuidance = {
+  "Routing mode": "Mode recorded for this request. LiteLLM passthrough forwards without gateway token/cost metering. Gateway managed uses the gateway request path. Not recorded means the mode was not captured or routing was unresolved; it does not infer today’s settings.",
   "Requests": "Number of recorded requests in the selected scope and time range. It is not the count of all requests ever received.",
   "Failures": "Recorded failed requests, including failures after streaming headers. It may differ from the count of non-200 HTTP statuses.",
   "Error rate": "Recorded failed requests divided by recorded requests in the selected scope and time range.",
@@ -528,7 +530,7 @@ const termGuidance = {
   "Average latency": "Average recorded request duration in milliseconds for the selected scope and time range.",
   "Avg latency": "Average recorded request duration in milliseconds for this group.",
   "Latency": "Recorded request duration in milliseconds. It can include response streaming and downstream delivery.",
-  "Tokens": "Recorded input and output token usage. Unknown or missing usage is different from zero tokens.",
+  "Tokens": "Recorded input and output token usage. Not metered by gateway identifies LiteLLM passthrough. Not recorded means missing data; neither means zero tokens.",
   "Client HTTP": "HTTP status confirmed for the downstream client. A streamed 200 may still end in failure; check the request outcome.",
   "Upstream HTTP": "HTTP status returned by the upstream provider. No status may mean no response headers were received.",
   "Attempts": "Number of upstream selections, including eligible retries or fallbacks. 0 means no upstream was selected.",
@@ -733,6 +735,20 @@ function installComponentGuidance(doc = document) {
     win.removeEventListener("resize", dismiss);
   };
 }
+function routingModeLabel(diagnostics) {
+  switch (diagnostics == null ? void 0 : diagnostics.routing_mode) {
+    case "managed_by_gateway":
+      return "Gateway managed";
+    case "litellm_passthrough":
+      return "LiteLLM passthrough";
+    default:
+      return "Not recorded";
+  }
+}
+function usageValue(diagnostics, value, format = String) {
+  if ((diagnostics == null ? void 0 : diagnostics.routing_mode) === "litellm_passthrough") return "Not metered by gateway";
+  return value == null ? "Not recorded" : format(value);
+}
 function investigationUsageSnapshot(usage2) {
   if (!usage2) return null;
   const fields = ["request_id", "key_id", "project_id", "route", "model", "provider", "status", "status_code", "latency_ms", "input_tokens", "output_tokens", "total_tokens", "estimated_cost_usd", "cost_source", "cost_mode", "pricing_rule_name", "service_name", "service_version", "http_method", "endpoint_template", "task_id", "run_id", "trace_id", "fallback_count", "created_at", "diagnostics"];
@@ -804,6 +820,7 @@ function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle
     ${section("Request context", facts([
     [traffic ? "Started" : "Recorded", (traffic == null ? void 0 : traffic.started_at) || (usage2 == null ? void 0 : usage2.created_at) || (bundle == null ? void 0 : bundle.created_at) ? time2((traffic == null ? void 0 : traffic.started_at) || (usage2 == null ? void 0 : usage2.created_at) || (bundle == null ? void 0 : bundle.created_at)) : null],
     ["Method / endpoint", [(traffic == null ? void 0 : traffic.method) || (usage2 == null ? void 0 : usage2.http_method), (traffic == null ? void 0 : traffic.endpoint) || (usage2 == null ? void 0 : usage2.endpoint_template) || (usage2 == null ? void 0 : usage2.route) || (bundle == null ? void 0 : bundle.route)].filter(Boolean).join(" ")],
+    ["Routing mode", routingModeLabel(d)],
     ["Model", usage2 == null ? void 0 : usage2.model],
     ["Provider", traffic ? traffic.provider || "Not selected" : (usage2 == null ? void 0 : usage2.provider) || (bundle == null ? void 0 : bundle.provider)],
     ["Project", project ? `${project.name} · ${project.id}` : projectId],
@@ -827,7 +844,7 @@ function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle
     ["Upstream status / failure", [a.upstream_status, a.failure_code].filter((v) => v != null).join(" / ")]
   ])}</article>`).join("")}${traffic.attempts > attempts.length ? '<p class="notice">Earlier attempt timings were discarded at the retention limit.</p>' : ""}` : `<p class="help">${(traffic == null ? void 0 : traffic.attempts) === 0 ? "No upstream connection was attempted." : "Network timings were not recorded for this request. Older records remain available without timing measurements."}</p>`)}
     ${section("Event timeline", ((_a2 = traffic == null ? void 0 : traffic.timeline) == null ? void 0 : _a2.length) ? `${traffic.timeline_truncated ? '<p class="notice">Earlier timeline steps were discarded at the retention limit.</p>' : ""}${table2(["Elapsed", "Attempt", "Stage", "Reason", "Upstream HTTP"], traffic.timeline.map((step) => [`${text(step.elapsed_ms)} ms`, text(step.attempt), text(label(step.stage)), text(step.code ?? "—"), text(step.upstream_status ?? "—")]))}` : '<p class="help">No event timeline was recorded.</p>')}
-    ${section("Usage & cost", facts([["Input tokens", usage2 == null ? void 0 : usage2.input_tokens], ["Output tokens", usage2 == null ? void 0 : usage2.output_tokens], ["Total tokens", usage2 == null ? void 0 : usage2.total_tokens], ["Estimated cost · USD", (usage2 == null ? void 0 : usage2.estimated_cost_usd) == null ? null : `$${Number(usage2.estimated_cost_usd).toFixed(6)}`], ["Pricing source", usage2 == null ? void 0 : usage2.cost_source], ["Pricing rule", usage2 == null ? void 0 : usage2.pricing_rule_name]]))}
+    ${section("Usage & cost", facts([["Input tokens", usageValue(d, usage2 == null ? void 0 : usage2.input_tokens)], ["Output tokens", usageValue(d, usage2 == null ? void 0 : usage2.output_tokens)], ["Total tokens", usageValue(d, usage2 == null ? void 0 : usage2.total_tokens)], ["Estimated cost · USD", usageValue(d, usage2 == null ? void 0 : usage2.estimated_cost_usd, (value) => `$${Number(value).toFixed(6)}`)], ["Pricing source", usage2 == null ? void 0 : usage2.cost_source], ["Pricing rule", usage2 == null ? void 0 : usage2.pricing_rule_name]]))}
     ${section("Policy & guardrails", `<h5>Policy decisions</h5>${traceList(bundle == null ? void 0 : bundle.policy_trace, "Policy decisions were not recorded.")}<h5>Guardrail executions</h5>${traceList(bundle == null ? void 0 : bundle.guardrail_trace, bundle ? "No guardrail executions were recorded in this snapshot." : "Guardrail execution details were not captured.")}`)}
     ${section("Routing decisions", `${traceList(bundle == null ? void 0 : bundle.selection_trace, "Routing decisions were not recorded.")}${((_b = bundle == null ? void 0 : bundle.fallback_history) == null ? void 0 : _b.length) ? table2(["From", "To", "Reason"], bundle.fallback_history.map((a) => [text(a.from_provider), text(a.to_provider), text(a.reason)])) : '<p class="help">No fallback history was recorded.</p>'}`)}
     ${((_c = traffic == null ? void 0 : traffic.recording_failures) == null ? void 0 : _c.length) ? `<p class="notice">Recording gaps: ${esc2(traffic.recording_failures.join(", "))}. This investigation may be incomplete.</p>` : ""}
@@ -16133,7 +16150,7 @@ async function refresh({ focus = false } = {}) {
       if (generation !== viewGeneration) return;
       state.projects = projects2;
       syncProjectScope();
-      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, mountDialog, investigationView, bindInvestigationActions, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
+      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
     }
     if (view === "usage") await usage();
     if (view === "health") await health();
@@ -18673,11 +18690,12 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
 }
 function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {}) {
   return table(
-    ["Created", "Request", "Route", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
+    ["Created", "Request", "Route", "Routing mode", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
     rows.map((row) => [
       time(row.created_at),
       `<code>${esc(row.request_id)}</code>`,
       esc(row.route),
+      badge(routingModeLabel(row.diagnostics), "neutral"),
       esc(row.service_name || ""),
       esc(row.http_method || ""),
       `<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
@@ -18685,8 +18703,8 @@ function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {
       esc(row.provider),
       `${badge(row.status, row.status === "success" ? "good" : "bad")} <code>${esc(row.status_code)}</code>`,
       `${esc(row.latency_ms)} ms`,
-      esc(row.total_tokens),
-      money(row.estimated_cost_usd),
+      esc(usageValue(row.diagnostics, row.total_tokens)),
+      esc(usageValue(row.diagnostics, row.estimated_cost_usd, money)),
       esc(row.cost_source || ""),
       esc(row.pricing_rule_name || ""),
       row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",

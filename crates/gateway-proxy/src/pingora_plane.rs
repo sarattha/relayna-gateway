@@ -3272,7 +3272,18 @@ fn finish_attempt_timing(ctx: &mut PingoraContext) {
     }
 }
 
+fn update_routing_diagnostics(ctx: &mut PingoraContext) {
+    ctx.traffic.diagnostics.routing_mode = if ctx.litellm_passthrough {
+        Some("litellm_passthrough".into())
+    } else if ctx.route_match.is_some() {
+        Some("managed_by_gateway".into())
+    } else {
+        None
+    };
+}
+
 fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
+    update_routing_diagnostics(ctx);
     ctx.traffic.endpoint = ctx
         .endpoint_template
         .clone()
@@ -3299,6 +3310,7 @@ fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
 }
 
 fn traffic_gateway_error(ctx: &mut PingoraContext, error: &GatewayError) {
+    update_routing_diagnostics(ctx);
     // Body filters may run after peer selection; classify their actual failure stage.
     let stage = match error {
         GatewayError::GatewayOverloaded | GatewayError::RequestBodyTooLarge => {
@@ -3419,7 +3431,14 @@ fn finish_traffic(
             failure_stage = ?ctx.traffic.diagnostics.failure_stage,
             failure_source = ?ctx.traffic.diagnostics.failure_source,
             outcome = ?ctx.traffic.diagnostics.outcome, attempts = ctx.traffic.attempts,
+            relayna.routing_mode = ctx.traffic.diagnostics.routing_mode.as_deref().unwrap_or("unknown"),
             "gateway request failed");
+    } else {
+        tracing::info!(request_id = %ctx.request_id, diagnostic_id = %ctx.traffic.id,
+            relayna.route = ctx.route.map(Route::as_str).unwrap_or("unknown"),
+            relayna.provider = ctx.traffic.provider.as_deref().unwrap_or("unknown"),
+            relayna.routing_mode = ctx.traffic.diagnostics.routing_mode.as_deref().unwrap_or("unknown"),
+            client_status = ?ctx.traffic.client_status, "gateway request completed");
     }
 }
 
@@ -4875,6 +4894,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn routing_mode_tracks_actual_request_mode_without_billing_identity() {
+        let mut ctx = new_pingora_context_for_tests();
+        traffic_step(&mut ctx, "received");
+        assert!(ctx.traffic.diagnostics.routing_mode.is_none());
+        ctx.route = Some(Route::ChatCompletions);
+        // A recognized path alone does not prove whether direct mode was selected.
+        traffic_gateway_error(&mut ctx, &GatewayError::InvalidVirtualKey);
+        assert!(ctx.traffic.diagnostics.routing_mode.is_none());
+        ctx.route_match =
+            Some(Route::resolve_match(&http::Method::POST, "/v1/chat/completions").unwrap());
+        traffic_step(&mut ctx, "policy");
+        assert_eq!(
+            ctx.traffic.diagnostics.routing_mode.as_deref(),
+            Some("managed_by_gateway")
+        );
+        for route in [Route::ChatCompletions, Route::LiteLlmPassthrough] {
+            let mut ctx = new_pingora_context_for_tests();
+            ctx.route = Some(route);
+            ctx.litellm_passthrough = true;
+            ctx.key = None;
+            finish_traffic(&mut ctx, Some(200), None);
+            assert_eq!(
+                ctx.traffic.diagnostics.routing_mode.as_deref(),
+                Some("litellm_passthrough")
+            );
+            let json = serde_json::to_value(&ctx.traffic).unwrap();
+            let restored: traffic::TrafficRequest = serde_json::from_value(json).unwrap();
+            assert_eq!(
+                restored.diagnostics.routing_mode.as_deref(),
+                Some("litellm_passthrough")
+            );
+        }
+    }
+
     #[tokio::test]
     async fn direct_litellm_passthrough_terminal_usage_is_status_only() {
         let store = Arc::new(MemoryUsageStore::default());
@@ -4912,6 +4966,10 @@ mod tests {
         let events = store.events.lock().expect("events lock");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].request_id, "req_direct_passthrough");
+        assert_eq!(
+            events[0].diagnostics.routing_mode.as_deref(),
+            Some("litellm_passthrough")
+        );
         assert_eq!(events[0].estimated_cost_usd, None);
         assert_eq!(events[0].input_tokens, None);
         assert_eq!(events[0].output_tokens, None);

@@ -29,7 +29,7 @@ export function matchesTraffic(row, filters) {
     && (filters.outcome !== "active" || !row.completed);
 }
 
-export function mountTraffic({ content, api, headers, esc, attr, table, badge, time, mountDialog, investigationView, bindInvestigationActions, initialFilters = {}, onFilters = () => {} }) {
+export function mountTraffic({ content, api, headers, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, initialFilters = {}, onFilters = () => {} }) {
   let rows = [], cursor = null, instance = "Connecting", selected = null, filters = { ...initialFilters };
   let mode = "live", paused = false, disposed = false, controller = null, reconnect = null;
   let warning = "", historyCursor = null, historyGeneration = 0, connectionGeneration = 0;
@@ -84,10 +84,11 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
       if (mode === "history") history(); else render();
     }));
     element("traffic-rows").innerHTML = table(
-      ["Arrived", "Request", "Endpoint / service", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
+      ["Arrived", "Request", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
       visible.map((row) => [
         time(row.started_at), `<code>${esc(row.request_id)}</code>`,
         `${esc(row.method)} ${esc(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc(row.service || row.provider || "Not selected")}</span>`,
+        badge(routingModeLabel(row.diagnostics), "neutral"),
         badge(label(row.completed ? row.diagnostics.outcome : row.stage), row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
         esc(row.client_status ?? "—"), esc(row.diagnostics.upstream_status ?? "—"), esc(row.attempts),
         `<span data-traffic-elapsed="${attr(row.id)}">${esc(row.completed ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)))} ms</span>`,

@@ -1,7 +1,7 @@
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic } from "./traffic";
 import { installComponentGuidance } from "./design-system/guidance";
-import { requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
+import { routingModeLabel, usageValue, requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 import Chart from "chart.js/auto";
 import "./app.css";
@@ -687,7 +687,7 @@ async function refresh({ focus = false } = {}) {
       if (generation !== viewGeneration) return;
       state.projects = projects;
       syncProjectScope();
-      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, mountDialog, investigationView, bindInvestigationActions, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
+      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
     }
     if (view === "usage") await usage();
     if (view === "health") await health();
@@ -3353,11 +3353,12 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
 
 function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {}) {
   return table(
-    ["Created", "Request", "Route", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
+    ["Created", "Request", "Route", "Routing mode", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
     rows.map((row) => [
       time(row.created_at),
       `<code>${esc(row.request_id)}</code>`,
       esc(row.route),
+      badge(routingModeLabel(row.diagnostics), "neutral"),
       esc(row.service_name || ""),
       esc(row.http_method || ""),
       `<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
@@ -3365,8 +3366,8 @@ function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {
       esc(row.provider),
       `${badge(row.status, row.status === "success" ? "good" : "bad")} <code>${esc(row.status_code)}</code>`,
       `${esc(row.latency_ms)} ms`,
-      esc(row.total_tokens),
-      money(row.estimated_cost_usd),
+      esc(usageValue(row.diagnostics, row.total_tokens)),
+      esc(usageValue(row.diagnostics, row.estimated_cost_usd, money)),
       esc(row.cost_source || ""),
       esc(row.pricing_rule_name || ""),
       row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",

@@ -14,6 +14,9 @@ const TIMELINE_CAPACITY: usize = 32;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RequestDiagnostics {
+    /// Actual request mode; absent for legacy records or unresolved routing.
+    #[serde(default)]
+    pub routing_mode: Option<String>,
     #[serde(default)]
     pub traffic_id: Option<Uuid>,
     pub failure_stage: Option<String>,
@@ -331,11 +334,16 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .remove("traffic_id");
+        json["diagnostics"]
+            .as_object_mut()
+            .unwrap()
+            .remove("routing_mode");
         let old: TrafficRequest = serde_json::from_value(json).unwrap();
         assert!(old.upstream_timings.is_empty());
         assert!(old.usage.is_none());
         assert!(old.debug_bundle.is_none());
         assert!(old.diagnostics.traffic_id.is_none());
+        assert!(old.diagnostics.routing_mode.is_none());
     }
 
     #[test]
