@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import "./admin-ui-dialog.test.mjs";
 import "./admin-ui-investigation.test.mjs";
+import "./admin-ui-guidance.test.mjs";
 import { reliability } from "./admin-ui-monitoring.test.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

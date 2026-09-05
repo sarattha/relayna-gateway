@@ -36,10 +36,10 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Traffic monitor</h3><div class="actions">
-        <select id="traffic-mode" aria-label="Traffic source"><option value="live">Live instance</option><option value="history">Saved history · all instances</option></select>
+        <label>Traffic source<select id="traffic-mode" aria-label="Traffic source" aria-describedby="traffic-source-help"><option value="live">Live instance</option><option value="history">Saved history · all instances</option></select></label>
         <button id="traffic-pause" type="button">Pause</button></div></div>
       <p id="traffic-connection" role="status" aria-live="polite">Connecting…</p>
-      <p class="help">Live view retains up to 200 recent requests from one gateway process. Saved history includes completed records across instances; its default window is 24 hours. Unknown routes are hidden to avoid capturing sensitive paths.</p>
+      <p id="traffic-source-help" class="help">Live view retains up to 200 recent requests from one gateway process. Saved history includes completed records across instances; its default window is 24 hours. Unknown routes are hidden to avoid capturing sensitive paths.</p>
       <div id="traffic-warning" class="notice hidden" role="status"></div>
       <form id="traffic-filters" class="form-grid">
         <label>Request ID<input name="request_id" maxlength="128" placeholder="Client correlation ID"></label>

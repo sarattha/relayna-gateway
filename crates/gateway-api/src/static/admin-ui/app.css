@@ -2801,7 +2801,7 @@ td { font-size: 13px; }
 
 .contextual-stack > .panel { margin-bottom: 20px; }
 
-.inventory-search { display: flex; gap: 12px; align-items: center; margin: 0 0 18px; }
+.inventory-search { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 0 0 18px; }
 
 .inventory-search input { max-width: 350px; }
 
@@ -2976,3 +2976,53 @@ td { font-size: 13px; }
 #traffic-detail { padding: 0; border: 0; box-shadow: none; }
 
 @media (max-width: 480px) { .investigation-facts { grid-template-columns: 1fr; } }
+
+/* Essential explanations stay visible; secondary definitions use a help button. */
+
+label.check > .field-hint { grid-column: 1 / -1; grid-row: 2; }
+
+.form-section-grid > label, .form-grid > label { align-self: start; }
+
+.field-hint { white-space: normal; overflow-wrap: anywhere; }
+
+button.help-trigger {
+  display: inline-grid;
+  place-items: center;
+  vertical-align: middle;
+  min-width: 24px;
+  min-height: 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-left: 3px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: normal;
+  color: var(--rg-color-muted);
+  background: var(--rg-color-surface);
+}
+
+.component-tooltip[role="tooltip"] {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--rg-color-border-strong);
+  border-radius: var(--rg-radius-sm);
+  background: var(--rg-color-text);
+  color: #fff;
+  box-shadow: var(--rg-shadow-modal);
+  font: 400 13px/1.5 system-ui, sans-serif;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.component-tooltip::backdrop { background: transparent; pointer-events: none; }

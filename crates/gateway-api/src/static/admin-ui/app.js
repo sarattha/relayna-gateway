@@ -106,10 +106,10 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
   content2.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Traffic monitor</h3><div class="actions">
-        <select id="traffic-mode" aria-label="Traffic source"><option value="live">Live instance</option><option value="history">Saved history · all instances</option></select>
+        <label>Traffic source<select id="traffic-mode" aria-label="Traffic source" aria-describedby="traffic-source-help"><option value="live">Live instance</option><option value="history">Saved history · all instances</option></select></label>
         <button id="traffic-pause" type="button">Pause</button></div></div>
       <p id="traffic-connection" role="status" aria-live="polite">Connecting…</p>
-      <p class="help">Live view retains up to 200 recent requests from one gateway process. Saved history includes completed records across instances; its default window is 24 hours. Unknown routes are hidden to avoid capturing sensitive paths.</p>
+      <p id="traffic-source-help" class="help">Live view retains up to 200 recent requests from one gateway process. Saved history includes completed records across instances; its default window is 24 hours. Unknown routes are hidden to avoid capturing sensitive paths.</p>
       <div id="traffic-warning" class="notice hidden" role="status"></div>
       <form id="traffic-filters" class="form-grid">
         <label>Request ID<input name="request_id" maxlength="128" placeholder="Client correlation ID"></label>
@@ -349,6 +349,388 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
     historyGeneration++;
     clearInterval(elapsedTimer);
     stopConnection();
+  };
+}
+const layerLimit = " Blank adds no limit at this policy layer; inherited limits still apply.";
+const policy = {
+  allowed_routes: "Comma-separated gateway routes allowed by this layer. Blank adds no route restriction; other layers still apply.",
+  allowed_models: "Comma-separated exact model names. Blank adds no model restriction; other layers still apply.",
+  rpm_limit: "Requests per minute. 0 blocks requests." + layerLimit,
+  tpm_limit: "Estimated tokens per minute. 0 leaves no allowance for requests with estimated tokens." + layerLimit,
+  daily_budget_usd: "Daily spending ceiling in USD. Reaching the ceiling blocks requests; 0 blocks immediately." + layerLimit,
+  monthly_budget_usd: "Monthly spending ceiling in USD. Reaching the ceiling blocks requests; 0 blocks immediately." + layerLimit,
+  max_requests_per_day: "Maximum requests per UTC day. 0 blocks requests." + layerLimit,
+  max_tokens_per_day: "Daily recorded token threshold. Reaching it blocks subsequent requests; 0 blocks immediately." + layerLimit,
+  max_cost_per_request: "Maximum estimated USD cost per request. 0 allows only zero-cost estimates." + layerLimit,
+  max_input_tokens_per_request: "Maximum input tokens per request. 0 allows no positive token count." + layerLimit,
+  max_output_tokens_per_request: "Maximum output tokens per request. 0 allows no positive token count." + layerLimit,
+  max_request_body_bytes: "Request size ceiling in bytes. 0 allows no nonempty request body." + layerLimit,
+  max_response_body_bytes: "Response size ceiling in bytes. 0 allows no nonempty response body." + layerLimit,
+  allowed_hours_utc: "Comma-separated UTC hours, 0–23. 0 means midnight–01:00 UTC, not disabled. Blank adds no time restriction.",
+  unused_key_auto_disable_after_days: "Disable keys after this many inactive days when the maintenance check runs. 0 makes them immediately eligible; blank adds no inactivity rule.",
+  allow_streaming: "Permit streamed responses at this layer. Other policy layers can still deny streaming.",
+  allow_tools: "Permit tool/function calling at this layer. Other policy layers can still deny it."
+};
+const shared = {
+  preset: "Starting policy template. Review the resulting permissions and limits before creating the key.",
+  expires_at: "Local date and time when the key stops authenticating. Use No expiration to create a key without an expiry.",
+  rotation_due_at: "Optional local date and time for a rotation reminder. This does not rotate or revoke the key automatically.",
+  no_expires_at: "Remove the expiry date. The key remains valid until disabled or revoked.",
+  disabled: "Temporarily reject this key's requests without revoking it.",
+  kind: "Policy layer to configure. Effective access combines applicable layers and keeps the stricter limits.",
+  scope_id: "Identifier for the selected layer: project UUID, team ID, route or model. Global has no scope ID.",
+  owner_type: "Project keys belong to a project. Individual keys are limited to their selected registered services.",
+  team_id: "Optional exact team identifier to include when resolving the simulated policy.",
+  path: "Gateway request path to simulate. The simulation evaluates policy without sending an upstream request.",
+  request_body_bytes: "Simulated request body size in bytes. 0 means empty; blank omits this measurement.",
+  response_body_bytes: "Simulated response body size in bytes. 0 means empty; blank omits this measurement.",
+  stream: "Evaluate the request as streaming. This does not start a stream.",
+  tools: "Evaluate the request as using tool/function calls.",
+  credential_header_mode: "authorization_bearer sends Authorization: Bearer. custom_header sends the credential using the header below.",
+  credential_header_name: "Header name used in custom_header mode, such as x-litellm-api-key. Ignored in authorization_bearer mode.",
+  credential_header_value_format: "In custom_header mode, raw sends the secret as-is; bearer prefixes it with Bearer.",
+  credential: "Write-only upstream credential. On edits, leave blank to keep the saved value; use the clear action if available to remove it.",
+  scope: "Choose whether this LiteLLM credential mapping applies to one gateway key or one project.",
+  key_target_id: "Gateway virtual key that will use this LiteLLM credential.",
+  project_target_id: "Project whose requests will use this LiteLLM credential mapping.",
+  allowed_paths: "Comma-separated path patterns eligible for wildcard forwarding, such as /v1/*. Administrative exposure is controlled separately.",
+  allowed_methods: "HTTP methods the service or passthrough route accepts. Review them before enabling access.",
+  timeout_ms: "Upstream timeout in milliseconds. 1,000 ms equals 1 second; 0 is not a valid timeout.",
+  max_request_body_bytes: "Maximum forwarded request size in bytes. 1,048,576 bytes equals 1 MiB. Must be greater than 0.",
+  max_response_body_bytes: "Maximum forwarded response size in bytes. 1,048,576 bytes equals 1 MiB. Must be greater than 0.",
+  max_body_bytes: "Service request body limit in bytes. 2,097,152 bytes equals 2 MiB. Must be greater than 0.",
+  ui_exposure: "Controls access to LiteLLM's UI through the gateway. Keep disabled unless this administrative access is intended.",
+  admin_api_exposure: "Controls forwarding to LiteLLM administrative APIs. Enabling exposure grants access beyond model inference.",
+  mode: "managed_by_gateway applies gateway routing. direct_litellm_passthrough forwards through the configured LiteLLM passthrough mode.",
+  route_pattern: "Public gateway path for this service, such as /services/search/*. It must identify the intended registered route.",
+  upstream_base_url: "Base URL of the upstream service, including http:// or https://. Do not include credentials in the URL.",
+  health_check_path: "Relative upstream path for health checks, such as /health. Leave blank to omit the active health-check endpoint.",
+  health_check_method: "HTTP method used to check the upstream health endpoint.",
+  fallback_services: "Comma-separated registered service names, in fallback order, used for eligible upstream failures.",
+  cost_mode: "none records no charge; fixed uses the configured USD estimate; passthrough uses upstream-reported cost when available.",
+  estimated_cost_usd: "Estimated USD charge per request in fixed mode. 0 means no estimated charge. Review the selected cost mode.",
+  json_pointer: "JSON Pointer into the request, such as /model or /payload/page_count, used to match this pricing rule.",
+  equals: "Text value the selected request field must match for this pricing rule to apply.",
+  openapi_source_path: "Relative path of the service's OpenAPI document, usually /openapi.json. Preview before syncing endpoint prices.",
+  studio_service_id: "Studio's service identifier used to link this registration to its source catalog.",
+  sync_status: "Recorded relationship to the Studio catalog. Changing this status does not fetch or import the service.",
+  clear_credential: "Remove the saved upstream credential when saving this service.",
+  token: "Write-only Studio bearer token. Leave blank to preserve a configured token; use Clear token to remove it.",
+  relayna_key_header: "Header clients can use to send their Relayna virtual key, for example X-Relayna-Key.",
+  apigee_trusted_header_enabled: "Trust Apigee identity headers only behind the configured trusted ingress. A shared secret is required.",
+  apigee_trusted_header_secret: "Write-only shared secret for trusted Apigee headers. Leave blank to preserve it; required when enabling trusted headers.",
+  entra_enabled: "Enable Entra ID token authentication using the issuer, audience and authorization settings below.",
+  tenant_id: "Entra tenant UUID. This identifies the organization issuing the identity tokens.",
+  audience: "Expected token audience for this gateway's application registration. It must match the token's aud claim.",
+  issuer: "Trusted token issuer URL. It must match the token's iss claim.",
+  oidc_discovery_url: "OpenID Connect discovery document URL used to locate issuer metadata and signing keys.",
+  required_scope: "Delegated permission required in the token's scp claim, such as gateway.invoke.",
+  required_role: "Application role required in the token's roles claim. It must match the role granted to the caller.",
+  allowed_groups: "Comma-separated Entra group IDs used for group authorization. Use IDs, not display names.",
+  accepted_algorithms: "Comma-separated accepted JWT signing algorithms, for example RS256. These must match your identity provider.",
+  jwks_cache_ttl_seconds: "Signing-key cache lifetime in seconds. 300 means five minutes; must be greater than 0.",
+  clock_skew_seconds: "Allowed token clock difference in seconds. 0 gives no tolerance; 60 allows one minute.",
+  circuit_state: "closed permits normal routing; open blocks use; half_open allows recovery checks. This edits recorded health state.",
+  active_check_ok: "Result of an active health probe. Unknown means no result, not failure. Saving does not run a probe.",
+  passive_success_count: "Recorded successful upstream observations. 0 means none recorded in this state.",
+  passive_failure_count: "Recorded failed upstream observations. 0 means none recorded in this state.",
+  consecutive_failures: "Failures in sequence for this health state. 0 means no current failure streak.",
+  average_latency_ms: "Recorded average latency in milliseconds. Blank means unknown; 0 is a measured zero.",
+  last_error_code: "Optional last recorded error code for this provider health state.",
+  cooldown_until: "Optional local time until which the provider remains in its configured cooldown.",
+  description: "Explain what this guardrail checks so operators can decide where to apply it.",
+  failure_policy: "fail_closed blocks on guardrail failure; fail_open continues; dry_run records the outcome without enforcing it.",
+  endpoint_url: "HTTP endpoint that executes this guardrail. Its credential is configured separately below.",
+  bearer_token: "Write-only guardrail bearer token. Leave blank on edit to keep it; Clear token removes it.",
+  clear_token: "Remove the saved guardrail token when saving. This may affect guardrails that require authentication.",
+  default_on: "Include this guardrail by default where its mode and policy allow it.",
+  config_schema: "JSON schema describing valid per-key configuration overrides. Enter a JSON object.",
+  guardrail_override_names: "Enable a configuration override for this key. Unchecking removes this override when the key policy is saved.",
+  runtime_config: "JSON object used when executing this guardrail. Check its schema and avoid embedding secrets.",
+  display_name: "Human-readable name for this workload identity binding.",
+  client_id: "Entra application/client UUID of the workload allowed to use this binding.",
+  object_id: "Optional exact service-principal object UUID. Blank matches by the other configured identity constraints.",
+  role: "Membership role for this resource. Both viewer and owner can read its monitoring data; global administration requires admin access.",
+  action: "Exact audit action to find. Leave blank for all actions.",
+  target_type: "Exact audited resource type, such as key or provider. Leave blank for all types.",
+  target_id: "Exact audited resource ID. Leave blank to include all resources.",
+  actor_token_id: "Exact operator token ID, not its secret value. Leave blank for all token actors.",
+  actor_member_id: "Exact member UUID whose audit activity to include. Leave blank for all members.",
+  time_preset: "Time window for Usage queries. Choose Custom to use From and To; exports can override these dates.",
+  interval: "Size of each timeseries bucket: hour or day. This does not change the selected time range.",
+  min_cost_usd: "Minimum estimated request cost in USD. 0 includes zero-cost records; blank adds no cost filter.",
+  breakdown_limit: "Maximum number of groups shown in each breakdown, not the number of request rows.",
+  sort_by: "Metric used to order the top breakdown groups.",
+  limit: "Maximum rows returned per page. This is a row count, not a duration or cost.",
+  trace_id: "Exact trace ID linking related activity. Leave blank to include all traces.",
+  task_id: "Exact task ID attached to usage records. Leave blank to include all tasks.",
+  run_id: "Exact execution run ID attached to usage records. Leave blank to include all runs.",
+  route: "Exact gateway route filter, such as /v1/chat/completions. Leave blank for all routes.",
+  endpoint: "Exact endpoint template, such as /jobs/{job_id}, rather than a concrete URL. Leave blank for all endpoints.",
+  method: "HTTP request method to include. All includes every method.",
+  status_code: "Client HTTP response status to match, such as 200 or 503. Leave blank for all codes.",
+  failure_code: "Exact gateway failure code to match. Leave blank to include every reason."
+};
+const filterText = {
+  project_id: "Project UUID to match. Blank or All includes all projects available in this workspace.",
+  key_id: "Gateway key UUID to match, not a key secret or prefix. Blank or All includes all keys in scope.",
+  service: "Exact registered service name. Blank or All includes every service in scope.",
+  provider: "Provider recorded on the request. All includes every provider in scope.",
+  model: "Exact recorded model name. Blank includes all models.",
+  status: "Recorded request outcome. Failure can include an interrupted stream even if HTTP headers reported 200.",
+  from: "Start time in your local timezone. Usage Custom uses this lower bound; leave blank for no lower bound.",
+  to: "End time in your local timezone. Usage Custom includes records before this time; blank gives no upper bound."
+};
+function fieldGuidance(name, context) {
+  if (context === "owner") {
+    if (name === "owner-range-select") return "Time window for this resource's dashboard and request logs.";
+    if (name === "owner-outcome-select") return filterText.status;
+    if (name === "owner-status-select") return shared.status_code;
+  }
+  if (context === "policy" && policy[name]) return policy[name];
+  if (context === "traffic") {
+    const traffic = {
+      request_id: "Client correlation ID. Live mode matches contained text; saved history matches the exact ID. Blank includes all requests.",
+      status: "Client HTTP status, such as 503. A 200 can still be an interrupted stream; inspect its outcome.",
+      outcome: "Failures selects recorded failure reasons. Active means unfinished requests and is available only in live mode.",
+      from: "Saved-history start in local time. Blank defaults to the last 24 hours. Ignored in live mode.",
+      to: "Saved-history end in local time, including this instant. Blank has no upper bound. Ignored in live mode."
+    };
+    if (traffic[name]) return traffic[name];
+  }
+  if (["usage", "traffic", "owner"].includes(context) && filterText[name]) return filterText[name];
+  if (name === "request_id") return "Client request ID used for legacy debug lookup. Reused client IDs may identify a later snapshot; prefer Usage or Traffic investigation for exact correlation.";
+  if (name === "base_url") return context === "studio" ? "Relayna Studio base URL, including http:// or https://. Connection settings do not import services until you run an import." : "Provider base URL, including http:// or https://. Keep credentials in the separate credential field.";
+  if (name === "name") return context === "pricing" ? "Name identifying this pricing rule in recorded usage." : context === "service" ? "Unique service name: lowercase letters, numbers and hyphens, starting and ending with a letter or number." : context === "health" ? "Exact configured provider name whose recorded health state is being edited." : "Name used to identify this resource in the gateway inventory.";
+  if (name === "enabled") return context === "passthrough" ? "Enable wildcard forwarding only for the allowed paths and methods below." : "Allow this configuration to be used. Turning it off preserves the saved configuration.";
+  if (name === "provider") return "Provider adapter used for this configuration or simulated request.";
+  if (name === "model") return "Exact model name to evaluate in the simulated request.";
+  if (name === "status") return context === "health" ? "Recorded health classification. Saving updates this state; use Run checks to obtain fresh probe results." : void 0;
+  if (name === "project_id") return "Project that owns this key or receives this identity's exact access binding.";
+  if (name === "service_name") return "Exact registered service for this request or access binding.";
+  if (name === "key_id") return "Key whose effective policy to simulate. Default policy evaluates without selecting a stored key.";
+  if (name !== "guardrail_override_names" && name.startsWith("guardrail_override_")) return "JSON object overriding this guardrail's configuration for this key. It must match the guardrail's config schema.";
+  return shared[name];
+}
+const termGuidance = {
+  "Requests": "Number of recorded requests in the selected scope and time range. It is not the count of all requests ever received.",
+  "Failures": "Recorded failed requests, including failures after streaming headers. It may differ from the count of non-200 HTTP statuses.",
+  "Error rate": "Recorded failed requests divided by recorded requests in the selected scope and time range.",
+  "Fallbacks": "Recorded fallback routing activity in the selected scope and sample. Inspect requests to see individual attempts.",
+  "Expensive": "Requests with estimated cost of at least USD 1, or the selected Minimum cost threshold when provided.",
+  "Guardrail blocks": "Requests recorded as blocked by a guardrail in the selected scope and time range.",
+  "Cost mode": "none records no charge; fixed uses a configured USD estimate; passthrough uses upstream-reported cost when available.",
+  "Success rate": "Successful recorded requests divided by all recorded requests in the selected scope and time range.",
+  "Failure rate": "Failed recorded requests divided by all recorded requests in the selected scope and time range. Missing samples are not zero failures.",
+  "Fallback rate": "Share of recorded requests that used fallback routing in the selected scope and time range.",
+  "Estimated cost": "Estimated usage cost in USD, based on the recorded pricing source. This is not a provider invoice.",
+  "Cost": "Estimated usage cost in USD for the selected records, not a provider invoice.",
+  "Average latency": "Average recorded request duration in milliseconds for the selected scope and time range.",
+  "Avg latency": "Average recorded request duration in milliseconds for this group.",
+  "Latency": "Recorded request duration in milliseconds. It can include response streaming and downstream delivery.",
+  "Tokens": "Recorded input and output token usage. Unknown or missing usage is different from zero tokens.",
+  "Client HTTP": "HTTP status confirmed for the downstream client. A streamed 200 may still end in failure; check the request outcome.",
+  "Upstream HTTP": "HTTP status returned by the upstream provider. No status may mean no response headers were received.",
+  "Attempts": "Number of upstream selections, including eligible retries or fallbacks. 0 means no upstream was selected.",
+  "Upstream attempts": "Number of upstream selections, including retries or fallbacks. 0 means no upstream was selected.",
+  "Total duration": "Gateway-observed elapsed request duration, including response delivery. It is not client-render time.",
+  "DNS resolution": "Hostname resolution time, including the OS resolver/cache. IP literals need no DNS; missing data is not a measured zero.",
+  "Elapsed": "Milliseconds since the gateway received the request. 0 marks the start or an event within the first millisecond.",
+  "Attempt": "Upstream attempt number. 0 is gateway processing before the first upstream attempt; 1 is the first attempt.",
+  "Trace ID": "Distributed tracing identifier, when recorded. Use it to correlate gateway activity with other instrumented services.",
+  "Task / run": "Relayna task and execution run identifiers recorded with this request. Not recorded means the request supplied no retained linkage.",
+  "Gateway instance": "Gateway process that observed this request. Live Traffic is limited to one instance; saved history spans instances.",
+  "Service version": "Version reported by the upstream service and retained by the gateway. Not recorded does not identify a deployment version.",
+  "DNS": "Hostname resolution time, including the OS resolver/cache. IP literals need no DNS; missing data is not a measured zero.",
+  "TCP connect": "New TCP connection setup, excluding DNS and TLS. A reused connection has no new connect measurement.",
+  "TLS handshake": "New TLS handshake after TCP connects. Reused connections have no new handshake; plain HTTP does not use TLS.",
+  "Response headers": "Time from this upstream attempt's start until response headers arrive, including connection setup.",
+  "First body byte": "Time from attempt start until the first nonempty upstream body chunk, which may be a streaming keepalive.",
+  "First content token": "Time to the first supported SSE content event. Keepalives and role-only events are excluded; observation is bounded.",
+  "Attempt duration": "Time from attempt start until failure, retry or completion. A successful attempt includes downstream delivery.",
+  "Request hash": "Fingerprint and length of request data for correlation. It is not the raw request body.",
+  "Response hash": "Fingerprint and length of response data for correlation. It is not the raw response body.",
+  "Circuit": "closed permits normal routing; open blocks use; half_open indicates recovery probing.",
+  "Circuit state": "closed permits normal routing; open blocks use; half_open indicates recovery probing.",
+  "Credential": "Whether a write-only upstream credential is configured. This never displays the saved secret.",
+  "Lifecycle": "Key expiry, disable/revoke and rotation state. Rotation due is a reminder, not automatic revocation.",
+  "Outcome": "Recorded completion or failure outcome, independent of whether HTTP headers were already delivered.",
+  "Failure reason": "Gateway classification of the failure. Inspect the request for its source, stage and upstream evidence.",
+  "Recording": "Whether diagnostic persistence encountered a problem. Missing saved evidence does not prove a request succeeded.",
+  "Modes": "Guardrail execution stages: pre_call before forwarding, post_call after a response, during_call during streaming.",
+  "Failure policy": "fail_closed blocks guardrail failures, fail_open continues, and dry_run records without enforcement.",
+  "TTL": "Time to live: how long a cached entry remains valid before refresh or expiration."
+};
+function tooltipPosition(anchor, size, viewport) {
+  const margin = 8;
+  const left = Math.max(margin, Math.min(anchor.left, viewport.width - size.width - margin));
+  const below = anchor.bottom + margin;
+  const top = below + size.height <= viewport.height - margin ? below : Math.max(margin, anchor.top - size.height - margin);
+  return { left, top };
+}
+function contextFor(control) {
+  if (control.closest("[data-pricing-rule-row]")) return "pricing";
+  if (control.closest("#traffic-filters")) return "traffic";
+  if (control.closest("#usage-form")) return "usage";
+  if (control.closest("#key-form, #key-edit-form, #policy-layer-form")) return "policy";
+  if (control.closest("#provider-health-state-form")) return "health";
+  if (control.closest("#studio-connection-form")) return "studio";
+  if (control.closest("#service-form, #service-edit-form")) return "service";
+  if (control.closest("#litellm-passthrough-form")) return "passthrough";
+  if (control.closest(".owner-request-filters")) return "owner";
+  return "configuration";
+}
+const controls = 'input:not([type="hidden"]), select, textarea';
+const terms = "th, .stat > span:first-child, .posture-fact > span:first-child, .investigation-metrics > div > span:first-child, .investigation-facts dt";
+function installComponentGuidance(doc = document) {
+  const seen = /* @__PURE__ */ new WeakSet();
+  let sequence = 0;
+  let active = null;
+  let hideTimer;
+  const win = doc.defaultView;
+  const clearTimer = () => {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = void 0;
+  };
+  const dismiss = () => {
+    clearTimer();
+    if (!active) return;
+    const { trigger, tip } = active;
+    if (tip.matches(":popover-open")) tip.hidePopover();
+    tip.remove();
+    const ids = (trigger.getAttribute("aria-describedby") || "").split(/\s+/).filter((id) => id && id !== tip.id);
+    if (ids.length) trigger.setAttribute("aria-describedby", ids.join(" "));
+    else trigger.removeAttribute("aria-describedby");
+    active = null;
+  };
+  const scheduleHide = () => {
+    clearTimer();
+    if ((active == null ? void 0 : active.pinned) || (active == null ? void 0 : active.trigger) === doc.activeElement) return;
+    hideTimer = setTimeout(dismiss, 180);
+  };
+  const show = (trigger) => {
+    clearTimer();
+    if ((active == null ? void 0 : active.trigger) === trigger) return;
+    dismiss();
+    const tip = doc.createElement("span");
+    tip.id = `component-tooltip-${++sequence}`;
+    tip.className = "component-tooltip";
+    tip.setAttribute("role", "tooltip");
+    tip.setAttribute("popover", "manual");
+    tip.textContent = trigger.dataset.helpTooltip || "";
+    trigger.after(tip);
+    trigger.setAttribute("aria-describedby", [trigger.getAttribute("aria-describedby"), tip.id].filter(Boolean).join(" "));
+    active = { trigger, tip, pinned: false };
+    tip.showPopover();
+    const rect = trigger.getBoundingClientRect();
+    const size = tip.getBoundingClientRect();
+    const position = tooltipPosition(rect, size, { width: win.innerWidth, height: win.innerHeight });
+    tip.style.left = `${position.left}px`;
+    tip.style.top = `${position.top}px`;
+    tip.addEventListener("pointerenter", clearTimer);
+    tip.addEventListener("pointerleave", scheduleHide);
+  };
+  const bindTooltip = (trigger) => {
+    trigger.addEventListener("pointerenter", (event) => {
+      if (event.pointerType !== "touch") show(trigger);
+    });
+    trigger.addEventListener("pointerleave", scheduleHide);
+    trigger.addEventListener("focus", () => show(trigger));
+    trigger.addEventListener("blur", () => {
+      if ((active == null ? void 0 : active.trigger) === trigger) {
+        active.pinned = false;
+        scheduleHide();
+      }
+    });
+    if (trigger.classList.contains("help-trigger")) trigger.addEventListener("click", () => {
+      if ((active == null ? void 0 : active.trigger) === trigger && active.pinned) dismiss();
+      else {
+        show(trigger);
+        if (active) active.pinned = true;
+      }
+    });
+  };
+  const addTerm = (element) => {
+    var _a2;
+    if (seen.has(element)) return;
+    seen.add(element);
+    const label = ((_a2 = element.textContent) == null ? void 0 : _a2.trim()) || "";
+    const explanation = termGuidance[label];
+    if (!explanation) return;
+    const trigger = doc.createElement("button");
+    trigger.type = "button";
+    trigger.className = "help-trigger";
+    trigger.setAttribute("aria-label", `About ${label}`);
+    trigger.dataset.helpTooltip = explanation;
+    trigger.textContent = "?";
+    element.append(" ", trigger);
+    bindTooltip(trigger);
+  };
+  const addField = (control) => {
+    var _a2;
+    if (seen.has(control)) return;
+    seen.add(control);
+    if (control.hasAttribute("aria-describedby") || control.type === "checkbox" && !control.closest("label.check")) return;
+    const name = control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
+    const explanation = fieldGuidance(name, contextFor(control));
+    const label = control.closest("label");
+    if (!explanation || !label) return;
+    const labelCopy = label.cloneNode(true);
+    labelCopy.querySelectorAll("input, select, textarea, .field-hint, .subtle").forEach((node) => node.remove());
+    const title = (_a2 = labelCopy.textContent) == null ? void 0 : _a2.replace(/\s+/g, " ").trim();
+    if (title && !control.hasAttribute("aria-label") && !control.hasAttribute("aria-labelledby")) control.setAttribute("aria-label", title);
+    const help = doc.createElement("small");
+    help.id = `component-field-help-${++sequence}`;
+    help.className = "field-hint";
+    help.textContent = explanation;
+    control.setAttribute("aria-describedby", help.id);
+    label.append(help);
+  };
+  const enhance = (root) => {
+    if (root.closest(".component-tooltip, .field-hint")) return;
+    if (root.matches(controls)) addField(root);
+    root.querySelectorAll(controls).forEach((node) => addField(node));
+    if (root.matches(terms)) addTerm(root);
+    root.querySelectorAll(terms).forEach((node) => addTerm(node));
+    const icons = "button.icon-button[aria-label], #command-trigger";
+    const buttons = [...root.querySelectorAll(icons)];
+    if (root.matches(icons)) buttons.push(root);
+    for (const button of buttons) {
+      if (seen.has(button)) continue;
+      seen.add(button);
+      button.dataset.helpTooltip = button.id === "command-trigger" ? "Search available pages. Keyboard shortcut: Command/Ctrl + K." : button.getAttribute("aria-label") || "";
+      bindTooltip(button);
+    }
+  };
+  enhance(doc.body);
+  const observer = new MutationObserver((records) => {
+    if (active && !active.trigger.isConnected) dismiss();
+    const roots = /* @__PURE__ */ new Set();
+    for (const record of records) for (const node of record.addedNodes) if (node instanceof Element) roots.add(node);
+    for (const root of roots) if (root.isConnected && ![...roots].some((other) => other !== root && other.contains(root))) enhance(root);
+  });
+  observer.observe(doc.body, { childList: true, subtree: true });
+  const escape = (event) => {
+    if (event.key === "Escape" && active) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      dismiss();
+    }
+  };
+  const outside = (event) => {
+    if (active && !active.trigger.contains(event.target) && !active.tip.contains(event.target)) dismiss();
+  };
+  win.addEventListener("keydown", escape, true);
+  doc.addEventListener("pointerdown", outside, true);
+  doc.addEventListener("scroll", dismiss, true);
+  win.addEventListener("resize", dismiss);
+  return () => {
+    observer.disconnect();
+    dismiss();
+    win.removeEventListener("keydown", escape, true);
+    doc.removeEventListener("pointerdown", outside, true);
+    doc.removeEventListener("scroll", dismiss, true);
+    win.removeEventListener("resize", dismiss);
   };
 }
 function investigationUsageSnapshot(usage2) {
@@ -3984,7 +4366,7 @@ function clearStacks(meta, items) {
   }
 }
 const isDirectUpdateMode = (mode) => mode === "reset" || mode === "none";
-const cloneIfNotShared = (cached, shared) => shared ? cached : Object.assign({}, cached);
+const cloneIfNotShared = (cached, shared2) => shared2 ? cached : Object.assign({}, cached);
 const createStack = (canStack, meta, chart) => canStack && !meta.hidden && meta._stacked && {
   keys: getSortedDatasetIndices(chart, true),
   values: null
@@ -15099,6 +15481,7 @@ function applyViewChrome(view) {
   if (summary) summary.textContent = meta.summary;
 }
 const tokenKey = "relayna_gateway_operator_token";
+installComponentGuidance();
 const viewIds = new Set(Object.keys(viewMeta));
 const ownerViewIds = /* @__PURE__ */ new Set(["my-services", "service-dashboard", "my-projects", "project-dashboard"]);
 const state = {
@@ -15235,9 +15618,9 @@ function handleAsync(handler) {
     }
   };
 }
-function setPending(root, pending, controls = null) {
+function setPending(root, pending, controls2 = null) {
   if (!(root instanceof HTMLElement)) return [];
-  const targets = controls || (root.matches("button") ? [root] : [...root.querySelectorAll("button")]);
+  const targets = controls2 || (root.matches("button") ? [root] : [...root.querySelectorAll("button")]);
   root.setAttribute("aria-busy", String(pending));
   root.classList.toggle("is-pending", pending);
   targets.forEach((button) => {
@@ -15349,7 +15732,7 @@ function showTextModal(titleText, value) {
   backdrop.innerHTML = `
     <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
       <h3 id="${titleId}">${esc(titleText)}</h3>
-      <textarea readonly rows="18">${esc(value)}</textarea>
+      <textarea readonly rows="18" aria-label="${attr(titleText)}">${esc(value)}</textarea>
       ${actionGroup('<button type="button" data-close-modal>Close</button>')}
     </div>
   `;
@@ -15594,7 +15977,7 @@ function showCommandPalette() {
   backdrop.innerHTML = `
     <div class="modal command-palette" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
       <h3 id="${titleId}">Go to ${workspaceLabel} view</h3>
-      <label class="command-search"><span class="sr-only">Filter views</span><input type="search" placeholder="Search views…" autocomplete="off" data-command-search></label>
+      <label class="command-search"><span>Filter views</span><input type="search" placeholder="Search views…" autocomplete="off" data-command-search></label>
       <div class="command-list" role="list">${commands}</div>
       <div class="command-footer"><span>Enter to open</span><span>Esc to close</span></div>
     </div>`;
@@ -15836,7 +16219,7 @@ async function overview() {
     </section>
     <details class="workflow-disclosure"><summary>Gateway inventory · ${enabledRoutes}/${totalRoutes} routes · ${enabledServices} services</summary><section class="panel">${overviewOperationsTable(healthRows, scopedKeys)}</section></details>
   `;
-  document.querySelector("#page-actions").innerHTML = `<label class="compact-field"><span class="sr-only">Overview time range</span><select id="overview-window">${option("24h", state.overviewWindow, "Last 24 hours")}${option("7d", state.overviewWindow, "Last 7 days")}${option("30d", state.overviewWindow, "Last 30 days")}</select></label>`;
+  document.querySelector("#page-actions").innerHTML = `<label class="compact-field"><span>Overview time range</span><select id="overview-window">${option("24h", state.overviewWindow, "Last 24 hours")}${option("7d", state.overviewWindow, "Last 7 days")}${option("30d", state.overviewWindow, "Last 30 days")}</select></label>`;
   content.querySelectorAll("[data-overview-project]").forEach((button) => button.addEventListener("click", () => {
     navigateToView("usage", { monitoring: { projectScope: button.dataset.overviewProject, usageFilters: { time_preset: state.overviewWindow === "30d" ? "last_30d" : state.overviewWindow === "24h" ? "last_24h" : "last_7d" } } });
   }));
@@ -16172,43 +16555,43 @@ async function keys() {
   organizeView("keys");
 }
 function policyFields(key = null, neutral = false) {
-  const policy = (key == null ? void 0 : key.policy) || {};
+  const policy2 = (key == null ? void 0 : key.policy) || {};
   return `
-    <label>Routes<input name="allowed_routes" value="${attr(listValue(policy.allowed_routes, neutral ? "" : "/v1/chat/completions,/v1/responses"))}"></label>
-    <label>Models<input name="allowed_models" value="${attr(listValue(policy.allowed_models, ""))}" placeholder="gpt-4o-mini"></label>
-    <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers, neutral)}</div>
-    <label>RPM limit<input name="rpm_limit" type="number" min="0" value="${attr(policy.rpm_limit ?? "")}"></label>
-    <label>TPM limit<input name="tpm_limit" type="number" min="0" value="${attr(policy.tpm_limit ?? "")}"></label>
-    <label>Daily budget<input name="daily_budget_usd" type="number" min="0" step="0.01" value="${attr(policy.daily_budget_usd ?? "")}"></label>
-    <label>Monthly budget<input name="monthly_budget_usd" type="number" min="0" step="0.01" value="${attr(policy.monthly_budget_usd ?? "")}"></label>
-    <label>Max daily requests<input name="max_requests_per_day" type="number" min="0" value="${attr(policy.max_requests_per_day ?? "")}"></label>
-    <label>Max daily tokens<input name="max_tokens_per_day" type="number" min="0" value="${attr(policy.max_tokens_per_day ?? "")}"></label>
-    <label>Max cost/request<input name="max_cost_per_request" type="number" min="0" step="0.01" value="${attr(policy.max_cost_per_request ?? "")}"></label>
-    <label>Max input tokens<input name="max_input_tokens_per_request" type="number" min="0" value="${attr(policy.max_input_tokens_per_request ?? "")}"></label>
-    <label>Max output tokens<input name="max_output_tokens_per_request" type="number" min="0" value="${attr(policy.max_output_tokens_per_request ?? "")}"></label>
-    <label>Allowed UTC hours<input name="allowed_hours_utc" value="${attr(listValue(policy.allowed_hours_utc, ""))}" placeholder="0,8,17"></label>
-    <label>Stale disable days<input name="unused_key_auto_disable_after_days" type="number" min="0" value="${attr(policy.unused_key_auto_disable_after_days ?? "")}"></label>
-    <label>Max request bytes<input name="max_request_body_bytes" type="number" min="0" value="${attr(policy.max_request_body_bytes ?? "")}"></label>
-    <label>Max response bytes<input name="max_response_body_bytes" type="number" min="0" value="${attr(policy.max_response_body_bytes ?? "")}"></label>
-    <label class="check"><input name="allow_streaming" type="checkbox" ${policy.allow_streaming || neutral ? "checked" : ""}> Allow streaming</label>
-    <label class="check"><input name="allow_tools" type="checkbox" ${policy.allow_tools || neutral ? "checked" : ""}> Allow tools</label>
+    <label>Routes<input name="allowed_routes" value="${attr(listValue(policy2.allowed_routes, neutral ? "" : "/v1/chat/completions,/v1/responses"))}"></label>
+    <label>Models<input name="allowed_models" value="${attr(listValue(policy2.allowed_models, ""))}" placeholder="gpt-4o-mini"></label>
+    <div class="field"><span>Providers</span>${providerPolicySelect(policy2.allowed_providers, neutral)}<small class="field-hint">Allowed provider adapters. No selection adds no restriction at this layer; inherited policies still apply.</small></div>
+    <label>RPM limit<input name="rpm_limit" type="number" min="0" value="${attr(policy2.rpm_limit ?? "")}"></label>
+    <label>TPM limit<input name="tpm_limit" type="number" min="0" value="${attr(policy2.tpm_limit ?? "")}"></label>
+    <label>Daily budget<input name="daily_budget_usd" type="number" min="0" step="0.01" value="${attr(policy2.daily_budget_usd ?? "")}"></label>
+    <label>Monthly budget<input name="monthly_budget_usd" type="number" min="0" step="0.01" value="${attr(policy2.monthly_budget_usd ?? "")}"></label>
+    <label>Max daily requests<input name="max_requests_per_day" type="number" min="0" value="${attr(policy2.max_requests_per_day ?? "")}"></label>
+    <label>Max daily tokens<input name="max_tokens_per_day" type="number" min="0" value="${attr(policy2.max_tokens_per_day ?? "")}"></label>
+    <label>Max cost/request<input name="max_cost_per_request" type="number" min="0" step="0.01" value="${attr(policy2.max_cost_per_request ?? "")}"></label>
+    <label>Max input tokens<input name="max_input_tokens_per_request" type="number" min="0" value="${attr(policy2.max_input_tokens_per_request ?? "")}"></label>
+    <label>Max output tokens<input name="max_output_tokens_per_request" type="number" min="0" value="${attr(policy2.max_output_tokens_per_request ?? "")}"></label>
+    <label>Allowed UTC hours<input name="allowed_hours_utc" value="${attr(listValue(policy2.allowed_hours_utc, ""))}" placeholder="0,8,17"></label>
+    <label>Stale disable days<input name="unused_key_auto_disable_after_days" type="number" min="0" value="${attr(policy2.unused_key_auto_disable_after_days ?? "")}"></label>
+    <label>Max request bytes<input name="max_request_body_bytes" type="number" min="0" value="${attr(policy2.max_request_body_bytes ?? "")}"></label>
+    <label>Max response bytes<input name="max_response_body_bytes" type="number" min="0" value="${attr(policy2.max_response_body_bytes ?? "")}"></label>
+    <label class="check"><input name="allow_streaming" type="checkbox" ${policy2.allow_streaming || neutral ? "checked" : ""}> Allow streaming</label>
+    <label class="check"><input name="allow_tools" type="checkbox" ${policy2.allow_tools || neutral ? "checked" : ""}> Allow tools</label>
   `;
 }
 function guardrailPolicyFields(key = null) {
-  const policy = (key == null ? void 0 : key.guardrail_policy) || {};
+  const policy2 = (key == null ? void 0 : key.guardrail_policy) || {};
   return `
-    <div class="field"><span>Mandatory guardrails</span>${guardrailSelectionControl(policy.mandatory_guardrails || [], "mandatory_guardrails", "Mandatory guardrails")}</div>
-    <div class="field"><span>Optional guardrails</span>${guardrailSelectionControl(policy.optional_guardrails || [], "optional_guardrails", "Optional guardrails")}</div>
-    <div class="field"><span>Forbidden guardrails</span>${guardrailSelectionControl(policy.forbidden_guardrails || [], "forbidden_guardrails", "Forbidden guardrails")}</div>
+    <div class="field"><span>Mandatory guardrails</span>${guardrailSelectionControl(policy2.mandatory_guardrails || [], "mandatory_guardrails", "Mandatory guardrails")}<small class="field-hint">Checks that this key must run. Callers cannot opt out of mandatory checks.</small></div>
+    <div class="field"><span>Optional guardrails</span>${guardrailSelectionControl(policy2.optional_guardrails || [], "optional_guardrails", "Optional guardrails")}<small class="field-hint">Checks permitted for this key when requested, in addition to mandatory checks.</small></div>
+    <div class="field"><span>Forbidden guardrails</span>${guardrailSelectionControl(policy2.forbidden_guardrails || [], "forbidden_guardrails", "Forbidden guardrails")}<small class="field-hint">Checks this key cannot request. Do not also select them as mandatory or optional.</small></div>
     <div class="wide-field field">
       <span>Guardrail config overrides</span>
-      <div data-guardrail-overrides>${guardrailOverrideControls(policy.guardrail_config_overrides || {}, activeConfigurableGuardrails(policy))}</div>
+      <div data-guardrail-overrides>${guardrailOverrideControls(policy2.guardrail_config_overrides || {}, activeConfigurableGuardrails(policy2))}</div>
     </div>
   `;
 }
-function activeConfigurableGuardrails(policy = {}) {
-  return [.../* @__PURE__ */ new Set([...policy.mandatory_guardrails || [], ...policy.optional_guardrails || []])].filter(
-    (name) => !(policy.forbidden_guardrails || []).includes(name)
+function activeConfigurableGuardrails(policy2 = {}) {
+  return [.../* @__PURE__ */ new Set([...policy2.mandatory_guardrails || [], ...policy2.optional_guardrails || []])].filter(
+    (name) => !(policy2.forbidden_guardrails || []).includes(name)
   );
 }
 function guardrailOverrideControls(overrides2 = {}, selectedNames = []) {
@@ -16227,7 +16610,7 @@ function guardrailOverrideControls(overrides2 = {}, selectedNames = []) {
             <input name="guardrail_override_names" type="checkbox" value="${attr(guardrail.name)}" ${enabled ? "checked" : ""}>
             <span><strong>${esc(guardrail.name)}</strong><small>${esc(guardrail.description || "Custom runtime settings")}</small></span>
           </label>
-          <textarea name="guardrail_override_${attr(guardrail.name)}" rows="4">${esc(value)}</textarea>
+          <label>Configuration for ${esc(guardrail.name)}<textarea name="guardrail_override_${attr(guardrail.name)}" rows="4">${esc(value)}</textarea></label>
           <details>
             <summary>Config schema</summary>
             <code>${esc(schema)}</code>
@@ -16672,16 +17055,16 @@ function providerAuthSettingsForm(row) {
     return '<span class="subtle">not applicable</span>';
   }
   return `<form class="inline-form" data-provider-config-form data-provider-id="${attr(row.id)}" aria-label="Authentication settings for provider ${attr(row.name)}">
-    <select name="credential_header_mode">
+    <label>Credential mode<select name="credential_header_mode">
       ${option("authorization_bearer", row.credential_header_mode || "authorization_bearer")}
       ${option("custom_header", row.credential_header_mode || "")}
-    </select>
-    <input name="credential_header_name" placeholder="x-litellm-api-key" value="${attr(row.credential_header_name || "")}">
-    <select name="credential_header_value_format">
+    </select></label>
+    <label>Custom header<input name="credential_header_name" placeholder="x-litellm-api-key" value="${attr(row.credential_header_name || "")}"></label>
+    <label>Header value<select name="credential_header_value_format">
       ${option("raw", row.credential_header_value_format || "raw")}
       ${option("bearer", row.credential_header_value_format || "")}
-    </select>
-    <input name="credential" type="password" autocomplete="new-password" placeholder="rotate default credential">
+    </select></label>
+    <label>Replace credential<input name="credential" type="password" autocomplete="new-password" placeholder="Leave blank to keep current credential"></label>
     <button type="submit" aria-label="Update authentication for provider ${attr(row.name)}">Update</button>
     <span class="subtle">x-litellm-key usually needs bearer.</span>
   </form>`;
@@ -16997,7 +17380,7 @@ async function services() {
             <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9\\x2d]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
             <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
             <label>Upstream URL<input name="upstream_base_url"></label>
-            <div class="field"><span>Methods</span>${methodSelect(["POST"])}</div>
+            <div class="field"><span>Methods</span><small class="field-hint">HTTP methods clients may use on this service. Select only the methods its endpoints need.</small>${methodSelect(["POST"])}</div>
             <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
           `, true)}
           ${formSection("Reliability and credentials", "Configure health checks, write-only credentials, limits, and fallback.", `
@@ -17111,6 +17494,7 @@ function pricingRuleFromRow(row) {
   return rule;
 }
 function openApiEndpointPricingEditor(service) {
+  const pricingHelpId = `endpoint-pricing-help-${service.id || service.name}`;
   const endpoints = service.openapi_endpoints || [];
   const rules = service.endpoint_pricing_rules || [];
   const endpointKey = (method, path) => `${String(method).toUpperCase()} ${path}`;
@@ -17124,8 +17508,8 @@ function openApiEndpointPricingEditor(service) {
         <td><code data-endpoint-field="method">${esc(rule.method)}</code></td>
         <td><code data-endpoint-field="path_template">${esc(rule.path_template)}</code><div class="subtle">${esc(operationId)}</div></td>
         <td>${(endpoint == null ? void 0 : endpoint.relayna_default) ? '<span class="badge good">Relayna default</span>' : stale ? '<span class="badge warn">stale</span>' : '<span class="badge">service</span>'}</td>
-        <td><select data-endpoint-field="cost_mode">${option("none", rule.cost_mode)}${option("fixed", rule.cost_mode)}${option("passthrough", rule.cost_mode)}</select></td>
-        <td><input data-endpoint-field="estimated_cost_usd" type="number" min="0" step="0.001" value="${attr(rule.estimated_cost_usd ?? "")}" aria-label="Estimated cost for ${attr(rule.method)} ${attr(rule.path_template)}"></td>
+        <td><select data-endpoint-field="cost_mode" aria-describedby="${attr(pricingHelpId)}" aria-label="Cost mode for ${attr(rule.method)} ${attr(rule.path_template)}">${option("none", rule.cost_mode)}${option("fixed", rule.cost_mode)}${option("passthrough", rule.cost_mode)}</select></td>
+        <td><input data-endpoint-field="estimated_cost_usd" aria-describedby="${attr(pricingHelpId)}" type="number" min="0" step="0.001" value="${attr(rule.estimated_cost_usd ?? "")}" aria-label="Estimated cost for ${attr(rule.method)} ${attr(rule.path_template)}"></td>
       </tr>
     `;
   }).join("");
@@ -17141,6 +17525,7 @@ function openApiEndpointPricingEditor(service) {
         <button type="button" data-openapi-action="preview" data-service-name="${attr(service.name)}">Preview OpenAPI</button>
       </div>
       <div class="help">Discovery fetches JSON from the registered upstream origin only, does not forward service credentials, does not follow redirects, and never runs on the proxy request path.</div>
+      <p id="${attr(pricingHelpId)}" class="field-hint">Endpoint prices are in USD per request. none records no charge; fixed uses the estimate (0 means no estimated charge); passthrough uses upstream-reported cost when available. Stale rules refer to endpoints absent from the last discovery.</p>
       ${rows ? tableWrap(`<table><thead><tr><th>Method</th><th>Endpoint</th><th>Class</th><th>Cost mode</th><th>Estimated cost</th></tr></thead><tbody>${rows}</tbody></table>`) : emptyState("No discovered endpoints. Preview and sync /openapi.json to create endpoint pricing rules.")}
     </div>
   `;
@@ -17231,7 +17616,7 @@ function serviceEditForm(service) {
         <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
         <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
         <label>Upstream URL<input name="upstream_base_url" value="${attr(service.upstream_base_url ?? "")}"></label>
-        <div class="field"><span>Methods</span>${methodSelect(service.allowed_methods)}</div>
+        <div class="field"><span>Methods</span><small class="field-hint">HTTP methods clients may use on this service. Select only the methods its endpoints need.</small>${methodSelect(service.allowed_methods)}</div>
         <label>Sync status<select name="sync_status">${["local", "synced", "incomplete", "stale", "failed"].map((value) => option(value, service.sync_status)).join("")}</select></label>
         <label class="check"><input name="enabled" type="checkbox" ${service.enabled ? "checked" : ""}> Enabled</label>
       `, true)}
@@ -17487,9 +17872,9 @@ async function authSettingsAction(event) {
 function studioImportTable(rows) {
   if (!rows.length) return '<div class="empty-state"><p>No Studio services.</p></div>';
   return `<div class="table-wrap studio-import-table"><table><thead><tr>
-    <th></th><th>Service</th><th>Environment</th><th>Status</th><th>Base URL</th><th>Tags</th><th>Route</th>
+    <th>Select</th><th>Service</th><th>Environment</th><th>Status</th><th>Base URL</th><th>Tags</th><th>Route</th>
   </tr></thead><tbody>${rows.map((row, index2) => `<tr>
-      <td><input name="studio_index" type="checkbox" value="${attr(index2)}"></td>
+      <td><input name="studio_index" type="checkbox" value="${attr(index2)}" aria-label="Select Studio service ${attr(row.display_name || row.name)}"></td>
       <td><strong>${esc(row.display_name || row.name)}</strong><div class="subtle">${esc(row.studio_service_id)}</div></td>
       <td>${esc(row.environment || "n/a")}</td>
       <td>${esc(row.status || "n/a")}</td>
@@ -17562,9 +17947,9 @@ function openGuardrailSelectionPicker(trigger) {
 function servicePickerTable(rows, selected) {
   if (!rows.length) return '<div class="empty-state"><p>No services registered.</p></div>';
   return `<div class="table-wrap service-picker-table"><table><thead><tr>
-    <th></th><th>Service</th><th>Status</th><th>Route</th><th>Upstream</th>
+    <th>Select</th><th>Service</th><th>Status</th><th>Route</th><th>Upstream</th>
   </tr></thead><tbody>${rows.map((row) => `<tr>
-      <td><input name="service_name" type="checkbox" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
+      <td><input name="service_name" type="checkbox" aria-label="Select service ${attr(row.name)}" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
       <td><strong>${esc(row.name)}</strong><div class="subtle">${esc(row.studio_service_id || "local")}</div></td>
       <td>${esc(row.sync_status || (row.enabled ? "enabled" : "disabled"))}</td>
       <td><code>${esc(row.route_pattern)}</code></td>
@@ -17574,9 +17959,9 @@ function servicePickerTable(rows, selected) {
 function guardrailPickerTable(rows, selected) {
   if (!rows.length) return '<div class="empty-state"><p>No guardrails configured.</p></div>';
   return `<div class="table-wrap guardrail-picker-table"><table><thead><tr>
-    <th></th><th>Guardrail</th><th>Provider</th><th>Modes</th><th>Failure</th><th>Default</th>
+    <th>Select</th><th>Guardrail</th><th>Provider</th><th>Modes</th><th>Failure</th><th>Default</th>
   </tr></thead><tbody>${rows.map((row) => `<tr>
-      <td><input name="guardrail_name" type="checkbox" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
+      <td><input name="guardrail_name" type="checkbox" aria-label="Select guardrail ${attr(row.name)}" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
       <td><strong>${esc(row.name)}</strong><div class="subtle">${esc(row.description || "")}</div></td>
       <td>${esc(row.provider_kind)}</td>
       <td>${esc(listValue(row.modes, "none"))}</td>
@@ -18459,7 +18844,7 @@ async function health() {
     <section class="panel">
       <div class="panel-heading"><h3>Debug bundle</h3></div>
       <form id="debug-bundle-form" class="inline-form">
-        <input name="request_id" placeholder="request ID" required>
+        <label>Request ID<input name="request_id" placeholder="request ID" required></label>
         <button>Load</button>
       </form>
       ${state.debugBundle ? debugBundleView(state.debugBundle) : ""}
@@ -18750,7 +19135,7 @@ function guardrailDrawer(guardrail) {
     <form id="guardrail-form" class="form-grid guardrail-form" data-mode="${creating ? "create" : "edit"}" data-guardrail-name="${attr((guardrail == null ? void 0 : guardrail.name) || "")}" data-provider-kind="${attr((guardrail == null ? void 0 : guardrail.provider_kind) || "http")}">
       <label>Name<input name="name" required ${creating ? "" : "readonly"} value="${attr((guardrail == null ? void 0 : guardrail.name) || "")}" placeholder="custom-policy-check"></label>
       <label>Description<input name="description" ${builtIn ? "disabled" : "required"} value="${attr((guardrail == null ? void 0 : guardrail.description) || "")}"></label>
-      <div class="field"><span>Modes</span>${guardrailModeSelect((guardrail == null ? void 0 : guardrail.modes) || ["pre_call"])}</div>
+      <div class="field"><span>Modes</span><small class="field-hint">Execution stages: pre_call before forwarding, post_call after a response, during_call during streaming.</small>${guardrailModeSelect((guardrail == null ? void 0 : guardrail.modes) || ["pre_call"])}</div>
       <label>Failure policy<select name="failure_policy">${["fail_closed", "fail_open", "dry_run"].map((value) => option(value, (guardrail == null ? void 0 : guardrail.failure_policy) || "fail_closed")).join("")}</select></label>
       <label>Timeout ms<input name="timeout_ms" type="number" min="100" max="10000" value="${attr((guardrail == null ? void 0 : guardrail.timeout_ms) ?? 1500)}" ${builtIn ? "disabled" : ""}></label>
       <label>Endpoint URL<input name="endpoint_url" type="url" ${creating ? "required" : ""} value="${attr((guardrail == null ? void 0 : guardrail.endpoint_url) || "")}" placeholder="https://guardrail.example/check" ${builtIn ? "disabled" : ""}></label>
@@ -18970,17 +19355,17 @@ function bindPolicySimulatorControls() {
   update();
 }
 function keyPolicySummary(key) {
-  const policy = key.policy;
-  return `<div>${esc((policy.allowed_routes || []).join(", ") || "no routes")}</div>
-    <div class="subtle">${esc((policy.allowed_providers || []).join(", ") || "no providers")}</div>
-    <div class="subtle">RPM ${esc(policy.rpm_limit ?? "none")} / daily ${esc(money(policy.daily_budget_usd))}</div>
-    <div class="subtle">Req ${esc(policy.max_request_body_bytes ?? "route")} / Resp ${esc(policy.max_response_body_bytes ?? "route")}</div>
+  const policy2 = key.policy;
+  return `<div>${esc((policy2.allowed_routes || []).join(", ") || "no routes")}</div>
+    <div class="subtle">${esc((policy2.allowed_providers || []).join(", ") || "no providers")}</div>
+    <div class="subtle">RPM ${esc(policy2.rpm_limit ?? "none")} / daily ${esc(money(policy2.daily_budget_usd))}</div>
+    <div class="subtle">Req ${esc(policy2.max_request_body_bytes ?? "route")} / Resp ${esc(policy2.max_response_body_bytes ?? "route")}</div>
     <div class="subtle">Rotate ${esc(key.rotation_due_at ? time(key.rotation_due_at) : "none")} / Last used ${esc(key.last_used_at ? time(key.last_used_at) : "never")}</div>`;
 }
-function guardrailPolicySummary(policy = {}) {
-  const mandatory = policy.mandatory_guardrails || [];
-  const optional = policy.optional_guardrails || [];
-  const forbidden = policy.forbidden_guardrails || [];
+function guardrailPolicySummary(policy2 = {}) {
+  const mandatory = policy2.mandatory_guardrails || [];
+  const optional = policy2.optional_guardrails || [];
+  const forbidden = policy2.forbidden_guardrails || [];
   return `<div>${badge(`${mandatory.length} mandatory`, mandatory.length ? "warn" : "neutral")} ${badge(`${optional.length} optional`)}</div>
     <div class="subtle">${esc(forbidden.length ? `${forbidden.length} forbidden` : "none forbidden")}</div>`;
 }
@@ -20097,7 +20482,7 @@ function addInventorySearch(panel2) {
   if (panel2.querySelector("[data-inventory-search]")) return;
   const label = document.createElement("label");
   label.className = "inventory-search";
-  label.innerHTML = `<span class="sr-only">Search inventory</span><input type="search" data-inventory-search placeholder="Search this inventory…"><span class="search-count" role="status"></span>`;
+  label.innerHTML = `<span>Search inventory</span><input type="search" aria-label="Search inventory" data-inventory-search placeholder="Search this inventory…"><span class="search-count" role="status"></span>`;
   panel2.querySelector(".panel-heading").after(label);
   const rows = [...panel2.querySelectorAll("tbody > tr")];
   label.querySelector("input").addEventListener("input", (event) => {
