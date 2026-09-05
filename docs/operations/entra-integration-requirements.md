@@ -279,7 +279,7 @@ Then set `ENTRA_APPLICATION_ID` to the shared application ID GUID and remove:
 Existing browser sessions may be invalid after the application-ID cutover; ask
 users to sign in again. Existing Relayna members, service memberships, managed
 identity service bindings, virtual keys, and usage data do not require data
-rewrites. Release `0.1.31` retains the separate project membership and project
+rewrites. Release `0.1.32` retains the separate project membership and project
 managed-identity binding tables.
 
 ## Certificate standard and lifecycle

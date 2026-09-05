@@ -26,7 +26,35 @@ Run `npm ci`, `npm run build:admin-ui`, and `npm test`. `tests/admin-ui-browser.
 
 Screenshots are local evidence under this directory (ignored by repository screenshot policy). The approved prototype evidence under `internal/design/admin-ui-3/` is separate from these production checks.
 
-## Automated verification
+## Final release verification (0.1.32)
+
+The full mandatory script now passes in sequence, including cargo audit, deny,
+machete, nextest, Trivy, gitleaks and Semgrep. The all-feature workspace release
+build and frontend tests pass. **Correction:** the earlier duplicate-advisory
+failure came from untracked files in the local advisory cache, not the official
+upstream repository. The complete cache was preserved at
+`/Users/jobz/.cargo/advisory-db.ui3-preserved-20260905`; a clean official cache
+resolved the failure without adding ignores or weakening checks.
+
+A fresh Computer Use attempt still timed out; the authorized Chrome workflow
+provides the recorded UI coverage. Browser verification is representative of
+major workflows and all 18 surfaces, not an exhaustive combination of every
+field and viewport. No known material product defect remains from the executed
+checks. Remaining external limitation: Computer Use capture itself.
+
+Final additions: Traffic project change after a key drilldown removed the old
+key from the URL and applied Usage filters; same-project key preservation has
+unit coverage. Downloaded CSV was parsed from disk: 170 rows, every row matched
+the selected Analytics project, no raw-key column. Stopping the isolated gateway
+produced a visible disconnected/retrying state; restarting the newly built
+0.1.32 binary reconnected automatically to a new instance and displayed the
+explicit missed-updates warning. Team policy layer save/readback/delete and
+policy simulation passed. The pending development member was approved, assigned
+service Viewer then project Owner access, both bindings were removed, and Block
+was verified; its fixture status was restored to pending. Current desktop and
+mobile screenshots are checked into `docs/assets/screenshots/admin-ui-3/`.
+
+## Earlier automated verification record
 
 - Frontend production build and `npm test`: pass, including body-stall timeout, composed cancellation, 503 response preservation, key lifecycle and sampled reliability thresholds.
 - Mandatory script: format, workspace Clippy with warnings denied, and workspace all-feature tests pass; **script cannot finish** because upstream RustSec contains duplicate advisory ID `RUSTSEC-2026-0244` (gettext-rs and gettext-sys). No advisory removed and no new ignore added.
@@ -35,7 +63,7 @@ Screenshots are local evidence under this directory (ignored by repository scree
 
 ## Limits and follow-up coverage
 
-Computer Use could not capture the locked Mac after an initial timeout. The user was notified; authorized Chrome verification continued. This report does not claim completed Computer Use coverage. Responsive checks cover navigation and representative interactions, not every mutation at every width. Studio preview/import/sync now passes against a disposable HTTP catalog fixture. Guardrail create/edit/disable/delete, a reversible auth-header Settings edit, Studio connection save/clear, and service workload registration/disable/enable/delete have also been exercised. Remaining coverage includes policy-layer and member mutation matrices, export file readback and live network-drop recovery; existing server tests and retained handlers do not substitute for those UI checks. No backend contract, migration, public route or secret-handling boundary was changed.
+Computer Use could not capture the locked Mac after an initial timeout. The user was notified; authorized Chrome verification continued. This report does not claim completed Computer Use coverage. Responsive checks cover navigation and representative interactions, not every mutation at every width. Studio preview/import/sync now passes against a disposable HTTP catalog fixture. Guardrail create/edit/disable/delete, a reversible auth-header Settings edit, Studio connection save/clear, and service workload registration/disable/enable/delete have also been exercised. Those remaining major workflow checks were completed in the final release pass above; server tests and retained handlers were not used as substitutes for UI readback. No backend contract, migration, public route or secret-handling boundary was changed.
 
 ## PR review follow-up (2026-09-05)
 

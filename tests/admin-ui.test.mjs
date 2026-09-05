@@ -49,8 +49,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.31/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.31/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.32/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.32/);
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
@@ -789,3 +789,16 @@ for (const selected of ['deleted-project','another-project']) {
   assert.equal(projectState.usageFilters.key_id,selected === 'deleted-project' ? '' : 'key-filter');
 }
 console.log('ok - successful selected-project deletion clears its scope without clearing other selections');
+
+for (const newProject of ['original', 'next-project', '']) {
+  const filterState = {projectScope:'original',usageFilters:{project_id:'original',key_id:'old-key',status:'failure'}};
+  let resetCount = 0;
+  const apply = new Function('state','resetUsagePagination','syncProjectScope','persistMonitoringHash', `${sourceFunction('applyTrafficFilters')}; return applyTrafficFilters;`)(filterState,()=>resetCount++,()=>{},()=>{});
+  apply({project_id:newProject,outcome:'failures'});
+  assert.equal(filterState.projectScope,newProject);
+  assert.equal(filterState.usageFilters.project_id,newProject);
+  assert.equal(filterState.usageFilters.key_id,newProject === 'original' ? 'old-key' : '');
+  assert.equal(filterState.usageFilters.status,'failure');
+  assert.equal(resetCount,newProject === 'original' ? 0 : 1);
+}
+console.log('ok - Traffic project changes synchronize Usage and discard cross-project key filters');

@@ -2,6 +2,31 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.32 - 2026-09-05
+
+### Added
+
+- Admin UI 3.0 with grouped navigation, project scope, contextual creation and
+  editing drawers, usage breakdown tabs and request investigation drawers.
+- Regression coverage for request-body timeouts, canceled navigation, scope
+  changes, key expiration, reliability signals and identity deletion.
+
+### Fixed
+
+- Readiness failures no longer erase independently available monitoring data;
+  failed sources show unavailable or timestamped stale results with retry.
+- Expired keys no longer count as active, and reliability selects the strongest
+  sampled error, timeout or fallback signal separately from current availability.
+- Obsolete requests cannot replace newer views. Canceled navigation preserves
+  workspace, drafts and scope; project changes clear incompatible key filters.
+- Service-name validation and service/project identity deletion after confirmation.
+
+### Changed
+
+- Workspace, Admin UI indicators and deployment examples target `0.1.32`.
+- Existing admin/owner APIs, authorization, database schemas, usage formats and
+  `/admin-ui` asset paths are preserved. This release requires no migration.
+
 ## 0.1.31 - 2026-09-03
 
 ### Added

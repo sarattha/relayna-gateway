@@ -8,6 +8,9 @@ Migrate the production Vite/TypeScript console to the approved design in `intern
 
 ## Progress
 
+- [x] (2026-09-05) Prepared 0.1.32 metadata, changelog, current UI docs/screenshots and contributor guidance. All major remaining workflow checks completed through authorized Chrome; Computer Use retry timed out. Full mandatory script and release build pass.
+- [ ] Verify final PR head and fresh Codex review, then merge under explicit user authorization and pause monitoring.
+
 - [x] (2026-09-05) Second review: defer Usage drilldown filters until accepted navigation; clear scope after deleting its selected project. Unit tests cover cancel/pending/accept and unrelated project selection; real browser reproductions pass. Required format/Clippy/workspace tests pass; upstream audit blocker unchanged.
 
 - [x] (2026-09-05) Extended browser testing uncovered lost DOM currentTarget after identity-delete confirmation. Captured binding IDs before awaiting; service/project confirmation and cancellation tests pass, with browser readback. Frontend and required format/Clippy/workspace tests pass; upstream audit blocker remains.
@@ -22,9 +25,9 @@ Migrate the production Vite/TypeScript console to the approved design in `intern
 - [x] Implement shell, contextual workflows, monitoring scope and drawers while preserving all 18 surfaces.
 - [x] Build isolated gateway environment and record admin/owner and responsive Chrome coverage; Computer Use blocked by locked Mac. Additional interaction matrix gaps are explicitly tracked in the QA report.
 - [x] Regenerate assets; frontend, format, Clippy, workspace tests and independent remaining checks pass.
-- [ ] Full verification script completion blocked by upstream RustSec duplicate advisory ID RUSTSEC-2026-0244.
+- [x] Full verification script passes after preserving and replacing the contaminated local advisory cache. The earlier upstream diagnosis was incorrect.
 - [x] Commit 03cd5f3 pushed; draft PR #111 opened, Codex review requested. Dedicated 10-minute heartbeat owns remaining verification and review.
-- [ ] Address Codex review with evidence, replies and resolution; keep PR draft while material verification gaps remain. Do not merge.
+- [ ] Address Codex review with evidence, replies and resolution; keep PR draft while material verification gaps remain. Merge only after final version, documentation, checks and review support landing.
 
 ## Surprises & Discoveries
 
@@ -38,6 +41,9 @@ Migrate the production Vite/TypeScript console to the approved design in `intern
 The branch was created and selected by task setup between inspection and `git switch`; verified it points to this checkout and starting commit. Docker is available. Existing frontend checks are mostly source assertions; behavioral browser coverage must be added. The production UI already supports workflows that the approved prototype labels conceptual.
 
 ## Decision Log
+
+- 2026-09-05 / User: Explicitly authorized choosing the release bump, updating changelog/documents and merging when ready. This supersedes earlier no-merge instructions; no separate release publication or deployment is authorized. Target 0.1.32 follows the repository's existing patch-release convention.
+- 2026-09-05 / Codex: Corrected the audit diagnosis: duplicate advisory was an untracked file in the local cache, not the official repository. Preserved the complete cache in a backup and fetched a clean official copy.
 
 - 2026-09-05 / Codex: User-approved UI 3.0 visual direction supersedes the old UI 2.0 visual rules, while retaining source/build, credential, accessibility and API rules.
 - 2026-09-05 / Codex: Preserve released backend contracts at v0.1.31. Implement a frontend migration against existing APIs; do not invent budgets, totals or backend capabilities. No data migration planned.
