@@ -729,3 +729,22 @@ test("admin portal remains usable on narrow screens", () => {
   assert.match(css, /grid-template-columns: 1fr/);
   assert.match(css, /overflow-x: auto/);
 });
+
+// DOM clears currentTarget after dispatch; confirmation resumes asynchronously.
+for (const [handlerName, path] of [["deleteManagedIdentity", "managed-identities"], ["deleteManagedIdentityProject", "managed-identity-projects"]]) {
+  for (const confirmed of [true, false]) {
+    let settle;
+    const confirmation = new Promise((resolve) => { settle = resolve; });
+    const calls = [];
+    const handler = new Function("confirmAction", "api", "managedIdentities", `return async ${sourceFunction(handlerName)}`)(
+      () => confirmation, async (url, options) => calls.push({url, method:options.method}), async () => {},
+    );
+    const event = {currentTarget:{dataset:{identityId:"fixture-binding"}}};
+    const pending = handler(event);
+    event.currentTarget = null;
+    settle(confirmed);
+    await pending;
+    assert.deepEqual(calls, confirmed ? [{url:`/admin-ui/admin/${path}/fixture-binding`,method:"DELETE"}] : []);
+  }
+  console.log(`ok - ${handlerName} retains identity across confirmation and respects cancellation`);
+}

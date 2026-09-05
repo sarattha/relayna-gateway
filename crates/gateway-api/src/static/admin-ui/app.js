@@ -19186,8 +19186,9 @@ async function toggleManagedIdentity(event) {
   await managedIdentities();
 }
 async function deleteManagedIdentity(event) {
+  const identityId = event.currentTarget.dataset.identityId;
   if (!await confirmAction("Delete managed identity binding", "The workload immediately loses monitoring API access.")) return;
-  await api(`/admin-ui/admin/managed-identities/${event.currentTarget.dataset.identityId}`, { method: "DELETE" });
+  await api(`/admin-ui/admin/managed-identities/${identityId}`, { method: "DELETE" });
   await managedIdentities();
 }
 async function createManagedIdentityProject(event) {
@@ -19216,8 +19217,9 @@ async function toggleManagedIdentityProject(event) {
   await managedIdentities();
 }
 async function deleteManagedIdentityProject(event) {
+  const identityId = event.currentTarget.dataset.identityId;
   if (!await confirmAction("Delete project identity binding", "The workload immediately loses project monitoring API access.")) return;
-  await api(`/admin-ui/admin/managed-identity-projects/${event.currentTarget.dataset.identityId}`, { method: "DELETE" });
+  await api(`/admin-ui/admin/managed-identity-projects/${identityId}`, { method: "DELETE" });
   await managedIdentities();
 }
 async function myServices() {
