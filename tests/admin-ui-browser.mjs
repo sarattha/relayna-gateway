@@ -69,3 +69,27 @@ export async function checkUsageRecovery(tab, configureFaults) {
   assert.match(await tab.playwright.locator('#usage-results').innerText(),/Applied filters:/);
   return 'Usage failure exits loading; Retry restores filtered results';
 }
+
+// Requires the disposable admin identity to also own one seeded project.
+export async function checkWorkspaceCancellation(tab) {
+  await tab.playwright.getByRole('button',{name:'Projects',exact:true}).click();
+  await tab.playwright.getByRole('button',{name:'Create project',exact:true}).click();
+  await tab.playwright.getByRole('dialog',{name:'Create project'}).getByLabel('Name',{exact:true}).fill('Workspace cancellation draft');
+  await tab.playwright.getByRole('button',{name:'Close Create project',exact:true}).click();
+  await tab.playwright.locator('#workspace-select').selectOption('owner');
+  await tab.playwright.getByRole('dialog',{name:'Discard unsaved changes?'}).getByRole('button',{name:'Cancel',exact:true}).click();
+  assert.equal(await tab.playwright.locator('#view-title').innerText(),'Projects');
+  assert.equal(await tab.playwright.evaluate(()=>document.querySelector('#workspace-select').value),'admin');
+  assert.equal(await tab.playwright.getByRole('navigation',{name:'Portal sections'}).getByRole('button',{name:'Projects',exact:true}).count(),1);
+  await tab.playwright.getByRole('button',{name:'Create project',exact:true}).click();
+  assert.equal(await tab.playwright.evaluate(()=>document.querySelector('#project-form input[name=name]').value),'Workspace cancellation draft');
+  await tab.playwright.getByRole('button',{name:'Close Create project',exact:true}).click();
+  await tab.playwright.locator('#workspace-select').selectOption('owner');
+  await tab.playwright.getByRole('dialog',{name:'Discard unsaved changes?'}).getByRole('button',{name:'Confirm',exact:true}).click();
+  await tab.playwright.locator('#content[aria-busy="false"]').waitFor({state:'attached'});
+  assert.equal(await tab.playwright.locator('#view-title').innerText(),'My projects');
+  assert.equal(await tab.playwright.evaluate(()=>document.querySelector('#workspace-select').value),'owner');
+  await tab.playwright.locator('#workspace-select').selectOption('admin');
+  await tab.playwright.locator('#content[aria-busy="false"]').waitFor({state:'attached'});
+  return 'Canceled workspace switch preserves admin shell and draft; confirmed switch enters owner workspace';
+}

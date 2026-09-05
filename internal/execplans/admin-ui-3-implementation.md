@@ -8,6 +8,8 @@ Migrate the production Vite/TypeScript console to the approved design in `intern
 
 ## Progress
 
+- [x] (2026-09-05) First Codex review findings fixed: highest reliability signal and atomic workspace navigation. Unit and dual-role browser regressions pass; review replies/resolution follow the pushed fix.
+
 - [x] (2026-09-05) Confirmed approved artifacts and isolated branch `codex/admin-ui-3` at `42aa804`.
 - [x] (2026-09-05) Read repository guidance, audit and required implementation skills; latest release `v0.1.31`.
 - [x] Validate correctness findings and implement request lifecycle, readiness and status fixes with regression checks.

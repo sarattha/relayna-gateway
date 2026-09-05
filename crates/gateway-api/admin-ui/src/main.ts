@@ -434,11 +434,13 @@ function configurePortalShell() {
   document.querySelector("#session-role").textContent = token() ? "Operator token" : admin ? "Admin member" : "Scoped member";
 }
 
-async function navigateToView(view, { replace = false, focus = true } = {}) {
+async function navigateToView(view, { replace = false, focus = true, workspace = state.workspace } = {}) {
   if (pendingWrites) { setNotice("Wait for the current change to finish before leaving this view."); return; }
   if (hasDirtyForms() && !(await confirmAction("Discard unsaved changes?", "Leaving this view replaces its forms. Choose Cancel to keep editing."))) return;
   clearDirtyForms();
   if (!viewIds.has(view) || !viewAllowed(view)) return;
+  state.workspace = workspace;
+  configurePortalShell();
   const nextHash = `#/${view}${monitoringHash()}`;
   const changed = location.hash !== nextHash;
   if (replace) history.replaceState(null, "", nextHash);
@@ -573,9 +575,10 @@ document.querySelector("#sign-out").addEventListener("click", signOut);
 document.querySelector("#access-state-sign-out").addEventListener("click", signOut);
 
 document.querySelector("#workspace-select").addEventListener("change", (event) => {
-  state.workspace = event.target.value;
-  configurePortalShell();
-  navigateToView(state.workspace === "owner" ? ownerLandingView() : "overview");
+  const workspace = event.target.value;
+  // Keep the visible selection and shell unchanged until navigation is accepted.
+  event.target.value = state.workspace;
+  navigateToView(workspace === "owner" ? ownerLandingView() : "overview", { workspace });
 });
 
 document.querySelector("#refresh").addEventListener("click", refresh);

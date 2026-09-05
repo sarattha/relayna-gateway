@@ -10,10 +10,11 @@ export function keyLifecycle(key, now = Date.now()) {
 export function reliability(row) {
   const count = Number(row.request_count || 0);
   if (count < 20) return { label: "Insufficient sample", tone: "neutral", signal: null, score: 0 };
-  for (const [field, label] of [["timeout_count", "Timeout rate"], ["error_count", "Error rate"], ["fallback_count", "Fallback rate"]]) {
-    const signal = Number(row[field] || 0) / count;
-    if (signal >= 0.05) return { label: `${label} elevated`, tone: signal >= 0.1 ? "bad" : "warn", signal, score: signal };
-  }
+  const signals = [["timeout_count", "Timeout rate"], ["error_count", "Error rate"], ["fallback_count", "Fallback rate"]]
+    .map(([field, label]) => ({ label, rate: Number(row[field] || 0) / count }))
+    .sort((left, right) => right.rate - left.rate);
+  const highest = signals[0];
+  if (highest.rate >= 0.05) return { label: `${highest.label} elevated`, tone: highest.rate >= 0.1 ? "bad" : "warn", signal: highest.rate, score: highest.rate };
   return { label: "Within thresholds", tone: "good", signal: null, score: 0 };
 }
 

@@ -36,3 +36,7 @@ Screenshots are local evidence under this directory (ignored by repository scree
 ## Limits and follow-up coverage
 
 Computer Use could not capture the locked Mac after an initial timeout. The user was notified; authorized Chrome verification continued. This report does not claim completed Computer Use coverage. Responsive checks cover navigation and representative interactions, not every mutation at every width. Studio import needs a configured Studio fixture; successful import/sync was not exercised. Full policy/guardrail, membership/workload-identity and settings mutation matrices, export file readback and live network-drop recovery remain additional coverage; existing server tests and retained handlers do not substitute for those UI checks. No backend contract, migration, public route or secret-handling boundary was changed.
+
+## PR review follow-up (2026-09-05)
+
+All GitHub checks passed at a7891d7. Addressed two Codex findings: reliability evaluates all timeout/error/fallback rates and selects the highest; workspace changes commit only after navigation is accepted. Added mixed-rate unit cases and a real dual-role browser regression covering Cancel (admin shell and draft retained), Confirm (owner landing) and return to Admin. Temporary admin project membership was removed after the test. Frontend tests and the required format/Clippy/workspace sequence pass; local cargo audit still encounters the same upstream duplicate advisory.

@@ -16,6 +16,10 @@ assert.equal(reliability({request_count:20,error_count:1}).tone,'warn');
 assert.equal(reliability({request_count:20,error_count:2}).tone,'bad');
 assert.equal(reliability({request_count:21000,error_count:20,timeout_count:1}).tone,'good');
 assert.equal(reliability({request_count:100,fallback_count:6}).signal,.06);
+assert.deepEqual(reliability({request_count:100,timeout_count:6,error_count:20,fallback_count:12}),
+  {label:'Error rate elevated',tone:'bad',signal:.2,score:.2});
+assert.equal(reliability({request_count:100,timeout_count:6,error_count:8,fallback_count:9}).label,'Fallback rate elevated');
+assert.equal(reliability({request_count:100,timeout_count:20,error_count:30,fallback_count:40}).signal,.4);
 
 const server = http.createServer((req,res) => {
   if(req.url === '/stalled') {res.writeHead(200,{'Content-Type':'application/json'});res.write('{');return;}

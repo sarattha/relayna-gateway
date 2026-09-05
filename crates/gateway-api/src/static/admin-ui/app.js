@@ -48,10 +48,9 @@ function keyLifecycle(key, now = Date.now()) {
 function reliability(row) {
   const count = Number(row.request_count || 0);
   if (count < 20) return { label: "Insufficient sample", tone: "neutral", signal: null, score: 0 };
-  for (const [field, label] of [["timeout_count", "Timeout rate"], ["error_count", "Error rate"], ["fallback_count", "Fallback rate"]]) {
-    const signal = Number(row[field] || 0) / count;
-    if (signal >= 0.05) return { label: `${label} elevated`, tone: signal >= 0.1 ? "bad" : "warn", signal, score: signal };
-  }
+  const signals = [["timeout_count", "Timeout rate"], ["error_count", "Error rate"], ["fallback_count", "Fallback rate"]].map(([field, label]) => ({ label, rate: Number(row[field] || 0) / count })).sort((left, right) => right.rate - left.rate);
+  const highest = signals[0];
+  if (highest.rate >= 0.05) return { label: `${highest.label} elevated`, tone: highest.rate >= 0.1 ? "bad" : "warn", signal: highest.rate, score: highest.rate };
   return { label: "Within thresholds", tone: "good", signal: null, score: 0 };
 }
 async function fetchComplete(path, options = {}, { timeoutMs = 8e3, signal } = {}) {
@@ -15417,7 +15416,7 @@ function configurePortalShell() {
   document.querySelector("#session-name").textContent = (member == null ? void 0 : member.display_name) || (member == null ? void 0 : member.email) || (token() ? "Break-glass operator" : "Portal member");
   document.querySelector("#session-role").textContent = token() ? "Operator token" : admin ? "Admin member" : "Scoped member";
 }
-async function navigateToView(view, { replace = false, focus = true } = {}) {
+async function navigateToView(view, { replace = false, focus = true, workspace = state.workspace } = {}) {
   if (pendingWrites) {
     setNotice("Wait for the current change to finish before leaving this view.");
     return;
@@ -15425,6 +15424,8 @@ async function navigateToView(view, { replace = false, focus = true } = {}) {
   if (hasDirtyForms() && !await confirmAction("Discard unsaved changes?", "Leaving this view replaces its forms. Choose Cancel to keep editing.")) return;
   clearDirtyForms();
   if (!viewIds.has(view) || !viewAllowed(view)) return;
+  state.workspace = workspace;
+  configurePortalShell();
   const nextHash = `#/${view}${monitoringHash()}`;
   const changed = location.hash !== nextHash;
   if (replace) history.replaceState(null, "", nextHash);
@@ -15552,9 +15553,9 @@ async function signOut() {
 document.querySelector("#sign-out").addEventListener("click", signOut);
 document.querySelector("#access-state-sign-out").addEventListener("click", signOut);
 document.querySelector("#workspace-select").addEventListener("change", (event) => {
-  state.workspace = event.target.value;
-  configurePortalShell();
-  navigateToView(state.workspace === "owner" ? ownerLandingView() : "overview");
+  const workspace = event.target.value;
+  event.target.value = state.workspace;
+  navigateToView(workspace === "owner" ? ownerLandingView() : "overview", { workspace });
 });
 document.querySelector("#refresh").addEventListener("click", refresh);
 document.querySelector("#nav-toggle").addEventListener("click", openNavigation);
