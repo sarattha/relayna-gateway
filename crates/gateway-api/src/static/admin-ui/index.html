@@ -62,10 +62,10 @@
       <aside id="sidebar" class="sidebar" aria-label="Admin navigation">
         <div class="sidebar-header">
           <div class="brand">
-            <span class="brand-kicker">Relayna</span>
+            <i class="ti ti-route" aria-hidden="true"></i>
             <span class="brand-title">
-              <strong>Gateway Admin</strong>
-              <span class="version-indicator" aria-label="Current Relayna Gateway version">v0.1.31</span>
+              <strong>relayna</strong><small>Gateway console · 3.0</small>
+              <span class="version-indicator" aria-label="Current Relayna Gateway version">v0.1.32</span>
             </span>
           </div>
           <button id="nav-close" class="icon-button nav-close" type="button" aria-label="Close navigation">
@@ -76,25 +76,25 @@
           <section class="nav-group" data-admin-nav>
             <span>Monitor</span>
             <button data-view="overview" class="nav active"><i class="ti ti-layout-dashboard" aria-hidden="true"></i><span>Overview</span></button>
-            <button data-view="health" class="nav"><i class="ti ti-heart-rate-monitor" aria-hidden="true"></i><span>Health</span></button>
             <button data-view="traffic" class="nav"><i class="ti ti-activity" aria-hidden="true"></i><span>Traffic</span></button>
-            <button data-view="usage" class="nav"><i class="ti ti-chart-line" aria-hidden="true"></i><span>Usage</span></button>
+            <button data-view="usage" class="nav"><i class="ti ti-chart-line" aria-hidden="true"></i><span>Usage &amp; cost</span></button>
+            <button data-view="health" class="nav"><i class="ti ti-heart-rate-monitor" aria-hidden="true"></i><span>Health</span></button>
           </section>
           <section class="nav-group" data-admin-nav>
             <span>Discover</span>
-            <button data-view="providers" class="nav"><i class="ti ti-database" aria-hidden="true"></i><span>Providers</span></button>
-            <button data-view="services" class="nav"><i class="ti ti-cube" aria-hidden="true"></i><span>Services</span></button>
-            <button data-view="routes" class="nav"><i class="ti ti-route" aria-hidden="true"></i><span>Routes</span></button>
             <button data-view="projects" class="nav"><i class="ti ti-folders" aria-hidden="true"></i><span>Projects</span></button>
+            <button data-view="services" class="nav"><i class="ti ti-cube" aria-hidden="true"></i><span>Services</span></button>
+            <button data-view="providers" class="nav"><i class="ti ti-database" aria-hidden="true"></i><span>Providers</span></button>
+            <button data-view="routes" class="nav"><i class="ti ti-route" aria-hidden="true"></i><span>Routes</span></button>
           </section>
           <section class="nav-group" data-admin-nav>
             <span>Govern</span>
-            <button data-view="keys" class="nav"><i class="ti ti-key" aria-hidden="true"></i><span>Keys</span></button>
-            <button data-view="guardrails" class="nav"><i class="ti ti-shield-check" aria-hidden="true"></i><span>Guardrails</span></button>
-            <button data-view="audit" class="nav"><i class="ti ti-file-search" aria-hidden="true"></i><span>Audit</span></button>
+            <button data-view="keys" class="nav"><i class="ti ti-key" aria-hidden="true"></i><span>Virtual keys</span></button>
+            <button data-view="guardrails" class="nav"><i class="ti ti-shield-check" aria-hidden="true"></i><span>Policies &amp; guardrails</span></button>
+            <button data-view="members" class="nav"><i class="ti ti-users" aria-hidden="true"></i><span>People &amp; identities</span></button>
+            <button data-view="audit" class="nav"><i class="ti ti-file-search" aria-hidden="true"></i><span>Audit log</span></button>
             <button data-view="settings" class="nav"><i class="ti ti-settings" aria-hidden="true"></i><span>Settings</span></button>
-            <button data-view="members" class="nav"><i class="ti ti-users" aria-hidden="true"></i><span>Members</span></button>
-            <button data-view="managed-identities" class="nav"><i class="ti ti-id-badge-2" aria-hidden="true"></i><span>Managed identities</span></button>
+            <button data-view="managed-identities" class="nav" hidden><i class="ti ti-id-badge-2" aria-hidden="true"></i><span>Managed identities</span></button>
           </section>
           <section class="nav-group" data-owner-nav>
             <span>Owner</span>
@@ -107,7 +107,7 @@
         <div class="sidebar-actions">
           <button id="rotate-token" class="danger" data-break-glass-only><i class="ti ti-refresh" aria-hidden="true"></i><span>Rotate token</span></button>
           <button id="sign-out"><i class="ti ti-logout" aria-hidden="true"></i><span>Sign out</span></button>
-          <div class="session-context" aria-label="Current environment">
+          <div class="session-context" aria-label="Current session">
             <span class="environment-dot" aria-hidden="true"></span>
             <span><strong id="session-name">Local</strong><small id="session-role">Portal session</small></span>
           </div>
@@ -120,7 +120,8 @@
             <button id="nav-toggle" class="icon-button" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">
               <i class="ti ti-menu-2" aria-hidden="true"></i>
             </button>
-            <div class="breadcrumbs" aria-label="Breadcrumb">
+            <span id="scope-context">Workspace</span><label class="project-scope-control"><span class="sr-only">Project scope</span><select id="project-scope"><option value="">All projects</option></select></label>
+            <div class="breadcrumbs" aria-label="Breadcrumb" hidden>
               <span id="breadcrumb-domain">Monitor</span>
               <i class="ti ti-chevron-right" aria-hidden="true"></i>
               <strong id="breadcrumb-title">Overview</strong>
@@ -128,12 +129,12 @@
           </div>
           <button id="command-trigger" class="command-trigger" type="button" aria-haspopup="dialog">
             <i class="ti ti-search" aria-hidden="true"></i>
-            <span>Search or run command…</span>
+            <span>Jump to a page…</span>
             <kbd>⌘K</kbd>
           </button>
           <div class="global-end">
             <label id="workspace-control" class="workspace-control hidden"><span class="sr-only">Workspace</span><select id="workspace-select"><option value="admin">Admin</option><option value="owner">Owner</option></select></label>
-            <span class="environment-chip"><span class="environment-dot" aria-hidden="true"></span>Local</span>
+
             <span id="last-refreshed" class="last-refreshed">Not refreshed</span>
             <button id="refresh" class="icon-button" type="button" aria-label="Refresh current view">
               <i class="ti ti-refresh" aria-hidden="true"></i>
@@ -146,7 +147,8 @@
             <h2 id="view-title">Overview</h2>
             <p id="view-summary" class="view-summary">Gateway posture, traffic, and service availability.</p>
           </div>
-          <div class="governed-change">
+          <div id="page-actions" class="actions"></div>
+          <div class="governed-change" hidden>
             <button id="governed-change-trigger" class="primary" type="button" aria-expanded="false" aria-controls="governed-change-menu">
               <i class="ti ti-plus" aria-hidden="true"></i>
               <span>New governed change</span>

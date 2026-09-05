@@ -4,13 +4,13 @@ Monitor → Traffic shows live request timelines, failure reasons and saved hist
 
 The admin portal is a static operator console embedded in `gateway-api`. It is served from the control listener at `/admin-ui` and calls the same `/admin-ui/admin/*` APIs used by automation.
 
-For a current-branch tour of the current Admin UI 2.0 redesign and
+For a current-branch tour of the current Admin UI 3.0 redesign and
 related governance, provider intelligence, usage analytics, and supply-chain
 features, see [Current Feature Highlights](current-features.md).
 
 ## Frontend Source
 
-Admin UI 2.0 source files live in
+Admin UI 3.0 source files live in
 `crates/gateway-api/admin-ui`. Build the Vite/TypeScript source into the static
 assets embedded by `gateway-api` with:
 
@@ -24,17 +24,38 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.31` Admin UI 2.0 shell uses the Aurora Teal visual system and groups
-operator work into Monitor, Discover, and Govern navigation domains. Monitor
-contains the live operational Overview, health, usage, and debug workflows;
-Discover contains providers, services, routes, and projects; Govern contains
-keys, guardrails, audit, and settings. Hash-backed navigation supports deep
-links and browser history without changing the `/admin-ui` server route.
-Command navigation and governed-change shortcuts help operators move directly
-to common workflows, while responsive drawer navigation and accessible dialogs
-preserve the same capabilities on narrower screens. The source package owns
-design-system tokens, view metadata, templates, and reusable components, while
-the generated asset paths stay stable for deployed gateways.
+The `v0.1.32` Admin UI 3.0 shell organizes navigation into Monitor, Discover,
+and Govern. Monitor contains Overview, Traffic, Usage & cost and Health;
+Discover contains Projects, Services, Providers and Routes; Govern contains
+Virtual keys, Policies & guardrails, People & identities, Audit log and Settings.
+Workload identity registration is available from People & identities → Workload
+identities. Use Jump to a page or the contextual page actions to begin work.
+
+Inventories precede creation forms. Create and edit actions open contextual
+drawers; closing a creation drawer retains its draft on that page. Leaving or
+refreshing a page with unsaved input requires a discard confirmation. Canceling
+also preserves the current workspace and project scope. Navigation waits for an
+in-flight write to finish.
+
+The project selector scopes Overview, Traffic, Usage, Projects and Virtual keys.
+Usage drilldowns carry the selected project/key, and changing projects clears
+incompatible key filters. Scope and Usage filters survive refresh in the URL.
+Readiness, current provider availability, gateway inventory and audit samples
+remain gateway-wide where labeled. Unknown project URLs stay exact; deleting a
+selected project returns its inventory to All projects.
+
+Overview separates current readiness from historical reliability. Reliability
+requires at least 20 requests, highlights rates from 5%, and marks rates from
+10% as high, choosing the strongest timeout/error/fallback signal. Expired,
+disabled and revoked keys do not count as active. Independent source failures
+show unavailable data or explicitly timestamped cached data; Retry refreshes
+those sources. Usage failures offer their own retry action.
+
+Usage breakdown tabs and request investigation drawers retain access to scoped
+results, exports and sanitized debug bundles. Traffic keeps its separate live
+instance stream and saved history. Hash navigation and the `/admin-ui` asset
+contract remain stable, including responsive navigation and keyboard focus
+restoration after dialogs close.
 
 The owner workspace includes service and project dashboards with incident charts for error rate and P95
 latency, bounded upstream service-version observations, all-request outcome and
@@ -43,12 +64,12 @@ drawer. Owner details remain exact-resource scoped and contain only sanitized
 usage metadata plus an optional redacted debug bundle. Project dashboards scope
 usage by persisted project attribution and add service-level breakdowns.
 
-![Aurora Teal operational Overview](assets/screenshots/admin-ui-2/aurora-teal-overview.png)
+![Admin UI 3.0 Overview with local fixture data](assets/screenshots/admin-ui-3/overview.png)
 
 On narrow screens, the same Monitor, Discover, and Govern structure moves into
 an accessible drawer without removing operator workflows.
 
-![Responsive Admin UI navigation drawer](assets/screenshots/admin-ui-2/aurora-teal-mobile-navigation.png)
+![Admin UI 3.0 on a narrow screen](assets/screenshots/admin-ui-3/mobile-overview.png)
 
 ## Authentication
 
@@ -107,7 +128,7 @@ http://127.0.0.1:8081/admin-ui
 Sign in with Microsoft Entra when an administrator membership already exists.
 For the first administrator, expand **Emergency operator access** and enter the
 bootstrap token from `GATEWAY_ADMIN_TOKEN` or the token printed on first
-startup. Use **Members** to approve the Entra identity and grant the Admin role,
+startup. Use **People & identities** to approve the Entra identity and grant the Admin role,
 then return to Entra for normal access.
 
 ![Admin portal sign-in form](assets/screenshots/admin-first-time-setup/01-admin-ui-sign-in.png)

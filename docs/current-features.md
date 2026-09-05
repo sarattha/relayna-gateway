@@ -2,29 +2,30 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.31` feature set.
+This page summarizes the `v0.1.32` feature set.
 
-Screenshots on this page use sanitized seeded demo data captured from a local
-Admin UI 2.0 rendering. They are meant to show workflow shape, not live
-customer, provider, token, or prompt data.
+The current console is **Admin UI 3.0**. Screenshots later in this feature
+catalog include historical UI 2.0 captures with sanitized local fixtures;
+see [Admin Portal](admin-portal.md) for current screenshots and navigation.
 
-## Admin UI 2.0
+## Admin UI 3.0
 
-Admin UI 2.0 turns the embedded portal into a compact operator console for
-governing AI traffic. The Aurora Teal redesign introduced in `v0.1.19` remains
-the visual foundation in `v0.1.31`, including a live Overview with usage
-charts, gateway posture, provider-health attention signals, recent operations,
-and governed-change shortcuts backed by existing Admin APIs. The UI is still
-served from
-`/admin-ui`, with the static asset contract preserved at `/admin-ui/app.js` and
-`/admin-ui/app.css`, but the source of truth is the Vite and TypeScript package
-in `crates/gateway-api/admin-ui`.
+The embedded console places inventories and monitoring results first. Creation
+and editing use contextual drawers; project scope follows Usage drilldowns and
+survives refresh. Request investigation keeps sanitized diagnostics beside the
+current workflow. Readiness, recorded reliability and key lifecycle states are
+separate, and failed sources offer explicit unavailable/stale states and retry.
 
-Administrator navigation is grouped by the operator jobs it supports:
+Administrator navigation is grouped by task:
 
-- Monitor: overview, health, traffic, usage, debug bundles, and operational status.
-- Discover: providers, services, routes, and projects.
-- Govern: keys, guardrails, audit, and settings.
+- Monitor: Overview, Traffic, Usage & cost, Health.
+- Discover: Projects, Services, Providers, Routes.
+- Govern: Virtual keys, Policies & guardrails, People & identities, Audit log,
+  Settings. Workload identities are a tab under People & identities.
+
+The Vite/TypeScript source remains in `crates/gateway-api/admin-ui`. Existing
+`/admin-ui`, `/admin-ui/app.js`, `/admin-ui/app.css`, admin and owner APIs,
+authorization and persisted schemas are preserved.
 
 ## Entra Portal and Resource Ownership
 
@@ -42,7 +43,7 @@ request `api://<application-id>/.default` and receive only `gateway.invoke` or
 `gateway.monitor.read` according to their service-to-service boundary.
 
 Administrators can assign exact service or project Owner and Viewer access from
-**Members** and can register managed identities for workload monitoring. Owners
+**People & identities** and can register managed identities for workload monitoring. Owners
 see only assigned resources in **My services**, **Service dashboard**, **My
 projects**, and **Project dashboard**. Project views include scoped usage,
 failures, sanitized request logs, service/endpoint/provider/model breakdowns,
@@ -237,7 +238,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.31` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.32` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -340,7 +341,7 @@ passthrough against a real `litellm/litellm` container.
 
 ## Memory-Safe Body Processing
 
-Release `0.1.31` bounds complete request and response buffering with one
+Release `0.1.32` retains bounds on complete request and response buffering with one
 process-wide admission controller. By default, at most eight managed requests
 or post-call responses may retain complete bodies, and their aggregate
 serialized reservations may not exceed 512 MiB. Operators can tune these
@@ -401,7 +402,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.31` release retains CI and release workflow hardening with strict
+The `v0.1.32` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

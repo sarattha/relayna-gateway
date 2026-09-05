@@ -1,14 +1,14 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.31` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.32` is the
 current release target.
 
-Version `0.1.31` adds Monitor → Traffic, authenticated live SSE, saved request
-history, upstream attempt timelines and metadata-only failure diagnostics.
-The additive migration creates `request_traffic` and adds usage `diagnostics`.
-Gateway-generated errors gain correlation headers; upstream response bodies and
-existing CSV columns stay compatible. See [Traffic Monitor](operations/traffic-monitor.md)
-for retention, multi-instance scope and database outage behavior.
+Version `0.1.32` introduces Admin UI 3.0 with contextual drawers, persistent
+project scope, request investigation, and corrected readiness, reliability,
+key lifecycle and asynchronous navigation behavior. It preserves released
+backend routes, authorization, schemas and embedded asset paths; no new
+migration is required. Existing Traffic history and diagnostics remain available.
+See [Admin Portal](admin-portal.md) for the updated operator workflow.
 
 It retains the `0.1.26` single-application Entra contract,
 Entra-authenticated browser sessions for administrators
@@ -22,7 +22,7 @@ The portal confidential client uses certificate-backed PS256
 first-admin bootstrap is bound to tenant, immutable object ID, and email.
 Existing operator tokens remain available for emergency access. It retains
 endpoint-level failure monitoring, body admission, OpenAPI endpoint billing,
-persisted timeout handling, the Aurora Teal Admin UI 2.0 shell, policy
+persisted timeout handling, the Admin UI 3.0 shell, policy
 governance, provider intelligence, supply-chain hardening, LiteLLM passthrough
 and credential mapping, and opt-in Entra ID and Apigee front-door authorization.
 See
@@ -41,7 +41,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.31
+   python3 scripts/validate-release-metadata.py v0.1.32
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -59,15 +59,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.31 .
+   docker build -t relayna-gateway:0.1.32 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.31 -m "Release v0.1.31"
-   git push origin v0.1.31
+   git tag -a v0.1.32 -m "Release v0.1.32"
+   git push origin v0.1.32
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -77,10 +77,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.31`, the workflow publishes:
+For `v0.1.32`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.31
+ghcr.io/sarattha/relayna-gateway:0.1.32
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

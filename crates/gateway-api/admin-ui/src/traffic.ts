@@ -51,8 +51,8 @@ const reasons = {
   invalid_virtual_key: "The virtual key could not be authenticated.",
 };
 
-export function mountTraffic({ content, api, headers, esc, attr, table, badge, time }) {
-  let rows = [], cursor = null, instance = "Connecting", selected = null, filters = {};
+export function mountTraffic({ content, api, headers, esc, attr, table, badge, time, mountDialog, initialFilters = {}, onFilters = () => {} }) {
+  let rows = [], cursor = null, instance = "Connecting", selected = null, filters = { ...initialFilters };
   let mode = "live", paused = false, disposed = false, controller = null, reconnect = null;
   let warning = "", historyCursor = null, historyGeneration = 0, connectionGeneration = 0;
   content.innerHTML = `
@@ -79,7 +79,12 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     <section class="panel"><div class="panel-heading"><h3>Requests</h3><div id="traffic-pages" class="actions hidden"><button id="traffic-newest">Newest</button><button id="traffic-older">Older</button></div></div>
       <p id="traffic-summary" class="help"></p><div id="traffic-failure-groups" class="actions"></div><div id="traffic-rows"></div></section>
     <section id="traffic-detail" class="panel hidden" tabindex="-1"></section>`;
-  const element = (id) => content.querySelector(`#${id}`);
+  let detailBackdrop = null, closeDetail = null;
+  const element = (id) => content.querySelector(`#${id}`) || detailBackdrop?.querySelector(`#${id}`);
+  for (const [name, value] of Object.entries(filters)) {
+    const field = element("traffic-filters").elements.namedItem(name);
+    if (field) field.value = value;
+  }
   const label = (value) => (value || "unknown").replaceAll("_", " ");
   function connection(message) {
     if (disposed) return;
@@ -113,15 +118,31 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
         `<button type="button" data-traffic-id="${attr(row.id)}">Inspect</button>`,
       ]));
     element("traffic-rows").querySelectorAll("[data-traffic-id]").forEach((button) => button.addEventListener("click", () => {
-      selected = button.dataset.trafficId; renderDetail(); element("traffic-detail").focus({ preventScroll: true });
+      selected = button.dataset.trafficId; openDetail();
     }));
+    renderDetail();
+  }
+  function openDetail() {
+    if (!detailBackdrop) {
+      const detail = element("traffic-detail");
+      detailBackdrop = document.createElement("section");
+      detailBackdrop.className = "modal-backdrop drawer-backdrop";
+      detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-label="Request investigation"><div class="drawer-body"></div></div>`;
+      detailBackdrop.querySelector(".drawer-body").appendChild(detail);
+      document.body.appendChild(detailBackdrop);
+      closeDetail = mountDialog(detailBackdrop, { restoreFocus: () =>
+        [...content.querySelectorAll("[data-traffic-id]")].find((button) => button.dataset.trafficId === selected) || element("traffic-mode"), onClose: () => {
+        selected = null; detail.classList.add("hidden"); content.appendChild(detail); detailBackdrop = null; closeDetail = null;
+      } });
+    }
     renderDetail();
   }
   function renderDetail() {
     const row = rows.find((value) => value.id === selected);
     const detail = element("traffic-detail");
     detail.classList.toggle("hidden", !row);
-    if (!row) return;
+    if (!row) { closeDetail?.(); return; }
+    const restoreCloseFocus = document.activeElement?.id === "traffic-close";
     const d = row.diagnostics;
     detail.innerHTML = `<div class="panel-heading"><h3>Request details</h3><button type="button" id="traffic-close">Close</button></div>
       <p><code>${esc(row.request_id)}</code> · Instance <code>${esc(row.instance_id)}</code></p>
@@ -134,7 +155,8 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
       <dt>Recording failures</dt><dd>${esc(row.recording_failures.join(", ") || "None reported")}</dd></dl>
       ${row.timeline_truncated ? '<p class="notice">Earlier timeline steps were discarded at the retention limit.</p>' : ""}
       ${table(["Elapsed", "Attempt", "Stage", "Reason", "Upstream HTTP"], row.timeline.map((step) => [`${esc(step.elapsed_ms)} ms`, esc(step.attempt), esc(label(step.stage)), esc(step.code || "—"), esc(step.upstream_status ?? "—")]))}`;
-    element("traffic-close").addEventListener("click", () => { selected = null; renderDetail(); });
+    element("traffic-close").addEventListener("click", () => closeDetail?.());
+    if (restoreCloseFocus) element("traffic-close").focus();
   }
   function stopConnection() { connectionGeneration++; controller?.abort(); controller = null; clearTimeout(reconnect); }
   async function connect() {
@@ -171,6 +193,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
   }
   async function history(older = false) {
     const generation = ++historyGeneration;
+    rows = []; selected = null; render();
     connection("Loading saved history");
     try {
       const query = new URLSearchParams({ limit: "100" });
@@ -188,7 +211,8 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     } catch (error) { if (!disposed && generation === historyGeneration) { warning = `History unavailable: ${error.message}`; connection("History unavailable"); render(); } }
   }
   element("traffic-filters").addEventListener("submit", (event) => {
-    event.preventDefault(); filters = Object.fromEntries(new FormData(event.currentTarget));
+    event.preventDefault(); filters = Object.fromEntries(new FormData(event.currentTarget)); onFilters(filters);
+    event.currentTarget.elements.namedItem("key_id").value = filters.key_id || "";
     if (mode === "history") history(); else render();
   });
   element("traffic-mode").addEventListener("change", (event) => {
@@ -212,5 +236,5 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     }
   }, 1000);
   render(); connect();
-  return () => { disposed = true; historyGeneration++; clearInterval(elapsedTimer); stopConnection(); };
+  return () => { closeDetail?.(); disposed = true; historyGeneration++; clearInterval(elapsedTimer); stopConnection(); };
 }

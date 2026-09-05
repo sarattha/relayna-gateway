@@ -4,7 +4,7 @@ This file defines repository-local UI implementation guidance for agents and
 contributors. Use it with `AGENTS.md` when changing the Admin UI or adding
 operator-facing frontend screens.
 
-## Admin UI 2.0 Design System
+## Admin UI 3.0 Design System
 
 Use this skill whenever work touches:
 
@@ -17,17 +17,17 @@ Use this skill whenever work touches:
 
 ### Design Intent
 
-Admin UI 2.0 is an operator console for governing AI traffic, not a marketing
+Admin UI 3.0 is an operator console for governing AI traffic, not a marketing
 site. The interface should be dense, calm, scannable, and optimized for repeat
 operations.
 
 The system borrows product concepts from Boomi-style API governance without
 copying Boomi branding:
 
-- **Monitor**: overview, health, usage, debug bundles, status changes.
-- **Discover**: providers, services, routes, projects, catalog and route
-  visibility.
-- **Govern**: keys, policy, guardrails, settings, scopes, standards, and risk.
+- **Monitor**: Overview, Traffic, Usage & cost, Health and request investigation.
+- **Discover**: Projects, Services, Providers and Routes.
+- **Govern**: Virtual keys, Policies & guardrails, People & identities, Audit log
+  and Settings. Workload identities remain a tab under People & identities.
 
 ### Source and Build Contract
 
@@ -61,7 +61,7 @@ belongs in `crates/gateway-api/admin-ui/`.
 
 ### Component Rules
 
-Use existing Admin UI 2.0 tokens and component classes before adding new ones:
+Use existing Admin UI 3.0 tokens and component classes before adding new ones:
 
 - Tokens in `src/design-system/tokens.css`: `--rg-color-*`, `--rg-status-*`,
   `--rg-space-*`, `--rg-radius-*`, `--rg-shadow-*`, and `--rg-focus-ring`.
@@ -80,6 +80,18 @@ Add new helper functions under `src/design-system/` only when at least two
 views need the same structure or status semantics.
 
 ### Interaction and Security Rules
+
+- Put inventories/results before creation forms; use contextual drawers without
+  cloning bound forms or losing input on close/reopen.
+- Commit workspace and scope changes only after navigation is accepted. Preserve
+  drafts and filters on Cancel; guard navigation while writes are pending.
+- Keep global project scope, Usage project/key filters, and Traffic filters
+  consistent. Clear incompatible key filters when the project changes.
+- Treat readiness and current availability separately from historical reliability.
+  Use shared lifecycle/reliability helpers, sampled rates and explicit stale or
+  unavailable states. Never label failed fetches as zero activity or healthy.
+- Keep request investigation in accessible drawers, trap focus and restore it to
+  the originating control. Wide tables retain horizontal scrolling.
 
 - Preserve all existing `/admin-ui/admin/*` API routes and response assumptions
   unless the task explicitly changes backend behavior and passes compatibility
@@ -100,7 +112,8 @@ views need the same structure or status semantics.
 - Use status badges and status colors consistently:
   - `good` for healthy, enabled, configured, active, success.
   - `bad` for missing, failed, disabled, revoked, expired, timeout, degraded.
-  - `warn` for unknown, pending, fallback, opt-in, default.
+  - `warn` for elevated recorded rates, pending or opt-in states.
+  - `neutral` for insufficient samples and informational states.
 - Do not add decorative hero sections, gradient-only pages, nested cards, or
   oversized marketing layout patterns.
 - Keep text inside controls from wrapping awkwardly or overflowing.

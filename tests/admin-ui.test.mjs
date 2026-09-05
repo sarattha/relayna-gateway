@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import "./admin-ui-dialog.test.mjs";
+import { reliability } from "./admin-ui-monitoring.test.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -44,12 +46,12 @@ test("admin portal shell exposes all release-critical views", () => {
   }
   assert.match(
     html,
-    /data-view="overview"[\s\S]*data-view="health"[\s\S]*data-view="usage"[\s\S]*data-view="providers"[\s\S]*data-view="services"[\s\S]*data-view="routes"[\s\S]*data-view="projects"[\s\S]*data-view="keys"[\s\S]*data-view="guardrails"[\s\S]*data-view="audit"[\s\S]*data-view="settings"/,
+    /data-view="overview"[\s\S]*data-view="traffic"[\s\S]*data-view="usage"[\s\S]*data-view="health"[\s\S]*data-view="projects"[\s\S]*data-view="services"[\s\S]*data-view="providers"[\s\S]*data-view="routes"[\s\S]*data-view="keys"[\s\S]*data-view="guardrails"[\s\S]*data-view="audit"[\s\S]*data-view="settings"/,
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.31/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.31/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.32/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.32/);
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
@@ -666,7 +668,7 @@ test("global overlays stay above sticky shell chrome on every view", () => {
 });
 
 test("overview ignores clean provider health rows without a status field", () => {
-  const overviewRisks = Function(`return (${sourceFunction("overviewRisks")})`)();
+  const overviewRisks = Function("reliability", `return (${sourceFunction("overviewRisks")})`)(reliability);
   const cleanRow = {
     name: "clean-provider",
     request_count: 10,
@@ -675,7 +677,8 @@ test("overview ignores clean provider health rows without a status field", () =>
     fallback_count: 0,
   };
   assert.deepEqual(overviewRisks([cleanRow]), []);
-  assert.equal(overviewRisks([{ ...cleanRow, error_count: 1 }]).length, 1);
+  assert.equal(overviewRisks([{ ...cleanRow, error_count: 1 }]).length, 0);
+  assert.equal(overviewRisks([{ ...cleanRow, request_count: 20, error_count: 1 }]).length, 1);
 });
 
 test("top dialog selection is independent of later section elements", () => {
@@ -727,3 +730,122 @@ test("admin portal remains usable on narrow screens", () => {
   assert.match(css, /grid-template-columns: 1fr/);
   assert.match(css, /overflow-x: auto/);
 });
+
+// DOM clears currentTarget after dispatch; confirmation resumes asynchronously.
+for (const [handlerName, path] of [["deleteManagedIdentity", "managed-identities"], ["deleteManagedIdentityProject", "managed-identity-projects"]]) {
+  for (const confirmed of [true, false]) {
+    let settle;
+    const confirmation = new Promise((resolve) => { settle = resolve; });
+    const calls = [];
+    const handler = new Function("confirmAction", "api", "managedIdentities", `return async ${sourceFunction(handlerName)}`)(
+      () => confirmation, async (url, options) => calls.push({url, method:options.method}), async () => {},
+    );
+    const event = {currentTarget:{dataset:{identityId:"fixture-binding"}}};
+    const pending = handler(event);
+    event.currentTarget = null;
+    settle(confirmed);
+    await pending;
+    assert.deepEqual(calls, confirmed ? [{url:`/admin-ui/admin/${path}/fixture-binding`,method:"DELETE"}] : []);
+  }
+  console.log(`ok - ${handlerName} retains identity across confirmation and respects cancellation`);
+}
+
+function bindProjectScope(state) {
+  return new Function('state', `${sourceFunction('synchronizeProjectScope')}; return synchronizeProjectScope;`)(state);
+}
+
+const navigationSource = sourceJs.slice(sourceJs.indexOf('async function navigateToView('), sourceJs.indexOf('\nfunction syncNavigation('));
+for (const outcome of ['cancel', 'pending', 'accept']) {
+  const navState = {workspace:'admin',view:'projects',projectScope:'original',usageFilters:{project_id:'original',key_id:'original-key'}};
+  const oldState = structuredClone(navState);
+  const loc = {hash:'#/projects?project=original'};
+  let shellChanges = 0;
+  const env = {
+    state:navState, synchronizeProjectScope:bindProjectScope(navState), pendingWrites:outcome === 'pending' ? 1 : 0,
+    setNotice(){}, hasDirtyForms:()=>true, confirmAction:async()=>outcome === 'accept', clearDirtyForms(){},
+    viewIds:new Set(['usage']), viewAllowed:()=>true, resetUsagePagination(){}, configurePortalShell(){shellChanges++;},
+    monitoringHash:()=>`?project=${navState.projectScope}`, location:loc, history:{replaceState(){}},
+    syncNavigation(){}, closeNavigation(){}, closeGovernedMenu(){}, window:{scrollTo(){}}, refresh(){},
+  };
+  const navigate = new Function('env', `const {${Object.keys(env).join(',')}} = env; ${navigationSource}; return navigateToView;`)(env);
+  await navigate('usage',{monitoring:{projectScope:'requested',usageFilters:{project_id:'requested',key_id:'requested-key'}}});
+  if (outcome === 'accept') {
+    assert.equal(navState.projectScope,'requested');
+    assert.equal(navState.usageFilters.key_id,'requested-key');
+    assert.equal(loc.hash,'#/usage?project=requested');
+    assert.equal(shellChanges,1);
+  } else {
+    assert.deepEqual(navState,oldState);
+    assert.equal(loc.hash,'#/projects?project=original');
+    assert.equal(shellChanges,0);
+  }
+}
+console.log('ok - usage drilldown scope commits only after accepted navigation');
+
+for (const selected of ['deleted-project','another-project']) {
+  const projectState = {projectScope:selected,usageFilters:{project_id:selected,key_id:'key-filter'}};
+  const calls = [];
+  const action = new Function('state','confirmAction','api','setNotice','projects','resetUsagePagination','persistMonitoringHash','navigateToView','synchronizeProjectScope', `return async ${sourceFunction('projectAction')}`)(
+    projectState, async()=>true, async(path)=>calls.push(path), ()=>{}, async()=>{}, ()=>{}, ()=>{}, async()=>{}, bindProjectScope(projectState),
+  );
+  await action({currentTarget:{dataset:{projectAction:'delete',projectId:'deleted-project'}}});
+  assert.deepEqual(calls,['/admin-ui/admin/projects/deleted-project']);
+  assert.equal(projectState.projectScope,selected === 'deleted-project' ? '' : selected);
+  assert.equal(projectState.usageFilters.key_id,selected === 'deleted-project' ? '' : 'key-filter');
+}
+console.log('ok - successful selected-project deletion clears its scope without clearing other selections');
+
+for (const newProject of ['original', 'next-project', '']) {
+  const filterState = {projectScope:'original',usageFilters:{project_id:'original',key_id:'old-key',status:'failure'}};
+  let resetCount = 0;
+  const apply = new Function('state','resetUsagePagination','syncProjectScope','persistMonitoringHash','synchronizeProjectScope', `${sourceFunction('applyTrafficFilters')}; return applyTrafficFilters;`)(filterState,()=>resetCount++,()=>{},()=>{},bindProjectScope(filterState));
+  const submitted = {project_id:newProject,key_id:'old-key',outcome:'failures'};
+  apply(submitted);
+  assert.equal(submitted.key_id,newProject === 'original' ? 'old-key' : '');
+  assert.equal(filterState.trafficFilters.key_id,submitted.key_id);
+  assert.equal(filterState.projectScope,newProject);
+  assert.equal(filterState.usageFilters.project_id,newProject);
+  assert.equal(filterState.usageFilters.key_id,newProject === 'original' ? 'old-key' : '');
+  assert.equal(filterState.usageFilters.status,'failure');
+  assert.equal(resetCount,newProject === 'original' ? 0 : 1);
+}
+console.log('ok - Traffic project changes synchronize Usage and discard cross-project key filters');
+
+for (const newProject of ['original', 'next-project', '']) {
+  const filterState = {projectScope:'original',usageFilters:{project_id:'original',key_id:'old-key'}};
+  const keyField = {value:'old-key'};
+  const form = {elements:{namedItem:()=>keyField}};
+  class TestFormData {
+    constructor() { return new Map([['project_id',newProject],['key_id',keyField.value],['status','failure']]); }
+  }
+  let loadedKey, persistedKey;
+  const apply = new Function('state','FormData','synchronizeProjectScope','persistMonitoringHash','syncProjectScope','resetUsagePagination','loadUsage', `return async ${sourceFunction('applyUsageFilters')}`)(
+    filterState,TestFormData,bindProjectScope(filterState),()=>{persistedKey=filterState.usageFilters.key_id;},()=>{},()=>{},async()=>{loadedKey=keyField.value;},
+  );
+  await apply({preventDefault(){},currentTarget:form,target:form});
+  const expectedKey = newProject === 'original' ? 'old-key' : '';
+  assert.equal(filterState.usageFilters.key_id,expectedKey);
+  assert.equal(persistedKey,expectedKey);
+  assert.equal(loadedKey,expectedKey);
+  assert.equal(filterState.usageFilters.status,'failure');
+}
+console.log('ok - Usage project submissions clear the key in saved filters, URL and queried form');
+
+const sharedScope = {projectScope:'old',usageFilters:{key_id:'old-key'},trafficFilters:{key_id:'old-key'}};
+bindProjectScope(sharedScope)('created-project');
+assert.equal(sharedScope.usageFilters.project_id,'created-project');
+assert.equal(sharedScope.trafficFilters.project_id,'created-project');
+assert.equal(sharedScope.usageFilters.key_id,'');
+assert.equal(sharedScope.trafficFilters.key_id,'');
+console.log('ok - shared project changes clear stale keys in both monitoring views');
+
+const ownerChartState = {overviewWindow:'7d',ownerDashboardFilters:{range:'6h'}};
+const ownerLabel = new Function('state', `${sourceFunction('ownerChartLabel')}; return ownerChartLabel;`)(ownerChartState);
+const ownerBuckets = [{bucket_start:'2026-09-05T08:00:00Z'},{bucket_start:'2026-09-05T09:00:00Z'}];
+assert.notEqual(ownerLabel(ownerBuckets[0]),ownerLabel(ownerBuckets[1]));
+ownerChartState.ownerDashboardFilters.range = '24h';
+assert.notEqual(ownerLabel(ownerBuckets[0]),ownerLabel(ownerBuckets[1]));
+ownerChartState.ownerDashboardFilters.range = '7d';
+ownerChartState.overviewWindow = '24h';
+assert.equal(ownerLabel(ownerBuckets[0]),ownerLabel(ownerBuckets[1]));
+console.log('ok - owner chart label granularity follows the owner range independently of admin range');
