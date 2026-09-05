@@ -98,28 +98,7 @@ function mergeTrafficRows(rows, batch, limit = 200) {
 function matchesTraffic(row, filters) {
   return (!filters.request_id || row.request_id.includes(filters.request_id)) && (!filters.service || row.service === filters.service) && (!filters.project_id || row.project_id === filters.project_id) && (!filters.key_id || row.key_id === filters.key_id) && (!filters.failure_code || row.diagnostics.failure_code === filters.failure_code) && (!filters.status || String(row.client_status) === filters.status) && (filters.outcome !== "failures" || Boolean(row.diagnostics.failure_code)) && (filters.outcome !== "active" || !row.completed);
 }
-const reasons = {
-  upstream_connection_refused: "The upstream refused the TCP connection. Check that the service is listening and its endpoint is correct.",
-  upstream_no_route: "The gateway could not route a connection to the upstream network.",
-  upstream_tls_handshake_failed: "The TLS handshake with the upstream failed.",
-  upstream_certificate_invalid: "The upstream certificate could not be validated.",
-  upstream_connection_closed: "The upstream connection closed before the response completed.",
-  upstream_write_failed: "Writing the request to the upstream failed.",
-  upstream_protocol_error: "The upstream returned an invalid HTTP response.",
-  control_state_unavailable: "The gateway could not access control state for rate limits or budgets.",
-  gateway_overloaded: "Gateway body-processing capacity was exhausted.",
-  store_unavailable: "The gateway could not access required database state.",
-  upstream_timeout: "The upstream operation timed out.",
-  upstream_transport_error: "The upstream connection or transfer failed. Inspect the attempt timeline.",
-  upstream_connection_error: "The gateway could not establish the upstream connection.",
-  upstream_http_error: "The upstream service returned an error response.",
-  client_disconnected: "The client connection closed before the request finished.",
-  response_not_delivered: "No response headers were confirmed as sent to the client.",
-  policy_denied: "Gateway policy denied this request.",
-  missing_authorization: "The request did not include the required authorization.",
-  invalid_virtual_key: "The virtual key could not be authenticated."
-};
-function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: attr2, table: table2, badge: badge2, time: time2, mountDialog: mountDialog2, initialFilters = {}, onFilters = () => {
+function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: attr2, table: table2, badge: badge2, time: time2, mountDialog: mountDialog2, investigationView: investigationView2, bindInvestigationActions: bindInvestigationActions2, initialFilters = {}, onFilters = () => {
 } }) {
   let rows = [], cursor = null, instance = "Connecting", selected = null, filters = { ...initialFilters };
   let mode = "live", paused = false, disposed = false, controller = null, reconnect = null;
@@ -148,7 +127,7 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
     <section class="panel"><div class="panel-heading"><h3>Requests</h3><div id="traffic-pages" class="actions hidden"><button id="traffic-newest">Newest</button><button id="traffic-older">Older</button></div></div>
       <p id="traffic-summary" class="help"></p><div id="traffic-failure-groups" class="actions"></div><div id="traffic-rows"></div></section>
     <section id="traffic-detail" class="panel hidden" tabindex="-1"></section>`;
-  let detailBackdrop = null, closeDetail = null;
+  let detailBackdrop = null, closeDetail = null, renderedDetailRow = null;
   const element = (id) => content2.querySelector(`#${id}`) || (detailBackdrop == null ? void 0 : detailBackdrop.querySelector(`#${id}`));
   for (const [name, value] of Object.entries(filters)) {
     const field = element("traffic-filters").elements.namedItem(name);
@@ -202,21 +181,23 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
       const detail = element("traffic-detail");
       detailBackdrop = document.createElement("section");
       detailBackdrop.className = "modal-backdrop drawer-backdrop";
-      detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-label="Request investigation"><div class="drawer-body"></div></div>`;
+      detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="traffic-investigation-title"><div class="drawer-heading"><h3 id="traffic-investigation-title">Request investigation</h3><button type="button" id="traffic-close" aria-label="Close Request investigation">Close</button></div><div class="drawer-body"></div></div>`;
       detailBackdrop.querySelector(".drawer-body").appendChild(detail);
       document.body.appendChild(detailBackdrop);
       closeDetail = mountDialog2(detailBackdrop, { restoreFocus: () => [...content2.querySelectorAll("[data-traffic-id]")].find((button) => button.dataset.trafficId === selected) || element("traffic-mode"), onClose: () => {
         selected = null;
+        renderedDetailRow = null;
         detail.classList.add("hidden");
         content2.appendChild(detail);
         detailBackdrop = null;
         closeDetail = null;
       } });
+      element("traffic-close").addEventListener("click", () => closeDetail == null ? void 0 : closeDetail());
     }
     renderDetail();
   }
   function renderDetail() {
-    var _a2;
+    var _a2, _b, _c, _d;
     const row = rows.find((value) => value.id === selected);
     const detail = element("traffic-detail");
     detail.classList.toggle("hidden", !row);
@@ -224,21 +205,16 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
       closeDetail == null ? void 0 : closeDetail();
       return;
     }
-    const restoreCloseFocus = ((_a2 = document.activeElement) == null ? void 0 : _a2.id) === "traffic-close";
-    const d = row.diagnostics;
-    detail.innerHTML = `<div class="panel-heading"><h3>Request details</h3><button type="button" id="traffic-close">Close</button></div>
-      <p><code>${esc2(row.request_id)}</code> · Instance <code>${esc2(row.instance_id)}</code></p>
-      <p>${esc2(reasons[d.failure_code] || (d.failure_code ? `Request failed: ${label(d.failure_code)}.` : row.completed ? "Request completed." : "Request is in progress."))}</p>
-      <dl class="traffic-facts"><dt>Failure source / stage</dt><dd>${esc2(label(d.failure_source || "none"))} / ${esc2(label(d.failure_stage || "none"))}</dd>
-      <dt>Client / upstream status</dt><dd>${esc2(row.client_status ?? "Not confirmed")} / ${esc2(d.upstream_status ?? "No response")}</dd>
-      <dt>Upstream attempts</dt><dd>${esc2(row.attempts)}${row.attempts === 0 ? " · No upstream connection attempted" : d.upstream_status ? " · Upstream response received" : " · Upstream application receipt is unconfirmed"}</dd>
-      <dt>Project / key</dt><dd>${esc2(row.project_id || "Unknown")} / ${esc2(row.key_id || "Unauthenticated or passthrough")}</dd>
-      <dt>Stream / outcome</dt><dd>${row.streaming ? "Streaming" : "Not identified as a stream"} / ${esc2(label(d.outcome || "in progress"))}</dd>
-      <dt>Recording failures</dt><dd>${esc2(row.recording_failures.join(", ") || "None reported")}</dd></dl>
-      ${row.timeline_truncated ? '<p class="notice">Earlier timeline steps were discarded at the retention limit.</p>' : ""}
-      ${table2(["Elapsed", "Attempt", "Stage", "Reason", "Upstream HTTP"], row.timeline.map((step) => [`${esc2(step.elapsed_ms)} ms`, esc2(step.attempt), esc2(label(step.stage)), esc2(step.code || "—"), esc2(step.upstream_status ?? "—")]))}`;
-    element("traffic-close").addEventListener("click", () => closeDetail == null ? void 0 : closeDetail());
-    if (restoreCloseFocus) element("traffic-close").focus();
+    if (row === renderedDetailRow) return;
+    renderedDetailRow = row;
+    const copyFocus = detail.contains(document.activeElement) ? (_b = (_a2 = document.activeElement) == null ? void 0 : _a2.dataset) == null ? void 0 : _b.investigationCopy : null;
+    const rawFocus = document.activeElement === detail.querySelector("[data-investigation-section=raw] > summary");
+    const rawOpen = (_c = detail.querySelector("[data-investigation-section=raw]")) == null ? void 0 : _c.open;
+    detail.innerHTML = investigationView2({ traffic: row });
+    if (rawOpen) detail.querySelector("[data-investigation-section=raw]").open = true;
+    bindInvestigationActions2(detail, row.request_id);
+    if (copyFocus) (_d = [...detail.querySelectorAll("[data-investigation-copy]")].find((button) => button.dataset.investigationCopy === copyFocus)) == null ? void 0 : _d.focus({ preventScroll: true });
+    if (rawFocus) detail.querySelector("[data-investigation-section=raw] > summary").focus({ preventScroll: true });
   }
   function stopConnection() {
     connectionGeneration++;
@@ -374,6 +350,118 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
     clearInterval(elapsedTimer);
     stopConnection();
   };
+}
+function investigationUsageSnapshot(usage2) {
+  if (!usage2) return null;
+  const fields = ["request_id", "key_id", "project_id", "route", "model", "provider", "status", "status_code", "latency_ms", "input_tokens", "output_tokens", "total_tokens", "estimated_cost_usd", "cost_source", "cost_mode", "pricing_rule_name", "service_name", "service_version", "http_method", "endpoint_template", "task_id", "run_id", "trace_id", "fallback_count", "created_at", "diagnostics"];
+  return Object.fromEntries(fields.filter((field) => field in usage2).map((field) => [field, usage2[field]]));
+}
+function timingValue(attempt, field) {
+  const value = attempt[field];
+  if (field === "dns_us" && attempt.dns_status === "ip_literal") return "Not needed · IP address";
+  if (["tcp_connect_us", "tls_handshake_us"].includes(field) && attempt.connection_reused === true) return "Reused connection";
+  if (field === "tls_handshake_us" && attempt.tls === false) return "Not used · HTTP";
+  if (value == null || !Number.isFinite(value) || value < 0) return "Not recorded";
+  return `${field.endsWith("_us") ? (value / 1e3).toLocaleString(void 0, { maximumFractionDigits: 3 }) : value.toLocaleString()} ms`;
+}
+function matchTrafficRecord(rows, usage2) {
+  var _a2;
+  const id = (_a2 = usage2 == null ? void 0 : usage2.diagnostics) == null ? void 0 : _a2.traffic_id;
+  if (!id) return null;
+  return rows.find((row) => row.id === id && row.request_id === usage2.request_id && row.key_id === usage2.key_id && row.project_id === usage2.project_id) || null;
+}
+function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle = null, notice = "" }, { esc: esc2, table: table2, time: time2, projects: projects2 = [] }) {
+  var _a2, _b, _c;
+  usage2 = investigationUsageSnapshot((traffic == null ? void 0 : traffic.usage) || usage2);
+  bundle = (traffic == null ? void 0 : traffic.debug_bundle) || bundle;
+  const d = (traffic == null ? void 0 : traffic.diagnostics) || (usage2 == null ? void 0 : usage2.diagnostics) || {};
+  const requestId = (traffic == null ? void 0 : traffic.request_id) || (usage2 == null ? void 0 : usage2.request_id) || (bundle == null ? void 0 : bundle.request_id) || "Unknown request";
+  const status = (traffic == null ? void 0 : traffic.client_status) ?? (usage2 == null ? void 0 : usage2.status_code);
+  const failed = Boolean(d.failure_code) || status >= 400 || (usage2 == null ? void 0 : usage2.status) === "failure";
+  const outcome = failed ? "Failed" : (traffic == null ? void 0 : traffic.completed) === false ? "In progress" : status != null ? "Completed" : "Outcome not recorded";
+  const text = (value) => esc2(value == null || value === "" ? "Not recorded" : String(value));
+  const label = (value) => value ? String(value).replaceAll("_", " ") : "Not recorded";
+  const facts = (rows) => `<dl class="investigation-facts">${rows.map(([name, value]) => `<div><dt>${esc2(name)}</dt><dd>${text(value)}</dd></div>`).join("")}</dl>`;
+  const section = (title, content2) => `<section class="investigation-section"><h4>${esc2(title)}</h4>${content2}</section>`;
+  const projectId = (traffic == null ? void 0 : traffic.project_id) ?? (usage2 == null ? void 0 : usage2.project_id) ?? (bundle == null ? void 0 : bundle.project_id);
+  const project = projects2.find((p) => p.id === projectId);
+  const duration = (traffic == null ? void 0 : traffic.elapsed_ms) ?? (usage2 == null ? void 0 : usage2.latency_ms);
+  const reasons = {
+    upstream_connection_refused: "The upstream refused the TCP connection. Check that the service is listening and its endpoint is correct.",
+    upstream_no_route: "The gateway could not route a connection to the upstream network.",
+    upstream_certificate_invalid: "The upstream certificate could not be validated.",
+    upstream_connection_closed: "The upstream connection closed before the response completed.",
+    upstream_write_failed: "Writing the request to the upstream failed.",
+    upstream_protocol_error: "The upstream returned an invalid HTTP response.",
+    control_state_unavailable: "The gateway could not access control state for rate limits or budgets.",
+    gateway_overloaded: "Gateway body-processing capacity was exhausted.",
+    store_unavailable: "The gateway could not access required database state.",
+    upstream_transport_error: "The upstream connection or transfer failed. Inspect the attempt timeline.",
+    client_disconnected: "The client connection closed before the request finished.",
+    response_not_delivered: "No response headers were confirmed as sent to the client.",
+    invalid_virtual_key: "The virtual key could not be authenticated. Check that the client uses the intended key and that it is active and unexpired.",
+    missing_authorization: "No supported authorization was supplied. Check the client's configured key header.",
+    policy_denied: "Gateway policy denied this request. Inspect the recorded policy and the requested route or model.",
+    rate_limited: "A configured request or token limit was reached. Check the key's limits before retrying.",
+    budget_exceeded: "The request exceeded its configured budget. Check the key's budget and recorded usage.",
+    upstream_timeout: "The upstream operation timed out. Compare DNS, connection, TLS and response timings with the configured timeout.",
+    upstream_tls_handshake_failed: "The TLS handshake failed. Check the upstream hostname, certificate chain and TLS configuration.",
+    upstream_connection_error: "The upstream connection failed. Check name resolution and network reachability.",
+    upstream_http_error: "The upstream returned an error response. Inspect its HTTP status and the attempt timeline."
+  };
+  const note = d.failure_code ? reasons[d.failure_code] || `Request failed: ${label(d.failure_code)}. Inspect the failure stage and attempt timeline.` : (traffic == null ? void 0 : traffic.completed) === false ? "This request is still running. Measurements appear as stages complete." : "";
+  const traceList = (entries, empty) => (entries == null ? void 0 : entries.length) ? `<ul class="investigation-trace">${entries.map((v) => `<li>${text(v)}</li>`).join("")}</ul>` : `<p class="help">${esc2(empty)}</p>`;
+  const attempts = (traffic == null ? void 0 : traffic.upstream_timings) || [];
+  const raw = { traffic, usage: usage2, debug_bundle: bundle };
+  return `<div class="request-investigation">
+    <div class="investigation-identity"><span class="badge ${failed ? "bad" : status != null ? "good" : "neutral"}">${esc2(outcome)}</span><strong>${esc2(requestId)}</strong></div>
+    <div class="actions investigation-actions"><button type="button" data-investigation-copy="id">Copy request ID</button><button type="button" data-investigation-copy="diagnostics">Copy sanitized diagnostics</button><span class="help" data-investigation-copy-status role="status"></span></div>
+    ${notice ? `<p class="notice">${esc2(notice)}</p>` : ""}
+    ${note ? `<p class="notice ${failed ? "bad" : ""}">${esc2(note)}</p>` : ""}
+    <div class="investigation-metrics">${[["Client HTTP", status ?? (traffic ? "Not confirmed" : null)], ["Upstream HTTP", d.upstream_status ?? ((traffic == null ? void 0 : traffic.attempts) === 0 ? "Not attempted" : null)], ["Total duration", duration == null ? null : `${duration.toLocaleString()} ms`], ["Upstream attempts", traffic == null ? void 0 : traffic.attempts]].map(([name, value]) => `<div><span>${esc2(name)}</span><strong>${text(value)}</strong></div>`).join("")}</div>
+    ${section("Request context", facts([
+    [traffic ? "Started" : "Recorded", (traffic == null ? void 0 : traffic.started_at) || (usage2 == null ? void 0 : usage2.created_at) || (bundle == null ? void 0 : bundle.created_at) ? time2((traffic == null ? void 0 : traffic.started_at) || (usage2 == null ? void 0 : usage2.created_at) || (bundle == null ? void 0 : bundle.created_at)) : null],
+    ["Method / endpoint", [(traffic == null ? void 0 : traffic.method) || (usage2 == null ? void 0 : usage2.http_method), (traffic == null ? void 0 : traffic.endpoint) || (usage2 == null ? void 0 : usage2.endpoint_template) || (usage2 == null ? void 0 : usage2.route) || (bundle == null ? void 0 : bundle.route)].filter(Boolean).join(" ")],
+    ["Model", usage2 == null ? void 0 : usage2.model],
+    ["Provider", traffic ? traffic.provider || "Not selected" : (usage2 == null ? void 0 : usage2.provider) || (bundle == null ? void 0 : bundle.provider)],
+    ["Project", project ? `${project.name} · ${project.id}` : projectId],
+    ["Service", (traffic == null ? void 0 : traffic.service) || (usage2 == null ? void 0 : usage2.service_name) || (bundle == null ? void 0 : bundle.service_name)],
+    ["Key", (traffic == null ? void 0 : traffic.key_prefix) ? `${traffic.key_prefix}… · ${traffic.key_id}` : (traffic == null ? void 0 : traffic.key_id) || (usage2 == null ? void 0 : usage2.key_id) || (traffic ? "Unauthenticated or passthrough" : null)],
+    ["Stream / outcome", traffic ? `${traffic.streaming ? "Streaming" : "Not identified as a stream"} · ${label(d.outcome || (traffic.completed ? "completed" : "in progress"))}` : null],
+    ["Failure source / stage", failed ? `${label(d.failure_source)} / ${label(d.failure_stage)}` : "No reported failure"],
+    ["Gateway instance", (traffic == null ? void 0 : traffic.instance_id) || d.instance_id],
+    ["Service version", usage2 == null ? void 0 : usage2.service_version],
+    ["Trace ID", (usage2 == null ? void 0 : usage2.trace_id) || (bundle == null ? void 0 : bundle.trace_id)],
+    ["Task / run", [usage2 == null ? void 0 : usage2.task_id, usage2 == null ? void 0 : usage2.run_id].filter(Boolean).join(" / ")]
+  ]))}
+    ${section("Network & response timing", attempts.length ? `<p class="help">DNS, TCP and TLS are phase durations. Headers, first body byte and first content token are measured from each attempt's start, including connection setup. Total duration above includes gateway and client delivery time.</p>${attempts.map((a) => `<article class="investigation-attempt"><h5>Attempt ${text(a.attempt)} · ${text(a.provider)}${a.connection_reused === true ? " · Reused connection" : a.connection_reused === false ? " · New connection" : ""}</h5>${facts([
+    ["DNS resolution", `${timingValue(a, "dns_us")}${["failed", "timeout"].includes(a.dns_status) ? ` · ${a.dns_status}` : ""}`],
+    ["TCP connect", timingValue(a, "tcp_connect_us")],
+    ["TLS handshake", timingValue(a, "tls_handshake_us")],
+    ["Response headers", timingValue(a, "response_headers_ms")],
+    ["First body byte", timingValue(a, "first_body_byte_ms")],
+    ["First content token", (traffic == null ? void 0 : traffic.streaming) ? timingValue(a, "first_token_ms") : "Not applicable · non-streaming"],
+    ["Attempt duration", timingValue(a, "total_ms")],
+    ["Upstream status / failure", [a.upstream_status, a.failure_code].filter((v) => v != null).join(" / ")]
+  ])}</article>`).join("")}${traffic.attempts > attempts.length ? '<p class="notice">Earlier attempt timings were discarded at the retention limit.</p>' : ""}` : `<p class="help">${(traffic == null ? void 0 : traffic.attempts) === 0 ? "No upstream connection was attempted." : "Network timings were not recorded for this request. Older records remain available without timing measurements."}</p>`)}
+    ${section("Event timeline", ((_a2 = traffic == null ? void 0 : traffic.timeline) == null ? void 0 : _a2.length) ? `${traffic.timeline_truncated ? '<p class="notice">Earlier timeline steps were discarded at the retention limit.</p>' : ""}${table2(["Elapsed", "Attempt", "Stage", "Reason", "Upstream HTTP"], traffic.timeline.map((step) => [`${text(step.elapsed_ms)} ms`, text(step.attempt), text(label(step.stage)), text(step.code ?? "—"), text(step.upstream_status ?? "—")]))}` : '<p class="help">No event timeline was recorded.</p>')}
+    ${section("Usage & cost", facts([["Input tokens", usage2 == null ? void 0 : usage2.input_tokens], ["Output tokens", usage2 == null ? void 0 : usage2.output_tokens], ["Total tokens", usage2 == null ? void 0 : usage2.total_tokens], ["Estimated cost · USD", (usage2 == null ? void 0 : usage2.estimated_cost_usd) == null ? null : `$${Number(usage2.estimated_cost_usd).toFixed(6)}`], ["Pricing source", usage2 == null ? void 0 : usage2.cost_source], ["Pricing rule", usage2 == null ? void 0 : usage2.pricing_rule_name]]))}
+    ${section("Policy & guardrails", `<h5>Policy decisions</h5>${traceList(bundle == null ? void 0 : bundle.policy_trace, "Policy decisions were not recorded.")}<h5>Guardrail executions</h5>${traceList(bundle == null ? void 0 : bundle.guardrail_trace, bundle ? "No guardrail executions were recorded in this snapshot." : "Guardrail execution details were not captured.")}`)}
+    ${section("Routing decisions", `${traceList(bundle == null ? void 0 : bundle.selection_trace, "Routing decisions were not recorded.")}${((_b = bundle == null ? void 0 : bundle.fallback_history) == null ? void 0 : _b.length) ? table2(["From", "To", "Reason"], bundle.fallback_history.map((a) => [text(a.from_provider), text(a.to_provider), text(a.reason)])) : '<p class="help">No fallback history was recorded.</p>'}`)}
+    ${((_c = traffic == null ? void 0 : traffic.recording_failures) == null ? void 0 : _c.length) ? `<p class="notice">Recording gaps: ${esc2(traffic.recording_failures.join(", "))}. This investigation may be incomplete.</p>` : ""}
+    <details class="investigation-raw" data-investigation-section="raw"><summary>Raw diagnostics & hashes</summary>${facts([["Internal request ID", traffic == null ? void 0 : traffic.id], ["Request hash", bundle == null ? void 0 : bundle.request_hash], ["Response hash", bundle == null ? void 0 : bundle.response_hash], ["Redaction version", bundle == null ? void 0 : bundle.redaction_version]])}<pre data-investigation-raw>${esc2(JSON.stringify(raw, null, 2))}</pre></details>
+  </div>`;
+}
+function bindInvestigationActions(root, requestId) {
+  root.querySelectorAll("[data-investigation-copy]").forEach((button) => button.addEventListener("click", async () => {
+    const status = root.querySelector("[data-investigation-copy-status]");
+    try {
+      await navigator.clipboard.writeText(button.dataset.investigationCopy === "id" ? requestId : root.querySelector("[data-investigation-raw]").textContent);
+      status.textContent = "Copied";
+    } catch {
+      status.textContent = "Clipboard unavailable. Select and copy from Raw diagnostics.";
+    }
+  }));
 }
 /*!
  * @kurkle/color v0.3.4
@@ -15310,6 +15398,7 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {
     "select:not([disabled])",
     "textarea:not([disabled])",
     "a[href]",
+    "summary",
     '[tabindex]:not([tabindex="-1"])'
   ].join(",");
   const close = (value) => {
@@ -15661,7 +15750,7 @@ async function refresh({ focus = false } = {}) {
       if (generation !== viewGeneration) return;
       state.projects = projects2;
       syncProjectScope();
-      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, mountDialog, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
+      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, mountDialog, investigationView, bindInvestigationActions, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
     }
     if (view === "usage") await usage();
     if (view === "health") await health();
@@ -17668,24 +17757,48 @@ async function usage() {
     <section class="panel">
       <div class="panel-heading"><h3>Export options</h3></div>
       <form id="usage-export-form" class="usage-export-form">
-        <select name="export_format" aria-label="Export format" aria-describedby="usage-export-help"><option value="csv">CSV</option><option value="json">JSON</option></select>
-        <select name="export_limit" aria-label="Export row count" aria-describedby="usage-export-help"><option value="1000">1,000</option><option value="100">100</option><option value="5000">5,000</option><option value="10000">10,000</option><option value="all">All rows (download)</option></select>
-        <label>Export from<input name="export_from" type="datetime-local" aria-describedby="usage-export-help"></label>
-        <label>Export to<input name="export_to" type="datetime-local" aria-describedby="usage-export-help"></label>
-        <input name="export_offset" type="number" min="0" value="0" aria-label="Export offset" aria-describedby="usage-export-help">
+        <div class="field">
+          <label for="usage-export-format">Export format</label>
+          <select id="usage-export-format" name="export_format" aria-describedby="usage-export-format-help"><option value="csv">CSV</option><option value="json">JSON</option></select>
+          <small id="usage-export-format-help" class="field-hint">CSV for spreadsheets; JSON for scripts and integrations.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-limit">Maximum rows</label>
+          <select id="usage-export-limit" name="export_limit" aria-describedby="usage-export-limit-help usage-export-help"><option value="1000">1,000</option><option value="100">100</option><option value="5000">5,000</option><option value="10000">10,000</option><option value="all">All rows (download)</option></select>
+          <small id="usage-export-limit-help" class="field-hint">Maximum matching records to include. All rows downloads every match in the selected time range.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-from">Export from</label>
+          <input id="usage-export-from" name="export_from" type="datetime-local" aria-describedby="usage-export-from-help usage-export-help">
+          <small id="usage-export-from-help" class="field-hint">Include records at or after this time. Uses your local time.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-to">Export to</label>
+          <input id="usage-export-to" name="export_to" type="datetime-local" aria-describedby="usage-export-to-help usage-export-help">
+          <small id="usage-export-to-help" class="field-hint">Include records before this time. Uses your local time.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-offset">Rows to skip</label>
+          <input id="usage-export-offset" name="export_offset" type="number" min="0" value="0" aria-describedby="usage-export-offset-help">
+          <small id="usage-export-offset-help" class="field-hint">0 starts at the first matching row. For example, 100 skips the first 100 rows. Ignored for All rows.</small>
+        </div>
         <div class="actions usage-export-actions">
           <button type="button" data-usage-export-action="preview">Preview</button>
           <button type="button" data-usage-export-action="download">Download</button>
           <button type="button" data-usage-export-action="copy-url">Copy URL</button>
           <button type="button" data-usage-export-action="copy-curl">Copy curl</button>
         </div>
-        <div id="usage-export-help" class="help">Export dates override the Usage time filter. Leave both blank to inherit it. All rows requires a start and end time and is available for Download only.</div>
+        <div id="usage-export-help" class="help">Leave both dates blank to use the Usage time filter. Entering either date replaces that range; a blank start or end means no limit on that side. Other Usage filters still apply. All rows needs both a start and end (here or in Usage) and supports Download only.</div>
       </form>
     </section>
     <section class="panel">
       <div class="panel-heading"><h3>Task drilldown</h3></div>
       <form id="task-usage-form" class="inline-form">
-        <input name="task_lookup" placeholder="task ID" required>
+        <div class="field">
+          <label for="task-usage-id">Task ID</label>
+          <input id="task-usage-id" name="task_lookup" placeholder="task ID" aria-describedby="task-usage-help" required>
+          <small id="task-usage-help" class="field-hint">Enter an exact task ID to summarize its requests, failures and cost using the current Usage filters.</small>
+        </div>
         <button>Load task usage</button>
       </form>
       <div id="task-usage-result"></div>
@@ -18192,16 +18305,38 @@ function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {
       esc(row.cost_source || ""),
       esc(row.pricing_rule_name || ""),
       row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",
-      ownerService || ownerProject ? `<button type="button" ${ownerService ? `data-owner-service="${attr(ownerService)}"` : `data-owner-project="${attr(ownerProject)}"`} data-owner-request="${attr(row.request_id)}">View details</button>` : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}">Debug</button>`
+      ownerService || ownerProject ? `<button type="button" ${ownerService ? `data-owner-service="${attr(ownerService)}"` : `data-owner-project="${attr(ownerProject)}"`} data-owner-request="${attr(row.request_id)}">View details</button>` : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}" data-debug-usage="${attr(JSON.stringify(investigationUsageSnapshot(row)))}">Debug</button>`
     ])
   );
 }
+function investigationView(data) {
+  return requestInvestigationView(data, { esc, table, time, projects: state.projects });
+}
 async function openDebugRequest(event) {
+  var _a2, _b;
   const trigger = event.currentTarget;
   const requestId = trigger.dataset.debugRequest;
-  const bundle = await api(`/admin-ui/admin/debug-bundles/${encodeURIComponent(requestId)}`);
-  showContentDrawer("Request investigation", debugBundleView(bundle), () => {
+  const usage2 = trigger.dataset.debugUsage ? JSON.parse(trigger.dataset.debugUsage) : null;
+  const body = document.createElement("div");
+  let open = true;
+  const render = (traffic, notice = "") => {
+    if (!open) return;
+    body.innerHTML = investigationView({ traffic, usage: usage2, notice });
+    bindInvestigationActions(body, requestId);
+  };
+  render(null, ((_a2 = usage2 == null ? void 0 : usage2.diagnostics) == null ? void 0 : _a2.traffic_id) ? "Loading the matching request timeline…" : "This older usage record has no internal Traffic ID. Request-ID-only debug snapshots are not combined with it because client request IDs can be reused.");
+  showContentDrawer("Request investigation", body, () => {
+    open = false;
   }, trigger);
+  if (!((_b = usage2 == null ? void 0 : usage2.diagnostics) == null ? void 0 : _b.traffic_id)) return;
+  try {
+    const query = new URLSearchParams({ id: usage2.diagnostics.traffic_id, limit: "1" });
+    const rows = await api(`/admin-ui/admin/traffic/history?${query}`);
+    const traffic = matchTrafficRecord(rows, usage2);
+    render(traffic, traffic ? "" : "The matching Traffic record is unavailable or was not saved. Usage metadata is still available.");
+  } catch {
+    render(null, "Traffic details could not be loaded. Usage metadata is still available; close and reopen to retry.");
+  }
 }
 function unusedKeysTable(rows) {
   return table(
@@ -18340,6 +18475,7 @@ async function health() {
     button.addEventListener("click", () => fillProviderHealthStateForm(button.dataset.healthStateEdit));
   });
   document.querySelector("#debug-bundle-form").addEventListener("submit", handleAsync(loadDebugBundle));
+  if (state.debugBundle) bindInvestigationActions(content, state.debugBundle.request_id);
   document.querySelectorAll("[data-import-rollback]").forEach((button) => {
     button.addEventListener("click", handleAsync(rollbackImportVersion));
   });
@@ -18386,17 +18522,7 @@ function healthStateTable(rows) {
   );
 }
 function debugBundleView(bundle) {
-  return `<div class="details">
-    <p><strong>${esc(bundle.request_id)}</strong> ${esc(bundle.route ?? "")} ${esc(bundle.provider ?? "")}</p>
-    <p class="subtle">Request hash ${esc(bundle.request_hash ?? "none")} · Response hash ${esc(bundle.response_hash ?? "none")}</p>
-    <pre>${esc(JSON.stringify({
-    policy_trace: bundle.policy_trace,
-    guardrail_trace: bundle.guardrail_trace,
-    selection_trace: bundle.selection_trace,
-    fallback_history: bundle.fallback_history,
-    upstream_latency_ms: bundle.upstream_latency_ms
-  }, null, 2))}</pre>
-  </div>`;
+  return investigationView({ bundle, notice: "Legacy debug snapshot, looked up by client request ID. Timings and usage are shown only when captured in the same request record." });
 }
 function serviceImportVersionsTable(rows) {
   return table(

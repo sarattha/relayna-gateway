@@ -1,6 +1,7 @@
 pub mod body_admission;
 pub mod body_rewrite;
 pub mod pingora_plane;
+mod request_timing;
 
 pub use body_admission::{
     BodyAdmissionController, BodyAdmissionLease, DEFAULT_MAX_BUFFERED_REQUESTS,

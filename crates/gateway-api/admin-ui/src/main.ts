@@ -1,5 +1,6 @@
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic } from "./traffic";
+import { requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 import Chart from "chart.js/auto";
 import "./app.css";
@@ -325,6 +326,7 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {}, re
     "select:not([disabled])",
     "textarea:not([disabled])",
     'a[href]',
+    "summary",
     '[tabindex]:not([tabindex="-1"])',
   ].join(",");
   const close = (value) => {
@@ -683,7 +685,7 @@ async function refresh({ focus = false } = {}) {
       if (generation !== viewGeneration) return;
       state.projects = projects;
       syncProjectScope();
-      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, mountDialog, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
+      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, mountDialog, investigationView, bindInvestigationActions, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
     }
     if (view === "usage") await usage();
     if (view === "health") await health();
@@ -2785,24 +2787,48 @@ async function usage() {
     <section class="panel">
       <div class="panel-heading"><h3>Export options</h3></div>
       <form id="usage-export-form" class="usage-export-form">
-        <select name="export_format" aria-label="Export format" aria-describedby="usage-export-help"><option value="csv">CSV</option><option value="json">JSON</option></select>
-        <select name="export_limit" aria-label="Export row count" aria-describedby="usage-export-help"><option value="1000">1,000</option><option value="100">100</option><option value="5000">5,000</option><option value="10000">10,000</option><option value="all">All rows (download)</option></select>
-        <label>Export from<input name="export_from" type="datetime-local" aria-describedby="usage-export-help"></label>
-        <label>Export to<input name="export_to" type="datetime-local" aria-describedby="usage-export-help"></label>
-        <input name="export_offset" type="number" min="0" value="0" aria-label="Export offset" aria-describedby="usage-export-help">
+        <div class="field">
+          <label for="usage-export-format">Export format</label>
+          <select id="usage-export-format" name="export_format" aria-describedby="usage-export-format-help"><option value="csv">CSV</option><option value="json">JSON</option></select>
+          <small id="usage-export-format-help" class="field-hint">CSV for spreadsheets; JSON for scripts and integrations.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-limit">Maximum rows</label>
+          <select id="usage-export-limit" name="export_limit" aria-describedby="usage-export-limit-help usage-export-help"><option value="1000">1,000</option><option value="100">100</option><option value="5000">5,000</option><option value="10000">10,000</option><option value="all">All rows (download)</option></select>
+          <small id="usage-export-limit-help" class="field-hint">Maximum matching records to include. All rows downloads every match in the selected time range.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-from">Export from</label>
+          <input id="usage-export-from" name="export_from" type="datetime-local" aria-describedby="usage-export-from-help usage-export-help">
+          <small id="usage-export-from-help" class="field-hint">Include records at or after this time. Uses your local time.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-to">Export to</label>
+          <input id="usage-export-to" name="export_to" type="datetime-local" aria-describedby="usage-export-to-help usage-export-help">
+          <small id="usage-export-to-help" class="field-hint">Include records before this time. Uses your local time.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-offset">Rows to skip</label>
+          <input id="usage-export-offset" name="export_offset" type="number" min="0" value="0" aria-describedby="usage-export-offset-help">
+          <small id="usage-export-offset-help" class="field-hint">0 starts at the first matching row. For example, 100 skips the first 100 rows. Ignored for All rows.</small>
+        </div>
         <div class="actions usage-export-actions">
           <button type="button" data-usage-export-action="preview">Preview</button>
           <button type="button" data-usage-export-action="download">Download</button>
           <button type="button" data-usage-export-action="copy-url">Copy URL</button>
           <button type="button" data-usage-export-action="copy-curl">Copy curl</button>
         </div>
-        <div id="usage-export-help" class="help">Export dates override the Usage time filter. Leave both blank to inherit it. All rows requires a start and end time and is available for Download only.</div>
+        <div id="usage-export-help" class="help">Leave both dates blank to use the Usage time filter. Entering either date replaces that range; a blank start or end means no limit on that side. Other Usage filters still apply. All rows needs both a start and end (here or in Usage) and supports Download only.</div>
       </form>
     </section>
     <section class="panel">
       <div class="panel-heading"><h3>Task drilldown</h3></div>
       <form id="task-usage-form" class="inline-form">
-        <input name="task_lookup" placeholder="task ID" required>
+        <div class="field">
+          <label for="task-usage-id">Task ID</label>
+          <input id="task-usage-id" name="task_lookup" placeholder="task ID" aria-describedby="task-usage-help" required>
+          <small id="task-usage-help" class="field-hint">Enter an exact task ID to summarize its requests, failures and cost using the current Usage filters.</small>
+        </div>
         <button>Load task usage</button>
       </form>
       <div id="task-usage-result"></div>
@@ -3342,16 +3368,37 @@ function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {
       row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",
       ownerService || ownerProject
         ? `<button type="button" ${ownerService ? `data-owner-service="${attr(ownerService)}"` : `data-owner-project="${attr(ownerProject)}"`} data-owner-request="${attr(row.request_id)}">View details</button>`
-        : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}">Debug</button>`,
+        : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}" data-debug-usage="${attr(JSON.stringify(investigationUsageSnapshot(row)))}">Debug</button>`,
     ]),
   );
+}
+
+function investigationView(data) {
+  return requestInvestigationView(data, { esc, table, time, projects: state.projects });
 }
 
 async function openDebugRequest(event) {
   const trigger = event.currentTarget;
   const requestId = trigger.dataset.debugRequest;
-  const bundle = await api(`/admin-ui/admin/debug-bundles/${encodeURIComponent(requestId)}`);
-  showContentDrawer("Request investigation", debugBundleView(bundle), () => {}, trigger);
+  const usage = trigger.dataset.debugUsage ? JSON.parse(trigger.dataset.debugUsage) : null;
+  const body = document.createElement("div");
+  let open = true;
+  const render = (traffic, notice = "") => {
+    if (!open) return;
+    body.innerHTML = investigationView({ traffic, usage, notice });
+    bindInvestigationActions(body, requestId);
+  };
+  render(null, usage?.diagnostics?.traffic_id ? "Loading the matching request timeline…" : "This older usage record has no internal Traffic ID. Request-ID-only debug snapshots are not combined with it because client request IDs can be reused.");
+  showContentDrawer("Request investigation", body, () => { open = false; }, trigger);
+  if (!usage?.diagnostics?.traffic_id) return;
+  try {
+    const query = new URLSearchParams({ id: usage.diagnostics.traffic_id, limit: "1" });
+    const rows = await api(`/admin-ui/admin/traffic/history?${query}`);
+    const traffic = matchTrafficRecord(rows, usage);
+    render(traffic, traffic ? "" : "The matching Traffic record is unavailable or was not saved. Usage metadata is still available.");
+  } catch {
+    render(null, "Traffic details could not be loaded. Usage metadata is still available; close and reopen to retry.");
+  }
 }
 
 function unusedKeysTable(rows) {
@@ -3489,6 +3536,7 @@ async function health() {
     button.addEventListener("click", () => fillProviderHealthStateForm(button.dataset.healthStateEdit));
   });
   document.querySelector("#debug-bundle-form").addEventListener("submit", handleAsync(loadDebugBundle));
+  if (state.debugBundle) bindInvestigationActions(content, state.debugBundle.request_id);
   document.querySelectorAll("[data-import-rollback]").forEach((button) => {
     button.addEventListener("click", handleAsync(rollbackImportVersion));
   });
@@ -3540,17 +3588,7 @@ function healthStateTable(rows) {
 }
 
 function debugBundleView(bundle) {
-  return `<div class="details">
-    <p><strong>${esc(bundle.request_id)}</strong> ${esc(bundle.route ?? "")} ${esc(bundle.provider ?? "")}</p>
-    <p class="subtle">Request hash ${esc(bundle.request_hash ?? "none")} · Response hash ${esc(bundle.response_hash ?? "none")}</p>
-    <pre>${esc(JSON.stringify({
-      policy_trace: bundle.policy_trace,
-      guardrail_trace: bundle.guardrail_trace,
-      selection_trace: bundle.selection_trace,
-      fallback_history: bundle.fallback_history,
-      upstream_latency_ms: bundle.upstream_latency_ms,
-    }, null, 2))}</pre>
-  </div>`;
+  return investigationView({ bundle, notice: "Legacy debug snapshot, looked up by client request ID. Timings and usage are shown only when captured in the same request record." });
 }
 
 function serviceImportVersionsTable(rows) {

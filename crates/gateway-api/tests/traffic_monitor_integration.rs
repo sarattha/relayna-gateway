@@ -62,7 +62,12 @@ async fn upstream(Json(body): Json<Value>) -> axum::response::Response {
     if body["model"] == "stream" {
         let stream = futures_util::stream::unfold(0, |step| async move {
             match step {
-                0 => Some((Ok::<_, std::io::Error>("data: {\"text\":\"hello\"}\n\n"), 1)),
+                0 => Some((
+                    Ok::<_, std::io::Error>(
+                        "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n",
+                    ),
+                    1,
+                )),
                 1 => {
                     tokio::time::sleep(Duration::from_millis(200)).await;
                     Some((
@@ -173,6 +178,9 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
             .send()
             .await
             .is_ok()
+            && tokio::net::TcpStream::connect(("127.0.0.1", proxy_port))
+                .await
+                .is_ok()
         {
             ready = true;
             break;
@@ -229,6 +237,7 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
     assert_eq!(row.diagnostics.failure_stage.as_deref(), Some("routing"));
     for (id, model, expected) in [
         ("success", "ok", 200),
+        ("success-reused", "ok", 200),
         ("upstream-503", "fail", 503),
         ("stream-abort", "stream", 200),
     ] {
@@ -252,6 +261,64 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
         let row = saved(&store, id).await;
         assert_eq!(row.attempts, 1);
         assert_eq!(row.client_status, Some(expected));
+        assert_eq!(row.diagnostics.traffic_id, Some(row.id));
+        assert!(row.debug_bundle.is_some());
+        assert_eq!(row.usage.as_ref().unwrap().model.as_deref(), Some(model));
+        assert_eq!(row.upstream_timings.len(), 1);
+        let timing = &row.upstream_timings[0];
+        assert_eq!(timing.dns_status, "ip_literal");
+        assert_eq!(timing.dns_us, None);
+        assert_eq!(timing.tls_handshake_us, None);
+        assert_eq!(timing.upstream_status, Some(expected));
+        assert!(timing.response_headers_ms.is_some());
+        assert!(timing.first_body_byte_ms.is_some());
+        assert!(timing.total_ms >= timing.response_headers_ms);
+        if id == "success" {
+            assert_eq!(timing.connection_reused, Some(false));
+            assert!(timing.tcp_connect_us.is_some());
+        }
+        if id == "success-reused" {
+            assert_eq!(timing.connection_reused, Some(true));
+            assert_eq!(timing.tcp_connect_us, None);
+        }
+        if id == "stream-abort" {
+            assert!(timing.first_token_ms.is_some());
+        } else {
+            assert!(timing.first_token_ms.is_none());
+        }
+        let stored_id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT (diagnostics->>'traffic_id')::uuid FROM usage_events WHERE request_id = $1",
+        )
+        .bind(id)
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+        assert_eq!(stored_id, Some(row.id));
+        // Exact lookup remains available outside the normal 24h history window.
+        let mut older = row.clone();
+        older.started_at -= chrono::Duration::days(2);
+        store.insert_traffic(&older).await.unwrap();
+        sqlx::query("UPDATE request_traffic SET started_at=$1 WHERE id=$2")
+            .bind(older.started_at)
+            .bind(row.id)
+            .execute(store.pool())
+            .await
+            .unwrap();
+        let exact = client
+            .get(format!(
+                "{control}/admin-ui/admin/traffic/history?id={}",
+                row.id
+            ))
+            .bearer_auth(&operator.raw_token)
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap();
+        assert_eq!(exact.as_array().unwrap().len(), 1);
+        assert_eq!(exact[0]["id"], row.id.to_string());
+
         assert!(row
             .timeline
             .iter()

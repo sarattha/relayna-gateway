@@ -1,6 +1,7 @@
 use crate::body_rewrite::{
     prepare_rewritten_request_headers, prepare_rewritten_response_headers, BoundedBodyRewriter,
 };
+use crate::request_timing::{micros, RequestTimingProbe};
 use crate::{
     BodyAdmissionController, BodyAdmissionLease, DEFAULT_MAX_BUFFERED_REQUESTS,
     DEFAULT_MAX_INFLIGHT_BUFFER_BYTES,
@@ -8,7 +9,7 @@ use crate::{
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::Utc;
-use gateway_core::traffic::{self, TrafficRequest, TrafficStore};
+use gateway_core::traffic::{self, TrafficRequest, TrafficStore, TrafficUsage, UpstreamTiming};
 use gateway_core::{
     analyze_generation_request,
     auth::{Authenticator, VirtualKeyLookup},
@@ -43,7 +44,7 @@ use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
     sync::Arc,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 const MAX_MULTIPART_PRICING_FIELDS: usize = 128;
@@ -229,6 +230,10 @@ where
     R: RateLimitStore + BudgetStore,
 {
     pub fn new(store: Arc<S>, control_state: Arc<R>, config: PingoraLiteLlmConfig) -> Self {
+        // Pingora and reqwest enable different Rustls crypto features. Select a
+        // default before Pingora creates its TLS connector; keep an embedding
+        // application's explicitly installed provider if one already exists.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let auth_runtime = config.auth_runtime.clone().unwrap_or_else(|| {
             SharedGatewayAuthRuntime::new(GatewayAuthRuntimeConfig {
                 relayna_key_header: config.relayna_key_header.clone(),
@@ -283,6 +288,7 @@ impl<S, R> RelaynaPingoraProxy<S, R> {
 #[derive(Debug)]
 pub struct PingoraContext {
     traffic: TrafficRequest,
+    timing_probe: RequestTimingProbe,
     started: Instant,
     request_id: String,
     route: Option<Route>,
@@ -362,6 +368,7 @@ where
     fn new_ctx(&self) -> Self::CTX {
         Self::CTX {
             traffic: TrafficRequest::default(),
+            timing_probe: RequestTimingProbe::default(),
             started: Instant::now(),
             request_id: uuid::Uuid::new_v4().to_string(),
             route: None,
@@ -437,6 +444,7 @@ where
         ctx.request_id =
             traffic::correlation_id(header_value(session.req_header(), "x-request-id"));
         ctx.traffic.request_id = ctx.request_id.clone();
+        ctx.traffic.diagnostics.traffic_id = Some(ctx.traffic.id);
         ctx.traffic.started_at = Utc::now();
         ctx.traffic.method = session
             .req_header()
@@ -1317,12 +1325,73 @@ where
         _session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<Box<HttpPeer>> {
+        finish_attempt_timing(ctx);
         ctx.traffic.attempts += 1;
         ctx.traffic.diagnostics.upstream_status = None;
+        ctx.timing_probe = RequestTimingProbe::default();
+        let upstream = self
+            .upstream_for(ctx)
+            .unwrap_or(&self.config.litellm)
+            .clone();
+        let started = elapsed_ms(ctx);
+        if ctx.traffic.upstream_timings.len() == 32 {
+            ctx.traffic.upstream_timings.remove(0);
+        }
+        ctx.traffic.upstream_timings.push(UpstreamTiming {
+            attempt: ctx.traffic.attempts,
+            provider: Some(provider_for_usage(ctx).as_str().into()),
+            started_elapsed_ms: started,
+            tls: upstream.tls,
+            ..Default::default()
+        });
+        traffic_step(ctx, "upstream_resolve");
+        let host = upstream.host.trim_matches(['[', ']']);
+        let addr = if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+            ctx.traffic.upstream_timings.last_mut().unwrap().dns_status = "ip_literal".into();
+            std::net::SocketAddr::new(ip, upstream.port)
+        } else {
+            let dns_started = Instant::now();
+            let timeout =
+                Duration::from_millis(ctx.route_match.as_ref().map_or(120_000, |r| r.timeout_ms));
+            let result =
+                tokio::time::timeout(timeout, tokio::net::lookup_host((host, upstream.port))).await;
+            let timing = ctx.traffic.upstream_timings.last_mut().unwrap();
+            timing.dns_us = Some(micros(dns_started.elapsed()));
+            match result {
+                Ok(Ok(mut addresses)) => match addresses.next() {
+                    Some(addr) => {
+                        timing.dns_status = "resolved".into();
+                        Ok(addr)
+                    }
+                    None => {
+                        timing.dns_status = "failed".into();
+                        Err(PingoraError::new_up(ErrorType::ConnectNoRoute))
+                    }
+                },
+                Ok(Err(_)) => {
+                    timing.dns_status = "failed".into();
+                    Err(PingoraError::new_up(ErrorType::ConnectNoRoute))
+                }
+                Err(_) => {
+                    timing.dns_status = "timeout".into();
+                    Err(PingoraError::new_up(ErrorType::ConnectTimedout))
+                }
+            }
+            .map_err(|mut error| {
+                traffic_attempt_error(ctx, &error);
+                error.set_retry(self.activate_provider_fallback(ctx));
+                error
+            })?
+        };
         traffic_step(ctx, "upstream_connect");
-        let upstream = self.upstream_for(ctx).unwrap_or(&self.config.litellm);
-        let addr = format!("{}:{}", upstream.host, upstream.port);
         let mut peer = HttpPeer::new(addr, upstream.tls, upstream.sni.clone());
+        let tcp_started = ctx.timing_probe.tcp_started.clone();
+        peer.options.upstream_tcp_sock_tweak_hook = Some(Arc::new(move |_| {
+            if let Ok(mut started) = tcp_started.lock() {
+                *started = Some(SystemTime::now());
+            }
+            Ok(())
+        }));
         if let Some(matched) = &ctx.route_match {
             let timeout = Duration::from_millis(matched.timeout_ms);
             peer.options.connection_timeout = Some(timeout);
@@ -1336,13 +1405,14 @@ where
     async fn connected_to_upstream(
         &self,
         _session: &mut Session,
-        _reused: bool,
+        reused: bool,
         _peer: &HttpPeer,
         #[cfg(unix)] _fd: std::os::unix::io::RawFd,
         #[cfg(windows)] _sock: std::os::windows::io::RawSocket,
-        _digest: Option<&pingora_core::protocols::Digest>,
+        digest: Option<&pingora_core::protocols::Digest>,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<()> {
+        ctx.timing_probe.connected(&mut ctx.traffic, reused, digest);
         traffic_step(ctx, "upstream_connected");
         Ok(())
     }
@@ -1438,6 +1508,14 @@ where
                 .get(header::CONTENT_TYPE)
                 .and_then(|value| value.to_str().ok())
                 .is_some_and(|value| value.starts_with("text/event-stream"));
+        let elapsed = elapsed_ms(ctx);
+        if let Some(timing) = ctx.traffic.upstream_timings.last_mut() {
+            timing.response_headers_ms = Some(elapsed.saturating_sub(timing.started_elapsed_ms));
+            timing.upstream_status = Some(status_code);
+            if status_code >= 400 {
+                timing.failure_code = Some("upstream_http_error".into());
+            }
+        }
         traffic_step(ctx, "upstream_response");
         if is_retry_safe_status(status_code) && self.activate_provider_fallback(ctx) {
             let mut error = PingoraError::new_up(ErrorType::HTTPStatus(status_code));
@@ -1452,6 +1530,20 @@ where
         }
         capture_service_version(upstream_response, ctx);
         Ok(())
+    }
+
+    fn upstream_response_body_filter(
+        &self,
+        _session: &mut Session,
+        body: &mut Option<Bytes>,
+        _end_of_stream: bool,
+        ctx: &mut Self::CTX,
+    ) -> PingoraResult<Option<Duration>> {
+        if let Some(bytes) = body.as_ref() {
+            let elapsed = elapsed_ms(ctx);
+            ctx.timing_probe.body(&mut ctx.traffic, bytes, elapsed);
+        }
+        Ok(None)
     }
 
     async fn response_filter(
@@ -1676,6 +1768,8 @@ where
             .with_trace_id(ctx.trace_id.clone())
             .with_fallback_count(ctx.fallback_count)
             .with_diagnostics(ctx.traffic.diagnostics.clone());
+            ctx.traffic.usage = Some(TrafficUsage::from(&event));
+            ctx.traffic.debug_bundle = Some(debug_bundle_for_ctx(ctx, status_code));
             ctx.terminal_usage_recorded = true;
             if !matches!(
                 tokio::time::timeout(
@@ -1756,6 +1850,12 @@ where
             }
         }
         .await;
+        if ctx.traffic.debug_bundle.is_none() {
+            ctx.traffic.debug_bundle = Some(debug_bundle_for_ctx(
+                ctx,
+                ctx.traffic.client_status.unwrap_or(500),
+            ));
+        }
         if !matches!(
             tokio::time::timeout(
                 Duration::from_secs(2),
@@ -1777,21 +1877,22 @@ where
         mut error: Box<PingoraError>,
     ) -> Box<PingoraError> {
         traffic_attempt_error(ctx, &error);
-        if self.activate_provider_fallback(ctx) {
-            error.set_retry(true);
-        }
+        error.set_retry(self.activate_provider_fallback(ctx));
         error
     }
 
     fn error_while_proxy(
         &self,
         _peer: &HttpPeer,
-        _session: &mut Session,
+        session: &mut Session,
         mut error: Box<PingoraError>,
         ctx: &mut Self::CTX,
-        _client_reused: bool,
+        client_reused: bool,
     ) -> Box<PingoraError> {
         traffic_attempt_error(ctx, &error);
+        error
+            .retry
+            .decide_reuse(client_reused && !session.as_ref().retry_buffer_truncated());
         if is_retry_safe_proxy_error(&error) && self.activate_provider_fallback(ctx) {
             error.set_retry(true);
         }
@@ -2104,6 +2205,8 @@ where
         .with_trace_id(ctx.trace_id.clone())
         .with_fallback_count(ctx.fallback_count)
         .with_diagnostics(ctx.traffic.diagnostics.clone());
+        ctx.traffic.usage = Some(TrafficUsage::from(&event));
+        ctx.traffic.debug_bundle = Some(debug_bundle_for_ctx(ctx, status_code));
         if !matches!(
             tokio::time::timeout(
                 Duration::from_secs(2),
@@ -3057,6 +3160,7 @@ fn default_proxy_failure_status(error: &PingoraError) -> u16 {
 fn new_pingora_context_for_tests() -> PingoraContext {
     PingoraContext {
         traffic: TrafficRequest::default(),
+        timing_probe: RequestTimingProbe::default(),
         started: Instant::now(),
         request_id: uuid::Uuid::new_v4().to_string(),
         route: None,
@@ -3155,6 +3259,19 @@ fn gateway_error_response(
     Ok((response, Bytes::from(body)))
 }
 
+fn elapsed_ms(ctx: &PingoraContext) -> i64 {
+    i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX)
+}
+
+fn finish_attempt_timing(ctx: &mut PingoraContext) {
+    let elapsed = elapsed_ms(ctx);
+    if let Some(timing) = ctx.traffic.upstream_timings.last_mut() {
+        timing
+            .total_ms
+            .get_or_insert(elapsed.saturating_sub(timing.started_elapsed_ms));
+    }
+}
+
 fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
     ctx.traffic.endpoint = ctx
         .endpoint_template
@@ -3171,6 +3288,10 @@ fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
         .route_match
         .as_ref()
         .map(|_| provider_for_usage(ctx).as_str().into());
+    ctx.traffic.key_prefix = ctx
+        .key
+        .as_ref()
+        .map(|key| key.key_prefix.chars().take(16).collect());
     ctx.traffic.key_id = ctx.key.as_ref().map(|key| key.key_id);
     ctx.traffic.project_id = ctx.key.as_ref().and_then(|key| key.project_id);
     let elapsed = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
@@ -3234,6 +3355,10 @@ fn traffic_transport_error(error: &PingoraError) -> (&'static str, &'static str)
 
 fn traffic_attempt_error(ctx: &mut PingoraContext, error: &PingoraError) {
     let (_, code) = traffic_transport_error(error);
+    if let Some(timing) = ctx.traffic.upstream_timings.last_mut() {
+        timing.failure_code = Some(code.into());
+    }
+    finish_attempt_timing(ctx);
     ctx.traffic.step(
         &ctx.traffic.stage.clone(),
         i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX),
@@ -3269,6 +3394,7 @@ fn finish_traffic(
             ctx.traffic.fail("gateway", "response_not_delivered");
         }
     }
+    finish_attempt_timing(ctx);
     ctx.traffic.completed = true;
     ctx.traffic.diagnostics.outcome = Some(
         if ctx.traffic.diagnostics.failure_code.is_some() {
@@ -3303,7 +3429,8 @@ mod tests {
     use chrono::{DateTime, Utc};
     use gateway_core::{
         AuthenticatedKey, BudgetDecision, BudgetState, EntraIdentitySource, GatewayResult,
-        LiteLlmPassthroughSettings, OpenAiRouteMode, RateLimitDecision, UsageEvent,
+        LiteLlmPassthroughSettings, OpenAiRouteMode, RateLimitDecision, ServiceRegistration,
+        UsageEvent,
     };
     use std::sync::Mutex;
     use uuid::Uuid;
@@ -4353,6 +4480,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn connection_errors_resolve_conditional_retry_and_keep_attempt_evidence() {
+        let mut proxy = RelaynaPingoraProxy {
+            store: Arc::new(MemoryUsageStore::default()),
+            control_state: Arc::new(MemoryControlState::default()),
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "test-key")
+                .unwrap(),
+            auth_runtime: default_auth_runtime_for_tests(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let _client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        let mut session = Session::new_h1(Box::new(
+            pingora_core::protocols::l4::stream::Stream::from(server),
+        ));
+        let peer = HttpPeer::new("127.0.0.1:4000", false, String::new());
+        for reused in [false, true] {
+            let mut ctx = new_pingora_context_for_tests();
+            ctx.traffic.upstream_timings.push(UpstreamTiming::default());
+            let mut error = PingoraError::new_up(ErrorType::ConnectionClosed);
+            error.retry = pingora_core::RetryType::ReusedOnly;
+            let error = proxy.error_while_proxy(&peer, &mut session, error, &mut ctx, reused);
+            assert_eq!(
+                error.retry(),
+                reused,
+                "fresh connection failures must not panic or retry"
+            );
+            assert_eq!(
+                ctx.traffic.upstream_timings[0].failure_code.as_deref(),
+                Some("upstream_connection_closed")
+            );
+            assert!(ctx.traffic.upstream_timings[0].total_ms.is_some());
+        }
+        let mut ctx = new_pingora_context_for_tests();
+        let mut error = PingoraError::new_up(ErrorType::InvalidCert);
+        error.retry = pingora_core::RetryType::ReusedOnly;
+        assert!(!proxy
+            .fail_to_connect(&mut session, &peer, &mut ctx, error)
+            .retry());
+        proxy.config.litellm.host = "timing-unresolvable.invalid".into();
+        let mut ctx = new_pingora_context_for_tests();
+        let mut matched =
+            Route::resolve_match(&http::Method::POST, "/v1/chat/completions").unwrap();
+        matched.timeout_ms = 50;
+        ctx.route_match = Some(matched);
+        let error = proxy
+            .upstream_peer(&mut session, &mut ctx)
+            .await
+            .unwrap_err();
+        assert!(!error.retry());
+        assert_eq!(ctx.traffic.stage, "upstream_resolve");
+        assert!(ctx.traffic.upstream_timings[0].dns_us.is_some());
+        assert!(ctx.traffic.upstream_timings[0].failure_code.is_some());
+        assert_eq!(ctx.traffic.upstream_timings[0].tcp_connect_us, None);
+    }
+
+    #[tokio::test]
     async fn route_setting_blocks_disabled_canonical_litellm_routes_only() {
         let store = Arc::new(MemoryUsageStore::default());
         *store.openai_routes_enabled.lock().expect("routes lock") = false;
@@ -4753,6 +4938,44 @@ mod tests {
             _query: traffic::TrafficQuery,
         ) -> GatewayResult<Vec<TrafficRequest>> {
             Ok(Vec::new())
+        }
+    }
+
+    #[async_trait]
+    impl VirtualKeyLookup for MemoryUsageStore {
+        async fn find_by_prefix(
+            &self,
+            _: &str,
+        ) -> GatewayResult<Option<gateway_core::StoredVirtualKey>> {
+            Ok(None)
+        }
+    }
+
+    #[async_trait]
+    impl PolicyLookup for MemoryUsageStore {
+        async fn policy_for_key(&self, _: Uuid) -> GatewayResult<KeyPolicy> {
+            Ok(KeyPolicy::default())
+        }
+    }
+
+    #[async_trait]
+    impl ServiceRegistryLookup for MemoryUsageStore {
+        async fn service_registration(
+            &self,
+            _: &str,
+        ) -> GatewayResult<Option<ServiceRegistration>> {
+            Ok(None)
+        }
+    }
+
+    #[async_trait]
+    impl ServiceRouteLookup for MemoryUsageStore {
+        async fn service_registration_for_route(
+            &self,
+            _: &http::Method,
+            _: &str,
+        ) -> GatewayResult<Option<ServiceRegistration>> {
+            Ok(None)
         }
     }
 

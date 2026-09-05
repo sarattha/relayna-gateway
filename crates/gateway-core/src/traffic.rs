@@ -14,6 +14,8 @@ const TIMELINE_CAPACITY: usize = 32;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RequestDiagnostics {
+    #[serde(default)]
+    pub traffic_id: Option<Uuid>,
     pub failure_stage: Option<String>,
     pub failure_code: Option<String>,
     pub failure_source: Option<String>,
@@ -31,8 +33,73 @@ pub struct TrafficStep {
     pub attempt: u32,
 }
 
+/// Per-attempt durations. None means unmeasured, never an assumed zero.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct UpstreamTiming {
+    pub attempt: u32,
+    pub provider: Option<String>,
+    pub started_elapsed_ms: i64,
+    pub dns_status: String,
+    pub dns_us: Option<u64>,
+    pub connection_reused: Option<bool>,
+    pub tls: bool,
+    pub tcp_connect_us: Option<u64>,
+    pub tls_handshake_us: Option<u64>,
+    /// Milestones are relative to this attempt's start, including DNS/connect.
+    pub response_headers_ms: Option<i64>,
+    pub first_body_byte_ms: Option<i64>,
+    pub first_token_ms: Option<i64>,
+    pub total_ms: Option<i64>,
+    pub upstream_status: Option<u16>,
+    pub failure_code: Option<String>,
+}
+
+/// Allowlisted usage metadata; payloads and credentials never enter Traffic.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TrafficUsage {
+    pub model: Option<String>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    pub estimated_cost_usd: Option<f64>,
+    pub cost_source: Option<String>,
+    pub pricing_rule_name: Option<String>,
+    pub service_version: Option<String>,
+    pub trace_id: Option<String>,
+    pub task_id: Option<String>,
+    pub run_id: Option<String>,
+}
+
+impl From<&crate::UsageEvent> for TrafficUsage {
+    fn from(event: &crate::UsageEvent) -> Self {
+        Self {
+            model: event.model.clone(),
+            input_tokens: event.input_tokens,
+            output_tokens: event.output_tokens,
+            total_tokens: event.total_tokens,
+            estimated_cost_usd: event.estimated_cost_usd,
+            cost_source: event.cost_source.clone(),
+            pricing_rule_name: event.pricing_rule_name.clone(),
+            service_version: event.service_version.clone(),
+            trace_id: event.trace_id.clone(),
+            task_id: event.task_id.clone(),
+            run_id: event.run_id.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrafficRequest {
+    #[serde(default)]
+    pub upstream_timings: Vec<UpstreamTiming>,
+    #[serde(default)]
+    pub usage: Option<TrafficUsage>,
+    #[serde(default)]
+    pub debug_bundle: Option<crate::DebugBundle>,
+    #[serde(default)]
+    pub key_prefix: Option<String>,
     /// Internal identity prevents clients reusing request IDs from overwriting records.
     pub id: Uuid,
     pub request_id: String,
@@ -60,6 +127,10 @@ pub struct TrafficRequest {
 impl Default for TrafficRequest {
     fn default() -> Self {
         Self {
+            upstream_timings: Vec::new(),
+            usage: None,
+            debug_bundle: None,
+            key_prefix: None,
             id: Uuid::new_v4(),
             request_id: String::new(),
             instance_id: monitor().instance_id.clone(),
@@ -128,6 +199,7 @@ impl TrafficRequest {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct TrafficQuery {
+    pub id: Option<Uuid>,
     pub request_id: Option<String>,
     pub service: Option<String>,
     pub project_id: Option<Uuid>,
@@ -249,6 +321,23 @@ pub fn correlation_id(value: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_traffic_json_remains_readable_without_fabricated_timings() {
+        let mut json = serde_json::to_value(TrafficRequest::default()).unwrap();
+        for field in ["upstream_timings", "usage", "debug_bundle", "key_prefix"] {
+            json.as_object_mut().unwrap().remove(field);
+        }
+        json["diagnostics"]
+            .as_object_mut()
+            .unwrap()
+            .remove("traffic_id");
+        let old: TrafficRequest = serde_json::from_value(json).unwrap();
+        assert!(old.upstream_timings.is_empty());
+        assert!(old.usage.is_none());
+        assert!(old.debug_bundle.is_none());
+        assert!(old.diagnostics.traffic_id.is_none());
+    }
+
     #[test]
     fn reconnect_reports_eviction_instance_change_and_duplicate_client_ids() {
         let monitor = TrafficMonitor::new(2);
