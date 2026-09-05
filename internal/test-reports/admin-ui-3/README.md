@@ -75,7 +75,7 @@ Second Codex follow-up: project/key/overview Usage drilldowns now pass requested
 
 A final consistency pass uses one project-scope synchronizer for navigation,
 creation, deletion, header selection and URL restoration. A changed project
-clears stale key filters in both Usage and Traffic; explicit filter submissions
+clears stale key filters in both Usage and Traffic; same-project filter submissions
 retain their supplied criteria. Unit coverage checks both views. Browser
 verification drilled into a key, created a new project, and confirmed its new
 scope URL contained no inherited key filter before deleting the fixture.
@@ -90,3 +90,12 @@ verified this: ui3-focus-origin stayed selected while ui3-focus-update replaced
 the table, and closing the drawer focused the new Inspect button in the
 originating row. Both temporary request keys were revoked. The complete
 mandatory script passed again after these fixes.
+
+Final project-filter regression: Usage and Traffic now clear their own submitted
+key when the project changes, including the rendered input and subsequent
+query. Regression tests cover unchanged scope, another project, and All projects.
+Browser verification changed Analytics plus its key to Order Operations in Usage:
+the key cleared from the form, applied filters, and URL. Traffic saved history
+changed Order Operations plus its key to Analytics: the key cleared and four
+Analytics records loaded. The full verification script, workspace build, frontend
+build/tests, and version 0.1.32 metadata validation passed after this change.

@@ -212,6 +212,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
   }
   element("traffic-filters").addEventListener("submit", (event) => {
     event.preventDefault(); filters = Object.fromEntries(new FormData(event.currentTarget)); onFilters(filters);
+    event.currentTarget.elements.namedItem("key_id").value = filters.key_id || "";
     if (mode === "history") history(); else render();
   });
   element("traffic-mode").addEventListener("change", (event) => {

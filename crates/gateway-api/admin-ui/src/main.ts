@@ -2900,6 +2900,10 @@ async function loadUsage(event) {
 async function applyUsageFilters(event) {
   event.preventDefault();
   const filters = Object.fromEntries(new FormData(event.currentTarget));
+  if (state.projectScope !== (filters.project_id || "")) {
+    filters.key_id = "";
+    event.currentTarget.elements.namedItem("key_id").value = "";
+  }
   synchronizeProjectScope(filters.project_id || "");
   state.usageFilters = filters;
   persistMonitoringHash();
@@ -5041,6 +5045,7 @@ function synchronizeProjectScope(projectScope) {
 function applyTrafficFilters(filters) {
   const projectScope = filters.project_id || "";
   const changedProject = state.projectScope !== projectScope;
+  if (changedProject) filters.key_id = "";
   synchronizeProjectScope(projectScope);
   state.trafficFilters = filters;
   if (changedProject) resetUsagePagination();

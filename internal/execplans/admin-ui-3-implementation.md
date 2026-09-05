@@ -44,6 +44,9 @@ The branch was created and selected by task setup between inspection and `git sw
 
 ## Decision Log
 
+- 2026-09-05 / User: Stop requesting new Codex reviews for P2-only feedback. Explicitly authorized the repository admin bypass for PR #111 after passing checks; keep branch protection configured and do not publish or deploy.
+- 2026-09-05 / Codex: Fixed the two remaining P2 filter submission findings. A project change clears the submitted key in Usage and Traffic before persistence/querying; same-project submissions retain it. Browser checks and the complete verification stack pass. This changes only unreleased UI state handling, preserving the v0.1.31 backend boundary.
+
 - 2026-09-05 / User: Explicitly authorized choosing the release bump, updating changelog/documents and merging when ready. This supersedes earlier no-merge instructions; no separate release publication or deployment is authorized. Target 0.1.32 follows the repository's existing patch-release convention.
 - 2026-09-05 / Codex: Corrected the audit diagnosis: duplicate advisory was an untracked file in the local cache, not the official repository. Preserved the complete cache in a backup and fetched a clean official copy.
 

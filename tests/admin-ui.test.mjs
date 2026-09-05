@@ -799,7 +799,10 @@ for (const newProject of ['original', 'next-project', '']) {
   const filterState = {projectScope:'original',usageFilters:{project_id:'original',key_id:'old-key',status:'failure'}};
   let resetCount = 0;
   const apply = new Function('state','resetUsagePagination','syncProjectScope','persistMonitoringHash','synchronizeProjectScope', `${sourceFunction('applyTrafficFilters')}; return applyTrafficFilters;`)(filterState,()=>resetCount++,()=>{},()=>{},bindProjectScope(filterState));
-  apply({project_id:newProject,outcome:'failures'});
+  const submitted = {project_id:newProject,key_id:'old-key',outcome:'failures'};
+  apply(submitted);
+  assert.equal(submitted.key_id,newProject === 'original' ? 'old-key' : '');
+  assert.equal(filterState.trafficFilters.key_id,submitted.key_id);
   assert.equal(filterState.projectScope,newProject);
   assert.equal(filterState.usageFilters.project_id,newProject);
   assert.equal(filterState.usageFilters.key_id,newProject === 'original' ? 'old-key' : '');
@@ -807,6 +810,26 @@ for (const newProject of ['original', 'next-project', '']) {
   assert.equal(resetCount,newProject === 'original' ? 0 : 1);
 }
 console.log('ok - Traffic project changes synchronize Usage and discard cross-project key filters');
+
+for (const newProject of ['original', 'next-project', '']) {
+  const filterState = {projectScope:'original',usageFilters:{project_id:'original',key_id:'old-key'}};
+  const keyField = {value:'old-key'};
+  const form = {elements:{namedItem:()=>keyField}};
+  class TestFormData {
+    constructor() { return new Map([['project_id',newProject],['key_id',keyField.value],['status','failure']]); }
+  }
+  let loadedKey, persistedKey;
+  const apply = new Function('state','FormData','synchronizeProjectScope','persistMonitoringHash','syncProjectScope','resetUsagePagination','loadUsage', `return async ${sourceFunction('applyUsageFilters')}`)(
+    filterState,TestFormData,bindProjectScope(filterState),()=>{persistedKey=filterState.usageFilters.key_id;},()=>{},()=>{},async()=>{loadedKey=keyField.value;},
+  );
+  await apply({preventDefault(){},currentTarget:form,target:form});
+  const expectedKey = newProject === 'original' ? 'old-key' : '';
+  assert.equal(filterState.usageFilters.key_id,expectedKey);
+  assert.equal(persistedKey,expectedKey);
+  assert.equal(loadedKey,expectedKey);
+  assert.equal(filterState.usageFilters.status,'failure');
+}
+console.log('ok - Usage project submissions clear the key in saved filters, URL and queried form');
 
 const sharedScope = {projectScope:'old',usageFilters:{key_id:'old-key'},trafficFilters:{key_id:'old-key'}};
 bindProjectScope(sharedScope)('created-project');
