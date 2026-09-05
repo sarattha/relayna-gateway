@@ -2825,7 +2825,7 @@ td { font-size: 13px; }
 
 .result-tabs button { border-color: transparent; background: transparent; }
 
-.result-tabs button[aria-pressed="true"] { background: var(--rg-status-good-bg); color: var(--rg-color-control); }
+.result-tabs button[aria-pressed="true"], .result-tabs button[aria-current="page"] { background: var(--rg-status-good-bg); color: var(--rg-color-control); }
 
 .drawer-backdrop { justify-content: flex-end; padding: 0; }
 

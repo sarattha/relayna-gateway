@@ -20454,9 +20454,10 @@ function organizeView(view) {
     if (resultsBody) tabulateUsage(resultsBody);
   }
   if (view === "members" || view === "managedIdentities") {
-    const tabs = document.createElement("div");
+    const tabs = document.createElement("nav");
     tabs.className = "result-tabs";
-    tabs.innerHTML = `<button type="button" data-identity-view="members" aria-pressed="${view === "members"}">People</button><button type="button" data-identity-view="managed-identities" aria-pressed="${view === "managedIdentities"}">Workload identities</button>`;
+    tabs.setAttribute("aria-label", "People and identities pages");
+    tabs.innerHTML = `<button type="button" data-identity-view="members" aria-current="${view === "members" ? "page" : "false"}">People</button><button type="button" data-identity-view="managed-identities" aria-current="${view === "managedIdentities" ? "page" : "false"}">Workload identities</button>`;
     content.prepend(tabs);
     tabs.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => navigateToView(button.dataset.identityView)));
     const projectForm = (_f = content.querySelector("#managed-identity-project-form")) == null ? void 0 : _f.closest(".panel");
@@ -20528,6 +20529,9 @@ function tabulateUsage(root) {
   nav.setAttribute("role", "group");
   nav.setAttribute("aria-label", "Usage breakdown");
   headings[0].before(nav);
+  const hint = document.createElement("p");
+  hint.className = "help";
+  nav.after(hint);
   const sections = headings.map((heading) => {
     const section = document.createElement("section");
     section.className = "breakdown-section";
@@ -20545,15 +20549,16 @@ function tabulateUsage(root) {
     nav.appendChild(button);
     return { section, button };
   });
-  const select = (chosen) => sections.forEach(({ section, button }, index2) => {
-    section.hidden = index2 !== chosen;
-    button.setAttribute("aria-pressed", String(index2 === chosen));
-  });
-  sections.forEach(({ button }, index2) => button.addEventListener("click", () => {
-    state.usageTab = button.textContent;
-    select(index2);
-  }));
-  select(Math.max(0, sections.findIndex(({ button }) => button.textContent === state.usageTab)));
+  const select = (chosen) => {
+    state.usageTab = chosen < 0 ? null : sections[chosen].button.textContent;
+    sections.forEach(({ section, button }, index2) => {
+      section.hidden = chosen >= 0 && index2 !== chosen;
+      button.setAttribute("aria-pressed", String(index2 === chosen));
+    });
+    hint.textContent = chosen < 0 ? "Showing all breakdowns. Select a breakdown to focus on it." : "Click the selected breakdown again to show all breakdowns.";
+  };
+  sections.forEach(({ button }, index2) => button.addEventListener("click", () => select(state.usageTab === button.textContent ? -1 : index2)));
+  select(state.usageTab === null ? -1 : Math.max(0, sections.findIndex(({ button }) => button.textContent === state.usageTab)));
 }
 window.matchMedia("(max-width: 920px)").addEventListener("change", closeNavigation);
 document.querySelector("#sidebar").addEventListener("keydown", (event) => {

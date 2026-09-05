@@ -784,6 +784,81 @@ for (const outcome of ['cancel', 'pending', 'accept']) {
 }
 console.log('ok - usage drilldown scope commits only after accepted navigation');
 
+test('Usage breakdown buttons toggle back to all sections and retain that choice on refresh', () => {
+  const state = { usageTab: 'Recent requests', usageFilters: { project_id: 'project', status: 'failure' } };
+  const filtersBefore = structuredClone(state.usageFilters);
+  // Minimal DOM adapter for the actual tabulateUsage handler; browser checks cover layout and keys.
+  function mount() {
+    const nodes = [];
+    const document = { createElement(tag) {
+      const node = { tag, textContent: '', hidden: false, attributes: {}, listeners: {},
+        setAttribute(name, value) { this.attributes[name] = value; },
+        appendChild() {}, before() {}, after() {},
+        addEventListener(name, callback) { this.listeners[name] = callback; },
+      };
+      nodes.push(node);
+      return node;
+    } };
+    const headings = ['Recent requests', 'By project', 'By service'].map(textContent => ({
+      textContent, nextElementSibling: null, before() {}, matches: () => true,
+    }));
+    const root = { querySelector: () => null, querySelectorAll: () => headings };
+    new Function('state', 'document', 'root', `${sourceFunction('tabulateUsage')}; tabulateUsage(root);`)(state, document, root);
+    return { buttons: nodes.filter(node => node.tag === 'button'), sections: nodes.filter(node => node.tag === 'section') };
+  }
+  let ui = mount();
+  const visible = () => ui.sections.map(section => !section.hidden);
+  const pressed = () => ui.buttons.map(button => button.attributes['aria-pressed']);
+  assert.deepEqual(visible(), [true, false, false]);
+  for (let index = 0; index < 3; index++) {
+    if (index) ui.buttons[index].listeners.click();
+    assert.deepEqual(pressed(), ui.buttons.map((_, i) => String(i === index)));
+    ui.buttons[index].listeners.click();
+    assert.deepEqual(visible(), [true, true, true]);
+    assert.deepEqual(pressed(), ['false', 'false', 'false']);
+    assert.equal(state.usageTab, null);
+    ui = mount();
+    assert.deepEqual(visible(), [true, true, true], 'data refresh must preserve cleared selection');
+  }
+  ui.buttons[0].listeners.click();
+  ui.buttons[2].listeners.click();
+  assert.deepEqual(visible(), [false, false, true], 'switching directly selects only the new breakdown');
+  assert.deepEqual(state.usageFilters, filtersBefore, 'breakdown toggles must preserve query filters');
+});
+
+for (const [name, data, prefix, refreshName] of [
+  ['keyAction', {keyId:'sample'}, '/keys/sample', 'keys'],
+  ['providerAction', {providerId:'sample'}, '/providers/sample', 'providers'],
+  ['liteLlmCredentialMappingAction', {mappingId:'sample'}, '/providers/litellm-credentials/sample', 'providers'],
+  ['openaiRouteAction', {routeId:'sample'}, '/openai-routes/sample', 'routes'],
+  ['anthropicRouteAction', {routeId:'sample'}, '/anthropic-routes/sample', 'routes'],
+  ['serviceAction', {serviceName:'sample'}, '/services/sample', 'services'],
+]) {
+  for (const approved of [true, false]) {
+    const calls = []; let refreshes = 0;
+    const env = { confirmAction: async () => approved, api: async (path, options) => calls.push([path, options.method]), setNotice() {}, [refreshName]: async () => refreshes++ };
+    const run = new Function('env', `const {${Object.keys(env).join(',')}} = env; return async ${sourceFunction(name)};`)(env);
+    for (const action of ['disable', 'enable']) await run({currentTarget:{dataset:{...data, [name === 'liteLlmCredentialMappingAction' ? 'litellmMappingAction' : name]:action}}});
+    assert.deepEqual(calls, approved ? [['/admin-ui/admin'+prefix+'/disable','POST'], ['/admin-ui/admin'+prefix+'/enable','POST']] : []);
+    assert.equal(refreshes, approved ? 2 : 0);
+  }
+}
+console.log('ok - resource Enable/Disable actions reverse direction, refresh state and respect Cancel');
+
+for (const [name, path, field, datasetField, refreshName] of [
+  ['toggleManagedIdentity', 'managed-identities', 'enabled', 'enabled', 'managedIdentities'],
+  ['toggleManagedIdentityProject', 'managed-identity-projects', 'enabled', 'enabled', 'managedIdentities'],
+  ['updateMemberAdmin', 'members', 'admin', 'memberAdmin', 'members'],
+]) {
+  const calls = []; let refreshes = 0;
+  const env = { api: async (url, options) => calls.push([url, options.method, JSON.parse(options.body)]), setNotice() {}, [refreshName]: async () => refreshes++ };
+  const run = new Function('env', `const {${Object.keys(env).join(',')}} = env; return async ${sourceFunction(name)};`)(env);
+  for (const enabled of ['false', 'true']) await run({currentTarget:{dataset:{identityId:'sample',memberId:'sample',[datasetField]:enabled}}});
+  assert.deepEqual(calls, [false, true].map(value => [`/admin-ui/admin/${path}/sample`, 'PATCH', {[field]:value}]));
+  assert.equal(refreshes, 2);
+}
+console.log('ok - identity and admin-role actions send both states and refresh authoritative data');
+
 for (const selected of ['deleted-project','another-project']) {
   const projectState = {projectScope:selected,usageFilters:{project_id:selected,key_id:'key-filter'}};
   const calls = [];

@@ -5,7 +5,9 @@ requests before authentication, current processing stage, upstream attempts,
 client and upstream HTTP statuses, elapsed time, and failure/recording reasons.
 Use **Inspect** for the timeline, project/key attribution and gateway instance.
 Filter by request ID, service, project/key UUID, HTTP status or failure reason;
-click a reason count to filter its requests. **Pause** freezes the live display;
+click a reason count to filter its requests, then click the highlighted count
+again to clear that reason while preserving other filters. The selected reason
+remains removable even with zero matching records. **Pause** freezes the live display;
 **Resume** reconnects and reports missed updates.
 
 ## Request investigation

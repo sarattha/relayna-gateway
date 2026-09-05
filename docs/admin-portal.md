@@ -51,8 +51,11 @@ disabled and revoked keys do not count as active. Independent source failures
 show unavailable data or explicitly timestamped cached data; Retry refreshes
 those sources. Usage failures offer their own retry action.
 
-Usage breakdown tabs and request investigation drawers retain access to scoped
-results, exports and sanitized debug bundles. Traffic keeps its separate live
+Usage breakdown buttons focus one section; click the selected button again to
+show all breakdowns. This choice survives data refreshes without changing the
+applied query filters. Selected buttons are highlighted and support Enter/Space.
+Request investigation drawers retain access to scoped results, exports and
+sanitized debug bundles. Traffic keeps its separate live
 instance stream and saved history. Hash navigation and the `/admin-ui` asset
 contract remain stable, including responsive navigation and keyboard focus
 restoration after dialogs close.

@@ -2732,7 +2732,7 @@ td { font-size: 13px; }
 .workflow-disclosure > .panel { border: 0; margin: 0; }
 .result-tabs { display: flex; overflow-x: auto; gap: 6px; border-bottom: 1px solid var(--rg-color-border); padding: 12px 0; margin: 16px 0; }
 .result-tabs button { border-color: transparent; background: transparent; }
-.result-tabs button[aria-pressed="true"] { background: var(--rg-status-good-bg); color: var(--rg-color-control); }
+.result-tabs button[aria-pressed="true"], .result-tabs button[aria-current="page"] { background: var(--rg-status-good-bg); color: var(--rg-color-control); }
 .drawer-backdrop { justify-content: flex-end; padding: 0; }
 .resource-drawer { width: min(720px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 .drawer-heading { padding: 22px 24px; border-bottom: 1px solid var(--rg-color-border); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
