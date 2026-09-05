@@ -1358,6 +1358,8 @@ where
             let timing = ctx.traffic.upstream_timings.last_mut().unwrap();
             timing.dns_us = Some(micros(dns_started.elapsed()));
             match result {
+                // Match HttpPeer::new in Pingora 0.8.0: its hostname constructor
+                // also retains only the first resolved socket address.
                 Ok(Ok(mut addresses)) => match addresses.next() {
                     Some(addr) => {
                         timing.dns_status = "resolved".into();

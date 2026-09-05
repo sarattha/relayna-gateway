@@ -1,14 +1,17 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.32` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.33` is the
 current release target.
 
-Version `0.1.32` introduces Admin UI 3.0 with contextual drawers, persistent
-project scope, request investigation, and corrected readiness, reliability,
-key lifecycle and asynchronous navigation behavior. It preserves released
-backend routes, authorization, schemas and embedded asset paths; no new
-migration is required. Existing Traffic history and diagnostics remain available.
-See [Admin Portal](admin-portal.md) for the updated operator workflow.
+Version `0.1.33` expands Admin UI 3.0 request investigation with exact internal
+request correlation, per-attempt DNS/TCP/TLS and response timing, and explicit
+LiteLLM passthrough labels. It adds field guidance, accessible help, reversible
+display filters and consistent action spacing. Pingora now enables verified
+Rustls upstream HTTPS and handles retry decisions explicitly. Diagnostic JSON
+fields are additive; older records remain readable and no schema migration is
+required. See [Admin Portal](admin-portal.md) and
+[Traffic Monitor](operations/traffic-monitor.md) for operator workflows and
+timing definitions.
 
 It retains the `0.1.26` single-application Entra contract,
 Entra-authenticated browser sessions for administrators
@@ -41,7 +44,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.32
+   python3 scripts/validate-release-metadata.py v0.1.33
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -59,15 +62,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.32 .
+   docker build -t relayna-gateway:0.1.33 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.32 -m "Release v0.1.32"
-   git push origin v0.1.32
+   git tag -a v0.1.33 -m "Release v0.1.33"
+   git push origin v0.1.33
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -77,10 +80,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.32`, the workflow publishes:
+For `v0.1.33`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.32
+ghcr.io/sarattha/relayna-gateway:0.1.33
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

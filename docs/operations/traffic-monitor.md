@@ -34,6 +34,10 @@ lookup remains available and is explicitly labeled as a legacy snapshot.
 
 ### Timing definitions
 
+Hostname resolution currently uses the first returned address, matching the
+previous Pingora 0.8.0 peer construction. The timing instrumentation does not add
+address rotation or automatic retries across a hostname's other A/AAAA records.
+
 Each upstream attempt captures up to the following values:
 
 | Field | Meaning |

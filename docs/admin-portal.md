@@ -24,7 +24,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.32` Admin UI 3.0 shell organizes navigation into Monitor, Discover,
+The `v0.1.33` Admin UI 3.0 shell organizes navigation into Monitor, Discover,
 and Govern. Monitor contains Overview, Traffic, Usage & cost and Health;
 Discover contains Projects, Services, Providers and Routes; Govern contains
 Virtual keys, Policies & guardrails, People & identities, Audit log and Settings.

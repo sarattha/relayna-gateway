@@ -2,7 +2,15 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.32` feature set.
+This page summarizes the `v0.1.33` feature set.
+
+The latest Admin UI update adds shared request investigation with exact internal
+request correlation, per-attempt network/response timing, and recorded routing
+mode labels. LiteLLM passthrough values explicitly indicate when Gateway does not
+meter tokens or cost. Field explanations, accessible help, reversible display
+filters and aligned actions improve day-to-day operation. See
+[Traffic Monitor](operations/traffic-monitor.md) for measurement definitions and
+retention limits, and [Admin Portal](admin-portal.md) for interaction details.
 
 The current console is **Admin UI 3.0**. Screenshots later in this feature
 catalog include historical UI 2.0 captures with sanitized local fixtures;
@@ -238,7 +246,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.32` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.33` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -341,7 +349,7 @@ passthrough against a real `litellm/litellm` container.
 
 ## Memory-Safe Body Processing
 
-Release `0.1.32` retains bounds on complete request and response buffering with one
+Release `0.1.33` retains bounds on complete request and response buffering with one
 process-wide admission controller. By default, at most eight managed requests
 or post-call responses may retain complete bodies, and their aggregate
 serialized reservations may not exceed 512 MiB. Operators can tune these
@@ -402,7 +410,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.32` release retains CI and release workflow hardening with strict
+The `v0.1.33` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

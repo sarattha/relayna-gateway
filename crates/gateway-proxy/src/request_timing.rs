@@ -155,6 +155,21 @@ mod tests {
     use gateway_core::traffic::UpstreamTiming;
     use pingora_core::protocols::TimingDigest;
 
+    #[test]
+    fn resolved_peer_preserves_pingora_address_selection() {
+        use pingora_core::upstreams::peer::HttpPeer;
+        let addresses: [std::net::SocketAddr; 2] = [
+            "[::1]:443".parse().unwrap(),
+            "127.0.0.1:443".parse().unwrap(),
+        ];
+        let native = HttpPeer::new(addresses.as_slice(), true, "localhost".into());
+        let resolved = HttpPeer::new(addresses[0], true, "localhost".into());
+        assert_eq!(native._address.as_inet(), Some(&addresses[0]));
+        assert_eq!(resolved._address.as_inet(), native._address.as_inet());
+        assert_eq!(resolved.sni, native.sni);
+        assert!(resolved.options.verify_cert && resolved.options.verify_hostname);
+    }
+
     #[tokio::test]
     async fn real_tls_digest_measures_handshake_and_rejects_wrong_hostname() {
         use openssl::{

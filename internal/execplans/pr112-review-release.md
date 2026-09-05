@@ -14,11 +14,18 @@ threads and merging, but this task does not publish a release or deploy.
 
 - [x] 2026-09-06: Mark PR ready and request Codex review.
 - [x] 2026-09-06: Identify Admin portal CI missing npm dependencies.
-- [ ] Fix and verify CI, address review findings and resolve handled threads.
-- [ ] Bump version, update changelog/docs and validate release metadata.
+- [x] 2026-09-06: Fix CI and verify the review finding against released/dependency code; reply pending push.
+- [x] 2026-09-06: Prepare version 0.1.33, changelog/docs, metadata, strict docs, complete verification and workspace build.
 - [ ] Verify final-head CI, merge and pause review heartbeat.
 
 ## Surprises & Discoveries
+
+Codex flagged first-address DNS selection as a P1 regression. Comparison against
+v0.1.31 and Pingora 0.8.0 `upstreams/peer.rs:612-615` shows the old hostname
+constructor also used `to_socket_addrs().next()` and stored one SocketAddr.
+No address-failover capability was removed. A focused test compares native
+multi-address construction with the explicit resolved peer, including SNI and
+verification settings; operator docs record the existing limitation.
 
 CI runs the frontend tests directly without installing dependencies. New tests
 import TypeScript and fail with ERR_MODULE_NOT_FOUND on a clean runner. Local tests
@@ -45,4 +52,4 @@ resolving it. Read back merged state and commit after merging.
 
 ## Outcomes & Retrospective
 
-Review and CI remediation in progress.
+CI remediation passed both remote CI runs. Version 0.1.33 passed frontend tests, strict docs, release metadata validation, the full verification script (333 nextest tests) and workspace build. Final-head CI and merge remain pending.

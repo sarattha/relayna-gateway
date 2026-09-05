@@ -2,6 +2,38 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.33 - 2026-09-06
+
+### Added
+
+- Shared Usage and Traffic request investigation with safe diagnostic snapshots,
+  exact internal request correlation, and per-attempt DNS, TCP, TLS, response
+  headers, first body byte and first content token timings.
+- Persistent field labels and explanations, including blank/zero semantics,
+  plus accessible help tooltips that support keyboard, hover, click and Escape.
+- Recorded routing mode in request diagnostics and terminal logs. Usage, Traffic
+  and investigation explicitly identify LiteLLM passthrough and gateway metering.
+
+### Fixed
+
+- Enable Pingora's verified Rustls upstream HTTPS backend and resolve retry
+  decisions on connection/proxy failures.
+- Keep sidebar session controls at the viewport bottom, space adjacent controls
+  and align table headings and filter actions.
+- Allow Traffic failure filters and Usage breakdown selections to be cleared
+  by clicking the selected button again; preserve unrelated filters and the
+  all-breakdowns choice on refresh.
+- Install frontend dependencies in CI, verify rebuilt static assets, and run
+  the complete frontend test suite on clean runners.
+
+### Changed
+
+- Workspace, portal indicators and deployment examples target `0.1.33`.
+- New diagnostic fields are additive and older records remain readable. Exact
+  Traffic ID lookup can retrieve records outside the default history window.
+  Existing routes, database schemas and Admin UI asset URLs remain unchanged;
+  no migration is required.
+
 ## 0.1.32 - 2026-09-05
 
 ### Added
