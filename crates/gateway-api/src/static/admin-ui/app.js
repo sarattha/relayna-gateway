@@ -15469,7 +15469,7 @@ function jsonBlock(value) {
   return `<pre>${html(JSON.stringify(value ?? null, null, 2))}</pre>`;
 }
 function filterPanel(title, formMarkup) {
-  return panel(title, `<form class="form-grid" data-filter-form>${formMarkup}</form>`);
+  return panel(title, `<form data-filter-form>${formMarkup}</form>`);
 }
 function auditLogTemplate(filterMarkup, tableMarkup) {
   return `${filterPanel("Audit filters", filterMarkup)}${panel("Audit events", tableMarkup)}`;
@@ -16887,12 +16887,14 @@ async function policyLayerAction(event) {
 async function audit() {
   const renderId = ++renderGeneration;
   const formMarkup = `
+    <div class="form-grid">
     <label>Action<input name="action" placeholder="operator_token.rotate"></label>
     <label>Target type<input name="target_type" placeholder="key, policy_layer, provider"></label>
     <label>Target ID<input name="target_id"></label>
     <label>Operator token ID<input name="actor_token_id"></label>
     <label>Member ID<input name="actor_member_id"></label>
     <label>Limit<input name="limit" type="number" min="1" max="500" value="100"></label>
+    </div>
     <div class="form-actions"><button class="primary">Apply</button></div>
   `;
   if (renderId !== renderGeneration) return;

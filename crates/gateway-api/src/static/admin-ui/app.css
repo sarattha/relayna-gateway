@@ -2728,7 +2728,7 @@ tbody tr:hover td {
 
 .traffic-source-actions { align-items: flex-end; }
 
-#traffic-filters .form-actions {
+#traffic-filters .form-actions, [data-filter-form] .form-actions {
   justify-content: flex-end;
   margin-top: var(--rg-space-3);
   border-top: 1px solid var(--rg-color-border);
