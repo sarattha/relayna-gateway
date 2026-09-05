@@ -35,13 +35,13 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
   let warning = "", historyCursor = null, historyGeneration = 0, connectionGeneration = 0;
   content.innerHTML = `
     <section class="panel">
-      <div class="panel-heading"><h3>Traffic monitor</h3><div class="actions">
+      <div class="panel-heading"><h3>Traffic monitor</h3><div class="actions traffic-source-actions">
         <label>Traffic source<select id="traffic-mode" aria-label="Traffic source" aria-describedby="traffic-source-help"><option value="live">Live instance</option><option value="history">Saved history · all instances</option></select></label>
         <button id="traffic-pause" type="button">Pause</button></div></div>
       <p id="traffic-connection" role="status" aria-live="polite">Connecting…</p>
       <p id="traffic-source-help" class="help">Live view retains up to 200 recent requests from one gateway process. Saved history includes completed records across instances; its default window is 24 hours. Unknown routes are hidden to avoid capturing sensitive paths.</p>
       <div id="traffic-warning" class="notice hidden" role="status"></div>
-      <form id="traffic-filters" class="form-grid">
+      <form id="traffic-filters"><div class="form-grid">
         <label>Request ID<input name="request_id" maxlength="128" placeholder="Client correlation ID"></label>
         <label>Service<input name="service" maxlength="256" placeholder="Exact service name"></label>
         <label>Project ID<input name="project_id" placeholder="Exact project UUID"></label>
@@ -51,7 +51,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
         <label>Outcome<select name="outcome"><option value="all">All requests</option><option value="failures">Failures only</option><option value="active">Active only · live</option></select></label>
         <label>History from<input name="from" type="datetime-local"></label>
         <label>History to<input name="to" type="datetime-local"></label>
-        <div class="form-actions"><button type="submit">Apply filters</button></div>
+        </div><div class="form-actions"><button type="submit">Apply filters</button></div>
       </form>
     </section>
     <section class="panel"><div class="panel-heading"><h3>Requests</h3><div id="traffic-pages" class="actions hidden"><button id="traffic-newest">Newest</button><button id="traffic-older">Older</button></div></div>

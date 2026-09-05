@@ -2726,9 +2726,17 @@ tbody tr:hover td {
 
 #traffic-connection, #traffic-detail code { overflow-wrap: anywhere; }
 
+.traffic-source-actions { align-items: flex-end; }
+
+#traffic-filters .form-actions {
+  justify-content: flex-end;
+  margin-top: var(--rg-space-3);
+  border-top: 1px solid var(--rg-color-border);
+  padding-top: var(--rg-space-3);
+}
+
 @media (max-width: 760px) {
   .traffic-facts { grid-template-columns: 1fr; }
-  #traffic-filters .form-actions { grid-column: 1; }
 }
 
 /* Admin UI 3.0: approved calm workspace, contextual workflows and drawers. */
