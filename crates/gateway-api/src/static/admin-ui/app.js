@@ -15426,7 +15426,7 @@ async function navigateToView(view, { replace = false, focus = true, workspace =
   if (!viewIds.has(view) || !viewAllowed(view)) return;
   state.workspace = workspace;
   if (monitoring) {
-    state.projectScope = monitoring.projectScope;
+    synchronizeProjectScope(monitoring.projectScope);
     state.usageFilters = monitoring.usageFilters;
     resetUsagePagination();
   }
@@ -15918,7 +15918,7 @@ async function createProject(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const project = await api("/admin-ui/admin/projects", { method: "POST", body: JSON.stringify({ name: form.get("name") }) });
-  state.projectScope = project.id;
+  synchronizeProjectScope(project.id);
   persistMonitoringHash();
   setNotice("Project created.", "success");
   await projects();
@@ -15932,8 +15932,7 @@ async function projectAction(event) {
   if (!await confirmAction("Delete project", "Projects with linked keys, services, or usage cannot be deleted.")) return;
   await api(`/admin-ui/admin/projects/${projectId}`, { method: "DELETE" });
   if (state.projectScope === projectId) {
-    state.projectScope = "";
-    state.usageFilters = { ...state.usageFilters, project_id: "", key_id: "" };
+    synchronizeProjectScope("");
     resetUsagePagination();
     persistMonitoringHash();
   }
@@ -17777,8 +17776,9 @@ async function loadUsage(event) {
 }
 async function applyUsageFilters(event) {
   event.preventDefault();
-  state.usageFilters = Object.fromEntries(new FormData(event.currentTarget));
-  state.projectScope = state.usageFilters.project_id || "";
+  const filters = Object.fromEntries(new FormData(event.currentTarget));
+  synchronizeProjectScope(filters.project_id || "");
+  state.usageFilters = filters;
   persistMonitoringHash();
   syncProjectScope();
   resetUsagePagination();
@@ -19556,7 +19556,7 @@ async function serviceDashboard() {
     });
   }
   content.querySelectorAll("[data-owner-page]").forEach((button) => button.addEventListener("click", () => {
-    const delta = button.dataset.ownerPage === "next" ? state.ownerDashboardFilters.limit : -20;
+    const delta = button.dataset.ownerPage === "next" ? state.ownerDashboardFilters.limit : -state.ownerDashboardFilters.limit;
     state.ownerDashboardFilters.offset = Math.max(0, state.ownerDashboardFilters.offset + delta);
     serviceDashboard().catch((error) => setNotice(error.message));
   }));
@@ -19677,7 +19677,7 @@ async function projectDashboard() {
     });
   }
   content.querySelectorAll("[data-owner-page]").forEach((button) => button.addEventListener("click", () => {
-    const delta = button.dataset.ownerPage === "next" ? state.ownerDashboardFilters.limit : -20;
+    const delta = button.dataset.ownerPage === "next" ? state.ownerDashboardFilters.limit : -state.ownerDashboardFilters.limit;
     state.ownerDashboardFilters.offset = Math.max(0, state.ownerDashboardFilters.offset + delta);
     projectDashboard().catch((error) => setNotice(error.message));
   }));
@@ -19760,12 +19760,18 @@ function scopeLabel() {
   if (!state.projectScope) return "All projects";
   return ((_a2 = state.projects.find((project) => project.id === state.projectScope)) == null ? void 0 : _a2.name) || `Project ${state.projectScope}`;
 }
+function synchronizeProjectScope(projectScope) {
+  const changedProject = state.projectScope !== projectScope;
+  state.projectScope = projectScope;
+  for (const field of ["usageFilters", "trafficFilters"]) {
+    state[field] = { ...state[field], project_id: projectScope, ...changedProject ? { key_id: "" } : {} };
+  }
+}
 function applyTrafficFilters(filters) {
   const projectScope = filters.project_id || "";
   const changedProject = state.projectScope !== projectScope;
+  synchronizeProjectScope(projectScope);
   state.trafficFilters = filters;
-  state.projectScope = projectScope;
-  state.usageFilters = { ...state.usageFilters, project_id: projectScope, ...changedProject ? { key_id: "" } : {} };
   if (changedProject) resetUsagePagination();
   syncProjectScope();
   persistMonitoringHash();
@@ -19784,7 +19790,7 @@ function persistMonitoringHash() {
 }
 function restoreMonitoringHash() {
   const query = new URLSearchParams(location.hash.split("?")[1] || "");
-  state.projectScope = query.get("project") || "";
+  synchronizeProjectScope(query.get("project") || "");
   state.overviewWindow = ["24h", "7d", "30d"].includes(query.get("range")) ? query.get("range") : "7d";
   state.usageFilters = Object.fromEntries([...query].filter(([key]) => key.startsWith("usage.")).map(([key, value]) => [key.slice(6), value]));
   resetUsagePagination();
@@ -20025,8 +20031,7 @@ document.querySelector("#project-scope").addEventListener("change", async (event
     return;
   }
   clearDirtyForms();
-  state.projectScope = event.target.value;
-  state.usageFilters = { ...state.usageFilters, project_id: state.projectScope, key_id: "" };
+  synchronizeProjectScope(event.target.value);
   resetUsagePagination();
   persistMonitoringHash();
   refresh();

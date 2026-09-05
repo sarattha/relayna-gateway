@@ -749,6 +749,10 @@ for (const [handlerName, path] of [["deleteManagedIdentity", "managed-identities
   console.log(`ok - ${handlerName} retains identity across confirmation and respects cancellation`);
 }
 
+function bindProjectScope(state) {
+  return new Function('state', `${sourceFunction('synchronizeProjectScope')}; return synchronizeProjectScope;`)(state);
+}
+
 const navigationSource = sourceJs.slice(sourceJs.indexOf('async function navigateToView('), sourceJs.indexOf('\nfunction syncNavigation('));
 for (const outcome of ['cancel', 'pending', 'accept']) {
   const navState = {workspace:'admin',view:'projects',projectScope:'original',usageFilters:{project_id:'original',key_id:'original-key'}};
@@ -756,7 +760,7 @@ for (const outcome of ['cancel', 'pending', 'accept']) {
   const loc = {hash:'#/projects?project=original'};
   let shellChanges = 0;
   const env = {
-    state:navState, pendingWrites:outcome === 'pending' ? 1 : 0,
+    state:navState, synchronizeProjectScope:bindProjectScope(navState), pendingWrites:outcome === 'pending' ? 1 : 0,
     setNotice(){}, hasDirtyForms:()=>true, confirmAction:async()=>outcome === 'accept', clearDirtyForms(){},
     viewIds:new Set(['usage']), viewAllowed:()=>true, resetUsagePagination(){}, configurePortalShell(){shellChanges++;},
     monitoringHash:()=>`?project=${navState.projectScope}`, location:loc, history:{replaceState(){}},
@@ -780,8 +784,8 @@ console.log('ok - usage drilldown scope commits only after accepted navigation')
 for (const selected of ['deleted-project','another-project']) {
   const projectState = {projectScope:selected,usageFilters:{project_id:selected,key_id:'key-filter'}};
   const calls = [];
-  const action = new Function('state','confirmAction','api','setNotice','projects','resetUsagePagination','persistMonitoringHash','navigateToView', `return async ${sourceFunction('projectAction')}`)(
-    projectState, async()=>true, async(path)=>calls.push(path), ()=>{}, async()=>{}, ()=>{}, ()=>{}, async()=>{},
+  const action = new Function('state','confirmAction','api','setNotice','projects','resetUsagePagination','persistMonitoringHash','navigateToView','synchronizeProjectScope', `return async ${sourceFunction('projectAction')}`)(
+    projectState, async()=>true, async(path)=>calls.push(path), ()=>{}, async()=>{}, ()=>{}, ()=>{}, async()=>{}, bindProjectScope(projectState),
   );
   await action({currentTarget:{dataset:{projectAction:'delete',projectId:'deleted-project'}}});
   assert.deepEqual(calls,['/admin-ui/admin/projects/deleted-project']);
@@ -793,7 +797,7 @@ console.log('ok - successful selected-project deletion clears its scope without 
 for (const newProject of ['original', 'next-project', '']) {
   const filterState = {projectScope:'original',usageFilters:{project_id:'original',key_id:'old-key',status:'failure'}};
   let resetCount = 0;
-  const apply = new Function('state','resetUsagePagination','syncProjectScope','persistMonitoringHash', `${sourceFunction('applyTrafficFilters')}; return applyTrafficFilters;`)(filterState,()=>resetCount++,()=>{},()=>{});
+  const apply = new Function('state','resetUsagePagination','syncProjectScope','persistMonitoringHash','synchronizeProjectScope', `${sourceFunction('applyTrafficFilters')}; return applyTrafficFilters;`)(filterState,()=>resetCount++,()=>{},()=>{},bindProjectScope(filterState));
   apply({project_id:newProject,outcome:'failures'});
   assert.equal(filterState.projectScope,newProject);
   assert.equal(filterState.usageFilters.project_id,newProject);
@@ -802,3 +806,11 @@ for (const newProject of ['original', 'next-project', '']) {
   assert.equal(resetCount,newProject === 'original' ? 0 : 1);
 }
 console.log('ok - Traffic project changes synchronize Usage and discard cross-project key filters');
+
+const sharedScope = {projectScope:'old',usageFilters:{key_id:'old-key'},trafficFilters:{key_id:'old-key'}};
+bindProjectScope(sharedScope)('created-project');
+assert.equal(sharedScope.usageFilters.project_id,'created-project');
+assert.equal(sharedScope.trafficFilters.project_id,'created-project');
+assert.equal(sharedScope.usageFilters.key_id,'');
+assert.equal(sharedScope.trafficFilters.key_id,'');
+console.log('ok - shared project changes clear stale keys in both monitoring views');
