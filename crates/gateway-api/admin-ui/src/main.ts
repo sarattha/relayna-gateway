@@ -1,5 +1,7 @@
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic } from "./traffic";
+import { installComponentGuidance } from "./design-system/guidance";
+import { routingModeLabel, usageValue, requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 import Chart from "chart.js/auto";
 import "./app.css";
@@ -18,6 +20,7 @@ import {
 } from "./design-system";
 
 const tokenKey = "relayna_gateway_operator_token";
+installComponentGuidance();
 const viewIds = new Set(Object.keys(viewMeta));
 const ownerViewIds = new Set(["my-services", "service-dashboard", "my-projects", "project-dashboard"]);
 const state = {
@@ -274,7 +277,7 @@ function showTextModal(titleText, value) {
   backdrop.innerHTML = `
     <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
       <h3 id="${titleId}">${esc(titleText)}</h3>
-      <textarea readonly rows="18">${esc(value)}</textarea>
+      <textarea readonly rows="18" aria-label="${attr(titleText)}">${esc(value)}</textarea>
       ${actionGroup('<button type="button" data-close-modal>Close</button>')}
     </div>
   `;
@@ -325,6 +328,7 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {}, re
     "select:not([disabled])",
     "textarea:not([disabled])",
     'a[href]',
+    "summary",
     '[tabindex]:not([tabindex="-1"])',
   ].join(",");
   const close = (value) => {
@@ -527,7 +531,7 @@ function showCommandPalette() {
   backdrop.innerHTML = `
     <div class="modal command-palette" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
       <h3 id="${titleId}">Go to ${workspaceLabel} view</h3>
-      <label class="command-search"><span class="sr-only">Filter views</span><input type="search" placeholder="Search views…" autocomplete="off" data-command-search></label>
+      <label class="command-search"><span>Filter views</span><input type="search" placeholder="Search views…" autocomplete="off" data-command-search></label>
       <div class="command-list" role="list">${commands}</div>
       <div class="command-footer"><span>Enter to open</span><span>Esc to close</span></div>
     </div>`;
@@ -683,7 +687,7 @@ async function refresh({ focus = false } = {}) {
       if (generation !== viewGeneration) return;
       state.projects = projects;
       syncProjectScope();
-      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, mountDialog, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
+      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
     }
     if (view === "usage") await usage();
     if (view === "health") await health();
@@ -767,7 +771,7 @@ async function overview() {
     </section>
     <details class="workflow-disclosure"><summary>Gateway inventory · ${enabledRoutes}/${totalRoutes} routes · ${enabledServices} services</summary><section class="panel">${overviewOperationsTable(healthRows, scopedKeys)}</section></details>
   `;
-  document.querySelector("#page-actions").innerHTML = `<label class="compact-field"><span class="sr-only">Overview time range</span><select id="overview-window">${option("24h", state.overviewWindow, "Last 24 hours")}${option("7d", state.overviewWindow, "Last 7 days")}${option("30d", state.overviewWindow, "Last 30 days")}</select></label>`;
+  document.querySelector("#page-actions").innerHTML = `<label class="compact-field"><span>Overview time range</span><select id="overview-window">${option("24h", state.overviewWindow, "Last 24 hours")}${option("7d", state.overviewWindow, "Last 7 days")}${option("30d", state.overviewWindow, "Last 30 days")}</select></label>`;
   content.querySelectorAll("[data-overview-project]").forEach((button) => button.addEventListener("click", () => {
     navigateToView("usage", { monitoring: { projectScope: button.dataset.overviewProject, usageFilters: { time_preset: state.overviewWindow === "30d" ? "last_30d" : state.overviewWindow === "24h" ? "last_24h" : "last_7d" } } });
   }));
@@ -1123,7 +1127,7 @@ function policyFields(key = null, neutral = false) {
   return `
     <label>Routes<input name="allowed_routes" value="${attr(listValue(policy.allowed_routes, neutral ? "" : "/v1/chat/completions,/v1/responses"))}"></label>
     <label>Models<input name="allowed_models" value="${attr(listValue(policy.allowed_models, ""))}" placeholder="gpt-4o-mini"></label>
-    <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers, neutral)}</div>
+    <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers, neutral)}<small class="field-hint">Allowed provider adapters. No selection adds no restriction at this layer; inherited policies still apply.</small></div>
     <label>RPM limit<input name="rpm_limit" type="number" min="0" value="${attr(policy.rpm_limit ?? "")}"></label>
     <label>TPM limit<input name="tpm_limit" type="number" min="0" value="${attr(policy.tpm_limit ?? "")}"></label>
     <label>Daily budget<input name="daily_budget_usd" type="number" min="0" step="0.01" value="${attr(policy.daily_budget_usd ?? "")}"></label>
@@ -1145,9 +1149,9 @@ function policyFields(key = null, neutral = false) {
 function guardrailPolicyFields(key = null) {
   const policy = key?.guardrail_policy || {};
   return `
-    <div class="field"><span>Mandatory guardrails</span>${guardrailSelectionControl(policy.mandatory_guardrails || [], "mandatory_guardrails", "Mandatory guardrails")}</div>
-    <div class="field"><span>Optional guardrails</span>${guardrailSelectionControl(policy.optional_guardrails || [], "optional_guardrails", "Optional guardrails")}</div>
-    <div class="field"><span>Forbidden guardrails</span>${guardrailSelectionControl(policy.forbidden_guardrails || [], "forbidden_guardrails", "Forbidden guardrails")}</div>
+    <div class="field"><span>Mandatory guardrails</span>${guardrailSelectionControl(policy.mandatory_guardrails || [], "mandatory_guardrails", "Mandatory guardrails")}<small class="field-hint">Checks that this key must run. Callers cannot opt out of mandatory checks.</small></div>
+    <div class="field"><span>Optional guardrails</span>${guardrailSelectionControl(policy.optional_guardrails || [], "optional_guardrails", "Optional guardrails")}<small class="field-hint">Checks permitted for this key when requested, in addition to mandatory checks.</small></div>
+    <div class="field"><span>Forbidden guardrails</span>${guardrailSelectionControl(policy.forbidden_guardrails || [], "forbidden_guardrails", "Forbidden guardrails")}<small class="field-hint">Checks this key cannot request. Do not also select them as mandatory or optional.</small></div>
     <div class="wide-field field">
       <span>Guardrail config overrides</span>
       <div data-guardrail-overrides>${guardrailOverrideControls(policy.guardrail_config_overrides || {}, activeConfigurableGuardrails(policy))}</div>
@@ -1177,7 +1181,7 @@ function guardrailOverrideControls(overrides = {}, selectedNames = []) {
             <input name="guardrail_override_names" type="checkbox" value="${attr(guardrail.name)}" ${enabled ? "checked" : ""}>
             <span><strong>${esc(guardrail.name)}</strong><small>${esc(guardrail.description || "Custom runtime settings")}</small></span>
           </label>
-          <textarea name="guardrail_override_${attr(guardrail.name)}" rows="4">${esc(value)}</textarea>
+          <label>Configuration for ${esc(guardrail.name)}<textarea name="guardrail_override_${attr(guardrail.name)}" rows="4">${esc(value)}</textarea></label>
           <details>
             <summary>Config schema</summary>
             <code>${esc(schema)}</code>
@@ -1441,12 +1445,14 @@ async function policyLayerAction(event) {
 async function audit() {
   const renderId = ++renderGeneration;
   const formMarkup = `
+    <div class="form-grid">
     <label>Action<input name="action" placeholder="operator_token.rotate"></label>
     <label>Target type<input name="target_type" placeholder="key, policy_layer, provider"></label>
     <label>Target ID<input name="target_id"></label>
     <label>Operator token ID<input name="actor_token_id"></label>
     <label>Member ID<input name="actor_member_id"></label>
     <label>Limit<input name="limit" type="number" min="1" max="500" value="100"></label>
+    </div>
     <div class="form-actions"><button class="primary">Apply</button></div>
   `;
   if (renderId !== renderGeneration) return;
@@ -1641,16 +1647,16 @@ function providerAuthSettingsForm(row) {
     return '<span class="subtle">not applicable</span>';
   }
   return `<form class="inline-form" data-provider-config-form data-provider-id="${attr(row.id)}" aria-label="Authentication settings for provider ${attr(row.name)}">
-    <select name="credential_header_mode">
+    <label>Credential mode<select name="credential_header_mode">
       ${option("authorization_bearer", row.credential_header_mode || "authorization_bearer")}
       ${option("custom_header", row.credential_header_mode || "")}
-    </select>
-    <input name="credential_header_name" placeholder="x-litellm-api-key" value="${attr(row.credential_header_name || "")}">
-    <select name="credential_header_value_format">
+    </select></label>
+    <label>Custom header<input name="credential_header_name" placeholder="x-litellm-api-key" value="${attr(row.credential_header_name || "")}"></label>
+    <label>Header value<select name="credential_header_value_format">
       ${option("raw", row.credential_header_value_format || "raw")}
       ${option("bearer", row.credential_header_value_format || "")}
-    </select>
-    <input name="credential" type="password" autocomplete="new-password" placeholder="rotate default credential">
+    </select></label>
+    <label>Replace credential<input name="credential" type="password" autocomplete="new-password" placeholder="Leave blank to keep current credential"></label>
     <button type="submit" aria-label="Update authentication for provider ${attr(row.name)}">Update</button>
     <span class="subtle">x-litellm-key usually needs bearer.</span>
   </form>`;
@@ -1987,7 +1993,7 @@ async function services() {
             <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9\\x2d]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
             <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
             <label>Upstream URL<input name="upstream_base_url"></label>
-            <div class="field"><span>Methods</span>${methodSelect(["POST"])}</div>
+            <div class="field"><span>Methods</span><small class="field-hint">HTTP methods clients may use on this service. Select only the methods its endpoints need.</small>${methodSelect(["POST"])}</div>
             <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
           `, true)}
           ${formSection("Reliability and credentials", "Configure health checks, write-only credentials, limits, and fallback.", `
@@ -2103,6 +2109,7 @@ function pricingRuleFromRow(row) {
 }
 
 function openApiEndpointPricingEditor(service) {
+  const pricingHelpId = `endpoint-pricing-help-${service.id || service.name}`;
   const endpoints = service.openapi_endpoints || [];
   const rules = service.endpoint_pricing_rules || [];
   const endpointKey = (method, path) => `${String(method).toUpperCase()} ${path}`;
@@ -2116,8 +2123,8 @@ function openApiEndpointPricingEditor(service) {
         <td><code data-endpoint-field="method">${esc(rule.method)}</code></td>
         <td><code data-endpoint-field="path_template">${esc(rule.path_template)}</code><div class="subtle">${esc(operationId)}</div></td>
         <td>${endpoint?.relayna_default ? '<span class="badge good">Relayna default</span>' : stale ? '<span class="badge warn">stale</span>' : '<span class="badge">service</span>'}</td>
-        <td><select data-endpoint-field="cost_mode">${option("none", rule.cost_mode)}${option("fixed", rule.cost_mode)}${option("passthrough", rule.cost_mode)}</select></td>
-        <td><input data-endpoint-field="estimated_cost_usd" type="number" min="0" step="0.001" value="${attr(rule.estimated_cost_usd ?? "")}" aria-label="Estimated cost for ${attr(rule.method)} ${attr(rule.path_template)}"></td>
+        <td><select data-endpoint-field="cost_mode" aria-describedby="${attr(pricingHelpId)}" aria-label="Cost mode for ${attr(rule.method)} ${attr(rule.path_template)}">${option("none", rule.cost_mode)}${option("fixed", rule.cost_mode)}${option("passthrough", rule.cost_mode)}</select></td>
+        <td><input data-endpoint-field="estimated_cost_usd" aria-describedby="${attr(pricingHelpId)}" type="number" min="0" step="0.001" value="${attr(rule.estimated_cost_usd ?? "")}" aria-label="Estimated cost for ${attr(rule.method)} ${attr(rule.path_template)}"></td>
       </tr>
     `;
   }).join("");
@@ -2133,6 +2140,7 @@ function openApiEndpointPricingEditor(service) {
         <button type="button" data-openapi-action="preview" data-service-name="${attr(service.name)}">Preview OpenAPI</button>
       </div>
       <div class="help">Discovery fetches JSON from the registered upstream origin only, does not forward service credentials, does not follow redirects, and never runs on the proxy request path.</div>
+      <p id="${attr(pricingHelpId)}" class="field-hint">Endpoint prices are in USD per request. none records no charge; fixed uses the estimate (0 means no estimated charge); passthrough uses upstream-reported cost when available. Stale rules refer to endpoints absent from the last discovery.</p>
       ${rows ? tableWrap(`<table><thead><tr><th>Method</th><th>Endpoint</th><th>Class</th><th>Cost mode</th><th>Estimated cost</th></tr></thead><tbody>${rows}</tbody></table>`) : emptyState("No discovered endpoints. Preview and sync /openapi.json to create endpoint pricing rules.")}
     </div>
   `;
@@ -2221,7 +2229,7 @@ function serviceEditForm(service) {
         <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
         <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
         <label>Upstream URL<input name="upstream_base_url" value="${attr(service.upstream_base_url ?? "")}"></label>
-        <div class="field"><span>Methods</span>${methodSelect(service.allowed_methods)}</div>
+        <div class="field"><span>Methods</span><small class="field-hint">HTTP methods clients may use on this service. Select only the methods its endpoints need.</small>${methodSelect(service.allowed_methods)}</div>
         <label>Sync status<select name="sync_status">${["local", "synced", "incomplete", "stale", "failed"].map((value) => option(value, service.sync_status)).join("")}</select></label>
         <label class="check"><input name="enabled" type="checkbox" ${service.enabled ? "checked" : ""}> Enabled</label>
       `, true)}
@@ -2370,7 +2378,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.32")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.33")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -2493,10 +2501,10 @@ async function authSettingsAction(event) {
 function studioImportTable(rows) {
   if (!rows.length) return '<div class="empty-state"><p>No Studio services.</p></div>';
   return `<div class="table-wrap studio-import-table"><table><thead><tr>
-    <th></th><th>Service</th><th>Environment</th><th>Status</th><th>Base URL</th><th>Tags</th><th>Route</th>
+    <th>Select</th><th>Service</th><th>Environment</th><th>Status</th><th>Base URL</th><th>Tags</th><th>Route</th>
   </tr></thead><tbody>${rows
     .map((row, index) => `<tr>
-      <td><input name="studio_index" type="checkbox" value="${attr(index)}"></td>
+      <td><input name="studio_index" type="checkbox" value="${attr(index)}" aria-label="Select Studio service ${attr(row.display_name || row.name)}"></td>
       <td><strong>${esc(row.display_name || row.name)}</strong><div class="subtle">${esc(row.studio_service_id)}</div></td>
       <td>${esc(row.environment || "n/a")}</td>
       <td>${esc(row.status || "n/a")}</td>
@@ -2572,10 +2580,10 @@ function openGuardrailSelectionPicker(trigger) {
 function servicePickerTable(rows, selected) {
   if (!rows.length) return '<div class="empty-state"><p>No services registered.</p></div>';
   return `<div class="table-wrap service-picker-table"><table><thead><tr>
-    <th></th><th>Service</th><th>Status</th><th>Route</th><th>Upstream</th>
+    <th>Select</th><th>Service</th><th>Status</th><th>Route</th><th>Upstream</th>
   </tr></thead><tbody>${rows
     .map((row) => `<tr>
-      <td><input name="service_name" type="checkbox" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
+      <td><input name="service_name" type="checkbox" aria-label="Select service ${attr(row.name)}" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
       <td><strong>${esc(row.name)}</strong><div class="subtle">${esc(row.studio_service_id || "local")}</div></td>
       <td>${esc(row.sync_status || (row.enabled ? "enabled" : "disabled"))}</td>
       <td><code>${esc(row.route_pattern)}</code></td>
@@ -2587,10 +2595,10 @@ function servicePickerTable(rows, selected) {
 function guardrailPickerTable(rows, selected) {
   if (!rows.length) return '<div class="empty-state"><p>No guardrails configured.</p></div>';
   return `<div class="table-wrap guardrail-picker-table"><table><thead><tr>
-    <th></th><th>Guardrail</th><th>Provider</th><th>Modes</th><th>Failure</th><th>Default</th>
+    <th>Select</th><th>Guardrail</th><th>Provider</th><th>Modes</th><th>Failure</th><th>Default</th>
   </tr></thead><tbody>${rows
     .map((row) => `<tr>
-      <td><input name="guardrail_name" type="checkbox" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
+      <td><input name="guardrail_name" type="checkbox" aria-label="Select guardrail ${attr(row.name)}" value="${attr(row.name)}" ${selected.has(row.name) ? "checked" : ""}></td>
       <td><strong>${esc(row.name)}</strong><div class="subtle">${esc(row.description || "")}</div></td>
       <td>${esc(row.provider_kind)}</td>
       <td>${esc(listValue(row.modes, "none"))}</td>
@@ -2785,24 +2793,48 @@ async function usage() {
     <section class="panel">
       <div class="panel-heading"><h3>Export options</h3></div>
       <form id="usage-export-form" class="usage-export-form">
-        <select name="export_format" aria-label="Export format" aria-describedby="usage-export-help"><option value="csv">CSV</option><option value="json">JSON</option></select>
-        <select name="export_limit" aria-label="Export row count" aria-describedby="usage-export-help"><option value="1000">1,000</option><option value="100">100</option><option value="5000">5,000</option><option value="10000">10,000</option><option value="all">All rows (download)</option></select>
-        <label>Export from<input name="export_from" type="datetime-local" aria-describedby="usage-export-help"></label>
-        <label>Export to<input name="export_to" type="datetime-local" aria-describedby="usage-export-help"></label>
-        <input name="export_offset" type="number" min="0" value="0" aria-label="Export offset" aria-describedby="usage-export-help">
+        <div class="field">
+          <label for="usage-export-format">Export format</label>
+          <select id="usage-export-format" name="export_format" aria-describedby="usage-export-format-help"><option value="csv">CSV</option><option value="json">JSON</option></select>
+          <small id="usage-export-format-help" class="field-hint">CSV for spreadsheets; JSON for scripts and integrations.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-limit">Maximum rows</label>
+          <select id="usage-export-limit" name="export_limit" aria-describedby="usage-export-limit-help usage-export-help"><option value="1000">1,000</option><option value="100">100</option><option value="5000">5,000</option><option value="10000">10,000</option><option value="all">All rows (download)</option></select>
+          <small id="usage-export-limit-help" class="field-hint">Maximum matching records to include. All rows downloads every match in the selected time range.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-from">Export from</label>
+          <input id="usage-export-from" name="export_from" type="datetime-local" aria-describedby="usage-export-from-help usage-export-help">
+          <small id="usage-export-from-help" class="field-hint">Include records at or after this time. Uses your local time.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-to">Export to</label>
+          <input id="usage-export-to" name="export_to" type="datetime-local" aria-describedby="usage-export-to-help usage-export-help">
+          <small id="usage-export-to-help" class="field-hint">Include records before this time. Uses your local time.</small>
+        </div>
+        <div class="field">
+          <label for="usage-export-offset">Rows to skip</label>
+          <input id="usage-export-offset" name="export_offset" type="number" min="0" value="0" aria-describedby="usage-export-offset-help">
+          <small id="usage-export-offset-help" class="field-hint">0 starts at the first matching row. For example, 100 skips the first 100 rows. Ignored for All rows.</small>
+        </div>
         <div class="actions usage-export-actions">
           <button type="button" data-usage-export-action="preview">Preview</button>
           <button type="button" data-usage-export-action="download">Download</button>
           <button type="button" data-usage-export-action="copy-url">Copy URL</button>
           <button type="button" data-usage-export-action="copy-curl">Copy curl</button>
         </div>
-        <div id="usage-export-help" class="help">Export dates override the Usage time filter. Leave both blank to inherit it. All rows requires a start and end time and is available for Download only.</div>
+        <div id="usage-export-help" class="help">Leave both dates blank to use the Usage time filter. Entering either date replaces that range; a blank start or end means no limit on that side. Other Usage filters still apply. All rows needs both a start and end (here or in Usage) and supports Download only.</div>
       </form>
     </section>
     <section class="panel">
       <div class="panel-heading"><h3>Task drilldown</h3></div>
       <form id="task-usage-form" class="inline-form">
-        <input name="task_lookup" placeholder="task ID" required>
+        <div class="field">
+          <label for="task-usage-id">Task ID</label>
+          <input id="task-usage-id" name="task_lookup" placeholder="task ID" aria-describedby="task-usage-help" required>
+          <small id="task-usage-help" class="field-hint">Enter an exact task ID to summarize its requests, failures and cost using the current Usage filters.</small>
+        </div>
         <button>Load task usage</button>
       </form>
       <div id="task-usage-result"></div>
@@ -3323,11 +3355,12 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
 
 function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {}) {
   return table(
-    ["Created", "Request", "Route", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
+    ["Created", "Request", "Route", "Routing mode", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
     rows.map((row) => [
       time(row.created_at),
       `<code>${esc(row.request_id)}</code>`,
       esc(row.route),
+      badge(routingModeLabel(row.diagnostics), "neutral"),
       esc(row.service_name || ""),
       esc(row.http_method || ""),
       `<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
@@ -3335,23 +3368,44 @@ function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {
       esc(row.provider),
       `${badge(row.status, row.status === "success" ? "good" : "bad")} <code>${esc(row.status_code)}</code>`,
       `${esc(row.latency_ms)} ms`,
-      esc(row.total_tokens),
-      money(row.estimated_cost_usd),
+      esc(usageValue(row.diagnostics, row.total_tokens)),
+      esc(usageValue(row.diagnostics, row.estimated_cost_usd, money)),
       esc(row.cost_source || ""),
       esc(row.pricing_rule_name || ""),
       row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",
       ownerService || ownerProject
         ? `<button type="button" ${ownerService ? `data-owner-service="${attr(ownerService)}"` : `data-owner-project="${attr(ownerProject)}"`} data-owner-request="${attr(row.request_id)}">View details</button>`
-        : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}">Debug</button>`,
+        : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}" data-debug-usage="${attr(JSON.stringify(investigationUsageSnapshot(row)))}">Debug</button>`,
     ]),
   );
+}
+
+function investigationView(data) {
+  return requestInvestigationView(data, { esc, table, time, projects: state.projects });
 }
 
 async function openDebugRequest(event) {
   const trigger = event.currentTarget;
   const requestId = trigger.dataset.debugRequest;
-  const bundle = await api(`/admin-ui/admin/debug-bundles/${encodeURIComponent(requestId)}`);
-  showContentDrawer("Request investigation", debugBundleView(bundle), () => {}, trigger);
+  const usage = trigger.dataset.debugUsage ? JSON.parse(trigger.dataset.debugUsage) : null;
+  const body = document.createElement("div");
+  let open = true;
+  const render = (traffic, notice = "") => {
+    if (!open) return;
+    body.innerHTML = investigationView({ traffic, usage, notice });
+    bindInvestigationActions(body, requestId);
+  };
+  render(null, usage?.diagnostics?.traffic_id ? "Loading the matching request timeline…" : "This older usage record has no internal Traffic ID. Request-ID-only debug snapshots are not combined with it because client request IDs can be reused.");
+  showContentDrawer("Request investigation", body, () => { open = false; }, trigger);
+  if (!usage?.diagnostics?.traffic_id) return;
+  try {
+    const query = new URLSearchParams({ id: usage.diagnostics.traffic_id, limit: "1" });
+    const rows = await api(`/admin-ui/admin/traffic/history?${query}`);
+    const traffic = matchTrafficRecord(rows, usage);
+    render(traffic, traffic ? "" : "The matching Traffic record is unavailable or was not saved. Usage metadata is still available.");
+  } catch {
+    render(null, "Traffic details could not be loaded. Usage metadata is still available; close and reopen to retry.");
+  }
 }
 
 function unusedKeysTable(rows) {
@@ -3473,7 +3527,7 @@ async function health() {
     <section class="panel">
       <div class="panel-heading"><h3>Debug bundle</h3></div>
       <form id="debug-bundle-form" class="inline-form">
-        <input name="request_id" placeholder="request ID" required>
+        <label>Request ID<input name="request_id" placeholder="request ID" required></label>
         <button>Load</button>
       </form>
       ${state.debugBundle ? debugBundleView(state.debugBundle) : ""}
@@ -3489,6 +3543,7 @@ async function health() {
     button.addEventListener("click", () => fillProviderHealthStateForm(button.dataset.healthStateEdit));
   });
   document.querySelector("#debug-bundle-form").addEventListener("submit", handleAsync(loadDebugBundle));
+  if (state.debugBundle) bindInvestigationActions(content, state.debugBundle.request_id);
   document.querySelectorAll("[data-import-rollback]").forEach((button) => {
     button.addEventListener("click", handleAsync(rollbackImportVersion));
   });
@@ -3540,17 +3595,7 @@ function healthStateTable(rows) {
 }
 
 function debugBundleView(bundle) {
-  return `<div class="details">
-    <p><strong>${esc(bundle.request_id)}</strong> ${esc(bundle.route ?? "")} ${esc(bundle.provider ?? "")}</p>
-    <p class="subtle">Request hash ${esc(bundle.request_hash ?? "none")} · Response hash ${esc(bundle.response_hash ?? "none")}</p>
-    <pre>${esc(JSON.stringify({
-      policy_trace: bundle.policy_trace,
-      guardrail_trace: bundle.guardrail_trace,
-      selection_trace: bundle.selection_trace,
-      fallback_history: bundle.fallback_history,
-      upstream_latency_ms: bundle.upstream_latency_ms,
-    }, null, 2))}</pre>
-  </div>`;
+  return investigationView({ bundle, notice: "Legacy debug snapshot, looked up by client request ID. Timings and usage are shown only when captured in the same request record." });
 }
 
 function serviceImportVersionsTable(rows) {
@@ -3792,7 +3837,7 @@ function guardrailDrawer(guardrail) {
     <form id="guardrail-form" class="form-grid guardrail-form" data-mode="${creating ? "create" : "edit"}" data-guardrail-name="${attr(guardrail?.name || "")}" data-provider-kind="${attr(guardrail?.provider_kind || "http")}">
       <label>Name<input name="name" required ${creating ? "" : "readonly"} value="${attr(guardrail?.name || "")}" placeholder="custom-policy-check"></label>
       <label>Description<input name="description" ${builtIn ? "disabled" : "required"} value="${attr(guardrail?.description || "")}"></label>
-      <div class="field"><span>Modes</span>${guardrailModeSelect(guardrail?.modes || ["pre_call"])}</div>
+      <div class="field"><span>Modes</span><small class="field-hint">Execution stages: pre_call before forwarding, post_call after a response, during_call during streaming.</small>${guardrailModeSelect(guardrail?.modes || ["pre_call"])}</div>
       <label>Failure policy<select name="failure_policy">${["fail_closed", "fail_open", "dry_run"].map((value) => option(value, guardrail?.failure_policy || "fail_closed")).join("")}</select></label>
       <label>Timeout ms<input name="timeout_ms" type="number" min="100" max="10000" value="${attr(guardrail?.timeout_ms ?? 1500)}" ${builtIn ? "disabled" : ""}></label>
       <label>Endpoint URL<input name="endpoint_url" type="url" ${creating ? "required" : ""} value="${attr(guardrail?.endpoint_url || "")}" placeholder="https://guardrail.example/check" ${builtIn ? "disabled" : ""}></label>
@@ -5169,8 +5214,9 @@ function organizeView(view) {
     if (resultsBody) tabulateUsage(resultsBody);
   }
   if (view === "members" || view === "managedIdentities") {
-    const tabs = document.createElement("div"); tabs.className = "result-tabs";
-    tabs.innerHTML = `<button type="button" data-identity-view="members" aria-pressed="${view === "members"}">People</button><button type="button" data-identity-view="managed-identities" aria-pressed="${view === "managedIdentities"}">Workload identities</button>`;
+    const tabs = document.createElement("nav"); tabs.className = "result-tabs";
+    tabs.setAttribute("aria-label", "People and identities pages");
+    tabs.innerHTML = `<button type="button" data-identity-view="members" aria-current="${view === "members" ? "page" : "false"}">People</button><button type="button" data-identity-view="managed-identities" aria-current="${view === "managedIdentities" ? "page" : "false"}">Workload identities</button>`;
     content.prepend(tabs);
     tabs.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => navigateToView(button.dataset.identityView)));
     const projectForm = content.querySelector("#managed-identity-project-form")?.closest(".panel");
@@ -5210,7 +5256,7 @@ function addInventorySearch(panel) {
   if (panel.querySelector("[data-inventory-search]")) return;
   const label = document.createElement("label");
   label.className = "inventory-search";
-  label.innerHTML = `<span class="sr-only">Search inventory</span><input type="search" data-inventory-search placeholder="Search this inventory…"><span class="search-count" role="status"></span>`;
+  label.innerHTML = `<span>Search inventory</span><input type="search" aria-label="Search inventory" data-inventory-search placeholder="Search this inventory…"><span class="search-count" role="status"></span>`;
   panel.querySelector(".panel-heading").after(label);
   const rows = [...panel.querySelectorAll("tbody > tr")];
   label.querySelector("input").addEventListener("input", (event) => {
@@ -5229,6 +5275,9 @@ function tabulateUsage(root) {
   nav.setAttribute("role", "group");
   nav.setAttribute("aria-label", "Usage breakdown");
   headings[0].before(nav);
+  const hint = document.createElement("p");
+  hint.className = "help";
+  nav.after(hint);
   const sections = headings.map((heading) => {
     const section = document.createElement("section");
     section.className = "breakdown-section";
@@ -5243,9 +5292,16 @@ function tabulateUsage(root) {
     nav.appendChild(button);
     return { section, button };
   });
-  const select = (chosen) => sections.forEach(({ section, button }, index) => { section.hidden = index !== chosen; button.setAttribute("aria-pressed", String(index === chosen)); });
-  sections.forEach(({ button }, index) => button.addEventListener("click", () => { state.usageTab = button.textContent; select(index); }));
-  select(Math.max(0, sections.findIndex(({ button }) => button.textContent === state.usageTab)));
+  const select = (chosen) => {
+    state.usageTab = chosen < 0 ? null : sections[chosen].button.textContent;
+    sections.forEach(({ section, button }, index) => {
+      section.hidden = chosen >= 0 && index !== chosen;
+      button.setAttribute("aria-pressed", String(index === chosen));
+    });
+    hint.textContent = chosen < 0 ? "Showing all breakdowns. Select a breakdown to focus on it." : "Click the selected breakdown again to show all breakdowns.";
+  };
+  sections.forEach(({ button }, index) => button.addEventListener("click", () => select(state.usageTab === button.textContent ? -1 : index)));
+  select(state.usageTab === null ? -1 : Math.max(0, sections.findIndex(({ button }) => button.textContent === state.usageTab)));
 }
 
 window.matchMedia("(max-width: 920px)").addEventListener("change", closeNavigation);

@@ -13,7 +13,7 @@ export function createEditTemplate(title: string, formMarkup: string): string {
 }
 
 export function filterPanel(title: string, formMarkup: string): string {
-  return panel(title, `<form class="form-grid" data-filter-form>${formMarkup}</form>`);
+  return panel(title, `<form data-filter-form>${formMarkup}</form>`);
 }
 
 export function auditLogTemplate(filterMarkup: string, tableMarkup: string): string {

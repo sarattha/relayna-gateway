@@ -79,6 +79,22 @@ state or layout. Keep components compact and stable across desktop and mobile.
 Add new helper functions under `src/design-system/` only when at least two
 views need the same structure or status semantics.
 
+### Component Labels and Guidance
+
+- Give every editable control a persistent visible label. Use a contextual
+  accessible name for row-selection checkboxes and icon actions; placeholders
+  are examples, not labels.
+- Keep essential units, blank/zero semantics, inheritance and credential handling
+  visible beside fields and connected with `aria-describedby`. Verify meanings
+  against runtime behavior; zero does not universally mean unlimited.
+- Maintain reviewed contextual field and metric definitions in
+  `src/design-system/guidance-content.ts`. The shared guidance installer handles
+  dynamically rendered forms without replacing controls or duplicating help.
+- Use shared help triggers for secondary metric/diagnostic definitions. Tooltips
+  must work on hover, focus and tap, remain within the viewport, and dismiss on
+  Escape before their containing dialog. Never put essential instructions only
+  in a tooltip.
+
 ### Interaction and Security Rules
 
 - Put inventories/results before creation forms; use contextual drawers without

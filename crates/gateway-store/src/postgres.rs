@@ -7907,6 +7907,9 @@ impl gateway_core::traffic::TrafficStore for PostgresStore {
         query.validate()?;
         let mut sql =
             QueryBuilder::<Postgres>::new("SELECT record FROM request_traffic WHERE TRUE");
+        if let Some(value) = query.id {
+            sql.push(" AND id = ").push_bind(value);
+        }
         if let Some(value) = query.request_id {
             sql.push(" AND request_id = ").push_bind(value);
         }
@@ -7931,11 +7934,13 @@ impl gateway_core::traffic::TrafficStore for PostgresStore {
             sql.push(" AND failed");
         }
         // Default lookback bounds ordinary queries; operators can specify a range.
-        sql.push(" AND started_at >= ").push_bind(
-            query
-                .from
-                .unwrap_or_else(|| chrono::Utc::now() - chrono::Duration::days(1)),
-        );
+        if query.id.is_none() || query.from.is_some() {
+            sql.push(" AND started_at >= ").push_bind(
+                query
+                    .from
+                    .unwrap_or_else(|| chrono::Utc::now() - chrono::Duration::days(1)),
+            );
+        }
         if let Some(value) = query.to {
             sql.push(" AND started_at <= ").push_bind(value);
         }

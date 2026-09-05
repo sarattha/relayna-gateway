@@ -121,8 +121,17 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install admin portal dependencies
+        run: npm ci
+
+      - name: Build admin portal
+        run: npm run build:admin-ui
+
+      - name: Verify generated admin portal assets
+        run: git diff --exit-code -- crates/gateway-api/src/static/admin-ui/
+
       - name: Run admin portal tests
-        run: node tests/admin-ui.test.mjs
+        run: npm test
 
   repository-metadata:
     name: repository metadata

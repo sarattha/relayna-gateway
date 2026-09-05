@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.32` behavior.
+This page covers the `0.1.33` behavior.
 
 ## Request Model
 
@@ -370,3 +370,29 @@ managed and direct modes, Anthropic `/v1/messages` direct passthrough, wildcard
 downstream mock provider, custom LiteLLM header injection against real LiteLLM,
 direct LiteLLM bearer delegation, and trusted-ingress dashboard/admin
 passthrough.
+
+## Request labels and metering in Admin UI
+
+Usage and Traffic display a **Routing mode** badge from the mode recorded for
+each request: **LiteLLM passthrough** or **Gateway managed**. Request investigation
+shows the same mode. The JSON field is `diagnostics.routing_mode`, with values
+`litellm_passthrough` and `managed_by_gateway`; terminal structured logs include
+`relayna.routing_mode`. Missing mode is `unknown` in logs and **Not recorded** in
+the UI. Older records are not classified from current settings.
+
+Canonical passthrough requests retain their normal route, such as
+`/v1/chat/completions`; wildcard passthrough retains `/litellm/*`. Both still use
+provider `litellm`. The mode badge distinguishes them from managed requests using
+the same route and provider.
+
+For LiteLLM passthrough, per-request tokens and cost display **Not metered by
+gateway**. This does not mean the upstream request is free. Numeric API/export
+fields remain null and cost source remains `none`. Managed measured zeros still
+display as zero, while absent measurements display **Not recorded**.
+
+Requests authenticated only with a LiteLLM credential, or accepted through trusted
+ingress without a Relayna key, can appear in Traffic without a Usage row. Their
+investigation still shows the passthrough mode and metering explanation. This
+change does not introduce billing identities or change Usage recording rules.
+Service `cost_mode: passthrough` means reading upstream cost and is separate from
+LiteLLM passthrough routing; it does not receive this unmetered label.
