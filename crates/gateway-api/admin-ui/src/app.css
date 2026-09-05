@@ -2674,6 +2674,11 @@ tbody tr:hover td {
 .traffic-facts dt { font-weight: 600; }
 .traffic-facts dd { margin: 0; }
 #traffic-failure-groups:not(:empty) { margin-bottom: var(--rg-space-4); }
+#traffic-failure-groups button[aria-pressed="true"] {
+  background: var(--rg-color-control);
+  border-color: var(--rg-color-control);
+  color: white;
+}
 #traffic-connection, #traffic-detail code { overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .traffic-facts { grid-template-columns: 1fr; }

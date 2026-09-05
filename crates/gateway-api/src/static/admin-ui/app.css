@@ -2718,6 +2718,12 @@ tbody tr:hover td {
 
 #traffic-failure-groups:not(:empty) { margin-bottom: var(--rg-space-4); }
 
+#traffic-failure-groups button[aria-pressed="true"] {
+  background: var(--rg-color-control);
+  border-color: var(--rg-color-control);
+  color: white;
+}
+
 #traffic-connection, #traffic-detail code { overflow-wrap: anywhere; }
 
 @media (max-width: 760px) {

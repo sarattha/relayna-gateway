@@ -140,6 +140,7 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
     if (element("traffic-connection").textContent !== value) element("traffic-connection").textContent = value;
   }
   function render() {
+    var _a2, _b;
     if (disposed) return;
     element("traffic-warning").classList.toggle("hidden", !warning);
     element("traffic-warning").textContent = warning;
@@ -147,13 +148,20 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
     const groups = /* @__PURE__ */ new Map();
     for (const row of visible) if (row.diagnostics.failure_code) groups.set(row.diagnostics.failure_code, (groups.get(row.diagnostics.failure_code) || 0) + 1);
     element("traffic-summary").textContent = `${visible.length} displayed · ${visible.filter((row) => !row.completed).length} active in retained records · ${[...groups].map(([reason, count]) => `${label(reason)}: ${count}`).join(" · ") || "No failures in displayed records"}`;
-    element("traffic-failure-groups").innerHTML = [...groups].map(([reason, count]) => `<button type="button" data-traffic-reason="${attr2(reason)}">${esc2(label(reason))}: ${count}</button>`).join("");
+    if (filters.failure_code && !groups.has(filters.failure_code)) groups.set(filters.failure_code, 0);
+    const focusedReason = element("traffic-failure-groups").contains(document.activeElement) ? (_b = (_a2 = document.activeElement) == null ? void 0 : _a2.dataset) == null ? void 0 : _b.trafficReason : null;
+    element("traffic-failure-groups").innerHTML = [...groups].map(([reason, count]) => `<button type="button" data-traffic-reason="${attr2(reason)}" aria-pressed="${filters.failure_code === reason}">${esc2(label(reason))}: ${count}</button>`).join("") + (filters.failure_code ? `<span class="help">Click the selected reason again to clear its filter.</span>` : "");
     element("traffic-failure-groups").querySelectorAll("[data-traffic-reason]").forEach((button) => button.addEventListener("click", () => {
-      filters.failure_code = button.dataset.trafficReason;
+      filters = { ...filters, failure_code: filters.failure_code === button.dataset.trafficReason ? "" : button.dataset.trafficReason };
+      onFilters(filters);
       element("traffic-filters").elements.namedItem("failure_code").value = filters.failure_code;
       if (mode === "history") history2();
       else render();
     }));
+    if (focusedReason) {
+      const replacement = [...element("traffic-failure-groups").querySelectorAll("[data-traffic-reason]")].find((button) => button.dataset.trafficReason === focusedReason);
+      (replacement || element("traffic-filters").elements.namedItem("failure_code")).focus({ preventScroll: true });
+    }
     element("traffic-rows").innerHTML = table2(
       ["Arrived", "Request", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
       visible.map((row) => [

@@ -77,12 +77,21 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     const groups = new Map();
     for (const row of visible) if (row.diagnostics.failure_code) groups.set(row.diagnostics.failure_code, (groups.get(row.diagnostics.failure_code) || 0) + 1);
     element("traffic-summary").textContent = `${visible.length} displayed · ${visible.filter((row) => !row.completed).length} active in retained records · ${[...groups].map(([reason, count]) => `${label(reason)}: ${count}`).join(" · ") || "No failures in displayed records"}`;
-    element("traffic-failure-groups").innerHTML = [...groups].map(([reason, count]) => `<button type="button" data-traffic-reason="${attr(reason)}">${esc(label(reason))}: ${count}</button>`).join("");
+    // Keep the active filter removable while history loads or its last match leaves the live window.
+    if (filters.failure_code && !groups.has(filters.failure_code)) groups.set(filters.failure_code, 0);
+    const focusedReason = element("traffic-failure-groups").contains(document.activeElement) ? document.activeElement?.dataset?.trafficReason : null;
+    element("traffic-failure-groups").innerHTML = [...groups].map(([reason, count]) => `<button type="button" data-traffic-reason="${attr(reason)}" aria-pressed="${filters.failure_code === reason}">${esc(label(reason))}: ${count}</button>`).join("")
+      + (filters.failure_code ? `<span class="help">Click the selected reason again to clear its filter.</span>` : "");
     element("traffic-failure-groups").querySelectorAll("[data-traffic-reason]").forEach((button) => button.addEventListener("click", () => {
-      filters.failure_code = button.dataset.trafficReason;
+      filters = { ...filters, failure_code: filters.failure_code === button.dataset.trafficReason ? "" : button.dataset.trafficReason };
+      onFilters(filters);
       element("traffic-filters").elements.namedItem("failure_code").value = filters.failure_code;
       if (mode === "history") history(); else render();
     }));
+    if (focusedReason) {
+      const replacement = [...element("traffic-failure-groups").querySelectorAll("[data-traffic-reason]")].find(button => button.dataset.trafficReason === focusedReason);
+      (replacement || element("traffic-filters").elements.namedItem("failure_code")).focus({ preventScroll: true });
+    }
     element("traffic-rows").innerHTML = table(
       ["Arrived", "Request", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
       visible.map((row) => [
