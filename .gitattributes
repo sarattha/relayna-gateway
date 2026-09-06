@@ -1,0 +1,4 @@
+# Keep internal design artifacts and test reports out of GitHub language statistics.
+internal/design/** linguist-documentation
+internal/entra-id-gateway-auth-design.html linguist-documentation
+internal/test-reports/** linguist-documentation
