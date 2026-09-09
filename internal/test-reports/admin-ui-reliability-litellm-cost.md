@@ -31,8 +31,8 @@ it is separate from Gateway estimates, date-filtered usage and budget enforcemen
   cancellation, stale cache scope, rolling buckets, modal dismissal and spend states.
 - `cargo llvm-cov --workspace --all-features --summary-only`: passed across the
   complete Rust workspace, with PostgreSQL and Redis integration services enabled.
-  **95.01% line coverage**, 31,029 total lines, 1,548 missed. Region coverage 92.24%;
-  function coverage 92.20%. `cargo llvm-cov report --summary-only --fail-under-lines 95`
+  **95.02% line coverage**, 31,028 total lines, 1,545 missed. Region coverage 92.25%;
+  function coverage 92.16%. `cargo llvm-cov report --summary-only --fail-under-lines 95`
   also passed. No path exclusions were added. This LLVM metric does
   not measure frontend TypeScript; frontend tests and UI checks are separate.
 - Added authentication failure-path regressions cover malformed claims/key material,
@@ -59,5 +59,27 @@ Screenshots were inspected locally in `/tmp/admin-cost-ui/`.
 
 ## Release and review
 
-Mandatory verification stack, PR review and version metadata update are tracked
-in the living ExecPlan. This report will be finalized after those checks finish.
+PR: https://github.com/sarattha/relayna-gateway/pull/116.
+
+Codex identified one P2 issue: the spend handler enumerated mapping inventory.
+Commit `a1142a1` fixes it by returning the effective credential and scope from one
+scoped query. Database tests verify precedence and disabled mapping fallback;
+the API fixture fails if inventory enumeration occurs. The thread was resolved,
+and Codex completed re-review on 2026-09-09 with no new findings. CI passed on
+the corrected implementation.
+
+The full mandatory stack passed after the correction and with prepared 0.1.35
+metadata: formatting, Clippy, Cargo tests, audit, deny, machete, all 345 Nextest
+tests, Trivy, Gitleaks and Semgrep. Workspace build, frontend tests, asset build,
+strict MkDocs and release metadata validation also passed. Verification used a
+clean worktree because the original workspace contains an ignored, unrelated
+design prototype with vulnerable dependencies. No exception was added and the
+prototype was untouched.
+
+A parallel coverage attempt hit an existing process-startup deadline under heavy
+Docker VM load. The full isolated rerun passed with `--fail-under-lines 95`,
+giving the final numbers above. No assertion or threshold was relaxed.
+
+Version 0.1.35 updates Cargo packages, generated UI assets, deployment examples,
+changelog and operator documentation. The final PR check status is visible on
+GitHub; no merge or release tag is performed by this task.

@@ -15,9 +15,10 @@ Relayna keys. Deliver one reviewed PR with release notes and regression evidence
 - [x] Complete dialog regression tests.
 - [x] Reduce Overview work and verify delayed/error responses.
 - [x] Implement bounded, authenticated LiteLLM spend reads and clear attribution UI.
-- [x] User clarified repository-wide coverage: all-features Rust workspace line coverage 95.01% (31,029 lines; 1,548 missed). Full regression suite and Computer Use desktop/mobile QA passed.
-- [ ] Complete mandatory verification stack.
-- [ ] Update version, changelog and docs; open one PR and address Codex review.
+- [x] User clarified repository-wide coverage: all-features Rust workspace line coverage 95.02% (31,028 lines; 1,545 missed). Full regression suite and Computer Use desktop/mobile QA passed.
+- [x] Complete mandatory verification stack from clean worktree; all 345 Nextest tests and all security checks passed.
+- [x] Open PR #116 and request Codex review.
+- [x] Finish Codex re-review with no new findings; verify 0.1.35 version, changelog and docs for the same PR.
 
 ## Surprises & Discoveries
 
@@ -38,7 +39,13 @@ arbitrarily filtered by Gateway's date range.
 
 ## Outcomes & Retrospective
 
-All three behaviors implemented. Coverage target passed for the complete Rust workspace, without path exclusions. Frontend regression suite and Computer Use QA passed; frontend coverage is not part of the LLVM metric. Mandatory verification and PR review remain in progress.
+All three behaviors are implemented in PR #116. Codex identified one scoped-query
+performance issue, fixed in `a1142a1`; re-review completed with no new findings.
+The corrected implementation passes CI, the complete mandatory local stack,
+Computer Use desktop/mobile QA and 95.02% complete Rust workspace line coverage.
+Frontend regressions and coverage scope are documented separately. Version 0.1.35,
+changelog, docs and generated assets are verified for the same PR. No merge,
+release tag, schema migration or production data change is performed.
 
 ## Context and Orientation
 
@@ -116,3 +123,31 @@ machete and all 345 Nextest tests, then Trivy found 14 high-severity dependencie
 in ignored `design-prototypes/service-owner-monitoring/package-lock.json`.
 That pre-existing prototype is outside the PR. Preserve it and rerun the entire
 stack from a clean temporary worktree of the committed branch.
+
+PR: https://github.com/sarattha/relayna-gateway/pull/116. Codex review requested
+on implementation commit `74f6e8a`. The 0.1.35 metadata/docs update passed frontend
+regressions, asset build, release metadata validation and strict MkDocs build;
+its complete mandatory stack and workspace build also passed in the clean worktree.
+
+### Codex review correction
+
+Codex P2 review comment 3970624301 identified inventory-wide mapping reads and
+per-row label queries on the spend path. Reuse the existing scoped runtime lookup
+and return scope with its credential from one SQL query. This changes only an
+internal Rust lookup value; HTTP contracts, persisted schemas and proxy credential
+selection remain unchanged. No migration or compatibility shim is needed. Add
+store regressions for key precedence, disabled-key project fallback, disabled
+project/no-context absence, plus an API fixture that fails if inventory enumeration
+is attempted. Re-run coverage and the mandatory stack after this correction.
+
+The correction is committed as `a1142a1`; the review thread is resolved and
+Codex re-review requested. The complete mandatory stack and workspace build passed
+with this correction and prepared 0.1.35 metadata. One parallel coverage attempt
+hit an existing gateway process startup deadline during heavy Docker VM load;
+rerun coverage in isolation, preserving all assertions and the 95% threshold.
+
+Final isolated coverage after `a1142a1` passed: 95.02% lines (31,028 total, 1,545
+missed), regions 92.25%, functions 92.16%, with `--fail-under-lines 95`.
+
+Codex re-review completed on `a1142a1` at 2026-09-09 16:33 UTC with no new findings.
+The verified 0.1.35 update is the final release-metadata commit in this PR.
