@@ -65,4 +65,15 @@ mutates shared singleton settings.
 
 ## Full verification
 
-In progress. Final results and PR review will be recorded before completion.
+Passed the repository verification script with live disposable PostgreSQL/Redis:
+formatting, workspace Clippy, all workspace tests, cargo audit (repository-listed
+exceptions), cargo deny, cargo machete, all 337 nextest tests with zero skips,
+Trivy, Gitleaks and Semgrep. Also passed the all-features workspace build,
+Admin UI build/tests, strict MkDocs build and the migration compatibility check.
+
+PR: https://github.com/sarattha/relayna-gateway/pull/115
+Codex reviewed implementation commit `104dccc` and identified that environment
+conflict validation ran before persisted-source selection. Removed the premature
+check and added a configuration regression: conflicting environment flags are
+rejected only when environment is the effective source; a safe persisted row
+boots successfully. Release 0.1.34 and the review fix are undergoing final checks.

@@ -1,17 +1,19 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.33` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.34` is the
 current release target.
 
-Version `0.1.33` expands Admin UI 3.0 request investigation with exact internal
-request correlation, per-attempt DNS/TCP/TLS and response timing, and explicit
-LiteLLM passthrough labels. It adds field guidance, accessible help, reversible
-display filters and consistent action spacing. Pingora now enables verified
-Rustls upstream HTTPS and handles retry decisions explicitly. Diagnostic JSON
-fields are additive; older records remain readable and no schema migration is
-required. See [Admin Portal](admin-portal.md) and
-[Traffic Monitor](operations/traffic-monitor.md) for operator workflows and
-timing definitions.
+Version `0.1.34` adds `unverified_bearer_enabled` for temporary troubleshooting
+of gateway-managed requests. Clients keep both headers while Gateway validates
+only the Relayna virtual key and suspends Entra verification. Admin Settings
+makes the active mode explicit and restores the saved verifier when the option
+is cleared. Trusted Apigee headers cannot be combined with it. Native bearer-key,
+direct LiteLLM passthrough, portal and owner authentication defaults are unchanged.
+
+Apply the additive false-default auth-settings migration through normal startup.
+Existing rows stay disabled. Disable the option before rolling back binaries;
+the extra column may remain. See [Entra authentication](entra-id-auth.md#temporarily-pause-verification-while-keeping-both-headers)
+for configuration, trust semantics and replica rollout guidance.
 
 It retains the `0.1.26` single-application Entra contract,
 Entra-authenticated browser sessions for administrators
@@ -44,7 +46,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.33
+   python3 scripts/validate-release-metadata.py v0.1.34
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -62,15 +64,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.33 .
+   docker build -t relayna-gateway:0.1.34 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.33 -m "Release v0.1.33"
-   git push origin v0.1.33
+   git tag -a v0.1.34 -m "Release v0.1.34"
+   git push origin v0.1.34
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -80,10 +82,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.33`, the workflow publishes:
+For `v0.1.34`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.33
+ghcr.io/sarattha/relayna-gateway:0.1.34
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

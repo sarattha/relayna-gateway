@@ -2,6 +2,27 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.34 - 2026-09-09
+
+### Added
+
+- Opt-in `unverified_bearer_enabled` auth setting and
+  `GATEWAY_UNVERIFIED_BEARER_ENABLED` environment fallback. Gateway-managed
+  requests require both a nonempty bearer and the configured Relayna key header
+  while Entra verification is paused. Only the Relayna virtual key is authenticated;
+  bearer claims never establish identity or authorization.
+- Admin Settings control and active-mode warning, with saved Entra configuration
+  retained for restoration. Trusted Apigee headers cannot be combined with this
+  mode. Existing native and direct LiteLLM authentication defaults are unchanged.
+- Additive false-default auth-settings migration, operator setup/restore guidance,
+  and regressions for JWT verification restoration, credential stripping/mapping,
+  key rejection, provider policy, persistence and UI saves.
+
+### Fixed
+
+- Synchronize live proxy test startup with its listener and serialize shared
+  singleton auth settings across integration tests to avoid nextest fixture races.
+
 ## 0.1.33 - 2026-09-06
 
 ### Added
