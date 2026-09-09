@@ -52,11 +52,6 @@ impl Config {
         let guardrail_mapping_encryption_key = optional("GUARDRAIL_MAPPING_ENCRYPTION_KEY");
         let unverified_bearer_enabled =
             optional_bool("GATEWAY_UNVERIFIED_BEARER_ENABLED")?.unwrap_or(false);
-        if unverified_bearer_enabled
-            && optional_bool("APIGEE_TRUSTED_HEADER_ENABLED")?.unwrap_or(false)
-        {
-            return Err(GatewayError::InvalidConfiguration);
-        }
         let entra_application_id = optional("ENTRA_APPLICATION_ID");
         let relayna_key_header = optional("ENTRA_RELAYNA_KEY_HEADER")
             .unwrap_or_else(|| ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned());

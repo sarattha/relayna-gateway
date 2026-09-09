@@ -365,10 +365,22 @@ fn unverified_bearer_is_explicit_and_incompatible_with_apigee() {
     assert!(config.gateway_auth_env().unverified_bearer_enabled);
     assert!(config.entra_auth.is_none());
     std::env::set_var("APIGEE_TRUSTED_HEADER_ENABLED", "true");
+    std::env::set_var("APIGEE_TRUSTED_HEADER_SECRET", "test-ingress-secret");
+    // Parse both environment options first. Only the selected effective source
+    // may reject the combination: persisted settings have precedence.
+    let env = Config::from_env().unwrap().gateway_auth_env();
     assert_eq!(
-        Config::from_env().unwrap_err(),
+        gateway_core::EffectiveGatewayAuthSettings::from_sources(None, &env).unwrap_err(),
         gateway_core::GatewayError::InvalidConfiguration
     );
+    let effective = gateway_core::EffectiveGatewayAuthSettings::from_sources(
+        Some(gateway_core::StoredGatewayAuthSettings::default()),
+        &env,
+    )
+    .unwrap();
+    assert!(!effective.unverified_bearer_enabled);
+    assert!(effective.apigee_trusted_header.is_none());
+    assert!(gateway_core::SharedGatewayAuthRuntime::new(effective.runtime_config()).is_ok());
     std::env::remove_var("APIGEE_TRUSTED_HEADER_ENABLED");
     std::env::set_var("GATEWAY_UNVERIFIED_BEARER_ENABLED", "typo");
     assert_eq!(
