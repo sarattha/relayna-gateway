@@ -35,34 +35,19 @@ async fn snapshot(state: &AppState, key_id: Uuid) -> GatewayResult<Option<SpendS
     let Some(key) = state.store.get_admin_key(key_id).await? else {
         return Ok(None);
     };
-    let mappings = state.store.list_litellm_credential_mappings().await?;
-    let mapping = mappings
-        .iter()
-        .filter(|m| m.enabled && m.credential_configured)
-        .filter(|m| match m.scope {
-            LiteLlmCredentialMappingScope::Key => m.target_id == key_id,
-            LiteLlmCredentialMappingScope::Project => Some(m.target_id) == key.project_id,
-        })
-        .min_by_key(|m| match m.scope {
-            LiteLlmCredentialMappingScope::Key => 0,
-            LiteLlmCredentialMappingScope::Project => 1,
-        });
+    let mapping = state
+        .store
+        .litellm_credential_mapping_for_context(key_id, key.project_id)
+        .await?;
     let mut result = SpendSnapshot {
         key_id,
         status: "not_mapped",
-        mapping_scope: mapping.map(|m| m.scope),
+        mapping_scope: mapping.as_ref().map(|m| m.scope),
         spend_usd: None,
         fetched_at: None,
     };
-    if mapping.is_none() {
-        return Ok(Some(result));
-    }
-    result.status = "unavailable";
-    if let Some(credential) = state
-        .store
-        .litellm_credential_mapping_for_context(key_id, key.project_id)
-        .await?
-    {
+    if let Some(credential) = mapping {
+        result.status = "unavailable";
         // Includes response-body consumption; redirects are disabled by the client.
         if let Ok(Ok(spend)) = tokio::time::timeout(
             Duration::from_secs(5),

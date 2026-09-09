@@ -114,6 +114,7 @@ pub struct LiteLlmCredentialMappingResponse {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiteLlmCredentialMappingRuntime {
+    pub scope: LiteLlmCredentialMappingScope,
     pub credential: String,
 }
 

@@ -7095,7 +7095,6 @@ mod tests {
         key: Arc<Mutex<Option<StoredVirtualKey>>>,
         admin_key: Arc<Mutex<Option<AdminKeyResponse>>>,
         store_fault: Option<&'static str>,
-        spend_mappings: Vec<LiteLlmCredentialMappingResponse>,
         spend_credential: Option<gateway_core::LiteLlmCredentialMappingRuntime>,
         spend_provider: Option<gateway_core::ProviderRuntimeConfig>,
         services: Arc<Mutex<Vec<ServiceResponse>>>,
@@ -8611,7 +8610,12 @@ mod tests {
         async fn list_litellm_credential_mappings(
             &self,
         ) -> GatewayResult<Vec<LiteLlmCredentialMappingResponse>> {
-            Ok(self.spend_mappings.clone())
+            assert_ne!(
+                self.store_fault,
+                Some("list_litellm_credential_mappings"),
+                "spend must not enumerate mapping inventory"
+            );
+            Ok(Vec::new())
         }
 
         async fn delete_litellm_credential_mapping(
@@ -9842,7 +9846,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -10434,21 +10437,9 @@ mod tests {
             .unwrap();
         assert_eq!(missing.status(), StatusCode::NOT_FOUND);
         for scope in [Key, Project] {
-            store.spend_mappings = vec![LiteLlmCredentialMappingResponse {
-                id: Uuid::new_v4(),
-                scope,
-                target_id: if scope == Key {
-                    key_id
-                } else {
-                    stored.project_id.unwrap()
-                },
-                target_label: None,
-                enabled: true,
-                credential_configured: true,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            }];
+            store.store_fault = Some("list_litellm_credential_mappings");
             store.spend_credential = Some(gateway_core::LiteLlmCredentialMappingRuntime {
+                scope,
                 credential: "mapped-secret".into(),
             });
             for (status, payload, expected) in [
@@ -10739,7 +10730,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -12302,7 +12292,6 @@ mod tests {
             key: Arc::new(Mutex::new(Some(stored_key(raw)))),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -12516,7 +12505,6 @@ mod tests {
             key: Arc::new(Mutex::new(Some(stored_key(raw)))),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -12553,7 +12541,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -12596,7 +12583,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -12942,7 +12928,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -12993,7 +12978,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -13074,7 +13058,6 @@ mod tests {
                 gateway_core::GuardrailPolicy::default(),
             )))),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -13118,7 +13101,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -13166,7 +13148,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -13215,7 +13196,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -13270,7 +13250,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -13375,7 +13354,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -13445,7 +13423,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -14018,7 +13995,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -14092,7 +14068,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -14369,7 +14344,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -14610,7 +14584,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -14688,7 +14661,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -14749,7 +14721,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
@@ -14846,7 +14817,6 @@ mod tests {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
             store_fault: None,
-            spend_mappings: Vec::new(),
             spend_credential: None,
             spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),

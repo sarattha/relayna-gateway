@@ -3558,7 +3558,7 @@ impl ProviderConfigLookup for PostgresStore {
     ) -> GatewayResult<Option<LiteLlmCredentialMappingRuntime>> {
         let row = sqlx::query(
             r#"
-            SELECT credential_secret
+            SELECT scope, credential_secret
             FROM litellm_credential_mappings
             WHERE enabled
               AND credential_secret IS NOT NULL
@@ -3575,12 +3575,18 @@ impl ProviderConfigLookup for PostgresStore {
         .fetch_optional(&self.pool)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
-        Ok(row.and_then(|row| {
-            row.try_get::<Option<String>, _>("credential_secret")
-                .ok()
-                .flatten()
-                .map(|credential| LiteLlmCredentialMappingRuntime { credential })
-        }))
+        row.map(|row| {
+            let scope: String = row
+                .try_get("scope")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            Ok(LiteLlmCredentialMappingRuntime {
+                scope: parse_credential_mapping_scope(&scope)?,
+                credential: row
+                    .try_get("credential_secret")
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
+            })
+        })
+        .transpose()
     }
 }
 
@@ -8630,6 +8636,61 @@ mod tests {
             .set_litellm_credential_mapping_enabled(mapping.id, true)
             .await
             .expect("enable mapping");
+
+        let project_mapping = store
+            .upsert_litellm_credential_mapping(LiteLlmCredentialMappingUpsertRequest {
+                scope: LiteLlmCredentialMappingScope::Project,
+                target_id: project.id,
+                enabled: true,
+                credential: Some("project-litellm-key".to_owned()),
+            })
+            .await
+            .expect("project mapping");
+        let effective = store
+            .litellm_credential_mapping_for_context(key.id, Some(project.id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(effective.scope, LiteLlmCredentialMappingScope::Key);
+        assert_eq!(effective.credential, "virtual-litellm-key");
+        store
+            .set_litellm_credential_mapping_enabled(mapping.id, false)
+            .await
+            .unwrap();
+        let effective = store
+            .litellm_credential_mapping_for_context(key.id, Some(project.id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(effective.scope, LiteLlmCredentialMappingScope::Project);
+        assert_eq!(effective.credential, "project-litellm-key");
+        assert!(store
+            .litellm_credential_mapping_for_context(key.id, None)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(store
+            .litellm_credential_mapping_for_context(Uuid::new_v4(), None)
+            .await
+            .unwrap()
+            .is_none());
+        store
+            .set_litellm_credential_mapping_enabled(project_mapping.id, false)
+            .await
+            .unwrap();
+        assert!(store
+            .litellm_credential_mapping_for_context(key.id, Some(project.id))
+            .await
+            .unwrap()
+            .is_none());
+        store
+            .set_litellm_credential_mapping_enabled(mapping.id, true)
+            .await
+            .unwrap();
+        store
+            .delete_litellm_credential_mapping(project_mapping.id)
+            .await
+            .unwrap();
 
         let openai_routes = store
             .list_openai_route_settings()
