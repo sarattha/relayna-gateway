@@ -440,6 +440,12 @@ td code {
   background: var(--rg-status-good-bg);
 }
 
+.notice[data-kind="warning"] {
+  color: var(--rg-status-warn);
+  border-color: var(--rg-status-warn);
+  background: var(--rg-status-warn-bg);
+}
+
 .notice > button {
   display: block;
   margin-top: var(--rg-space-3);

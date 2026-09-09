@@ -2,16 +2,18 @@
 
 Relayna Gateway ships as one binary and one Docker image. The image serves both the core proxy and the admin portal because the admin UI is embedded in the `gateway-api` binary.
 
-Version `0.1.33` keeps that deployment shape and retains governed LiteLLM rerank
+Version `0.1.34` keeps that deployment shape and retains governed LiteLLM rerank
 aliases plus bounded all-row usage exports with exact Admin UI time windows.
 Entra-authenticated portal sessions,
 request-plane authorization, and scoped owner monitoring remain on one
 confidential Web/API application. Separate managed identities receive
 `gateway.invoke` or `gateway.monitor.read`; the monitoring role can be reused
 for service and project bindings. Existing authorization diagnostics do not
-change public errors or decisions. The forward migration only seeds the
-canonical rerank route setting, and the released export API cap remains 10,000
-rows per request. Existing
+change public errors or decisions. The new forward migration adds the false-default
+unverified-bearer auth setting and rejects combining it with trusted Apigee
+headers. Existing auth defaults remain unchanged. See [pause and restore
+instructions](entra-id-auth.md#temporarily-pause-verification-while-keeping-both-headers).
+The released export API cap remains 10,000 rows per request. Existing
 operator-token access and registered-service traffic remain unchanged. It retains
 endpoint-level failure monitoring, buffered-body admission, OpenAPI
 discovery and endpoint billing, persisted service timeout controls, structured
@@ -36,7 +38,7 @@ See
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.33 .
+docker build -t relayna-gateway:0.1.34 .
 ```
 
 Run it with required dependencies:
@@ -56,12 +58,12 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.33
+  relayna-gateway:0.1.34
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
 
-Version `0.1.33` reuses existing portal members, exact service memberships,
+Version `0.1.34` reuses existing portal members, exact service memberships,
 managed-identity bindings, OIDC login transactions, and opaque portal sessions.
 The forward migration creates separate project membership and workload-binding
 tables without rewriting service assignments. Existing operator tokens remain
@@ -120,13 +122,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.33
+   ghcr.io/sarattha/relayna-gateway:0.1.34
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.33"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.34"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -134,7 +136,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.33
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.34
    ```
 
 3. Store secrets through your cluster secret manager:

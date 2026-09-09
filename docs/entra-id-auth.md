@@ -4,7 +4,7 @@ Relayna Gateway releases `0.1.7` and later can put Microsoft Entra ID in front o
 traffic while keeping Relayna virtual keys as the policy, budget, rate-limit,
 guardrail, and usage anchor.
 
-The feature is opt-in. With `ENTRA_AUTH_ENABLED=false`, which is the default,
+The feature is opt-in. With `ENTRA_AUTH_ENABLED=false` and `GATEWAY_UNVERIFIED_BEARER_ENABLED=false` (the defaults),
 existing clients keep using:
 
 ```http
@@ -23,6 +23,68 @@ X-Relayna-Key: rk_live_...
 `ENTRA_RELAYNA_KEY_HEADER`. Earlier review builds used `X-AIH-API-Key`; Gateway
 still strips `X-AIH-API-Key` before upstream forwarding as a legacy sensitive
 header, but the documented default is now `X-Relayna-Key`.
+
+## Temporarily pause verification while keeping both headers
+
+In Admin portal **Settings**, enable **Require unverified bearer (troubleshooting)**
+and save. This sets `unverified_bearer_enabled` on
+`PATCH /admin-ui/admin/auth/front-door`. Leave **Enable Entra ID** and its existing
+configuration intact if you want to restore verification by clearing one option.
+Disable **Enable Apigee trusted headers** first: combining these modes is rejected.
+The active mode displays **Unverified bearer active** and **Verification paused**.
+
+For deployments with no persisted auth settings, the environment equivalent is:
+
+```bash
+export GATEWAY_UNVERIFIED_BEARER_ENABLED="true"
+export ENTRA_RELAYNA_KEY_HEADER="x-litellm-key"
+export APIGEE_TRUSTED_HEADER_ENABLED="false"
+# Keep existing ENTRA_AUTH_ENABLED=true and Entra configuration for restoration.
+```
+
+Persisted settings override environment settings, including a persisted false
+value. Use the Admin API/UI to change a persisted mode. The mode also works with
+Entra disabled and no issuer configuration, but restoring Entra then requires
+enabling and configuring it.
+
+Clients continue sending:
+
+```http
+Authorization: Bearer <nonempty token>
+x-litellm-key: rk_live_...
+```
+
+The bearer is **present but unverified**. Gateway does not decode it, fetch OIDC
+metadata or JWKS, validate signature/issuer/audience/expiry, or enforce Entra
+scope/role/group claims. It establishes no Entra identity and grants no
+identity-based access. Portal sign-in, owner APIs, and operator-token protection
+are unaffected. Use this only for temporary troubleshooting where authenticating
+the Relayna virtual key alone is acceptable.
+
+The Relayna header still contains a Gateway `rk_live_...` key, never a LiteLLM
+`sk-...` credential. Invalid, expired, disabled and revoked keys remain rejected;
+normal route/model/provider policy, rate limits, budgets, guardrails and usage
+accounting still apply. Both client credential headers are stripped before
+Gateway injects the key/project-mapped provider credential or provider default.
+Raw bearer tokens are not logged by this mode.
+
+Select **Gateway managed** for the relevant OpenAI-compatible routes. The new
+option does not change **Direct LiteLLM passthrough**, whose non-Relayna bearer
+path still uses the client bearer as its LiteLLM credential. Trusted-ingress
+LiteLLM passthrough is also unchanged.
+
+To restore full verification, clear **Require unverified bearer (troubleshooting)**
+and save while **Enable Entra ID** remains checked, or PATCH
+`{"unverified_bearer_enabled":false}`. For environment-only configuration, set
+`GATEWAY_UNVERIFIED_BEARER_ENABLED=false` and restart with `ENTRA_AUTH_ENABLED=true`.
+Keep the same Relayna key header. Verify a valid JWT succeeds and an invalid JWT
+fails. Admin-saved changes apply to new requests on the serving process; follow
+your existing restart/rollout procedure for every replica using these settings.
+
+The migration adds a false-default `gateway_auth_settings.unverified_bearer_enabled`
+column and a constraint forbidding trusted Apigee coexistence. Existing rows keep
+their previous behavior. Disable this option before rolling back to an older
+binary; the additive column can remain in place.
 
 ## Scope
 
@@ -98,6 +160,7 @@ The environment variables are listed below. Empty strings are treated as unset.
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `ENTRA_APPLICATION_ID` | When any Entra mode is enabled | none | One Entra application ID GUID shared by portal OIDC, request-plane access-token validation, and owner monitoring. For v2 access tokens this is the expected `aud`; managed identities request `api://<application-id>/.default`. |
+| `GATEWAY_UNVERIFIED_BEARER_ENABLED` | No | `false` | Requires a bearer plus Relayna header key on managed routes while suspending Entra verification; incompatible with trusted Apigee headers. |
 | `ENTRA_AUTH_ENABLED` | No | `false` | Enables direct Entra JWT validation for proxy traffic. |
 | `ENTRA_AUTH_DEBUG` | No | `false` | Emits a structured, high-detail authorization decision trail for all Entra surfaces and portal cookie sessions. This can include decoded token claims and must be enabled only for controlled diagnostics. See [Entra Authorization Debug Mode](operations/entra-authorization-debug.md). |
 | `ENTRA_TENANT_ID` | When enabled | none | Expected `tid` claim. Use the tenant GUID or tenant identifier your app tokens carry. |
@@ -272,7 +335,7 @@ empty placeholders for required Entra values.
 Useful local checks after changing Entra configuration or code:
 
 ```bash
-python3 scripts/validate-release-metadata.py v0.1.33
+python3 scripts/validate-release-metadata.py v0.1.34
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
 cargo test --workspace --all-features

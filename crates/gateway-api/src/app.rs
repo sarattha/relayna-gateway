@@ -13754,6 +13754,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn gateway_auth_settings_unverified_mode_round_trips_and_rejects_apigee() {
+        let state = test_state(default_store());
+        let runtime = state.auth_runtime.clone();
+        let app = router_with_state(state);
+        let response = admin_patch(
+            app.clone(),
+            "/admin-ui/admin/auth/front-door",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"unverified_bearer_enabled":true,"relayna_key_header":"x-litellm-key"}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(response).await["unverified_bearer_enabled"],
+            true
+        );
+        assert!(runtime.snapshot().unwrap().config.unverified_bearer_enabled);
+        assert!(runtime.snapshot().unwrap().entra_verifier.is_none());
+        let response = admin_get(
+            app.clone(),
+            "/admin-ui/admin/auth/front-door",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(
+            response_json(response).await["unverified_bearer_enabled"],
+            true
+        );
+        let response = admin_patch(app.clone(), "/admin-ui/admin/auth/front-door", Some(TEST_OPERATOR_TOKEN),
+            r#"{"apigee_trusted_header_enabled":true,"apigee_trusted_header_secret":"test-secret"}"#).await;
+        assert_eq!(
+            response_json(response).await["error"]["code"],
+            "invalid_configuration"
+        );
+        assert!(runtime
+            .snapshot()
+            .unwrap()
+            .config
+            .apigee_trusted_header
+            .is_none());
+        let response = admin_patch(
+            app,
+            "/admin-ui/admin/auth/front-door",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"unverified_bearer_enabled":false}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(!runtime.snapshot().unwrap().config.unverified_bearer_enabled);
+    }
+
+    #[tokio::test]
     async fn gateway_auth_settings_reject_enabled_entra_without_required_fields() {
         let app = router_with_state(test_state(default_store()));
         let response = admin_patch(

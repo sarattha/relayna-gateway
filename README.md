@@ -4,13 +4,13 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
-Version `0.1.33` improves [Admin UI 3.0](docs/admin-portal.md) with shared request
-investigation, DNS/TCP/TLS and response timing, exact Usage-to-Traffic correlation,
-and clear LiteLLM passthrough labels. Visible field explanations, accessible help,
-reversible filters and aligned actions make the console easier to operate.
-The [Traffic Monitor](docs/operations/traffic-monitor.md) retains bounded,
-sanitized diagnostics. Existing records remain readable, and no database migration
-or deployment topology change is required.
+Version `0.1.34` adds an opt-in troubleshooting mode that keeps the bearer-plus-
+Relayna-key header contract while pausing Entra verification on gateway-managed
+requests. The Relayna key remains authenticated; no unverified bearer claims
+establish identity. Admin Settings shows the active mode and can restore saved
+Entra verification without changing client headers. A false-default database
+migration preserves existing authentication behavior. See [Entra authentication](docs/entra-id-auth.md#temporarily-pause-verification-while-keeping-both-headers)
+for setup and trust semantics.
 See `docs/operations/entra-portal-and-owner-monitoring.md`,
 `docs/operations/entra-integration-requirements.md`,
 `docs/openapi-service-pricing.md`, `docs/current-features.md`,
@@ -110,7 +110,7 @@ simulation, policy layers, provider health state, debug bundles, service import
 preview/activation/version/rollback, and paginated expanded usage analytics. These are
 documented in `docs/current-features.md`.
 
-Release `0.1.33` can run Relayna Gateway as the single ingress in front of
+Release `0.1.34` can run Relayna Gateway as the single ingress in front of
 LiteLLM. Canonical OpenAI-compatible and Anthropic-compatible Claude routes
 remain governed by Relayna policy by default, and operators can optionally
 switch each canonical route to direct LiteLLM passthrough while preserving
@@ -146,7 +146,11 @@ See `docs/litellm-passthrough.md`,
 Operators can configure Entra ID and Apigee front-door auth from Admin portal
 Settings, including enablement, tenant, audience, issuer, OIDC discovery,
 scope, role, groups, accepted algorithms, JWKS cache TTL, clock skew, Relayna
-key header, and the write-only Apigee secret.
+key header, and the write-only Apigee secret. The opt-in **Require unverified
+bearer (troubleshooting)** setting preserves the two-header contract while pausing
+Entra verification on gateway-managed routes. Only the Relayna key is authenticated;
+trusted Apigee headers cannot be enabled with it. See [pause and restore
+instructions](docs/entra-id-auth.md#temporarily-pause-verification-while-keeping-both-headers).
 
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are startup fallback
 settings. Operators can also open Admin portal Settings after Gateway starts to
@@ -184,7 +188,7 @@ of 400 or greater remains a failure, whether returned by Gateway or upstream.
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.1.33 .
+docker build -t relayna-gateway:0.1.34 .
 ```
 
 Run it:
@@ -198,7 +202,7 @@ docker run --rm \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
   -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.1.33
+  relayna-gateway:0.1.34
 ```
 
 `GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
@@ -214,7 +218,7 @@ managed-identity example, ports, and cleanup commands.
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.33`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.34`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Budgets, TPM, and Usage Exports
 

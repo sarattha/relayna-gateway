@@ -2330,7 +2330,7 @@ async function settings() {
       ${stat("Token", state.studioConnection.token_configured ? "Configured" : "Not configured")}
       ${stat("Base URL", state.studioConnection.base_url || "Unset")}
       ${stat("Auth source", state.authSettings.source)}
-      ${stat("Entra ID", state.authSettings.entra.enabled ? "Enabled" : "Disabled")}
+      ${stat("Entra ID", state.authSettings.unverified_bearer_enabled ? "Verification paused" : state.authSettings.entra.enabled ? "Enabled" : "Disabled")}
       ${stat("Apigee", state.authSettings.apigee.trusted_header_enabled ? "Enabled" : "Disabled")}
     </div>
     <section class="panel">
@@ -2349,9 +2349,12 @@ async function settings() {
       </form>
     </section>
     <section class="panel">
+      ${state.authSettings.unverified_bearer_enabled ? `<div class="notice" data-kind="warning" role="status"><span class="badge warn">Unverified bearer active</span> Entra verification is paused for gateway-managed requests. Only the Relayna virtual key is authenticated.</div>` : ""}
       <div class="panel-heading"><h3>Entra ID and Apigee front door</h3><span class="subtle">${esc(state.authSettings.updated_at ? time(state.authSettings.updated_at) : "environment or unset")}</span></div>
       <form id="auth-settings-form" class="form-grid">
         ${formSection("Gateway headers", "Keep native key and trusted-ingress behavior explicit.", `
+          <label class="check wide-field"><input name="unverified_bearer_enabled" type="checkbox" ${state.authSettings.unverified_bearer_enabled ? "checked" : ""} aria-describedby="unverified-bearer-help"> Require unverified bearer (troubleshooting)</label>
+          <p id="unverified-bearer-help" class="wide-field subtle">When enabled, gateway-managed requests require a nonempty Bearer token and a valid Relayna key in the header below. Entra verification is paused: no token identity, groups, roles or scopes are trusted. Disable Apigee trusted headers before enabling this mode. Keep Entra ID enabled and configured to restore verification by clearing this option. Direct LiteLLM passthrough is unchanged; use gateway-managed routes.</p>
           <label>Relayna key header<input name="relayna_key_header" value="${attr(state.authSettings.relayna_key_header || "X-Relayna-Key")}"></label>
           <label class="check"><input name="apigee_trusted_header_enabled" type="checkbox" ${state.authSettings.apigee.trusted_header_enabled ? "checked" : ""}> Enable Apigee trusted headers</label>
           <label>Apigee secret<input name="apigee_trusted_header_secret" type="password" autocomplete="new-password" placeholder="${apigeeSecretPlaceholder()}"></label>
@@ -2378,7 +2381,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.33")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.34")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -2450,7 +2453,12 @@ async function saveAuthSettings(event) {
     setNotice("Re-enter the Apigee secret before saving environment-backed trusted-header settings.", "error");
     return;
   }
+  if (apigeeEnabled && form.has("unverified_bearer_enabled")) {
+    setNotice("Disable Apigee trusted headers before enabling unverified bearer mode.", "error");
+    return;
+  }
   const body = {
+    unverified_bearer_enabled: form.has("unverified_bearer_enabled"),
     entra_enabled: form.has("entra_enabled"),
     apigee_trusted_header_enabled: apigeeEnabled,
     relayna_key_header: form.get("relayna_key_header")?.trim() || "X-Relayna-Key",

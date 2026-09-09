@@ -80,6 +80,9 @@ fn main() -> anyhow::Result<()> {
             EffectiveGatewayAuthSettings::from_sources(stored, &auth_env)
                 .context("resolve gateway auth settings")
         })?;
+    if effective_auth.unverified_bearer_enabled {
+        tracing::warn!("unverified bearer mode active: Entra verification is paused for gateway-managed requests; only Relayna virtual keys are authenticated");
+    }
     let shared_auth = SharedGatewayAuthRuntime::new(effective_auth.runtime_config())
         .context("create shared gateway auth runtime")?;
     let mut proxy_config =

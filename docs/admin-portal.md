@@ -24,7 +24,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.33` Admin UI 3.0 shell organizes navigation into Monitor, Discover,
+The `v0.1.34` Admin UI 3.0 shell organizes navigation into Monitor, Discover,
 and Govern. Monitor contains Overview, Traffic, Usage & cost and Health;
 Discover contains Projects, Services, Providers and Routes; Govern contains
 Virtual keys, Policies & guardrails, People & identities, Audit log and Settings.
@@ -565,7 +565,7 @@ variables in [Entra ID Auth](entra-id-auth.md) and
 
 The panel shows the current auth source in the Settings summary:
 
-- `unset`: no Entra or Apigee front-door auth is active.
+- `unset`: no Entra, Apigee, or unverified-bearer mode is active.
 - `environment`: Gateway is using deployment environment variables.
 - `persisted`: Gateway is using Admin API settings saved from the portal.
 
@@ -585,7 +585,8 @@ header carries the Relayna virtual key.
 
 | UI option | Environment variable | What it does | How to set it |
 | --- | --- | --- | --- |
-| `Enable Entra ID` | `ENTRA_AUTH_ENABLED` | Requires proxy clients to send `Authorization: Bearer <Entra access token>` before Gateway authenticates the Relayna virtual key. | Check it only after tenant, audience, issuer, and OIDC discovery URL are filled. Clear it to return direct proxy traffic to Relayna virtual-key auth unless Apigee trusted headers remain enabled. |
+| `Require unverified bearer (troubleshooting)` | `GATEWAY_UNVERIFIED_BEARER_ENABLED` | Requires both headers on managed routes while suspending Entra verification. No bearer claims establish identity. | Disable trusted Apigee headers first. Keep Entra enabled/configured; clear this option to restore verification with the same headers. The active mode shows a warning. Direct LiteLLM passthrough is unchanged. See [setup and trust semantics](entra-id-auth.md#temporarily-pause-verification-while-keeping-both-headers). |
+| `Enable Entra ID` | `ENTRA_AUTH_ENABLED` | Requires proxy clients to send `Authorization: Bearer <Entra access token>` before Gateway authenticates the Relayna virtual key. | Check it only after tenant, audience, issuer, and OIDC discovery URL are filled. Clear it to return direct proxy traffic to Relayna virtual-key auth unless Apigee trusted headers or unverified-bearer mode remain enabled. |
 | `Enable Apigee trusted headers` | `APIGEE_TRUSTED_HEADER_ENABLED` | Allows Apigee to send a sanitized identity header and HMAC signature instead of forwarding the original Entra JWT. | Check it only after `Apigee secret` is configured. Clear it to disable trusted-header verification. |
 | `Relayna key header` | `ENTRA_RELAYNA_KEY_HEADER` | Names the HTTP header that carries the Relayna `rk_live_...` key when Entra or Apigee front-door auth is used. | Keep `X-Relayna-Key` unless clients and Apigee policies are already updated to a different valid HTTP header name. Gateway strips this header before upstream forwarding. |
 
