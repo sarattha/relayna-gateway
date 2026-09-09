@@ -1,3 +1,4 @@
+mod litellm_spend;
 use crate::portal::{
     constant_time_eq, pkce_challenge, random_opaque_token, safe_return_to, token_hash,
     PortalOidcRuntime,
@@ -677,6 +678,10 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin-ui/admin/usage/by-project", get(usage_by_project))
         .route("/admin-ui/admin/usage/by-model", get(usage_by_model))
         .route("/admin-ui/admin/usage/by-provider", get(usage_by_provider))
+        .route(
+            "/admin-ui/admin/keys/{key_id}/litellm-spend",
+            get(litellm_spend::key_spend),
+        )
         .route("/admin-ui/admin/usage/by-service", get(usage_by_service))
         .route("/admin-ui/admin/usage/by-task", get(usage_by_task))
         .route("/admin-ui/admin/usage/events", get(usage_events))
@@ -7089,6 +7094,9 @@ mod tests {
     struct MemoryStore {
         key: Arc<Mutex<Option<StoredVirtualKey>>>,
         admin_key: Arc<Mutex<Option<AdminKeyResponse>>>,
+        store_fault: Option<&'static str>,
+        spend_credential: Option<gateway_core::LiteLlmCredentialMappingRuntime>,
+        spend_provider: Option<gateway_core::ProviderRuntimeConfig>,
         services: Arc<Mutex<Vec<ServiceResponse>>>,
         openai_routes: Arc<Mutex<Vec<OpenAiRouteSetting>>>,
         anthropic_routes: Arc<Mutex<Vec<OpenAiRouteSetting>>>,
@@ -7243,6 +7251,9 @@ mod tests {
             &self,
             member_id: Uuid,
         ) -> GatewayResult<Vec<ServiceMembership>> {
+            if self.store_fault == Some("list_service_memberships") {
+                return Err(GatewayError::StoreUnavailable);
+            }
             Ok(self
                 .service_memberships
                 .lock()
@@ -7305,6 +7316,9 @@ mod tests {
             &self,
             member_id: Uuid,
         ) -> GatewayResult<Vec<ProjectMembership>> {
+            if self.store_fault == Some("list_project_memberships") {
+                return Err(GatewayError::StoreUnavailable);
+            }
             Ok(self
                 .project_memberships
                 .lock()
@@ -7553,6 +7567,9 @@ mod tests {
             session_hash: &str,
             now: chrono::DateTime<Utc>,
         ) -> GatewayResult<Option<gateway_core::StoredPortalSession>> {
+            if self.store_fault == Some("resolve_portal_session") {
+                return Err(GatewayError::StoreUnavailable);
+            }
             let session = self
                 .portal_sessions
                 .lock()
@@ -7576,6 +7593,9 @@ mod tests {
         }
 
         async fn delete_portal_session(&self, session_hash: &str) -> GatewayResult<bool> {
+            if self.store_fault == Some("delete_portal_session") {
+                return Err(GatewayError::StoreUnavailable);
+            }
             let mut sessions = self.portal_sessions.lock().expect("lock poisoned");
             let before = sessions.len();
             sessions.retain(|session| session.session_hash != session_hash);
@@ -7587,6 +7607,9 @@ mod tests {
             member_id: Uuid,
             service_name: &str,
         ) -> GatewayResult<Option<ServiceMemberRole>> {
+            if self.store_fault == Some("member_service_role") {
+                return Err(GatewayError::StoreUnavailable);
+            }
             let active = self
                 .get_member(member_id)
                 .await?
@@ -7610,6 +7633,9 @@ mod tests {
             member_id: Uuid,
             project_id: Uuid,
         ) -> GatewayResult<Option<ServiceMemberRole>> {
+            if self.store_fault == Some("member_project_role") {
+                return Err(GatewayError::StoreUnavailable);
+            }
             let active = self
                 .get_member(member_id)
                 .await?
@@ -7692,7 +7718,7 @@ mod tests {
         async fn active_litellm_config(
             &self,
         ) -> GatewayResult<Option<gateway_core::ProviderRuntimeConfig>> {
-            Ok(None)
+            Ok(self.spend_provider.clone())
         }
 
         async fn litellm_credential_mapping_for_context(
@@ -7700,7 +7726,7 @@ mod tests {
             _key_id: Uuid,
             _project_id: Option<Uuid>,
         ) -> GatewayResult<Option<gateway_core::LiteLlmCredentialMappingRuntime>> {
-            Ok(None)
+            Ok(self.spend_credential.clone())
         }
     }
 
@@ -8584,6 +8610,11 @@ mod tests {
         async fn list_litellm_credential_mappings(
             &self,
         ) -> GatewayResult<Vec<LiteLlmCredentialMappingResponse>> {
+            assert_ne!(
+                self.store_fault,
+                Some("list_litellm_credential_mappings"),
+                "spend must not enumerate mapping inventory"
+            );
             Ok(Vec::new())
         }
 
@@ -9814,6 +9845,9 @@ mod tests {
         MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -10180,6 +10214,316 @@ mod tests {
         state
     }
 
+    #[tokio::test]
+    async fn portal_storage_outages_are_errors_not_empty_successful_sessions() {
+        for (fault, method, path) in [
+            (
+                "resolve_portal_session",
+                Method::GET,
+                "/admin-ui/auth/session",
+            ),
+            (
+                "resolve_portal_session",
+                Method::GET,
+                "/owner/v1/services/orders",
+            ),
+            (
+                "list_service_memberships",
+                Method::GET,
+                "/admin-ui/auth/session",
+            ),
+            (
+                "list_project_memberships",
+                Method::GET,
+                "/admin-ui/auth/session",
+            ),
+            (
+                "member_service_role",
+                Method::GET,
+                "/owner/v1/services/orders",
+            ),
+            (
+                "member_project_role",
+                Method::GET,
+                "/owner/v1/projects/00000000-0000-0000-0000-000000000001",
+            ),
+            (
+                "delete_portal_session",
+                Method::POST,
+                "/admin-ui/auth/logout",
+            ),
+        ] {
+            let mut store = default_store();
+            store.store_fault = Some(fault);
+            let (session, csrf) = seed_portal_session(&store, active_portal_member(true));
+            let app = router_with_state(test_state(store));
+            let response =
+                portal_request(app, method, path, &session, &csrf, Some(&csrf), "{}").await;
+            assert_eq!(response.status(), StatusCode::BAD_GATEWAY, "{fault}");
+            assert_eq!(
+                response_json(response).await["error"]["code"],
+                "store_unavailable"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn project_identity_governance_persists_changes_and_audits_them() {
+        let store = default_store();
+        let member = active_portal_member(true);
+        let member_id = member.id;
+        let project_id = Uuid::new_v4();
+        store.projects.lock().unwrap().push(ProjectResponse {
+            id: project_id,
+            name: "test project".into(),
+            service_names: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        let (session, csrf) = seed_portal_session(&store, member);
+        let app = router_with_state(test_state(store.clone()));
+        let uri = format!("/admin-ui/admin/members/{member_id}/projects/{project_id}");
+        for role in ["owner", "viewer"] {
+            let body = format!(r#"{{"role":"{role}"}}"#);
+            let response = portal_request(
+                app.clone(),
+                Method::PUT,
+                &uri,
+                &session,
+                &csrf,
+                Some(&csrf),
+                &body,
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response_json(response).await["role"], role);
+            assert_eq!(store.project_memberships.lock().unwrap().len(), 1);
+        }
+        for expected in [StatusCode::NO_CONTENT, StatusCode::NOT_FOUND] {
+            assert_eq!(
+                portal_request(
+                    app.clone(),
+                    Method::DELETE,
+                    &uri,
+                    &session,
+                    &csrf,
+                    Some(&csrf),
+                    ""
+                )
+                .await
+                .status(),
+                expected
+            );
+        }
+        let root = "/admin-ui/admin/managed-identity-projects";
+        let body=serde_json::json!({"tenant_id":"test-tenant","client_id":"test-client","project_id":project_id,"display_name":"test identity","enabled":true}).to_string();
+        let response = portal_request(
+            app.clone(),
+            Method::POST,
+            root,
+            &session,
+            &csrf,
+            Some(&csrf),
+            &body,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let id = response_json(response).await["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let uri = format!("{root}/{id}");
+        let list = portal_request(
+            app.clone(),
+            Method::GET,
+            root,
+            &session,
+            &csrf,
+            Some(&csrf),
+            "",
+        )
+        .await;
+        assert_eq!(response_json(list).await.as_array().unwrap().len(), 1);
+        for enabled in [false, true] {
+            let body=serde_json::json!({"enabled":enabled,"display_name":"updated","required_role":"monitor.read"}).to_string();
+            let response = portal_request(
+                app.clone(),
+                Method::PATCH,
+                &uri,
+                &session,
+                &csrf,
+                Some(&csrf),
+                &body,
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response_json(response).await["enabled"], enabled);
+        }
+        for expected in [StatusCode::NO_CONTENT, StatusCode::NOT_FOUND] {
+            assert_eq!(
+                portal_request(
+                    app.clone(),
+                    Method::DELETE,
+                    &uri,
+                    &session,
+                    &csrf,
+                    Some(&csrf),
+                    ""
+                )
+                .await
+                .status(),
+                expected
+            );
+        }
+        assert_eq!(
+            portal_request(
+                app.clone(),
+                Method::PATCH,
+                &uri,
+                &session,
+                &csrf,
+                Some(&csrf),
+                "{}"
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert!(store.managed_identity_projects.lock().unwrap().is_empty());
+        assert_eq!(store.audit_events.lock().unwrap().len(), 7);
+        assert_eq!(request(app, root).await.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn litellm_spend_authorizes_and_handles_mapping_and_upstream_failures() {
+        use gateway_core::LiteLlmCredentialMappingScope::{Key, Project};
+        let stored = stored_key("rk_live_spend_fixture");
+        let key_id = stored.id;
+        let path = format!("/admin-ui/admin/keys/{key_id}/litellm-spend");
+        let mut store = default_store();
+        *store.admin_key.lock().unwrap() = Some(admin_key_for(&stored, Default::default()));
+        let app = router_with_state(test_state(store.clone()));
+        assert_eq!(
+            request(app.clone(), &path).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(&path)
+                    .header("authorization", format!("Bearer {TEST_OPERATOR_TOKEN}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), 10000)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["status"], "not_mapped");
+        let missing = router_with_state(test_state(default_store()))
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(&path)
+                    .header("authorization", format!("Bearer {TEST_OPERATOR_TOKEN}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+        for scope in [Key, Project] {
+            store.store_fault = Some("list_litellm_credential_mappings");
+            store.spend_credential = Some(gateway_core::LiteLlmCredentialMappingRuntime {
+                scope,
+                credential: "mapped-secret".into(),
+            });
+            for (status, payload, expected) in [
+                (
+                    "200 OK",
+                    r#"{"key":"mapped-secret","info":{"spend":0,"token":"server-secret"}}"#
+                        .to_owned(),
+                    "available",
+                ),
+                ("403 Forbidden", "server-secret".into(), "unavailable"),
+                ("302 Found", "".into(), "unavailable"),
+                ("200 OK", "invalid".into(), "unavailable"),
+                ("200 OK", "x".repeat(65537), "unavailable"),
+            ] {
+                let (base, captured) = spawn_litellm_server(status, vec![], &payload);
+                let mut state =
+                    test_state_with_litellm(store.clone(), base.clone(), "server-secret");
+                if scope == Project {
+                    let mut custom = store.clone();
+                    custom.spend_provider = Some(gateway_core::ProviderRuntimeConfig {
+                        provider: gateway_core::Provider::LiteLlm,
+                        base_url: base,
+                        credential: Some("server-secret".into()),
+                        credential_header_mode: CredentialHeaderMode::CustomHeader,
+                        credential_header_name: Some("x-litellm-key".into()),
+                        credential_header_value_format: CredentialHeaderValueFormat::Bearer,
+                    });
+                    state.store = Arc::new(custom);
+                }
+                let response = router_with_state(state)
+                    .oneshot(
+                        axum::http::Request::builder()
+                            .uri(&path)
+                            .header("authorization", format!("Bearer {TEST_OPERATOR_TOKEN}"))
+                            .header("cookie", "private-session")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                let bytes = axum::body::to_bytes(response.into_body(), 10000)
+                    .await
+                    .unwrap();
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                assert!(!text.contains("secret"));
+                let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(body["status"], expected);
+                assert_eq!(
+                    body["mapping_scope"],
+                    if scope == Key { "key" } else { "project" }
+                );
+                assert_eq!(
+                    body["spend_usd"],
+                    if expected == "available" {
+                        serde_json::json!(0.0)
+                    } else {
+                        serde_json::Value::Null
+                    }
+                );
+                let sent = captured.recv_timeout(Duration::from_secs(2)).unwrap();
+                assert_eq!(
+                    sent.request_line,
+                    format!(
+                        "GET /key/info?key={:x} HTTP/1.1",
+                        Sha256::digest(b"mapped-secret")
+                    )
+                );
+                assert!(captured_header(&sent, "cookie").is_none());
+                assert_eq!(
+                    captured_header(
+                        &sent,
+                        if scope == Key {
+                            "authorization"
+                        } else {
+                            "x-litellm-key"
+                        }
+                    ),
+                    Some("Bearer server-secret")
+                );
+            }
+        }
+    }
+
     fn spawn_litellm_server(
         status: &str,
         response_headers: Vec<(&str, &str)>,
@@ -10385,6 +10729,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -10697,6 +11044,47 @@ mod tests {
             response_json(cross_project_request).await["error"]["code"],
             "request_not_found"
         );
+
+        for endpoint in ["errors", "logs", "endpoints", "export.json", "export.csv"] {
+            let response = portal_request(app.clone(), Method::GET, &format!("/owner/v1/projects/{allowed_project_id}/{endpoint}?project_id={denied_project_id}"), &raw_session, &raw_csrf, None, "").await;
+            assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
+            let bytes = axum::body::to_bytes(response.into_body(), 100000)
+                .await
+                .unwrap();
+            let text = String::from_utf8(bytes.to_vec()).unwrap();
+            assert!(
+                !text.contains("req-payments"),
+                "project boundary in {endpoint}"
+            );
+            let denied = portal_request(
+                app.clone(),
+                Method::GET,
+                &format!("/owner/v1/projects/{denied_project_id}/{endpoint}"),
+                &raw_session,
+                &raw_csrf,
+                None,
+                "",
+            )
+            .await;
+            assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        }
+        let projects = portal_request(
+            app.clone(),
+            Method::GET,
+            "/owner/v1/projects",
+            &raw_session,
+            &raw_csrf,
+            None,
+            "",
+        )
+        .await;
+        let projects = response_json(projects).await;
+        assert!(projects
+            .to_string()
+            .contains(&allowed_project_id.to_string()));
+        assert!(!projects
+            .to_string()
+            .contains(&denied_project_id.to_string()));
 
         let denied = portal_request(
             app,
@@ -11140,6 +11528,41 @@ mod tests {
         ));
         let app = router_with_state(state);
 
+        let stale_callback = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/admin-ui/auth/callback?code=unused&state=unknown")
+                    .header(header::COOKIE, format!("{PORTAL_LOGIN_COOKIE}=unmatched"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stale_callback.status(), StatusCode::UNAUTHORIZED);
+        let disabled_callback = request(
+            router_with_state(test_state(default_store())),
+            "/admin-ui/auth/callback?code=x&state=y",
+        )
+        .await;
+        assert_eq!(disabled_callback.status(), StatusCode::BAD_GATEWAY);
+        for path in [
+            "/admin-ui/auth/session",
+            "/owner/v1/projects/00000000-0000-0000-0000-000000000001",
+        ] {
+            let response = portal_request(
+                app.clone(),
+                Method::GET,
+                path,
+                "expired-session",
+                "expired-csrf",
+                None,
+                "",
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+
         let provider_error =
             request(app.clone(), "/admin-ui/auth/callback?error=access_denied").await;
         assert_eq!(provider_error.status(), StatusCode::UNAUTHORIZED);
@@ -11536,6 +11959,36 @@ mod tests {
         assert_eq!(workload_response.status(), StatusCode::OK);
         assert_eq!(response_json(workload_response).await["role"], "viewer");
 
+        for path in [
+            format!("/owner/v1/projects/{}", Uuid::new_v4()),
+            "/owner/v1/services/unassigned".to_owned(),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .uri(&path)
+                        .header(header::AUTHORIZATION, format!("Bearer {workload_token}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .uri(&path)
+                        .header(header::AUTHORIZATION, "Bearer malformed")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+
         let project_workload_response = app
             .oneshot(
                 axum::http::Request::builder()
@@ -11838,6 +12291,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(Some(stored_key(raw)))),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12048,6 +12504,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(Some(stored_key(raw)))),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12081,6 +12540,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12120,6 +12582,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12462,6 +12927,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12509,6 +12977,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12586,6 +13057,9 @@ mod tests {
                 &stored,
                 gateway_core::GuardrailPolicy::default(),
             )))),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12626,6 +13100,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12670,6 +13147,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12715,6 +13195,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12766,6 +13249,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12867,6 +13353,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -12933,6 +13422,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -13502,6 +13994,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -13572,6 +14067,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -13845,6 +14343,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -14082,6 +14583,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -14156,6 +14660,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -14213,6 +14720,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),
@@ -14306,6 +14816,9 @@ mod tests {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
+            store_fault: None,
+            spend_credential: None,
+            spend_provider: None,
             services: Arc::new(Mutex::new(Vec::new())),
             openai_routes: Arc::new(Mutex::new(default_openai_routes())),
             anthropic_routes: Arc::new(Mutex::new(default_anthropic_routes())),

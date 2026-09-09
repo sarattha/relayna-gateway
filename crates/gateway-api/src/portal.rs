@@ -727,6 +727,50 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn oidc_invalid_discovery_and_token_responses_fail_closed() {
+        gateway_telemetry::init("off", true);
+        let credentials = test_credentials();
+        for variant in 0..6 {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let base = format!("http://{address}");
+            let server_base = base.clone();
+            thread::spawn(move || {
+                for step in 0..if variant < 3 { 1 } else { 2 } {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    let mut bytes = [0; 8192];
+                    let _ = stream.read(&mut bytes);
+                    let (status,body)=match (variant,step) {
+                        (0,_) => ("503 Service Unavailable","{}".to_owned()),
+                        (1,_) => ("200 OK","invalid".to_owned()),
+                        (2,_) => ("200 OK",serde_json::json!({"issuer":"wrong","authorization_endpoint":"invalid","token_endpoint":"invalid"}).to_string()),
+                        (_,0) => ("200 OK",serde_json::json!({"issuer":server_base,"authorization_endpoint":format!("{server_base}/authorize"),"token_endpoint":format!("{server_base}/token")}).to_string()),
+                        (3,_) => ("200 OK","invalid".to_owned()),
+                        (4,_) => ("200 OK","{}".to_owned()),
+                        _ => ("200 OK",r#"{"id_token":"not-a-jwt"}"#.to_owned()),
+                    };
+                    write!(stream,"HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+                }
+            });
+            let runtime = PortalOidcRuntime::new(test_config(&base, &credentials)).unwrap();
+            assert!(!format!("{runtime:?}").contains("PRIVATE KEY"));
+            assert!(runtime
+                .exchange_code("test-code", "test-pkce", Utc::now())
+                .await
+                .is_err());
+        }
+        let runtime =
+            PortalOidcRuntime::new(test_config("http://127.0.0.1:9", &credentials)).unwrap();
+        assert_eq!(
+            runtime
+                .exchange_code("code", "pkce", Utc::now())
+                .await
+                .unwrap_err(),
+            GatewayError::OidcUnavailable
+        );
+    }
+
     #[test]
     fn opaque_tokens_hash_and_pkce_without_revealing_source() {
         let token = random_opaque_token();

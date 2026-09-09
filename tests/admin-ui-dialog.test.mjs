@@ -8,7 +8,7 @@ class Element {
   constructor({inert=false,modal=false,dialog=null}={}) { this.inert=inert;this.modal=modal;this.dialog=dialog;this.isConnected=true; }
   matches() { return this.modal; }
   querySelector() { return this.dialog; }
-  addEventListener() {}
+  addEventListener(name, listener) { (this.listeners ||= {})[name] = listener; }
   removeEventListener() {}
   remove() {this.isConnected=false;roots.splice(roots.indexOf(this),1);}
   focus() {focused=this;}
@@ -39,3 +39,46 @@ assert.equal(focused,replacement);
 assert.equal(enabledRoot.inert,false);
 assert.equal(preInertRoot.inert,true);
 console.log('ok - dialogs preserve root inert baselines across nested close order and resolve current focus targets');
+
+// Show-once credentials survive accidental dismissal, while ordinary dialogs do not.
+assert.match(source, /mountDialog\(backdrop, \{ initialFocus: "\[data-copy-token\]", dismissible: false \}\)/);
+for (const dismissible of [false, true]) {
+  for (const gesture of ['backdrop', 'Escape', 'inside']) {
+    const node = modal();
+    let closes = 0;
+    const close = mount(node, {dismissible, onClose: () => closes++});
+    if (gesture === 'Escape') node.listeners.keydown({key: 'Escape', preventDefault() {}});
+    else node.listeners.click({target: gesture === 'backdrop' ? node : node.dialog});
+    const shouldClose = dismissible && gesture !== 'inside';
+    assert.equal(node.isConnected, !shouldClose, `${dismissible}/${gesture}`);
+    assert.equal(closes, Number(shouldClose));
+    close();
+    close();
+    assert.equal(closes, 1, 'explicit close is idempotent');
+    assert.equal(enabledRoot.inert, false);
+  }
+}
+console.log('ok - show-once secrets require explicit close; ordinary dialogs remain dismissible');
+
+const closeTopSource = source.slice(source.indexOf('function closeTopDialog('), source.indexOf('\nfunction signedIn('));
+const closeTop = new Function('document', `${closeTopSource}; return closeTopDialog;`)(document);
+const oldWorkflow = modal();
+mount(oldWorkflow);
+let finishOldRequest;
+const pendingRequest = new Promise(resolve => { finishOldRequest = resolve; }).then(() => closeTop());
+closeTop();
+assert.equal(oldWorkflow.isConnected, false);
+let secretCloses = 0;
+const secret = modal();
+const explicitlyCloseSecret = mount(secret, {dismissible:false, onClose:()=>secretCloses++});
+finishOldRequest();
+await pendingRequest;
+assert.equal(secret.isConnected, true, 'a late import/sync completion cannot discard the new token');
+assert.equal(secretCloses, 0);
+assert.equal(enabledRoot.inert, true, 'background stays inert while the secret remains visible');
+secret.closeDialog();
+assert.equal(secret.isConnected, true, 'direct generic callbacks are protected too');
+explicitlyCloseSecret();
+assert.equal(secretCloses, 1);
+assert.equal(enabledRoot.inert, false);
+console.log('ok - late generic async closure cannot dismiss show-once credentials; explicit Close still works');

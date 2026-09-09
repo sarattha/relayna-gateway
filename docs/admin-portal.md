@@ -24,7 +24,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.34` Admin UI 3.0 shell organizes navigation into Monitor, Discover,
+The `v0.1.35` Admin UI 3.0 shell organizes navigation into Monitor, Discover,
 and Govern. Monitor contains Overview, Traffic, Usage & cost and Health;
 Discover contains Projects, Services, Providers and Routes; Govern contains
 Virtual keys, Policies & guardrails, People & identities, Audit log and Settings.
@@ -1121,3 +1121,46 @@ human users, temporary automation, demos, and CI jobs.
 `fixed` records the configured estimate on each routed service request. For example, a service with `estimated_cost_usd` set to `0.01` contributes `$0.0100` per recorded request.
 
 `passthrough` records the cost reported by the upstream response when present, such as `usage.total_cost` or LiteLLM response-cost fields. If the provider omits cost data, the usage event has no per-request cost and aggregate summaries treat missing cost as zero.
+
+## Overview reliability and LiteLLM reported spend
+
+Overview reads only the summary, request timeseries and project breakdown it
+renders. It no longer loads the full Usage dashboard, which also computes
+service, endpoint, model, provider, task and unused-key sections. Analytics reads
+have a 30-second deadline; ordinary control reads keep their eight-second limit.
+Navigation cancels old reads. Failed sources show unavailable or explicitly
+labeled cached data, with Retry sources; a failed request is never zero activity.
+The 24-hour and seven-day graphs include both partially filled boundary hours.
+
+Under **Virtual keys**, select **LiteLLM spend** for a key. The same snapshot is
+available from **Usage & cost** when a key filter is applied. **Refresh spend**
+reads the current LiteLLM counter; the dialog shows its retrieval time and whether
+it came from a key mapping or shared project mapping. Configure mappings under
+**Providers → LiteLLM credential mappings** for OpenAI/Anthropic endpoints in
+`manage_by_gateway` mode. Enabled key mappings take precedence over enabled
+project mappings. Missing or disabled mappings produce an explicit empty state.
+
+The configured LiteLLM provider credential (or environment fallback) must have
+permission to read `/key/info`. Bearer and configured custom-header authentication
+are supported. Gateway sends the SHA-256 identifier of the mapped key and returns
+only the nonnegative USD spend, mapping scope and fetch timestamp. Redirects are
+not followed, reads time out after five seconds, and responses over 64 KiB are
+rejected. Upstream failures show unavailable and can be retried; credentials,
+key metadata and raw upstream errors are never returned to the browser.
+
+This is **LiteLLM reported spend**, not a provider invoice or a Gateway-only
+estimate. It covers the current LiteLLM budget/reset period, can decrease after
+reset, and includes traffic outside Gateway using that credential. Gateway date,
+model and provider filters do not apply. A project mapping is shared; even a key
+mapping may reuse a credential elsewhere. Use dedicated LiteLLM keys for exclusive
+attribution. Do not add shared counters together. These reads do not modify
+Gateway usage records or budget enforcement.
+
+The additive `GET /admin-ui/admin/keys/{key_id}/litellm-spend` endpoint requires
+`usage:read`, returns `Cache-Control: no-store`, and returns 404 for an unknown
+Gateway key. Its `status` is `available`, `not_mapped` or `unavailable`;
+`spend_usd` and `fetched_at` are null unless a read succeeds.
+
+Newly created virtual keys remain visible until **Close** is explicitly activated.
+Backdrop clicks and Escape cannot dismiss show-once credentials. Copy the key and
+store it before closing; the raw value cannot be recovered afterward.

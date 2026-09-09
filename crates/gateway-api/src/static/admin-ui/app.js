@@ -15700,7 +15700,7 @@ async function json(path, options = {}) {
 async function fetchWithTimeout(path, options = {}) {
   const generation = viewGeneration;
   const response = await fetchComplete(path, options, {
-    timeoutMs: requestTimeoutMs,
+    timeoutMs: /\/admin-ui\/admin\/(usage\/|provider-health(?:\?|$))/.test(path) ? 3e4 : requestTimeoutMs,
     signal: !options.method || options.method === "GET" ? viewController.signal : void 0
   });
   if (generation !== viewGeneration) throw new DOMException("Request superseded", "AbortError");
@@ -15744,7 +15744,7 @@ function showRawToken(rawToken, label = "Token shown once") {
   node.querySelector("textarea").value = rawToken;
   document.body.appendChild(node);
   const backdrop = document.body.lastElementChild;
-  const close = mountDialog(backdrop, { initialFocus: "[data-copy-token]" });
+  const close = mountDialog(backdrop, { initialFocus: "[data-copy-token]", dismissible: false });
   backdrop.querySelector("[data-copy-token]").addEventListener("click", async () => {
     await navigator.clipboard.writeText(rawToken);
     setNotice("Token copied. Store it in your secret manager now.", "success");
@@ -15788,7 +15788,7 @@ function confirmAction(titleText, bodyText) {
   });
 }
 function mountDialog(backdrop, { initialFocus = "button", onClose = () => {
-}, restoreFocus = null } = {}) {
+}, restoreFocus = null, dismissible = true } = {}) {
   const dialog = backdrop == null ? void 0 : backdrop.querySelector('[role="dialog"]');
   if (!(backdrop instanceof HTMLElement) || !(dialog instanceof HTMLElement)) {
     return () => {
@@ -15829,7 +15829,7 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {
   const onKeyDown = (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      close(false);
+      if (dismissible) close(false);
       return;
     }
     if (event.key !== "Tab") return;
@@ -15851,9 +15851,11 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {
   };
   backdrop.addEventListener("keydown", onKeyDown);
   backdrop.addEventListener("click", (event) => {
-    if (event.target === backdrop) close(false);
+    if (dismissible && event.target === backdrop) close(false);
   });
-  backdrop.closeDialog = close;
+  backdrop.closeDialog = (value) => {
+    if (dismissible) close(value);
+  };
   queueMicrotask(() => {
     const target = dialog.querySelector(initialFocus) || dialog.querySelector(focusableSelector) || dialog;
     if (target instanceof HTMLElement) {
@@ -16186,10 +16188,11 @@ async function overview() {
   var _a2, _b, _c;
   const renderId = ++renderGeneration;
   const issues = [];
-  const emptyDashboard = { summary: {}, timeseries: [], breakdowns: { projects: [] } };
   const usageQuery = overviewUsageQuery();
-  const [dashboard, healthRows, ready, keysRows, openaiRoutes, anthropicRoutes, servicesRows, projectsRows, auditEvents, policyLayers] = await Promise.all([
-    monitoringPanel(`/admin-ui/admin/usage/dashboard?${usageQuery}`, emptyDashboard, issues),
+  const [summary, timeseries, projectUsage, healthRows, ready, keysRows, openaiRoutes, anthropicRoutes, servicesRows, projectsRows, auditEvents, policyLayers] = await Promise.all([
+    monitoringPanel(`/admin-ui/admin/usage/summary?${usageQuery}`, {}, issues),
+    monitoringPanel(`/admin-ui/admin/usage/timeseries?${usageQuery}`, [], issues),
+    monitoringPanel(`/admin-ui/admin/usage/by-project?${usageQuery}`, [], issues),
     monitoringPanel(`/admin-ui/admin/provider-health?${usageQuery}`, [], issues),
     readiness(),
     monitoringPanel("/admin-ui/admin/keys", [], issues),
@@ -16204,7 +16207,6 @@ async function overview() {
   state.projects = projectsRows;
   syncProjectScope();
   const scopedKeys = state.projectScope ? keysRows.filter((key) => key.project_id === state.projectScope) : keysRows;
-  const summary = dashboard.summary;
   const activeKeys = scopedKeys.filter((key) => ["active", "non-expiring"].includes(keyLifecycle(key))).length;
   const enabledRoutes = openaiRoutes.filter((route) => route.enabled).length + anthropicRoutes.filter((route) => route.enabled).length;
   const totalRoutes = openaiRoutes.length + anthropicRoutes.length;
@@ -16224,8 +16226,7 @@ async function overview() {
     <div class="overview-insights">
       <section class="panel chart-panel">
         <div class="panel-heading chart-heading"><div><h3>Request volume</h3><span class="subtle">${esc(scopeLabel())} · ${esc(overviewWindowLabel())}</span></div></div>
-        <div class="overview-chart-wrap"><canvas id="overview-chart" role="img" aria-label="Requests and failures over ${overviewWindowLabel().toLowerCase()}"></canvas></div>
-        <p class="sr-only">${esc(overviewChartSummary(dashboard.timeseries || []))}</p>
+        ${overviewRequestVolume(timeseries, issues)}
         <button type="button" class="link-button" data-overview-nav="usage">Explore requests →</button>
       </section>
       <section class="panel attention-panel">
@@ -16236,13 +16237,7 @@ async function overview() {
         <button type="button" class="link-button" data-overview-nav="keys">Review virtual keys →</button>
       </section>
     </div>
-    <section class="panel">
-      <div class="panel-heading"><div><h3>Project activity</h3><span class="subtle">${esc(overviewWindowLabel())} · top ${dashboard.breakdowns.projects.length} recorded projects · ${esc(scopeLabel())}</span></div></div>
-      ${table(["Project", "Requests", "Failures", "Estimated cost", "Explore"], dashboard.breakdowns.projects.map((row) => {
-    var _a3;
-    return [esc(((_a3 = projectsRows.find((project) => project.id === row.name)) == null ? void 0 : _a3.name) || row.name), esc(row.summary.request_count), esc(row.summary.failure_count), money(row.summary.estimated_cost_usd), `<button type="button" data-overview-project="${attr(row.name)}">View usage</button>`];
-  }))}
-    </section>
+    ${overviewProjectActivity(projectUsage, projectsRows, issues)}
     <details class="workflow-disclosure"><summary>Gateway inventory · ${enabledRoutes}/${totalRoutes} routes · ${enabledServices} services</summary><section class="panel">${overviewOperationsTable(healthRows, scopedKeys)}</section></details>
   `;
   document.querySelector("#page-actions").innerHTML = `<label class="compact-field"><span>Overview time range</span><select id="overview-window">${option("24h", state.overviewWindow, "Last 24 hours")}${option("7d", state.overviewWindow, "Last 7 days")}${option("30d", state.overviewWindow, "Last 30 days")}</select></label>`;
@@ -16250,7 +16245,7 @@ async function overview() {
     navigateToView("usage", { monitoring: { projectScope: button.dataset.overviewProject, usageFilters: { time_preset: state.overviewWindow === "30d" ? "last_30d" : state.overviewWindow === "24h" ? "last_24h" : "last_7d" } } });
   }));
   (_b = content.querySelector("[data-retry-monitoring]")) == null ? void 0 : _b.addEventListener("click", () => refresh());
-  renderOverviewChart(dashboard.timeseries || []);
+  renderOverviewChart(timeseries);
   content.insertAdjacentHTML("beforeend", panel("Latest changes", `<p class="help">Latest sample of up to 8 audit entries · gateway-wide</p>${auditEventTable(auditEvents)}`));
   (_c = document.querySelector("#overview-window")) == null ? void 0 : _c.addEventListener("change", (event) => {
     state.overviewWindow = event.currentTarget.value;
@@ -16260,6 +16255,23 @@ async function overview() {
   document.querySelectorAll("[data-overview-nav]").forEach((button) => {
     button.addEventListener("click", () => navigateToView(button.dataset.overviewNav));
   });
+}
+function overviewProjectActivity(projectUsage, projectsRows, issues) {
+  const unavailable = issues.some((issue) => issue.startsWith("by-project:") && issue.endsWith("unavailable"));
+  return `    <section class="panel">
+      <div class="panel-heading"><div><h3>Project activity</h3><span class="subtle">${esc(overviewWindowLabel())} · ${unavailable ? "Activity unavailable" : `top ${projectUsage.length} recorded projects`} · ${esc(scopeLabel())}</span></div></div>
+      ${unavailable ? emptyState("Project activity is unavailable. Retry sources to load it.") : table(["Project", "Requests", "Failures", "Estimated cost", "Explore"], projectUsage.map((row) => {
+    var _a2;
+    return [esc(((_a2 = projectsRows.find((project) => project.id === row.name)) == null ? void 0 : _a2.name) || row.name), esc(row.summary.request_count), esc(row.summary.failure_count), money(row.summary.estimated_cost_usd), `<button type="button" data-overview-project="${attr(row.name)}">View usage</button>`];
+  }))}
+    </section>`;
+}
+function overviewRequestVolume(timeseries, issues) {
+  if (issues.some((issue) => issue.startsWith("timeseries:") && issue.endsWith("unavailable"))) {
+    return emptyState("Request volume is unavailable. Retry sources to load it.");
+  }
+  return `<div class="overview-chart-wrap"><canvas id="overview-chart" role="img" aria-label="Requests and failures over ${overviewWindowLabel().toLowerCase()}"></canvas></div>
+    <p class="sr-only">${esc(overviewChartSummary(timeseries))}</p>`;
 }
 function overviewUsageQuery() {
   const now = /* @__PURE__ */ new Date();
@@ -16271,8 +16283,7 @@ function overviewUsageQuery() {
     to: now.toISOString(),
     interval: state.overviewWindow === "30d" ? "day" : "hour",
     breakdown_limit: "20",
-    timeseries_limit: state.overviewWindow === "30d" ? "31" : state.overviewWindow === "7d" ? "168" : "24",
-    service_timeseries_limit: "1"
+    timeseries_limit: state.overviewWindow === "30d" ? "31" : state.overviewWindow === "7d" ? "169" : "25"
   });
   if (state.projectScope) query.set("project_id", state.projectScope);
   return query.toString();
@@ -16716,6 +16727,7 @@ function keyLifecycleActions(key) {
   const toggle = key.revoked_at ? "" : key.disabled ? `<button data-key-action="enable" data-key-id="${attr(key.id)}" aria-label="Enable virtual key ${keyLabel}">Enable</button>` : `<button data-key-action="disable" data-key-id="${attr(key.id)}" aria-label="Disable virtual key ${keyLabel}">Disable</button>`;
   return `<div class="actions">
         <button data-key-action="edit" data-key-id="${attr(key.id)}" aria-label="Edit virtual key ${keyLabel}">Edit</button>
+        <button data-key-action="spend" data-key-id="${attr(key.id)}" aria-label="LiteLLM spend for virtual key ${keyLabel}">LiteLLM spend</button>
         <button data-key-action="usage" data-key-id="${attr(key.id)}" aria-label="View usage for virtual key ${keyLabel}">Usage</button>
         ${toggle}
         <button class="danger" data-key-action="revoke" data-key-id="${attr(key.id)}" aria-label="Revoke virtual key ${keyLabel}" ${key.revoked_at ? "disabled" : ""}>Revoke</button>
@@ -16948,6 +16960,10 @@ async function keyAction(event) {
     await keys();
     return;
   }
+  if (action === "spend") {
+    await showLiteLlmSpend(keyId);
+    return;
+  }
   if (action === "usage") {
     const projectScope = ((_a2 = state.keys.find((key) => key.id === keyId)) == null ? void 0 : _a2.project_id) || "";
     await navigateToView("usage", { monitoring: { projectScope, usageFilters: { ...state.usageFilters, project_id: projectScope, key_id: keyId } } });
@@ -16957,6 +16973,44 @@ async function keyAction(event) {
   await api(`/admin-ui/admin/keys/${keyId}/${action}`, { method: "POST", body: "{}" });
   setNotice(`Virtual key ${action}d.`, "success");
   await keys();
+}
+async function showLiteLlmSpend(keyId) {
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
+  backdrop.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+    <h3 id="${titleId}">LiteLLM reported spend</h3>
+    <p>Virtual key <code>${esc(keyId)}</code></p>
+    <div data-spend-result role="status" aria-live="polite"></div>
+    <p class="help">Current LiteLLM counter in USD, since its last reset. Includes all traffic using the mapped LiteLLM key, including outside Gateway. Date filters do not apply. Shared credentials cannot provide an exclusive per-key cost. Gateway usage estimates and budgets remain separate.</p>
+    <div class="form-actions"><button type="button" data-refresh-spend>Refresh spend</button><button type="button" data-close-modal>Close</button></div>
+  </div>`;
+  document.body.appendChild(backdrop);
+  const close = mountDialog(backdrop, { initialFocus: "[data-close-modal]" });
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => close());
+  const result = backdrop.querySelector("[data-spend-result]");
+  const refresh2 = backdrop.querySelector("[data-refresh-spend]");
+  const load = async () => {
+    refresh2.disabled = true;
+    result.textContent = "Loading reported spend…";
+    try {
+      const snapshot = await api(`/admin-ui/admin/keys/${encodeURIComponent(keyId)}/litellm-spend`);
+      if (!backdrop.isConnected) return;
+      result.innerHTML = liteLlmSpendContent(snapshot);
+    } catch (error) {
+      if (backdrop.isConnected) result.textContent = "Spend unavailable. Refresh to retry.";
+    } finally {
+      refresh2.disabled = false;
+    }
+  };
+  refresh2.addEventListener("click", load);
+  await load();
+}
+function liteLlmSpendContent(snapshot) {
+  if (snapshot.status === "not_mapped") return emptyState("No enabled LiteLLM credential mapping. Configure a key or project mapping in Providers for gateway-managed endpoints.");
+  const scope = snapshot.mapping_scope === "project" ? "Shared project mapping" : "Key mapping";
+  if (snapshot.status !== "available" || !Number.isFinite(snapshot.spend_usd) || snapshot.spend_usd < 0) return `<p>${esc(scope)}</p><p>Spend unavailable. Check the LiteLLM connection and permission to read key information, then refresh.</p>`;
+  return `<div class="stat"><span>LiteLLM reported spend · USD</span><strong>${money(snapshot.spend_usd)}</strong></div><p>${esc(scope)} · Retrieved ${time(snapshot.fetched_at)}</p>`;
 }
 async function providers() {
   const renderId = ++renderGeneration;
@@ -17791,7 +17845,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.34")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.35")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -18242,6 +18296,7 @@ async function usage() {
   await loadUsage();
 }
 async function loadUsage(event) {
+  var _a2;
   event == null ? void 0 : event.preventDefault();
   const generation = ++usageGeneration;
   const root = document.querySelector("#usage-results");
@@ -18293,6 +18348,7 @@ async function loadUsage(event) {
       ${stat("Expensive", summary.expensive_request_count || 0)}
       ${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
     </div>
+    ${query.get("key_id") ? `<p><button type="button" data-usage-litellm-spend>View LiteLLM reported spend</button> <span class="help">Current mapped-key counter · independent of date filters</span></p>` : ""}
     <h4>Project → Virtual key → Service</h4>
     ${usageProjectKeyServiceHierarchy(dashboard.breakdowns.project_key_services || [])}
     <h4>Projects</h4>${usageBreakdownTable(dashboard.breakdowns.projects, projectName)}
@@ -18307,6 +18363,7 @@ async function loadUsage(event) {
     ${usagePagedTable("Service timeseries", "service-timeseries", usageServiceTimeseriesTable(dashboard.service_timeseries || []), dashboard.service_timeseries_page, (dashboard.service_timeseries || []).length)}
     <h4>Unused keys</h4>${unusedKeysTable(dashboard.unused_keys)}
   `;
+  (_a2 = results.querySelector("[data-usage-litellm-spend]")) == null ? void 0 : _a2.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
   tabulateUsage(results);
   results.querySelectorAll("[data-debug-request]").forEach((button) => {
     button.addEventListener("click", handleAsync(openDebugRequest));

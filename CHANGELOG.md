@@ -2,6 +2,26 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.35 - 2026-09-09
+
+### Added
+
+- LiteLLM-reported spend for mapped Relayna keys in Virtual keys and key-filtered
+  Usage & cost, with retrieval time, mapping scope and explicit shared/resettable
+  counter semantics. Reads use hashed key identifiers, configured authentication,
+  bounded response size/time and sanitized output; estimates and budgets stay separate.
+- Regression coverage for spend, slow analytics, dialog behavior, portal storage
+  failures, scoped project access and malformed OIDC inputs. Complete all-features
+  Rust workspace line coverage exceeds 95%.
+
+### Fixed
+
+- Show-once credentials close only through explicit Close, preventing accidental
+  dismissal by backdrop clicks or Escape.
+- Overview loads only its required usage aggregates in parallel, allows bounded
+  30-second analytics reads and preserves independent stale/unavailable states.
+  Rolling charts include both partially filled boundary buckets.
+
 ## 0.1.34 - 2026-09-09
 
 ### Added

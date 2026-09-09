@@ -2,7 +2,13 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.34` feature set.
+This page summarizes the `v0.1.35` feature set.
+
+New virtual keys stay visible until explicitly closed. Overview requests only
+its displayed usage aggregates and supports bounded 30-second analytics reads.
+Virtual keys and key-filtered Usage & cost show LiteLLM-reported spend with
+mapping scope and retrieval time, keeping shared/resettable counters separate
+from Gateway estimates and budgets. See [spend and reliability details](admin-portal.md#overview-reliability-and-litellm-reported-spend).
 
 Gateway-managed requests support opt-in **Require unverified bearer
 (troubleshooting)** in Admin Settings. It keeps both client headers and validates
@@ -252,7 +258,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.34` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.35` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -355,7 +361,7 @@ passthrough against a real `litellm/litellm` container.
 
 ## Memory-Safe Body Processing
 
-Release `0.1.34` retains bounds on complete request and response buffering with one
+Release `0.1.35` retains bounds on complete request and response buffering with one
 process-wide admission controller. By default, at most eight managed requests
 or post-call responses may retain complete bodies, and their aggregate
 serialized reservations may not exceed 512 MiB. Operators can tune these
@@ -416,7 +422,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.34` release retains CI and release workflow hardening with strict
+The `v0.1.35` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

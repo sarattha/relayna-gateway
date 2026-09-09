@@ -4833,6 +4833,7 @@ mod tests {
             .litellm_credential_mapping
             .lock()
             .expect("mapping lock") = Some(gateway_core::LiteLlmCredentialMappingRuntime {
+            scope: gateway_core::LiteLlmCredentialMappingScope::Key,
             credential: "mapped-litellm-key".to_owned(),
         });
         let proxy = RelaynaPingoraProxy {
