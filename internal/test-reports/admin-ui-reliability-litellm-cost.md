@@ -61,12 +61,16 @@ Screenshots were inspected locally in `/tmp/admin-cost-ui/`.
 
 PR: https://github.com/sarattha/relayna-gateway/pull/116.
 
-Codex identified one P2 issue: the spend handler enumerated mapping inventory.
+Codex identified two P2 issues. First, the spend handler enumerated mapping inventory.
 Commit `a1142a1` fixes it by returning the effective credential and scope from one
 scoped query. Database tests verify precedence and disabled mapping fallback;
 the API fixture fails if inventory enumeration occurs. The thread was resolved,
-and Codex completed re-review on 2026-09-09 with no new findings. CI passed on
-the corrected implementation.
+and CI passed on the scoped-query correction. A second finding identified false
+zero activity when project aggregation failed without cached data. Project activity
+and request volume now explicitly show unavailable; successful empty responses and
+cached data stay distinct. Frontend regressions, desktop/mobile Computer Use failure
+and retry checks, and the full mandatory stack passed after the UI correction.
+The final Codex re-review is tracked on the PR.
 
 The full mandatory stack passed after the correction and with prepared 0.1.35
 metadata: formatting, Clippy, Cargo tests, audit, deny, machete, all 345 Nextest

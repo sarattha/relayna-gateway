@@ -55,3 +55,15 @@ try {
   assert.deepEqual(await response.json(),{request_count:42});
 } finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 console.log('ok - actual analytics response beyond eight seconds succeeds');
+
+const activity = new Function('esc','scopeLabel','overviewWindowLabel','emptyState','table','money','attr','overviewChartSummary', `${extract('function overviewProjectActivity(', '\nfunction overviewUsageQuery')}; return {projects:overviewProjectActivity,volume:overviewRequestVolume};`)(x=>x,()=>"All projects",()=>"Last 7 days",x=>x,(_,rows)=>rows.length?JSON.stringify(rows):"No rows",x=>x,x=>x,()=>"No timeseries");
+const failedProjects = activity.projects([],[],['by-project: request_timeout · unavailable']);
+assert.match(failedProjects,/Project activity is unavailable/);
+assert.doesNotMatch(failedProjects,/top 0|No rows/);
+assert.match(activity.projects([],[],[]),/top 0 recorded projects/);
+assert.match(activity.projects([{name:'project-a',summary:{request_count:7,failure_count:0,estimated_cost_usd:1}}],[{id:'project-a',name:'Support'}],['by-project: request_timeout · stale data from 10:00']),/Support/);
+assert.match(activity.volume([],['timeseries: request_timeout · unavailable']),/Request volume is unavailable/);
+assert.doesNotMatch(activity.volume([],['timeseries: request_timeout · unavailable']),/<canvas|No timeseries/);
+assert.match(activity.volume([],[]),/<canvas/);
+assert.match(activity.volume([],['timeseries: request_timeout · stale data from 10:00']),/<canvas/);
+console.log('ok - unavailable Overview sections never present failed reads as zero activity; valid empty and cached data remain distinct');

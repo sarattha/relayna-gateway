@@ -18,7 +18,8 @@ Relayna keys. Deliver one reviewed PR with release notes and regression evidence
 - [x] User clarified repository-wide coverage: all-features Rust workspace line coverage 95.02% (31,028 lines; 1,545 missed). Full regression suite and Computer Use desktop/mobile QA passed.
 - [x] Complete mandatory verification stack from clean worktree; all 345 Nextest tests and all security checks passed.
 - [x] Open PR #116 and request Codex review.
-- [x] Finish Codex re-review with no new findings; verify 0.1.35 version, changelog and docs for the same PR.
+- [x] Verify and push 0.1.35 version, changelog and docs in the same PR.
+- [ ] Complete Codex re-review after the second UI finding.
 
 ## Surprises & Discoveries
 
@@ -40,7 +41,8 @@ arbitrarily filtered by Gateway's date range.
 ## Outcomes & Retrospective
 
 All three behaviors are implemented in PR #116. Codex identified one scoped-query
-performance issue, fixed in `a1142a1`; re-review completed with no new findings.
+performance issue, fixed in `a1142a1`, and a failed-project empty-state issue.
+The latter now shows explicit unavailable states for project activity and charts.
 The corrected implementation passes CI, the complete mandatory local stack,
 Computer Use desktop/mobile QA and 95.02% complete Rust workspace line coverage.
 Frontend regressions and coverage scope are documented separately. Version 0.1.35,
@@ -149,5 +151,12 @@ rerun coverage in isolation, preserving all assertions and the 95% threshold.
 Final isolated coverage after `a1142a1` passed: 95.02% lines (31,028 total, 1,545
 missed), regions 92.25%, functions 92.16%, with `--fail-under-lines 95`.
 
-Codex re-review completed on `a1142a1` at 2026-09-09 16:33 UTC with no new findings.
+Codex re-review completed at 2026-09-09 16:33 UTC; its second finding appeared
+after the completed status and required the additional UI correction.
 The verified 0.1.35 update is the final release-metadata commit in this PR.
+
+The second correction passed frontend tests, rebuilt assets, Computer Use desktop
+and 390px failure/retry checks, and the full mandatory stack. Rust production code
+is unchanged by this UI correction; the measured 95.02% Rust coverage remains
+applicable. Re-review the new UI commit and inspect all unresolved threads before
+claiming the review is clear.

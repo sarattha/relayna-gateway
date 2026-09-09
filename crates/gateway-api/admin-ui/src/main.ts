@@ -753,8 +753,7 @@ async function overview() {
     <div class="overview-insights">
       <section class="panel chart-panel">
         <div class="panel-heading chart-heading"><div><h3>Request volume</h3><span class="subtle">${esc(scopeLabel())} · ${esc(overviewWindowLabel())}</span></div></div>
-        <div class="overview-chart-wrap"><canvas id="overview-chart" role="img" aria-label="Requests and failures over ${overviewWindowLabel().toLowerCase()}"></canvas></div>
-        <p class="sr-only">${esc(overviewChartSummary(timeseries))}</p>
+        ${overviewRequestVolume(timeseries, issues)}
         <button type="button" class="link-button" data-overview-nav="usage">Explore requests →</button>
       </section>
       <section class="panel attention-panel">
@@ -765,10 +764,7 @@ async function overview() {
         <button type="button" class="link-button" data-overview-nav="keys">Review virtual keys →</button>
       </section>
     </div>
-    <section class="panel">
-      <div class="panel-heading"><div><h3>Project activity</h3><span class="subtle">${esc(overviewWindowLabel())} · top ${projectUsage.length} recorded projects · ${esc(scopeLabel())}</span></div></div>
-      ${table(["Project", "Requests", "Failures", "Estimated cost", "Explore"], projectUsage.map((row) => [esc(projectsRows.find((project) => project.id === row.name)?.name || row.name), esc(row.summary.request_count), esc(row.summary.failure_count), money(row.summary.estimated_cost_usd), `<button type="button" data-overview-project="${attr(row.name)}">View usage</button>`]))}
-    </section>
+    ${overviewProjectActivity(projectUsage, projectsRows, issues)}
     <details class="workflow-disclosure"><summary>Gateway inventory · ${enabledRoutes}/${totalRoutes} routes · ${enabledServices} services</summary><section class="panel">${overviewOperationsTable(healthRows, scopedKeys)}</section></details>
   `;
   document.querySelector("#page-actions").innerHTML = `<label class="compact-field"><span>Overview time range</span><select id="overview-window">${option("24h", state.overviewWindow, "Last 24 hours")}${option("7d", state.overviewWindow, "Last 7 days")}${option("30d", state.overviewWindow, "Last 30 days")}</select></label>`;
@@ -786,6 +782,22 @@ async function overview() {
   document.querySelectorAll("[data-overview-nav]").forEach((button) => {
     button.addEventListener("click", () => navigateToView(button.dataset.overviewNav));
   });
+}
+
+function overviewProjectActivity(projectUsage, projectsRows, issues) {
+  const unavailable = issues.some((issue) => issue.startsWith("by-project:") && issue.endsWith("unavailable"));
+  return `    <section class="panel">
+      <div class="panel-heading"><div><h3>Project activity</h3><span class="subtle">${esc(overviewWindowLabel())} · ${unavailable ? "Activity unavailable" : `top ${projectUsage.length} recorded projects`} · ${esc(scopeLabel())}</span></div></div>
+      ${unavailable ? emptyState("Project activity is unavailable. Retry sources to load it.") : table(["Project", "Requests", "Failures", "Estimated cost", "Explore"], projectUsage.map((row) => [esc(projectsRows.find((project) => project.id === row.name)?.name || row.name), esc(row.summary.request_count), esc(row.summary.failure_count), money(row.summary.estimated_cost_usd), `<button type="button" data-overview-project="${attr(row.name)}">View usage</button>`]))}
+    </section>`;
+}
+
+function overviewRequestVolume(timeseries, issues) {
+  if (issues.some((issue) => issue.startsWith("timeseries:") && issue.endsWith("unavailable"))) {
+    return emptyState("Request volume is unavailable. Retry sources to load it.");
+  }
+  return `<div class="overview-chart-wrap"><canvas id="overview-chart" role="img" aria-label="Requests and failures over ${overviewWindowLabel().toLowerCase()}"></canvas></div>
+    <p class="sr-only">${esc(overviewChartSummary(timeseries))}</p>`;
 }
 
 function overviewUsageQuery() {
