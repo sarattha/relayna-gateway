@@ -926,3 +926,38 @@ ownerChartState.ownerDashboardFilters.range = '7d';
 ownerChartState.overviewWindow = '24h';
 assert.equal(ownerLabel(ownerBuckets[0]),ownerLabel(ownerBuckets[1]));
 console.log('ok - owner chart label granularity follows the owner range independently of admin range');
+
+// Exercise the actual save handler: false must be sent when restoring verification,
+// while saved Entra fields survive both transitions and conflicting modes never save.
+for (const [unverified, apigee, expectedWrites] of [[true, false, 1], [false, false, 1], [true, true, 0]]) {
+  const values = new Map(Object.entries({
+    tenant_id: "tenant", audience: "audience", issuer: "https://issuer.example",
+    oidc_discovery_url: "https://issuer.example/discovery", entra_enabled: "on",
+    relayna_key_header: "x-litellm-key", accepted_algorithms: "RS256",
+    ...(unverified ? { unverified_bearer_enabled: "on" } : {}),
+    ...(apigee ? { apigee_trusted_header_enabled: "on" } : {}),
+  }));
+  const writes = [];
+  const notices = [];
+  const env = {
+    state: { authSettings: { source: "persisted", apigee: {} } },
+    FormData: class { constructor() { return values; } },
+    api: async (url, request) => { writes.push({ url, body: JSON.parse(request.body) }); return {}; },
+    setNotice: (...args) => notices.push(args), settings: async () => {},
+    nullableText: value => value?.trim() || null,
+    csv: value => value ? value.split(",") : [],
+    numberOrDefault: (value, fallback) => value == null ? fallback : Number(value),
+  };
+  const save = new Function("env", `const {${Object.keys(env).join(",")}} = env; return async ${sourceFunction("saveAuthSettings")}`)(env);
+  await save({ preventDefault() {}, target: {} });
+  assert.equal(writes.length, expectedWrites);
+  if (expectedWrites) {
+    assert.equal(writes[0].body.unverified_bearer_enabled, unverified);
+    assert.equal(writes[0].body.entra_enabled, true);
+    assert.equal(writes[0].body.issuer, values.get("issuer"));
+    assert.equal(writes[0].body.relayna_key_header, "x-litellm-key");
+  } else {
+    assert.match(notices[0][0], /Disable Apigee trusted headers/);
+  }
+}
+console.log("ok - unverified bearer save, restoration and Apigee conflict regression");

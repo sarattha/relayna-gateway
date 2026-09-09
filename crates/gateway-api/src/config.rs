@@ -20,6 +20,7 @@ pub struct Config {
     pub relayna_studio_token: Option<String>,
     pub guardrail_pii_mapping_ttl_seconds: u64,
     pub guardrail_mapping_encryption_key: Option<String>,
+    pub unverified_bearer_enabled: bool,
     pub relayna_key_header: String,
     pub entra_auth: Option<EntraAuthConfig>,
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
@@ -49,6 +50,13 @@ impl Config {
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(3600);
         let guardrail_mapping_encryption_key = optional("GUARDRAIL_MAPPING_ENCRYPTION_KEY");
+        let unverified_bearer_enabled =
+            optional_bool("GATEWAY_UNVERIFIED_BEARER_ENABLED")?.unwrap_or(false);
+        if unverified_bearer_enabled
+            && optional_bool("APIGEE_TRUSTED_HEADER_ENABLED")?.unwrap_or(false)
+        {
+            return Err(GatewayError::InvalidConfiguration);
+        }
         let entra_application_id = optional("ENTRA_APPLICATION_ID");
         let relayna_key_header = optional("ENTRA_RELAYNA_KEY_HEADER")
             .unwrap_or_else(|| ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned());
@@ -180,6 +188,7 @@ impl Config {
             relayna_studio_token,
             guardrail_pii_mapping_ttl_seconds,
             guardrail_mapping_encryption_key,
+            unverified_bearer_enabled,
             relayna_key_header,
             entra_auth,
             apigee_trusted_header,
@@ -196,6 +205,7 @@ impl Config {
 
     pub fn gateway_auth_env(&self) -> GatewayAuthEnv {
         GatewayAuthEnv {
+            unverified_bearer_enabled: self.unverified_bearer_enabled,
             relayna_key_header: self.relayna_key_header.clone(),
             entra_auth: self.entra_auth.clone(),
             apigee_trusted_header: self.apigee_trusted_header.clone(),

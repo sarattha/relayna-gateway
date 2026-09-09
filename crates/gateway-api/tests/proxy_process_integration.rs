@@ -1,7 +1,7 @@
 use axum::{
     body::Bytes,
     extract::OriginalUri,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::{any, post},
     Json, Router,
 };
@@ -35,19 +35,23 @@ async fn mock_upstream() -> (String, JoinHandle<()>) {
             "/large-response",
             post(|| async { Json(json!({"payload": "x".repeat(2048)})) }),
         )
-        .fallback(any(|OriginalUri(uri): OriginalUri| async move {
-            (
-                StatusCode::OK,
-                Json(json!({
-                    "id": "mock-response",
-                    "path": uri.path(),
-                    "model": "coverage-model",
-                    "choices": [],
-                    "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
-                    "usage_metadata": {"total_cost": 0.001}
-                })),
-            )
-        }));
+        .fallback(any(
+            |OriginalUri(uri): OriginalUri, headers: HeaderMap| async move {
+                (
+                    StatusCode::OK,
+                    Json(json!({
+                        "id": "mock-response",
+                        "auth": headers.get("authorization").and_then(|v| v.to_str().ok()),
+                        "client_key": headers.contains_key("x-litellm-key"),
+                        "path": uri.path(),
+                        "model": "coverage-model",
+                        "choices": [],
+                        "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+                        "usage_metadata": {"total_cost": 0.001}
+                    })),
+                )
+            },
+        ));
     let task = tokio::spawn(async move {
         axum::serve(listener, app)
             .await
@@ -279,16 +283,22 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     });
 
     let proxy_port = unused_port();
+    let auth_runtime = gateway_core::SharedGatewayAuthRuntime::new(Default::default()).unwrap();
     let proxy_config = PingoraLiteLlmConfig::from_base_url(&upstream_url, "litellm-secret")
         .expect("LiteLLM proxy config")
         .with_direct_openai(Some(
             PingoraUpstreamConfig::from_base_url(&upstream_url, "openai-secret")
                 .expect("direct OpenAI config"),
         ))
+        .with_auth_runtime(auth_runtime.clone())
         .with_worker_token(Some("worker-secret".to_owned()))
         .with_body_admission_limits(2, 512)
         .expect("body admission limits");
-    let proxy = RelaynaPingoraProxy::new(Arc::new(store), Arc::new(redis_control), proxy_config);
+    let proxy = RelaynaPingoraProxy::new(
+        Arc::new(store.clone()),
+        Arc::new(redis_control),
+        proxy_config,
+    );
     std::thread::spawn(move || {
         let mut pingora = Server::new(None).expect("create Pingora server");
         pingora.bootstrap();
@@ -301,6 +311,17 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     let proxy_url = format!("http://127.0.0.1:{proxy_port}");
     let control_url = format!("http://127.0.0.1:{control_port}");
     wait_until_ready(&client, &control_url).await;
+    // Control-plane readiness can precede the independently started Pingora listener.
+    for attempt in 0..100 {
+        if tokio::net::TcpStream::connect(("127.0.0.1", proxy_port))
+            .await
+            .is_ok()
+        {
+            break;
+        }
+        assert!(attempt < 99, "proxy listener did not become ready");
+        time::sleep(Duration::from_millis(100)).await;
+    }
 
     assert_eq!(
         send_json(
@@ -474,6 +495,261 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     assert_eq!(error["error"]["code"], "gateway_overloaded");
     assert_eq!(error["error"]["retry_after_seconds"], 1);
 
+    unverified_bearer_regressions(&client, &proxy_url, &material, &store, &auth_runtime).await;
+
     control_task.abort();
     upstream_task.abort();
+}
+
+// Runs against the same real Pingora process after the released native-mode cases.
+async fn unverified_bearer_regressions(
+    client: &reqwest::Client,
+    proxy_url: &str,
+    material: &VirtualKeyMaterial,
+    store: &PostgresStore,
+    runtime: &gateway_core::SharedGatewayAuthRuntime,
+) {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    use gateway_core::{
+        AdminGatewayAuthSettingsStore, AdminProviderConfigStore, EffectiveGatewayAuthSettings,
+        GatewayAuthEnv, LiteLlmCredentialMappingScope, LiteLlmCredentialMappingUpsertRequest,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
+    let signing_key =
+        jsonwebtoken::EncodingKey::from_rsa_pem(&rsa.private_key_to_pem().unwrap()).unwrap();
+    let jwks = json!({"keys": [{"kty":"RSA", "kid":"issue114", "alg":"RS256", "use":"sig",
+        "n": URL_SAFE_NO_PAD.encode(rsa.n().to_vec()), "e": URL_SAFE_NO_PAD.encode(rsa.e().to_vec())}]});
+    let oidc_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let issuer = format!("http://{}", oidc_listener.local_addr().unwrap());
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_for_server = hits.clone();
+    let issuer_for_server = issuer.clone();
+    let oidc = Router::new().fallback(any(move |OriginalUri(uri): OriginalUri| {
+        hits_for_server.fetch_add(1, Ordering::SeqCst);
+        let response = if uri.path() == "/keys" {
+            jwks.clone()
+        } else {
+            json!({"issuer": issuer_for_server, "jwks_uri": format!("{issuer_for_server}/keys")})
+        };
+        async move { Json(response) }
+    }));
+    let oidc_task = tokio::spawn(async move {
+        axum::serve(oidc_listener, oidc).await.unwrap();
+    });
+    let stored = store
+        .patch_gateway_auth_settings(
+            serde_json::from_value(json!({
+                "unverified_bearer_enabled": true, "entra_enabled": true,
+                "apigee_trusted_header_enabled": false, "relayna_key_header":"x-litellm-key",
+                "tenant_id":"tenant", "audience":"api://gateway", "issuer":issuer,
+                "oidc_discovery_url":format!("{issuer}/discovery"),
+                "required_role":"gateway.invoke", "required_scope":"gateway.invoke",
+                "allowed_groups":["operators"], "clock_skew_seconds":0
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    // Read back from PostgreSQL rather than trusting the PATCH return value.
+    assert!(
+        store
+            .gateway_auth_settings()
+            .await
+            .unwrap()
+            .unwrap()
+            .unverified_bearer_enabled
+    );
+    let effective =
+        EffectiveGatewayAuthSettings::from_sources(Some(stored), &GatewayAuthEnv::default())
+            .unwrap();
+    runtime.update(effective.runtime_config()).unwrap();
+    assert!(runtime.snapshot().unwrap().entra_verifier.is_none());
+    let now = chrono::Utc::now().timestamp();
+    let claims = json!({"iss":issuer,"aud":"api://gateway","tid":"tenant","oid":"user",
+        "sub":"user","ver":"2.0","exp":now+3600,"nbf":now-10,"iat":now-10,
+        "roles":["gateway.invoke"],"scp":"gateway.invoke","groups":["operators"]});
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    header.kid = Some("issue114".to_owned());
+    let sign = |claims: &Value| jsonwebtoken::encode(&header, claims, &signing_key).unwrap();
+    let valid = sign(&claims);
+    let mut tokens = vec!["not-a-jwt".to_owned()];
+    for (field, value) in [
+        ("iss", json!("https://wrong.example")),
+        ("aud", json!("wrong")),
+        ("exp", json!(now - 3600)),
+        ("roles", json!([])),
+        ("scp", json!("wrong")),
+        ("groups", json!([])),
+    ] {
+        let mut invalid = claims.clone();
+        invalid[field] = value;
+        tokens.push(sign(&invalid));
+    }
+    let other = openssl::rsa::Rsa::generate(2048).unwrap();
+    tokens.push(
+        jsonwebtoken::encode(
+            &header,
+            &claims,
+            &jsonwebtoken::EncodingKey::from_rsa_pem(&other.private_key_to_pem().unwrap()).unwrap(),
+        )
+        .unwrap(),
+    );
+    let request = |authorization: Option<&str>, key: Option<&str>| {
+        let mut request = client
+            .post(format!("{proxy_url}/v1/chat/completions"))
+            .json(&json!({"model":"coverage-model","messages":[]}));
+        if let Some(value) = authorization {
+            request = request.header("authorization", value);
+        }
+        if let Some(value) = key {
+            request = request.header("x-litellm-key", value);
+        }
+        request
+    };
+    for token in tokens.iter().chain(std::iter::once(&valid)) {
+        let response = request(Some(&format!("Bearer {token}")), Some(&material.raw_key))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(body["auth"], "Bearer litellm-secret");
+        assert_eq!(body["client_key"], false);
+    }
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        0,
+        "paused mode must not fetch discovery/JWKS"
+    );
+    for authorization in [None, Some(""), Some("Bearer "), Some("Basic token")] {
+        assert_eq!(
+            request(authorization, Some(&material.raw_key))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    for key in [
+        None,
+        Some(""),
+        Some("invalid"),
+        Some("sk-not-a-relayna-key"),
+    ] {
+        assert_eq!(
+            request(Some("Bearer unverified"), key)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    let unknown = VirtualKeyMaterial::generate().unwrap();
+    assert_eq!(
+        request(Some("Bearer unverified"), Some(&unknown.raw_key))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    for assignment in [
+        "disabled = true",
+        "revoked_at = now()",
+        "expires_at = now() - interval '1 hour'",
+    ] {
+        sqlx::query(&format!(
+            "UPDATE api_keys SET {assignment} WHERE key_prefix = $1"
+        ))
+        .bind(&material.key_prefix)
+        .execute(store.pool())
+        .await
+        .unwrap();
+        assert_eq!(
+            request(Some("Bearer unverified"), Some(&material.raw_key))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        sqlx::query("UPDATE api_keys SET disabled = false, revoked_at = NULL, expires_at = NULL WHERE key_prefix = $1")
+            .bind(&material.key_prefix).execute(store.pool()).await.unwrap();
+    }
+    // A valid key is still subject to its provider policy.
+    sqlx::query("UPDATE key_policies SET allowed_providers = ARRAY['openai-compatible'] WHERE key_id = (SELECT id FROM api_keys WHERE key_prefix = $1)")
+        .bind(&material.key_prefix).execute(store.pool()).await.unwrap();
+    assert_eq!(
+        request(Some("Bearer unverified"), Some(&material.raw_key))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    sqlx::query("UPDATE key_policies SET allowed_providers = ARRAY['litellm', 'openai-compatible', 'internal-service'] WHERE key_id = (SELECT id FROM api_keys WHERE key_prefix = $1)")
+        .bind(&material.key_prefix).execute(store.pool()).await.unwrap();
+    let key_id: Uuid = sqlx::query_scalar("SELECT id FROM api_keys WHERE key_prefix = $1")
+        .bind(&material.key_prefix)
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    store
+        .upsert_litellm_credential_mapping(LiteLlmCredentialMappingUpsertRequest {
+            scope: LiteLlmCredentialMappingScope::Key,
+            target_id: key_id,
+            enabled: true,
+            credential: Some("sk-issue114-mapped".to_owned()),
+        })
+        .await
+        .unwrap();
+    let response = request(Some("Bearer unverified"), Some(&material.raw_key))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["auth"], "Bearer sk-issue114-mapped");
+    assert_eq!(body["client_key"], false);
+
+    let stored = store
+        .patch_gateway_auth_settings(
+            serde_json::from_str(r#"{"unverified_bearer_enabled":false}"#).unwrap(),
+        )
+        .await
+        .unwrap();
+    let restored =
+        EffectiveGatewayAuthSettings::from_sources(Some(stored), &GatewayAuthEnv::default())
+            .unwrap();
+    assert_eq!(restored.entra_auth, effective.entra_auth);
+    runtime.update(restored.runtime_config()).unwrap();
+    let response = request(Some(&format!("Bearer {valid}")), Some(&material.raw_key))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let _ = response.bytes().await.unwrap();
+    for token in &tokens {
+        let response = request(Some(&format!("Bearer {token}")), Some(&material.raw_key))
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            response.status() == StatusCode::UNAUTHORIZED
+                || response.status() == StatusCode::FORBIDDEN,
+            "restored verification accepted an invalid token: {}",
+            response.status()
+        );
+    }
+    assert!(hits.load(Ordering::SeqCst) >= 2);
+    // Leave shared persisted settings in their default state for other integration cases.
+    store
+        .patch_gateway_auth_settings(serde_json::from_str(r#"{"entra_enabled":false}"#).unwrap())
+        .await
+        .unwrap();
+    oidc_task.abort();
 }

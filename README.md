@@ -146,7 +146,11 @@ See `docs/litellm-passthrough.md`,
 Operators can configure Entra ID and Apigee front-door auth from Admin portal
 Settings, including enablement, tenant, audience, issuer, OIDC discovery,
 scope, role, groups, accepted algorithms, JWKS cache TTL, clock skew, Relayna
-key header, and the write-only Apigee secret.
+key header, and the write-only Apigee secret. The opt-in **Require unverified
+bearer (troubleshooting)** setting preserves the two-header contract while pausing
+Entra verification on gateway-managed routes. Only the Relayna key is authenticated;
+trusted Apigee headers cannot be enabled with it. See [pause and restore
+instructions](docs/entra-id-auth.md#temporarily-pause-verification-while-keeping-both-headers).
 
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are startup fallback
 settings. Operators can also open Admin portal Settings after Gateway starts to

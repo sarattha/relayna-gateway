@@ -236,6 +236,7 @@ where
         let _ = rustls::crypto::ring::default_provider().install_default();
         let auth_runtime = config.auth_runtime.clone().unwrap_or_else(|| {
             SharedGatewayAuthRuntime::new(GatewayAuthRuntimeConfig {
+                unverified_bearer_enabled: false,
                 relayna_key_header: config.relayna_key_header.clone(),
                 entra_auth: config.entra_auth.clone(),
                 apigee_trusted_header: config.apigee_trusted_header.clone(),
@@ -658,7 +659,19 @@ where
                 }
             }
         }
-        let key_result = if auth.entra_enabled() {
+        let key_result = if auth.config.unverified_bearer_enabled {
+            match require_unverified_bearer(authorization) {
+                Ok(()) => {
+                    Authenticator::new(self.store.clone())
+                        .authenticate_raw_key(
+                            header_value(req, &auth.config.relayna_key_header),
+                            now,
+                        )
+                        .await
+                }
+                Err(error) => Err(error),
+            }
+        } else if auth.entra_enabled() {
             match self
                 .verify_entra_request(req, now, &auth, &ctx.request_id)
                 .await
@@ -2298,6 +2311,19 @@ fn is_valid_traceparent(value: &str) -> bool {
         && parts
             .iter()
             .all(|part| part.chars().all(|character| character.is_ascii_hexdigit()))
+}
+
+// Presence is the entire bearer contract in this explicit troubleshooting mode.
+// Never decode the token or derive an identity from its unverified contents.
+fn require_unverified_bearer(authorization: Option<&str>) -> GatewayResult<()> {
+    let authorization = authorization.ok_or(GatewayError::MissingEntraAuthorization)?;
+    let token = authorization
+        .strip_prefix("Bearer ")
+        .ok_or(GatewayError::MalformedEntraAuthorization)?;
+    if token.trim().is_empty() {
+        return Err(GatewayError::MalformedEntraAuthorization);
+    }
+    Ok(())
 }
 
 fn prepare_upstream_authority_and_credentials(

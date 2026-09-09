@@ -17,6 +17,7 @@ pub enum GatewayAuthSettingsSource {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatewayAuthEnv {
+    pub unverified_bearer_enabled: bool,
     pub relayna_key_header: String,
     pub entra_auth: Option<EntraAuthConfig>,
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
@@ -25,6 +26,7 @@ pub struct GatewayAuthEnv {
 impl Default for GatewayAuthEnv {
     fn default() -> Self {
         Self {
+            unverified_bearer_enabled: false,
             relayna_key_header: ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned(),
             entra_auth: None,
             apigee_trusted_header: None,
@@ -34,6 +36,7 @@ impl Default for GatewayAuthEnv {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StoredGatewayAuthSettings {
+    pub unverified_bearer_enabled: bool,
     pub entra_enabled: bool,
     pub tenant_id: Option<String>,
     pub audience: Option<String>,
@@ -53,6 +56,7 @@ pub struct StoredGatewayAuthSettings {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EffectiveGatewayAuthSettings {
+    pub unverified_bearer_enabled: bool,
     pub source: GatewayAuthSettingsSource,
     pub relayna_key_header: String,
     pub entra_auth: Option<EntraAuthConfig>,
@@ -62,6 +66,7 @@ pub struct EffectiveGatewayAuthSettings {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct GatewayAuthSettingsResponse {
+    pub unverified_bearer_enabled: bool,
     pub source: GatewayAuthSettingsSource,
     pub updated_at: Option<DateTime<Utc>>,
     pub relayna_key_header: String,
@@ -92,6 +97,8 @@ pub struct ApigeeAuthSettingsResponse {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct GatewayAuthSettingsPatchRequest {
+    #[serde(default)]
+    pub unverified_bearer_enabled: Option<bool>,
     pub relayna_key_header: Option<String>,
     #[serde(default)]
     pub entra_enabled: Option<bool>,
@@ -159,6 +166,7 @@ impl EffectiveGatewayAuthSettings {
         env: &GatewayAuthEnv,
     ) -> GatewayResult<Self> {
         if let Some(stored) = stored {
+            stored.validate()?;
             let relayna_key_header = normalized_non_empty(stored.relayna_key_header.as_deref())
                 .unwrap_or_else(|| env.relayna_key_header.clone());
             let entra_auth = if stored.entra_enabled {
@@ -173,6 +181,7 @@ impl EffectiveGatewayAuthSettings {
             };
             return Ok(Self {
                 source: GatewayAuthSettingsSource::Persisted,
+                unverified_bearer_enabled: stored.unverified_bearer_enabled,
                 relayna_key_header,
                 entra_auth,
                 apigee_trusted_header,
@@ -180,9 +189,17 @@ impl EffectiveGatewayAuthSettings {
             });
         }
 
-        if env.entra_auth.is_some() || env.apigee_trusted_header.is_some() {
+        validate_unverified_bearer_mode(
+            env.unverified_bearer_enabled,
+            env.apigee_trusted_header.is_some(),
+        )?;
+        if env.unverified_bearer_enabled
+            || env.entra_auth.is_some()
+            || env.apigee_trusted_header.is_some()
+        {
             return Ok(Self {
                 source: GatewayAuthSettingsSource::Environment,
+                unverified_bearer_enabled: env.unverified_bearer_enabled,
                 relayna_key_header: env.relayna_key_header.clone(),
                 entra_auth: env.entra_auth.clone(),
                 apigee_trusted_header: env.apigee_trusted_header.clone(),
@@ -192,6 +209,7 @@ impl EffectiveGatewayAuthSettings {
 
         Ok(Self {
             source: GatewayAuthSettingsSource::Unset,
+            unverified_bearer_enabled: false,
             relayna_key_header: env.relayna_key_header.clone(),
             entra_auth: None,
             apigee_trusted_header: None,
@@ -201,6 +219,7 @@ impl EffectiveGatewayAuthSettings {
 
     pub fn runtime_config(&self) -> GatewayAuthRuntimeConfig {
         GatewayAuthRuntimeConfig {
+            unverified_bearer_enabled: self.unverified_bearer_enabled,
             relayna_key_header: self.relayna_key_header.clone(),
             entra_auth: self.entra_auth.clone(),
             apigee_trusted_header: self.apigee_trusted_header.clone(),
@@ -210,6 +229,7 @@ impl EffectiveGatewayAuthSettings {
     pub fn response(&self) -> GatewayAuthSettingsResponse {
         GatewayAuthSettingsResponse {
             source: self.source,
+            unverified_bearer_enabled: self.unverified_bearer_enabled,
             updated_at: self.updated_at,
             relayna_key_header: self.relayna_key_header.clone(),
             entra: self
@@ -239,6 +259,9 @@ impl EffectiveGatewayAuthSettings {
 
 impl StoredGatewayAuthSettings {
     pub fn apply_patch(mut self, patch: GatewayAuthSettingsPatchRequest) -> GatewayResult<Self> {
+        if let Some(value) = patch.unverified_bearer_enabled {
+            self.unverified_bearer_enabled = value;
+        }
         if let Some(value) = patch.entra_enabled {
             self.entra_enabled = value;
         }
@@ -281,6 +304,10 @@ impl StoredGatewayAuthSettings {
     }
 
     pub fn validate(&self) -> GatewayResult<()> {
+        validate_unverified_bearer_mode(
+            self.unverified_bearer_enabled,
+            self.apigee_trusted_header_enabled,
+        )?;
         if self.entra_enabled {
             self.entra_config(
                 self.relayna_key_header
@@ -333,6 +360,7 @@ impl StoredGatewayAuthSettings {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatewayAuthRuntimeConfig {
+    pub unverified_bearer_enabled: bool,
     pub relayna_key_header: String,
     pub entra_auth: Option<EntraAuthConfig>,
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
@@ -341,6 +369,7 @@ pub struct GatewayAuthRuntimeConfig {
 impl Default for GatewayAuthRuntimeConfig {
     fn default() -> Self {
         Self {
+            unverified_bearer_enabled: false,
             relayna_key_header: ENTRA_DEFAULT_RELAYNA_KEY_HEADER.to_owned(),
             entra_auth: None,
             apigee_trusted_header: None,
@@ -403,9 +432,14 @@ impl GatewayAuthRuntimeSnapshot {
 impl GatewayAuthRuntimeState {
     fn new(config: GatewayAuthRuntimeConfig) -> GatewayResult<Self> {
         validate_relayna_key_header_name(&config.relayna_key_header)?;
+        validate_unverified_bearer_mode(
+            config.unverified_bearer_enabled,
+            config.apigee_trusted_header.is_some(),
+        )?;
         let entra_verifier = config
             .entra_auth
             .clone()
+            .filter(|_| !config.unverified_bearer_enabled)
             .map(EntraJwtVerifier::new)
             .transpose()?
             .map(Arc::new);
@@ -414,6 +448,13 @@ impl GatewayAuthRuntimeState {
             entra_verifier,
         })
     }
+}
+
+fn validate_unverified_bearer_mode(enabled: bool, apigee_enabled: bool) -> GatewayResult<()> {
+    if enabled && apigee_enabled {
+        return Err(GatewayError::InvalidConfiguration);
+    }
+    Ok(())
 }
 
 fn entra_response(config: &EntraAuthConfig) -> EntraAuthSettingsResponse {
@@ -482,6 +523,7 @@ mod tests {
 
     fn stored_enabled() -> StoredGatewayAuthSettings {
         StoredGatewayAuthSettings {
+            unverified_bearer_enabled: false,
             entra_enabled: true,
             tenant_id: Some("tenant".to_owned()),
             audience: Some("api://gateway".to_owned()),
@@ -507,6 +549,7 @@ mod tests {
         let effective = EffectiveGatewayAuthSettings::from_sources(
             Some(stored_enabled()),
             &GatewayAuthEnv {
+                unverified_bearer_enabled: false,
                 relayna_key_header: "X-Env-Key".to_owned(),
                 entra_auth: None,
                 apigee_trusted_header: None,
@@ -524,6 +567,7 @@ mod tests {
     #[test]
     fn disabled_persisted_settings_override_environment() {
         let env = GatewayAuthEnv {
+            unverified_bearer_enabled: false,
             relayna_key_header: "X-Env-Key".to_owned(),
             entra_auth: Some(EntraAuthConfig {
                 tenant_id: "env-tenant".to_owned(),
@@ -553,8 +597,72 @@ mod tests {
     }
 
     #[test]
+    fn unverified_mode_pauses_and_restores_verifier_without_losing_configuration() {
+        let mut stored = stored_enabled();
+        stored.apigee_trusted_header_enabled = false;
+        let patch = |value| {
+            serde_json::from_value(serde_json::json!({"unverified_bearer_enabled": value})).unwrap()
+        };
+        stored = stored.apply_patch(patch(true)).unwrap();
+        let effective = EffectiveGatewayAuthSettings::from_sources(
+            Some(stored.clone()),
+            &GatewayAuthEnv::default(),
+        )
+        .unwrap();
+        let runtime = SharedGatewayAuthRuntime::new(effective.runtime_config()).unwrap();
+        assert!(effective.response().unverified_bearer_enabled);
+        assert!(effective.response().entra.enabled);
+        assert!(runtime.snapshot().unwrap().entra_verifier.is_none());
+        assert!(!runtime.snapshot().unwrap().entra_enabled());
+        // An older client omitting the new field must not silently restore verification.
+        stored = stored
+            .apply_patch(serde_json::from_str("{}").unwrap())
+            .unwrap();
+        assert!(stored.unverified_bearer_enabled);
+        stored = stored.apply_patch(patch(false)).unwrap();
+        let restored =
+            EffectiveGatewayAuthSettings::from_sources(Some(stored), &GatewayAuthEnv::default())
+                .unwrap();
+        assert_eq!(restored.entra_auth, effective.entra_auth);
+        runtime.update(restored.runtime_config()).unwrap();
+        assert!(runtime.snapshot().unwrap().entra_verifier.is_some());
+    }
+
+    #[test]
+    fn unverified_mode_rejects_apigee_and_persisted_false_overrides_environment() {
+        let patch = serde_json::from_str(r#"{"unverified_bearer_enabled":true}"#).unwrap();
+        assert_eq!(
+            stored_enabled().apply_patch(patch).unwrap_err(),
+            GatewayError::InvalidConfiguration
+        );
+        let env = GatewayAuthEnv {
+            unverified_bearer_enabled: true,
+            ..Default::default()
+        };
+        let effective = EffectiveGatewayAuthSettings::from_sources(None, &env).unwrap();
+        assert_eq!(effective.source, GatewayAuthSettingsSource::Environment);
+        assert!(effective.unverified_bearer_enabled);
+        let effective = EffectiveGatewayAuthSettings::from_sources(
+            Some(StoredGatewayAuthSettings::default()),
+            &env,
+        )
+        .unwrap();
+        assert!(!effective.unverified_bearer_enabled);
+        let config = GatewayAuthRuntimeConfig {
+            unverified_bearer_enabled: true,
+            apigee_trusted_header: Some(stored_enabled().apigee_config().unwrap()),
+            ..Default::default()
+        };
+        assert_eq!(
+            SharedGatewayAuthRuntime::new(config).unwrap_err(),
+            GatewayError::InvalidConfiguration
+        );
+    }
+
+    #[test]
     fn enabled_entra_requires_core_fields() {
         let patch = GatewayAuthSettingsPatchRequest {
+            unverified_bearer_enabled: None,
             relayna_key_header: None,
             entra_enabled: Some(true),
             tenant_id: AuthPatchValue::Unchanged,

@@ -19,6 +19,7 @@ const VARIABLES: &[&str] = &[
     "ENTRA_APPLICATION_ID",
     "ENTRA_RELAYNA_KEY_HEADER",
     "ENTRA_AUTH_ENABLED",
+    "GATEWAY_UNVERIFIED_BEARER_ENABLED",
     "ENTRA_TENANT_ID",
     "ENTRA_ISSUER",
     "ENTRA_OIDC_DISCOVERY_URL",
@@ -350,5 +351,29 @@ fn defaults_and_invalid_optional_values_are_handled_deterministically() {
     std::env::remove_var("ENTRA_AUTH_DEBUG");
     std::env::set_var("GATEWAY_BIND_ADDR", "not-an-address");
     assert!(Config::from_env().is_err());
+    clear_environment();
+}
+
+#[test]
+fn unverified_bearer_is_explicit_and_incompatible_with_apigee() {
+    let _guard = ENV_LOCK.lock().expect("environment lock");
+    clear_environment();
+    set_required_environment();
+    assert!(!Config::from_env().unwrap().unverified_bearer_enabled);
+    std::env::set_var("GATEWAY_UNVERIFIED_BEARER_ENABLED", "true");
+    let config = Config::from_env().unwrap();
+    assert!(config.gateway_auth_env().unverified_bearer_enabled);
+    assert!(config.entra_auth.is_none());
+    std::env::set_var("APIGEE_TRUSTED_HEADER_ENABLED", "true");
+    assert_eq!(
+        Config::from_env().unwrap_err(),
+        gateway_core::GatewayError::InvalidConfiguration
+    );
+    std::env::remove_var("APIGEE_TRUSTED_HEADER_ENABLED");
+    std::env::set_var("GATEWAY_UNVERIFIED_BEARER_ENABLED", "typo");
+    assert_eq!(
+        Config::from_env().unwrap_err(),
+        gateway_core::GatewayError::InvalidConfiguration
+    );
     clear_environment();
 }

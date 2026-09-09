@@ -68,6 +68,7 @@ const shared: Record<string, string> = {
   relayna_key_header: "Header clients can use to send their Relayna virtual key, for example X-Relayna-Key.",
   apigee_trusted_header_enabled: "Trust Apigee identity headers only behind the configured trusted ingress. A shared secret is required.",
   apigee_trusted_header_secret: "Write-only shared secret for trusted Apigee headers. Leave blank to preserve it; required when enabling trusted headers.",
+  unverified_bearer_enabled: "Require both client headers while pausing Entra verification on gateway-managed routes. Only the Relayna key is authenticated. Incompatible with trusted Apigee headers.",
   entra_enabled: "Enable Entra ID token authentication using the issuer, audience and authorization settings below.",
   tenant_id: "Entra tenant UUID. This identifies the organization issuing the identity tokens.",
   audience: "Expected token audience for this gateway's application registration. It must match the token's aud claim.",

@@ -3662,6 +3662,7 @@ impl AdminGatewayAuthSettingsStore for PostgresStore {
         sqlx::query(
             r#"
             SELECT
+                unverified_bearer_enabled,
                 entra_enabled,
                 tenant_id,
                 audience,
@@ -3701,6 +3702,7 @@ impl AdminGatewayAuthSettingsStore for PostgresStore {
             r#"
             INSERT INTO gateway_auth_settings (
                 singleton,
+                unverified_bearer_enabled,
                 entra_enabled,
                 tenant_id,
                 audience,
@@ -3716,8 +3718,9 @@ impl AdminGatewayAuthSettingsStore for PostgresStore {
                 apigee_trusted_header_enabled,
                 apigee_trusted_header_secret
             )
-            VALUES (true, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES (true, $15, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (singleton) DO UPDATE SET
+                unverified_bearer_enabled = EXCLUDED.unverified_bearer_enabled,
                 entra_enabled = EXCLUDED.entra_enabled,
                 tenant_id = EXCLUDED.tenant_id,
                 audience = EXCLUDED.audience,
@@ -3734,6 +3737,7 @@ impl AdminGatewayAuthSettingsStore for PostgresStore {
                 apigee_trusted_header_secret = EXCLUDED.apigee_trusted_header_secret,
                 updated_at = now()
             RETURNING
+                unverified_bearer_enabled,
                 entra_enabled,
                 tenant_id,
                 audience,
@@ -3765,6 +3769,7 @@ impl AdminGatewayAuthSettingsStore for PostgresStore {
         .bind(next.clock_skew_seconds)
         .bind(next.apigee_trusted_header_enabled)
         .bind(next.apigee_trusted_header_secret)
+        .bind(next.unverified_bearer_enabled)
         .fetch_one(&self.pool)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
@@ -5825,6 +5830,9 @@ fn gateway_auth_settings_from_row(
     row: &sqlx::postgres::PgRow,
 ) -> GatewayResult<StoredGatewayAuthSettings> {
     Ok(StoredGatewayAuthSettings {
+        unverified_bearer_enabled: row
+            .try_get("unverified_bearer_enabled")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
         entra_enabled: row
             .try_get("entra_enabled")
             .map_err(|_| GatewayError::StoreUnavailable)?,
@@ -8290,6 +8298,13 @@ mod tests {
             eprintln!("skipping dependency-backed store coverage: DATABASE_URL is not set");
             return;
         };
+        // This test mutates singleton auth/provider settings also used by the
+        // process and Admin API integration tests under nextest.
+        let mut database_lock = store.pool().acquire().await.expect("integration lock");
+        sqlx::query("SELECT pg_advisory_lock(82120260808)")
+            .execute(&mut *database_lock)
+            .await
+            .expect("serialize shared control-plane integration state");
         let suffix = Uuid::new_v4().simple().to_string();
         let now = chrono::Utc::now();
 
