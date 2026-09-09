@@ -76,4 +76,9 @@ Codex reviewed implementation commit `104dccc` and identified that environment
 conflict validation ran before persisted-source selection. Removed the premature
 check and added a configuration regression: conflicting environment flags are
 rejected only when environment is the effective source; a safe persisted row
-boots successfully. Release 0.1.34 and the review fix are undergoing final checks.
+boots successfully. Release 0.1.34 and the review fix passed the full verification script again,
+including 337 nextest tests with no skips, and the all-features workspace build.
+UI build/tests, strict documentation build and release metadata validation also
+passed. Codex re-review was requested for `d4fc741`; subsequent review activity
+and required human approval are tracked on the PR. Later changes only record
+this verification evidence and do not change the reviewed implementation.

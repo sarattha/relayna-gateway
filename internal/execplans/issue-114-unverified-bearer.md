@@ -19,7 +19,7 @@ be restored without changing the client headers.
 - [x] (2026-09-09) Full verification passes, including 337 nextest tests; open PR #115.
 - [x] (2026-09-09) Address Codex finding: defer env conflict check until effective source selection; add regression.
 - [x] (2026-09-09) Prepare 0.1.34 version, changelog and current documentation updates.
-- [ ] Verify release metadata changes and finish Codex review.
+- [x] (2026-09-09) Verify 0.1.34 with full script, UI/docs/build checks and release validator; request Codex re-review of d4fc741.
 
 ## Surprises & Discoveries
 
@@ -44,8 +44,11 @@ timing gap, fixed test-listener race, and macOS certificate-store workaround.
 ## Outcomes & Retrospective
 
 Implementation, regression tests, migration compatibility and desktop/mobile UI QA
-are complete. Full verification passes. PR #115 is open; Codex review and the
-release metadata update remain.
+are complete. Version 0.1.34, changelog and documentation are updated. The full
+verification script passes on the release revision. PR #115 is open with the
+initial Codex finding fixed and the updated implementation submitted for
+re-review. Live review activity and human approval remain tracked in GitHub.
+The pre-existing model-policy timing gap is documented separately and unchanged.
 
 ## Context and Orientation
 
