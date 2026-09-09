@@ -100,3 +100,11 @@ keeps its private closure. The regression recreates the deferred-request race.
 Computer Use confirmed Copy, Escape protection and explicit Close in the mobile
 fixture. The full mandatory stack (345 Nextest tests included) and workspace build
 passed. Another review is tracked in the ExecPlan.
+
+## Final review clearance
+
+On 2026-09-10 (18:47 UTC on September 9), Codex completed review of `a763c1a`
+and reported no major issues. All three review threads are resolved and CI passed
+on the reviewed code. Automated babysitting is complete. PR #116 remains open
+for human review, without a merge or release tag. This final report update changes
+no product code.

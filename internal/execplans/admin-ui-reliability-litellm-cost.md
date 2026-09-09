@@ -19,7 +19,7 @@ Relayna keys. Deliver one reviewed PR with release notes and regression evidence
 - [x] Complete mandatory verification stack from clean worktree; all 345 Nextest tests and all security checks passed.
 - [x] Open PR #116 and request Codex review.
 - [x] Verify and push 0.1.35 version, changelog and docs in the same PR.
-- [ ] Complete Codex re-review after the second UI finding.
+- [x] Complete Codex re-review after all three findings: `a763c1a` reviewed with no major issues; all threads resolved and CI green.
 
 ## Surprises & Discoveries
 
@@ -161,12 +161,12 @@ is unchanged by this UI correction; the measured 95.02% Rust coverage remains
 applicable. Re-review the new UI commit and inspect all unresolved threads before
 claiming the review is clear.
 
-## Remaining external review gate
+## Review service failure (resolved)
 
 The final Codex review of `ac60b63` failed twice with "Provided git ref does not
 exist". GitHub's commit API and PR head both confirm that exact SHA exists, and
 CI is green. Both code findings are fixed and resolved; a clean final re-review
-is still pending and must not be claimed as complete. Heartbeat automation
+was pending at that point. Final clearance is recorded below. Heartbeat automation
 `babysit-admin-ui-pr-116` checks every 10 minutes and retries no more than once per
 30 minutes while this service error persists. It will address new valid findings,
 notify on completion/actionable changes and pause itself after completion.
@@ -187,3 +187,13 @@ request regression reproduces the old-dialog/new-token race and verifies retaine
 visibility, inert background, direct generic callbacks and explicit Close. Frontend
 regressions and Computer Use Copy/Escape/Close checks pass; the full verification
 stack and workspace build also passed. This UI-only correction does not change measured Rust lines.
+
+## Final outcome (2026-09-10)
+
+Codex completed review of `a763c1a` at 2026-09-09 18:47 UTC and explicitly reported
+no major issues. All three inline review threads are resolved, and all required CI
+checks passed on that code commit. The 0.1.35 implementation, release notes, docs,
+regression suite, Computer Use checks and 95.02% Rust line coverage are complete.
+This final documentation-only update records the result; it does not alter the
+reviewed code. The heartbeat is paused after completion. The PR remains open for
+human review; no merge or release tag was performed.
