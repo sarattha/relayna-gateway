@@ -1362,6 +1362,199 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn malformed_credentials_and_key_material_fail_closed_with_diagnostics() {
+        gateway_telemetry::init("off", true);
+        let key = signing_key("diagnostic-key");
+        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![key.jwk.clone()]);
+        for header in [
+            None,
+            Some("Basic abc"),
+            Some("Bearer "),
+            Some("Bearer invalid"),
+        ] {
+            assert!(verifier
+                .verify_authorization(header, Utc::now())
+                .await
+                .is_err());
+        }
+        let claims = valid_claims();
+        let no_kid = encode(&Header::new(Algorithm::RS256), &claims, &key.encoding_key).unwrap();
+        assert_eq!(
+            verifier
+                .verify_token(&no_kid, Utc::now())
+                .await
+                .unwrap_err(),
+            GatewayError::InvalidEntraToken
+        );
+        let mut header = Header::new(Algorithm::HS256);
+        header.kid = Some("diagnostic-key".into());
+        let wrong_alg = encode(&header, &claims, &EncodingKey::from_secret(b"fixture")).unwrap();
+        assert_eq!(
+            verifier
+                .verify_token(&wrong_alg, Utc::now())
+                .await
+                .unwrap_err(),
+            GatewayError::InvalidEntraToken
+        );
+        for variant in [0, 1, 2] {
+            let mut jwk = key.jwk.clone();
+            match variant {
+                0 => jwk.kty = "EC".into(),
+                1 => jwk.alg = Some("RS512".into()),
+                _ => jwk.n = "%%%".into(),
+            }
+            let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![jwk]);
+            assert_eq!(
+                verifier
+                    .verify_token(&token(&key, claims.clone()), Utc::now())
+                    .await
+                    .unwrap_err(),
+                GatewayError::InvalidEntraToken
+            );
+        }
+        for (field, value, error) in [
+            (
+                "iss",
+                json!("https://wrong.example"),
+                GatewayError::InvalidEntraIssuer,
+            ),
+            (
+                "tid",
+                json!("wrong-tenant"),
+                GatewayError::InvalidEntraIssuer,
+            ),
+            (
+                "nbf",
+                json!(Utc::now().timestamp() + 3600),
+                GatewayError::InvalidEntraToken,
+            ),
+            (
+                "iat",
+                json!(Utc::now().timestamp() + 3600),
+                GatewayError::InvalidEntraToken,
+            ),
+            ("ver", json!("3.0"), GatewayError::InvalidEntraToken),
+        ] {
+            let mut claims = valid_claims();
+            claims[field] = value;
+            assert_eq!(
+                verifier
+                    .verify_token(&token(&key, claims), Utc::now())
+                    .await
+                    .unwrap_err(),
+                error
+            );
+        }
+        let config = ApigeeTrustedHeaderConfig {
+            secret: "test-secret".into(),
+            required_scope: None,
+            required_role: None,
+            allowed_groups: vec![],
+        };
+        for (identity, signature) in [(None, None), (Some("x"), None), (Some("x"), Some("bad"))] {
+            assert_eq!(
+                verify_apigee_trusted_identity(identity, signature, &config).unwrap_err(),
+                GatewayError::UntrustedApigeeIdentity
+            );
+        }
+        for payload in ["%%%".to_owned(), URL_SAFE_NO_PAD.encode(b"invalid json")] {
+            let signature = sign_apigee_trusted_identity(&payload, &config).unwrap();
+            assert_eq!(
+                verify_apigee_trusted_identity(Some(&payload), Some(&signature), &config)
+                    .unwrap_err(),
+                GatewayError::UntrustedApigeeIdentity
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn oidc_discovery_and_jwks_failures_never_authenticate() {
+        let key = signing_key("network-errors");
+        for variant in 0..6 {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            let issuer = config().issuer;
+            thread::spawn(move || {
+                for step in 0..if variant < 3 { 1 } else { 2 } {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    let mut request = [0; 4096];
+                    let _ = stream.read(&mut request);
+                    let (status, body) = match (variant, step) {
+                        (0, _) => ("503 Service Unavailable", "{}".into()),
+                        (1, _) => ("200 OK", "invalid".into()),
+                        (2, _) => (
+                            "200 OK",
+                            format!(r#"{{"issuer":"wrong","jwks_uri":"http://{addr}/keys"}}"#),
+                        ),
+                        (_, 0) => (
+                            "200 OK",
+                            format!(r#"{{"issuer":"{issuer}","jwks_uri":"http://{addr}/keys"}}"#),
+                        ),
+                        (3, _) => ("403 Forbidden", "{}".into()),
+                        (4, _) => ("200 OK", "invalid".into()),
+                        _ => ("200 OK", r#"{"keys":[]}"#.into()),
+                    };
+                    write!(stream,"HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+                }
+            });
+            let mut cfg = config();
+            cfg.oidc_discovery_url = format!("http://{addr}/discovery");
+            let verifier = EntraJwtVerifier::new(cfg).unwrap();
+            let error = verifier
+                .verify_token(&token(&key, valid_claims()), Utc::now())
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error,
+                if variant == 2 {
+                    GatewayError::InvalidEntraIssuer
+                } else {
+                    GatewayError::InvalidEntraToken
+                }
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_and_jwks_connection_failures_reject_tokens() {
+        let key = signing_key("connection-errors");
+        for discovery_fails in [true, false] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            let mut cfg = config();
+            cfg.oidc_discovery_url = format!("http://{addr}/discovery");
+            if discovery_fails {
+                drop(listener);
+            } else {
+                let issuer = cfg.issuer.clone();
+                thread::spawn(move || {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    let mut request = [0; 4096];
+                    let _ = stream.read(&mut request);
+                    // Close the listener before the verifier follows the JWKS URI.
+                    drop(listener);
+                    let body =
+                        format!(r#"{{"issuer":"{issuer}","jwks_uri":"http://{addr}/keys"}}"#);
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .unwrap();
+                });
+            }
+            let verifier = EntraJwtVerifier::new(cfg).unwrap();
+            assert_eq!(
+                verifier
+                    .verify_token(&token(&key, valid_claims()), Utc::now())
+                    .await
+                    .unwrap_err(),
+                GatewayError::InvalidEntraToken
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn accepts_valid_entra_token() {
         let key = signing_key("test-kid");
         let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![key.jwk.clone()]);
