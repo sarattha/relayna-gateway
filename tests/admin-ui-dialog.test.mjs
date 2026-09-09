@@ -59,3 +59,26 @@ for (const dismissible of [false, true]) {
   }
 }
 console.log('ok - show-once secrets require explicit close; ordinary dialogs remain dismissible');
+
+const closeTopSource = source.slice(source.indexOf('function closeTopDialog('), source.indexOf('\nfunction signedIn('));
+const closeTop = new Function('document', `${closeTopSource}; return closeTopDialog;`)(document);
+const oldWorkflow = modal();
+mount(oldWorkflow);
+let finishOldRequest;
+const pendingRequest = new Promise(resolve => { finishOldRequest = resolve; }).then(() => closeTop());
+closeTop();
+assert.equal(oldWorkflow.isConnected, false);
+let secretCloses = 0;
+const secret = modal();
+const explicitlyCloseSecret = mount(secret, {dismissible:false, onClose:()=>secretCloses++});
+finishOldRequest();
+await pendingRequest;
+assert.equal(secret.isConnected, true, 'a late import/sync completion cannot discard the new token');
+assert.equal(secretCloses, 0);
+assert.equal(enabledRoot.inert, true, 'background stays inert while the secret remains visible');
+secret.closeDialog();
+assert.equal(secret.isConnected, true, 'direct generic callbacks are protected too');
+explicitlyCloseSecret();
+assert.equal(secretCloses, 1);
+assert.equal(enabledRoot.inert, false);
+console.log('ok - late generic async closure cannot dismiss show-once credentials; explicit Close still works');

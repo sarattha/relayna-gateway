@@ -15853,7 +15853,9 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {
   backdrop.addEventListener("click", (event) => {
     if (dismissible && event.target === backdrop) close(false);
   });
-  backdrop.closeDialog = close;
+  backdrop.closeDialog = (value) => {
+    if (dismissible) close(value);
+  };
   queueMicrotask(() => {
     const target = dialog.querySelector(initialFocus) || dialog.querySelector(focusableSelector) || dialog;
     if (target instanceof HTMLElement) {

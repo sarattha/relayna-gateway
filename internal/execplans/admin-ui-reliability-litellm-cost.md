@@ -176,3 +176,14 @@ and gateway_verify databases) and Redis on 21379 (databases 0 and 1). The clean
 verification worktree is `/tmp/relayna-admin-cost-verify`; synthetic UI fixtures
 serve ports 21481 and 21482. Do not alter unrelated Docker workloads or the ignored
 design prototype.
+
+### Third review correction (2026-09-10)
+
+The review service recovered and completed review of `2c5a40e`, identifying a
+late generic dialog-close callback that could discard a newly shown token. The
+public generic `closeDialog` callback now honors non-dismissible dialogs; the
+private closure returned to the explicit Close button remains usable. A deferred
+request regression reproduces the old-dialog/new-token race and verifies retained
+visibility, inert background, direct generic callbacks and explicit Close. Frontend
+regressions and Computer Use Copy/Escape/Close checks pass; the full verification
+stack and workspace build also passed. This UI-only correction does not change measured Rust lines.

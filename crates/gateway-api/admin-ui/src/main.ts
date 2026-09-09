@@ -374,7 +374,8 @@ function mountDialog(backdrop, { initialFocus = "button", onClose = () => {}, re
   backdrop.addEventListener("click", (event) => {
     if (dismissible && event.target === backdrop) close(false);
   });
-  backdrop.closeDialog = close;
+  // Generic async workflows must not dismiss a newer show-once secret.
+  backdrop.closeDialog = (value) => { if (dismissible) close(value); };
   queueMicrotask(() => {
     const target = dialog.querySelector(initialFocus) || dialog.querySelector(focusableSelector) || dialog;
     if (target instanceof HTMLElement) {

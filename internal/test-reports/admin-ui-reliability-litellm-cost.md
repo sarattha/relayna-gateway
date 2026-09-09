@@ -92,3 +92,11 @@ Final re-review status: Codex failed twice to resolve `ac60b63`, although GitHub
 confirms the commit exists. All CI checks on that code commit passed and both
 review threads are resolved. Automated follow-up remains active; final review
 clearance is pending rather than reported as successful.
+
+Follow-up on 2026-09-10: Codex recovered and identified a third issue: a late
+import/sync callback could generically dismiss a newer show-once token. Generic
+closure now respects non-dismissible dialogs while the explicit Close handler
+keeps its private closure. The regression recreates the deferred-request race.
+Computer Use confirmed Copy, Escape protection and explicit Close in the mobile
+fixture. The full mandatory stack (345 Nextest tests included) and workspace build
+passed. Another review is tracked in the ExecPlan.
