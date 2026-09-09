@@ -160,3 +160,19 @@ and 390px failure/retry checks, and the full mandatory stack. Rust production co
 is unchanged by this UI correction; the measured 95.02% Rust coverage remains
 applicable. Re-review the new UI commit and inspect all unresolved threads before
 claiming the review is clear.
+
+## Remaining external review gate
+
+The final Codex review of `ac60b63` failed twice with "Provided git ref does not
+exist". GitHub's commit API and PR head both confirm that exact SHA exists, and
+CI is green. Both code findings are fixed and resolved; a clean final re-review
+is still pending and must not be claimed as complete. Heartbeat automation
+`babysit-admin-ui-pr-116` checks every 10 minutes and retries no more than once per
+30 minutes while this service error persists. It will address new valid findings,
+notify on completion/actionable changes and pause itself after completion.
+
+Disposable verification services remain available: PostgreSQL on 21432 (gateway
+and gateway_verify databases) and Redis on 21379 (databases 0 and 1). The clean
+verification worktree is `/tmp/relayna-admin-cost-verify`; synthetic UI fixtures
+serve ports 21481 and 21482. Do not alter unrelated Docker workloads or the ignored
+design prototype.

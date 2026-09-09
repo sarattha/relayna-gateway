@@ -87,3 +87,8 @@ giving the final numbers above. No assertion or threshold was relaxed.
 Version 0.1.35 updates Cargo packages, generated UI assets, deployment examples,
 changelog and operator documentation. The final PR check status is visible on
 GitHub; no merge or release tag is performed by this task.
+
+Final re-review status: Codex failed twice to resolve `ac60b63`, although GitHub
+confirms the commit exists. All CI checks on that code commit passed and both
+review threads are resolved. Automated follow-up remains active; final review
+clearance is pending rather than reported as successful.
