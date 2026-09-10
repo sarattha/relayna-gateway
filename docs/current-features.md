@@ -268,13 +268,14 @@ Only unmatched paths that pass the configured LiteLLM passthrough allowlist are
 forwarded to LiteLLM.
 
 Canonical OpenAI-compatible routes are still first-class Gateway routes. The
-chat-completions and responses aliases share their canonical `/v1/...` policy
+chat-completions, responses, and embeddings aliases share their canonical `/v1/...` policy
 and route settings while preserving the requested path upstream:
 
 - `POST /chat/completions`
 - `POST /v1/chat/completions`
 - `POST /responses`
 - `POST /v1/responses`
+- `POST /embeddings`
 - `POST /v1/embeddings`
 
 LiteLLM reranking is also a first-class governed route. One canonical

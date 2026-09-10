@@ -83,7 +83,7 @@ When a request reaches the proxy listener, routing is evaluated in this order:
 3. Canonical OpenAI-compatible routes:
    - `POST /chat/completions` and `POST /v1/chat/completions`
    - `POST /responses` and `POST /v1/responses`
-   - `POST /v1/embeddings`
+   - `POST /embeddings` and `POST /v1/embeddings`
 4. Canonical LiteLLM rerank aliases, governed by one `/v1/rerank` route
    setting:
    - `POST /rerank`
@@ -101,6 +101,11 @@ When a request reaches the proxy listener, routing is evaluated in this order:
 
 This means `/services/*` and the Admin/control API cannot accidentally fall
 through to LiteLLM wildcard passthrough.
+
+Both embeddings paths use the `/v1/embeddings` policy, route mode, limits, and
+usage identity, preserving the requested path upstream. `/embeddings` no longer
+falls back to an unregistered internal embeddings service. Explicit registered
+service routes retain the precedence described above.
 
 ## Canonical Route Modes
 

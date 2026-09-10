@@ -94,8 +94,8 @@ proxy plane:
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
 - `POST /providers/openai/*`
-- Built-in internal service routes such as `/summary`, `/translation`, `/ocr`,
-  and `/embeddings`
+- LiteLLM embeddings routes `/embeddings` and `/v1/embeddings`
+- Built-in internal service routes such as `/summary`, `/translation`, and `/ocr`
 - Registered service wildcard routes under `/services/<service-name>/*`
 
 The control plane remains protected by operator tokens on `/admin-ui/*`.

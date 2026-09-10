@@ -63,7 +63,7 @@ impl Route {
             "/responses" | "/v1/responses" if method == Method::POST => {
                 Ok(RouteMatch::litellm(Self::Responses))
             }
-            "/v1/embeddings" if method == Method::POST => {
+            "/embeddings" | "/v1/embeddings" if method == Method::POST => {
                 Ok(RouteMatch::litellm(Self::LiteLlmEmbeddings))
             }
             "/rerank" | "/v1/rerank" | "/v2/rerank" if method == Method::POST => {
@@ -101,9 +101,6 @@ impl Route {
                 Ok(RouteMatch::service(Self::Translation, "translation"))
             }
             "/ocr" if method == Method::POST => Ok(RouteMatch::service(Self::Ocr, "ocr")),
-            "/embeddings" if method == Method::POST => {
-                Ok(RouteMatch::service(Self::Embeddings, "embeddings"))
-            }
             _ if path.starts_with("/services/") => {
                 let service_name = path
                     .trim_start_matches("/services/")
@@ -219,10 +216,18 @@ mod tests {
         }
         assert_eq!(Route::Responses.as_str(), "/v1/responses");
 
-        let embeddings = Route::resolve_match(&Method::POST, "/v1/embeddings").expect("embeddings");
-        assert_eq!(embeddings.route, Route::LiteLlmEmbeddings);
-        assert_eq!(embeddings.backend, BackendType::LiteLlm);
-        assert_eq!(embeddings.provider, Provider::LiteLlm);
+        for path in ["/embeddings", "/v1/embeddings"] {
+            let embeddings = Route::resolve_match(&Method::POST, path).expect("embeddings");
+            assert_eq!(embeddings.route, Route::LiteLlmEmbeddings);
+            assert_eq!(embeddings.backend, BackendType::LiteLlm);
+            assert_eq!(embeddings.provider, Provider::LiteLlm);
+            assert_eq!(embeddings.service_name, None);
+            assert_eq!(embeddings.route.as_str(), "/v1/embeddings");
+            assert_eq!(
+                crate::openai_route_id(embeddings.route),
+                crate::openai_route_id(Route::LiteLlmEmbeddings)
+            );
+        }
 
         for path in ["/rerank", "/v1/rerank", "/v2/rerank"] {
             let rerank = Route::resolve_match(&Method::POST, path).expect("rerank");
@@ -290,10 +295,15 @@ mod tests {
             Route::resolve(&Method::POST, "/v1/completions").unwrap_err(),
             GatewayError::UnsupportedRoute
         );
-        assert_eq!(
-            Route::resolve(&Method::GET, "/v1/embeddings").unwrap_err(),
-            GatewayError::UnsupportedRoute
-        );
+        for path in ["/embeddings", "/v1/embeddings"] {
+            for method in [Method::GET, Method::PUT, Method::DELETE] {
+                assert_eq!(
+                    Route::resolve(&method, path).unwrap_err(),
+                    GatewayError::UnsupportedRoute,
+                    "embeddings method {method} path {path}"
+                );
+            }
+        }
         for path in ["/rerank", "/v1/rerank", "/v2/rerank"] {
             assert_eq!(
                 Route::resolve(&Method::GET, path).unwrap_err(),
@@ -365,11 +375,7 @@ mod tests {
 
     #[test]
     fn covers_remaining_legacy_service_routes_and_route_labels() {
-        for (path, expected) in [
-            ("/translation", Route::Translation),
-            ("/ocr", Route::Ocr),
-            ("/embeddings", Route::Embeddings),
-        ] {
+        for (path, expected) in [("/translation", Route::Translation), ("/ocr", Route::Ocr)] {
             assert_eq!(Route::resolve(&Method::POST, path), Ok(expected));
         }
         for (route, expected) in [
