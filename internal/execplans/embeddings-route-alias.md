@@ -19,7 +19,8 @@ An absent internal embeddings service must no longer produce `missing_service`.
 
 - [x] (2026-09-10) Review identified loss of the legacy policy identity for registered `/embeddings` services. Added a registration-only identity override and unit/live proxy regression coverage.
 - [x] (2026-09-10) Review fix passed focused unit/live proxy tests, formatting, Clippy, all workspace tests, build, dependency checks, and 345 Nextest tests with no skips. Gitleaks and Semgrep passed separately. The verifier still stops at the same 14 unrelated prototype Trivy findings.
-- [ ] Push the verified review fix and monitor its CI/review.
+- [x] (2026-09-10) Pushed review fix `e333b17`; CI passed. Monitoring was paused at the user’s request.
+- [x] (2026-09-10) Prepared version 0.1.36, changelog, generated UI labels, deployment examples, and release documentation. Release validator, strict docs build, UI tests, formatting, Clippy, workspace tests/build, dependency checks, and 345 Nextest tests passed. The same 14 unrelated Trivy findings persist; Gitleaks and Semgrep passed separately.
 
 ## Surprises & Discoveries
 
@@ -49,6 +50,8 @@ choose `ServiceWildcard`, denying derived service keys. The helper must retain
 - (2026-09-10, Codex) Preserve the released registered-service policy identity
   in the proxy helper; keep unregistered requests on `LiteLlmEmbeddings`. This
   fixes review thread `PRRT_kwDOSX_7Cc6g8Q0L` without a persisted-policy migration.
+
+- (2026-09-10, Codex) Prepare patch release 0.1.36 per user request. Keep historical release notes and compatibility boundary v0.1.35 intact; update current version references and rebuild UI assets from source.
 
 ## Outcomes & Retrospective
 
@@ -106,8 +109,8 @@ The mandatory verifier must pass; report any environment-gated tests honestly.
 
 ## Idempotence and Recovery
 
-Edits and verification can be repeated. No deployment, database migration, or
-commit is requested. Keep work on the new branch; preserve unrelated files.
+Edits and verification can be repeated. No deployment or database migration is requested. The changes are carried in
+PR #118; the user requested a release metadata update after review fixes. Keep work on the new branch; preserve unrelated files.
 
 ## Artifacts and Notes
 
@@ -125,3 +128,7 @@ are removed after verification.
 
 No new dependency or route setting is introduced. Both paths use existing
 `Route::LiteLlmEmbeddings` and the `embeddings` route setting.
+
+Release verification logs are `/tmp/relayna-036-*.log`. Only the five local
+workspace package versions changed in Cargo.lock; dependency versions stayed
+unchanged. Disposable PostgreSQL and Redis services were used for verification.

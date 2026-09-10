@@ -1,14 +1,18 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.35` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.36` is the
 current release target.
 
-Version `0.1.35` protects show-once virtual keys from accidental dismissal,
-reduces Overview aggregation work and gives analytics reads a bounded 30-second
-deadline. Mapped keys expose LiteLLM-reported spend with scope and retrieval time;
-shared/resettable counters remain separate from usage estimates and budgets.
-The spend endpoint is additive and requires no database migration. See
-[Admin portal](admin-portal.md#overview-reliability-and-litellm-reported-spend).
+Version `0.1.36` makes `POST /embeddings` a LiteLLM alias of
+`POST /v1/embeddings`, sharing mode, policy, limits, and usage identity while
+preserving the requested path upstream. Explicit registered `/embeddings`
+services retain precedence and their legacy policy identity, so linked service
+keys continue to work. No database migration is introduced. See
+[LiteLLM route precedence](litellm-passthrough.md#route-precedence).
+
+Version `0.1.35` added LiteLLM-reported spend for mapped keys, improved Overview
+analytics reliability, and protected show-once credentials from accidental
+dismissal. See [Admin portal](admin-portal.md#overview-reliability-and-litellm-reported-spend).
 
 Version `0.1.34` added `unverified_bearer_enabled` for temporary troubleshooting
 of gateway-managed requests. Clients keep both headers while Gateway validates
@@ -53,7 +57,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.35
+   python3 scripts/validate-release-metadata.py v0.1.36
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -71,15 +75,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.35 .
+   docker build -t relayna-gateway:0.1.36 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.35 -m "Release v0.1.35"
-   git push origin v0.1.35
+   git tag -a v0.1.36 -m "Release v0.1.36"
+   git push origin v0.1.36
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -89,10 +93,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.35`, the workflow publishes:
+For `v0.1.36`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.35
+ghcr.io/sarattha/relayna-gateway:0.1.36
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```
