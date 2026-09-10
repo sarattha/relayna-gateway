@@ -2520,6 +2520,11 @@ fn service_route_match_for_persisted_registration(
     path: &str,
     service_name: &str,
 ) -> RouteMatch {
+    // A registered service wins before the LiteLLM alias is resolved. Keep the
+    // identity used by persisted service policies and derived virtual keys.
+    if method == http::Method::POST && path == "/embeddings" {
+        return RouteMatch::service(Route::Embeddings, service_name);
+    }
     match Route::resolve_match(method, path) {
         Ok(matched) if matched.provider == Provider::InternalService => {
             RouteMatch::service(matched.route, service_name)
@@ -4284,6 +4289,21 @@ mod tests {
         assert_eq!(matched.route, Route::Summary);
         assert_eq!(matched.provider, Provider::InternalService);
         assert_eq!(matched.service_name.as_deref(), Some("summary"));
+
+        for service_name in ["embeddings", "custom-embeddings"] {
+            let embeddings = service_route_match_for_persisted_registration(
+                &http::Method::POST,
+                "/embeddings",
+                service_name,
+            );
+            assert_eq!(embeddings.route, Route::Embeddings);
+            assert_eq!(embeddings.provider, Provider::InternalService);
+            assert_eq!(embeddings.service_name.as_deref(), Some(service_name));
+        }
+        assert_eq!(
+            Route::resolve(&http::Method::POST, "/embeddings").unwrap(),
+            Route::LiteLlmEmbeddings
+        );
 
         let custom = service_route_match_for_persisted_registration(
             &http::Method::POST,

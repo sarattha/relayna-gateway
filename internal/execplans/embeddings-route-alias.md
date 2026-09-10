@@ -17,6 +17,10 @@ An absent internal embeddings service must no longer produce `missing_service`.
 - [x] (2026-09-10) Formatting, Clippy, all workspace tests, audit, deny, machete, all 345 Nextest tests (zero skipped), and the workspace build passed.
 - [x] (2026-09-10) Final diff reviewed. Full verifier stopped at unrelated Trivy findings; Gitleaks and Semgrep passed separately with no findings. Disposable test containers removed.
 
+- [x] (2026-09-10) Review identified loss of the legacy policy identity for registered `/embeddings` services. Added a registration-only identity override and unit/live proxy regression coverage.
+- [x] (2026-09-10) Review fix passed focused unit/live proxy tests, formatting, Clippy, all workspace tests, build, dependency checks, and 345 Nextest tests with no skips. Gitleaks and Semgrep passed separately. The verifier still stops at the same 14 unrelated prototype Trivy findings.
+- [ ] Push the verified review fix and monitor its CI/review.
+
 ## Surprises & Discoveries
 
 The released resolver contains an internal embeddings fallback even though the
@@ -29,6 +33,11 @@ The first live test hit a macOS native certificate-store I/O error. Setting
 Dedicated disposable PostgreSQL and Redis containers avoid touching the existing
 local gateway stack.
 
+Registered `/embeddings` services derive `Route::Embeddings` policy permission
+from PostgreSQL. The alias change caused the persisted-registration helper to
+choose `ServiceWildcard`, denying derived service keys. The helper must retain
+`Route::Embeddings` only when an explicit registration wins routing.
+
 ## Decision Log
 
 - (2026-09-10, Codex) Replace the fallback with `LiteLlmEmbeddings` as explicitly
@@ -37,7 +46,17 @@ local gateway stack.
   to avoid changing historical records or silently broadening old policies.
   Clients of this alias need canonical `/v1/embeddings` policy permission.
 
+- (2026-09-10, Codex) Preserve the released registered-service policy identity
+  in the proxy helper; keep unregistered requests on `LiteLlmEmbeddings`. This
+  fixes review thread `PRRT_kwDOSX_7Cc6g8Q0L` without a persisted-policy migration.
+
 ## Outcomes & Retrospective
+
+The registration-specific proxy fix addresses the reviewer finding without
+changing the alias behavior. Its live regression uses an isolated project and a
+key whose service route access is derived from its registration, with an explicit
+internal-service provider allowlist. Review verification logs are under
+`/tmp/relayna-118-review-*.log`.
 
 Implementation and documentation are updated. Focused tests and live proxy
 forwarding passed in both modes. All Rust checks passed. The full verification
