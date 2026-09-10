@@ -36,8 +36,8 @@ The Apigee path applies to the same proxy route families as direct Entra mode:
 - `/v1/chat/completions`
 - `/v1/responses`
 - `/providers/openai/*`
-- Built-in internal service routes such as `/summary`, `/translation`, `/ocr`,
-  and `/embeddings`
+- LiteLLM embeddings routes `/embeddings` and `/v1/embeddings`
+- Built-in internal service routes such as `/summary`, `/translation`, and `/ocr`
 - Registered service wildcard routes under `/services/<service-name>/*`
 
 ## Pattern 1: Apigee JWT Revalidation

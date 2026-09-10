@@ -94,8 +94,8 @@ proxy plane:
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
 - `POST /providers/openai/*`
-- Built-in internal service routes such as `/summary`, `/translation`, `/ocr`,
-  and `/embeddings`
+- LiteLLM embeddings routes `/embeddings` and `/v1/embeddings`
+- Built-in internal service routes such as `/summary`, `/translation`, and `/ocr`
 - Registered service wildcard routes under `/services/<service-name>/*`
 
 The control plane remains protected by operator tokens on `/admin-ui/*`.
@@ -335,7 +335,7 @@ empty placeholders for required Entra values.
 Useful local checks after changing Entra configuration or code:
 
 ```bash
-python3 scripts/validate-release-metadata.py v0.1.35
+python3 scripts/validate-release-metadata.py v0.1.36
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
 cargo test --workspace --all-features

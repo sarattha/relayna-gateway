@@ -7,9 +7,10 @@ use axum::{
 };
 use gateway_api::app;
 use gateway_core::{
-    admin::KeyPolicyPatch, AdminKeyCreate, AdminKeyOwnerType, AdminKeyStore, AdminPolicyLayerStore,
-    AdminPolicyLayerUpsert, AdminProjectStore, AdminServiceStore, GuardrailPolicy, PolicyLayerKind,
-    ProjectCreateRequest, ServiceCreateRequest, VirtualKeyMaterial,
+    admin::KeyPolicyPatch, AdminKeyCreate, AdminKeyOwnerType, AdminKeyStore, AdminOpenAiRouteStore,
+    AdminPolicyLayerStore, AdminPolicyLayerUpsert, AdminProjectStore, AdminServiceStore,
+    GuardrailPolicy, OpenAiRouteMode, PolicyLayerKind, ProjectCreateRequest, ServiceCreateRequest,
+    VirtualKeyMaterial,
 };
 use gateway_proxy::{PingoraLiteLlmConfig, PingoraUpstreamConfig, RelaynaPingoraProxy};
 use gateway_store::{PostgresStore, RedisControlState, RedisReadiness};
@@ -139,7 +140,7 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
         UPDATE openai_route_settings
         SET mode = 'managed_by_gateway',
             updated_at = now()
-        WHERE route_id IN ('chat-completions', 'responses')
+        WHERE route_id IN ('chat-completions', 'responses', 'embeddings')
         "#,
     )
     .execute(store.pool())
@@ -370,6 +371,10 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
             json!({"model": "coverage-model", "input": "hello"}),
         ),
         (
+            "/embeddings",
+            json!({"model": "coverage-model", "input": "hello"}),
+        ),
+        (
             "/rerank",
             json!({"model": "coverage-model", "query": "hello", "documents": ["one", "two"]}),
         ),
@@ -398,10 +403,110 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
         let status = response.status();
         let response_body: Value = response.json().await.expect("proxy response body");
         assert_eq!(status, StatusCode::OK, "proxy path {path}: {response_body}");
-        if matches!(path, "/chat/completions" | "/responses") || path.ends_with("/rerank") {
+        if matches!(
+            path,
+            "/chat/completions" | "/responses" | "/embeddings" | "/v1/embeddings"
+        ) || path.ends_with("/rerank")
+        {
             assert_eq!(response_body["path"], path, "preserve alias path {path}");
         }
     }
+
+    store
+        .set_openai_route_mode("embeddings", OpenAiRouteMode::DirectLiteLlmPassthrough)
+        .await
+        .expect("enable direct embeddings passthrough");
+    for path in ["/embeddings", "/v1/embeddings"] {
+        let response = send_json(
+            &client,
+            &proxy_url,
+            path,
+            Some("sk-embeddings-test"),
+            json!({"model": "coverage-model", "input": "hello"}),
+        )
+        .await;
+        let status = response.status();
+        let body: Value = response.json().await.expect("direct embeddings body");
+        assert_eq!(status, StatusCode::OK, "direct embeddings {path}: {body}");
+        assert_eq!(body["path"], path);
+        assert_eq!(body["auth"], "Bearer sk-embeddings-test");
+    }
+    store
+        .set_openai_route_mode("embeddings", OpenAiRouteMode::ManagedByGateway)
+        .await
+        .expect("restore managed embeddings mode");
+
+    // Explicit registrations retain their legacy policy identity even though
+    // the same path is a LiteLLM alias when no registration exists.
+    let embeddings_project = store
+        .create_project(ProjectCreateRequest {
+            name: format!("embeddings-coverage-{suffix}"),
+        })
+        .await
+        .expect("create embeddings project");
+    store
+        .upsert_policy_layer(AdminPolicyLayerUpsert {
+            kind: PolicyLayerKind::Project,
+            scope_id: Some(embeddings_project.id.to_string()),
+            policy: KeyPolicyPatch::default(),
+            guardrail_policy: Default::default(),
+        })
+        .await
+        .expect("create neutral embeddings project policy");
+    let embeddings_service_name = format!("proxy-embeddings-{suffix}");
+    store
+        .create_service(
+            serde_json::from_value::<ServiceCreateRequest>(json!({
+                "name": embeddings_service_name,
+                "project_id": embeddings_project.id,
+                "route_pattern": "/embeddings",
+                "upstream_base_url": upstream_url,
+                "credential": "embeddings-service-secret",
+                "allowed_methods": ["POST"],
+                "cost_mode": "fixed",
+                "estimated_cost_usd": 0.01
+            }))
+            .expect("embeddings service request"),
+        )
+        .await
+        .expect("register embeddings service");
+    let embeddings_material = VirtualKeyMaterial::generate().expect("embeddings key");
+    store
+        .create_admin_key(
+            AdminKeyCreate {
+                owner_type: AdminKeyOwnerType::Project,
+                project_id: Some(embeddings_project.id),
+                service_names: vec![embeddings_service_name.clone()],
+                preset: None,
+                expires_at: None,
+                rotation_due_at: None,
+                policy: KeyPolicyPatch {
+                    allowed_routes: Some(vec![]),
+                    allowed_providers: Some(vec!["internal-service".to_owned()]),
+                    ..KeyPolicyPatch::default()
+                },
+                guardrail_policy: GuardrailPolicy::default(),
+            },
+            &embeddings_material,
+        )
+        .await
+        .expect("create derived embeddings service key");
+    let response = send_json(
+        &client,
+        &proxy_url,
+        "/embeddings",
+        Some(&embeddings_material.raw_key),
+        json!({"input": "hello"}),
+    )
+    .await;
+    let status = response.status();
+    let body: Value = response.json().await.expect("registered embeddings body");
+    assert_eq!(status, StatusCode::OK, "registered embeddings: {body}");
+    assert_eq!(body["auth"], "Bearer embeddings-service-secret");
+    store
+        .delete_service(&embeddings_service_name)
+        .await
+        .expect("remove embeddings registration");
 
     let service_url = format!("{proxy_url}/services/{service_name}/status");
     let response = client

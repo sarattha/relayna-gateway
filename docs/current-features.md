@@ -2,7 +2,7 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.35` feature set.
+This page summarizes the `v0.1.36` feature set.
 
 New virtual keys stay visible until explicitly closed. Overview requests only
 its displayed usage aggregates and supports bounded 30-second analytics reads.
@@ -258,7 +258,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.35` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.36` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -268,13 +268,14 @@ Only unmatched paths that pass the configured LiteLLM passthrough allowlist are
 forwarded to LiteLLM.
 
 Canonical OpenAI-compatible routes are still first-class Gateway routes. The
-chat-completions and responses aliases share their canonical `/v1/...` policy
+chat-completions, responses, and embeddings aliases share their canonical `/v1/...` policy
 and route settings while preserving the requested path upstream:
 
 - `POST /chat/completions`
 - `POST /v1/chat/completions`
 - `POST /responses`
 - `POST /v1/responses`
+- `POST /embeddings`
 - `POST /v1/embeddings`
 
 LiteLLM reranking is also a first-class governed route. One canonical
@@ -361,7 +362,7 @@ passthrough against a real `litellm/litellm` container.
 
 ## Memory-Safe Body Processing
 
-Release `0.1.35` retains bounds on complete request and response buffering with one
+Release `0.1.36` retains bounds on complete request and response buffering with one
 process-wide admission controller. By default, at most eight managed requests
 or post-call responses may retain complete bodies, and their aggregate
 serialized reservations may not exceed 512 MiB. Operators can tune these
@@ -422,7 +423,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.35` release retains CI and release workflow hardening with strict
+The `v0.1.36` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

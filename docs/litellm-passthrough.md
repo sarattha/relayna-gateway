@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.35` behavior.
+This page covers the `0.1.36` behavior.
 
 ## Request Model
 
@@ -83,7 +83,7 @@ When a request reaches the proxy listener, routing is evaluated in this order:
 3. Canonical OpenAI-compatible routes:
    - `POST /chat/completions` and `POST /v1/chat/completions`
    - `POST /responses` and `POST /v1/responses`
-   - `POST /v1/embeddings`
+   - `POST /embeddings` and `POST /v1/embeddings`
 4. Canonical LiteLLM rerank aliases, governed by one `/v1/rerank` route
    setting:
    - `POST /rerank`
@@ -101,6 +101,18 @@ When a request reaches the proxy listener, routing is evaluated in this order:
 
 This means `/services/*` and the Admin/control API cannot accidentally fall
 through to LiteLLM wildcard passthrough.
+
+Both embeddings paths use the `/v1/embeddings` policy, route mode, limits, and
+usage identity, preserving the requested path upstream. `/embeddings` no longer
+falls back to an unregistered internal embeddings service. Explicit registered
+service routes retain the precedence described above and keep their legacy
+`/embeddings` service policy identity.
+
+For Gateway-authenticated alias requests, permit `/v1/embeddings` in the key
+policy and every applicable restrictive inherited allowlist. Adding it to the key
+alone does not override a global or project restriction. Use the key policy
+simulator to inspect the final allowed routes if the request returns
+`policy_denied`.
 
 ## Canonical Route Modes
 

@@ -2,6 +2,24 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.36 - 2026-09-10
+
+### Fixed
+
+- Route `POST /embeddings` through the canonical `/v1/embeddings` LiteLLM
+  operation when no registered service matches, avoiding the previous
+  `missing_service` error. Both paths share routing mode, policy, limits, and
+  usage identity while preserving the requested path upstream.
+- Preserve the legacy policy identity and precedence of explicitly registered
+  `/embeddings` services, keeping linked service keys authorized.
+
+### Compatibility
+
+- Alias requests require canonical `/v1/embeddings` permission in every applicable
+  restrictive policy layer. Existing service policies remain readable, and no
+  database migration is introduced. Managed and direct LiteLLM modes have live
+  proxy regression coverage for both paths and registered-service precedence.
+
 ## 0.1.35 - 2026-09-09
 
 ### Added
