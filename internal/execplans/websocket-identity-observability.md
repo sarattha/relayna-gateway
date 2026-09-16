@@ -16,7 +16,7 @@ claims and the endpoint policy applied at request time, without raw credentials.
 - [x] Add shared Traffic/Usage presentation with live countdowns and protocol labels.
 - [x] Verify persistence, redaction, counters, failures, and multi-turn E2E diagnostics.
 - [x] Run UI and mandatory checks; visually inspect and capture screenshots.
-- [ ] Update docs and draft PR.
+- [x] Update docs and draft PR #119; implementation pushed as 0ac9b3c.
 
 ## Compatibility Boundary
 
