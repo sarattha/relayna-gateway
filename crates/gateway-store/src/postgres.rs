@@ -8374,7 +8374,9 @@ mod tests {
             .await
             .expect("serialize shared control-plane integration state");
         let suffix = Uuid::new_v4().simple().to_string();
-        let now = chrono::Utc::now();
+        // Exercise sub-microsecond precision even on clocks that only return microseconds.
+        let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 123_456_789)
+            .expect("valid test timestamp");
 
         store.ready().await.expect("store ready");
         let has_active_operator = store
@@ -9173,7 +9175,9 @@ mod tests {
                 .expect("usage version transitions"),
             [UsageVersionTransition {
                 service_version: "2026.08.09".to_owned(),
-                first_observed_at: now,
+                // PostgreSQL timestamps retain microseconds, not nanoseconds.
+                first_observed_at: chrono::DateTime::from_timestamp_micros(now.timestamp_micros())
+                    .expect("valid persisted timestamp"),
             }]
         );
         store
