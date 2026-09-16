@@ -1854,11 +1854,16 @@ async function routes() {
     api("/admin-ui/admin/openai-routes"),
     api("/admin-ui/admin/anthropic-routes"),
     api("/admin-ui/admin/services"),
+    api("/admin-ui/admin/route-identities"),
   ]);
   if (renderId !== renderGeneration) return;
-  [state.openaiRoutes, state.anthropicRoutes, state.services] = loaded;
+  [state.openaiRoutes, state.anthropicRoutes, state.services, state.routeIdentities] = loaded;
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
+    <section class="panel"><div class="panel-heading"><h3>Additional endpoint identity</h3></div>
+      <p class="field-hint">Choose Entra verification for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
+      ${table(["Route", "Protocol", "Identity"], state.routeIdentities.filter((row) => ![...state.openaiRoutes, ...state.anthropicRoutes].some((item) => item.route === row.route)).map((row) => [`<code>${esc(row.route)}</code>`, '<span class="badge">HTTP</span>', routeIdentityControl(row.route)]))}
+    </section>
     <section class="panel">
       <div class="panel-heading">
         <h3>${routeFamilyLogo("openai")} OpenAI-compatible and rerank routes</h3>
@@ -1893,6 +1898,7 @@ async function routes() {
   document.querySelectorAll("[data-service-route-timeout-form]").forEach((form) => {
     form.addEventListener("submit", handleAsync(saveServiceRouteTimeout));
   });
+  document.querySelectorAll("[data-route-identity]").forEach((button) => button.addEventListener("click", editRouteIdentity));
   organizeView("routes");
 }
 
@@ -1906,10 +1912,11 @@ function providerRouteTable(rows, family) {
   const actionAttr = family === "anthropic" ? "data-anthropic-route-action" : "data-openai-route-action";
   const modeForm = family === "anthropic" ? anthropicRouteModeForm : openaiRouteModeForm;
   return table(
-    ["Route", "Protocol", "State", "Configuration", "Updated", "Actions"],
+    ["Route", "Protocol", "Identity", "State", "Configuration", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
       '<span class="badge">HTTP</span>',
+      routeIdentityControl(row.route),
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
       modeForm(row),
       time(row.updated_at),
@@ -1943,11 +1950,12 @@ function routeConfigForm(row, dataAttrName) {
 
 function serviceRouteTable(rows) {
   return table(
-    ["Service", "Route", "Protocol", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
+    ["Service", "Route", "Protocol", "Identity", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       `<code>${esc(row.route_pattern)}</code>`,
       serviceProtocolSummary(row),
+      endpointIdentityBadge(row.access),
       serviceBadges(row),
       esc(listValue(row.allowed_methods, "none")),
       esc(row.upstream_base_url || "missing"),
@@ -2412,8 +2420,8 @@ async function settings() {
       </form>
     </section>
     <section class="panel">
-      ${state.authSettings.unverified_bearer_enabled ? `<div class="notice" data-kind="warning" role="status"><span class="badge warn">Unverified bearer active</span> Entra verification is paused for gateway-managed requests. Only the Relayna virtual key is authenticated.</div>` : ""}
-      <div class="panel-heading"><h3>Entra ID and Apigee front door</h3><span class="subtle">${esc(state.authSettings.updated_at ? time(state.authSettings.updated_at) : "environment or unset")}</span></div>
+      ${state.authSettings.unverified_bearer_enabled ? `<div class="notice" data-kind="warning" role="status"><span class="badge warn">Unverified bearer active</span> Legacy Entra verification is paused; endpoints configured to Require Entra still fail closed. Only the Relayna virtual key is authenticated.</div>` : ""}
+      <div class="panel-heading"><h3>Shared Entra trust and legacy defaults</h3><span class="subtle">${esc(state.authSettings.updated_at ? time(state.authSettings.updated_at) : "environment or unset")}</span></div>
       <form id="auth-settings-form" class="form-grid">
         ${formSection("Gateway headers", "Keep native key and trusted-ingress behavior explicit.", `
           <label class="check wide-field"><input name="unverified_bearer_enabled" type="checkbox" ${state.authSettings.unverified_bearer_enabled ? "checked" : ""} aria-describedby="unverified-bearer-help"> Require unverified bearer (troubleshooting)</label>
@@ -2784,12 +2792,13 @@ function serviceProtocolSummary(service) {
 
 function serviceTable(rows) {
   return table(
-    ["Name", "State", "Route", "Protocol", "Upstream", "Health check", "Credential", "Cost", "Actions"],
+    ["Name", "State", "Route", "Protocol", "Identity", "Upstream", "Health check", "Credential", "Cost", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       serviceBadges(row),
       `<code>${esc(row.route_pattern)}</code>`,
       serviceProtocolSummary(row),
+      endpointIdentityBadge(row.access),
       esc(row.upstream_base_url || "missing"),
       esc(healthCheckLabel(row)),
       row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
@@ -4035,15 +4044,67 @@ function guardrailExecutionTable(rows) {
   );
 }
 
-function endpointAccessFields(access) {
+function endpointIdentityFields(access = {}) {
   const entra = access.entra || {};
-  const binding = access.accessa || {};
-  return formSection("Endpoint identity and Accessa", "Apply identity requirements to this registered route. Accessa preserves the public path and requires an explicit key service binding.", `
+  const mode = access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
+  return `<label class="wide-field">Entra verification<select name="endpoint_entra_mode">
+    <option value="inherit" ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
+    <option value="required" ${mode === "required" ? "selected" : ""}>Require Entra</option>
+    <option value="disabled" ${mode === "disabled" ? "selected" : ""}>No Entra</option>
+  </select></label>
     <label>Entra audience<input name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
     <label>Required scopes<input name="endpoint_scopes" value="${attr(listValue(entra.required_scopes, ""))}"></label>
     <label>Required roles<input name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
     <label>Allowed groups<input name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
     <label class="check"><input name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label>
+    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claims below apply only to Require Entra.</p>`;
+}
+
+function endpointIdentityBadge(access = {}) {
+  return access.entra ? `<span class="badge good">Entra required</span><div class="subtle">${esc(access.entra.audience)}</div>`
+    : access.skip_entra ? '<span class="badge">No Entra</span>' : '<span class="badge warn">Gateway setting</span>';
+}
+
+function routeIdentityControl(route) {
+  const setting = (state.routeIdentities || []).find((item) => item.route === route);
+  if (!setting) return '<span class="subtle">Unavailable</span>';
+  return `${endpointIdentityBadge(setting.access)}<button type="button" data-route-identity="${attr(route)}" aria-label="Edit Entra verification for ${attr(route)}">Edit identity</button>`;
+}
+
+function editRouteIdentity(event) {
+  const route = event.currentTarget.dataset.routeIdentity;
+  const setting = state.routeIdentities.find((item) => item.route === route);
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
+  backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+    <h3 id="${titleId}">Endpoint identity · ${esc(route)}</h3>
+    <form class="form-grid">${endpointIdentityFields(setting.access)}
+      <div class="form-actions"><button class="primary">Save identity</button><button type="button" data-close-modal>Cancel</button></div>
+    </form></div>`;
+  document.body.appendChild(backdrop);
+  let saving = false;
+  const close = mountDialog(backdrop, { initialFocus: "select", dismissible: false });
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => { if (!saving) close(); });
+  backdrop.addEventListener("keydown", (keyEvent) => { if (keyEvent.key === "Escape" && !saving) close(); });
+  backdrop.querySelector("form").addEventListener("submit", handleAsync(async (submit) => {
+    submit.preventDefault();
+    if (saving) return;
+    const access = endpointAccessFromForm(new FormData(submit.currentTarget));
+    saving = true;
+    try {
+      await api("/admin-ui/admin/route-identities", { method: "PUT", body: JSON.stringify({ route, access }) });
+      close();
+      setNotice(`Endpoint identity saved for ${route}.`, "success");
+      await routes();
+    } finally { saving = false; }
+  }));
+}
+
+function endpointAccessFields(access) {
+  const binding = access.accessa || {};
+  return formSection("Endpoint identity and Accessa", "Apply identity requirements to this registered route. Accessa preserves the public path and requires an explicit key service binding.", `
+    ${endpointIdentityFields(access)}
     <label class="check"><input name="accessa_enabled" type="checkbox" ${access.accessa ? "checked" : ""}> Accessa channel binding</label>
     <label>Accessa app<input name="accessa_app" value="${attr(binding.app || "")}" placeholder="tara"></label>
     <label>Accessa channel<input name="accessa_channel" value="${attr(binding.channel || "")}" placeholder="tara-frontend"></label>
@@ -4051,15 +4112,19 @@ function endpointAccessFields(access) {
     <label>Connections per route per instance<input name="socket_connections" type="number" min="1" max="10000" value="${attr(binding.max_connections ?? 100)}"></label>
     <label>Connections per key per instance<input name="socket_key_connections" type="number" min="1" max="10000" value="${attr(binding.max_connections_per_key ?? 10)}"></label>
     <label>Maximum socket message bytes<input name="socket_frame_bytes" type="number" min="125" max="16777216" value="${attr(binding.max_frame_bytes ?? 1048576)}"></label>
-    <div class="help wide-field">Blank audience inherits global authentication. With an audience, all listed scopes and roles are required; any listed group may match. Apigee must sign audience and expiry claims. Accessa requires an audience; a blank app is only for /channel/{channel}/v1/me. Socket limits apply per gateway instance; the instance ceiling is 4,096. Accessa transport and admission carry no charge; downstream service calls remain metered.</div>
+    <div class="help wide-field">With Require Entra, all listed scopes and roles are required; any listed group may match. Apigee must sign audience and expiry claims. Accessa requires Require Entra and an audience; a blank app is only for /channel/{channel}/v1/me. Socket limits apply per gateway instance; the instance ceiling is 4,096. Accessa transport and admission carry no charge; downstream service calls remain metered.</div>
   `);
 }
 
 function endpointAccessFromForm(form) {
-  const audience = String(form.get("endpoint_audience") || "").trim();
+  const mode = String(form.get("endpoint_entra_mode") || "inherit");
+  const audience = mode === "required" ? String(form.get("endpoint_audience") || "").trim() : "";
   const accessa = form.has("accessa_enabled");
-  if (accessa && !audience) throw new Error("Accessa requires an endpoint Entra audience.");
+  if (accessa && !audience) throw new Error("Accessa requires an endpoint Entra audience and Require Entra mode.");
+  if (mode === "required" && !audience) throw new Error("Require Entra needs an endpoint audience.");
+  if (!["inherit", "required", "disabled"].includes(mode)) throw new Error("Choose an Entra verification mode.");
   return {
+    skip_entra: mode === "disabled",
     entra: audience ? {
       audience, required_scopes: csv(form.get("endpoint_scopes")), required_roles: csv(form.get("endpoint_roles")),
       allowed_groups: csv(form.get("endpoint_groups")), allow_apigee: form.has("endpoint_apigee"),

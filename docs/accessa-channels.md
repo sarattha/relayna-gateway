@@ -168,3 +168,60 @@ skips. The system certificate override is needed on the tested macOS environment
 The test starts independent mock BFF, adapters, Router, agent and OIDC servers,
 plus the real Pingora gateway. It does not use production Entra or providers.
 See `internal/test-reports/accessa/` for UI and coverage evidence.
+
+## Entra verification for every request-plane endpoint
+
+Services → Edit → Endpoint identity and Accessa now has an **Entra verification**
+selector. Routes offers **Edit identity** for each built-in route, including
+OpenAI, Anthropic, direct OpenAI, LiteLLM passthrough and built-in service aliases.
+
+| Selection | Result |
+| --- | --- |
+| Require Entra | Verify this endpoint's audience, scopes, roles and groups. |
+| No Entra | Skip Entra for this endpoint; retain its credential and policy checks. |
+| Use existing gateway setting | Preserve the released gateway-wide behavior. |
+
+An existing endpoint is unchanged until explicitly configured. Tenant, issuer,
+OIDC discovery/JWKS, accepted algorithms and the Relayna key header remain shared
+trust configuration in Settings. Enable/configure that verifier before selecting
+Require Entra. Missing verifier configuration fails closed. The troubleshooting
+unverified-bearer switch cannot bypass an explicit endpoint policy.
+
+For a service, `access: {"skip_entra": true}` selects No Entra. `access: {}` restores
+legacy behavior. `access: {"entra": {"audience": "api://service"}}` requires Entra.
+`skip_entra` cannot be combined with `entra` or an Accessa binding. Accessa always
+requires its own Entra policy. Service aliases use the same saved service policy.
+
+Built-in policies are listed with `GET /admin-ui/admin/route-identities` and
+replaced with `PUT /admin-ui/admin/route-identities`, for example:
+
+```json
+{
+  "route": "/v1/chat/completions",
+  "access": {
+    "entra": {
+      "audience": "api://litellm",
+      "required_scopes": ["generate"]
+    }
+  }
+}
+```
+
+These admin APIs require the existing read/update scopes and audit policy writes.
+Use the exact canonical route from the GET response; aliases such as
+`/chat/completions` share `/v1/chat/completions`. `/litellm/*` names the catch-all
+LiteLLM route family (its configured allowlist still controls actual paths).
+A registered service takes precedence over the generic service route policy.
+
+On Entra-protected canonical LiteLLM routes, send the user JWT in Authorization
+and the gateway virtual key in the configured Relayna key header. This applies to
+both managed and direct LiteLLM modes; gateway resolves the existing upstream
+credential mapping. A raw LiteLLM token cannot substitute for the user JWT.
+Explicitly configured trusted-ingress passthrough retains its existing upstream
+credential contract but must first pass the endpoint Entra gate. No Entra does
+not change those published passthrough modes; gateway-managed traffic still
+requires a valid virtual key and passes normal policy/rate/budget checks.
+
+Migration `20260916000200_route_identity.sql` adds the built-in identity table.
+No existing endpoint policies are changed. Clear an override with `access: {}`
+to restore legacy behavior without dropping persisted configuration.

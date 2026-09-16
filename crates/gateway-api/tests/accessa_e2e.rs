@@ -591,5 +591,69 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
             expected
         );
     }
+
+    // A service explicitly skips Entra while the same process still protects Accessa.
+    store
+        .patch_service(
+            &service_names[0],
+            serde_json::from_value(json!({"access":{"skip_entra":true}})).unwrap(),
+        )
+        .await
+        .unwrap();
+    for url in [
+        &internal_url,
+        &format!("{gateway}/services/{}/check", service_names[0]),
+    ] {
+        for dedicated in [true, false] {
+            let request = client.get(url);
+            let request = if dedicated {
+                request.header("x-relayna-key", &keys[0])
+            } else {
+                request.bearer_auth(&keys[0])
+            };
+            assert_eq!(request.send().await.unwrap().status(), 200);
+        }
+        assert_eq!(client.get(url).send().await.unwrap().status(), 401);
+        assert_eq!(
+            client
+                .get(url)
+                .bearer_auth("rk_live_test_key")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            401
+        );
+    }
+    assert_eq!(
+        client
+            .get(format!(
+                "{gateway}/app/tara/channel/{}/v1/documents",
+                channels[1]
+            ))
+            .header("x-relayna-key", &keys[1])
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    store
+        .patch_service(
+            &service_names[0],
+            serde_json::from_value(json!({"access":{}})).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .get(&internal_url)
+            .header("x-relayna-key", &keys[0])
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
     println!("Accessa E2E: two adapters, BFF, Router, agent, Entra isolation, heartbeat, limits, revocation, budget and replay passed");
 }

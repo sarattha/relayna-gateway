@@ -95,6 +95,14 @@ pub struct LiteLlmPassthroughSettings {
 
 #[async_trait]
 pub trait AdminOpenAiRouteStore: Send + Sync {
+    async fn list_route_identities(
+        &self,
+    ) -> GatewayResult<Vec<crate::endpoint_access::RouteIdentitySetting>>;
+    async fn set_route_identity(
+        &self,
+        _setting: crate::endpoint_access::RouteIdentitySetting,
+    ) -> GatewayResult<crate::endpoint_access::RouteIdentitySetting>;
+
     async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>>;
     async fn list_anthropic_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>>;
 
@@ -147,6 +155,17 @@ impl<T> AdminOpenAiRouteStore for std::sync::Arc<T>
 where
     T: AdminOpenAiRouteStore + ?Sized,
 {
+    async fn list_route_identities(
+        &self,
+    ) -> GatewayResult<Vec<crate::endpoint_access::RouteIdentitySetting>> {
+        (**self).list_route_identities().await
+    }
+    async fn set_route_identity(
+        &self,
+        setting: crate::endpoint_access::RouteIdentitySetting,
+    ) -> GatewayResult<crate::endpoint_access::RouteIdentitySetting> {
+        (**self).set_route_identity(setting).await
+    }
     async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
         (**self).list_openai_route_settings().await
     }
@@ -219,6 +238,8 @@ where
 
 #[async_trait]
 pub trait OpenAiRouteSettingsLookup: Send + Sync {
+    async fn route_identity(&self, route: Route) -> GatewayResult<crate::EndpointAccess>;
+
     async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool>;
     async fn openai_route_mode(&self, route: Route) -> GatewayResult<OpenAiRouteMode>;
     async fn openai_route_limits(&self, route: Route) -> GatewayResult<LiteLlmRouteLimits>;
@@ -233,6 +254,9 @@ impl<T> OpenAiRouteSettingsLookup for std::sync::Arc<T>
 where
     T: OpenAiRouteSettingsLookup + ?Sized,
 {
+    async fn route_identity(&self, route: Route) -> GatewayResult<crate::EndpointAccess> {
+        (**self).route_identity(route).await
+    }
     async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool> {
         (**self).openai_route_enabled(route).await
     }

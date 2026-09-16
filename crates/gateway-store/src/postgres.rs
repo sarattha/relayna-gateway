@@ -2606,6 +2606,43 @@ impl AdminAuditStore for PostgresStore {
 
 #[async_trait]
 impl AdminOpenAiRouteStore for PostgresStore {
+    async fn list_route_identities(
+        &self,
+    ) -> GatewayResult<Vec<gateway_core::endpoint_access::RouteIdentitySetting>> {
+        let rows = sqlx::query("SELECT route, access FROM route_identity_settings")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let mut values = std::collections::HashMap::new();
+        for row in rows {
+            values.insert(
+                row.try_get::<String, _>("route")
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
+                row.try_get::<Json<gateway_core::EndpointAccess>, _>("access")
+                    .map_err(|_| GatewayError::StoreUnavailable)?
+                    .0,
+            );
+        }
+        Ok(gateway_core::endpoint_access::IDENTITY_ROUTES
+            .iter()
+            .map(
+                |route| gateway_core::endpoint_access::RouteIdentitySetting {
+                    route: route.as_str().to_owned(),
+                    access: values.remove(route.as_str()).unwrap_or_default(),
+                },
+            )
+            .collect())
+    }
+    async fn set_route_identity(
+        &self,
+        setting: gateway_core::endpoint_access::RouteIdentitySetting,
+    ) -> GatewayResult<gateway_core::endpoint_access::RouteIdentitySetting> {
+        setting.validate()?;
+        sqlx::query("INSERT INTO route_identity_settings (route, access) VALUES ($1,$2) ON CONFLICT (route) DO UPDATE SET access=EXCLUDED.access, updated_at=now()")
+            .bind(&setting.route).bind(Json(&setting.access)).execute(&self.pool).await.map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(setting)
+    }
+
     async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
         let rows = sqlx::query(
             r#"
@@ -2950,6 +2987,20 @@ impl AdminOpenAiRouteStore for PostgresStore {
 
 #[async_trait]
 impl OpenAiRouteSettingsLookup for PostgresStore {
+    async fn route_identity(&self, route: Route) -> GatewayResult<gateway_core::EndpointAccess> {
+        let access = sqlx::query_scalar::<_, Json<gateway_core::EndpointAccess>>(
+            "SELECT access FROM route_identity_settings WHERE route=$1",
+        )
+        .bind(route.as_str())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|value| value.0)
+        .unwrap_or_default();
+        access.validate(route.as_str())?;
+        Ok(access)
+    }
+
     async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool> {
         let Some(route_id) = gateway_core::openai_route_id(route) else {
             return Ok(true);

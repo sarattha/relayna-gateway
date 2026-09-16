@@ -1,18 +1,23 @@
 {
   "base": "8ee95a6",
   "scope": "changed production Rust executable lines; tests excluded",
-  "covered": 611,
-  "executable": 615,
-  "percent": 99.34959349593497,
+  "covered": 675,
+  "executable": 679,
+  "percent": 99.41089837997055,
   "files": {
+    "crates/gateway-api/src/app.rs": {
+      "covered": 37,
+      "executable": 37,
+      "uncovered_lines": []
+    },
     "crates/gateway-core/src/accessa.rs": {
       "covered": 7,
       "executable": 7,
       "uncovered_lines": []
     },
     "crates/gateway-core/src/endpoint_access.rs": {
-      "covered": 73,
-      "executable": 73,
+      "covered": 85,
+      "executable": 85,
       "uncovered_lines": []
     },
     "crates/gateway-core/src/entra.rs": {
@@ -25,6 +30,11 @@
     "crates/gateway-core/src/lib.rs": {
       "covered": 0,
       "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/route_settings.rs": {
+      "covered": 6,
+      "executable": 6,
       "uncovered_lines": []
     },
     "crates/gateway-core/src/services.rs": {
@@ -54,12 +64,12 @@
       "covered": 38,
       "executable": 39,
       "uncovered_lines": [
-        1803
+        1828
       ]
     },
     "crates/gateway-store/src/postgres.rs": {
-      "covered": 2,
-      "executable": 2,
+      "covered": 11,
+      "executable": 11,
       "uncovered_lines": []
     },
     "crates/gateway-store/src/redis.rs": {

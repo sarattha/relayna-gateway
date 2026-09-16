@@ -580,6 +580,15 @@ where
                 },
             }
         };
+        if ctx.service_upstream.is_none() {
+            ctx.access = match self.store.route_identity(matched.route).await {
+                Ok(access) => access,
+                Err(error) => {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(true);
+                }
+            };
+        }
         // Service-name aliases must not bypass an endpoint's identity policy.
         if ctx.service_upstream.is_none() {
             if let Some(name) = matched.service_name.as_deref() {
@@ -677,6 +686,18 @@ where
         ctx.relayna_key_header = auth.config.relayna_key_header.clone();
         let now = Utc::now();
         let authorization = header_value(req, "authorization");
+        if let Some(endpoint) = ctx.access.entra.as_ref() {
+            match self
+                .verify_endpoint_identity(req, now, &auth, &ctx.request_id, endpoint)
+                .await
+            {
+                Ok(identity) => ctx.entra_identity = Some(identity),
+                Err(error) => {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(true);
+                }
+            }
+        }
         if ctx.litellm_passthrough && matched.route == Route::LiteLlmPassthrough {
             match self.store.litellm_passthrough_settings().await {
                 Ok(settings)
@@ -701,7 +722,10 @@ where
         if gateway_core::is_litellm_canonical_route(matched.route) {
             match self.route_mode(matched.route).await {
                 Ok(OpenAiRouteMode::DirectLiteLlmPassthrough)
-                    if !authorization_has_relayna_key(authorization) =>
+                    if ctx.access.entra.is_none()
+                        && !authorization_has_relayna_key(authorization)
+                        && (!ctx.access.skip_entra
+                            || header_value(req, &auth.config.relayna_key_header).is_none()) =>
                 {
                     if let Err(error) = self
                         .ensure_litellm_canonical_route_enabled(matched.route)
@@ -738,20 +762,21 @@ where
                 }
             }
         }
-        let key_result = if let Some(endpoint) = ctx.access.entra.as_ref() {
-            match self
-                .verify_endpoint_identity(req, now, &auth, &ctx.request_id, endpoint)
-                .await
-            {
-                Ok(identity) => ctx.entra_identity = Some(identity),
-                Err(error) => {
-                    respond_error(session, error, ctx).await?;
-                    return Ok(true);
-                }
-            }
+        let key_result = if ctx.access.entra.is_some() {
             Authenticator::new(self.store.clone())
                 .authenticate_raw_key(header_value(req, &auth.config.relayna_key_header), now)
                 .await
+        } else if ctx.access.skip_entra {
+            // Dedicated key header is accepted consistently; never treat a JWT as a key.
+            if let Some(key) = header_value(req, &auth.config.relayna_key_header) {
+                Authenticator::new(self.store.clone())
+                    .authenticate_raw_key(Some(key), now)
+                    .await
+            } else {
+                Authenticator::new(self.store.clone())
+                    .authenticate_authorization(authorization, now)
+                    .await
+            }
         } else if auth.config.unverified_bearer_enabled {
             match require_unverified_bearer(authorization) {
                 Ok(()) => {
@@ -5474,6 +5499,13 @@ mod tests {
 
     #[async_trait]
     impl OpenAiRouteSettingsLookup for MemoryUsageStore {
+        async fn route_identity(
+            &self,
+            _route: Route,
+        ) -> GatewayResult<gateway_core::EndpointAccess> {
+            Ok(gateway_core::EndpointAccess::default())
+        }
+
         async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool> {
             if gateway_core::openai_route_id(route).is_some() {
                 Ok(*self.openai_routes_enabled.lock().expect("routes lock"))

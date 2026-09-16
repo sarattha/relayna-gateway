@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct EndpointAccess {
+    /// Explicit key-only mode; absent overrides retain released authentication.
+    pub skip_entra: bool,
     pub entra: Option<EndpointEntraPolicy>,
     pub accessa: Option<AccessaBinding>,
 }
@@ -38,6 +40,9 @@ pub struct AccessaBinding {
 
 impl EndpointAccess {
     pub fn validate(&self, route_pattern: &str) -> GatewayResult<()> {
+        if self.skip_entra && (self.entra.is_some() || self.accessa.is_some()) {
+            return Err(GatewayError::InvalidServicePayload);
+        }
         if let Some(policy) = &self.entra {
             if !valid_claim(&policy.audience)
                 || policy
@@ -218,5 +223,86 @@ mod tests {
         };
         assert!(policy.authorize(&identity(), 100).is_ok());
         assert!(serde_json::from_value::<EndpointAccess>(json!({"unknown":true})).is_err());
+    }
+}
+
+/// Canonical request-plane routes. Aliases resolve to the same entry.
+pub const IDENTITY_ROUTES: &[crate::Route] = &[
+    crate::Route::ChatCompletions,
+    crate::Route::Responses,
+    crate::Route::LiteLlmEmbeddings,
+    crate::Route::LiteLlmRerank,
+    crate::Route::AnthropicMessages,
+    crate::Route::AnthropicMessagesCountTokens,
+    crate::Route::AnthropicMessageBatches,
+    crate::Route::AnthropicMessageBatch,
+    crate::Route::AnthropicMessageBatchResults,
+    crate::Route::AnthropicMessageBatchCancel,
+    crate::Route::AnthropicModels,
+    crate::Route::DirectOpenAi,
+    crate::Route::LiteLlmPassthrough,
+    crate::Route::Summary,
+    crate::Route::Translation,
+    crate::Route::Ocr,
+    crate::Route::ServiceWildcard,
+];
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouteIdentitySetting {
+    pub route: String,
+    pub access: EndpointAccess,
+}
+impl RouteIdentitySetting {
+    pub fn validate(&self) -> GatewayResult<()> {
+        if !IDENTITY_ROUTES
+            .iter()
+            .any(|route| route.as_str() == self.route)
+            || self.access.accessa.is_some()
+        {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+        self.access.validate(&self.route)
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    #[test]
+    fn explicit_identity_modes_validate_and_round_trip() {
+        for route in IDENTITY_ROUTES {
+            for access in [
+                serde_json::json!({}),
+                serde_json::json!({"skip_entra":true}),
+                serde_json::json!({"entra":{"audience":"api://service"}}),
+            ] {
+                let setting: RouteIdentitySetting = serde_json::from_value(
+                    serde_json::json!({"route":route.as_str(),"access":access}),
+                )
+                .unwrap();
+                setting.validate().unwrap();
+                assert_eq!(
+                    serde_json::from_value::<RouteIdentitySetting>(
+                        serde_json::to_value(&setting).unwrap()
+                    )
+                    .unwrap()
+                    .access,
+                    setting.access
+                );
+            }
+        }
+        for value in [
+            serde_json::json!({"route":"/unknown","access":{}}),
+            serde_json::json!({"route":"/v1/chat/completions","access":{"entra":{"audience":""}}}),
+            serde_json::json!({"route":"/v1/chat/completions","access":{"skip_entra":true,"entra":{"audience":"api://service"}}}),
+            serde_json::json!({"route":"/v1/chat/completions","access":{"accessa":{"app":"tara","channel":"web","idle_timeout_ms":1000,"max_connections":1,"max_connections_per_key":1,"max_frame_bytes":125}}}),
+        ] {
+            assert!(serde_json::from_value::<RouteIdentitySetting>(value)
+                .unwrap()
+                .validate()
+                .is_err());
+        }
+        assert!(serde_json::from_value::<EndpointAccess>(serde_json::json!({"skip_entra":true,"accessa":{"app":"tara","channel":"web","idle_timeout_ms":1000,"max_connections":1,"max_connections_per_key":1,"max_frame_bytes":125}})).unwrap().validate("/app/tara/channel/web/v1/*").is_err());
     }
 }

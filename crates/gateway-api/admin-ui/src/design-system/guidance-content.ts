@@ -21,7 +21,7 @@ const policy: Record<string, string> = {
   allow_tools: "Permit tool/function calling at this layer. Other policy layers can still deny it.",
 };
 const shared: Record<string, string> = {
-  endpoint_audience: "Exact audience for this registered endpoint. Blank inherits global authentication. This does not add the audience to other endpoints.",
+  endpoint_audience: "Exact audience required when Require Entra is selected. Other modes ignore this field. This does not add the audience to other endpoints.",
   endpoint_scopes: "Comma-separated scopes. Every listed scope is required; blank adds no scope requirement for this endpoint.",
   endpoint_roles: "Comma-separated roles. Every listed role is required; blank adds no role requirement for this endpoint.",
   endpoint_groups: "Comma-separated group IDs. At least one must match; blank adds no group restriction.",

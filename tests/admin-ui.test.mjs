@@ -33,7 +33,7 @@ function test(name, fn) {
 function sourceFunction(name) {
   const start = sourceJs.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing source function ${name}`);
-  const bodyStart = sourceJs.indexOf("{", start);
+  const bodyStart = sourceJs.indexOf(") {", start) + 2;
   let depth = 0;
   for (let index = bodyStart; index < sourceJs.length; index += 1) {
     if (sourceJs[index] === "{") depth += 1;
@@ -966,11 +966,13 @@ console.log("ok - unverified bearer save, restoration and Apigee conflict regres
 test("endpoint access form preserves isolated audiences and channel limits", () => {
   const parse = new Function(`${sourceFunction("csv")}\n${sourceFunction("nullableString")}\n${sourceFunction("endpointAccessFromForm")}\nreturn endpointAccessFromForm;`)();
   const form = new FormData();
-  assert.deepEqual(parse(form), { entra: null, accessa: null });
+  assert.deepEqual(parse(form), { skip_entra: false, entra: null, accessa: null });
+  form.set("endpoint_entra_mode", "required");
   form.set("accessa_enabled", "on");
   assert.throws(() => parse(form), /requires an endpoint Entra audience/);
   for (const [key, value] of Object.entries({ endpoint_audience: " api://accessa ", endpoint_scopes: "run, read", endpoint_roles: "invoke", endpoint_groups: "staff", accessa_app: "tara", accessa_channel: "web", socket_idle_ms: "30000", socket_connections: "10", socket_key_connections: "2", socket_frame_bytes: "4096" })) form.set(key, value);
   assert.deepEqual(parse(form), {
+    skip_entra: false,
     entra: { audience: "api://accessa", required_scopes: ["run", "read"], required_roles: ["invoke"], allowed_groups: ["staff"], allow_apigee: false },
     accessa: { app: "tara", channel: "web", idle_timeout_ms: 30000, max_connections: 10, max_connections_per_key: 2, max_frame_bytes: 4096 },
   });
@@ -1001,4 +1003,31 @@ test("protocol labels distinguish Accessa run sockets from ordinary HTTP endpoin
   assert.doesNotMatch(render(hostile), /<img>/);
   for (const name of ["serviceTable", "serviceRouteTable", "serviceEditForm"]) assert.match(sourceFunction(name), /serviceProtocolSummary\(/);
   assert.match(sourceFunction("providerRouteTable"), />HTTP</);
+});
+
+
+test("endpoint identity controls select explicit modes without retaining hidden policy", () => {
+  const parse = new Function(`${sourceFunction("csv")}\n${sourceFunction("nullableString")}\n${sourceFunction("endpointAccessFromForm")}\nreturn endpointAccessFromForm;`)();
+  const form = new FormData();
+  form.set("endpoint_audience", "api://old");
+  form.set("endpoint_scopes", "old");
+  form.set("endpoint_entra_mode", "disabled");
+  assert.deepEqual(parse(form), { skip_entra: true, entra: null, accessa: null });
+  form.set("endpoint_entra_mode", "inherit");
+  assert.deepEqual(parse(form), { skip_entra: false, entra: null, accessa: null });
+  form.set("endpoint_entra_mode", "required");
+  assert.equal(parse(form).entra.audience, "api://old");
+  form.set("endpoint_audience", "");
+  assert.throws(() => parse(form), /needs an endpoint audience/);
+  form.set("endpoint_entra_mode", "invalid");
+  assert.throws(() => parse(form), /Choose an Entra/);
+  form.set("endpoint_entra_mode", "disabled");
+  form.set("accessa_enabled", "on");
+  assert.throws(() => parse(form), /Accessa requires/);
+  const badge = new Function(`${sourceFunction("esc")}\n${sourceFunction("endpointIdentityBadge")}\nreturn endpointIdentityBadge;`)();
+  assert.match(badge(), /Gateway setting/);
+  assert.match(badge({ skip_entra: true }), /No Entra/);
+  assert.match(badge({ entra: { audience: "<unsafe>" } }), /&lt;unsafe&gt;/);
+  assert.match(sourceFunction("routes"), /route-identities/);
+  assert.match(sourceFunction("editRouteIdentity"), /method: "PUT"/);
 });
