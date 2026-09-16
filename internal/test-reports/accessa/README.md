@@ -99,3 +99,27 @@ Final extension verification: all mandatory commands passed in sequence, 359
 Nextest tests passed with zero skipped, npm build/tests passed, and strict MkDocs
 build passed using `uvx --with mkdocs-material mkdocs build --strict`. Computer Use
 also checked Monitor/Discover/Govern navigation at desktop and mobile widths.
+
+## Multi-turn chatbot E2E follow-up
+
+`accessa_mock_chain_and_endpoint_regressions` now exercises:
+
+- Five successful itinerary-planning turns over one BFF WebSocket, with follow-up
+  messages about trip duration, vegetarian meals, weather changes and a summary.
+- Per-turn accepted, two token events and completed, with ordered sequence numbers,
+  matching conversation/turn IDs, distinct admission IDs and exact prior messages.
+- Disabled-key and exhausted-budget attempts on the same socket, with no additional
+  agent dispatches or conversation-history changes; four heartbeat exchanges.
+- Reconnect and exact replay of all five completed turns without agent reexecution.
+- A sixth successful turn after reconnect that retains all five earlier messages.
+
+The gateway, PostgreSQL and Redis are real test instances. BFF, channel adapters,
+Router and agent are mocks. The deterministic agent records user messages and
+returns prior context; this verifies transport and lifecycle behavior, not language
+model reasoning. Memory belongs to the mock agent and replay to the mock Router.
+No production code changed, so the previously measured 99.41% production-line
+coverage is unchanged; coverage was not remeasured for this test-only follow-up.
+
+Verification passed: focused Accessa E2E, full mandatory verification stack, and
+359 Nextest tests with zero skipped. The full run used live disposable PostgreSQL
+and Redis services. All configured security checks passed.

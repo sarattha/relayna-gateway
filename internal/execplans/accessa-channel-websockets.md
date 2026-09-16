@@ -120,3 +120,17 @@ SSE remains HTTP. This changes presentation only; no API/schema/runtime changes.
 - [x] Add and regression-test protocol labels; rebuild static assets. `npm test` and the Admin UI build pass.
 - [x] Verify Services, Routes and the editor with Computer Use; capture `protocol-labels.png` and `protocol-settings.png`.
 - [x] Mandatory verification stack passed in sequence (357 Nextest tests, zero skipped); publish this follow-up on draft PR #119.
+
+## Follow-up: multi-turn chatbot E2E
+
+- [x] Extend the existing real-gateway/mock-chain harness with five successful
+  conversational turns on one BFF WebSocket, then replay all five after reconnect
+  and execute a sixth contextual follow-up.
+- [x] Assert ordered and correlated accepted/token/completed events, distinct
+  admissions, exact agent history, and no agent execution for replay or denied
+  turns. Agent memory is deliberately fixture-owned, not gateway-owned.
+- [x] Mandatory verification passed in sequence: 359 Nextest tests, zero skipped,
+  and all configured security checks. Publish this follow-up on draft PR #119.
+
+Decision: this is test-only; no runtime, protocol, migration or compatibility
+changes. Deterministic prompts model itinerary follow-ups without a live LLM.

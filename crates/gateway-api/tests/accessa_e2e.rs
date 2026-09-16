@@ -72,6 +72,8 @@ async fn bridge(mut downstream: WebSocket, request: http::Request<()>) {
     let _ = write.close().await;
     let _ = downstream.close().await;
 }
+type AgentHistory = Arc<Mutex<HashMap<String, Vec<String>>>>;
+
 #[derive(Clone)]
 struct MockRouter {
     gateway: Arc<Mutex<String>>,
@@ -105,7 +107,7 @@ async fn router_socket(
                     state.dispatches.fetch_add(1,Ordering::SeqCst);
                     let (mut agent,_)=connect_async(format!("{}/chat",ws(&state.agent))).await.unwrap();
                     agent.send(Message::Text(command.to_string().into())).await.unwrap();
-                    let mut events=vec![json!({"type":"accepted","turn_id":turn,"admission_id":result["admission_id"]})];
+                    let mut events=vec![json!({"type":"accepted","turn_id":turn,"conversation_id":command["conversation_id"],"admission_id":result["admission_id"]})];
                     while let Some(Ok(Message::Text(text)))=agent.next().await{
                         let event:Value=serde_json::from_str(&text).unwrap();let done=event["type"]=="completed";
                         events.push(event);if done{break;}
@@ -180,6 +182,48 @@ async fn next_json(
         .unwrap_or_else(|error| panic!("expected JSON frame, received {message:?}: {error}"))
 }
 
+// Assert the complete event boundary for each turn, including correlation and
+// context from previous turns. The agent is deterministic; no live LLM is used.
+async fn chat_turn(
+    socket: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    conversation: &str,
+    messages: &[&str],
+) -> Vec<Value> {
+    let turn = Uuid::new_v4().to_string();
+    socket
+        .send(Message::Text(
+            json!({"command":"run","turn_id":turn,
+        "conversation_id":conversation,"message":messages.last().unwrap()})
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    let mut events = Vec::new();
+    for kind in ["accepted", "token", "token", "completed"] {
+        let event = next_json(socket).await;
+        assert_eq!(event["type"], kind);
+        assert_eq!(event["turn_id"], turn);
+        assert_eq!(event["conversation_id"], conversation);
+        events.push(event);
+    }
+    for (sequence, event) in events[1..].iter().enumerate() {
+        assert_eq!(event["sequence"], sequence + 1);
+    }
+    assert_eq!(
+        events[1]["prior_messages"],
+        json!(&messages[..messages.len() - 1])
+    );
+    assert_eq!(
+        events[1]["text"],
+        messages[..messages.len() - 1].join(" | ")
+    );
+    assert_eq!(events[2]["text"], *messages.last().unwrap());
+    events
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn accessa_mock_chain_and_endpoint_regressions() {
     gateway_telemetry::init("error", false);
@@ -243,24 +287,45 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
     };
     let expiry = Utc::now().timestamp() + 3600;
     let token = sign("api://accessa", "run", expiry);
-    let agent = serve(Router::new().route(
-        "/chat",
-        get(|upgrade: WebSocketUpgrade| async {
-            upgrade.on_upgrade(|mut socket| async move {
-                if socket.recv().await.is_some() {
-                    for event in [
-                        json!({"type":"token","sequence":1,"text":"hello"}),
-                        json!({"type":"completed","sequence":2}),
-                    ] {
-                        socket
-                            .send(AxumMessage::Text(event.to_string().into()))
-                            .await
-                            .unwrap();
+    // Conversation memory belongs to the agent fixture, not the gateway. Every
+    // dispatch opens a new Router -> agent socket, so state must survive sockets.
+    let agent_history = Arc::new(Mutex::new(HashMap::<String, Vec<String>>::new()));
+    let agent = serve(
+        Router::new()
+            .route(
+                "/chat",
+                get(
+                    |State(history): State<AgentHistory>, upgrade: WebSocketUpgrade| async move {
+                        upgrade.on_upgrade(move |mut socket| async move {
+                    if let Some(Ok(AxumMessage::Text(text))) = socket.recv().await {
+                        let command: Value = serde_json::from_str(&text).unwrap();
+                        let conversation = command["conversation_id"].as_str().unwrap();
+                        let message = command["message"].as_str().unwrap();
+                        let previous = {
+                            let mut history = history.lock().unwrap();
+                            let messages = history.entry(conversation.to_owned()).or_default();
+                            let previous = messages.clone();
+                            messages.push(message.to_owned());
+                            previous
+                        };
+                        for event in [
+                            json!({"type":"token","sequence":1,"text":previous.join(" | "),
+                                "prior_messages":previous,"turn_id":command["turn_id"],
+                                "conversation_id":conversation}),
+                            json!({"type":"token","sequence":2,"text":message,
+                                "turn_id":command["turn_id"],"conversation_id":conversation}),
+                            json!({"type":"completed","sequence":3,"turn_id":command["turn_id"],
+                                "conversation_id":conversation}),
+                        ] {
+                            socket.send(AxumMessage::Text(event.to_string().into())).await.unwrap();
+                        }
                     }
-                }
-            })
-        }),
-    ))
+                })
+                    },
+                ),
+            )
+            .with_state(agent_history.clone()),
+    )
     .await;
     let state = MockRouter {
         gateway: Arc::new(Mutex::new(String::new())),
@@ -416,17 +481,28 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
     let (mut socket, _) = connect_async(format!("{}/socket", ws(&bff_url)))
         .await
         .unwrap();
-    let turn = Uuid::new_v4();
-    socket
-        .send(Message::Text(
-            json!({"command":"run","turn_id":turn}).to_string().into(),
-        ))
-        .await
-        .unwrap();
-    assert_eq!(next_json(&mut socket).await["type"], "accepted");
-    assert_eq!(next_json(&mut socket).await["text"], "hello");
-    assert_eq!(next_json(&mut socket).await["type"], "completed");
-    assert_eq!(state.dispatches.load(Ordering::SeqCst), 1);
+    let conversation = Uuid::new_v4().to_string();
+    let messages = [
+        "My name is Mali. Help me plan a trip to Chiang Mai.",
+        "Make it three days, please.",
+        "I prefer vegetarian food. Include places to eat.",
+        "Change the second day to an indoor activity if it rains.",
+        "Summarize my destination, duration, food preference and revised plan.",
+        "I am back. Remind me of the preferences I gave you before reconnecting.",
+    ];
+    let mut transcript = Vec::new();
+    let mut admission_ids = std::collections::HashSet::new();
+    // Five successful conversational turns on exactly the same BFF socket.
+    for index in 0..5 {
+        let events = chat_turn(&mut socket, &conversation, &messages[..=index]).await;
+        assert!(admission_ids.insert(events[0]["admission_id"].as_str().unwrap().to_owned()));
+        transcript.push(events);
+        assert_eq!(state.dispatches.load(Ordering::SeqCst), index + 1);
+        assert_eq!(
+            agent_history.lock().unwrap()[&conversation],
+            messages[..=index]
+        );
+    }
     assert!(
         connect_async(direct_request(&token, &keys[0], &run_path))
             .await
@@ -457,14 +533,16 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
         .unwrap();
     socket
         .send(Message::Text(
-            json!({"command":"run","turn_id":Uuid::new_v4()})
-                .to_string()
-                .into(),
+            json!({"command":"run","turn_id":Uuid::new_v4(),
+                "conversation_id":conversation,"message":"Please continue my itinerary."})
+            .to_string()
+            .into(),
         ))
         .await
         .unwrap();
     assert_eq!(next_json(&mut socket).await["type"], "error");
-    assert_eq!(state.dispatches.load(Ordering::SeqCst), 1);
+    assert_eq!(state.dispatches.load(Ordering::SeqCst), 5);
+    assert_eq!(agent_history.lock().unwrap()[&conversation], messages[..5]);
     sqlx::query("UPDATE api_keys SET disabled=false WHERE id=$1")
         .bind(key_ids[0])
         .execute(store.pool())
@@ -477,14 +555,16 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
         .unwrap();
     socket
         .send(Message::Text(
-            json!({"command":"run","turn_id":Uuid::new_v4()})
-                .to_string()
-                .into(),
+            json!({"command":"run","turn_id":Uuid::new_v4(),
+                "conversation_id":conversation,"message":"Please continue my itinerary."})
+            .to_string()
+            .into(),
         ))
         .await
         .unwrap();
     assert_eq!(next_json(&mut socket).await["status"], 402);
-    assert_eq!(state.dispatches.load(Ordering::SeqCst), 1);
+    assert_eq!(state.dispatches.load(Ordering::SeqCst), 5);
+    assert_eq!(agent_history.lock().unwrap()[&conversation], messages[..5]);
     control
         .seed_budget_counters(key_ids[0], 0.0, 0.0, Utc::now())
         .await
@@ -494,22 +574,33 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
     let (mut socket, _) = connect_async(format!("{}/socket", ws(&bff_url)))
         .await
         .unwrap();
-    socket
-        .send(Message::Text(
-            json!({"command":"resume","turn_id":turn})
+    // Replay every completed turn after reconnect, preserving exact event IDs
+    // and ordering without dispatching to the agent or modifying its memory.
+    for events in &transcript {
+        socket
+            .send(Message::Text(
+                json!({"command":"resume",
+            "turn_id":events[0]["turn_id"],"conversation_id":conversation})
                 .to_string()
                 .into(),
-        ))
-        .await
-        .unwrap();
-    for expected in ["accepted", "token", "completed"] {
-        assert_eq!(next_json(&mut socket).await["type"], expected);
+            ))
+            .await
+            .unwrap();
+        for expected in events {
+            assert_eq!(next_json(&mut socket).await, *expected);
+        }
     }
     assert_eq!(
         state.dispatches.load(Ordering::SeqCst),
-        1,
+        5,
         "resume never re-executes"
     );
+    assert_eq!(agent_history.lock().unwrap()[&conversation], messages[..5]);
+    // Continue the same conversation on the new socket with all prior context.
+    let events = chat_turn(&mut socket, &conversation, &messages).await;
+    assert!(admission_ids.insert(events[0]["admission_id"].as_str().unwrap().to_owned()));
+    assert_eq!(state.dispatches.load(Ordering::SeqCst), 6);
+    assert_eq!(agent_history.lock().unwrap()[&conversation], messages);
     socket.close(None).await.unwrap();
     let response = client
         .get(format!(
