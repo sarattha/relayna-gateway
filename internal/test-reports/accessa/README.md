@@ -135,3 +135,23 @@ The Admin UI build, npm tests, and gateway rebuild pass. Computer Use visual
 verification remains pending: the session returned changing-window errors,
 noWindowsAvailable, and a clipboard timeout. A separate local preview runs on
 port 18460; no replacement screenshot has been claimed as verified.
+
+## Drawer footer verification
+
+The shared sticky footer now uses an opaque surface and matches drawer padding.
+In-app browser verification succeeded after Computer Use lost its Chrome target.
+Services, Providers, Virtual keys, Projects and Workload identities were inspected;
+service pricing and key limits were expanded and scrolled behind the action bar.
+At desktop, the service footer spans x=560..1280 and ends at y=720. At 390x844,
+it spans x=0..390 and ends at y=844. Both computed backgrounds are solid white.
+Projects and workload identities use ordinary inline actions and showed no
+footer bleed-through. Prior Routes alignment was also verified on desktop;
+its mobile verification remains outstanding. UI build/tests and gateway build
+passed. No new Rust code or tests changed; the Rust verification stack was not
+rerun for this CSS-only follow-up.
+
+![Service footer desktop](service-footer-desktop.png)
+![Service footer mobile](service-footer-mobile.png)
+![Key footer desktop](key-footer-desktop.png)
+![Provider footer desktop](provider-footer-desktop.png)
+![Routes alignment desktop](routes-alignment-desktop.png)

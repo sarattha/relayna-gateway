@@ -146,3 +146,17 @@ This is presentation-only and preserves existing form handlers and API contracts
 
 - [x] Update source styles/markup, regenerate assets, and pass UI build/tests.
 - [ ] Verify desktop/mobile with Computer Use and capture screenshots.
+
+## Follow-up: opaque drawer action bars
+
+- [x] Replace translucent shared action-bar backgrounds with the opaque surface.
+- [x] Match sticky footer bounds to drawer padding at desktop and mobile sizes,
+  covering the bottom and side gaps through which scrolled text was visible.
+- [x] Build Admin UI, run npm tests, and rebuild the gateway successfully.
+- [x] Inspect Services, Providers, Virtual keys, Projects and Workload identities
+  using the in-app browser after Computer Use lost its Chrome target. Verify
+  service footer at 390px and desktop; save screenshots. Inspect Routes desktop
+  alignment and Monitor navigation as well. No configuration writes performed.
+
+This is shared CSS only; no runtime/API changes. Short forms retain natural
+button placement; long forms keep their actions pinned without transparency.

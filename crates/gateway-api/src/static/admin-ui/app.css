@@ -2119,8 +2119,7 @@ tbody tr:hover td {
   margin: 0 -16px -16px;
   padding: 12px 16px;
   border-top: 1px solid var(--rg-color-border);
-  background: rgb(255 255 255 / 96%);
-  backdrop-filter: blur(10px);
+  background: var(--rg-color-surface);
 }
 
 .sticky-form-actions:not(:last-child) {
@@ -2871,7 +2870,17 @@ td { font-size: 13px; }
 
 .drawer-heading h3 { margin: 0; }
 
-.drawer-body { padding: 24px; overflow: auto; min-height: 0; }
+.drawer-body { --drawer-padding: 24px; padding: var(--drawer-padding); overflow: auto; min-height: 0; }
+
+/* Cover the scrollport padding as well as the form while actions are pinned. */
+
+.drawer-body .sticky-form-actions {
+  bottom: calc(-1 * var(--drawer-padding));
+  margin-inline: calc(-1 * var(--drawer-padding));
+  margin-bottom: calc(-1 * var(--drawer-padding));
+  padding-inline: var(--drawer-padding);
+  padding-bottom: var(--drawer-padding);
+}
 
 .drawer-body > .panel { padding: 0; border: 0; }
 
@@ -2915,7 +2924,7 @@ td { font-size: 13px; }
   .posture-panel { padding: 0; }
   .posture-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .posture-fact { padding: 17px; }
-  .drawer-body { padding: 20px; }
+  .drawer-body { --drawer-padding: 20px; }
   .drawer-body .form-grid { grid-template-columns: 1fr; }
   .drawer-body .wide-field { grid-column: 1; }
 }
