@@ -172,3 +172,24 @@ identity editor with its existing saved audience/scope. No settings were saved.
 UI build/tests and gateway rebuild passed.
 
 ![Endpoint identity alignment](endpoint-identity-alignment.png)
+
+## Service type presets
+
+Create service now offers Internal HTTP, Relayna HTTP, Entra-protected HTTP,
+Apigee-backed HTTP, Accessa app/channel, Accessa discovery and Custom presets.
+They populate existing API fields; no new runtime protocol or persisted type
+is introduced. Behavioral UI tests cover every preset, validation, manual route
+overrides, switching presets and preservation of operator-owned fields.
+
+In-app browser testing created disposable Internal HTTP and Accessa services
+against the local gateway on port 18460. The saved Accessa service showed the
+selected channel route, HTTP + WS, matching `/run` path and Entra audience.
+Desktop Relayna defaults and the 390x844 discovery form were also inspected.
+Admin UI tests/build, gateway build and strict documentation build passed.
+
+![Accessa service preset](service-type-accessa-desktop.png)
+![Relayna service preset](service-type-relayna-desktop.png)
+![Mobile discovery preset](service-type-mobile.png)
+
+The complete mandatory verification stack passed: formatting, Clippy, workspace
+tests, audit, deny, machete, 359 Nextest tests, Trivy, Gitleaks and Semgrep.

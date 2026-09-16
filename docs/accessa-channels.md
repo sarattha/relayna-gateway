@@ -225,3 +225,31 @@ requires a valid virtual key and passes normal policy/rate/budget checks.
 Migration `20260916000200_route_identity.sql` adds the built-in identity table.
 No existing endpoint policies are changed. Clear an override with `access: {}`
 to restore legacy behavior without dropping persisted configuration.
+
+## Create a service from a type
+
+In **Services → Create service**, choose a **Service type** before completing
+registration. Types are editable starting configurations, saved as the existing
+service settings rather than a separate server-side type.
+
+| Type | Starting configuration |
+| --- | --- |
+| Internal HTTP service | GET/POST, gateway identity setting, 60-second timeout |
+| Relayna HTTP service | GET/POST, gateway identity setting, 120-second timeout, `/health` check |
+| Entra-protected HTTP service | GET/POST with an endpoint-specific Entra audience |
+| Apigee-backed HTTP service | Entra-required HTTP, also accepting signed Apigee identity |
+| Accessa app/channel | GET/POST, Entra required, HTTP plus the exact WebSocket run endpoint |
+| Accessa channel discovery | GET `/channel/{channel}/v1/me`, Entra required, HTTP only |
+| Custom configuration | Keep the current settings and adjust them manually |
+
+HTTP presets suggest `/services/{name}/*`. Accessa suggests
+`/app/{app}/channel/{channel}/v1/*` from its app and channel fields; discovery has
+no app binding. Name/app/channel edits update a suggested route until you edit
+that route manually. Choosing another preset replaces the route and the preset's
+method, timeout, health and identity defaults. Name, upstream URL, credentials and
+pricing stay intact. Entra audiences/scopes are not guessed; supply your actual
+application requirements. Accessa virtual keys still need an explicit service
+binding. Relayna HTTP forwards to the runtime's HTTP API; the runtime owns task
+and agent execution. Generic WebSockets and arbitrary protocol adapters are not
+introduced by these presets. Existing services continue to use their saved
+settings; editing them does not automatically apply a creation preset.

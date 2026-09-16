@@ -2041,6 +2041,77 @@ function routeConfigPayload(form) {
   };
 }
 
+function serviceTypePresets() {
+  return [
+    { id: "internal_http", label: "Internal HTTP service", description: "General HTTP API using the gateway identity setting. Adjust methods and Entra requirements for your service.", methods: ["GET", "POST"], mode: "inherit", timeout: 60000 },
+    { id: "relayna_http", label: "Relayna HTTP service", description: "Relayna runtime exposed through its HTTP API. Point Upstream URL at the runtime; requests use /services/{name}/*. The runtime owns tasks and agent execution. Import from Studio if the service already exists there.", methods: ["GET", "POST"], mode: "inherit", timeout: 120000, health: "/health" },
+    { id: "entra_http", label: "Entra-protected HTTP service", description: "HTTP API requiring its own Entra audience. Enter the audience and any required scopes, roles or groups below.", methods: ["GET", "POST"], mode: "required", timeout: 60000 },
+    { id: "apigee_http", label: "Apigee-backed HTTP service", description: "HTTP API requiring Entra identity, also accepting signed Apigee claims. Enter this endpoint’s audience. Trusted Apigee verification must be configured in gateway settings.", methods: ["GET", "POST"], mode: "required", apigee: true, timeout: 60000 },
+    { id: "accessa_channel", label: "Accessa app/channel (HTTP + WebSocket)", description: "BFF connects through the gateway to the channel adapter. App and channel generate the route; only GET /run supports WebSocket. Enter the Accessa Entra audience and bind a virtual key to this service.", methods: ["GET", "POST"], mode: "required", accessa: true, app: "tara", channel: "web", timeout: 60000 },
+    { id: "accessa_discovery", label: "Accessa channel discovery (HTTP)", description: "Channel identity discovery at /channel/{channel}/v1/me. App stays blank; enter the channel and its Entra audience. This endpoint does not open WebSockets.", methods: ["GET"], mode: "required", accessa: true, app: "", channel: "web", timeout: 60000 },
+    { id: "custom", label: "Custom configuration", description: "Configure the supported HTTP or Accessa route directly. Keeps current values so you can customize a preset. Generic WebSockets and arbitrary protocol adapters are not enabled by this choice." },
+  ];
+}
+
+function suggestedServiceRoute(type, name, app, channel) {
+  if (type === "accessa_channel") return app && channel ? `/app/${app}/channel/${channel}/v1/*` : "";
+  if (type === "accessa_discovery") return channel ? `/channel/${channel}/v1/me` : "";
+  return type && type !== "custom" && name ? `/services/${name}/*` : "";
+}
+
+function applyServiceTypePreset(form, type) {
+  const preset = serviceTypePresets().find((item) => item.id === type);
+  if (!preset) return;
+  form.querySelector("#service-type-help").textContent = preset.description;
+  if (type === "custom") return;
+  const set = (name, value) => { form.elements.namedItem(name).value = value; };
+  const check = (name, value) => { form.elements.namedItem(name).checked = value; };
+  form.querySelectorAll('[name="allowed_methods"]').forEach((input) => { input.checked = preset.methods.includes(input.value); });
+  set("timeout_ms", preset.timeout);
+  set("health_check_path", preset.health || "");
+  set("endpoint_entra_mode", preset.mode);
+  for (const field of ["endpoint_audience", "endpoint_scopes", "endpoint_roles", "endpoint_groups"]) set(field, "");
+  check("endpoint_apigee", !!preset.apigee);
+  check("accessa_enabled", !!preset.accessa);
+  set("accessa_app", preset.app || "");
+  set("accessa_channel", preset.channel || "");
+  set("socket_idle_ms", 60000);
+  set("socket_connections", 100);
+  set("socket_key_connections", 10);
+  set("socket_frame_bytes", 1048576);
+  set("route_pattern", "");
+  form.dataset.suggestedRoute = "";
+  updateServiceRouteSuggestion(form);
+  const identity = form.elements.namedItem("endpoint_entra_mode").closest("details");
+  if (identity) identity.open = preset.mode === "required";
+  updateServiceTransportFields(form);
+}
+
+function updateServiceRouteSuggestion(form) {
+  const value = (name) => String(form.elements.namedItem(name).value).trim();
+  const input = form.elements.namedItem("route_pattern");
+  if (input.value && input.value !== form.dataset.suggestedRoute) return;
+  const suggested = suggestedServiceRoute(value("service_type"), value("name"), value("accessa_app"), value("accessa_channel"));
+  input.value = suggested;
+  form.dataset.suggestedRoute = suggested;
+}
+
+function updateServiceTransportFields(form) {
+  const enabled = form.elements.namedItem("accessa_enabled").checked;
+  for (const name of ["accessa_app", "accessa_channel", "socket_idle_ms", "socket_connections", "socket_key_connections", "socket_frame_bytes"]) {
+    form.elements.namedItem(name).closest("label").hidden = !enabled;
+  }
+}
+
+function bindServiceTypePresets(form) {
+  form.elements.namedItem("service_type").addEventListener("change", (event) => applyServiceTypePreset(form, event.target.value));
+  for (const name of ["name", "accessa_app", "accessa_channel"]) {
+    form.elements.namedItem(name).addEventListener("input", () => updateServiceRouteSuggestion(form));
+  }
+  form.elements.namedItem("accessa_enabled").addEventListener("change", () => updateServiceTransportFields(form));
+  updateServiceTransportFields(form);
+}
+
 async function services() {
   const renderId = ++renderGeneration;
   const loaded = await Promise.all([api("/admin-ui/admin/services"), api("/admin-ui/admin/projects")]);
@@ -2056,6 +2127,11 @@ async function services() {
           <button type="button" data-service-action="studio-import">Import from Studio</button>
         </div>
         <form id="service-form" class="form-grid">
+          <label class="wide-field">Service type<select name="service_type" required aria-describedby="service-type-help">
+            <option value="">Choose a service type…</option>
+            ${serviceTypePresets().map((preset) => `<option value="${attr(preset.id)}">${esc(preset.label)}</option>`).join("")}
+          </select></label>
+          <p id="service-type-help" class="field-hint wide-field" aria-live="polite">Choose a starting configuration, then adjust its settings. Changing type replaces route, methods, timeout and identity defaults; name, upstream, credentials and pricing are kept.</p>
           ${formSection("Identity and routing", "Name the service and define its public route and upstream.", `
             <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9\\x2d]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
             <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
@@ -2095,6 +2171,7 @@ async function services() {
     <datalist id="service-routes">${serviceRouteOptions()}</datalist>
   `;
   document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
+  bindServiceTypePresets(document.querySelector("#service-form"));
   document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
   bindPricingRuleEditors();
   bindEndpointPricingEditors();

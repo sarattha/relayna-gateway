@@ -1031,3 +1031,90 @@ test("endpoint identity controls select explicit modes without retaining hidden 
   assert.match(sourceFunction("routes"), /route-identities/);
   assert.match(sourceFunction("editRouteIdentity"), /method: "PUT"/);
 });
+
+test("service presets produce supported access contracts and preserve operator-owned values", () => {
+  const names = ["serviceTypePresets", "suggestedServiceRoute", "applyServiceTypePreset", "updateServiceRouteSuggestion", "updateServiceTransportFields", "bindServiceTypePresets", "endpointAccessFromForm", "csv", "nullableString"];
+  const api = new Function(`${names.map(sourceFunction).join("\n")}\nreturn {serviceTypePresets, applyServiceTypePreset, updateServiceRouteSuggestion, bindServiceTypePresets, endpointAccessFromForm};`)();
+  const fields = {};
+  const identity = { open: false };
+  const fieldNames = ["service_type", "name", "route_pattern", "upstream_base_url", "credential", "cost_mode", "timeout_ms", "health_check_path", "endpoint_entra_mode", "endpoint_audience", "endpoint_scopes", "endpoint_roles", "endpoint_groups", "endpoint_apigee", "accessa_enabled", "accessa_app", "accessa_channel", "socket_idle_ms", "socket_connections", "socket_key_connections", "socket_frame_bytes"];
+  for (const name of fieldNames) {
+    const label = { hidden: false };
+    fields[name] = { value: "", checked: false, events: {}, closest: (tag) => tag === "details" ? identity : label, addEventListener(event, fn) { this.events[event] = fn; } };
+  }
+  fields.name.value = "orders";
+  fields.upstream_base_url.value = "http://orders:8080";
+  fields.credential.value = "operator-entered";
+  fields.cost_mode.value = "fixed";
+  const methods = ["GET", "POST", "PUT", "PATCH", "DELETE"].map(value => ({value, checked:false}));
+  const help = {textContent:""};
+  const form = {dataset:{}, elements:{namedItem:name=>fields[name]}, querySelector:()=>help, querySelectorAll:()=>methods};
+  const access = () => {
+    const data = new FormData();
+    for (const [name, field] of Object.entries(fields)) {
+      if (["accessa_enabled", "endpoint_apigee"].includes(name)) { if(field.checked) data.set(name,"on"); }
+      else data.set(name,String(field.value));
+    }
+    return api.endpointAccessFromForm(data);
+  };
+  const select = type => { fields.service_type.value = type; api.applyServiceTypePreset(form,type); };
+  api.bindServiceTypePresets(form);
+  assert.equal(fields.accessa_app.closest("label").hidden,true);
+  assert.equal(api.serviceTypePresets().length,7);
+  for (const type of ["internal_http","relayna_http","entra_http","apigee_http","accessa_channel","accessa_discovery"]) {
+    select(type);
+    assert.equal(fields.upstream_base_url.value,"http://orders:8080");
+    assert.equal(fields.credential.value,"operator-entered");
+    assert.equal(fields.cost_mode.value,"fixed");
+    assert.equal(fields.endpoint_audience.value, "", "audiences must be supplied by the operator");
+    assert.equal(fields.accessa_enabled.checked,type.startsWith("accessa_"));
+    if (["internal_http","relayna_http"].includes(type)) {
+      assert.equal(fields.route_pattern.value,"/services/orders/*");
+      assert.equal(access().entra,null);
+      assert.equal(identity.open,false);
+    } else {
+      assert.equal(identity.open,true);
+      assert.throws(access,/audience/);
+      fields.endpoint_audience.value="api://orders";
+      assert.equal(access().entra.audience,"api://orders");
+      assert.equal(access().entra.allow_apigee,type==="apigee_http");
+    }
+    if(type==="accessa_channel") {
+      assert.equal(fields.route_pattern.value,"/app/tara/channel/web/v1/*");
+      assert.deepEqual(methods.filter(m=>m.checked).map(m=>m.value),["GET","POST"]);
+      assert.equal(access().accessa.app,"tara");
+      assert.equal(access().accessa.max_frame_bytes,1048576);
+    }
+    if(type==="accessa_discovery") {
+      assert.equal(fields.route_pattern.value,"/channel/web/v1/me");
+      assert.equal(access().accessa.app,null);
+      assert.deepEqual(methods.filter(m=>m.checked).map(m=>m.value),["GET"]);
+    }
+  }
+  select("relayna_http");
+  assert.equal(fields.health_check_path.value,"/health");
+  assert.equal(fields.timeout_ms.value,120000);
+  select("accessa_channel");
+  fields.accessa_channel.value="mobile";
+  fields.accessa_channel.events.input();
+  assert.equal(fields.route_pattern.value,"/app/tara/channel/mobile/v1/*");
+  fields.route_pattern.value="/custom/operator-route/*";
+  fields.name.value="renamed";
+  fields.name.events.input();
+  assert.equal(fields.route_pattern.value,"/custom/operator-route/*");
+  select("custom");
+  assert.equal(fields.route_pattern.value,"/custom/operator-route/*");
+  assert.equal(fields.accessa_enabled.checked,true,"custom preserves the transport");
+  fields.accessa_enabled.checked=false;
+  fields.accessa_enabled.events.change();
+  assert.equal(fields.accessa_app.closest("label").hidden,true);
+  select("internal_http");
+  assert.equal(access().accessa,null,"switching away clears Accessa binding");
+  assert.equal(access().entra,null,"switching away clears stale identity requirements");
+  fields.name.value="";
+  api.updateServiceRouteSuggestion(form);
+  assert.equal(fields.route_pattern.value,"");
+  fields.name.value="next";
+  fields.name.events.input();
+  assert.equal(fields.route_pattern.value,"/services/next/*");
+});
