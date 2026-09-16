@@ -155,3 +155,11 @@ rerun for this CSS-only follow-up.
 ![Key footer desktop](key-footer-desktop.png)
 ![Provider footer desktop](provider-footer-desktop.png)
 ![Routes alignment desktop](routes-alignment-desktop.png)
+
+## Create provider button spacing
+
+The provider drawer action bar adds 12px top margin and uses 24px top padding.
+Verified in the in-app browser with Authentication collapsed; computed spacing
+matches those values. Admin UI build/tests and gateway rebuild pass.
+
+![Provider button spacing](provider-button-spacing.png)

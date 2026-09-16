@@ -2882,6 +2882,11 @@ td { font-size: 13px; }
   padding-bottom: var(--drawer-padding);
 }
 
+.drawer-body #provider-form > .sticky-form-actions {
+  margin-top: var(--rg-space-3);
+  padding-top: var(--rg-space-6);
+}
+
 .drawer-body > .panel { padding: 0; border: 0; }
 
 .drawer-body > .panel > .panel-heading > h3 { display: none; }
