@@ -1002,10 +1002,32 @@ tr:last-child td {
 
 .route-config-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(130px, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: var(--rg-space-3);
+  align-items: start;
+  min-width: 480px;
+}
+
+.route-config-form > .route-config-field:first-child:has(select),
+.route-config-form > button {
+  grid-column: 1 / -1;
+}
+
+.route-config-form[data-service-route-timeout-form] {
+  grid-template-columns: minmax(160px, 1fr);
+  min-width: 180px;
+}
+
+.route-identity-control {
+  display: grid;
+  justify-items: start;
   gap: var(--rg-space-2);
-  align-items: end;
-  min-width: min(720px, 72vw);
+  min-width: 130px;
+}
+
+.route-identity-control .badge,
+.route-identity-control button {
+  white-space: nowrap;
 }
 
 .route-config-field {
@@ -1129,7 +1151,7 @@ tr:last-child td {
 
   .route-config-form {
     grid-template-columns: 1fr;
-    min-width: 0;
+    min-width: 260px;
   }
 }
 

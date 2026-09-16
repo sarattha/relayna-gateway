@@ -4068,7 +4068,7 @@ function endpointIdentityBadge(access = {}) {
 function routeIdentityControl(route) {
   const setting = (state.routeIdentities || []).find((item) => item.route === route);
   if (!setting) return '<span class="subtle">Unavailable</span>';
-  return `${endpointIdentityBadge(setting.access)}<button type="button" data-route-identity="${attr(route)}" aria-label="Edit Entra verification for ${attr(route)}">Edit identity</button>`;
+  return `<div class="route-identity-control">${endpointIdentityBadge(setting.access)}<button type="button" data-route-identity="${attr(route)}" aria-label="Edit Entra verification for ${attr(route)}">Edit identity</button></div>`;
 }
 
 function editRouteIdentity(event) {

@@ -134,3 +134,15 @@ SSE remains HTTP. This changes presentation only; no API/schema/runtime changes.
 
 Decision: this is test-only; no runtime, protocol, migration or compatibility
 changes. Deterministic prompts model itinerary follow-ups without a live LLM.
+
+## Follow-up: Routes alignment
+
+The Routes configuration fields inherited bottom alignment while guidance text
+varied in length. Keep Mode on its own row, top-align the three numeric fields,
+and place Save below them. Give identity controls consistent spacing and prevent
+badge wrapping. Use a compact single-field layout for service timeouts and a
+readable minimum width inside horizontally scrollable tables on narrow screens.
+This is presentation-only and preserves existing form handlers and API contracts.
+
+- [x] Update source styles/markup, regenerate assets, and pass UI build/tests.
+- [ ] Verify desktop/mobile with Computer Use and capture screenshots.

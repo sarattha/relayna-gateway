@@ -123,3 +123,15 @@ coverage is unchanged; coverage was not remeasured for this test-only follow-up.
 Verification passed: focused Accessa E2E, full mandatory verification stack, and
 359 Nextest tests with zero skipped. The full run used live disposable PostgreSQL
 and Redis services. All configured security checks passed.
+
+## Routes alignment follow-up
+
+Route configuration now places Mode on its own row, aligns numeric controls at
+the top, and places Save beneath the fields. Identity controls have consistent
+spacing and badges do not wrap. Service timeout forms no longer reserve the
+full provider-configuration width. Narrow layouts retain horizontal scrolling.
+
+The Admin UI build, npm tests, and gateway rebuild pass. Computer Use visual
+verification remains pending: the session returned changing-window errors,
+noWindowsAvailable, and a clipboard timeout. A separate local preview runs on
+port 18460; no replacement screenshot has been claimed as verified.
