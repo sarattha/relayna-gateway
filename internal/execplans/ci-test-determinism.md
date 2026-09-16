@@ -13,8 +13,8 @@ Redis counters. Both changes are confined to tests and preserve released APIs.
 - [x] Reproduce timestamp assertion locally with explicit nanoseconds.
 - [x] Correct expected database precision; focused store test passes.
 - [x] Scope budget rehydration test helper to each test's unique key.
-- [ ] Run focused integration tests and complete mandatory verification.
-- [ ] Push fixes and inspect replacement CI checks.
+- [x] Run focused integration tests and complete mandatory verification.
+- [x] Push fixes and inspect replacement CI checks (Linux Rust job running).
 
 ## Surprises & Discoveries
 
@@ -38,4 +38,7 @@ with PostgreSQL and Redis enabled. Verify the pushed head's Rust CI result.
 
 ## Outcomes & Retrospective
 
-Pending final verification.
+Focused timestamp and all eight control-state integration tests pass. The full
+mandatory script passes, including 359 Nextest tests and all security scans.
+Fixes were pushed to PR #119; GitHub security, docs, metadata and Admin Portal
+checks passed. The Linux Rust job was still running when this record was saved.
