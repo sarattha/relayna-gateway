@@ -24,4 +24,5 @@ url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
 openssl.workspace = true

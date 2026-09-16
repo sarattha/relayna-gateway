@@ -8647,6 +8647,7 @@ mod tests {
             }
             let now = Utc::now();
             let response = ServiceResponse {
+                access: Default::default(),
                 name: request.name.clone(),
                 project_id: request.project_id,
                 studio_service_id: request.studio_service_id.clone(),
@@ -8834,6 +8835,7 @@ mod tests {
             }
 
             let response = ServiceResponse {
+                access: Default::default(),
                 name: request.name.clone(),
                 project_id: request.project_id,
                 studio_service_id: Some(request.studio_service_id),
@@ -10053,6 +10055,8 @@ mod tests {
         display_name: &str,
     ) -> EntraIdentityContext {
         EntraIdentityContext {
+            audiences: Vec::new(),
+            expires_at: None,
             tenant_id: tenant_id.to_owned(),
             subject: Some(object_id.to_owned()),
             object_id: Some(object_id.to_owned()),
@@ -10603,6 +10607,7 @@ mod tests {
     fn openapi_test_service(upstream_base_url: String) -> ServiceResponse {
         let now = Utc::now();
         ServiceResponse {
+            access: Default::default(),
             name: "ocr".to_owned(),
             project_id: None,
             studio_service_id: None,

@@ -411,6 +411,44 @@ async fn read_budget_reservation(
         }))
 }
 
+#[async_trait::async_trait]
+impl gateway_core::accessa::AccessaStore for RedisControlState {
+    async fn accessa_get(&self, key: &str) -> GatewayResult<Option<String>> {
+        self.connection()
+            .await?
+            .get(key)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)
+    }
+    async fn accessa_put(
+        &self,
+        key: &str,
+        value: &str,
+        ttl: u64,
+        only_if_absent: bool,
+    ) -> GatewayResult<bool> {
+        let mut command = redis::cmd("SET");
+        command.arg(key).arg(value).arg("EX").arg(ttl.max(1));
+        if only_if_absent {
+            command.arg("NX");
+        }
+        let result: Option<String> = command
+            .query_async(&mut self.connection().await?)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        Ok(result.is_some())
+    }
+    async fn accessa_delete(&self, key: &str) -> GatewayResult<()> {
+        let _: usize = self
+            .connection()
+            .await?
+            .del(key)
+            .await
+            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

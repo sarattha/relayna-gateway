@@ -3831,9 +3831,10 @@ impl AdminServiceStore for PostgresStore {
                 source,
                 sync_status,
                 last_synced_at,
-                disabled_at
+                disabled_at,
+                access
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END, $22)
             "#,
         )
         .bind(&request.name)
@@ -3857,6 +3858,7 @@ impl AdminServiceStore for PostgresStore {
         .bind(&request.fallback_services)
         .bind(if request.studio_service_id.is_some() { "studio" } else { "gateway" })
         .bind(service_sync_status_str(sync_status))
+        .bind(Json(&request.access))
         .execute(&self.pool)
         .await
         .map_err(|error| {
@@ -3949,6 +3951,10 @@ impl AdminServiceStore for PostgresStore {
         if let Some(estimated_cost_usd) = patch.estimated_cost_usd {
             registration.estimated_cost_usd = estimated_cost_usd;
         }
+        if let Some(access) = patch.access {
+            registration.access = access;
+        }
+        registration.access.validate(&registration.route_pattern)?;
         registration.validate_cost()?;
         if let Some(pricing_rules) = patch.pricing_rules {
             registration.pricing_rules = pricing_rules;
@@ -4011,6 +4017,7 @@ impl AdminServiceStore for PostgresStore {
                 fallback_services = $21,
                 source = $22,
                 sync_status = $23,
+                access = $24,
                 disabled_at = CASE WHEN $8 THEN NULL ELSE COALESCE(disabled_at, now()) END,
                 updated_at = now()
             WHERE name = $1
@@ -4039,6 +4046,7 @@ impl AdminServiceStore for PostgresStore {
         .bind(&registration.fallback_services)
         .bind(service_source_str(registration.source))
         .bind(service_sync_status_str(registration.sync_status))
+        .bind(Json(&registration.access))
         .execute(&self.pool)
         .await
         .map_err(|error| {
@@ -6040,6 +6048,9 @@ fn service_registration_from_row(
         .try_get::<Json<Vec<ServiceEndpointPricingRule>>, _>("endpoint_pricing_rules")?
         .0;
     Ok(ServiceRegistration {
+        access: row
+            .try_get::<Json<gateway_core::EndpointAccess>, _>("access")?
+            .0,
         name: row.try_get("name")?,
         project_id: row.try_get("project_id")?,
         studio_service_id: row.try_get("studio_service_id")?,

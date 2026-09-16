@@ -1,3 +1,6 @@
+pub mod accessa;
+pub mod endpoint_access;
+pub use endpoint_access::{AccessaBinding, EndpointAccess, EndpointEntraPolicy};
 pub mod access;
 pub mod admin;
 pub mod auth;

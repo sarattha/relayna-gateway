@@ -711,6 +711,8 @@ mod tests {
         )
         .expect("bootstrap policy");
         let identity = EntraIdentityContext {
+            audiences: Vec::new(),
+            expires_at: None,
             tenant_id: "tenant-1".into(),
             subject: Some("subject-1".into()),
             object_id: Some("object-1".into()),

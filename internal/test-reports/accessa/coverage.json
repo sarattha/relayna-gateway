@@ -1,0 +1,76 @@
+{
+  "base": "8ee95a6",
+  "scope": "changed production Rust executable lines; tests excluded",
+  "covered": 611,
+  "executable": 615,
+  "percent": 99.34959349593497,
+  "files": {
+    "crates/gateway-core/src/accessa.rs": {
+      "covered": 7,
+      "executable": 7,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/endpoint_access.rs": {
+      "covered": 73,
+      "executable": 73,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/entra.rs": {
+      "covered": 58,
+      "executable": 59,
+      "uncovered_lines": [
+        639
+      ]
+    },
+    "crates/gateway-core/src/lib.rs": {
+      "covered": 0,
+      "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/services.rs": {
+      "covered": 2,
+      "executable": 2,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/accessa_runtime.rs": {
+      "covered": 314,
+      "executable": 314,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/accessa_transport.rs": {
+      "covered": 108,
+      "executable": 110,
+      "uncovered_lines": [
+        62,
+        63
+      ]
+    },
+    "crates/gateway-proxy/src/lib.rs": {
+      "covered": 0,
+      "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/pingora_plane.rs": {
+      "covered": 38,
+      "executable": 39,
+      "uncovered_lines": [
+        1803
+      ]
+    },
+    "crates/gateway-store/src/postgres.rs": {
+      "covered": 2,
+      "executable": 2,
+      "uncovered_lines": []
+    },
+    "crates/gateway-store/src/redis.rs": {
+      "covered": 6,
+      "executable": 6,
+      "uncovered_lines": []
+    },
+    "crates/gateway-telemetry/src/lib.rs": {
+      "covered": 3,
+      "executable": 3,
+      "uncovered_lines": []
+    }
+  }
+}

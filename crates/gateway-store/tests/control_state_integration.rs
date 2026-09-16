@@ -26,6 +26,8 @@ fn portal_identity(
     display_name: &str,
 ) -> EntraIdentityContext {
     EntraIdentityContext {
+        audiences: Vec::new(),
+        expires_at: None,
         tenant_id: tenant_id.into(),
         subject: Some(object_id.into()),
         object_id: Some(object_id.into()),

@@ -80,6 +80,10 @@ pub fn validate_relayna_key_header_name(header: &str) -> GatewayResult<()> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntraIdentityContext {
+    #[serde(default)]
+    pub audiences: Vec<String>,
+    #[serde(default)]
+    pub expires_at: Option<i64>,
     pub tenant_id: String,
     pub subject: Option<String>,
     pub object_id: Option<String>,
@@ -199,6 +203,17 @@ impl EntraJwtVerifier {
         token: &str,
         now: DateTime<Utc>,
         context: EntraAuthDebugContext<'_>,
+    ) -> GatewayResult<EntraIdentityContext> {
+        self.verify_token_for_endpoint(token, now, context, None)
+            .await
+    }
+
+    pub async fn verify_token_for_endpoint(
+        &self,
+        token: &str,
+        now: DateTime<Utc>,
+        context: EntraAuthDebugContext<'_>,
+        endpoint: Option<&crate::EndpointEntraPolicy>,
     ) -> GatewayResult<EntraIdentityContext> {
         if token.is_empty() {
             return Err(self.reject(
@@ -357,17 +372,19 @@ impl EntraJwtVerifier {
                 )
             })?
             .claims;
-        let identity = self.validate_claims(claims, now).map_err(|failure| {
-            self.reject(
-                context,
-                "jwt_claims",
-                failure.reason,
-                failure.error,
-                Some(token),
-                "signature_verified",
-                json!({"server_time": now.to_rfc3339()}),
-            )
-        })?;
+        let identity = self
+            .validate_claims_for_endpoint(claims, now, endpoint)
+            .map_err(|failure| {
+                self.reject(
+                    context,
+                    "jwt_claims",
+                    failure.reason,
+                    failure.error,
+                    Some(token),
+                    "signature_verified",
+                    json!({"server_time": now.to_rfc3339()}),
+                )
+            })?;
         self.emit(
             context,
             "jwt_claims",
@@ -525,10 +542,11 @@ impl EntraJwtVerifier {
         Ok(())
     }
 
-    fn validate_claims(
+    fn validate_claims_for_endpoint(
         &self,
         claims: EntraClaims,
         now: DateTime<Utc>,
+        endpoint: Option<&crate::EndpointEntraPolicy>,
     ) -> Result<EntraIdentityContext, ClaimValidationFailure> {
         if claims.iss != self.config.issuer {
             return Err(ClaimValidationFailure::new(
@@ -542,7 +560,12 @@ impl EntraJwtVerifier {
                 "tenant_mismatch",
             ));
         }
-        if !audience_contains(&claims.aud, &self.config.audience) {
+        if !audience_contains(
+            &claims.aud,
+            endpoint.map_or(self.config.audience.as_str(), |policy| {
+                policy.audience.as_str()
+            }),
+        ) {
             return Err(ClaimValidationFailure::new(
                 GatewayError::InvalidEntraAudience,
                 "audience_mismatch",
@@ -592,19 +615,30 @@ impl EntraJwtVerifier {
         let scopes = split_scopes(claims.scp.as_deref());
         let roles = claims.roles.unwrap_or_default();
         let groups = claims.groups.unwrap_or_default();
-        validate_entra_authorization_detailed(
-            self.config.required_scope.as_deref(),
-            self.config.required_role.as_deref(),
-            &self.config.allowed_groups,
-            &scopes,
-            &roles,
-            &groups,
-        )
-        .map_err(|reason| {
-            ClaimValidationFailure::new(GatewayError::InsufficientEntraAuthorization, reason)
-        })?;
-
-        Ok(EntraIdentityContext {
+        if endpoint.is_none() {
+            validate_entra_authorization_detailed(
+                self.config.required_scope.as_deref(),
+                self.config.required_role.as_deref(),
+                &self.config.allowed_groups,
+                &scopes,
+                &roles,
+                &groups,
+            )
+            .map_err(|reason| {
+                ClaimValidationFailure::new(GatewayError::InsufficientEntraAuthorization, reason)
+            })?;
+        }
+        let identity = EntraIdentityContext {
+            audiences: match &claims.aud {
+                Value::String(aud) => vec![aud.clone()],
+                Value::Array(auds) => auds
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
+                _ => Vec::new(),
+            },
+            expires_at: Some(claims.exp),
             tenant_id: claims.tid,
             subject: claims.sub,
             object_id: claims.oid,
@@ -618,7 +652,15 @@ impl EntraJwtVerifier {
             groups,
             token_version: claims.ver,
             source: EntraIdentitySource::Jwt,
-        })
+        };
+        if let Some(endpoint) = endpoint {
+            endpoint
+                .authorize(&identity, now.timestamp())
+                .map_err(|error| {
+                    ClaimValidationFailure::new(error, "endpoint_authorization_failed")
+                })?;
+        }
+        Ok(identity)
     }
 
     #[allow(
@@ -1571,6 +1613,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn accepts_matching_audience_in_array_and_rejects_cross_endpoint_reuse() {
+        let key = signing_key("test-kid");
+        let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![key.jwk.clone()]);
+        let mut claims = valid_claims();
+        claims["aud"] = json!(["api://another", "api://accessa"]);
+        let token = token(&key, claims);
+        let mut policy = crate::EndpointEntraPolicy {
+            audience: "api://accessa".to_owned(),
+            required_scopes: vec!["gateway.invoke".to_owned()],
+            required_roles: vec![],
+            allowed_groups: vec![],
+            allow_apigee: false,
+        };
+        let identity = verifier
+            .verify_token_for_endpoint(
+                &token,
+                Utc::now(),
+                DEFAULT_ENTRA_DEBUG_CONTEXT,
+                Some(&policy),
+            )
+            .await
+            .unwrap();
+        assert_eq!(identity.audiences, vec!["api://another", "api://accessa"]);
+        policy.audience = "api://internal-service".to_owned();
+        assert_eq!(
+            verifier
+                .verify_token_for_endpoint(
+                    &token,
+                    Utc::now(),
+                    DEFAULT_ENTRA_DEBUG_CONTEXT,
+                    Some(&policy)
+                )
+                .await
+                .unwrap_err(),
+            GatewayError::InvalidEntraAudience
+        );
+        assert_eq!(
+            verifier.verify_token(&token, Utc::now()).await.unwrap_err(),
+            GatewayError::InvalidEntraAudience
+        );
+    }
+
+    #[tokio::test]
     async fn rejects_wrong_audience() {
         let key = signing_key("test-kid");
         let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config(), vec![key.jwk.clone()]);
@@ -1676,6 +1761,8 @@ mod tests {
             allowed_groups: Vec::new(),
         };
         let identity = EntraIdentityContext {
+            audiences: Vec::new(),
+            expires_at: None,
             tenant_id: "tenant-1".to_owned(),
             subject: Some("subject-1".to_owned()),
             object_id: None,
@@ -1710,6 +1797,8 @@ mod tests {
             allowed_groups: Vec::new(),
         };
         let identity = EntraIdentityContext {
+            audiences: Vec::new(),
+            expires_at: None,
             tenant_id: "tenant-1".to_owned(),
             subject: Some("subject-1".to_owned()),
             object_id: None,
@@ -1744,6 +1833,8 @@ mod tests {
             allowed_groups: vec!["allowed-group".to_owned()],
         };
         let identity = EntraIdentityContext {
+            audiences: Vec::new(),
+            expires_at: None,
             tenant_id: "tenant-1".to_owned(),
             subject: Some("subject-1".to_owned()),
             object_id: None,

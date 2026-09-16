@@ -962,3 +962,22 @@ for (const [unverified, apigee, expectedWrites] of [[true, false, 1], [false, fa
   }
 }
 console.log("ok - unverified bearer save, restoration and Apigee conflict regression");
+
+test("endpoint access form preserves isolated audiences and channel limits", () => {
+  const parse = new Function(`${sourceFunction("csv")}\n${sourceFunction("nullableString")}\n${sourceFunction("endpointAccessFromForm")}\nreturn endpointAccessFromForm;`)();
+  const form = new FormData();
+  assert.deepEqual(parse(form), { entra: null, accessa: null });
+  form.set("accessa_enabled", "on");
+  assert.throws(() => parse(form), /requires an endpoint Entra audience/);
+  for (const [key, value] of Object.entries({ endpoint_audience: " api://accessa ", endpoint_scopes: "run, read", endpoint_roles: "invoke", endpoint_groups: "staff", accessa_app: "tara", accessa_channel: "web", socket_idle_ms: "30000", socket_connections: "10", socket_key_connections: "2", socket_frame_bytes: "4096" })) form.set(key, value);
+  assert.deepEqual(parse(form), {
+    entra: { audience: "api://accessa", required_scopes: ["run", "read"], required_roles: ["invoke"], allowed_groups: ["staff"], allow_apigee: false },
+    accessa: { app: "tara", channel: "web", idle_timeout_ms: 30000, max_connections: 10, max_connections_per_key: 2, max_frame_bytes: 4096 },
+  });
+  form.delete("accessa_enabled");
+  form.set("endpoint_audience", "api://internal-service");
+  form.set("endpoint_apigee", "on");
+  assert.equal(parse(form).accessa, null);
+  assert.equal(parse(form).entra.audience, "api://internal-service");
+  assert.equal(parse(form).entra.allow_apigee, true);
+});

@@ -34,6 +34,8 @@ uuid.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+axum = { workspace = true, features = ["ws"] }
+tokio-tungstenite = "0.29.0"
 redis.workspace = true
 sqlx.workspace = true
 tower.workspace = true

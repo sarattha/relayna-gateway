@@ -381,6 +381,18 @@ const policy = {
   allow_tools: "Permit tool/function calling at this layer. Other policy layers can still deny it."
 };
 const shared = {
+  endpoint_audience: "Exact audience for this registered endpoint. Blank inherits global authentication. This does not add the audience to other endpoints.",
+  endpoint_scopes: "Comma-separated scopes. Every listed scope is required; blank adds no scope requirement for this endpoint.",
+  endpoint_roles: "Comma-separated roles. Every listed role is required; blank adds no role requirement for this endpoint.",
+  endpoint_groups: "Comma-separated group IDs. At least one must match; blank adds no group restriction.",
+  endpoint_apigee: "Accept HMAC-verified Apigee identity only when it includes the matching audience and a future expiry.",
+  accessa_enabled: "Preserve the route path and enforce explicit channel-key service permissions. Requires endpoint Entra authentication.",
+  accessa_app: "Target app, for example tara or docgen. Blank is for the channel identity endpoint only.",
+  accessa_channel: "Channel backend identity. Must match the registered route exactly.",
+  socket_idle_ms: "Idle read/write timeout in milliseconds. Traffic and heartbeat replies keep a long run alive; zero is invalid.",
+  socket_connections: "Maximum active sockets for this service on one gateway instance. All services share an instance ceiling of 4,096.",
+  socket_key_connections: "Maximum active sockets for one key on one gateway instance. Must not exceed the route limit.",
+  socket_frame_bytes: "Maximum WebSocket frame and assembled message size, including fragmented messages. Zero is invalid.",
   preset: "Starting policy template. Review the resulting permissions and limits before creating the key.",
   expires_at: "Local date and time when the key stops authenticating. Use No expiration to create a key without an expiry.",
   rotation_due_at: "Optional local date and time for a rotation reminder. This does not rotate or revoke the key automatically.",
@@ -17473,6 +17485,7 @@ async function services() {
             <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="2097152"></label>
             <label>Fallback services<input name="fallback_services" placeholder="backup-a,backup-b"></label>
           `)}
+          ${endpointAccessFields({})}
           ${formSection("Usage pricing", "Choose the cost source and optional request-matching rules.", `
             <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
             <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01"></label>
@@ -17711,6 +17724,7 @@ function serviceEditForm(service) {
         <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
         <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       `)}
+      ${endpointAccessFields(service.access || {})}
       ${formSection("Usage pricing", "Update cost source and request-matching rules.", `
         <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
         <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
@@ -19336,8 +19350,50 @@ function guardrailExecutionTable(rows) {
     ])
   );
 }
+function endpointAccessFields(access) {
+  const entra = access.entra || {};
+  const binding = access.accessa || {};
+  return formSection("Endpoint identity and Accessa", "Apply identity requirements to this registered route. Accessa preserves the public path and requires an explicit key service binding.", `
+    <label>Entra audience<input name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
+    <label>Required scopes<input name="endpoint_scopes" value="${attr(listValue(entra.required_scopes, ""))}"></label>
+    <label>Required roles<input name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
+    <label>Allowed groups<input name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
+    <label class="check"><input name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label>
+    <label class="check"><input name="accessa_enabled" type="checkbox" ${access.accessa ? "checked" : ""}> Accessa channel binding</label>
+    <label>Accessa app<input name="accessa_app" value="${attr(binding.app || "")}" placeholder="tara"></label>
+    <label>Accessa channel<input name="accessa_channel" value="${attr(binding.channel || "")}" placeholder="tara-frontend"></label>
+    <label>Socket idle timeout ms<input name="socket_idle_ms" type="number" min="100" max="600000" value="${attr(binding.idle_timeout_ms ?? 6e4)}"></label>
+    <label>Connections per route per instance<input name="socket_connections" type="number" min="1" max="10000" value="${attr(binding.max_connections ?? 100)}"></label>
+    <label>Connections per key per instance<input name="socket_key_connections" type="number" min="1" max="10000" value="${attr(binding.max_connections_per_key ?? 10)}"></label>
+    <label>Maximum socket message bytes<input name="socket_frame_bytes" type="number" min="125" max="16777216" value="${attr(binding.max_frame_bytes ?? 1048576)}"></label>
+    <div class="help wide-field">Blank audience inherits global authentication. With an audience, all listed scopes and roles are required; any listed group may match. Apigee must sign audience and expiry claims. Accessa requires an audience; a blank app is only for /channel/{channel}/v1/me. Socket limits apply per gateway instance; the instance ceiling is 4,096. Accessa transport and admission carry no charge; downstream service calls remain metered.</div>
+  `);
+}
+function endpointAccessFromForm(form) {
+  const audience = String(form.get("endpoint_audience") || "").trim();
+  const accessa = form.has("accessa_enabled");
+  if (accessa && !audience) throw new Error("Accessa requires an endpoint Entra audience.");
+  return {
+    entra: audience ? {
+      audience,
+      required_scopes: csv(form.get("endpoint_scopes")),
+      required_roles: csv(form.get("endpoint_roles")),
+      allowed_groups: csv(form.get("endpoint_groups")),
+      allow_apigee: form.has("endpoint_apigee")
+    } : null,
+    accessa: accessa ? {
+      app: nullableString(form.get("accessa_app")),
+      channel: String(form.get("accessa_channel") || "").trim(),
+      idle_timeout_ms: Number(form.get("socket_idle_ms")),
+      max_connections: Number(form.get("socket_connections")),
+      max_connections_per_key: Number(form.get("socket_key_connections")),
+      max_frame_bytes: Number(form.get("socket_frame_bytes"))
+    } : null
+  };
+}
 function serviceBody(form, patch) {
   const body = {
+    access: endpointAccessFromForm(form),
     project_id: form.has("project_id") ? nullableString(form.get("project_id")) : void 0,
     studio_service_id: patch ? nullableString(form.get("studio_service_id")) : blankToUndefined(form.get("studio_service_id")),
     route_pattern: form.get("route_pattern") || void 0,
