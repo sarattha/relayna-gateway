@@ -42,3 +42,7 @@ Focused timestamp and all eight control-state integration tests pass. The full
 mandatory script passes, including 359 Nextest tests and all security scans.
 Fixes were pushed to PR #119; GitHub security, docs, metadata and Admin Portal
 checks passed. The Linux Rust job was still running when this record was saved.
+
+Linux follow-up found the same nanosecond assumption in the OIDC transaction
+round trip. Its fixture now also has explicit nanoseconds and compares expiry at
+persisted microsecond precision; full verification is rerun for this correction.

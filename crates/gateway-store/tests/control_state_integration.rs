@@ -321,7 +321,9 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
     let Some(env) = integration_env().await else {
         return;
     };
-    let now = Utc::now();
+    // Exercise database timestamp precision independently of the host clock.
+    let now = DateTime::from_timestamp(Utc::now().timestamp(), 987_654_321)
+        .expect("valid test timestamp");
     let suffix = Uuid::new_v4().simple().to_string();
     let service_name = format!("owner-{suffix}");
     sqlx::query(
@@ -711,7 +713,11 @@ async fn portal_access_state_is_durable_scoped_and_revocable() {
             )
             .await
             .unwrap(),
-        Some(transaction.clone())
+        Some(OidcLoginTransaction {
+            expires_at: DateTime::from_timestamp_micros(transaction.expires_at.timestamp_micros())
+                .expect("valid persisted expiration"),
+            ..transaction.clone()
+        })
     );
     assert!(env
         .store
