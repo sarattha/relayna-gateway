@@ -472,6 +472,22 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
             "expected gateway rejection, got {error:?}"
         );
     }
+    let failed_identities: Vec<_> = gateway_core::traffic::monitor()
+        .batch(None)
+        .rows
+        .into_iter()
+        .filter_map(|row| row.diagnostics.entra)
+        .filter(|identity| identity.verification == "failed")
+        .collect();
+    assert!(!failed_identities.is_empty());
+    for identity in failed_identities {
+        assert_eq!(identity.expected_audience.as_deref(), Some("api://accessa"));
+        assert!(
+            identity.audiences.is_empty()
+                && identity.scopes.is_empty()
+                && identity.roles.is_empty()
+        );
+    }
     let bff_url = serve(Router::new().route("/socket", get(bff)).with_state(Bff {
         url: format!("{}{run_path}", ws(&gateway)),
         jwt: token.clone(),
@@ -526,6 +542,38 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
             .unwrap();
         assert_eq!(next_json(&mut socket).await["type"], "pong");
     }
+    let live = gateway_core::traffic::monitor()
+        .batch(None)
+        .rows
+        .into_iter()
+        .find(|row| {
+            row.key_id == Some(key_ids[0])
+                && !row.completed
+                && row
+                    .diagnostics
+                    .websocket
+                    .as_ref()
+                    .is_some_and(|socket| socket.state == "open")
+        })
+        .expect("live websocket diagnostic sample");
+    let socket_sample = live.diagnostics.websocket.as_ref().unwrap();
+    assert!(socket_sample.client_bytes > 0 && socket_sample.upstream_bytes > 0);
+    assert!(socket_sample.client_frames >= 9 && socket_sample.upstream_frames >= 9);
+    assert!(socket_sample.duration_ms >= 1500);
+    assert_eq!(socket_sample.idle_timeout_ms, 1500);
+    assert!(socket_sample.session_expires_at.is_some());
+    let verified = live.diagnostics.entra.as_ref().unwrap();
+    assert_eq!(verified.verification, "verified");
+    assert_eq!(verified.expected_audience.as_deref(), Some("api://accessa"));
+    assert_eq!(verified.audiences, ["api://accessa"]);
+    assert_eq!(verified.scopes, ["run"]);
+    assert_eq!(verified.roles, ["invoke"]);
+    assert_eq!(verified.groups, ["staff"]);
+    assert_eq!(verified.required_scopes, ["run"]);
+    let safe = serde_json::to_string(&live).unwrap();
+    for secret in [&token, &keys[0], messages[0]] {
+        assert!(!safe.contains(secret));
+    }
     sqlx::query("UPDATE api_keys SET disabled=true WHERE id=$1")
         .bind(key_ids[0])
         .execute(store.pool())
@@ -571,6 +619,29 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
         .unwrap();
     socket.close(None).await.unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
+    let mut terminal = None;
+    for _ in 0..100 {
+        terminal = sqlx::query_scalar::<_, Value>(
+            "SELECT diagnostics FROM usage_events WHERE diagnostics->>'traffic_id' = $1",
+        )
+        .bind(live.id.to_string())
+        .fetch_optional(store.pool())
+        .await
+        .unwrap();
+        if terminal.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let terminal: gateway_core::traffic::RequestDiagnostics =
+        serde_json::from_value(terminal.expect("persisted socket usage")).unwrap();
+    let closed = terminal.websocket.unwrap();
+    assert_eq!(closed.state, "closed");
+    assert!(closed.closed_at.is_some());
+    assert!(closed.client_bytes >= socket_sample.client_bytes);
+    assert!(closed.upstream_bytes >= socket_sample.upstream_bytes);
+    assert!(closed.duration_ms >= socket_sample.duration_ms);
+    assert_eq!(terminal.entra.unwrap(), *verified);
     let (mut socket, _) = connect_async(format!("{}/socket", ws(&bff_url)))
         .await
         .unwrap();
@@ -683,6 +754,22 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
         );
     }
 
+    let signed_identity = gateway_core::traffic::monitor()
+        .batch(None)
+        .rows
+        .into_iter()
+        .filter_map(|row| row.diagnostics.entra)
+        .find(|identity| {
+            identity.source.as_deref() == Some("signed_apigee")
+                && identity.verification == "verified"
+        })
+        .expect("signed Apigee identity diagnostic");
+    assert_eq!(
+        signed_identity.expected_audience.as_deref(),
+        Some("api://internal-service")
+    );
+    assert_eq!(signed_identity.audiences, ["api://internal-service"]);
+    assert_eq!(signed_identity.scopes, ["internal.invoke"]);
     // A service explicitly skips Entra while the same process still protects Accessa.
     store
         .patch_service(

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Mutex, OnceLock},
 };
 use uuid::Uuid;
@@ -14,6 +14,12 @@ const TIMELINE_CAPACITY: usize = 32;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RequestDiagnostics {
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub websocket: Option<WebSocketDiagnostics>,
+    #[serde(default)]
+    pub entra: Option<EntraDiagnostics>,
     /// Actual request mode; absent for legacy records or unresolved routing.
     #[serde(default)]
     pub routing_mode: Option<String>,
@@ -25,6 +31,116 @@ pub struct RequestDiagnostics {
     pub outcome: Option<String>,
     pub upstream_status: Option<u16>,
     pub instance_id: Option<String>,
+}
+
+/// Metadata observed at proxy frame hooks; counts exclude HTTP headers and TLS overhead.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct WebSocketDiagnostics {
+    pub state: String,
+    pub app: Option<String>,
+    pub channel: String,
+    pub opened_at: Option<DateTime<Utc>>,
+    pub observed_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub duration_ms: u64,
+    pub client_bytes: u64,
+    pub upstream_bytes: u64,
+    pub client_frames: u64,
+    pub upstream_frames: u64,
+    pub client_close_frame: bool,
+    pub upstream_close_frame: bool,
+    pub last_client_activity_at: Option<DateTime<Utc>>,
+    pub last_upstream_activity_at: Option<DateTime<Utc>>,
+    pub idle_timeout_ms: u64,
+    pub session_expires_at: Option<DateTime<Utc>>,
+    pub max_frame_bytes: u64,
+    pub close_cause: Option<String>,
+}
+
+/// Bounded allowlist, populated only after successful identity verification.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct EntraDiagnostics {
+    pub policy_source: String,
+    pub verification: String,
+    pub expected_audience: Option<String>,
+    pub required_scopes: Vec<String>,
+    pub required_roles: Vec<String>,
+    pub allowed_groups: Vec<String>,
+    pub allow_apigee: bool,
+    pub source: Option<String>,
+    pub tenant_id: Option<String>,
+    pub object_id: Option<String>,
+    pub app_id: Option<String>,
+    pub authorized_party: Option<String>,
+    pub token_version: Option<String>,
+    pub expires_at: Option<i64>,
+    pub audiences: Vec<String>,
+    pub scopes: Vec<String>,
+    pub roles: Vec<String>,
+    pub groups: Vec<String>,
+    pub truncated: bool,
+}
+
+impl EntraDiagnostics {
+    fn bounded(value: &str, truncated: &mut bool) -> String {
+        *truncated |= value.chars().count() > 256;
+        value.chars().take(256).collect()
+    }
+
+    fn claims(values: &[String], truncated: &mut bool) -> Vec<String> {
+        *truncated |= values.len() > 32;
+        values
+            .iter()
+            .take(32)
+            .map(|v| Self::bounded(v, truncated))
+            .collect()
+    }
+
+    pub fn endpoint(policy: &crate::EndpointEntraPolicy) -> Self {
+        let mut result = Self {
+            policy_source: "endpoint".into(),
+            verification: "pending".into(),
+            allow_apigee: policy.allow_apigee,
+            ..Self::default()
+        };
+        result.expected_audience = Some(Self::bounded(&policy.audience, &mut result.truncated));
+        result.required_scopes = Self::claims(&policy.required_scopes, &mut result.truncated);
+        result.required_roles = Self::claims(&policy.required_roles, &mut result.truncated);
+        result.allowed_groups = Self::claims(&policy.allowed_groups, &mut result.truncated);
+        result
+    }
+
+    pub fn verified(&mut self, identity: &crate::EntraIdentityContext) {
+        self.verification = "verified".into();
+        self.source = Some(
+            match identity.source {
+                crate::EntraIdentitySource::Jwt => "jwt",
+                crate::EntraIdentitySource::ApigeeTrustedHeader => "signed_apigee",
+            }
+            .into(),
+        );
+        self.tenant_id = Some(Self::bounded(&identity.tenant_id, &mut self.truncated));
+        self.object_id = identity
+            .object_id
+            .as_deref()
+            .map(|v| Self::bounded(v, &mut self.truncated));
+        self.app_id = identity
+            .app_id
+            .as_deref()
+            .map(|v| Self::bounded(v, &mut self.truncated));
+        self.authorized_party = identity
+            .authorized_party
+            .as_deref()
+            .map(|v| Self::bounded(v, &mut self.truncated));
+        self.token_version = Some(Self::bounded(&identity.token_version, &mut self.truncated));
+        self.expires_at = identity.expires_at;
+        self.audiences = Self::claims(&identity.audiences, &mut self.truncated);
+        self.scopes = Self::claims(&identity.scopes, &mut self.truncated);
+        self.roles = Self::claims(&identity.roles, &mut self.truncated);
+        self.groups = Self::claims(&identity.groups, &mut self.truncated);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,6 +358,7 @@ pub trait TrafficStore: Send + Sync {
 pub struct TrafficMonitor {
     pub instance_id: String,
     journal: Mutex<(u64, VecDeque<(u64, TrafficRequest)>)>,
+    socket_updates: Mutex<HashMap<Uuid, TrafficRequest>>,
     capacity: usize,
 }
 
@@ -259,11 +376,28 @@ impl TrafficMonitor {
         Self {
             instance_id: Uuid::new_v4().to_string(),
             journal: Mutex::new((0, VecDeque::new())),
+            socket_updates: Mutex::new(HashMap::new()),
             capacity: capacity.max(1),
         }
     }
 
+    /// Keep only the latest socket sample until the next live poll.
+    pub fn publish_socket_progress(&self, request: TrafficRequest) {
+        let mut updates = self
+            .socket_updates
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if updates.len() < self.capacity || updates.contains_key(&request.id) {
+            updates.insert(request.id, request);
+        }
+    }
+
     pub fn publish(&self, request: TrafficRequest) {
+        let mut updates = self
+            .socket_updates
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        updates.remove(&request.id);
         let mut journal = self.journal.lock().unwrap_or_else(|e| e.into_inner());
         journal.0 += 1;
         let sequence = journal.0;
@@ -274,7 +408,19 @@ impl TrafficMonitor {
     }
 
     pub fn batch(&self, cursor: Option<&str>) -> TrafficBatch {
-        let journal = self.journal.lock().unwrap_or_else(|e| e.into_inner());
+        let mut updates = self
+            .socket_updates
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut journal = self.journal.lock().unwrap_or_else(|e| e.into_inner());
+        for (_, request) in updates.drain() {
+            journal.0 += 1;
+            let sequence = journal.0;
+            journal.1.push_back((sequence, request));
+        }
+        while journal.1.len() > self.capacity {
+            journal.1.pop_front();
+        }
         let parsed = cursor.and_then(|v| v.rsplit_once(':'));
         let sequence = parsed.and_then(|(instance, seq)| {
             (instance == self.instance_id)
@@ -324,6 +470,74 @@ pub fn correlation_id(value: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn identity_snapshot_bounds_claims_and_excludes_private_token_fields() {
+        let policy = crate::EndpointEntraPolicy {
+            audience: "api://channel".into(),
+            required_scopes: vec!["run".into()],
+            required_roles: vec![],
+            allowed_groups: vec![],
+            allow_apigee: false,
+        };
+        let mut snapshot = EntraDiagnostics::endpoint(&policy);
+        assert_eq!(snapshot.verification, "pending");
+        assert!(snapshot.audiences.is_empty());
+        let identity: crate::EntraIdentityContext = serde_json::from_value(serde_json::json!({
+            "tenant_id":"tenant", "audiences":["api://channel"], "expires_at":2000000000,
+            "object_id":"user", "app_id":"app", "authorized_party":"party", "subject":"private-subject",
+            "email":"private-email", "display_name":"private-name", "nonce":"private-nonce",
+            "scopes":["run"], "roles":["role"], "groups":vec!["g".repeat(300); 40],
+            "token_version":"2.0", "source":"jwt"
+        })).unwrap();
+        snapshot.verified(&identity);
+        assert_eq!(snapshot.verification, "verified");
+        assert_eq!(snapshot.groups.len(), 32);
+        assert_eq!(snapshot.groups[0].len(), 256);
+        assert!(snapshot.truncated);
+        let json = serde_json::to_string(&snapshot).unwrap();
+        for private in [
+            "private-subject",
+            "private-email",
+            "private-name",
+            "private-nonce",
+        ] {
+            assert!(!json.contains(private));
+        }
+        let mut old = serde_json::to_value(RequestDiagnostics::default()).unwrap();
+        old.as_object_mut().unwrap().remove("websocket");
+        old.as_object_mut().unwrap().remove("entra");
+        let old: RequestDiagnostics = serde_json::from_value(old).unwrap();
+        assert!(old.websocket.is_none() && old.entra.is_none());
+    }
+
+    #[test]
+    fn socket_updates_coalesce_flush_and_cannot_overwrite_terminal_records() {
+        let monitor = TrafficMonitor::new(2);
+        let mut row = TrafficRequest::default();
+        for n in 0..100 {
+            row.elapsed_ms = n;
+            monitor.publish_socket_progress(row.clone());
+        }
+        let batch = monitor.batch(None);
+        assert_eq!(batch.rows.len(), 1);
+        assert_eq!(batch.rows[0].elapsed_ms, 99);
+        assert_eq!(batch.evicted_updates, 0);
+        row.elapsed_ms = 100;
+        monitor.publish_socket_progress(row.clone());
+        row.completed = true;
+        monitor.publish(row);
+        let batch = monitor.batch(Some(&batch.cursor));
+        assert_eq!(batch.rows.len(), 1);
+        assert!(batch.rows[0].completed);
+        for _ in 0..10 {
+            monitor.publish_socket_progress(TrafficRequest::default());
+        }
+        assert_eq!(monitor.socket_updates.lock().unwrap().len(), 2);
+        let batch = monitor.batch(None);
+        assert_eq!(batch.rows.len(), 2);
+        assert!(batch.evicted_updates > 0);
+    }
+
     #[test]
     fn legacy_traffic_json_remains_readable_without_fabricated_timings() {
         let mut json = serde_json::to_value(TrafficRequest::default()).unwrap();

@@ -36,10 +36,38 @@ export function matchTrafficRecord(rows, usage) {
   return rows.find(row => row.id === id && row.request_id === usage.request_id && row.key_id === usage.key_id && row.project_id === usage.project_id) || null;
 }
 
+export function websocketMetrics(socket, live = false, now = Date.now()) {
+  const active = live && socket.state === "open" && !socket.closed_at;
+  const sampled = Date.parse(socket.closed_at || socket.observed_at || socket.opened_at);
+  const end = active ? now : sampled;
+  const opened = Date.parse(socket.opened_at);
+  const duration = Number.isFinite(opened) && Number.isFinite(end) ? Math.max(0, end - opened) : Number(socket.duration_ms || 0);
+  const seconds = value => value < 1000 ? `${Math.round(Math.max(0, value))} ms` : `${(value / 1000).toLocaleString(undefined, {maximumFractionDigits: 1})} s`;
+  const remaining = deadline => active && Number.isFinite(deadline) ? (deadline <= now ? "Deadline reached · awaiting enforcement" : seconds(deadline - now)) : "Not active";
+  return {
+    duration: socket.opened_at ? seconds(duration) : "Not opened",
+    upload: `${Number(socket.client_bytes || 0).toLocaleString()} B`,
+    download: `${Number(socket.upstream_bytes || 0).toLocaleString()} B`,
+    upload_rate: duration > 0 ? `${(Number(socket.client_bytes || 0) * 1000 / duration).toLocaleString(undefined, {maximumFractionDigits: 1})} B/s` : "Not yet measured",
+    download_rate: duration > 0 ? `${(Number(socket.upstream_bytes || 0) * 1000 / duration).toLocaleString(undefined, {maximumFractionDigits: 1})} B/s` : "Not yet measured",
+    idle: remaining(Date.parse(socket.last_upstream_activity_at || socket.opened_at) + Number(socket.idle_timeout_ms)),
+    expiry: remaining(Date.parse(socket.session_expires_at)),
+  };
+}
+
+export function refreshWebSocketMetrics(root, now = Date.now()) {
+  root?.querySelectorAll("[data-websocket-live]").forEach(panel => {
+    const metrics = websocketMetrics(JSON.parse(panel.dataset.websocketLive), true, now);
+    panel.querySelectorAll("[data-websocket-metric]").forEach(field => { field.textContent = metrics[field.dataset.websocketMetric]; });
+  });
+}
+
 export function requestInvestigationView({ traffic = null, usage = null, bundle = null, notice = "" }, { esc, table, time, projects = [] }) {
   usage = investigationUsageSnapshot(traffic?.usage || usage);
   bundle = traffic?.debug_bundle || bundle;
   const d = traffic?.diagnostics || usage?.diagnostics || {};
+  const socket = d.websocket;
+  const identity = d.entra;
   const requestId = traffic?.request_id || usage?.request_id || bundle?.request_id || "Unknown request";
   const status = traffic?.client_status ?? usage?.status_code;
   const failed = Boolean(d.failure_code) || status >= 400 || usage?.status === "failure";
@@ -96,6 +124,18 @@ export function requestInvestigationView({ traffic = null, usage = null, bundle 
       ["Gateway instance", traffic?.instance_id || d.instance_id], ["Service version", usage?.service_version],
       ["Trace ID", usage?.trace_id || bundle?.trace_id], ["Task / run", [usage?.task_id,usage?.run_id].filter(Boolean).join(" / ")],
     ]))}
+    ${socket ? section("WebSocket session", `<div ${traffic?.completed === false && socket.state === "open" ? `data-websocket-live="${esc(JSON.stringify(socket))}"` : ""}>
+      <p class="help">Frame bytes observed by the gateway, including WebSocket headers; excludes HTTP handshake and TLS overhead. Rates are session averages, not billed tokens. Live values are sampled; idle time is an upstream-read estimate. Write timeout applies while writing, and session expiry is checked on frame activity.</p>
+      ${facts([["State",socket.state],["App / channel",[socket.app,socket.channel].filter(Boolean).join(" / ")],["Opened",socket.opened_at ? time(socket.opened_at) : null],["Closed",socket.closed_at ? time(socket.closed_at) : null],["Last client activity",socket.last_client_activity_at ? time(socket.last_client_activity_at) : null],["Last upstream activity",socket.last_upstream_activity_at ? time(socket.last_upstream_activity_at) : null],["Idle read/write limit",`${socket.idle_timeout_ms} ms`],["Session expires",socket.session_expires_at ? time(socket.session_expires_at) : null],["Frame/message limit",`${socket.max_frame_bytes} B`],["Client / upstream frame headers",`${socket.client_frames} / ${socket.upstream_frames}`],["Close frame observed",`Client: ${socket.client_close_frame ? "yes" : "no"} · upstream: ${socket.upstream_close_frame ? "yes" : "no"}`],["Close cause",socket.close_cause || "Not closed"],["Last sample",socket.observed_at ? time(socket.observed_at) : null]])}
+      <dl class="investigation-facts">${Object.entries({duration:"Open duration",upload:"Client → upstream",download:"Upstream → client",upload_rate:"Average upload",download_rate:"Average download",idle:"Upstream idle remaining · estimate",expiry:"Session expiry remaining"}).map(([key,title]) => `<div><dt>${esc(title)}</dt><dd data-websocket-metric="${key}">${esc(websocketMetrics(socket, traffic?.completed === false)[key])}</dd></div>`).join("")}</dl>
+    </div>`) : ""}
+    ${section("Entra verification", identity ? `${identity.truncated ? '<p class="notice">Claim display was truncated to bounded diagnostic limits.</p>' : ""}<p class="help">Policy and claims captured for this request. Claims appear only after successful verification; token strings and private payloads are never recorded. Gateway-inherited policy requirements are not captured in this snapshot.</p>${facts([
+      ["Policy source",identity.policy_source],["Verification",identity.verification],["Identity source",identity.source],["Expected audience",identity.expected_audience],
+      ["Required scopes",identity.required_scopes?.join(", ") || "None recorded"],["Required roles",identity.required_roles?.join(", ") || "None recorded"],["Allowed groups · any match",identity.allowed_groups?.join(", ") || "None recorded"],
+      ["Signed Apigee allowed",identity.policy_source === "endpoint" ? (identity.allow_apigee ? "Yes" : "No") : "Not recorded"],
+      ["Verified audiences",identity.audiences?.join(", ")],["Verified scopes",identity.scopes?.join(", ")],["Verified roles",identity.roles?.join(", ")],["Verified groups",identity.groups?.join(", ")],
+      ["Tenant ID",identity.tenant_id],["Object ID",identity.object_id],["Application ID",identity.app_id],["Authorized party",identity.authorized_party],["Token version",identity.token_version],["Token expiry",identity.expires_at != null ? time(new Date(identity.expires_at * 1000).toISOString()) : null],
+    ])}` : '<p class="help">No verified Entra diagnostic snapshot was recorded. This may be a key-only route or an older record.</p>')}
     ${section("Network & response timing", attempts.length ? `<p class="help">DNS, TCP and TLS are phase durations. Headers, first body byte and first content token are measured from each attempt's start, including connection setup. Total duration above includes gateway and client delivery time.</p>${attempts.map(a => `<article class="investigation-attempt"><h5>Attempt ${text(a.attempt)} · ${text(a.provider)}${a.connection_reused === true ? " · Reused connection" : a.connection_reused === false ? " · New connection" : ""}</h5>${facts([
       ["DNS resolution", `${timingValue(a,"dns_us")}${["failed","timeout"].includes(a.dns_status) ? ` · ${a.dns_status}` : ""}`],
       ["TCP connect",timingValue(a,"tcp_connect_us")], ["TLS handshake",timingValue(a,"tls_handshake_us")],

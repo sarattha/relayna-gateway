@@ -193,3 +193,40 @@ Admin UI tests/build, gateway build and strict documentation build passed.
 
 The complete mandatory verification stack passed: formatting, Clippy, workspace
 tests, audit, deny, machete, 359 Nextest tests, Trivy, Gitleaks and Semgrep.
+
+## WebSocket and verified Entra diagnostics
+
+Traffic displays live directional frame bytes, frame headers, channel identity,
+activity timestamps, open duration, average transfer rates and timeout estimates.
+Usage preserves the final session snapshot. Both drawers show endpoint policy
+requirements alongside verified audience, scopes, roles, groups, tenant/object/app
+identifiers and token expiry. Failed verification retains requirements and the
+failure code without unverified claims; raw JWTs and frame payloads are excluded.
+
+The mock BFF → gateway → adapter → Router → agent E2E checks live samples after
+five conversation turns and four heartbeats, then checks terminal Usage persistence.
+It also covers signed Apigee snapshots and rejected-identity redaction. UI tests
+cover countdowns, frozen historical values and escaped claims in both drawers.
+New production Rust line coverage is **145/145 (100%)** against `bac55aa`; see
+[the coverage report](diagnostics-coverage.json).
+
+Computer Use in Chrome verified Traffic and Usage investigation drawers against
+a saved real E2E session copied into an isolated demo database. Screenshots show
+a short reconnect session, not the five-turn session used for live assertions.
+A 390×844 in-app browser check verified wrapping and scrolling; Settings navigation
+was also smoke-tested without changing configuration. Admin UI tests/build and
+strict documentation build passed.
+
+Byte totals include WebSocket frame headers, exclude HTTP/TLS overhead, and count
+accepted chunks observed at gateway hooks. Rates are session averages. Idle time
+is an upstream-read estimate; session expiry is enforced on frame activity.
+Gateway-inherited policy requirements are not included in the identity snapshot.
+
+![Traffic WebSocket diagnostics](traffic-websocket-diagnostics.jpg)
+![Verified Entra policy and claims](traffic-entra-diagnostics.jpg)
+![Usage WebSocket diagnostics](usage-websocket-diagnostics.jpg)
+![Mobile Usage diagnostics](usage-websocket-mobile.png)
+
+The complete mandatory verification script passed for this extension, including
+363 Nextest tests with zero skipped, Cargo tests, formatting, Clippy, audit, deny,
+machete, Trivy, Gitleaks and Semgrep.

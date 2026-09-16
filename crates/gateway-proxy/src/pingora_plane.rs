@@ -648,6 +648,17 @@ where
                 return Ok(true);
             }
             ctx.socket = true;
+            if let Some(binding) = &ctx.access.accessa {
+                ctx.traffic.diagnostics.websocket =
+                    Some(gateway_core::traffic::WebSocketDiagnostics {
+                        state: "connecting".into(),
+                        app: binding.app.clone(),
+                        channel: binding.channel.clone(),
+                        idle_timeout_ms: binding.idle_timeout_ms,
+                        max_frame_bytes: binding.max_frame_bytes as u64,
+                        ..Default::default()
+                    });
+            }
         }
         if ctx.access.accessa.is_some() {
             matched.estimated_cost_usd = None;
@@ -687,11 +698,21 @@ where
         let now = Utc::now();
         let authorization = header_value(req, "authorization");
         if let Some(endpoint) = ctx.access.entra.as_ref() {
+            ctx.traffic.diagnostics.entra =
+                Some(gateway_core::traffic::EntraDiagnostics::endpoint(endpoint));
             match self
                 .verify_endpoint_identity(req, now, &auth, &ctx.request_id, endpoint)
                 .await
             {
-                Ok(identity) => ctx.entra_identity = Some(identity),
+                Ok(identity) => {
+                    ctx.traffic
+                        .diagnostics
+                        .entra
+                        .as_mut()
+                        .unwrap()
+                        .verified(&identity);
+                    ctx.entra_identity = Some(identity);
+                }
                 Err(error) => {
                     respond_error(session, error, ctx).await?;
                     return Ok(true);
@@ -790,11 +811,22 @@ where
                 Err(error) => Err(error),
             }
         } else if auth.entra_enabled() {
+            ctx.traffic.diagnostics.entra = Some(gateway_core::traffic::EntraDiagnostics {
+                policy_source: "gateway".into(),
+                verification: "pending".into(),
+                ..Default::default()
+            });
             match self
                 .verify_entra_request(req, now, &auth, &ctx.request_id)
                 .await
             {
                 Ok(identity) => {
+                    ctx.traffic
+                        .diagnostics
+                        .entra
+                        .as_mut()
+                        .unwrap()
+                        .verified(&identity);
                     ctx.entra_identity = Some(identity);
                     gateway_telemetry::phase_span("gateway.auth.entra", &ctx.request_id)
                         .in_scope(|| tracing::info!("Entra identity authenticated"));
@@ -964,12 +996,15 @@ where
         if ctx.socket {
             if let Some(frames) = &mut ctx.socket_request_frames {
                 if Utc::now().timestamp() >= ctx.socket_expires_at {
+                    ctx.traffic.fail("gateway", "websocket_session_expired");
                     return Err(PingoraError::new(ErrorType::ConnectionClosed));
                 }
-                frames
-                    .feed(body.as_deref().unwrap_or_default())
-                    .map_err(|_| PingoraError::new(ErrorType::ConnectionClosed))?;
+                if frames.feed(body.as_deref().unwrap_or_default()).is_err() {
+                    ctx.traffic.fail("gateway", "websocket_frame_rejected");
+                    return Err(PingoraError::new(ErrorType::ConnectionClosed));
+                }
             }
+            websocket_activity(ctx, false, body.as_ref().map_or(0, Bytes::len));
             return Ok(());
         }
         if ctx.guardrail_error.is_some() {
@@ -1698,6 +1733,18 @@ where
         ctx.request_body_lease.take();
         let status_code = upstream_response.status.as_u16();
         ctx.socket_upgraded = ctx.socket && status_code == 101;
+        if let Some(socket) = &mut ctx.traffic.diagnostics.websocket {
+            socket.state = if ctx.socket_upgraded {
+                "open"
+            } else {
+                "handshake_rejected"
+            }
+            .into();
+            socket.observed_at = Some(Utc::now());
+            if ctx.socket_upgraded {
+                socket.opened_at = socket.observed_at;
+            }
+        }
         ctx.traffic.diagnostics.upstream_status = Some(status_code);
         ctx.traffic.streaming = ctx.is_streaming
             || upstream_response
@@ -1820,12 +1867,15 @@ where
             }
             if let Some(frames) = &mut ctx.socket_response_frames {
                 if Utc::now().timestamp() >= ctx.socket_expires_at {
+                    ctx.traffic.fail("gateway", "websocket_session_expired");
                     return Err(PingoraError::new(ErrorType::ConnectionClosed));
                 }
-                frames
-                    .feed(body.as_deref().unwrap_or_default())
-                    .map_err(|_| PingoraError::new(ErrorType::ConnectionClosed))?;
+                if frames.feed(body.as_deref().unwrap_or_default()).is_err() {
+                    ctx.traffic.fail("gateway", "websocket_frame_rejected");
+                    return Err(PingoraError::new(ErrorType::ConnectionClosed));
+                }
             }
+            websocket_activity(ctx, true, body.as_ref().map_or(0, Bytes::len));
             return Ok(None);
         }
         if !ctx.first_chunk_recorded && body.as_ref().is_some_and(|value| !value.is_empty()) {
@@ -3524,6 +3574,7 @@ fn finish_attempt_timing(ctx: &mut PingoraContext) {
 }
 
 fn update_routing_diagnostics(ctx: &mut PingoraContext) {
+    ctx.traffic.diagnostics.protocol = Some(if ctx.socket { "websocket" } else { "http" }.into());
     ctx.traffic.diagnostics.routing_mode = if ctx.litellm_passthrough {
         Some("litellm_passthrough".into())
     } else if ctx.route_match.is_some() {
@@ -3531,6 +3582,38 @@ fn update_routing_diagnostics(ctx: &mut PingoraContext) {
     } else {
         None
     };
+}
+
+/// Coalesce progress until the next Traffic poll, without retaining payloads.
+fn websocket_activity(ctx: &mut PingoraContext, upstream: bool, bytes: usize) {
+    if bytes == 0 {
+        return;
+    }
+    let Some(socket) = &mut ctx.traffic.diagnostics.websocket else {
+        return;
+    };
+    let now = Utc::now();
+    if upstream {
+        socket.upstream_bytes = socket.upstream_bytes.saturating_add(bytes as u64);
+        socket.last_upstream_activity_at = Some(now);
+        if let Some(frames) = &ctx.socket_response_frames {
+            socket.upstream_frames = frames.frames;
+            socket.upstream_close_frame = frames.close_seen;
+        }
+    } else {
+        socket.client_bytes = socket.client_bytes.saturating_add(bytes as u64);
+        socket.last_client_activity_at = Some(now);
+        if let Some(frames) = &ctx.socket_request_frames {
+            socket.client_frames = frames.frames;
+            socket.client_close_frame = frames.close_seen;
+        }
+    }
+    socket.observed_at = Some(now);
+    socket.duration_ms = socket
+        .opened_at
+        .map_or(0, |start| (now - start).num_milliseconds().max(0) as u64);
+    ctx.traffic.elapsed_ms = elapsed_ms(ctx);
+    gateway_core::traffic::monitor().publish_socket_progress(ctx.traffic.clone());
 }
 
 fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
@@ -3561,6 +3644,11 @@ fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
 }
 
 fn traffic_gateway_error(ctx: &mut PingoraContext, error: &GatewayError) {
+    if let Some(identity) = &mut ctx.traffic.diagnostics.entra {
+        if identity.verification == "pending" {
+            identity.verification = "failed".into();
+        }
+    }
     update_routing_diagnostics(ctx);
     // Body filters may run after peer selection; classify their actual failure stage.
     let stage = match error {
@@ -3658,6 +3746,30 @@ fn finish_traffic(
         }
     }
     finish_attempt_timing(ctx);
+    if let Some(socket) = &mut ctx.traffic.diagnostics.websocket {
+        let now = Utc::now();
+        socket.observed_at = Some(now);
+        socket.closed_at = Some(now);
+        socket.duration_ms = socket
+            .opened_at
+            .map_or(0, |start| (now - start).num_milliseconds().max(0) as u64);
+        socket.state = if socket.opened_at.is_some() {
+            "closed"
+        } else {
+            "handshake_rejected"
+        }
+        .into();
+        socket.close_cause = Some(ctx.traffic.diagnostics.failure_code.clone().unwrap_or_else(
+            || {
+                if socket.client_close_frame || socket.upstream_close_frame {
+                    "close_frame_observed"
+                } else {
+                    "transport_ended"
+                }
+                .into()
+            },
+        ));
+    }
     ctx.traffic.completed = true;
     ctx.traffic.diagnostics.outcome = Some(
         if ctx.traffic.diagnostics.failure_code.is_some() {
@@ -3704,6 +3816,26 @@ mod tests {
     };
     use std::sync::Mutex;
     use uuid::Uuid;
+
+    #[test]
+    fn socket_diagnostics_handle_untracked_chunks_and_transport_end() {
+        let mut ctx = new_pingora_context_for_tests();
+        websocket_activity(&mut ctx, false, 0);
+        websocket_activity(&mut ctx, false, 12);
+        assert!(ctx.traffic.diagnostics.websocket.is_none());
+        ctx.traffic.diagnostics.websocket = Some(gateway_core::traffic::WebSocketDiagnostics {
+            state: "open".into(),
+            opened_at: Some(Utc::now()),
+            ..Default::default()
+        });
+        websocket_activity(&mut ctx, false, 12);
+        websocket_activity(&mut ctx, true, 24);
+        finish_traffic(&mut ctx, Some(101), None);
+        let socket = ctx.traffic.diagnostics.websocket.unwrap();
+        assert_eq!((socket.client_bytes, socket.upstream_bytes), (12, 24));
+        assert_eq!(socket.close_cause.as_deref(), Some("transport_ended"));
+        assert_eq!(socket.state, "closed");
+    }
 
     #[test]
     fn gateway_timeout_response_uses_stable_json_envelope() {

@@ -98,7 +98,7 @@ function mergeTrafficRows(rows, batch, limit = 200) {
 function matchesTraffic(row, filters) {
   return (!filters.request_id || row.request_id.includes(filters.request_id)) && (!filters.service || row.service === filters.service) && (!filters.project_id || row.project_id === filters.project_id) && (!filters.key_id || row.key_id === filters.key_id) && (!filters.failure_code || row.diagnostics.failure_code === filters.failure_code) && (!filters.status || String(row.client_status) === filters.status) && (filters.outcome !== "failures" || Boolean(row.diagnostics.failure_code)) && (filters.outcome !== "active" || !row.completed);
 }
-function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: attr2, table: table2, badge: badge2, time: time2, routingModeLabel: routingModeLabel2, mountDialog: mountDialog2, investigationView: investigationView2, bindInvestigationActions: bindInvestigationActions2, initialFilters = {}, onFilters = () => {
+function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: attr2, table: table2, badge: badge2, time: time2, routingModeLabel: routingModeLabel2, mountDialog: mountDialog2, investigationView: investigationView2, bindInvestigationActions: bindInvestigationActions2, refreshWebSocketMetrics: refreshWebSocketMetrics2, initialFilters = {}, onFilters = () => {
 } }) {
   let rows = [], cursor = null, instance = "Connecting", selected = null, filters = { ...initialFilters };
   let mode = "live", paused = false, disposed = false, controller = null, reconnect = null;
@@ -163,21 +163,25 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
       (replacement || element("traffic-filters").elements.namedItem("failure_code")).focus({ preventScroll: true });
     }
     element("traffic-rows").innerHTML = table2(
-      ["Arrived", "Request", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
-      visible.map((row) => [
-        time2(row.started_at),
-        `<code>${esc2(row.request_id)}</code>`,
-        `${esc2(row.method)} ${esc2(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc2(row.service || row.provider || "Not selected")}</span>`,
-        badge2(routingModeLabel2(row.diagnostics), "neutral"),
-        badge2(label(row.completed ? row.diagnostics.outcome : row.stage), row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
-        esc2(row.client_status ?? "—"),
-        esc2(row.diagnostics.upstream_status ?? "—"),
-        esc2(row.attempts),
-        `<span data-traffic-elapsed="${attr2(row.id)}">${esc2(row.completed ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)))} ms</span>`,
-        esc2(label(row.diagnostics.failure_code || "none")),
-        row.recording_failures.length ? badge2("Recording failed", "bad") : esc2(row.completed ? "No reported failure" : "In progress"),
-        `<button type="button" data-traffic-id="${attr2(row.id)}">Inspect</button>`
-      ])
+      ["Arrived", "Request", "Protocol / transfer", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
+      visible.map((row) => {
+        var _a3;
+        return [
+          time2(row.started_at),
+          `<code>${esc2(row.request_id)}</code>`,
+          row.diagnostics.websocket ? `${badge2("WS", "neutral")}<div class="subtle">↑ ${esc2(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc2(row.diagnostics.websocket.upstream_bytes)} B</div>` : badge2(((_a3 = row.diagnostics) == null ? void 0 : _a3.protocol) === "http" ? "HTTP" : "Not recorded", "neutral"),
+          `${esc2(row.method)} ${esc2(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc2(row.service || row.provider || "Not selected")}</span>`,
+          badge2(routingModeLabel2(row.diagnostics), "neutral"),
+          badge2(label(row.completed ? row.diagnostics.outcome : row.stage), row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
+          esc2(row.client_status ?? "—"),
+          esc2(row.diagnostics.upstream_status ?? "—"),
+          esc2(row.attempts),
+          `<span data-traffic-elapsed="${attr2(row.id)}">${esc2(row.completed ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)))} ms</span>`,
+          esc2(label(row.diagnostics.failure_code || "none")),
+          row.recording_failures.length ? badge2("Recording failed", "bad") : esc2(row.completed ? "No reported failure" : "In progress"),
+          `<button type="button" data-traffic-id="${attr2(row.id)}">Inspect</button>`
+        ];
+      })
     );
     element("traffic-rows").querySelectorAll("[data-traffic-id]").forEach((button) => button.addEventListener("click", () => {
       selected = button.dataset.trafficId;
@@ -344,6 +348,7 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
   element("traffic-older").addEventListener("click", () => history2(true));
   const elapsedTimer = setInterval(() => {
     if (disposed || paused || mode !== "live") return;
+    refreshWebSocketMetrics2 == null ? void 0 : refreshWebSocketMetrics2(element("traffic-detail"));
     for (const row of rows) {
       if (row.completed) continue;
       const cell = content2.querySelector(`[data-traffic-elapsed="${row.id}"]`);
@@ -789,11 +794,39 @@ function matchTrafficRecord(rows, usage2) {
   if (!id) return null;
   return rows.find((row) => row.id === id && row.request_id === usage2.request_id && row.key_id === usage2.key_id && row.project_id === usage2.project_id) || null;
 }
+function websocketMetrics(socket, live = false, now = Date.now()) {
+  const active = live && socket.state === "open" && !socket.closed_at;
+  const sampled = Date.parse(socket.closed_at || socket.observed_at || socket.opened_at);
+  const end = active ? now : sampled;
+  const opened = Date.parse(socket.opened_at);
+  const duration = Number.isFinite(opened) && Number.isFinite(end) ? Math.max(0, end - opened) : Number(socket.duration_ms || 0);
+  const seconds = (value) => value < 1e3 ? `${Math.round(Math.max(0, value))} ms` : `${(value / 1e3).toLocaleString(void 0, { maximumFractionDigits: 1 })} s`;
+  const remaining = (deadline) => active && Number.isFinite(deadline) ? deadline <= now ? "Deadline reached · awaiting enforcement" : seconds(deadline - now) : "Not active";
+  return {
+    duration: socket.opened_at ? seconds(duration) : "Not opened",
+    upload: `${Number(socket.client_bytes || 0).toLocaleString()} B`,
+    download: `${Number(socket.upstream_bytes || 0).toLocaleString()} B`,
+    upload_rate: duration > 0 ? `${(Number(socket.client_bytes || 0) * 1e3 / duration).toLocaleString(void 0, { maximumFractionDigits: 1 })} B/s` : "Not yet measured",
+    download_rate: duration > 0 ? `${(Number(socket.upstream_bytes || 0) * 1e3 / duration).toLocaleString(void 0, { maximumFractionDigits: 1 })} B/s` : "Not yet measured",
+    idle: remaining(Date.parse(socket.last_upstream_activity_at || socket.opened_at) + Number(socket.idle_timeout_ms)),
+    expiry: remaining(Date.parse(socket.session_expires_at))
+  };
+}
+function refreshWebSocketMetrics(root, now = Date.now()) {
+  root == null ? void 0 : root.querySelectorAll("[data-websocket-live]").forEach((panel2) => {
+    const metrics = websocketMetrics(JSON.parse(panel2.dataset.websocketLive), true, now);
+    panel2.querySelectorAll("[data-websocket-metric]").forEach((field) => {
+      field.textContent = metrics[field.dataset.websocketMetric];
+    });
+  });
+}
 function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle = null, notice = "" }, { esc: esc2, table: table2, time: time2, projects: projects2 = [] }) {
-  var _a2, _b, _c;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
   usage2 = investigationUsageSnapshot((traffic == null ? void 0 : traffic.usage) || usage2);
   bundle = (traffic == null ? void 0 : traffic.debug_bundle) || bundle;
   const d = (traffic == null ? void 0 : traffic.diagnostics) || (usage2 == null ? void 0 : usage2.diagnostics) || {};
+  const socket = d.websocket;
+  const identity = d.entra;
   const requestId = (traffic == null ? void 0 : traffic.request_id) || (usage2 == null ? void 0 : usage2.request_id) || (bundle == null ? void 0 : bundle.request_id) || "Unknown request";
   const status = (traffic == null ? void 0 : traffic.client_status) ?? (usage2 == null ? void 0 : usage2.status_code);
   const failed = Boolean(d.failure_code) || status >= 400 || (usage2 == null ? void 0 : usage2.status) === "failure";
@@ -854,6 +887,31 @@ function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle
     ["Trace ID", (usage2 == null ? void 0 : usage2.trace_id) || (bundle == null ? void 0 : bundle.trace_id)],
     ["Task / run", [usage2 == null ? void 0 : usage2.task_id, usage2 == null ? void 0 : usage2.run_id].filter(Boolean).join(" / ")]
   ]))}
+    ${socket ? section("WebSocket session", `<div ${(traffic == null ? void 0 : traffic.completed) === false && socket.state === "open" ? `data-websocket-live="${esc2(JSON.stringify(socket))}"` : ""}>
+      <p class="help">Frame bytes observed by the gateway, including WebSocket headers; excludes HTTP handshake and TLS overhead. Rates are session averages, not billed tokens. Live values are sampled; idle time is an upstream-read estimate. Write timeout applies while writing, and session expiry is checked on frame activity.</p>
+      ${facts([["State", socket.state], ["App / channel", [socket.app, socket.channel].filter(Boolean).join(" / ")], ["Opened", socket.opened_at ? time2(socket.opened_at) : null], ["Closed", socket.closed_at ? time2(socket.closed_at) : null], ["Last client activity", socket.last_client_activity_at ? time2(socket.last_client_activity_at) : null], ["Last upstream activity", socket.last_upstream_activity_at ? time2(socket.last_upstream_activity_at) : null], ["Idle read/write limit", `${socket.idle_timeout_ms} ms`], ["Session expires", socket.session_expires_at ? time2(socket.session_expires_at) : null], ["Frame/message limit", `${socket.max_frame_bytes} B`], ["Client / upstream frame headers", `${socket.client_frames} / ${socket.upstream_frames}`], ["Close frame observed", `Client: ${socket.client_close_frame ? "yes" : "no"} · upstream: ${socket.upstream_close_frame ? "yes" : "no"}`], ["Close cause", socket.close_cause || "Not closed"], ["Last sample", socket.observed_at ? time2(socket.observed_at) : null]])}
+      <dl class="investigation-facts">${Object.entries({ duration: "Open duration", upload: "Client → upstream", download: "Upstream → client", upload_rate: "Average upload", download_rate: "Average download", idle: "Upstream idle remaining · estimate", expiry: "Session expiry remaining" }).map(([key, title]) => `<div><dt>${esc2(title)}</dt><dd data-websocket-metric="${key}">${esc2(websocketMetrics(socket, (traffic == null ? void 0 : traffic.completed) === false)[key])}</dd></div>`).join("")}</dl>
+    </div>`) : ""}
+    ${section("Entra verification", identity ? `${identity.truncated ? '<p class="notice">Claim display was truncated to bounded diagnostic limits.</p>' : ""}<p class="help">Policy and claims captured for this request. Claims appear only after successful verification; token strings and private payloads are never recorded. Gateway-inherited policy requirements are not captured in this snapshot.</p>${facts([
+    ["Policy source", identity.policy_source],
+    ["Verification", identity.verification],
+    ["Identity source", identity.source],
+    ["Expected audience", identity.expected_audience],
+    ["Required scopes", ((_a2 = identity.required_scopes) == null ? void 0 : _a2.join(", ")) || "None recorded"],
+    ["Required roles", ((_b = identity.required_roles) == null ? void 0 : _b.join(", ")) || "None recorded"],
+    ["Allowed groups · any match", ((_c = identity.allowed_groups) == null ? void 0 : _c.join(", ")) || "None recorded"],
+    ["Signed Apigee allowed", identity.policy_source === "endpoint" ? identity.allow_apigee ? "Yes" : "No" : "Not recorded"],
+    ["Verified audiences", (_d = identity.audiences) == null ? void 0 : _d.join(", ")],
+    ["Verified scopes", (_e = identity.scopes) == null ? void 0 : _e.join(", ")],
+    ["Verified roles", (_f = identity.roles) == null ? void 0 : _f.join(", ")],
+    ["Verified groups", (_g = identity.groups) == null ? void 0 : _g.join(", ")],
+    ["Tenant ID", identity.tenant_id],
+    ["Object ID", identity.object_id],
+    ["Application ID", identity.app_id],
+    ["Authorized party", identity.authorized_party],
+    ["Token version", identity.token_version],
+    ["Token expiry", identity.expires_at != null ? time2(new Date(identity.expires_at * 1e3).toISOString()) : null]
+  ])}` : '<p class="help">No verified Entra diagnostic snapshot was recorded. This may be a key-only route or an older record.</p>')}
     ${section("Network & response timing", attempts.length ? `<p class="help">DNS, TCP and TLS are phase durations. Headers, first body byte and first content token are measured from each attempt's start, including connection setup. Total duration above includes gateway and client delivery time.</p>${attempts.map((a) => `<article class="investigation-attempt"><h5>Attempt ${text(a.attempt)} · ${text(a.provider)}${a.connection_reused === true ? " · Reused connection" : a.connection_reused === false ? " · New connection" : ""}</h5>${facts([
     ["DNS resolution", `${timingValue(a, "dns_us")}${["failed", "timeout"].includes(a.dns_status) ? ` · ${a.dns_status}` : ""}`],
     ["TCP connect", timingValue(a, "tcp_connect_us")],
@@ -864,11 +922,11 @@ function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle
     ["Attempt duration", timingValue(a, "total_ms")],
     ["Upstream status / failure", [a.upstream_status, a.failure_code].filter((v) => v != null).join(" / ")]
   ])}</article>`).join("")}${traffic.attempts > attempts.length ? '<p class="notice">Earlier attempt timings were discarded at the retention limit.</p>' : ""}` : `<p class="help">${(traffic == null ? void 0 : traffic.attempts) === 0 ? "No upstream connection was attempted." : "Network timings were not recorded for this request. Older records remain available without timing measurements."}</p>`)}
-    ${section("Event timeline", ((_a2 = traffic == null ? void 0 : traffic.timeline) == null ? void 0 : _a2.length) ? `${traffic.timeline_truncated ? '<p class="notice">Earlier timeline steps were discarded at the retention limit.</p>' : ""}${table2(["Elapsed", "Attempt", "Stage", "Reason", "Upstream HTTP"], traffic.timeline.map((step) => [`${text(step.elapsed_ms)} ms`, text(step.attempt), text(label(step.stage)), text(step.code ?? "—"), text(step.upstream_status ?? "—")]))}` : '<p class="help">No event timeline was recorded.</p>')}
+    ${section("Event timeline", ((_h = traffic == null ? void 0 : traffic.timeline) == null ? void 0 : _h.length) ? `${traffic.timeline_truncated ? '<p class="notice">Earlier timeline steps were discarded at the retention limit.</p>' : ""}${table2(["Elapsed", "Attempt", "Stage", "Reason", "Upstream HTTP"], traffic.timeline.map((step) => [`${text(step.elapsed_ms)} ms`, text(step.attempt), text(label(step.stage)), text(step.code ?? "—"), text(step.upstream_status ?? "—")]))}` : '<p class="help">No event timeline was recorded.</p>')}
     ${section("Usage & cost", facts([["Input tokens", usageValue(d, usage2 == null ? void 0 : usage2.input_tokens)], ["Output tokens", usageValue(d, usage2 == null ? void 0 : usage2.output_tokens)], ["Total tokens", usageValue(d, usage2 == null ? void 0 : usage2.total_tokens)], ["Estimated cost · USD", usageValue(d, usage2 == null ? void 0 : usage2.estimated_cost_usd, (value) => `$${Number(value).toFixed(6)}`)], ["Pricing source", usage2 == null ? void 0 : usage2.cost_source], ["Pricing rule", usage2 == null ? void 0 : usage2.pricing_rule_name]]))}
     ${section("Policy & guardrails", `<h5>Policy decisions</h5>${traceList(bundle == null ? void 0 : bundle.policy_trace, "Policy decisions were not recorded.")}<h5>Guardrail executions</h5>${traceList(bundle == null ? void 0 : bundle.guardrail_trace, bundle ? "No guardrail executions were recorded in this snapshot." : "Guardrail execution details were not captured.")}`)}
-    ${section("Routing decisions", `${traceList(bundle == null ? void 0 : bundle.selection_trace, "Routing decisions were not recorded.")}${((_b = bundle == null ? void 0 : bundle.fallback_history) == null ? void 0 : _b.length) ? table2(["From", "To", "Reason"], bundle.fallback_history.map((a) => [text(a.from_provider), text(a.to_provider), text(a.reason)])) : '<p class="help">No fallback history was recorded.</p>'}`)}
-    ${((_c = traffic == null ? void 0 : traffic.recording_failures) == null ? void 0 : _c.length) ? `<p class="notice">Recording gaps: ${esc2(traffic.recording_failures.join(", "))}. This investigation may be incomplete.</p>` : ""}
+    ${section("Routing decisions", `${traceList(bundle == null ? void 0 : bundle.selection_trace, "Routing decisions were not recorded.")}${((_i = bundle == null ? void 0 : bundle.fallback_history) == null ? void 0 : _i.length) ? table2(["From", "To", "Reason"], bundle.fallback_history.map((a) => [text(a.from_provider), text(a.to_provider), text(a.reason)])) : '<p class="help">No fallback history was recorded.</p>'}`)}
+    ${((_j = traffic == null ? void 0 : traffic.recording_failures) == null ? void 0 : _j.length) ? `<p class="notice">Recording gaps: ${esc2(traffic.recording_failures.join(", "))}. This investigation may be incomplete.</p>` : ""}
     <details class="investigation-raw" data-investigation-section="raw"><summary>Raw diagnostics & hashes</summary>${facts([["Internal request ID", traffic == null ? void 0 : traffic.id], ["Request hash", bundle == null ? void 0 : bundle.request_hash], ["Response hash", bundle == null ? void 0 : bundle.response_hash], ["Redaction version", bundle == null ? void 0 : bundle.redaction_version]])}<pre data-investigation-raw>${esc2(JSON.stringify(raw, null, 2))}</pre></details>
   </div>`;
 }
@@ -16173,7 +16231,7 @@ async function refresh({ focus = false } = {}) {
       if (generation !== viewGeneration) return;
       state.projects = projects2;
       syncProjectScope();
-      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
+      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, refreshWebSocketMetrics, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
     }
     if (view === "usage") await usage();
     if (view === "health") await health();
@@ -18881,26 +18939,30 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
 }
 function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {}) {
   return table(
-    ["Created", "Request", "Route", "Routing mode", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
-    rows.map((row) => [
-      time(row.created_at),
-      `<code>${esc(row.request_id)}</code>`,
-      esc(row.route),
-      badge(routingModeLabel(row.diagnostics), "neutral"),
-      esc(row.service_name || ""),
-      esc(row.http_method || ""),
-      `<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
-      esc(row.model || ""),
-      esc(row.provider),
-      `${badge(row.status, row.status === "success" ? "good" : "bad")} <code>${esc(row.status_code)}</code>`,
-      `${esc(row.latency_ms)} ms`,
-      esc(usageValue(row.diagnostics, row.total_tokens)),
-      esc(usageValue(row.diagnostics, row.estimated_cost_usd, money)),
-      esc(row.cost_source || ""),
-      esc(row.pricing_rule_name || ""),
-      row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",
-      ownerService || ownerProject ? `<button type="button" ${ownerService ? `data-owner-service="${attr(ownerService)}"` : `data-owner-project="${attr(ownerProject)}"`} data-owner-request="${attr(row.request_id)}">View details</button>` : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}" data-debug-usage="${attr(JSON.stringify(investigationUsageSnapshot(row)))}">Debug</button>`
-    ])
+    ["Created", "Request", "Protocol / transfer", "Route", "Routing mode", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
+    rows.map((row) => {
+      var _a2, _b;
+      return [
+        time(row.created_at),
+        `<code>${esc(row.request_id)}</code>`,
+        ((_a2 = row.diagnostics) == null ? void 0 : _a2.websocket) ? `${badge("WS", "neutral")}<div class="subtle">↑ ${esc(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc(row.diagnostics.websocket.upstream_bytes)} B</div>` : badge(((_b = row.diagnostics) == null ? void 0 : _b.protocol) === "http" ? "HTTP" : "Not recorded", "neutral"),
+        esc(row.route),
+        badge(routingModeLabel(row.diagnostics), "neutral"),
+        esc(row.service_name || ""),
+        esc(row.http_method || ""),
+        `<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
+        esc(row.model || ""),
+        esc(row.provider),
+        `${badge(row.status, row.status === "success" ? "good" : "bad")} <code>${esc(row.status_code)}</code>`,
+        `${esc(row.latency_ms)} ms`,
+        esc(usageValue(row.diagnostics, row.total_tokens)),
+        esc(usageValue(row.diagnostics, row.estimated_cost_usd, money)),
+        esc(row.cost_source || ""),
+        esc(row.pricing_rule_name || ""),
+        row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",
+        ownerService || ownerProject ? `<button type="button" ${ownerService ? `data-owner-service="${attr(ownerService)}"` : `data-owner-project="${attr(ownerProject)}"`} data-owner-request="${attr(row.request_id)}">View details</button>` : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}" data-debug-usage="${attr(JSON.stringify(investigationUsageSnapshot(row)))}">Debug</button>`
+      ];
+    })
   );
 }
 function investigationView(data) {

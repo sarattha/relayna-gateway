@@ -200,6 +200,9 @@ where
                 .await?;
             ctx.admission_token = Some(token);
             ctx.socket_expires_at = expires_at;
+            if let Some(socket) = &mut ctx.traffic.diagnostics.websocket {
+                socket.session_expires_at = chrono::DateTime::from_timestamp(expires_at, 0);
+            }
         }
         Ok(())
     }

@@ -1,0 +1,29 @@
+{
+  "base": "bac55aa",
+  "scope": "changed production Rust executable lines; tests excluded",
+  "covered": 145,
+  "executable": 145,
+  "percent": 100.0,
+  "files": {
+    "crates/gateway-core/src/traffic.rs": {
+      "covered": 80,
+      "executable": 80,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/accessa_runtime.rs": {
+      "covered": 3,
+      "executable": 3,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/accessa_transport.rs": {
+      "covered": 4,
+      "executable": 4,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/pingora_plane.rs": {
+      "covered": 58,
+      "executable": 58,
+      "uncovered_lines": []
+    }
+  }
+}

@@ -67,6 +67,8 @@ impl Drop for ConnectionLease {
 /// Parse only frame headers, skipping payloads. Bounds frames AND fragmented messages.
 #[derive(Debug)]
 pub struct FrameLimit {
+    pub frames: u64,
+    pub close_seen: bool,
     header: Vec<u8>,
     remaining: u64,
     message_bytes: u64,
@@ -77,6 +79,8 @@ pub struct FrameLimit {
 impl FrameLimit {
     pub fn new(max: usize, masked: bool) -> Self {
         Self {
+            frames: 0,
+            close_seen: false,
             header: Vec::with_capacity(14),
             remaining: 0,
             message_bytes: 0,
@@ -142,6 +146,8 @@ impl FrameLimit {
                     self.message_bytes = 0;
                 }
             }
+            self.frames = self.frames.saturating_add(1);
+            self.close_seen |= opcode == 8;
             self.remaining = size;
             self.header.clear();
         }
@@ -152,6 +158,16 @@ impl FrameLimit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn counts_split_frame_headers_and_close_without_retaining_payloads() {
+        let mut frames = FrameLimit::new(1024, false);
+        for byte in [0x81, 3, b'a', b'b', b'c', 0x89, 0, 0x88, 0] {
+            frames.feed(&[byte]).unwrap();
+        }
+        assert_eq!(frames.frames, 3);
+        assert!(frames.close_seen);
+        assert!(frames.header.is_empty());
+    }
     #[test]
     fn connection_limits_release_on_all_drop_paths() {
         let limits = Arc::new(ConnectionLimits::default());

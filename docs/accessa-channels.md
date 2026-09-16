@@ -253,3 +253,36 @@ binding. Relayna HTTP forwards to the runtime's HTTP API; the runtime owns task
 and agent execution. Generic WebSockets and arbitrary protocol adapters are not
 introduced by these presets. Existing services continue to use their saved
 settings; editing them does not automatically apply a creation preset.
+
+## Monitor WebSocket sessions and verified identity
+
+Traffic and Usage event tables identify WebSocket requests with a **WS** badge
+and directional byte totals. Open **Inspect** in Traffic or **Debug** in Usage
+for the shared **WebSocket session** and **Entra verification** sections.
+
+Live Traffic samples include the app/channel, open duration, client/upstream
+frame bytes and frame-header counts, average transfer rates, activity times,
+configured idle/frame limits and session expiry. Progress is coalesced between
+live polls; normal journal/display retention limits still apply. Closed sessions
+persist final totals, duration, observed close frames and a fixed close cause in
+both Traffic history and Usage diagnostics. Usage remains a terminal event log;
+inspect live Traffic for an open session. Older records have no new snapshot.
+
+Bytes are observed at the gateway frame hooks, including WebSocket framing and
+excluding HTTP handshake/TLS overhead; they do not prove application receipt and
+are not billing tokens. Frame counts mean accepted frame headers, not chatbot
+turns. No frame payload or close reason text is retained. Read-idle countdowns
+are estimates from the last upstream activity; write timeouts apply while
+writing, and session expiry is enforced when processing frames. A reached
+estimate does not assert that the connection has already closed.
+
+For endpoint-specific Entra verification, the snapshot includes required audience,
+scopes, roles and allowed groups alongside verified audience/scope/role/group
+claims, source (JWT or signed Apigee), tenant/object/application IDs, authorized
+party, token version and expiry. Gateway-inherited verification records verified
+claims but does not snapshot its required policy. Failed verification records the
+required endpoint policy and failure outcome without exposing untrusted claims.
+Diagnostic claim lists retain at most 32 entries and strings at most 256 characters;
+a truncation notice makes omissions explicit. Tokens, signatures, nonce, email,
+display name and chat text are not stored in these snapshots. Existing admin and
+resource-scoped Usage permissions continue to apply.
