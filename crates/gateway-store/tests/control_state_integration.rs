@@ -200,8 +200,20 @@ async fn insert_usage(
     .expect("insert usage");
 }
 
-async fn seed_from_postgres(store: &PostgresStore, redis: &RedisControlState, now: DateTime<Utc>) {
-    for seed in store.budget_counter_seeds(now).await.expect("load seeds") {
+async fn seed_from_postgres(
+    store: &PostgresStore,
+    redis: &RedisControlState,
+    key_id: Uuid,
+    now: DateTime<Utc>,
+) {
+    // Other tests rehydrate concurrently; never overwrite their Redis counters.
+    for seed in store
+        .budget_counter_seeds(now)
+        .await
+        .expect("load seeds")
+        .into_iter()
+        .filter(|seed| seed.key_id == key_id)
+    {
         redis
             .seed_budget_counters(
                 seed.key_id,
@@ -836,7 +848,7 @@ async fn empty_redis_rehydrates_budget_spend_and_denies_over_budget_key() {
     )
     .await;
 
-    seed_from_postgres(&env.store, &env.redis, now).await;
+    seed_from_postgres(&env.store, &env.redis, key_id, now).await;
 
     let decision = env
         .redis
@@ -883,7 +895,7 @@ async fn rehydration_ignores_bad_costs_and_skips_unbudgeted_keys() {
     insert_usage(&env.store, budgeted_key_id, project_id, "null", None, now).await;
     let (_, unbudgeted_key_id) = insert_budgeted_key(&env.store, None, None).await;
 
-    seed_from_postgres(&env.store, &env.redis, now).await;
+    seed_from_postgres(&env.store, &env.redis, budgeted_key_id, now).await;
 
     let allowed = env
         .redis
@@ -920,7 +932,7 @@ async fn rehydration_preserves_existing_budget_reservations() {
         .await
         .expect("reserve budget");
 
-    seed_from_postgres(&env.store, &env.redis, now).await;
+    seed_from_postgres(&env.store, &env.redis, key_id, now).await;
     env.redis
         .reconcile_budget_reservation(key_id, "req-reservation", 0.75, now)
         .await
