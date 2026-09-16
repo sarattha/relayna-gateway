@@ -23,7 +23,7 @@ audiences. Browser clients never receive channel keys.
 - [x] Measure >98% changed executable Rust line coverage; report exact scope.
 - [x] Verify operator UI with Computer Use and save evidence.
 - [x] Run mandatory verification and review the diff.
-- [ ] Commit, push and open draft PR.
+- [x] Commit, push and open draft PR #119: https://github.com/sarattha/relayna-gateway/pull/119.
 
 ## Surprises & Discoveries
 
@@ -51,7 +51,7 @@ audiences. Browser clients never receive channel keys.
 
 ## Outcomes & Retrospective
 
-Implementation, multi-hop E2E and Computer Use save/readback are complete. Changed production Rust coverage is 611/615 executable lines (99.35%). The complete mandatory verification stack passed, including 357 Nextest tests with zero skips, Trivy, Gitleaks and Semgrep. UI tests, strict docs build and release metadata checks passed. Publication is pending.
+Implementation, multi-hop E2E and Computer Use save/readback are complete. Changed production Rust coverage is 611/615 executable lines (99.35%). The complete mandatory verification stack passed, including 357 Nextest tests with zero skips, Trivy, Gitleaks and Semgrep. UI tests, strict docs build and release metadata checks passed. Published as draft PR #119 on codex/accessa-channel-websockets.
 
 ## Context and Orientation
 
