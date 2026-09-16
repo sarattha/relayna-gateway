@@ -17341,9 +17341,10 @@ function providerRouteTable(rows, family) {
   const actionAttr = family === "anthropic" ? "data-anthropic-route-action" : "data-openai-route-action";
   const modeForm = family === "anthropic" ? anthropicRouteModeForm : openaiRouteModeForm;
   return table(
-    ["Route", "State", "Configuration", "Updated", "Actions"],
+    ["Route", "Protocol", "State", "Configuration", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
+      '<span class="badge">HTTP</span>',
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
       modeForm(row),
       time(row.updated_at),
@@ -17373,10 +17374,11 @@ function routeConfigForm(row, dataAttrName) {
 }
 function serviceRouteTable(rows) {
   return table(
-    ["Service", "Route", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
+    ["Service", "Route", "Protocol", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       `<code>${esc(row.route_pattern)}</code>`,
+      serviceProtocolSummary(row),
       serviceBadges(row),
       esc(listValue(row.allowed_methods, "none")),
       esc(row.upstream_base_url || "missing"),
@@ -17503,6 +17505,7 @@ async function services() {
     </div>
     <section class="panel">
       <div class="panel-heading"><h3>Registered services</h3><span class="subtle">${state.services.length} total</span></div>
+      <p class="field-hint">Register each Accessa app/channel once. HTTP endpoints share its route prefix; WS (WebSocket) is limited to the displayed GET run path. SSE uses HTTP.</p>
       ${serviceTable(state.services)}
     </section>
     <datalist id="service-routes">${serviceRouteOptions()}</datalist>
@@ -17707,6 +17710,7 @@ function serviceEditForm(service) {
   return `
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
     <form id="service-edit-form" class="form-grid" data-service-name="${attr(service.name)}">
+      <div class="field wide-field"><span>Saved endpoint protocols</span><div>${serviceProtocolSummary(service)}</div><small class="field-hint">WS means WebSocket and applies only to the displayed run path. Other endpoints use HTTP; SSE also uses HTTP. Labels describe saved configuration, not current availability.</small></div>
       ${formSection("Identity and routing", "Update registry identity, route, upstream, and methods.", `
         <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
         <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
@@ -18158,13 +18162,24 @@ async function serviceAction(event) {
   setNotice(`Service ${action}d.`, "success");
   await services();
 }
+function serviceProtocolSummary(service) {
+  var _a2;
+  const binding = (_a2 = service.access) == null ? void 0 : _a2.accessa;
+  const prefix = (binding == null ? void 0 : binding.app) ? `/app/${binding.app}/channel/${binding.channel}/v1/` : null;
+  const hasRunSocket = prefix && service.route_pattern === `${prefix}*` && (service.allowed_methods || []).includes("GET");
+  if (!hasRunSocket) return '<span class="badge">HTTP</span>';
+  return `<span class="badge">HTTP + WS</span>
+    <div class="subtle">HTTP: registered methods</div>
+    <div class="subtle"><span class="badge">WS</span> GET <code>${esc(`${prefix}run`)}</code></div>`;
+}
 function serviceTable(rows) {
   return table(
-    ["Name", "State", "Route", "Upstream", "Health check", "Credential", "Cost", "Actions"],
+    ["Name", "State", "Route", "Protocol", "Upstream", "Health check", "Credential", "Cost", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       serviceBadges(row),
       `<code>${esc(row.route_pattern)}</code>`,
+      serviceProtocolSummary(row),
       esc(row.upstream_base_url || "missing"),
       esc(healthCheckLabel(row)),
       row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',

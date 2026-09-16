@@ -108,3 +108,15 @@ Evidence and final coverage commands will be recorded as implementation proceeds
 - Mandatory audit found RUSTSEC-2026-0285 in the pre-existing Rustls dependency. Updated Rustls to 0.23.45 (and webpki 0.103.15), plus event-listener 5.4.2 for its reported thread-safety issue. No new audit exemptions.
 
 - Final LLVM coverage run passed all workspace tests with live disposable services: 611/615 changed production executable lines (99.3496%), excluding tests. The four uncovered mappings remain listed in `internal/test-reports/accessa/coverage.json`; no production failure paths were excluded.
+
+## Follow-up: endpoint protocol labels
+
+User requested visible HTTP / WS / HTTP + WS labels and clarification of registration.
+Display saved transport support in Services, Routes and the service editor, with
+an explicit WS label on the exact GET run path. Require an app binding, matching
+prefix and GET before advertising WS; discovery and ordinary services are HTTP.
+SSE remains HTTP. This changes presentation only; no API/schema/runtime changes.
+
+- [x] Add and regression-test protocol labels; rebuild static assets. `npm test` and the Admin UI build pass.
+- [x] Verify Services, Routes and the editor with Computer Use; capture `protocol-labels.png` and `protocol-settings.png`.
+- [x] Mandatory verification stack passed in sequence (357 Nextest tests, zero skipped); publish this follow-up on draft PR #119.

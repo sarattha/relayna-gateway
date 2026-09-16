@@ -54,6 +54,11 @@ Example fragment (alongside the existing name, upstream, credential and methods)
 }
 ```
 
+Services and Routes show **HTTP**, **WS**, or **HTTP + WS** labels. An Accessa
+prefix supports both when GET is enabled, and the exact WS run path is displayed.
+Other endpoints (including SSE) use HTTP. These labels describe saved transport
+configuration; the enabled/disabled state is shown separately.
+
 Create a distinct registration for each app/channel binding. Route and binding
 must match exactly. For identity discovery, set `app: null` and register exactly
 `/channel/{channel}/v1/me`; that registration cannot open a run socket.

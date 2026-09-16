@@ -981,3 +981,24 @@ test("endpoint access form preserves isolated audiences and channel limits", () 
   assert.equal(parse(form).entra.audience, "api://internal-service");
   assert.equal(parse(form).entra.allow_apigee, true);
 });
+
+
+test("protocol labels distinguish Accessa run sockets from ordinary HTTP endpoints", () => {
+  const render = new Function(`${sourceFunction("esc")}\n${sourceFunction("serviceProtocolSummary")}\nreturn serviceProtocolSummary;`)();
+  const http = '<span class="badge">HTTP</span>';
+  assert.equal(render({}), http);
+  assert.equal(render({ route_pattern: "/services/internal/*", allowed_methods: ["GET"], access: { entra: { audience: "internal" } } }), http);
+  assert.equal(render({ route_pattern: "/channel/web/v1/me", allowed_methods: ["GET"], access: { accessa: { app: null, channel: "web" } } }), http);
+  const service = { route_pattern: "/app/tara/channel/web/v1/*", allowed_methods: ["GET", "POST"], access: { accessa: { app: "tara", channel: "web" } } };
+  assert.match(render(service), />HTTP \+ WS</);
+  assert.match(render(service), />WS<\/span> GET <code>\/app\/tara\/channel\/web\/v1\/run<\/code>/);
+  assert.equal(render({ ...service, allowed_methods: ["POST"] }), http);
+  assert.equal(render({ ...service, allowed_methods: undefined }), http);
+  assert.equal(render({ ...service, route_pattern: "/services/alias/*" }), http);
+  assert.match(render({ ...service, enabled: false }), />HTTP \+ WS</, "protocol and availability remain separate");
+  const hostile = { ...service, route_pattern: '/app/tara/channel/<img>/v1/*', access: { accessa: { app: "tara", channel: "<img>" } } };
+  assert.match(render(hostile), /&lt;img&gt;/);
+  assert.doesNotMatch(render(hostile), /<img>/);
+  for (const name of ["serviceTable", "serviceRouteTable", "serviceEditForm"]) assert.match(sourceFunction(name), /serviceProtocolSummary\(/);
+  assert.match(sourceFunction("providerRouteTable"), />HTTP</);
+});

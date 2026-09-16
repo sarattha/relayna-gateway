@@ -53,3 +53,20 @@ bash .codex/skills/code-change-verification/scripts/run.sh
   exceptions. Rustls/webpki and event-listener were updated to patched versions.
 - `npm run build:admin-ui`, `npm test`, strict MkDocs build, workflow YAML parsing,
   release metadata validation, and `git diff --check` passed.
+
+## Protocol label follow-up
+
+Computer Use verified the rebuilt Services inventory, Routes inventory and saved
+service editor. Ordinary services and provider routes show HTTP; the Accessa
+registration shows HTTP + WS and labels the exact GET run path WS.
+Regression tests cover discovery, missing GET, mismatched prefixes, disabled
+registrations and escaped display values. The Admin UI build and npm tests pass.
+
+![Service protocol labels](protocol-labels.png)
+![Saved endpoint protocol summary](protocol-settings.png)
+
+This follow-up changes presentation only; the production Rust coverage report
+remains 611/615 changed executable lines (99.35%).
+
+The full mandatory verification stack passed again for this follow-up, including
+357 Nextest tests with zero skipped and all configured security checks.
