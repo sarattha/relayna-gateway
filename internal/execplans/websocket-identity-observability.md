@@ -61,3 +61,20 @@ PostgreSQL/Redis. Inspect desktop/mobile UI and save screenshots.
 Runtime and both shared investigation views implemented. The extended mock-chain E2E checks live counters across five conversation turns plus heartbeats, terminal Usage persistence, failed identity redaction, and signed Apigee identity snapshots. Changed production Rust line coverage is 145/145 (100%) against bac55aa. Desktop Computer Use and 390px mobile screenshots are saved in internal/test-reports/accessa/. Live updates coalesce between polls in a bounded map; countdowns are explicitly estimates. No new migrations or token/payload capture.
 
 The complete mandatory verification script passed (363 Nextest tests, zero skipped), including Cargo tests, formatting, Clippy, audit, deny, machete, Trivy, Gitleaks and Semgrep. Admin UI build/regression tests and strict docs build passed.
+
+## Release and landing follow-up (2026-09-17)
+
+User authorized the version bump, ready-for-review transition, monitoring and
+merge when ready. Prepare 0.1.37 across workspace/lockfile, generated UI, deployment
+examples, changelog and current documentation; retain historical release notes.
+Rerun mandatory verification and the release build before pushing. GitHub requires
+one approving review and code-owner review; do not bypass this protection.
+
+- [x] Prepare 0.1.37 release metadata and operator documentation.
+- [x] Validate 0.1.37: mandatory stack (363 Nextest tests), full workspace build, UI build/tests, release metadata and strict docs all passed.
+- [ ] Push and mark PR #119 ready for review.
+- [ ] Monitor checks/review and merge the verified head when eligible.
+
+Decision: this is release metadata and documentation only; no additional runtime
+contract or migration change. Final acceptance is a merged PR after successful
+checks and required approval.
