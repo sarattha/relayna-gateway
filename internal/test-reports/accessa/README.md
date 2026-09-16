@@ -163,3 +163,12 @@ Verified in the in-app browser with Authentication collapsed; computed spacing
 matches those values. Admin UI build/tests and gateway rebuild pass.
 
 ![Provider button spacing](provider-button-spacing.png)
+
+## Additional endpoint identity alignment
+
+Moved Edit identity into a dedicated Actions column. Identity badges and audience
+text remain in Identity. Verified aligned desktop rows and reopening the LiteLLM
+identity editor with its existing saved audience/scope. No settings were saved.
+UI build/tests and gateway rebuild passed.
+
+![Endpoint identity alignment](endpoint-identity-alignment.png)

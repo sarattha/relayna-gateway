@@ -1862,7 +1862,7 @@ async function routes() {
   content.innerHTML = `
     <section class="panel"><div class="panel-heading"><h3>Additional endpoint identity</h3></div>
       <p class="field-hint">Choose Entra verification for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
-      ${table(["Route", "Protocol", "Identity"], state.routeIdentities.filter((row) => ![...state.openaiRoutes, ...state.anthropicRoutes].some((item) => item.route === row.route)).map((row) => [`<code>${esc(row.route)}</code>`, '<span class="badge">HTTP</span>', routeIdentityControl(row.route)]))}
+      ${table(["Route", "Protocol", "Identity", "Actions"], state.routeIdentities.filter((row) => ![...state.openaiRoutes, ...state.anthropicRoutes].some((item) => item.route === row.route)).map((row) => [`<code>${esc(row.route)}</code>`, '<span class="badge">HTTP</span>', endpointIdentityBadge(row.access), routeIdentityButton(row.route)]))}
     </section>
     <section class="panel">
       <div class="panel-heading">
@@ -4068,7 +4068,11 @@ function endpointIdentityBadge(access = {}) {
 function routeIdentityControl(route) {
   const setting = (state.routeIdentities || []).find((item) => item.route === route);
   if (!setting) return '<span class="subtle">Unavailable</span>';
-  return `<div class="route-identity-control">${endpointIdentityBadge(setting.access)}<button type="button" data-route-identity="${attr(route)}" aria-label="Edit Entra verification for ${attr(route)}">Edit identity</button></div>`;
+  return `<div class="route-identity-control">${endpointIdentityBadge(setting.access)}${routeIdentityButton(route)}</div>`;
+}
+
+function routeIdentityButton(route) {
+  return `<button type="button" data-route-identity="${attr(route)}" aria-label="Edit Entra verification for ${attr(route)}">Edit identity</button>`;
 }
 
 function editRouteIdentity(event) {
