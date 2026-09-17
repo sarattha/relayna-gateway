@@ -230,3 +230,19 @@ Gateway-inherited policy requirements are not included in the identity snapshot.
 The complete mandatory verification script passed for this extension, including
 363 Nextest tests with zero skipped, Cargo tests, formatting, Clippy, audit, deny,
 machete, Trivy, Gitleaks and Semgrep.
+
+## PR review follow-up
+
+Shared upstream header preparation strips caller-supplied admission context.
+The Accessa E2E verifies minted context is present for Accessa and spoofed context
+is absent for an ordinary signed-Apigee service. JWT endpoint expiry now uses
+the configured clock skew; boundary tests cover zero/60-second skew and confirm
+that missing scope still fails. Signed-Apigee expiry remains strict.
+
+The conversation fixture uses a 10-second idle window to accommodate slow CI
+admission work, retaining the 1-second HTTP timeout and heartbeat assertions.
+A clean focused LLVM run covers 5/5 changed production Rust lines (100%); see
+[review fixes coverage](review-fixes-coverage.json).
+
+The final mandatory verification script passed for the review fixes, including
+364 Nextest tests, Cargo workspace tests, Clippy and all configured security scans.

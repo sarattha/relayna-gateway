@@ -132,7 +132,7 @@ async fn adapter(
 ) -> axum::response::Response {
     state.observed.lock().unwrap().push(json!({"path":uri.path(),"oid":headers.get("x-caller-oid").and_then(|v|v.to_str().ok()),
         "channel":headers.get("x-route-channel").and_then(|v|v.to_str().ok()),"app":headers.get("x-route-app").and_then(|v|v.to_str().ok()),
-        "key_leaked":headers.contains_key("x-relayna-key"),"user_token_leaked":headers.contains_key("x-access-token")}));
+        "admission_present":headers.contains_key("x-relayna-admission-context"),"key_leaked":headers.contains_key("x-relayna-key"),"user_token_leaked":headers.contains_key("x-access-token")}));
     if let Ok(upgrade) = upgrade {
         let mut request = format!("{}/run", ws(&state.router))
             .into_client_request()
@@ -360,7 +360,7 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
         let channel = format!("web{index}-{suffix}");
         let name = format!("accessa-{index}-{suffix}");
         let request:ServiceCreateRequest=serde_json::from_value(json!({"name":name,"project_id":project.id,"route_pattern":format!("/app/tara/channel/{channel}/v1/*"),"upstream_base_url":upstream,"credential":"mock-adapter-only","allowed_methods":["GET","POST"],"timeout_ms":1000,"max_body_bytes":512,
-            "access":{"entra":{"audience":"api://accessa","required_scopes":["run"],"required_roles":["invoke"],"allowed_groups":["staff"]},"accessa":{"app":"tara","channel":channel,"idle_timeout_ms":1500,"max_connections":2,"max_connections_per_key":1,"max_frame_bytes":4096}}})).unwrap();
+            "access":{"entra":{"audience":"api://accessa","required_scopes":["run"],"required_roles":["invoke"],"allowed_groups":["staff"]},"accessa":{"app":"tara","channel":channel,"idle_timeout_ms":10000,"max_connections":2,"max_connections_per_key":1,"max_frame_bytes":4096}}})).unwrap();
         let response = store.create_service(request).await.unwrap();
         assert_eq!(response.access.entra.unwrap().audience, "api://accessa");
         let material = VirtualKeyMaterial::generate().unwrap();
@@ -508,6 +508,7 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
     ];
     let mut transcript = Vec::new();
     let mut admission_ids = std::collections::HashSet::new();
+    // Allow slow CI admission/Argon2 work within the 10-second socket idle limit.
     // Five successful conversational turns on exactly the same BFF socket.
     for index in 0..5 {
         let events = chat_turn(&mut socket, &conversation, &messages[..=index]).await;
@@ -560,7 +561,7 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
     assert!(socket_sample.client_bytes > 0 && socket_sample.upstream_bytes > 0);
     assert!(socket_sample.client_frames >= 9 && socket_sample.upstream_frames >= 9);
     assert!(socket_sample.duration_ms >= 1500);
-    assert_eq!(socket_sample.idle_timeout_ms, 1500);
+    assert_eq!(socket_sample.idle_timeout_ms, 10000);
     assert!(socket_sample.session_expires_at.is_some());
     let verified = live.diagnostics.entra.as_ref().unwrap();
     assert_eq!(verified.verification, "verified");
@@ -689,6 +690,7 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
         format!("/app/tara/channel/{}/v1/conversations", channels[0])
     );
     for request in observed.lock().unwrap().iter() {
+        assert_eq!(request["admission_present"], true);
         assert_eq!(request["oid"], "employee-1");
         assert_eq!(request["key_leaked"], false);
         assert_eq!(request["user_token_leaked"], false);
@@ -745,6 +747,7 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
                 .header("x-relayna-key", &keys[0])
                 .header("x-apigee-entra-identity", payload)
                 .header("x-apigee-entra-signature", signature)
+                .header("x-relayna-admission-context", "spoofed-context")
                 .send()
                 .await
                 .unwrap()
@@ -753,6 +756,11 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
             expected
         );
     }
+
+    assert_eq!(
+        observed.lock().unwrap().last().unwrap()["admission_present"],
+        false
+    );
 
     let signed_identity = gateway_core::traffic::monitor()
         .batch(None)

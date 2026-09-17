@@ -72,9 +72,22 @@ one approving review and code-owner review; do not bypass this protection.
 
 - [x] Prepare 0.1.37 release metadata and operator documentation.
 - [x] Validate 0.1.37: mandatory stack (363 Nextest tests), full workspace build, UI build/tests, release metadata and strict docs all passed.
-- [ ] Push and mark PR #119 ready for review.
+- [x] Push and mark PR #119 ready for review (c86ff75).
 - [ ] Monitor checks/review and merge the verified head when eligible.
 
 Decision: this is release metadata and documentation only; no additional runtime
 contract or migration change. Final acceptance is a merged PR after successful
 checks and required approval.
+
+## Review follow-up
+
+Review identified caller-controlled admission context leakage on non-Accessa
+upstreams and JWT clock-skew inconsistency in endpoint authorization. Both are
+branch-local Accessa behavior after v0.1.36; fix directly with no migration.
+Strip admission context in the shared header sanitizer before minting an Accessa
+context. Apply configured JWT skew to the endpoint expiry comparison, preserving
+strict signed-Apigee expiry. Add regression coverage for both. CI also exposed
+the E2E fixture's narrow 1.5-second idle window; allow 10 seconds for slow admission
+work, retaining the 1-second HTTP timeout and five-turn/heartbeat assertions.
+
+Both review fixes passed the complete final mandatory verification stack with 364 Nextest tests, zero failures/skips. Clean LLVM coverage is 5/5 changed production Rust lines (100%) against c86ff75. Ready to push for CI and reviewer reassessment; required approval remains outstanding.

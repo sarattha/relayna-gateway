@@ -2591,6 +2591,7 @@ fn prepare_upstream_authority_and_credentials(
     upstream: &PingoraUpstreamConfig,
     relayna_key_header: Option<&str>,
 ) -> PingoraResult<()> {
+    upstream_request.remove_header(ADMISSION_CONTEXT_HEADER);
     upstream_request.remove_header("authorization");
     upstream_request.remove_header("host");
     upstream_request.remove_header("x-apigee-entra-identity");
@@ -4405,6 +4406,9 @@ mod tests {
             .insert_header("x-relayna-worker-token", "client-worker-token")
             .expect("client worker token");
 
+        request
+            .insert_header(ADMISSION_CONTEXT_HEADER, "caller-controlled-context")
+            .unwrap();
         prepare_upstream_authority_and_credentials(&mut request, &upstream, Some("x-relayna-key"))
             .expect("prepared upstream headers");
 
@@ -4422,6 +4426,7 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("Bearer internal-service-key")
         );
+        assert!(!request.headers.contains_key(ADMISSION_CONTEXT_HEADER));
         assert!(!request.headers.contains_key("x-relayna-key"));
         assert!(!request.headers.contains_key("proxy-authorization"));
         assert!(!request.headers.contains_key("cookie"));

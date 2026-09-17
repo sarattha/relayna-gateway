@@ -654,8 +654,13 @@ impl EntraJwtVerifier {
             source: EntraIdentitySource::Jwt,
         };
         if let Some(endpoint) = endpoint {
+            // JWT temporal validation above and endpoint expiry use the same tolerance.
+            // Signed Apigee authorization retains its separate strict expiry check.
+            let authorization_time = now
+                .timestamp()
+                .saturating_sub(self.config.clock_skew_seconds);
             endpoint
-                .authorize(&identity, now.timestamp())
+                .authorize(&identity, authorization_time)
                 .map_err(|error| {
                     ClaimValidationFailure::new(error, "endpoint_authorization_failed")
                 })?;
@@ -1653,6 +1658,56 @@ mod tests {
             verifier.verify_token(&token, Utc::now()).await.unwrap_err(),
             GatewayError::InvalidEntraAudience
         );
+    }
+
+    #[tokio::test]
+    async fn endpoint_jwt_expiry_matches_gateway_clock_skew() {
+        let key = signing_key("test-kid");
+        let now = DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap();
+        for skew in [0, 60] {
+            let mut config = config();
+            config.clock_skew_seconds = skew;
+            let policy = crate::EndpointEntraPolicy {
+                audience: config.audience.clone(),
+                required_scopes: vec!["gateway.invoke".into()],
+                required_roles: vec![],
+                allowed_groups: config.allowed_groups.clone(),
+                allow_apigee: false,
+            };
+            let verifier = EntraJwtVerifier::new_with_jwks_for_tests(config, vec![key.jwk.clone()]);
+            for delta in [-61, -60, -59, -1, 0, 1] {
+                let mut claims = valid_claims();
+                claims["exp"] = json!(now.timestamp() + delta);
+                let token = token(&key, claims);
+                let global = verifier.verify_token(&token, now).await;
+                let endpoint = verifier
+                    .verify_token_for_endpoint(
+                        &token,
+                        now,
+                        DEFAULT_ENTRA_DEBUG_CONTEXT,
+                        Some(&policy),
+                    )
+                    .await;
+                assert_eq!(global.is_ok(), delta + skew > 0);
+                assert_eq!(endpoint, global, "expiry delta={delta}, skew={skew}");
+            }
+            // Clock tolerance must not weaken the endpoint's scope requirements.
+            let mut claims = valid_claims();
+            claims["exp"] = json!(now.timestamp() + 1);
+            claims["scp"] = json!("unrelated.scope");
+            assert_eq!(
+                verifier
+                    .verify_token_for_endpoint(
+                        &token(&key, claims),
+                        now,
+                        DEFAULT_ENTRA_DEBUG_CONTEXT,
+                        Some(&policy)
+                    )
+                    .await
+                    .unwrap_err(),
+                GatewayError::InsufficientEntraAuthorization
+            );
+        }
     }
 
     #[tokio::test]

@@ -1,0 +1,19 @@
+{
+  "base": "c86ff75",
+  "scope": "changed production Rust executable lines; tests excluded",
+  "covered": 5,
+  "executable": 5,
+  "percent": 100.0,
+  "files": {
+    "crates/gateway-core/src/entra.rs": {
+      "covered": 4,
+      "executable": 4,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/pingora_plane.rs": {
+      "covered": 1,
+      "executable": 1,
+      "uncovered_lines": []
+    }
+  }
+}

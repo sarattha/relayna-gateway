@@ -22,6 +22,9 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Fixed
 
+- Strip caller-supplied admission context from every upstream route before
+  inserting gateway-issued Accessa credentials. Endpoint JWT verification honors
+  the configured clock skew without relaxing scope or role requirements.
 - Align route configuration and identity actions; make drawer action bars opaque
   and consistently spaced across service and provider forms.
 - Stabilize database timestamp assertions, OIDC expiry fixtures and isolated
