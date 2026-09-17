@@ -1,7 +1,7 @@
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic } from "./traffic";
 import { installComponentGuidance } from "./design-system/guidance";
-import { routingModeLabel, usageValue, requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
+import { refreshWebSocketMetrics, routingModeLabel, usageValue, requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 import Chart from "chart.js/auto";
 import "./app.css";
@@ -688,7 +688,7 @@ async function refresh({ focus = false } = {}) {
       if (generation !== viewGeneration) return;
       state.projects = projects;
       syncProjectScope();
-      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
+      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, refreshWebSocketMetrics, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
     }
     if (view === "usage") await usage();
     if (view === "health") await health();
@@ -1854,11 +1854,16 @@ async function routes() {
     api("/admin-ui/admin/openai-routes"),
     api("/admin-ui/admin/anthropic-routes"),
     api("/admin-ui/admin/services"),
+    api("/admin-ui/admin/route-identities"),
   ]);
   if (renderId !== renderGeneration) return;
-  [state.openaiRoutes, state.anthropicRoutes, state.services] = loaded;
+  [state.openaiRoutes, state.anthropicRoutes, state.services, state.routeIdentities] = loaded;
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
+    <section class="panel"><div class="panel-heading"><h3>Additional endpoint identity</h3></div>
+      <p class="field-hint">Choose Entra verification for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
+      ${table(["Route", "Protocol", "Identity", "Actions"], state.routeIdentities.filter((row) => ![...state.openaiRoutes, ...state.anthropicRoutes].some((item) => item.route === row.route)).map((row) => [`<code>${esc(row.route)}</code>`, '<span class="badge">HTTP</span>', endpointIdentityBadge(row.access), routeIdentityButton(row.route)]))}
+    </section>
     <section class="panel">
       <div class="panel-heading">
         <h3>${routeFamilyLogo("openai")} OpenAI-compatible and rerank routes</h3>
@@ -1893,6 +1898,7 @@ async function routes() {
   document.querySelectorAll("[data-service-route-timeout-form]").forEach((form) => {
     form.addEventListener("submit", handleAsync(saveServiceRouteTimeout));
   });
+  document.querySelectorAll("[data-route-identity]").forEach((button) => button.addEventListener("click", editRouteIdentity));
   organizeView("routes");
 }
 
@@ -1906,9 +1912,11 @@ function providerRouteTable(rows, family) {
   const actionAttr = family === "anthropic" ? "data-anthropic-route-action" : "data-openai-route-action";
   const modeForm = family === "anthropic" ? anthropicRouteModeForm : openaiRouteModeForm;
   return table(
-    ["Route", "State", "Configuration", "Updated", "Actions"],
+    ["Route", "Protocol", "Identity", "State", "Configuration", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
+      '<span class="badge">HTTP</span>',
+      routeIdentityControl(row.route),
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
       modeForm(row),
       time(row.updated_at),
@@ -1942,10 +1950,12 @@ function routeConfigForm(row, dataAttrName) {
 
 function serviceRouteTable(rows) {
   return table(
-    ["Service", "Route", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
+    ["Service", "Route", "Protocol", "Identity", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       `<code>${esc(row.route_pattern)}</code>`,
+      serviceProtocolSummary(row),
+      endpointIdentityBadge(row.access),
       serviceBadges(row),
       esc(listValue(row.allowed_methods, "none")),
       esc(row.upstream_base_url || "missing"),
@@ -2031,6 +2041,77 @@ function routeConfigPayload(form) {
   };
 }
 
+function serviceTypePresets() {
+  return [
+    { id: "internal_http", label: "Internal HTTP service", description: "General HTTP API using the gateway identity setting. Adjust methods and Entra requirements for your service.", methods: ["GET", "POST"], mode: "inherit", timeout: 60000 },
+    { id: "relayna_http", label: "Relayna HTTP service", description: "Relayna runtime exposed through its HTTP API. Point Upstream URL at the runtime; requests use /services/{name}/*. The runtime owns tasks and agent execution. Import from Studio if the service already exists there.", methods: ["GET", "POST"], mode: "inherit", timeout: 120000, health: "/health" },
+    { id: "entra_http", label: "Entra-protected HTTP service", description: "HTTP API requiring its own Entra audience. Enter the audience and any required scopes, roles or groups below.", methods: ["GET", "POST"], mode: "required", timeout: 60000 },
+    { id: "apigee_http", label: "Apigee-backed HTTP service", description: "HTTP API requiring Entra identity, also accepting signed Apigee claims. Enter this endpoint’s audience. Trusted Apigee verification must be configured in gateway settings.", methods: ["GET", "POST"], mode: "required", apigee: true, timeout: 60000 },
+    { id: "accessa_channel", label: "Accessa app/channel (HTTP + WebSocket)", description: "BFF connects through the gateway to the channel adapter. App and channel generate the route; only GET /run supports WebSocket. Enter the Accessa Entra audience and bind a virtual key to this service.", methods: ["GET", "POST"], mode: "required", accessa: true, app: "tara", channel: "web", timeout: 60000 },
+    { id: "accessa_discovery", label: "Accessa channel discovery (HTTP)", description: "Channel identity discovery at /channel/{channel}/v1/me. App stays blank; enter the channel and its Entra audience. This endpoint does not open WebSockets.", methods: ["GET"], mode: "required", accessa: true, app: "", channel: "web", timeout: 60000 },
+    { id: "custom", label: "Custom configuration", description: "Configure the supported HTTP or Accessa route directly. Keeps current values so you can customize a preset. Generic WebSockets and arbitrary protocol adapters are not enabled by this choice." },
+  ];
+}
+
+function suggestedServiceRoute(type, name, app, channel) {
+  if (type === "accessa_channel") return app && channel ? `/app/${app}/channel/${channel}/v1/*` : "";
+  if (type === "accessa_discovery") return channel ? `/channel/${channel}/v1/me` : "";
+  return type && type !== "custom" && name ? `/services/${name}/*` : "";
+}
+
+function applyServiceTypePreset(form, type) {
+  const preset = serviceTypePresets().find((item) => item.id === type);
+  if (!preset) return;
+  form.querySelector("#service-type-help").textContent = preset.description;
+  if (type === "custom") return;
+  const set = (name, value) => { form.elements.namedItem(name).value = value; };
+  const check = (name, value) => { form.elements.namedItem(name).checked = value; };
+  form.querySelectorAll('[name="allowed_methods"]').forEach((input) => { input.checked = preset.methods.includes(input.value); });
+  set("timeout_ms", preset.timeout);
+  set("health_check_path", preset.health || "");
+  set("endpoint_entra_mode", preset.mode);
+  for (const field of ["endpoint_audience", "endpoint_scopes", "endpoint_roles", "endpoint_groups"]) set(field, "");
+  check("endpoint_apigee", !!preset.apigee);
+  check("accessa_enabled", !!preset.accessa);
+  set("accessa_app", preset.app || "");
+  set("accessa_channel", preset.channel || "");
+  set("socket_idle_ms", 60000);
+  set("socket_connections", 100);
+  set("socket_key_connections", 10);
+  set("socket_frame_bytes", 1048576);
+  set("route_pattern", "");
+  form.dataset.suggestedRoute = "";
+  updateServiceRouteSuggestion(form);
+  const identity = form.elements.namedItem("endpoint_entra_mode").closest("details");
+  if (identity) identity.open = preset.mode === "required";
+  updateServiceTransportFields(form);
+}
+
+function updateServiceRouteSuggestion(form) {
+  const value = (name) => String(form.elements.namedItem(name).value).trim();
+  const input = form.elements.namedItem("route_pattern");
+  if (input.value && input.value !== form.dataset.suggestedRoute) return;
+  const suggested = suggestedServiceRoute(value("service_type"), value("name"), value("accessa_app"), value("accessa_channel"));
+  input.value = suggested;
+  form.dataset.suggestedRoute = suggested;
+}
+
+function updateServiceTransportFields(form) {
+  const enabled = form.elements.namedItem("accessa_enabled").checked;
+  for (const name of ["accessa_app", "accessa_channel", "socket_idle_ms", "socket_connections", "socket_key_connections", "socket_frame_bytes"]) {
+    form.elements.namedItem(name).closest("label").hidden = !enabled;
+  }
+}
+
+function bindServiceTypePresets(form) {
+  form.elements.namedItem("service_type").addEventListener("change", (event) => applyServiceTypePreset(form, event.target.value));
+  for (const name of ["name", "accessa_app", "accessa_channel"]) {
+    form.elements.namedItem(name).addEventListener("input", () => updateServiceRouteSuggestion(form));
+  }
+  form.elements.namedItem("accessa_enabled").addEventListener("change", () => updateServiceTransportFields(form));
+  updateServiceTransportFields(form);
+}
+
 async function services() {
   const renderId = ++renderGeneration;
   const loaded = await Promise.all([api("/admin-ui/admin/services"), api("/admin-ui/admin/projects")]);
@@ -2046,6 +2127,11 @@ async function services() {
           <button type="button" data-service-action="studio-import">Import from Studio</button>
         </div>
         <form id="service-form" class="form-grid">
+          <label class="wide-field">Service type<select name="service_type" required aria-describedby="service-type-help">
+            <option value="">Choose a service type…</option>
+            ${serviceTypePresets().map((preset) => `<option value="${attr(preset.id)}">${esc(preset.label)}</option>`).join("")}
+          </select></label>
+          <p id="service-type-help" class="field-hint wide-field" aria-live="polite">Choose a starting configuration, then adjust its settings. Changing type replaces route, methods, timeout and identity defaults; name, upstream, credentials and pricing are kept.</p>
           ${formSection("Identity and routing", "Name the service and define its public route and upstream.", `
             <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9\\x2d]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
             <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
@@ -2061,6 +2147,7 @@ async function services() {
             <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="2097152"></label>
             <label>Fallback services<input name="fallback_services" placeholder="backup-a,backup-b"></label>
           `)}
+          ${endpointAccessFields({})}
           ${formSection("Usage pricing", "Choose the cost source and optional request-matching rules.", `
             <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
             <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01"></label>
@@ -2078,11 +2165,13 @@ async function services() {
     </div>
     <section class="panel">
       <div class="panel-heading"><h3>Registered services</h3><span class="subtle">${state.services.length} total</span></div>
+      <p class="field-hint">Register each Accessa app/channel once. HTTP endpoints share its route prefix; WS (WebSocket) is limited to the displayed GET run path. SSE uses HTTP.</p>
       ${serviceTable(state.services)}
     </section>
     <datalist id="service-routes">${serviceRouteOptions()}</datalist>
   `;
   document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
+  bindServiceTypePresets(document.querySelector("#service-form"));
   document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
   bindPricingRuleEditors();
   bindEndpointPricingEditors();
@@ -2282,6 +2371,7 @@ function serviceEditForm(service) {
   return `
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
     <form id="service-edit-form" class="form-grid" data-service-name="${attr(service.name)}">
+      <div class="field wide-field"><span>Saved endpoint protocols</span><div>${serviceProtocolSummary(service)}</div><small class="field-hint">WS means WebSocket and applies only to the displayed run path. Other endpoints use HTTP; SSE also uses HTTP. Labels describe saved configuration, not current availability.</small></div>
       ${formSection("Identity and routing", "Update registry identity, route, upstream, and methods.", `
         <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
         <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
@@ -2299,6 +2389,7 @@ function serviceEditForm(service) {
         <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
         <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       `)}
+      ${endpointAccessFields(service.access || {})}
       ${formSection("Usage pricing", "Update cost source and request-matching rules.", `
         <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
         <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
@@ -2406,8 +2497,8 @@ async function settings() {
       </form>
     </section>
     <section class="panel">
-      ${state.authSettings.unverified_bearer_enabled ? `<div class="notice" data-kind="warning" role="status"><span class="badge warn">Unverified bearer active</span> Entra verification is paused for gateway-managed requests. Only the Relayna virtual key is authenticated.</div>` : ""}
-      <div class="panel-heading"><h3>Entra ID and Apigee front door</h3><span class="subtle">${esc(state.authSettings.updated_at ? time(state.authSettings.updated_at) : "environment or unset")}</span></div>
+      ${state.authSettings.unverified_bearer_enabled ? `<div class="notice" data-kind="warning" role="status"><span class="badge warn">Unverified bearer active</span> Legacy Entra verification is paused; endpoints configured to Require Entra still fail closed. Only the Relayna virtual key is authenticated.</div>` : ""}
+      <div class="panel-heading"><h3>Shared Entra trust and legacy defaults</h3><span class="subtle">${esc(state.authSettings.updated_at ? time(state.authSettings.updated_at) : "environment or unset")}</span></div>
       <form id="auth-settings-form" class="form-grid">
         ${formSection("Gateway headers", "Keep native key and trusted-ingress behavior explicit.", `
           <label class="check wide-field"><input name="unverified_bearer_enabled" type="checkbox" ${state.authSettings.unverified_bearer_enabled ? "checked" : ""} aria-describedby="unverified-bearer-help"> Require unverified bearer (troubleshooting)</label>
@@ -2438,7 +2529,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.36")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.37")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -2766,13 +2857,25 @@ async function serviceAction(event) {
   await services();
 }
 
+function serviceProtocolSummary(service) {
+  const binding = service.access?.accessa;
+  const prefix = binding?.app ? `/app/${binding.app}/channel/${binding.channel}/v1/` : null;
+  const hasRunSocket = prefix && service.route_pattern === `${prefix}*` && (service.allowed_methods || []).includes("GET");
+  if (!hasRunSocket) return '<span class="badge">HTTP</span>';
+  return `<span class="badge">HTTP + WS</span>
+    <div class="subtle">HTTP: registered methods</div>
+    <div class="subtle"><span class="badge">WS</span> GET <code>${esc(`${prefix}run`)}</code></div>`;
+}
+
 function serviceTable(rows) {
   return table(
-    ["Name", "State", "Route", "Upstream", "Health check", "Credential", "Cost", "Actions"],
+    ["Name", "State", "Route", "Protocol", "Identity", "Upstream", "Health check", "Credential", "Cost", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       serviceBadges(row),
       `<code>${esc(row.route_pattern)}</code>`,
+      serviceProtocolSummary(row),
+      endpointIdentityBadge(row.access),
       esc(row.upstream_base_url || "missing"),
       esc(healthCheckLabel(row)),
       row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
@@ -3422,10 +3525,11 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
 
 function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {}) {
   return table(
-    ["Created", "Request", "Route", "Routing mode", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
+    ["Created", "Request", "Protocol / transfer", "Route", "Routing mode", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
     rows.map((row) => [
       time(row.created_at),
       `<code>${esc(row.request_id)}</code>`,
+      row.diagnostics?.websocket ? `${badge("WS", "neutral")}<div class="subtle">↑ ${esc(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc(row.diagnostics.websocket.upstream_bytes)} B</div>` : badge(row.diagnostics?.protocol === "http" ? "HTTP" : "Not recorded", "neutral"),
       esc(row.route),
       badge(routingModeLabel(row.diagnostics), "neutral"),
       esc(row.service_name || ""),
@@ -4018,8 +4122,106 @@ function guardrailExecutionTable(rows) {
   );
 }
 
+function endpointIdentityFields(access = {}) {
+  const entra = access.entra || {};
+  const mode = access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
+  return `<label class="wide-field">Entra verification<select name="endpoint_entra_mode">
+    <option value="inherit" ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
+    <option value="required" ${mode === "required" ? "selected" : ""}>Require Entra</option>
+    <option value="disabled" ${mode === "disabled" ? "selected" : ""}>No Entra</option>
+  </select></label>
+    <label>Entra audience<input name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
+    <label>Required scopes<input name="endpoint_scopes" value="${attr(listValue(entra.required_scopes, ""))}"></label>
+    <label>Required roles<input name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
+    <label>Allowed groups<input name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
+    <label class="check"><input name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label>
+    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claims below apply only to Require Entra.</p>`;
+}
+
+function endpointIdentityBadge(access = {}) {
+  return access.entra ? `<span class="badge good">Entra required</span><div class="subtle">${esc(access.entra.audience)}</div>`
+    : access.skip_entra ? '<span class="badge">No Entra</span>' : '<span class="badge warn">Gateway setting</span>';
+}
+
+function routeIdentityControl(route) {
+  const setting = (state.routeIdentities || []).find((item) => item.route === route);
+  if (!setting) return '<span class="subtle">Unavailable</span>';
+  return `<div class="route-identity-control">${endpointIdentityBadge(setting.access)}${routeIdentityButton(route)}</div>`;
+}
+
+function routeIdentityButton(route) {
+  return `<button type="button" data-route-identity="${attr(route)}" aria-label="Edit Entra verification for ${attr(route)}">Edit identity</button>`;
+}
+
+function editRouteIdentity(event) {
+  const route = event.currentTarget.dataset.routeIdentity;
+  const setting = state.routeIdentities.find((item) => item.route === route);
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
+  backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+    <h3 id="${titleId}">Endpoint identity · ${esc(route)}</h3>
+    <form class="form-grid">${endpointIdentityFields(setting.access)}
+      <div class="form-actions"><button class="primary">Save identity</button><button type="button" data-close-modal>Cancel</button></div>
+    </form></div>`;
+  document.body.appendChild(backdrop);
+  let saving = false;
+  const close = mountDialog(backdrop, { initialFocus: "select", dismissible: false });
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => { if (!saving) close(); });
+  backdrop.addEventListener("keydown", (keyEvent) => { if (keyEvent.key === "Escape" && !saving) close(); });
+  backdrop.querySelector("form").addEventListener("submit", handleAsync(async (submit) => {
+    submit.preventDefault();
+    if (saving) return;
+    const access = endpointAccessFromForm(new FormData(submit.currentTarget));
+    saving = true;
+    try {
+      await api("/admin-ui/admin/route-identities", { method: "PUT", body: JSON.stringify({ route, access }) });
+      close();
+      setNotice(`Endpoint identity saved for ${route}.`, "success");
+      await routes();
+    } finally { saving = false; }
+  }));
+}
+
+function endpointAccessFields(access) {
+  const binding = access.accessa || {};
+  return formSection("Endpoint identity and Accessa", "Apply identity requirements to this registered route. Accessa preserves the public path and requires an explicit key service binding.", `
+    ${endpointIdentityFields(access)}
+    <label class="check"><input name="accessa_enabled" type="checkbox" ${access.accessa ? "checked" : ""}> Accessa channel binding</label>
+    <label>Accessa app<input name="accessa_app" value="${attr(binding.app || "")}" placeholder="tara"></label>
+    <label>Accessa channel<input name="accessa_channel" value="${attr(binding.channel || "")}" placeholder="tara-frontend"></label>
+    <label>Socket idle timeout ms<input name="socket_idle_ms" type="number" min="100" max="600000" value="${attr(binding.idle_timeout_ms ?? 60000)}"></label>
+    <label>Connections per route per instance<input name="socket_connections" type="number" min="1" max="10000" value="${attr(binding.max_connections ?? 100)}"></label>
+    <label>Connections per key per instance<input name="socket_key_connections" type="number" min="1" max="10000" value="${attr(binding.max_connections_per_key ?? 10)}"></label>
+    <label>Maximum socket message bytes<input name="socket_frame_bytes" type="number" min="125" max="16777216" value="${attr(binding.max_frame_bytes ?? 1048576)}"></label>
+    <div class="help wide-field">With Require Entra, all listed scopes and roles are required; any listed group may match. Apigee must sign audience and expiry claims. Accessa requires Require Entra and an audience; a blank app is only for /channel/{channel}/v1/me. Socket limits apply per gateway instance; the instance ceiling is 4,096. Accessa transport and admission carry no charge; downstream service calls remain metered.</div>
+  `);
+}
+
+function endpointAccessFromForm(form) {
+  const mode = String(form.get("endpoint_entra_mode") || "inherit");
+  const audience = mode === "required" ? String(form.get("endpoint_audience") || "").trim() : "";
+  const accessa = form.has("accessa_enabled");
+  if (accessa && !audience) throw new Error("Accessa requires an endpoint Entra audience and Require Entra mode.");
+  if (mode === "required" && !audience) throw new Error("Require Entra needs an endpoint audience.");
+  if (!["inherit", "required", "disabled"].includes(mode)) throw new Error("Choose an Entra verification mode.");
+  return {
+    skip_entra: mode === "disabled",
+    entra: audience ? {
+      audience, required_scopes: csv(form.get("endpoint_scopes")), required_roles: csv(form.get("endpoint_roles")),
+      allowed_groups: csv(form.get("endpoint_groups")), allow_apigee: form.has("endpoint_apigee"),
+    } : null,
+    accessa: accessa ? {
+      app: nullableString(form.get("accessa_app")), channel: String(form.get("accessa_channel") || "").trim(),
+      idle_timeout_ms: Number(form.get("socket_idle_ms")), max_connections: Number(form.get("socket_connections")),
+      max_connections_per_key: Number(form.get("socket_key_connections")), max_frame_bytes: Number(form.get("socket_frame_bytes")),
+    } : null,
+  };
+}
+
 function serviceBody(form, patch) {
   const body = {
+    access: endpointAccessFromForm(form),
     project_id: form.has("project_id") ? nullableString(form.get("project_id")) : undefined,
     studio_service_id: patch ? nullableString(form.get("studio_service_id")) : blankToUndefined(form.get("studio_service_id")),
     route_pattern: form.get("route_pattern") || undefined,

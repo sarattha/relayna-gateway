@@ -37,6 +37,7 @@ pub enum ServiceCostMode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServiceRegistration {
+    pub access: crate::EndpointAccess,
     pub name: String,
     pub project_id: Option<Uuid>,
     pub studio_service_id: Option<String>,
@@ -68,6 +69,8 @@ pub struct ServiceRegistration {
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct ServiceCreateRequest {
+    #[serde(default)]
+    pub access: crate::EndpointAccess,
     pub name: String,
     #[serde(default)]
     pub project_id: Option<Uuid>,
@@ -109,6 +112,7 @@ pub struct ServiceCreateRequest {
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 pub struct ServicePatchRequest {
+    pub access: Option<crate::EndpointAccess>,
     pub project_id: Option<Option<Uuid>>,
     pub studio_service_id: Option<Option<String>>,
     pub route_pattern: Option<String>,
@@ -283,6 +287,7 @@ pub struct StudioServiceImportPreview {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ServiceResponse {
+    pub access: crate::EndpointAccess,
     pub name: String,
     pub project_id: Option<Uuid>,
     pub studio_service_id: Option<String>,
@@ -462,6 +467,7 @@ impl ServiceCreateRequest {
             .or_else(|| default_route_pattern(&self.name))
             .unwrap_or_else(|| format!("/services/{}/*", self.name));
         validate_route_pattern(&route_pattern)?;
+        self.access.validate(&route_pattern)?;
         validate_optional_upstream(self.upstream_base_url.as_deref())?;
         validate_optional_health_check_path(self.health_check_path.as_deref())?;
         validate_health_check_method(&self.health_check_method)?;
@@ -659,6 +665,7 @@ impl ServiceRegistration {
 
     pub fn to_response(&self) -> ServiceResponse {
         ServiceResponse {
+            access: self.access.clone(),
             name: self.name.clone(),
             project_id: self.project_id,
             studio_service_id: self.studio_service_id.clone(),
@@ -1291,6 +1298,7 @@ mod tests {
     fn redacts_service_credentials_in_response() {
         let now = Utc::now();
         let registration = ServiceRegistration {
+            access: Default::default(),
             name: "summary".to_owned(),
             project_id: None,
             studio_service_id: None,
@@ -1829,6 +1837,7 @@ mod tests {
 
     fn valid_create_request() -> ServiceCreateRequest {
         ServiceCreateRequest {
+            access: Default::default(),
             name: "summary".to_owned(),
             project_id: None,
             studio_service_id: None,
@@ -1857,6 +1866,7 @@ mod tests {
     ) -> ServiceRegistration {
         let now = Utc::now();
         ServiceRegistration {
+            access: Default::default(),
             name: "summary".to_owned(),
             project_id: None,
             studio_service_id: None,

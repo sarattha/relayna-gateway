@@ -2606,6 +2606,43 @@ impl AdminAuditStore for PostgresStore {
 
 #[async_trait]
 impl AdminOpenAiRouteStore for PostgresStore {
+    async fn list_route_identities(
+        &self,
+    ) -> GatewayResult<Vec<gateway_core::endpoint_access::RouteIdentitySetting>> {
+        let rows = sqlx::query("SELECT route, access FROM route_identity_settings")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let mut values = std::collections::HashMap::new();
+        for row in rows {
+            values.insert(
+                row.try_get::<String, _>("route")
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
+                row.try_get::<Json<gateway_core::EndpointAccess>, _>("access")
+                    .map_err(|_| GatewayError::StoreUnavailable)?
+                    .0,
+            );
+        }
+        Ok(gateway_core::endpoint_access::IDENTITY_ROUTES
+            .iter()
+            .map(
+                |route| gateway_core::endpoint_access::RouteIdentitySetting {
+                    route: route.as_str().to_owned(),
+                    access: values.remove(route.as_str()).unwrap_or_default(),
+                },
+            )
+            .collect())
+    }
+    async fn set_route_identity(
+        &self,
+        setting: gateway_core::endpoint_access::RouteIdentitySetting,
+    ) -> GatewayResult<gateway_core::endpoint_access::RouteIdentitySetting> {
+        setting.validate()?;
+        sqlx::query("INSERT INTO route_identity_settings (route, access) VALUES ($1,$2) ON CONFLICT (route) DO UPDATE SET access=EXCLUDED.access, updated_at=now()")
+            .bind(&setting.route).bind(Json(&setting.access)).execute(&self.pool).await.map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(setting)
+    }
+
     async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
         let rows = sqlx::query(
             r#"
@@ -2950,6 +2987,20 @@ impl AdminOpenAiRouteStore for PostgresStore {
 
 #[async_trait]
 impl OpenAiRouteSettingsLookup for PostgresStore {
+    async fn route_identity(&self, route: Route) -> GatewayResult<gateway_core::EndpointAccess> {
+        let access = sqlx::query_scalar::<_, Json<gateway_core::EndpointAccess>>(
+            "SELECT access FROM route_identity_settings WHERE route=$1",
+        )
+        .bind(route.as_str())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .map(|value| value.0)
+        .unwrap_or_default();
+        access.validate(route.as_str())?;
+        Ok(access)
+    }
+
     async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool> {
         let Some(route_id) = gateway_core::openai_route_id(route) else {
             return Ok(true);
@@ -3831,9 +3882,10 @@ impl AdminServiceStore for PostgresStore {
                 source,
                 sync_status,
                 last_synced_at,
-                disabled_at
+                disabled_at,
+                access
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END, $22)
             "#,
         )
         .bind(&request.name)
@@ -3857,6 +3909,7 @@ impl AdminServiceStore for PostgresStore {
         .bind(&request.fallback_services)
         .bind(if request.studio_service_id.is_some() { "studio" } else { "gateway" })
         .bind(service_sync_status_str(sync_status))
+        .bind(Json(&request.access))
         .execute(&self.pool)
         .await
         .map_err(|error| {
@@ -3949,6 +4002,10 @@ impl AdminServiceStore for PostgresStore {
         if let Some(estimated_cost_usd) = patch.estimated_cost_usd {
             registration.estimated_cost_usd = estimated_cost_usd;
         }
+        if let Some(access) = patch.access {
+            registration.access = access;
+        }
+        registration.access.validate(&registration.route_pattern)?;
         registration.validate_cost()?;
         if let Some(pricing_rules) = patch.pricing_rules {
             registration.pricing_rules = pricing_rules;
@@ -4011,6 +4068,7 @@ impl AdminServiceStore for PostgresStore {
                 fallback_services = $21,
                 source = $22,
                 sync_status = $23,
+                access = $24,
                 disabled_at = CASE WHEN $8 THEN NULL ELSE COALESCE(disabled_at, now()) END,
                 updated_at = now()
             WHERE name = $1
@@ -4039,6 +4097,7 @@ impl AdminServiceStore for PostgresStore {
         .bind(&registration.fallback_services)
         .bind(service_source_str(registration.source))
         .bind(service_sync_status_str(registration.sync_status))
+        .bind(Json(&registration.access))
         .execute(&self.pool)
         .await
         .map_err(|error| {
@@ -6040,6 +6099,9 @@ fn service_registration_from_row(
         .try_get::<Json<Vec<ServiceEndpointPricingRule>>, _>("endpoint_pricing_rules")?
         .0;
     Ok(ServiceRegistration {
+        access: row
+            .try_get::<Json<gateway_core::EndpointAccess>, _>("access")?
+            .0,
         name: row.try_get("name")?,
         project_id: row.try_get("project_id")?,
         studio_service_id: row.try_get("studio_service_id")?,
@@ -8312,7 +8374,9 @@ mod tests {
             .await
             .expect("serialize shared control-plane integration state");
         let suffix = Uuid::new_v4().simple().to_string();
-        let now = chrono::Utc::now();
+        // Exercise sub-microsecond precision even on clocks that only return microseconds.
+        let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 123_456_789)
+            .expect("valid test timestamp");
 
         store.ready().await.expect("store ready");
         let has_active_operator = store
@@ -9111,7 +9175,9 @@ mod tests {
                 .expect("usage version transitions"),
             [UsageVersionTransition {
                 service_version: "2026.08.09".to_owned(),
-                first_observed_at: now,
+                // PostgreSQL timestamps retain microseconds, not nanoseconds.
+                first_observed_at: chrono::DateTime::from_timestamp_micros(now.timestamp_micros())
+                    .expect("valid persisted timestamp"),
             }]
         );
         store

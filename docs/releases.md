@@ -1,7 +1,14 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.36` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.37` is the
 current release target.
+
+Version `0.1.37` adds Accessa channel WebSockets, endpoint-specific Entra
+requirements, service creation presets and WebSocket/verified-identity diagnostics
+in Traffic and Usage. Apply the additive endpoint-access and route-identity
+migrations through normal startup; existing routes retain inherited behavior.
+Deploy adapter/Router admission support before enabling channel bindings. See
+[Accessa channels](accessa-channels.md) for setup, rollout and measurement limits.
 
 Version `0.1.36` makes `POST /embeddings` a LiteLLM alias of
 `POST /v1/embeddings`, sharing mode, policy, limits, and usage identity while
@@ -57,11 +64,11 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.36
+   python3 scripts/validate-release-metadata.py v0.1.37
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
-   cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437
+   cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437 --ignore RUSTSEC-2026-0173
    cargo deny check
    cargo machete
    cargo nextest run --workspace --all-features
@@ -75,15 +82,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.36 .
+   docker build -t relayna-gateway:0.1.37 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.36 -m "Release v0.1.36"
-   git push origin v0.1.36
+   git tag -a v0.1.37 -m "Release v0.1.37"
+   git push origin v0.1.37
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -93,10 +100,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.36`, the workflow publishes:
+For `v0.1.37`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.36
+ghcr.io/sarattha/relayna-gateway:0.1.37
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

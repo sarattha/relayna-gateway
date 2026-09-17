@@ -1,0 +1,34 @@
+{
+  "base": "1045bdf",
+  "scope": "changed production Rust executable lines; tests excluded",
+  "covered": 64,
+  "executable": 64,
+  "percent": 100.0,
+  "files": {
+    "crates/gateway-api/src/app.rs": {
+      "covered": 37,
+      "executable": 37,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/endpoint_access.rs": {
+      "covered": 12,
+      "executable": 12,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/route_settings.rs": {
+      "covered": 6,
+      "executable": 6,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/pingora_plane.rs": {
+      "covered": 0,
+      "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-store/src/postgres.rs": {
+      "covered": 9,
+      "executable": 9,
+      "uncovered_lines": []
+    }
+  }
+}

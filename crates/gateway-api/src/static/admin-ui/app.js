@@ -98,7 +98,7 @@ function mergeTrafficRows(rows, batch, limit = 200) {
 function matchesTraffic(row, filters) {
   return (!filters.request_id || row.request_id.includes(filters.request_id)) && (!filters.service || row.service === filters.service) && (!filters.project_id || row.project_id === filters.project_id) && (!filters.key_id || row.key_id === filters.key_id) && (!filters.failure_code || row.diagnostics.failure_code === filters.failure_code) && (!filters.status || String(row.client_status) === filters.status) && (filters.outcome !== "failures" || Boolean(row.diagnostics.failure_code)) && (filters.outcome !== "active" || !row.completed);
 }
-function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: attr2, table: table2, badge: badge2, time: time2, routingModeLabel: routingModeLabel2, mountDialog: mountDialog2, investigationView: investigationView2, bindInvestigationActions: bindInvestigationActions2, initialFilters = {}, onFilters = () => {
+function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: attr2, table: table2, badge: badge2, time: time2, routingModeLabel: routingModeLabel2, mountDialog: mountDialog2, investigationView: investigationView2, bindInvestigationActions: bindInvestigationActions2, refreshWebSocketMetrics: refreshWebSocketMetrics2, initialFilters = {}, onFilters = () => {
 } }) {
   let rows = [], cursor = null, instance = "Connecting", selected = null, filters = { ...initialFilters };
   let mode = "live", paused = false, disposed = false, controller = null, reconnect = null;
@@ -163,21 +163,25 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
       (replacement || element("traffic-filters").elements.namedItem("failure_code")).focus({ preventScroll: true });
     }
     element("traffic-rows").innerHTML = table2(
-      ["Arrived", "Request", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
-      visible.map((row) => [
-        time2(row.started_at),
-        `<code>${esc2(row.request_id)}</code>`,
-        `${esc2(row.method)} ${esc2(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc2(row.service || row.provider || "Not selected")}</span>`,
-        badge2(routingModeLabel2(row.diagnostics), "neutral"),
-        badge2(label(row.completed ? row.diagnostics.outcome : row.stage), row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
-        esc2(row.client_status ?? "—"),
-        esc2(row.diagnostics.upstream_status ?? "—"),
-        esc2(row.attempts),
-        `<span data-traffic-elapsed="${attr2(row.id)}">${esc2(row.completed ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)))} ms</span>`,
-        esc2(label(row.diagnostics.failure_code || "none")),
-        row.recording_failures.length ? badge2("Recording failed", "bad") : esc2(row.completed ? "No reported failure" : "In progress"),
-        `<button type="button" data-traffic-id="${attr2(row.id)}">Inspect</button>`
-      ])
+      ["Arrived", "Request", "Protocol / transfer", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
+      visible.map((row) => {
+        var _a3;
+        return [
+          time2(row.started_at),
+          `<code>${esc2(row.request_id)}</code>`,
+          row.diagnostics.websocket ? `${badge2("WS", "neutral")}<div class="subtle">↑ ${esc2(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc2(row.diagnostics.websocket.upstream_bytes)} B</div>` : badge2(((_a3 = row.diagnostics) == null ? void 0 : _a3.protocol) === "http" ? "HTTP" : "Not recorded", "neutral"),
+          `${esc2(row.method)} ${esc2(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc2(row.service || row.provider || "Not selected")}</span>`,
+          badge2(routingModeLabel2(row.diagnostics), "neutral"),
+          badge2(label(row.completed ? row.diagnostics.outcome : row.stage), row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
+          esc2(row.client_status ?? "—"),
+          esc2(row.diagnostics.upstream_status ?? "—"),
+          esc2(row.attempts),
+          `<span data-traffic-elapsed="${attr2(row.id)}">${esc2(row.completed ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)))} ms</span>`,
+          esc2(label(row.diagnostics.failure_code || "none")),
+          row.recording_failures.length ? badge2("Recording failed", "bad") : esc2(row.completed ? "No reported failure" : "In progress"),
+          `<button type="button" data-traffic-id="${attr2(row.id)}">Inspect</button>`
+        ];
+      })
     );
     element("traffic-rows").querySelectorAll("[data-traffic-id]").forEach((button) => button.addEventListener("click", () => {
       selected = button.dataset.trafficId;
@@ -344,6 +348,7 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
   element("traffic-older").addEventListener("click", () => history2(true));
   const elapsedTimer = setInterval(() => {
     if (disposed || paused || mode !== "live") return;
+    refreshWebSocketMetrics2 == null ? void 0 : refreshWebSocketMetrics2(element("traffic-detail"));
     for (const row of rows) {
       if (row.completed) continue;
       const cell = content2.querySelector(`[data-traffic-elapsed="${row.id}"]`);
@@ -381,6 +386,18 @@ const policy = {
   allow_tools: "Permit tool/function calling at this layer. Other policy layers can still deny it."
 };
 const shared = {
+  endpoint_audience: "Exact audience required when Require Entra is selected. Other modes ignore this field. This does not add the audience to other endpoints.",
+  endpoint_scopes: "Comma-separated scopes. Every listed scope is required; blank adds no scope requirement for this endpoint.",
+  endpoint_roles: "Comma-separated roles. Every listed role is required; blank adds no role requirement for this endpoint.",
+  endpoint_groups: "Comma-separated group IDs. At least one must match; blank adds no group restriction.",
+  endpoint_apigee: "Accept HMAC-verified Apigee identity only when it includes the matching audience and a future expiry.",
+  accessa_enabled: "Preserve the route path and enforce explicit channel-key service permissions. Requires endpoint Entra authentication.",
+  accessa_app: "Target app, for example tara or docgen. Blank is for the channel identity endpoint only.",
+  accessa_channel: "Channel backend identity. Must match the registered route exactly.",
+  socket_idle_ms: "Idle read/write timeout in milliseconds. Traffic and heartbeat replies keep a long run alive; zero is invalid.",
+  socket_connections: "Maximum active sockets for this service on one gateway instance. All services share an instance ceiling of 4,096.",
+  socket_key_connections: "Maximum active sockets for one key on one gateway instance. Must not exceed the route limit.",
+  socket_frame_bytes: "Maximum WebSocket frame and assembled message size, including fragmented messages. Zero is invalid.",
   preset: "Starting policy template. Review the resulting permissions and limits before creating the key.",
   expires_at: "Local date and time when the key stops authenticating. Use No expiration to create a key without an expiry.",
   rotation_due_at: "Optional local date and time for a rotation reminder. This does not rotate or revoke the key automatically.",
@@ -777,11 +794,39 @@ function matchTrafficRecord(rows, usage2) {
   if (!id) return null;
   return rows.find((row) => row.id === id && row.request_id === usage2.request_id && row.key_id === usage2.key_id && row.project_id === usage2.project_id) || null;
 }
+function websocketMetrics(socket, live = false, now = Date.now()) {
+  const active = live && socket.state === "open" && !socket.closed_at;
+  const sampled = Date.parse(socket.closed_at || socket.observed_at || socket.opened_at);
+  const end = active ? now : sampled;
+  const opened = Date.parse(socket.opened_at);
+  const duration = Number.isFinite(opened) && Number.isFinite(end) ? Math.max(0, end - opened) : Number(socket.duration_ms || 0);
+  const seconds = (value) => value < 1e3 ? `${Math.round(Math.max(0, value))} ms` : `${(value / 1e3).toLocaleString(void 0, { maximumFractionDigits: 1 })} s`;
+  const remaining = (deadline) => active && Number.isFinite(deadline) ? deadline <= now ? "Deadline reached · awaiting enforcement" : seconds(deadline - now) : "Not active";
+  return {
+    duration: socket.opened_at ? seconds(duration) : "Not opened",
+    upload: `${Number(socket.client_bytes || 0).toLocaleString()} B`,
+    download: `${Number(socket.upstream_bytes || 0).toLocaleString()} B`,
+    upload_rate: duration > 0 ? `${(Number(socket.client_bytes || 0) * 1e3 / duration).toLocaleString(void 0, { maximumFractionDigits: 1 })} B/s` : "Not yet measured",
+    download_rate: duration > 0 ? `${(Number(socket.upstream_bytes || 0) * 1e3 / duration).toLocaleString(void 0, { maximumFractionDigits: 1 })} B/s` : "Not yet measured",
+    idle: remaining(Date.parse(socket.last_upstream_activity_at || socket.opened_at) + Number(socket.idle_timeout_ms)),
+    expiry: remaining(Date.parse(socket.session_expires_at))
+  };
+}
+function refreshWebSocketMetrics(root, now = Date.now()) {
+  root == null ? void 0 : root.querySelectorAll("[data-websocket-live]").forEach((panel2) => {
+    const metrics = websocketMetrics(JSON.parse(panel2.dataset.websocketLive), true, now);
+    panel2.querySelectorAll("[data-websocket-metric]").forEach((field) => {
+      field.textContent = metrics[field.dataset.websocketMetric];
+    });
+  });
+}
 function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle = null, notice = "" }, { esc: esc2, table: table2, time: time2, projects: projects2 = [] }) {
-  var _a2, _b, _c;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
   usage2 = investigationUsageSnapshot((traffic == null ? void 0 : traffic.usage) || usage2);
   bundle = (traffic == null ? void 0 : traffic.debug_bundle) || bundle;
   const d = (traffic == null ? void 0 : traffic.diagnostics) || (usage2 == null ? void 0 : usage2.diagnostics) || {};
+  const socket = d.websocket;
+  const identity = d.entra;
   const requestId = (traffic == null ? void 0 : traffic.request_id) || (usage2 == null ? void 0 : usage2.request_id) || (bundle == null ? void 0 : bundle.request_id) || "Unknown request";
   const status = (traffic == null ? void 0 : traffic.client_status) ?? (usage2 == null ? void 0 : usage2.status_code);
   const failed = Boolean(d.failure_code) || status >= 400 || (usage2 == null ? void 0 : usage2.status) === "failure";
@@ -842,6 +887,31 @@ function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle
     ["Trace ID", (usage2 == null ? void 0 : usage2.trace_id) || (bundle == null ? void 0 : bundle.trace_id)],
     ["Task / run", [usage2 == null ? void 0 : usage2.task_id, usage2 == null ? void 0 : usage2.run_id].filter(Boolean).join(" / ")]
   ]))}
+    ${socket ? section("WebSocket session", `<div ${(traffic == null ? void 0 : traffic.completed) === false && socket.state === "open" ? `data-websocket-live="${esc2(JSON.stringify(socket))}"` : ""}>
+      <p class="help">Frame bytes observed by the gateway, including WebSocket headers; excludes HTTP handshake and TLS overhead. Rates are session averages, not billed tokens. Live values are sampled; idle time is an upstream-read estimate. Write timeout applies while writing, and session expiry is checked on frame activity.</p>
+      ${facts([["State", socket.state], ["App / channel", [socket.app, socket.channel].filter(Boolean).join(" / ")], ["Opened", socket.opened_at ? time2(socket.opened_at) : null], ["Closed", socket.closed_at ? time2(socket.closed_at) : null], ["Last client activity", socket.last_client_activity_at ? time2(socket.last_client_activity_at) : null], ["Last upstream activity", socket.last_upstream_activity_at ? time2(socket.last_upstream_activity_at) : null], ["Idle read/write limit", `${socket.idle_timeout_ms} ms`], ["Session expires", socket.session_expires_at ? time2(socket.session_expires_at) : null], ["Frame/message limit", `${socket.max_frame_bytes} B`], ["Client / upstream frame headers", `${socket.client_frames} / ${socket.upstream_frames}`], ["Close frame observed", `Client: ${socket.client_close_frame ? "yes" : "no"} · upstream: ${socket.upstream_close_frame ? "yes" : "no"}`], ["Close cause", socket.close_cause || "Not closed"], ["Last sample", socket.observed_at ? time2(socket.observed_at) : null]])}
+      <dl class="investigation-facts">${Object.entries({ duration: "Open duration", upload: "Client → upstream", download: "Upstream → client", upload_rate: "Average upload", download_rate: "Average download", idle: "Upstream idle remaining · estimate", expiry: "Session expiry remaining" }).map(([key, title]) => `<div><dt>${esc2(title)}</dt><dd data-websocket-metric="${key}">${esc2(websocketMetrics(socket, (traffic == null ? void 0 : traffic.completed) === false)[key])}</dd></div>`).join("")}</dl>
+    </div>`) : ""}
+    ${section("Entra verification", identity ? `${identity.truncated ? '<p class="notice">Claim display was truncated to bounded diagnostic limits.</p>' : ""}<p class="help">Policy and claims captured for this request. Claims appear only after successful verification; token strings and private payloads are never recorded. Gateway-inherited policy requirements are not captured in this snapshot.</p>${facts([
+    ["Policy source", identity.policy_source],
+    ["Verification", identity.verification],
+    ["Identity source", identity.source],
+    ["Expected audience", identity.expected_audience],
+    ["Required scopes", ((_a2 = identity.required_scopes) == null ? void 0 : _a2.join(", ")) || "None recorded"],
+    ["Required roles", ((_b = identity.required_roles) == null ? void 0 : _b.join(", ")) || "None recorded"],
+    ["Allowed groups · any match", ((_c = identity.allowed_groups) == null ? void 0 : _c.join(", ")) || "None recorded"],
+    ["Signed Apigee allowed", identity.policy_source === "endpoint" ? identity.allow_apigee ? "Yes" : "No" : "Not recorded"],
+    ["Verified audiences", (_d = identity.audiences) == null ? void 0 : _d.join(", ")],
+    ["Verified scopes", (_e = identity.scopes) == null ? void 0 : _e.join(", ")],
+    ["Verified roles", (_f = identity.roles) == null ? void 0 : _f.join(", ")],
+    ["Verified groups", (_g = identity.groups) == null ? void 0 : _g.join(", ")],
+    ["Tenant ID", identity.tenant_id],
+    ["Object ID", identity.object_id],
+    ["Application ID", identity.app_id],
+    ["Authorized party", identity.authorized_party],
+    ["Token version", identity.token_version],
+    ["Token expiry", identity.expires_at != null ? time2(new Date(identity.expires_at * 1e3).toISOString()) : null]
+  ])}` : '<p class="help">No verified Entra diagnostic snapshot was recorded. This may be a key-only route or an older record.</p>')}
     ${section("Network & response timing", attempts.length ? `<p class="help">DNS, TCP and TLS are phase durations. Headers, first body byte and first content token are measured from each attempt's start, including connection setup. Total duration above includes gateway and client delivery time.</p>${attempts.map((a) => `<article class="investigation-attempt"><h5>Attempt ${text(a.attempt)} · ${text(a.provider)}${a.connection_reused === true ? " · Reused connection" : a.connection_reused === false ? " · New connection" : ""}</h5>${facts([
     ["DNS resolution", `${timingValue(a, "dns_us")}${["failed", "timeout"].includes(a.dns_status) ? ` · ${a.dns_status}` : ""}`],
     ["TCP connect", timingValue(a, "tcp_connect_us")],
@@ -852,11 +922,11 @@ function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle
     ["Attempt duration", timingValue(a, "total_ms")],
     ["Upstream status / failure", [a.upstream_status, a.failure_code].filter((v) => v != null).join(" / ")]
   ])}</article>`).join("")}${traffic.attempts > attempts.length ? '<p class="notice">Earlier attempt timings were discarded at the retention limit.</p>' : ""}` : `<p class="help">${(traffic == null ? void 0 : traffic.attempts) === 0 ? "No upstream connection was attempted." : "Network timings were not recorded for this request. Older records remain available without timing measurements."}</p>`)}
-    ${section("Event timeline", ((_a2 = traffic == null ? void 0 : traffic.timeline) == null ? void 0 : _a2.length) ? `${traffic.timeline_truncated ? '<p class="notice">Earlier timeline steps were discarded at the retention limit.</p>' : ""}${table2(["Elapsed", "Attempt", "Stage", "Reason", "Upstream HTTP"], traffic.timeline.map((step) => [`${text(step.elapsed_ms)} ms`, text(step.attempt), text(label(step.stage)), text(step.code ?? "—"), text(step.upstream_status ?? "—")]))}` : '<p class="help">No event timeline was recorded.</p>')}
+    ${section("Event timeline", ((_h = traffic == null ? void 0 : traffic.timeline) == null ? void 0 : _h.length) ? `${traffic.timeline_truncated ? '<p class="notice">Earlier timeline steps were discarded at the retention limit.</p>' : ""}${table2(["Elapsed", "Attempt", "Stage", "Reason", "Upstream HTTP"], traffic.timeline.map((step) => [`${text(step.elapsed_ms)} ms`, text(step.attempt), text(label(step.stage)), text(step.code ?? "—"), text(step.upstream_status ?? "—")]))}` : '<p class="help">No event timeline was recorded.</p>')}
     ${section("Usage & cost", facts([["Input tokens", usageValue(d, usage2 == null ? void 0 : usage2.input_tokens)], ["Output tokens", usageValue(d, usage2 == null ? void 0 : usage2.output_tokens)], ["Total tokens", usageValue(d, usage2 == null ? void 0 : usage2.total_tokens)], ["Estimated cost · USD", usageValue(d, usage2 == null ? void 0 : usage2.estimated_cost_usd, (value) => `$${Number(value).toFixed(6)}`)], ["Pricing source", usage2 == null ? void 0 : usage2.cost_source], ["Pricing rule", usage2 == null ? void 0 : usage2.pricing_rule_name]]))}
     ${section("Policy & guardrails", `<h5>Policy decisions</h5>${traceList(bundle == null ? void 0 : bundle.policy_trace, "Policy decisions were not recorded.")}<h5>Guardrail executions</h5>${traceList(bundle == null ? void 0 : bundle.guardrail_trace, bundle ? "No guardrail executions were recorded in this snapshot." : "Guardrail execution details were not captured.")}`)}
-    ${section("Routing decisions", `${traceList(bundle == null ? void 0 : bundle.selection_trace, "Routing decisions were not recorded.")}${((_b = bundle == null ? void 0 : bundle.fallback_history) == null ? void 0 : _b.length) ? table2(["From", "To", "Reason"], bundle.fallback_history.map((a) => [text(a.from_provider), text(a.to_provider), text(a.reason)])) : '<p class="help">No fallback history was recorded.</p>'}`)}
-    ${((_c = traffic == null ? void 0 : traffic.recording_failures) == null ? void 0 : _c.length) ? `<p class="notice">Recording gaps: ${esc2(traffic.recording_failures.join(", "))}. This investigation may be incomplete.</p>` : ""}
+    ${section("Routing decisions", `${traceList(bundle == null ? void 0 : bundle.selection_trace, "Routing decisions were not recorded.")}${((_i = bundle == null ? void 0 : bundle.fallback_history) == null ? void 0 : _i.length) ? table2(["From", "To", "Reason"], bundle.fallback_history.map((a) => [text(a.from_provider), text(a.to_provider), text(a.reason)])) : '<p class="help">No fallback history was recorded.</p>'}`)}
+    ${((_j = traffic == null ? void 0 : traffic.recording_failures) == null ? void 0 : _j.length) ? `<p class="notice">Recording gaps: ${esc2(traffic.recording_failures.join(", "))}. This investigation may be incomplete.</p>` : ""}
     <details class="investigation-raw" data-investigation-section="raw"><summary>Raw diagnostics & hashes</summary>${facts([["Internal request ID", traffic == null ? void 0 : traffic.id], ["Request hash", bundle == null ? void 0 : bundle.request_hash], ["Response hash", bundle == null ? void 0 : bundle.response_hash], ["Redaction version", bundle == null ? void 0 : bundle.redaction_version]])}<pre data-investigation-raw>${esc2(JSON.stringify(raw, null, 2))}</pre></details>
   </div>`;
 }
@@ -16161,7 +16231,7 @@ async function refresh({ focus = false } = {}) {
       if (generation !== viewGeneration) return;
       state.projects = projects2;
       syncProjectScope();
-      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
+      stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, refreshWebSocketMetrics, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
     }
     if (view === "usage") await usage();
     if (view === "health") await health();
@@ -17278,12 +17348,17 @@ async function routes() {
   const loaded = await Promise.all([
     api("/admin-ui/admin/openai-routes"),
     api("/admin-ui/admin/anthropic-routes"),
-    api("/admin-ui/admin/services")
+    api("/admin-ui/admin/services"),
+    api("/admin-ui/admin/route-identities")
   ]);
   if (renderId !== renderGeneration) return;
-  [state.openaiRoutes, state.anthropicRoutes, state.services] = loaded;
+  [state.openaiRoutes, state.anthropicRoutes, state.services, state.routeIdentities] = loaded;
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
+    <section class="panel"><div class="panel-heading"><h3>Additional endpoint identity</h3></div>
+      <p class="field-hint">Choose Entra verification for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
+      ${table(["Route", "Protocol", "Identity", "Actions"], state.routeIdentities.filter((row) => ![...state.openaiRoutes, ...state.anthropicRoutes].some((item) => item.route === row.route)).map((row) => [`<code>${esc(row.route)}</code>`, '<span class="badge">HTTP</span>', endpointIdentityBadge(row.access), routeIdentityButton(row.route)]))}
+    </section>
     <section class="panel">
       <div class="panel-heading">
         <h3>${routeFamilyLogo("openai")} OpenAI-compatible and rerank routes</h3>
@@ -17318,6 +17393,7 @@ async function routes() {
   document.querySelectorAll("[data-service-route-timeout-form]").forEach((form) => {
     form.addEventListener("submit", handleAsync(saveServiceRouteTimeout));
   });
+  document.querySelectorAll("[data-route-identity]").forEach((button) => button.addEventListener("click", editRouteIdentity));
   organizeView("routes");
 }
 function routeFamilyLogo(family) {
@@ -17329,9 +17405,11 @@ function providerRouteTable(rows, family) {
   const actionAttr = family === "anthropic" ? "data-anthropic-route-action" : "data-openai-route-action";
   const modeForm = family === "anthropic" ? anthropicRouteModeForm : openaiRouteModeForm;
   return table(
-    ["Route", "State", "Configuration", "Updated", "Actions"],
+    ["Route", "Protocol", "Identity", "State", "Configuration", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
+      '<span class="badge">HTTP</span>',
+      routeIdentityControl(row.route),
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
       modeForm(row),
       time(row.updated_at),
@@ -17361,10 +17439,12 @@ function routeConfigForm(row, dataAttrName) {
 }
 function serviceRouteTable(rows) {
   return table(
-    ["Service", "Route", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
+    ["Service", "Route", "Protocol", "Identity", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       `<code>${esc(row.route_pattern)}</code>`,
+      serviceProtocolSummary(row),
+      endpointIdentityBadge(row.access),
       serviceBadges(row),
       esc(listValue(row.allowed_methods, "none")),
       esc(row.upstream_base_url || "missing"),
@@ -17442,6 +17522,77 @@ function routeConfigPayload(form) {
     max_response_body_bytes: nullableNumber(form.get("max_response_body_bytes"))
   };
 }
+function serviceTypePresets() {
+  return [
+    { id: "internal_http", label: "Internal HTTP service", description: "General HTTP API using the gateway identity setting. Adjust methods and Entra requirements for your service.", methods: ["GET", "POST"], mode: "inherit", timeout: 6e4 },
+    { id: "relayna_http", label: "Relayna HTTP service", description: "Relayna runtime exposed through its HTTP API. Point Upstream URL at the runtime; requests use /services/{name}/*. The runtime owns tasks and agent execution. Import from Studio if the service already exists there.", methods: ["GET", "POST"], mode: "inherit", timeout: 12e4, health: "/health" },
+    { id: "entra_http", label: "Entra-protected HTTP service", description: "HTTP API requiring its own Entra audience. Enter the audience and any required scopes, roles or groups below.", methods: ["GET", "POST"], mode: "required", timeout: 6e4 },
+    { id: "apigee_http", label: "Apigee-backed HTTP service", description: "HTTP API requiring Entra identity, also accepting signed Apigee claims. Enter this endpoint’s audience. Trusted Apigee verification must be configured in gateway settings.", methods: ["GET", "POST"], mode: "required", apigee: true, timeout: 6e4 },
+    { id: "accessa_channel", label: "Accessa app/channel (HTTP + WebSocket)", description: "BFF connects through the gateway to the channel adapter. App and channel generate the route; only GET /run supports WebSocket. Enter the Accessa Entra audience and bind a virtual key to this service.", methods: ["GET", "POST"], mode: "required", accessa: true, app: "tara", channel: "web", timeout: 6e4 },
+    { id: "accessa_discovery", label: "Accessa channel discovery (HTTP)", description: "Channel identity discovery at /channel/{channel}/v1/me. App stays blank; enter the channel and its Entra audience. This endpoint does not open WebSockets.", methods: ["GET"], mode: "required", accessa: true, app: "", channel: "web", timeout: 6e4 },
+    { id: "custom", label: "Custom configuration", description: "Configure the supported HTTP or Accessa route directly. Keeps current values so you can customize a preset. Generic WebSockets and arbitrary protocol adapters are not enabled by this choice." }
+  ];
+}
+function suggestedServiceRoute(type, name, app2, channel) {
+  if (type === "accessa_channel") return app2 && channel ? `/app/${app2}/channel/${channel}/v1/*` : "";
+  if (type === "accessa_discovery") return channel ? `/channel/${channel}/v1/me` : "";
+  return type && type !== "custom" && name ? `/services/${name}/*` : "";
+}
+function applyServiceTypePreset(form, type) {
+  const preset = serviceTypePresets().find((item) => item.id === type);
+  if (!preset) return;
+  form.querySelector("#service-type-help").textContent = preset.description;
+  if (type === "custom") return;
+  const set2 = (name, value) => {
+    form.elements.namedItem(name).value = value;
+  };
+  const check = (name, value) => {
+    form.elements.namedItem(name).checked = value;
+  };
+  form.querySelectorAll('[name="allowed_methods"]').forEach((input) => {
+    input.checked = preset.methods.includes(input.value);
+  });
+  set2("timeout_ms", preset.timeout);
+  set2("health_check_path", preset.health || "");
+  set2("endpoint_entra_mode", preset.mode);
+  for (const field of ["endpoint_audience", "endpoint_scopes", "endpoint_roles", "endpoint_groups"]) set2(field, "");
+  check("endpoint_apigee", !!preset.apigee);
+  check("accessa_enabled", !!preset.accessa);
+  set2("accessa_app", preset.app || "");
+  set2("accessa_channel", preset.channel || "");
+  set2("socket_idle_ms", 6e4);
+  set2("socket_connections", 100);
+  set2("socket_key_connections", 10);
+  set2("socket_frame_bytes", 1048576);
+  set2("route_pattern", "");
+  form.dataset.suggestedRoute = "";
+  updateServiceRouteSuggestion(form);
+  const identity = form.elements.namedItem("endpoint_entra_mode").closest("details");
+  if (identity) identity.open = preset.mode === "required";
+  updateServiceTransportFields(form);
+}
+function updateServiceRouteSuggestion(form) {
+  const value = (name) => String(form.elements.namedItem(name).value).trim();
+  const input = form.elements.namedItem("route_pattern");
+  if (input.value && input.value !== form.dataset.suggestedRoute) return;
+  const suggested = suggestedServiceRoute(value("service_type"), value("name"), value("accessa_app"), value("accessa_channel"));
+  input.value = suggested;
+  form.dataset.suggestedRoute = suggested;
+}
+function updateServiceTransportFields(form) {
+  const enabled = form.elements.namedItem("accessa_enabled").checked;
+  for (const name of ["accessa_app", "accessa_channel", "socket_idle_ms", "socket_connections", "socket_key_connections", "socket_frame_bytes"]) {
+    form.elements.namedItem(name).closest("label").hidden = !enabled;
+  }
+}
+function bindServiceTypePresets(form) {
+  form.elements.namedItem("service_type").addEventListener("change", (event) => applyServiceTypePreset(form, event.target.value));
+  for (const name of ["name", "accessa_app", "accessa_channel"]) {
+    form.elements.namedItem(name).addEventListener("input", () => updateServiceRouteSuggestion(form));
+  }
+  form.elements.namedItem("accessa_enabled").addEventListener("change", () => updateServiceTransportFields(form));
+  updateServiceTransportFields(form);
+}
 async function services() {
   var _a2;
   const renderId = ++renderGeneration;
@@ -17458,6 +17609,11 @@ async function services() {
           <button type="button" data-service-action="studio-import">Import from Studio</button>
         </div>
         <form id="service-form" class="form-grid">
+          <label class="wide-field">Service type<select name="service_type" required aria-describedby="service-type-help">
+            <option value="">Choose a service type…</option>
+            ${serviceTypePresets().map((preset) => `<option value="${attr(preset.id)}">${esc(preset.label)}</option>`).join("")}
+          </select></label>
+          <p id="service-type-help" class="field-hint wide-field" aria-live="polite">Choose a starting configuration, then adjust its settings. Changing type replaces route, methods, timeout and identity defaults; name, upstream, credentials and pricing are kept.</p>
           ${formSection("Identity and routing", "Name the service and define its public route and upstream.", `
             <label>Name<input name="name" required pattern="[a-z0-9]([a-z0-9\\x2d]{0,62}[a-z0-9])?" placeholder="temp-service-2" title="Use lowercase letters, numbers, and hyphens; start and end with a letter or number."></label>
             <label>Route pattern<input name="route_pattern" list="service-routes" placeholder="/services/name/*"></label>
@@ -17473,6 +17629,7 @@ async function services() {
             <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="2097152"></label>
             <label>Fallback services<input name="fallback_services" placeholder="backup-a,backup-b"></label>
           `)}
+          ${endpointAccessFields({})}
           ${formSection("Usage pricing", "Choose the cost source and optional request-matching rules.", `
             <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
             <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01"></label>
@@ -17490,11 +17647,13 @@ async function services() {
     </div>
     <section class="panel">
       <div class="panel-heading"><h3>Registered services</h3><span class="subtle">${state.services.length} total</span></div>
+      <p class="field-hint">Register each Accessa app/channel once. HTTP endpoints share its route prefix; WS (WebSocket) is limited to the displayed GET run path. SSE uses HTTP.</p>
       ${serviceTable(state.services)}
     </section>
     <datalist id="service-routes">${serviceRouteOptions()}</datalist>
   `;
   document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
+  bindServiceTypePresets(document.querySelector("#service-form"));
   (_a2 = document.querySelector("#service-edit-form")) == null ? void 0 : _a2.addEventListener("submit", handleAsync(patchService));
   bindPricingRuleEditors();
   bindEndpointPricingEditors();
@@ -17694,6 +17853,7 @@ function serviceEditForm(service) {
   return `
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
     <form id="service-edit-form" class="form-grid" data-service-name="${attr(service.name)}">
+      <div class="field wide-field"><span>Saved endpoint protocols</span><div>${serviceProtocolSummary(service)}</div><small class="field-hint">WS means WebSocket and applies only to the displayed run path. Other endpoints use HTTP; SSE also uses HTTP. Labels describe saved configuration, not current availability.</small></div>
       ${formSection("Identity and routing", "Update registry identity, route, upstream, and methods.", `
         <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
         <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
@@ -17711,6 +17871,7 @@ function serviceEditForm(service) {
         <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
         <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       `)}
+      ${endpointAccessFields(service.access || {})}
       ${formSection("Usage pricing", "Update cost source and request-matching rules.", `
         <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
         <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
@@ -17813,8 +17974,8 @@ async function settings() {
       </form>
     </section>
     <section class="panel">
-      ${state.authSettings.unverified_bearer_enabled ? `<div class="notice" data-kind="warning" role="status"><span class="badge warn">Unverified bearer active</span> Entra verification is paused for gateway-managed requests. Only the Relayna virtual key is authenticated.</div>` : ""}
-      <div class="panel-heading"><h3>Entra ID and Apigee front door</h3><span class="subtle">${esc(state.authSettings.updated_at ? time(state.authSettings.updated_at) : "environment or unset")}</span></div>
+      ${state.authSettings.unverified_bearer_enabled ? `<div class="notice" data-kind="warning" role="status"><span class="badge warn">Unverified bearer active</span> Legacy Entra verification is paused; endpoints configured to Require Entra still fail closed. Only the Relayna virtual key is authenticated.</div>` : ""}
+      <div class="panel-heading"><h3>Shared Entra trust and legacy defaults</h3><span class="subtle">${esc(state.authSettings.updated_at ? time(state.authSettings.updated_at) : "environment or unset")}</span></div>
       <form id="auth-settings-form" class="form-grid">
         ${formSection("Gateway headers", "Keep native key and trusted-ingress behavior explicit.", `
           <label class="check wide-field"><input name="unverified_bearer_enabled" type="checkbox" ${state.authSettings.unverified_bearer_enabled ? "checked" : ""} aria-describedby="unverified-bearer-help"> Require unverified bearer (troubleshooting)</label>
@@ -17845,7 +18006,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.36")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.37")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -18144,13 +18305,25 @@ async function serviceAction(event) {
   setNotice(`Service ${action}d.`, "success");
   await services();
 }
+function serviceProtocolSummary(service) {
+  var _a2;
+  const binding = (_a2 = service.access) == null ? void 0 : _a2.accessa;
+  const prefix = (binding == null ? void 0 : binding.app) ? `/app/${binding.app}/channel/${binding.channel}/v1/` : null;
+  const hasRunSocket = prefix && service.route_pattern === `${prefix}*` && (service.allowed_methods || []).includes("GET");
+  if (!hasRunSocket) return '<span class="badge">HTTP</span>';
+  return `<span class="badge">HTTP + WS</span>
+    <div class="subtle">HTTP: registered methods</div>
+    <div class="subtle"><span class="badge">WS</span> GET <code>${esc(`${prefix}run`)}</code></div>`;
+}
 function serviceTable(rows) {
   return table(
-    ["Name", "State", "Route", "Upstream", "Health check", "Credential", "Cost", "Actions"],
+    ["Name", "State", "Route", "Protocol", "Identity", "Upstream", "Health check", "Credential", "Cost", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       serviceBadges(row),
       `<code>${esc(row.route_pattern)}</code>`,
+      serviceProtocolSummary(row),
+      endpointIdentityBadge(row.access),
       esc(row.upstream_base_url || "missing"),
       esc(healthCheckLabel(row)),
       row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
@@ -18766,26 +18939,30 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
 }
 function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {}) {
   return table(
-    ["Created", "Request", "Route", "Routing mode", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
-    rows.map((row) => [
-      time(row.created_at),
-      `<code>${esc(row.request_id)}</code>`,
-      esc(row.route),
-      badge(routingModeLabel(row.diagnostics), "neutral"),
-      esc(row.service_name || ""),
-      esc(row.http_method || ""),
-      `<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
-      esc(row.model || ""),
-      esc(row.provider),
-      `${badge(row.status, row.status === "success" ? "good" : "bad")} <code>${esc(row.status_code)}</code>`,
-      `${esc(row.latency_ms)} ms`,
-      esc(usageValue(row.diagnostics, row.total_tokens)),
-      esc(usageValue(row.diagnostics, row.estimated_cost_usd, money)),
-      esc(row.cost_source || ""),
-      esc(row.pricing_rule_name || ""),
-      row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",
-      ownerService || ownerProject ? `<button type="button" ${ownerService ? `data-owner-service="${attr(ownerService)}"` : `data-owner-project="${attr(ownerProject)}"`} data-owner-request="${attr(row.request_id)}">View details</button>` : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}" data-debug-usage="${attr(JSON.stringify(investigationUsageSnapshot(row)))}">Debug</button>`
-    ])
+    ["Created", "Request", "Protocol / transfer", "Route", "Routing mode", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
+    rows.map((row) => {
+      var _a2, _b;
+      return [
+        time(row.created_at),
+        `<code>${esc(row.request_id)}</code>`,
+        ((_a2 = row.diagnostics) == null ? void 0 : _a2.websocket) ? `${badge("WS", "neutral")}<div class="subtle">↑ ${esc(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc(row.diagnostics.websocket.upstream_bytes)} B</div>` : badge(((_b = row.diagnostics) == null ? void 0 : _b.protocol) === "http" ? "HTTP" : "Not recorded", "neutral"),
+        esc(row.route),
+        badge(routingModeLabel(row.diagnostics), "neutral"),
+        esc(row.service_name || ""),
+        esc(row.http_method || ""),
+        `<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
+        esc(row.model || ""),
+        esc(row.provider),
+        `${badge(row.status, row.status === "success" ? "good" : "bad")} <code>${esc(row.status_code)}</code>`,
+        `${esc(row.latency_ms)} ms`,
+        esc(usageValue(row.diagnostics, row.total_tokens)),
+        esc(usageValue(row.diagnostics, row.estimated_cost_usd, money)),
+        esc(row.cost_source || ""),
+        esc(row.pricing_rule_name || ""),
+        row.trace_id ? `<code>${esc(row.trace_id)}</code>` : "",
+        ownerService || ownerProject ? `<button type="button" ${ownerService ? `data-owner-service="${attr(ownerService)}"` : `data-owner-project="${attr(ownerProject)}"`} data-owner-request="${attr(row.request_id)}">View details</button>` : `<button type="button" data-nav="health" data-debug-request="${attr(row.request_id)}" data-debug-usage="${attr(JSON.stringify(investigationUsageSnapshot(row)))}">Debug</button>`
+      ];
+    })
   );
 }
 function investigationView(data) {
@@ -19336,8 +19513,110 @@ function guardrailExecutionTable(rows) {
     ])
   );
 }
+function endpointIdentityFields(access = {}) {
+  const entra = access.entra || {};
+  const mode = access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
+  return `<label class="wide-field">Entra verification<select name="endpoint_entra_mode">
+    <option value="inherit" ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
+    <option value="required" ${mode === "required" ? "selected" : ""}>Require Entra</option>
+    <option value="disabled" ${mode === "disabled" ? "selected" : ""}>No Entra</option>
+  </select></label>
+    <label>Entra audience<input name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
+    <label>Required scopes<input name="endpoint_scopes" value="${attr(listValue(entra.required_scopes, ""))}"></label>
+    <label>Required roles<input name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
+    <label>Allowed groups<input name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
+    <label class="check"><input name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label>
+    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claims below apply only to Require Entra.</p>`;
+}
+function endpointIdentityBadge(access = {}) {
+  return access.entra ? `<span class="badge good">Entra required</span><div class="subtle">${esc(access.entra.audience)}</div>` : access.skip_entra ? '<span class="badge">No Entra</span>' : '<span class="badge warn">Gateway setting</span>';
+}
+function routeIdentityControl(route) {
+  const setting = (state.routeIdentities || []).find((item) => item.route === route);
+  if (!setting) return '<span class="subtle">Unavailable</span>';
+  return `<div class="route-identity-control">${endpointIdentityBadge(setting.access)}${routeIdentityButton(route)}</div>`;
+}
+function routeIdentityButton(route) {
+  return `<button type="button" data-route-identity="${attr(route)}" aria-label="Edit Entra verification for ${attr(route)}">Edit identity</button>`;
+}
+function editRouteIdentity(event) {
+  const route = event.currentTarget.dataset.routeIdentity;
+  const setting = state.routeIdentities.find((item) => item.route === route);
+  const backdrop = document.createElement("section");
+  backdrop.className = "modal-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
+  backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+    <h3 id="${titleId}">Endpoint identity · ${esc(route)}</h3>
+    <form class="form-grid">${endpointIdentityFields(setting.access)}
+      <div class="form-actions"><button class="primary">Save identity</button><button type="button" data-close-modal>Cancel</button></div>
+    </form></div>`;
+  document.body.appendChild(backdrop);
+  let saving = false;
+  const close = mountDialog(backdrop, { initialFocus: "select", dismissible: false });
+  backdrop.querySelector("[data-close-modal]").addEventListener("click", () => {
+    if (!saving) close();
+  });
+  backdrop.addEventListener("keydown", (keyEvent) => {
+    if (keyEvent.key === "Escape" && !saving) close();
+  });
+  backdrop.querySelector("form").addEventListener("submit", handleAsync(async (submit) => {
+    submit.preventDefault();
+    if (saving) return;
+    const access = endpointAccessFromForm(new FormData(submit.currentTarget));
+    saving = true;
+    try {
+      await api("/admin-ui/admin/route-identities", { method: "PUT", body: JSON.stringify({ route, access }) });
+      close();
+      setNotice(`Endpoint identity saved for ${route}.`, "success");
+      await routes();
+    } finally {
+      saving = false;
+    }
+  }));
+}
+function endpointAccessFields(access) {
+  const binding = access.accessa || {};
+  return formSection("Endpoint identity and Accessa", "Apply identity requirements to this registered route. Accessa preserves the public path and requires an explicit key service binding.", `
+    ${endpointIdentityFields(access)}
+    <label class="check"><input name="accessa_enabled" type="checkbox" ${access.accessa ? "checked" : ""}> Accessa channel binding</label>
+    <label>Accessa app<input name="accessa_app" value="${attr(binding.app || "")}" placeholder="tara"></label>
+    <label>Accessa channel<input name="accessa_channel" value="${attr(binding.channel || "")}" placeholder="tara-frontend"></label>
+    <label>Socket idle timeout ms<input name="socket_idle_ms" type="number" min="100" max="600000" value="${attr(binding.idle_timeout_ms ?? 6e4)}"></label>
+    <label>Connections per route per instance<input name="socket_connections" type="number" min="1" max="10000" value="${attr(binding.max_connections ?? 100)}"></label>
+    <label>Connections per key per instance<input name="socket_key_connections" type="number" min="1" max="10000" value="${attr(binding.max_connections_per_key ?? 10)}"></label>
+    <label>Maximum socket message bytes<input name="socket_frame_bytes" type="number" min="125" max="16777216" value="${attr(binding.max_frame_bytes ?? 1048576)}"></label>
+    <div class="help wide-field">With Require Entra, all listed scopes and roles are required; any listed group may match. Apigee must sign audience and expiry claims. Accessa requires Require Entra and an audience; a blank app is only for /channel/{channel}/v1/me. Socket limits apply per gateway instance; the instance ceiling is 4,096. Accessa transport and admission carry no charge; downstream service calls remain metered.</div>
+  `);
+}
+function endpointAccessFromForm(form) {
+  const mode = String(form.get("endpoint_entra_mode") || "inherit");
+  const audience = mode === "required" ? String(form.get("endpoint_audience") || "").trim() : "";
+  const accessa = form.has("accessa_enabled");
+  if (accessa && !audience) throw new Error("Accessa requires an endpoint Entra audience and Require Entra mode.");
+  if (mode === "required" && !audience) throw new Error("Require Entra needs an endpoint audience.");
+  if (!["inherit", "required", "disabled"].includes(mode)) throw new Error("Choose an Entra verification mode.");
+  return {
+    skip_entra: mode === "disabled",
+    entra: audience ? {
+      audience,
+      required_scopes: csv(form.get("endpoint_scopes")),
+      required_roles: csv(form.get("endpoint_roles")),
+      allowed_groups: csv(form.get("endpoint_groups")),
+      allow_apigee: form.has("endpoint_apigee")
+    } : null,
+    accessa: accessa ? {
+      app: nullableString(form.get("accessa_app")),
+      channel: String(form.get("accessa_channel") || "").trim(),
+      idle_timeout_ms: Number(form.get("socket_idle_ms")),
+      max_connections: Number(form.get("socket_connections")),
+      max_connections_per_key: Number(form.get("socket_key_connections")),
+      max_frame_bytes: Number(form.get("socket_frame_bytes"))
+    } : null
+  };
+}
 function serviceBody(form, patch) {
   const body = {
+    access: endpointAccessFromForm(form),
     project_id: form.has("project_id") ? nullableString(form.get("project_id")) : void 0,
     studio_service_id: patch ? nullableString(form.get("studio_service_id")) : blankToUndefined(form.get("studio_service_id")),
     route_pattern: form.get("route_pattern") || void 0,

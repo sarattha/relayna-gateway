@@ -2,6 +2,48 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.37 - 2026-09-17
+
+### Added
+
+- Accessa app/channel HTTP and WebSocket registration, preserving public paths
+  and opening the channel adapter connection through the registered `/run` route.
+  BFF, adapter, Router and agent integration includes fresh per-turn admission,
+  bounded frames, connection limits, expiry, cancellation and reconnect replay.
+- Per-service and per-route Entra requirements for audience, scopes, roles and
+  groups, including canonical OpenAI/Anthropic passthrough and separate LiteLLM
+  UI policy. Endpoints can inherit gateway settings or explicitly omit Entra;
+  Accessa requires endpoint identity and an explicitly bound service key.
+- Service creation presets, HTTP/WS protocol labels and endpoint identity editors.
+- Traffic and Usage investigations show WebSocket duration, directional bytes,
+  average transfer rates, activity, frame counts, close cause and timeout estimates.
+  Bounded verified Entra claims appear beside the endpoint policy requirements;
+  raw tokens and frame payloads are never retained.
+
+### Fixed
+
+- Strip caller-supplied admission context from every upstream route before
+  inserting gateway-issued Accessa credentials. Endpoint JWT verification honors
+  the configured clock skew without relaxing scope or role requirements.
+- Align route configuration and identity actions; make drawer action bars opaque
+  and consistently spaced across service and provider forms.
+- Stabilize database timestamp assertions, OIDC expiry fixtures and isolated
+  budget test scopes. CI runs integration tests against PostgreSQL and Redis.
+- Update vulnerable Rustls/webpki and event-listener dependencies.
+
+### Upgrade notes
+
+- Startup applies additive endpoint-access and route-identity migrations. Existing
+  registrations retain legacy HTTP rewriting and inherited authentication until
+  explicitly configured. Diagnostic JSON fields remain optional for old records.
+- Deploy adapter/Router admission support before enabling Accessa channels.
+  Router owns durable turns, deduplication and replay; gateway owns admission.
+- WebSocket byte counts exclude handshake/TLS overhead. Idle countdowns are
+  estimates, and session expiry is checked on frame activity. Usage stores final
+  session measurements; Traffic provides live samples.
+- See [Accessa channels](docs/accessa-channels.md) for registration, rollout,
+  per-turn authorization and monitoring details.
+
 ## 0.1.36 - 2026-09-10
 
 ### Fixed

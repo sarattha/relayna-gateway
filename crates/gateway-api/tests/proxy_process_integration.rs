@@ -146,6 +146,7 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     .execute(store.pool())
     .await
     .expect("establish managed routes for virtual-key proxy coverage");
+    sqlx::query("DELETE FROM route_identity_settings WHERE route IN ('/v1/chat/completions','/v1/responses','/litellm/*','/v1/messages','/providers/openai/*')").execute(store.pool()).await.unwrap();
     let suffix = Uuid::new_v4().simple().to_string();
     let project = store
         .create_project(ProjectCreateRequest {
@@ -851,6 +852,232 @@ async fn unverified_bearer_regressions(
         );
     }
     assert!(hits.load(Ordering::SeqCst) >= 2);
+
+    // Per-route identity overrides isolate audiences and no-Entra traffic in one instance.
+    use gateway_core::{endpoint_access::RouteIdentitySetting, OpenAiRouteSettingsLookup};
+    let route_policy = |route: &str, access: Value| {
+        serde_json::from_value::<RouteIdentitySetting>(json!({"route":route,"access":access}))
+            .unwrap()
+    };
+    let rows = store.list_route_identities().await.unwrap();
+    assert_eq!(
+        rows.len(),
+        gateway_core::endpoint_access::IDENTITY_ROUTES.len()
+    );
+    assert!(store
+        .set_route_identity(route_policy("/unknown", json!({})))
+        .await
+        .is_err());
+    store
+        .set_route_identity(route_policy(
+            "/v1/chat/completions",
+            json!({"entra":{"audience":"api://litellm","required_scopes":["generate"]}}),
+        ))
+        .await
+        .unwrap();
+    store
+        .set_route_identity(route_policy("/v1/responses", json!({"skip_entra":true})))
+        .await
+        .unwrap();
+    let shared_store = Arc::new(store.clone());
+    assert!(
+        shared_store
+            .route_identity(gateway_core::Route::Responses)
+            .await
+            .unwrap()
+            .skip_entra
+    );
+    assert!(shared_store
+        .list_route_identities()
+        .await
+        .unwrap()
+        .iter()
+        .any(|row| row.route == "/v1/responses" && row.access.skip_entra));
+    let mut endpoint_claims = claims.clone();
+    endpoint_claims["aud"] = json!("api://litellm");
+    endpoint_claims["scp"] = json!("generate");
+    let endpoint_token = sign(&endpoint_claims);
+    for path in ["/v1/chat/completions", "/chat/completions"] {
+        for mode in [
+            OpenAiRouteMode::ManagedByGateway,
+            OpenAiRouteMode::DirectLiteLlmPassthrough,
+        ] {
+            store
+                .set_openai_route_mode("chat-completions", mode)
+                .await
+                .unwrap();
+            for (jwt, expected) in [
+                (None, 401),
+                (Some(valid.as_str()), 401),
+                (Some(endpoint_token.as_str()), 200),
+                (Some("sk-raw-litellm"), 401),
+            ] {
+                let mut request = client
+                    .post(format!("{proxy_url}{path}"))
+                    .header("x-litellm-key", &material.raw_key)
+                    .json(&json!({"model":"coverage-model","messages":[]}));
+                if let Some(jwt) = jwt {
+                    request = request.bearer_auth(jwt);
+                }
+                let response = request.send().await.unwrap();
+                assert_eq!(response.status().as_u16(), expected, "{path} {mode:?}");
+                if expected == 200 {
+                    let body: Value = response.json().await.unwrap();
+                    assert_eq!(body["client_key"], false);
+                    assert_ne!(body["auth"], format!("Bearer {endpoint_token}"));
+                }
+            }
+        }
+    }
+    for path in ["/v1/responses", "/responses"] {
+        for mode in [
+            OpenAiRouteMode::ManagedByGateway,
+            OpenAiRouteMode::DirectLiteLlmPassthrough,
+        ] {
+            store
+                .set_openai_route_mode("responses", mode)
+                .await
+                .unwrap();
+            let response = client
+                .post(format!("{proxy_url}{path}"))
+                .header("x-litellm-key", &material.raw_key)
+                .json(&json!({"model":"coverage-model","input":"hello"}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200, "key-only {path} {mode:?}");
+            assert_eq!(
+                client
+                    .post(format!("{proxy_url}{path}"))
+                    .bearer_auth("rk_live_test_key")
+                    .json(&json!({"model":"coverage-model"}))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                401
+            );
+        }
+    }
+
+    for (route, path) in [
+        ("/v1/messages", "/v1/messages"),
+        ("/providers/openai/*", "/providers/openai/chat/completions"),
+    ] {
+        store
+            .set_route_identity(route_policy(
+                route,
+                json!({"entra":{"audience":"api://litellm","required_scopes":["generate"]}}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            client
+                .post(format!("{proxy_url}{path}"))
+                .header("x-litellm-key", &material.raw_key)
+                .json(&json!({"model":"coverage-model","messages":[]}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            401
+        );
+        assert_eq!(
+            client
+                .post(format!("{proxy_url}{path}"))
+                .bearer_auth(&endpoint_token)
+                .header("x-litellm-key", &material.raw_key)
+                .json(&json!({"model":"coverage-model","messages":[]}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        store
+            .set_route_identity(route_policy(route, json!({})))
+            .await
+            .unwrap();
+    }
+    // Corrupt or unavailable identity storage must deny requests, never inherit silently.
+    sqlx::query(r#"UPDATE route_identity_settings SET access='{"skip_entra":"invalid"}' WHERE route='/v1/responses'"#).execute(store.pool()).await.unwrap();
+    assert!(store.list_route_identities().await.is_err());
+    assert_eq!(
+        client
+            .post(format!("{proxy_url}/v1/responses"))
+            .header("x-litellm-key", &material.raw_key)
+            .json(&json!({"model":"coverage-model"}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        502
+    );
+    store
+        .set_route_identity(route_policy("/v1/responses", json!({"skip_entra":true})))
+        .await
+        .unwrap();
+    let closed = PostgresStore::connect(&std::env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    closed.pool().close().await;
+    assert!(closed
+        .route_identity(gateway_core::Route::Responses)
+        .await
+        .is_err());
+    assert!(closed.list_route_identities().await.is_err());
+    assert!(closed
+        .set_route_identity(route_policy("/v1/responses", json!({})))
+        .await
+        .is_err());
+    // Wildcard LiteLLM trusted-ingress cannot bypass its explicit identity gate.
+    let previous = store.get_litellm_passthrough_settings().await.unwrap();
+    store
+        .patch_litellm_passthrough_settings(
+            serde_json::from_value(json!({"enabled":true,"ui_exposure":"trusted_ingress","allowed_paths":["/ui/*"],"allowed_methods":["GET"]}))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    shared_store
+        .set_route_identity(route_policy(
+            "/litellm/*",
+            json!({"entra":{"audience":"api://litellm","required_scopes":["generate"]}}),
+        ))
+        .await
+        .unwrap();
+    for (jwt, expected) in [
+        (None, 401),
+        (Some(valid.as_str()), 401),
+        (Some(endpoint_token.as_str()), 200),
+    ] {
+        let mut request = client.get(format!("{proxy_url}/ui/"));
+        if let Some(jwt) = jwt {
+            request = request.bearer_auth(jwt);
+        }
+        assert_eq!(request.send().await.unwrap().status().as_u16(), expected);
+    }
+    store
+        .patch_litellm_passthrough_settings(
+            serde_json::from_value(
+                json!({"enabled":previous.enabled,"ui_exposure":previous.ui_exposure,"allowed_paths":previous.allowed_paths,"allowed_methods":previous.allowed_methods}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    for route in ["/v1/chat/completions", "/v1/responses", "/litellm/*"] {
+        store
+            .set_route_identity(route_policy(route, json!({})))
+            .await
+            .unwrap();
+    }
+    for route in ["chat-completions", "responses"] {
+        store
+            .set_openai_route_mode(route, OpenAiRouteMode::ManagedByGateway)
+            .await
+            .unwrap();
+    }
     // Leave shared persisted settings in their default state for other integration cases.
     store
         .patch_gateway_auth_settings(serde_json::from_str(r#"{"entra_enabled":false}"#).unwrap())

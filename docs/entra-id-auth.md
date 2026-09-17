@@ -4,6 +4,13 @@ Relayna Gateway releases `0.1.7` and later can put Microsoft Entra ID in front o
 traffic while keeping Relayna virtual keys as the policy, budget, rate-limit,
 guardrail, and usage anchor.
 
+Services and Routes can now select **Require Entra**, **No Entra**, or **Use existing
+gateway setting** independently. Protected endpoints choose their own audience,
+scopes, roles and groups; shared Settings still defines issuer, tenant and JWKS
+trust. See [per-endpoint verification](accessa-channels.md#entra-verification-for-every-request-plane-endpoint)
+for configuration, API examples, passthrough behavior and rollout notes.
+The gateway-wide behavior below applies to endpoints using the existing gateway setting.
+
 The feature is opt-in. With `ENTRA_AUTH_ENABLED=false` and `GATEWAY_UNVERIFIED_BEARER_ENABLED=false` (the defaults),
 existing clients keep using:
 
@@ -335,7 +342,7 @@ empty placeholders for required Entra values.
 Useful local checks after changing Entra configuration or code:
 
 ```bash
-python3 scripts/validate-release-metadata.py v0.1.36
+python3 scripts/validate-release-metadata.py v0.1.37
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
 cargo test --workspace --all-features

@@ -29,7 +29,7 @@ export function matchesTraffic(row, filters) {
     && (filters.outcome !== "active" || !row.completed);
 }
 
-export function mountTraffic({ content, api, headers, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, initialFilters = {}, onFilters = () => {} }) {
+export function mountTraffic({ content, api, headers, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, refreshWebSocketMetrics, initialFilters = {}, onFilters = () => {} }) {
   let rows = [], cursor = null, instance = "Connecting", selected = null, filters = { ...initialFilters };
   let mode = "live", paused = false, disposed = false, controller = null, reconnect = null;
   let warning = "", historyCursor = null, historyGeneration = 0, connectionGeneration = 0;
@@ -93,9 +93,10 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
       (replacement || element("traffic-filters").elements.namedItem("failure_code")).focus({ preventScroll: true });
     }
     element("traffic-rows").innerHTML = table(
-      ["Arrived", "Request", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
+      ["Arrived", "Request", "Protocol / transfer", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
       visible.map((row) => [
         time(row.started_at), `<code>${esc(row.request_id)}</code>`,
+        row.diagnostics.websocket ? `${badge("WS", "neutral")}<div class="subtle">↑ ${esc(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc(row.diagnostics.websocket.upstream_bytes)} B</div>` : badge(row.diagnostics?.protocol === "http" ? "HTTP" : "Not recorded", "neutral"),
         `${esc(row.method)} ${esc(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc(row.service || row.provider || "Not selected")}</span>`,
         badge(routingModeLabel(row.diagnostics), "neutral"),
         badge(label(row.completed ? row.diagnostics.outcome : row.stage), row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
@@ -213,6 +214,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
   element("traffic-older").addEventListener("click", () => history(true));
   const elapsedTimer = setInterval(() => {
     if (disposed || paused || mode !== "live") return;
+    refreshWebSocketMetrics?.(element("traffic-detail"));
     for (const row of rows) {
       if (row.completed) continue;
       const cell = content.querySelector(`[data-traffic-elapsed="${row.id}"]`);

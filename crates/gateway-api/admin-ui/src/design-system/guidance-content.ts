@@ -21,6 +21,18 @@ const policy: Record<string, string> = {
   allow_tools: "Permit tool/function calling at this layer. Other policy layers can still deny it.",
 };
 const shared: Record<string, string> = {
+  endpoint_audience: "Exact audience required when Require Entra is selected. Other modes ignore this field. This does not add the audience to other endpoints.",
+  endpoint_scopes: "Comma-separated scopes. Every listed scope is required; blank adds no scope requirement for this endpoint.",
+  endpoint_roles: "Comma-separated roles. Every listed role is required; blank adds no role requirement for this endpoint.",
+  endpoint_groups: "Comma-separated group IDs. At least one must match; blank adds no group restriction.",
+  endpoint_apigee: "Accept HMAC-verified Apigee identity only when it includes the matching audience and a future expiry.",
+  accessa_enabled: "Preserve the route path and enforce explicit channel-key service permissions. Requires endpoint Entra authentication.",
+  accessa_app: "Target app, for example tara or docgen. Blank is for the channel identity endpoint only.",
+  accessa_channel: "Channel backend identity. Must match the registered route exactly.",
+  socket_idle_ms: "Idle read/write timeout in milliseconds. Traffic and heartbeat replies keep a long run alive; zero is invalid.",
+  socket_connections: "Maximum active sockets for this service on one gateway instance. All services share an instance ceiling of 4,096.",
+  socket_key_connections: "Maximum active sockets for one key on one gateway instance. Must not exceed the route limit.",
+  socket_frame_bytes: "Maximum WebSocket frame and assembled message size, including fragmented messages. Zero is invalid.",
   preset: "Starting policy template. Review the resulting permissions and limits before creating the key.",
   expires_at: "Local date and time when the key stops authenticating. Use No expiration to create a key without an expiry.",
   rotation_due_at: "Optional local date and time for a rotation reminder. This does not rotate or revoke the key automatically.",

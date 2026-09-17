@@ -657,6 +657,9 @@ fn sanitize_label(value: &str) -> String {
 }
 
 pub fn is_sensitive_field(name: &str) -> bool {
+    if name.eq_ignore_ascii_case("x-relayna-admission-context") {
+        return true;
+    }
     let normalized = name.to_ascii_lowercase();
     normalized == "authorization"
         || normalized == "proxy-authorization"
@@ -725,6 +728,7 @@ mod tests {
 
     #[test]
     fn identifies_sensitive_fields_for_redaction() {
+        assert!(super::is_sensitive_field("X-Relayna-Admission-Context"));
         assert!(super::is_sensitive_field("Authorization"));
         assert!(super::is_sensitive_field("provider_secret"));
         assert!(super::is_sensitive_field("internal_service_token"));

@@ -198,3 +198,19 @@ DELETE FROM request_traffic WHERE id IN (
   defaulted `upstream_timings`, `usage`,
   `debug_bundle`, and masked `key_prefix` fields inside their existing JSON.
   These additions need no schema migration; older saved records remain readable.
+
+## Accessa WebSocket and endpoint identity diagnostics
+
+Open **Inspect** in Traffic or **Debug** in Usage & cost to see WebSocket
+duration, directional frame bytes, average transfer rates, activity, frame counts,
+close cause and expiry. Traffic samples live connections; Usage retains terminal
+measurements. Upstream idle remaining is an estimate, and session expiry is
+checked on frame activity. Bytes include frame headers but exclude HTTP/TLS
+overhead. These counters do not represent billed tokens.
+
+Entra details compare the endpoint requirements with successfully verified
+audience, scopes, roles, groups, identifiers and expiry. Failed verification shows
+the requirements and failure without unverified claims. Tokens and payloads are
+excluded; old records may lack these optional fields. Gateway-inherited policy
+requirements are not captured. See [Accessa monitoring](../accessa-channels.md)
+for claim bounds and rollout guidance.

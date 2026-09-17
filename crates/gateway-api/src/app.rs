@@ -585,6 +585,10 @@ pub fn router_with_state(state: AppState) -> Router {
             "/admin-ui/admin/providers/{provider_id}/enable",
             post(enable_provider),
         )
+        .route(
+            "/admin-ui/admin/route-identities",
+            get(list_route_identities).put(set_route_identity),
+        )
         .route("/admin-ui/admin/openai-routes", get(list_openai_routes))
         .route(
             "/admin-ui/admin/anthropic-routes",
@@ -3986,6 +3990,50 @@ async fn enable_provider(
     Path(provider_id): Path<uuid::Uuid>,
 ) -> Response {
     mutate_provider_enabled(state, headers, provider_id, true).await
+}
+
+async fn list_route_identities(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_USAGE_READ).await {
+        return response;
+    }
+    match state.store.list_route_identities().await {
+        Ok(settings) => Json(settings).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn set_route_identity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(setting): Json<gateway_core::endpoint_access::RouteIdentitySetting>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_POLICIES_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    if let Err(error) = setting.validate() {
+        return error_response(&headers, error);
+    }
+    match state.store.set_route_identity(setting).await {
+        Ok(setting) => {
+            if let Err(error) = record_admin_audit(
+                &state,
+                &headers,
+                &actor,
+                "policies:route_identity_update",
+                "route_identity",
+                Some(setting.route.clone()),
+                None,
+                audit_json(&setting),
+            )
+            .await
+            {
+                return error_response(&headers, error);
+            }
+            Json(setting).into_response()
+        }
+        Err(error) => error_response(&headers, error),
+    }
 }
 
 async fn list_openai_routes(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -7733,6 +7781,9 @@ mod tests {
     #[async_trait]
     impl AdminAuditStore for MemoryStore {
         async fn record_audit_event(&self, event: AuditEventCreate) -> GatewayResult<AuditEvent> {
+            if self.store_fault == Some("route_identity_audit") {
+                return Err(GatewayError::StoreUnavailable);
+            }
             let audit_event = AuditEvent {
                 id: Uuid::new_v4(),
                 actor_token_id: event.actor_token_id,
@@ -8372,6 +8423,32 @@ mod tests {
 
     #[async_trait]
     impl AdminOpenAiRouteStore for MemoryStore {
+        async fn list_route_identities(
+            &self,
+        ) -> GatewayResult<Vec<gateway_core::endpoint_access::RouteIdentitySetting>> {
+            if self.store_fault == Some("route_identity") {
+                return Err(GatewayError::StoreUnavailable);
+            }
+            Ok(gateway_core::endpoint_access::IDENTITY_ROUTES
+                .iter()
+                .map(
+                    |route| gateway_core::endpoint_access::RouteIdentitySetting {
+                        route: route.as_str().into(),
+                        access: Default::default(),
+                    },
+                )
+                .collect())
+        }
+        async fn set_route_identity(
+            &self,
+            setting: gateway_core::endpoint_access::RouteIdentitySetting,
+        ) -> GatewayResult<gateway_core::endpoint_access::RouteIdentitySetting> {
+            if self.store_fault == Some("route_identity") {
+                return Err(GatewayError::StoreUnavailable);
+            }
+            Ok(setting)
+        }
+
         async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
             Ok(self.openai_routes.lock().expect("lock poisoned").clone())
         }
@@ -8647,6 +8724,7 @@ mod tests {
             }
             let now = Utc::now();
             let response = ServiceResponse {
+                access: Default::default(),
                 name: request.name.clone(),
                 project_id: request.project_id,
                 studio_service_id: request.studio_service_id.clone(),
@@ -8834,6 +8912,7 @@ mod tests {
             }
 
             let response = ServiceResponse {
+                access: Default::default(),
                 name: request.name.clone(),
                 project_id: request.project_id,
                 studio_service_id: Some(request.studio_service_id),
@@ -10053,6 +10132,8 @@ mod tests {
         display_name: &str,
     ) -> EntraIdentityContext {
         EntraIdentityContext {
+            audiences: Vec::new(),
+            expires_at: None,
             tenant_id: tenant_id.to_owned(),
             subject: Some(object_id.to_owned()),
             object_id: Some(object_id.to_owned()),
@@ -10603,6 +10684,7 @@ mod tests {
     fn openapi_test_service(upstream_base_url: String) -> ServiceResponse {
         let now = Utc::now();
         ServiceResponse {
+            access: Default::default(),
             name: "ocr".to_owned(),
             project_id: None,
             studio_service_id: None,
@@ -14206,6 +14288,115 @@ mod tests {
             .expect("body");
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(value["error"]["code"], "invalid_studio_connection_payload");
+    }
+
+    #[tokio::test]
+    async fn route_identity_api_scopes_validation_audit_and_failures() {
+        let route = "/admin-ui/admin/route-identities";
+        let store = default_store();
+        store
+            .operator_tokens
+            .lock()
+            .unwrap()
+            .push(TEST_USAGE_OPERATOR_TOKEN.to_owned());
+        let app = router_with_state(test_state(store.clone()));
+        assert_eq!(
+            admin_get(app.clone(), route, None).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let response = admin_get(app.clone(), route, Some(TEST_OPERATOR_TOKEN)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let rows: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["route"] == "/litellm/*"));
+        for (token, body, status) in [
+            (
+                None,
+                r#"{"route":"/litellm/*","access":{}}"#,
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                Some(TEST_USAGE_OPERATOR_TOKEN),
+                r#"{"route":"/litellm/*","access":{}}"#,
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                Some(TEST_OPERATOR_TOKEN),
+                r#"{"route":"/unknown","access":{}}"#,
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                Some(TEST_OPERATOR_TOKEN),
+                r#"{"route":"/litellm/*","access":{"skip_entra":true,"entra":{"audience":"a"}}}"#,
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                Some(TEST_OPERATOR_TOKEN),
+                r#"{"route":"/litellm/*","access":{"skip_entra":true}}"#,
+                StatusCode::OK,
+            ),
+            (
+                Some(TEST_OPERATOR_TOKEN),
+                r#"{"route":"/litellm/*","access":{"entra":{"audience":"api://litellm"}}}"#,
+                StatusCode::OK,
+            ),
+        ] {
+            let mut request = axum::http::Request::builder()
+                .method("PUT")
+                .uri(route)
+                .header("content-type", "application/json");
+            if let Some(token) = token {
+                request = request.header("authorization", format!("Bearer {token}"));
+            }
+            let response = app
+                .clone()
+                .oneshot(request.body(axum::body::Body::from(body)).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+        }
+        assert!(store
+            .audit_events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.action == "policies:route_identity_update"));
+        for fault in ["route_identity", "route_identity_audit"] {
+            let mut store = default_store();
+            store.store_fault = Some(fault);
+            let app = router_with_state(test_state(store));
+            if fault == "route_identity" {
+                assert_eq!(
+                    admin_get(app.clone(), route, Some(TEST_OPERATOR_TOKEN))
+                        .await
+                        .status(),
+                    StatusCode::BAD_GATEWAY
+                );
+            }
+            let response = app
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("PUT")
+                        .uri(route)
+                        .header("content-type", "application/json")
+                        .header("authorization", format!("Bearer {TEST_OPERATOR_TOKEN}"))
+                        .body(axum::body::Body::from(
+                            r#"{"route":"/litellm/*","access":{}}"#,
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        }
     }
 
     #[tokio::test]

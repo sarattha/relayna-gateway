@@ -1,3 +1,6 @@
+#[path = "accessa_runtime.rs"]
+mod accessa_runtime;
+use crate::accessa_transport::{ConnectionLease, ConnectionLimits, FrameLimit};
 use crate::body_rewrite::{
     prepare_rewritten_request_headers, prepare_rewritten_response_headers, BoundedBodyRewriter,
 };
@@ -9,6 +12,9 @@ use crate::{
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::Utc;
+use gateway_core::accessa::{
+    session_store_key, AccessaSession, AccessaStore, ADMISSION_CONTEXT_HEADER, ADMISSION_PREFIX,
+};
 use gateway_core::traffic::{self, TrafficRequest, TrafficStore, TrafficUsage, UpstreamTiming};
 use gateway_core::{
     analyze_generation_request,
@@ -215,6 +221,7 @@ pub struct RelaynaPingoraProxy<S, R> {
     control_state: Arc<R>,
     config: PingoraLiteLlmConfig,
     auth_runtime: SharedGatewayAuthRuntime,
+    connection_limits: Arc<ConnectionLimits>,
 }
 
 impl<S, R> RelaynaPingoraProxy<S, R>
@@ -248,6 +255,7 @@ where
             control_state,
             config,
             auth_runtime,
+            connection_limits: Arc::new(ConnectionLimits::default()),
         }
     }
 }
@@ -288,6 +296,14 @@ impl<S, R> RelaynaPingoraProxy<S, R> {
 
 #[derive(Debug)]
 pub struct PingoraContext {
+    access: gateway_core::EndpointAccess,
+    socket: bool,
+    socket_upgraded: bool,
+    socket_lease: Option<ConnectionLease>,
+    socket_request_frames: Option<FrameLimit>,
+    socket_response_frames: Option<FrameLimit>,
+    admission_token: Option<String>,
+    socket_expires_at: i64,
     traffic: TrafficRequest,
     timing_probe: RequestTimingProbe,
     started: Instant,
@@ -362,12 +378,20 @@ where
         + Send
         + Sync
         + 'static,
-    R: RateLimitStore + BudgetStore + Send + Sync + 'static,
+    R: RateLimitStore + BudgetStore + AccessaStore + Send + Sync + 'static,
 {
     type CTX = PingoraContext;
 
     fn new_ctx(&self) -> Self::CTX {
         Self::CTX {
+            access: Default::default(),
+            socket: false,
+            socket_upgraded: false,
+            socket_lease: None,
+            socket_request_frames: None,
+            socket_response_frames: None,
+            admission_token: None,
+            socket_expires_at: 0,
             traffic: TrafficRequest::default(),
             timing_probe: RequestTimingProbe::default(),
             started: Instant::now(),
@@ -469,6 +493,14 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        if session
+            .req_header()
+            .uri
+            .path()
+            .starts_with(ADMISSION_PREFIX)
+        {
+            return self.handle_accessa_admission(session, ctx).await;
+        }
         let req = session.req_header();
         ctx.request_content_type =
             header_value(req, header::CONTENT_TYPE.as_str()).map(ToOwned::to_owned);
@@ -490,6 +522,7 @@ where
             None
         };
         let mut matched = if let Some(registration) = persisted_service {
+            ctx.access = registration.access.clone();
             let service_name = registration.name.clone();
             let upstream = match service_upstream_from_registration(&registration) {
                 Ok(upstream) => upstream,
@@ -547,6 +580,34 @@ where
                 },
             }
         };
+        if ctx.service_upstream.is_none() {
+            ctx.access = match self.store.route_identity(matched.route).await {
+                Ok(access) => access,
+                Err(error) => {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(true);
+                }
+            };
+        }
+        // Service-name aliases must not bypass an endpoint's identity policy.
+        if ctx.service_upstream.is_none() {
+            if let Some(name) = matched.service_name.as_deref() {
+                match self.store.service_registration(name).await {
+                    Ok(Some(registration)) => {
+                        ctx.access = registration.access;
+                        if ctx.access.accessa.is_some() {
+                            respond_error(session, GatewayError::UnsupportedRoute, ctx).await?;
+                            return Ok(true);
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        respond_error(session, error, ctx).await?;
+                        return Ok(true);
+                    }
+                }
+            }
+        }
         if gateway_core::is_litellm_canonical_route(matched.route) {
             match self.apply_litellm_route_limits(&mut matched).await {
                 Ok(()) => {}
@@ -565,6 +626,44 @@ where
             }
         }
         ctx.route = Some(matched.route);
+        let upgrade =
+            req.headers.contains_key("upgrade") || req.headers.contains_key("sec-websocket-key");
+        if upgrade {
+            let allowed = ctx
+                .access
+                .accessa
+                .as_ref()
+                .is_some_and(|binding| binding.run_path().as_deref() == Some(req.uri.path()))
+                && req.method == http::Method::GET
+                && header_value(req, "upgrade")
+                    .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
+                && header_value(req, "connection").is_some_and(|v| {
+                    v.split(',')
+                        .any(|v| v.trim().eq_ignore_ascii_case("upgrade"))
+                })
+                && header_value(req, "sec-websocket-version") == Some("13")
+                && !req.headers.contains_key("sec-websocket-extensions");
+            if !allowed {
+                respond_error(session, GatewayError::UnsupportedRoute, ctx).await?;
+                return Ok(true);
+            }
+            ctx.socket = true;
+            if let Some(binding) = &ctx.access.accessa {
+                ctx.traffic.diagnostics.websocket =
+                    Some(gateway_core::traffic::WebSocketDiagnostics {
+                        state: "connecting".into(),
+                        app: binding.app.clone(),
+                        channel: binding.channel.clone(),
+                        idle_timeout_ms: binding.idle_timeout_ms,
+                        max_frame_bytes: binding.max_frame_bytes as u64,
+                        ..Default::default()
+                    });
+            }
+        }
+        if ctx.access.accessa.is_some() {
+            matched.estimated_cost_usd = None;
+        }
+
         ctx.request_rewriter = Some(BoundedBodyRewriter::new(matched.max_body_bytes));
         ctx.response_rewriter = Some(BoundedBodyRewriter::new(matched.max_response_body_bytes));
         ctx.traceparent = header_value(req, "traceparent")
@@ -598,6 +697,28 @@ where
         ctx.relayna_key_header = auth.config.relayna_key_header.clone();
         let now = Utc::now();
         let authorization = header_value(req, "authorization");
+        if let Some(endpoint) = ctx.access.entra.as_ref() {
+            ctx.traffic.diagnostics.entra =
+                Some(gateway_core::traffic::EntraDiagnostics::endpoint(endpoint));
+            match self
+                .verify_endpoint_identity(req, now, &auth, &ctx.request_id, endpoint)
+                .await
+            {
+                Ok(identity) => {
+                    ctx.traffic
+                        .diagnostics
+                        .entra
+                        .as_mut()
+                        .unwrap()
+                        .verified(&identity);
+                    ctx.entra_identity = Some(identity);
+                }
+                Err(error) => {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(true);
+                }
+            }
+        }
         if ctx.litellm_passthrough && matched.route == Route::LiteLlmPassthrough {
             match self.store.litellm_passthrough_settings().await {
                 Ok(settings)
@@ -622,7 +743,10 @@ where
         if gateway_core::is_litellm_canonical_route(matched.route) {
             match self.route_mode(matched.route).await {
                 Ok(OpenAiRouteMode::DirectLiteLlmPassthrough)
-                    if !authorization_has_relayna_key(authorization) =>
+                    if ctx.access.entra.is_none()
+                        && !authorization_has_relayna_key(authorization)
+                        && (!ctx.access.skip_entra
+                            || header_value(req, &auth.config.relayna_key_header).is_none()) =>
                 {
                     if let Err(error) = self
                         .ensure_litellm_canonical_route_enabled(matched.route)
@@ -659,7 +783,22 @@ where
                 }
             }
         }
-        let key_result = if auth.config.unverified_bearer_enabled {
+        let key_result = if ctx.access.entra.is_some() {
+            Authenticator::new(self.store.clone())
+                .authenticate_raw_key(header_value(req, &auth.config.relayna_key_header), now)
+                .await
+        } else if ctx.access.skip_entra {
+            // Dedicated key header is accepted consistently; never treat a JWT as a key.
+            if let Some(key) = header_value(req, &auth.config.relayna_key_header) {
+                Authenticator::new(self.store.clone())
+                    .authenticate_raw_key(Some(key), now)
+                    .await
+            } else {
+                Authenticator::new(self.store.clone())
+                    .authenticate_authorization(authorization, now)
+                    .await
+            }
+        } else if auth.config.unverified_bearer_enabled {
             match require_unverified_bearer(authorization) {
                 Ok(()) => {
                     Authenticator::new(self.store.clone())
@@ -672,11 +811,22 @@ where
                 Err(error) => Err(error),
             }
         } else if auth.entra_enabled() {
+            ctx.traffic.diagnostics.entra = Some(gateway_core::traffic::EntraDiagnostics {
+                policy_source: "gateway".into(),
+                verification: "pending".into(),
+                ..Default::default()
+            });
             match self
                 .verify_entra_request(req, now, &auth, &ctx.request_id)
                 .await
             {
                 Ok(identity) => {
+                    ctx.traffic
+                        .diagnostics
+                        .entra
+                        .as_mut()
+                        .unwrap()
+                        .verified(&identity);
                     ctx.entra_identity = Some(identity);
                     gateway_telemetry::phase_span("gateway.auth.entra", &ctx.request_id)
                         .in_scope(|| tracing::info!("Entra identity authenticated"));
@@ -843,6 +993,20 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        if ctx.socket {
+            if let Some(frames) = &mut ctx.socket_request_frames {
+                if Utc::now().timestamp() >= ctx.socket_expires_at {
+                    ctx.traffic.fail("gateway", "websocket_session_expired");
+                    return Err(PingoraError::new(ErrorType::ConnectionClosed));
+                }
+                if frames.feed(body.as_deref().unwrap_or_default()).is_err() {
+                    ctx.traffic.fail("gateway", "websocket_frame_rejected");
+                    return Err(PingoraError::new(ErrorType::ConnectionClosed));
+                }
+            }
+            websocket_activity(ctx, false, body.as_ref().map_or(0, Bytes::len));
+            return Ok(());
+        }
         if ctx.guardrail_error.is_some() {
             *body = Some(Bytes::new());
             return Err(PingoraError::new(ErrorType::InternalError));
@@ -1158,6 +1322,15 @@ where
             respond_error(session, error, ctx).await?;
             return Ok(false);
         }
+        if ctx.access.accessa.is_some() {
+            match self.admit_accessa_connection(ctx, &key).await {
+                Ok(()) => return Ok(true),
+                Err(error) => {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(false);
+                }
+            }
+        }
         // Body selectors are unavailable at this lifecycle stage. Reserve a
         // conservative fixed-cost ceiling and reconcile after body parsing.
         prepare_service_cost_for_ctx(ctx);
@@ -1413,6 +1586,17 @@ where
             peer.options.total_connection_timeout = Some(timeout);
             peer.options.read_timeout = Some(timeout);
             peer.options.write_timeout = Some(timeout);
+            if ctx.socket {
+                let idle = Duration::from_millis(
+                    ctx.access
+                        .accessa
+                        .as_ref()
+                        .expect("binding")
+                        .idle_timeout_ms,
+                );
+                peer.options.read_timeout = Some(idle);
+                peer.options.write_timeout = Some(idle);
+            }
         }
         Ok(Box::new(peer))
     }
@@ -1447,6 +1631,38 @@ where
             upstream,
             Some(ctx.relayna_key_header.as_str()),
         )?;
+        if let Some(binding) = &ctx.access.accessa {
+            for name in [
+                "x-caller-oid",
+                "x-caller-upn",
+                "x-caller-groups",
+                "x-caller-tenant",
+                "x-route-app",
+                "x-route-channel",
+                "x-access-token",
+                ADMISSION_CONTEXT_HEADER,
+            ] {
+                upstream_request.remove_header(name);
+            }
+            let identity = ctx.entra_identity.as_ref().expect("Accessa authenticated");
+            upstream_request.insert_header(
+                "x-caller-oid",
+                identity.object_id.as_deref().unwrap_or_default(),
+            )?;
+            upstream_request.insert_header("x-caller-tenant", &identity.tenant_id)?;
+            if let Some(upn) = &identity.email {
+                upstream_request.insert_header("x-caller-upn", upn)?;
+            }
+            upstream_request.insert_header("x-caller-groups", identity.groups.join(","))?;
+            upstream_request.insert_header("x-route-channel", &binding.channel)?;
+            if let Some(app) = &binding.app {
+                upstream_request.insert_header("x-route-app", app)?;
+            }
+            upstream_request.insert_header("x-request-id", &ctx.request_id)?;
+            if let Some(token) = &ctx.admission_token {
+                upstream_request.insert_header(ADMISSION_CONTEXT_HEADER, token)?;
+            }
+        }
         if ctx
             .route_match
             .as_ref()
@@ -1455,7 +1671,7 @@ where
             rewrite_direct_openai_uri(upstream_request)?;
         }
         if let Some(matched) = &ctx.route_match {
-            if matched.route == Route::ServiceWildcard {
+            if matched.route == Route::ServiceWildcard && ctx.access.accessa.is_none() {
                 if let Some(service_name) = matched.service_name.as_deref() {
                     rewrite_service_wildcard_uri(
                         upstream_request,
@@ -1516,6 +1732,19 @@ where
         // released before any post-call response buffering begins.
         ctx.request_body_lease.take();
         let status_code = upstream_response.status.as_u16();
+        ctx.socket_upgraded = ctx.socket && status_code == 101;
+        if let Some(socket) = &mut ctx.traffic.diagnostics.websocket {
+            socket.state = if ctx.socket_upgraded {
+                "open"
+            } else {
+                "handshake_rejected"
+            }
+            .into();
+            socket.observed_at = Some(Utc::now());
+            if ctx.socket_upgraded {
+                socket.opened_at = socket.observed_at;
+            }
+        }
         ctx.traffic.diagnostics.upstream_status = Some(status_code);
         ctx.traffic.streaming = ctx.is_streaming
             || upstream_response
@@ -1532,7 +1761,8 @@ where
             }
         }
         traffic_step(ctx, "upstream_response");
-        if is_retry_safe_status(status_code) && self.activate_provider_fallback(ctx) {
+        if !ctx.socket && is_retry_safe_status(status_code) && self.activate_provider_fallback(ctx)
+        {
             let mut error = PingoraError::new_up(ErrorType::HTTPStatus(status_code));
             error.set_retry(true);
             return Err(error);
@@ -1554,6 +1784,9 @@ where
         _end_of_stream: bool,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<Option<Duration>> {
+        if ctx.socket {
+            return Ok(None);
+        }
         if let Some(bytes) = body.as_ref() {
             let elapsed = elapsed_ms(ctx);
             ctx.timing_probe.body(&mut ctx.traffic, bytes, elapsed);
@@ -1573,6 +1806,7 @@ where
         upstream_response.insert_header("x-request-id", &ctx.request_id)?;
         upstream_response.insert_header("x-relayna-request-id", &ctx.request_id)?;
         upstream_response.remove_header("alt-svc");
+        upstream_response.remove_header(ADMISSION_CONTEXT_HEADER);
         if ctx.trusted_ingress_passthrough {
             rewrite_trusted_ingress_location(upstream_response, ctx)?;
         }
@@ -1627,6 +1861,23 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        if ctx.socket {
+            if !ctx.socket_upgraded {
+                return Ok(None);
+            }
+            if let Some(frames) = &mut ctx.socket_response_frames {
+                if Utc::now().timestamp() >= ctx.socket_expires_at {
+                    ctx.traffic.fail("gateway", "websocket_session_expired");
+                    return Err(PingoraError::new(ErrorType::ConnectionClosed));
+                }
+                if frames.feed(body.as_deref().unwrap_or_default()).is_err() {
+                    ctx.traffic.fail("gateway", "websocket_frame_rejected");
+                    return Err(PingoraError::new(ErrorType::ConnectionClosed));
+                }
+            }
+            websocket_activity(ctx, true, body.as_ref().map_or(0, Bytes::len));
+            return Ok(None);
+        }
         if !ctx.first_chunk_recorded && body.as_ref().is_some_and(|value| !value.is_empty()) {
             traffic_step(ctx, "response_body");
         }
@@ -1718,6 +1969,12 @@ where
         error: Option<&pingora_core::Error>,
         ctx: &mut Self::CTX,
     ) {
+        if let Some(token) = ctx.admission_token.take() {
+            if let Ok(key) = session_store_key(&token) {
+                let _ = self.control_state.accessa_delete(&key).await;
+            }
+        }
+        ctx.socket_lease.take();
         gateway_telemetry::request_finished();
         finish_traffic(
             ctx,
@@ -1860,7 +2117,7 @@ where
                 );
                 let _ = self.store.insert_guardrail_execution_event(event).await;
             }
-            if ctx.is_streaming {
+            if ctx.is_streaming && !ctx.socket {
                 gateway_telemetry::stream_finished(error.is_some() || status_code >= 500);
             }
         }
@@ -2007,6 +2264,9 @@ where
     }
 
     fn activate_provider_fallback(&self, ctx: &mut PingoraContext) -> bool {
+        if ctx.access.accessa.is_some() {
+            return false;
+        }
         let Some(matched) = &ctx.route_match else {
             return false;
         };
@@ -2256,7 +2516,7 @@ where
                 .release_budget_reservation(key.key_id, &ctx.request_id)
                 .await;
         }
-        if ctx.is_streaming {
+        if ctx.is_streaming && !ctx.socket {
             gateway_telemetry::stream_finished(true);
         }
         ctx.terminal_usage_recorded = true;
@@ -2331,6 +2591,7 @@ fn prepare_upstream_authority_and_credentials(
     upstream: &PingoraUpstreamConfig,
     relayna_key_header: Option<&str>,
 ) -> PingoraResult<()> {
+    upstream_request.remove_header(ADMISSION_CONTEXT_HEADER);
     upstream_request.remove_header("authorization");
     upstream_request.remove_header("host");
     upstream_request.remove_header("x-apigee-entra-identity");
@@ -2972,7 +3233,7 @@ fn configure_service_pricing_context(
 }
 
 fn resolved_usage_cost(ctx: &PingoraContext) -> ResolvedUsageCost {
-    if ctx.litellm_passthrough {
+    if ctx.litellm_passthrough || ctx.access.accessa.is_some() {
         return ResolvedUsageCost {
             estimated_cost_usd: None,
             cost_source: Some("none".to_owned()),
@@ -3192,6 +3453,14 @@ fn default_proxy_failure_status(error: &PingoraError) -> u16 {
 #[cfg(test)]
 fn new_pingora_context_for_tests() -> PingoraContext {
     PingoraContext {
+        access: Default::default(),
+        socket: false,
+        socket_upgraded: false,
+        socket_lease: None,
+        socket_request_frames: None,
+        socket_response_frames: None,
+        admission_token: None,
+        socket_expires_at: 0,
         traffic: TrafficRequest::default(),
         timing_probe: RequestTimingProbe::default(),
         started: Instant::now(),
@@ -3306,6 +3575,7 @@ fn finish_attempt_timing(ctx: &mut PingoraContext) {
 }
 
 fn update_routing_diagnostics(ctx: &mut PingoraContext) {
+    ctx.traffic.diagnostics.protocol = Some(if ctx.socket { "websocket" } else { "http" }.into());
     ctx.traffic.diagnostics.routing_mode = if ctx.litellm_passthrough {
         Some("litellm_passthrough".into())
     } else if ctx.route_match.is_some() {
@@ -3313,6 +3583,38 @@ fn update_routing_diagnostics(ctx: &mut PingoraContext) {
     } else {
         None
     };
+}
+
+/// Coalesce progress until the next Traffic poll, without retaining payloads.
+fn websocket_activity(ctx: &mut PingoraContext, upstream: bool, bytes: usize) {
+    if bytes == 0 {
+        return;
+    }
+    let Some(socket) = &mut ctx.traffic.diagnostics.websocket else {
+        return;
+    };
+    let now = Utc::now();
+    if upstream {
+        socket.upstream_bytes = socket.upstream_bytes.saturating_add(bytes as u64);
+        socket.last_upstream_activity_at = Some(now);
+        if let Some(frames) = &ctx.socket_response_frames {
+            socket.upstream_frames = frames.frames;
+            socket.upstream_close_frame = frames.close_seen;
+        }
+    } else {
+        socket.client_bytes = socket.client_bytes.saturating_add(bytes as u64);
+        socket.last_client_activity_at = Some(now);
+        if let Some(frames) = &ctx.socket_request_frames {
+            socket.client_frames = frames.frames;
+            socket.client_close_frame = frames.close_seen;
+        }
+    }
+    socket.observed_at = Some(now);
+    socket.duration_ms = socket
+        .opened_at
+        .map_or(0, |start| (now - start).num_milliseconds().max(0) as u64);
+    ctx.traffic.elapsed_ms = elapsed_ms(ctx);
+    gateway_core::traffic::monitor().publish_socket_progress(ctx.traffic.clone());
 }
 
 fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
@@ -3343,6 +3645,11 @@ fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
 }
 
 fn traffic_gateway_error(ctx: &mut PingoraContext, error: &GatewayError) {
+    if let Some(identity) = &mut ctx.traffic.diagnostics.entra {
+        if identity.verification == "pending" {
+            identity.verification = "failed".into();
+        }
+    }
     update_routing_diagnostics(ctx);
     // Body filters may run after peer selection; classify their actual failure stage.
     let stage = match error {
@@ -3440,6 +3747,30 @@ fn finish_traffic(
         }
     }
     finish_attempt_timing(ctx);
+    if let Some(socket) = &mut ctx.traffic.diagnostics.websocket {
+        let now = Utc::now();
+        socket.observed_at = Some(now);
+        socket.closed_at = Some(now);
+        socket.duration_ms = socket
+            .opened_at
+            .map_or(0, |start| (now - start).num_milliseconds().max(0) as u64);
+        socket.state = if socket.opened_at.is_some() {
+            "closed"
+        } else {
+            "handshake_rejected"
+        }
+        .into();
+        socket.close_cause = Some(ctx.traffic.diagnostics.failure_code.clone().unwrap_or_else(
+            || {
+                if socket.client_close_frame || socket.upstream_close_frame {
+                    "close_frame_observed"
+                } else {
+                    "transport_ended"
+                }
+                .into()
+            },
+        ));
+    }
     ctx.traffic.completed = true;
     ctx.traffic.diagnostics.outcome = Some(
         if ctx.traffic.diagnostics.failure_code.is_some() {
@@ -3486,6 +3817,26 @@ mod tests {
     };
     use std::sync::Mutex;
     use uuid::Uuid;
+
+    #[test]
+    fn socket_diagnostics_handle_untracked_chunks_and_transport_end() {
+        let mut ctx = new_pingora_context_for_tests();
+        websocket_activity(&mut ctx, false, 0);
+        websocket_activity(&mut ctx, false, 12);
+        assert!(ctx.traffic.diagnostics.websocket.is_none());
+        ctx.traffic.diagnostics.websocket = Some(gateway_core::traffic::WebSocketDiagnostics {
+            state: "open".into(),
+            opened_at: Some(Utc::now()),
+            ..Default::default()
+        });
+        websocket_activity(&mut ctx, false, 12);
+        websocket_activity(&mut ctx, true, 24);
+        finish_traffic(&mut ctx, Some(101), None);
+        let socket = ctx.traffic.diagnostics.websocket.unwrap();
+        assert_eq!((socket.client_bytes, socket.upstream_bytes), (12, 24));
+        assert_eq!(socket.close_cause.as_deref(), Some("transport_ended"));
+        assert_eq!(socket.state, "closed");
+    }
 
     #[test]
     fn gateway_timeout_response_uses_stable_json_envelope() {
@@ -3676,6 +4027,7 @@ mod tests {
     fn service_endpoint_context_uses_template_with_concrete_fallback() {
         let now = Utc::now();
         let registration = gateway_core::ServiceRegistration {
+            access: Default::default(),
             name: "jobs".to_owned(),
             project_id: None,
             studio_service_id: None,
@@ -4054,6 +4406,9 @@ mod tests {
             .insert_header("x-relayna-worker-token", "client-worker-token")
             .expect("client worker token");
 
+        request
+            .insert_header(ADMISSION_CONTEXT_HEADER, "caller-controlled-context")
+            .unwrap();
         prepare_upstream_authority_and_credentials(&mut request, &upstream, Some("x-relayna-key"))
             .expect("prepared upstream headers");
 
@@ -4071,6 +4426,7 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("Bearer internal-service-key")
         );
+        assert!(!request.headers.contains_key(ADMISSION_CONTEXT_HEADER));
         assert!(!request.headers.contains_key("x-relayna-key"));
         assert!(!request.headers.contains_key("proxy-authorization"));
         assert!(!request.headers.contains_key("cookie"));
@@ -4503,6 +4859,7 @@ mod tests {
         let store = Arc::new(MemoryUsageStore::default());
         let control_state = Arc::new(MemoryControlState::default());
         let proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state,
             config: PingoraLiteLlmConfig::from_base_url("http://litellm.internal", "litellm-key")
@@ -4547,8 +4904,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn accessa_socket_hooks_reject_expiry_and_bad_frames_without_buffering_or_retry() {
+        let proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
+            store: Arc::new(MemoryUsageStore::default()),
+            control_state: Arc::new(MemoryControlState::default()),
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "test-key")
+                .unwrap(),
+            auth_runtime: default_auth_runtime_for_tests(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let _client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        let mut session = Session::new_h1(Box::new(
+            pingora_core::protocols::l4::stream::Stream::from(server),
+        ));
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.socket = true;
+        ctx.socket_request_frames = Some(FrameLimit::new(125, true));
+        ctx.socket_response_frames = Some(FrameLimit::new(125, false));
+        ctx.socket_expires_at = Utc::now().timestamp() + 60;
+        ctx.access = serde_json::from_value(serde_json::json!({"accessa":{"app":"tara","channel":"web","idle_timeout_ms":1000,"max_connections":2,"max_connections_per_key":1,"max_frame_bytes":125}})).unwrap();
+        assert!(!proxy.activate_provider_fallback(&mut ctx));
+        let mut rejection = Some(Bytes::from_static(b"upstream handshake rejected"));
+        assert!(proxy
+            .response_body_filter(&mut session, &mut rejection, true, &mut ctx)
+            .is_ok());
+        assert!(ctx.response_body_prefix.is_empty());
+        ctx.socket_upgraded = true;
+        let mut oversized = Some(Bytes::from_static(&[0x81, 126, 0, 126]));
+        assert!(proxy
+            .response_body_filter(&mut session, &mut oversized, false, &mut ctx)
+            .is_err());
+        let mut unmasked = Some(Bytes::from_static(&[0x81, 0, 0, 0, 0, 0]));
+        assert!(proxy
+            .request_body_filter(&mut session, &mut unmasked, false, &mut ctx)
+            .await
+            .is_err());
+        assert!(ctx.body_prefix.is_empty());
+        ctx.socket_expires_at = Utc::now().timestamp() - 1;
+        assert!(proxy
+            .response_body_filter(&mut session, &mut None, false, &mut ctx)
+            .is_err());
+        assert!(proxy
+            .request_body_filter(&mut session, &mut None, false, &mut ctx)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
     async fn connection_errors_resolve_conditional_retry_and_keep_attempt_evidence() {
         let mut proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
             store: Arc::new(MemoryUsageStore::default()),
             control_state: Arc::new(MemoryControlState::default()),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "test-key")
@@ -4609,6 +5018,7 @@ mod tests {
         let store = Arc::new(MemoryUsageStore::default());
         *store.openai_routes_enabled.lock().expect("routes lock") = false;
         let proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state: Arc::new(MemoryControlState::default()),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
@@ -4747,6 +5157,8 @@ mod tests {
         ));
 
         let identity = EntraIdentityContext {
+            audiences: Vec::new(),
+            expires_at: None,
             tenant_id: "tenant".to_owned(),
             subject: Some("operator".to_owned()),
             object_id: Some("object".to_owned()),
@@ -4808,6 +5220,7 @@ mod tests {
             credential_header_value_format: CredentialHeaderValueFormat::Raw,
         });
         let proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state: Arc::new(MemoryControlState::default()),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "fallback-key")
@@ -4857,6 +5270,7 @@ mod tests {
             credential: "mapped-litellm-key".to_owned(),
         });
         let proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state: Arc::new(MemoryControlState::default()),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "fallback-key")
@@ -4898,6 +5312,7 @@ mod tests {
             credential_header_value_format: CredentialHeaderValueFormat::Bearer,
         });
         let proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state: Arc::new(MemoryControlState::default()),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "fallback-key")
@@ -4983,6 +5398,7 @@ mod tests {
         let store = Arc::new(MemoryUsageStore::default());
         let control_state = Arc::new(MemoryControlState::default());
         let proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
             store: store.clone(),
             control_state,
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
@@ -5109,6 +5525,7 @@ mod tests {
         *store.openai_route_mode.lock().expect("route mode lock") =
             OpenAiRouteMode::DirectLiteLlmPassthrough;
         let proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state: Arc::new(MemoryControlState::default()),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
@@ -5219,6 +5636,13 @@ mod tests {
 
     #[async_trait]
     impl OpenAiRouteSettingsLookup for MemoryUsageStore {
+        async fn route_identity(
+            &self,
+            _route: Route,
+        ) -> GatewayResult<gateway_core::EndpointAccess> {
+            Ok(gateway_core::EndpointAccess::default())
+        }
+
         async fn openai_route_enabled(&self, route: Route) -> GatewayResult<bool> {
             if gateway_core::openai_route_id(route).is_some() {
                 Ok(*self.openai_routes_enabled.lock().expect("routes lock"))
@@ -5330,7 +5754,7 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MemoryControlState {
+    pub(super) struct MemoryControlState {
         released: Mutex<Vec<(Uuid, String)>>,
     }
 
@@ -5533,6 +5957,7 @@ mod tests {
         let store = Arc::new(MemoryUsageStore::default());
         let control_state = Arc::new(MemoryControlState::default());
         let proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
             store: store.clone(),
             control_state: control_state.clone(),
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
@@ -5584,6 +6009,7 @@ mod tests {
         let store = Arc::new(MemoryUsageStore::default());
         let control_state = Arc::new(MemoryControlState::default());
         let proxy = RelaynaPingoraProxy {
+            connection_limits: Arc::new(ConnectionLimits::default()),
             store: store.clone(),
             control_state,
             config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key")
@@ -5803,5 +6229,19 @@ mod traffic_regressions {
             traffic_transport_error(&PingoraError::new_up(ErrorType::InvalidCert)),
             ("upstream", "upstream_certificate_invalid")
         );
+    }
+}
+
+#[cfg(test)]
+#[async_trait]
+impl AccessaStore for tests::MemoryControlState {
+    async fn accessa_get(&self, _: &str) -> GatewayResult<Option<String>> {
+        Err(GatewayError::ControlStateUnavailable)
+    }
+    async fn accessa_put(&self, _: &str, _: &str, _: u64, _: bool) -> GatewayResult<bool> {
+        Err(GatewayError::ControlStateUnavailable)
+    }
+    async fn accessa_delete(&self, _: &str) -> GatewayResult<()> {
+        Err(GatewayError::ControlStateUnavailable)
     }
 }
