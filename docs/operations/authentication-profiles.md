@@ -22,7 +22,13 @@ Tenant, issuer, signing algorithms, JWKS and JWT clock skew still come from
 Settings. Signed Apigee identity is accepted only when enabled on the selected
 profile; its expiry remains strict.
 
-Assign existing key UUIDs to each profile. A key may have exactly one assignment
+Use **Assigned keys → Select keys** to search by key prefix, UUID, project name
+or ID, or service. Add matching keys and review their project and lifecycle status;
+remove selections explicitly. Keys assigned to another profile cannot be selected
+until removed there. Filtering does not clear selections, and changes take effect
+only when the identity form is saved. If key lookup fails, existing assignments
+are retained; reopen the picker to retry. The current key API identifies keys by
+prefix and UUID rather than an editable display name. A key may have exactly one assignment
 on a route; an absent, disabled or invalid assignment denies access. Assigning a
 profile never grants a route forbidden by the key's effective policy. Existing
 route, project, provider, rate and budget controls continue to apply according

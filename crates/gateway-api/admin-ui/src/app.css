@@ -2943,3 +2943,10 @@ button.help-trigger {
 @media (max-width: 760px) {
   .authentication-profile, [data-profile-entra], [data-endpoint-entra] { grid-template-columns: minmax(0, 1fr); }
 }
+
+.profile-key-picker { min-width: 0; }
+.profile-key-item { display: flex; align-items: center; justify-content: space-between; gap: var(--rg-space-2); padding: var(--rg-space-2) 0; border-bottom: 1px solid var(--rg-color-border); }
+.profile-key-item > span { min-width: 0; }
+.profile-key-item small, .profile-key-item code { display: block; overflow-wrap: anywhere; }
+.profile-key-item button { flex-shrink: 0; }
+.profile-key-results { max-height: 260px; overflow-y: auto; }

@@ -57,8 +57,16 @@ function profileRow(profile2 = {}, bindings = []) {
     ${["required_scopes", "required_roles", "allowed_groups"].map((name) => `<label>${escape({ required_scopes: "Scopes (optional)", required_roles: "Roles (optional)", allowed_groups: "Groups (optional)" }[name])}<input ${keyOnly ? "disabled" : ""} name="${id}.${name}" value="${escape((entra[name] || []).join(", "))}"></label>`).join("")}
     <label class="check"><input type="checkbox" ${keyOnly ? "disabled" : ""} name="${id}.allow_apigee" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label></div>
     <p class="help wide-field" data-profile-key-only ${keyOnly ? "" : "hidden"}>Authenticates the assigned Relayna key. No Entra JWT, audience or claims are used.</p>
-    <label class="wide-field">Assigned key UUIDs<textarea name="${id}.keys" rows="2">${escape(keys2.join("\n"))}</textarea></label>
-    <p class="help wide-field">${keys2.length} saved bindings.</p>
+    <section class="wide-field profile-key-picker" data-key-picker>
+      <input type="hidden" name="${id}.keys" data-profile-keys value="${escape(keys2.join(","))}">
+      <div class="panel-heading"><strong>Assigned keys</strong><button type="button" data-open-keys aria-expanded="false">Select keys</button></div>
+      <div data-selected-keys>${keys2.map((key) => `<div class="profile-key-item"><code>${escape(key)}</code></div>`).join("") || '<p class="help">No keys assigned.</p>'}</div>
+      <div data-key-search-panel hidden>
+        <label>Search keys<input type="search" data-key-search data-guidance-name="profile_keys_search" placeholder="Key prefix, UUID, project or service" autocomplete="off"></label>
+        <p class="help" role="status" data-key-results-status></p>
+        <div class="profile-key-results" data-key-results></div>
+      </div>
+    </section>
     <button type="button" data-remove-profile>Remove unbound profile</button>
   </fieldset>`;
 }
@@ -122,27 +130,121 @@ function syncIdentityFields(root) {
     row.querySelector("[data-profile-key-only]").hidden = entra;
   }
 }
-function bindProfileEditor(doc = document) {
+const keyCatalogs = /* @__PURE__ */ new WeakMap();
+const selectedKeyIds = (value) => String(value || "").split(/[,\n]/).map((id) => id.trim().toLowerCase()).filter(Boolean);
+function profileKeyOptions(keys2, projects2, query = "", projectId = "") {
+  const terms2 = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return keys2.filter((key) => !projectId || key.project_id === projectId).map((key) => {
+    const project = projects2.find((project2) => project2.id === key.project_id);
+    const name = key.name || key.key_prefix || key.id;
+    const owner = (project == null ? void 0 : project.name) || key.project_id || "Individual";
+    const status = key.revoked_at ? "Revoked" : key.disabled ? "Disabled" : key.expires_at && Date.parse(key.expires_at) <= Date.now() ? "Expired" : "Active";
+    const searchable = [name, key.key_prefix, key.id, owner, key.project_id, ...key.service_names || []].join(" ").toLowerCase();
+    return { id: key.id, name, owner, status, searchable };
+  }).filter((key) => terms2.every((term) => key.searchable.includes(term)));
+}
+function keyDescription(key) {
+  return `<span><strong>${escape(key.name)}</strong><small>${escape(key.owner)} · ${escape(key.status)}</small><code>${escape(key.id)}</code></span>`;
+}
+function refreshProfileKeys(editor) {
+  const state2 = keyCatalogs.get(editor);
+  if (!state2) return;
+  const catalog = state2.catalog || { keys: [], projects: [] };
+  const all = profileKeyOptions(catalog.keys, catalog.projects);
+  const assignments = [...editor.querySelectorAll("[data-profile-keys]")].flatMap((input) => selectedKeyIds(input.value));
+  const root = editor.closest("[data-endpoint-identity]");
+  const active = root.querySelector('[name="endpoint_entra_mode"]').value === "profiles";
+  for (const picker of editor.querySelectorAll("[data-key-picker]")) {
+    const ids = selectedKeyIds(picker.querySelector("[data-profile-keys]").value);
+    picker.querySelector("[data-selected-keys]").innerHTML = ids.map((id) => {
+      const key = all.find((key2) => key2.id === id) || { id, name: "Key details unavailable", owner: "Saved assignment", status: "Unknown" };
+      return `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-remove-key="${escape(id)}" aria-label="Remove ${escape(key.name)} (${escape(id)})" ${active ? "" : "disabled"}>Remove</button></div>`;
+    }).join("") || '<p class="help">No keys assigned.</p>';
+    const matches = profileKeyOptions(catalog.keys, catalog.projects, picker.querySelector("[data-key-search]").value, root.dataset.keyProject || "");
+    picker.querySelector("[data-key-results-status]").textContent = state2.loading ? "Loading keys…" : state2.error ? "Could not load keys. Existing selections are kept. Close and reopen Select keys to retry." : `${matches.length} matching keys${matches.length > 30 ? " · showing the first 30; refine your search" : ""}.`;
+    picker.querySelector("[data-key-results]").innerHTML = state2.loading || state2.error ? "" : matches.slice(0, 30).map((key) => {
+      const assigned = assignments.includes(key.id);
+      const label = ids.includes(key.id) ? "Selected" : assigned ? "Assigned elsewhere" : "Add";
+      return `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-add-key="${escape(key.id)}" aria-label="${label} ${escape(key.name)} (${escape(key.id)})" ${assigned || !active ? "disabled" : ""}>${label}</button></div>`;
+    }).join("");
+  }
+}
+async function loadProfileKeys(editor, loadCatalog) {
+  var _a2, _b;
+  if ((_a2 = keyCatalogs.get(editor)) == null ? void 0 : _a2.loading) return;
+  const state2 = { catalog: (_b = keyCatalogs.get(editor)) == null ? void 0 : _b.catalog, loading: true, error: false };
+  keyCatalogs.set(editor, state2);
+  refreshProfileKeys(editor);
+  try {
+    state2.catalog = await loadCatalog();
+  } catch {
+    state2.error = true;
+  } finally {
+    state2.loading = false;
+    if (editor.isConnected) refreshProfileKeys(editor);
+  }
+}
+function bindProfileEditor(doc = document, loadCatalog = async () => ({ keys: [], projects: [] })) {
   doc.addEventListener("change", (event) => {
     if (!event.target.matches('[name="endpoint_entra_mode"], [data-profile-type]')) return;
-    syncIdentityFields(event.target.closest("[data-endpoint-identity]"));
+    const root = event.target.closest("[data-endpoint-identity]");
+    syncIdentityFields(root);
+    refreshProfileKeys(root.querySelector("[data-profile-editor]"));
   });
-  doc.addEventListener("click", (event) => {
+  doc.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target.matches("[data-key-search]")) event.preventDefault();
+  });
+  doc.addEventListener("input", (event) => {
+    if (event.target.matches("[data-key-search]")) refreshProfileKeys(event.target.closest("[data-profile-editor]"));
+  });
+  doc.addEventListener("click", async (event) => {
+    var _a2;
     const editor = event.target.closest("[data-profile-editor]");
     if (!editor) return;
+    const picker = event.target.closest("[data-key-picker]");
+    if (event.target.closest("[data-open-keys]")) {
+      const panel2 = picker.querySelector("[data-key-search-panel]");
+      panel2.hidden = !panel2.hidden;
+      event.target.closest("[data-open-keys]").setAttribute("aria-expanded", String(!panel2.hidden));
+      if (!panel2.hidden) {
+        picker.querySelector("[data-key-search]").focus();
+        await loadProfileKeys(editor, loadCatalog);
+      }
+      return;
+    }
+    const add = event.target.closest("[data-add-key]");
+    const remove = event.target.closest("[data-remove-key]");
+    if (add || remove) {
+      const input = picker.querySelector("[data-profile-keys]");
+      const ids = selectedKeyIds(input.value);
+      if (remove) input.value = ids.filter((id) => id !== remove.dataset.removeKey).join(",");
+      else {
+        const id = add.dataset.addKey;
+        const catalog = (_a2 = keyCatalogs.get(editor)) == null ? void 0 : _a2.catalog;
+        const project = editor.closest("[data-endpoint-identity]").dataset.keyProject || "";
+        const assigned = [...editor.querySelectorAll("[data-profile-keys]")].flatMap((control) => selectedKeyIds(control.value));
+        if (!catalog || assigned.includes(id) || !catalog.keys.some((key) => key.id === id && (!project || key.project_id === project))) return;
+        input.value = [...ids, id].join(",");
+      }
+      refreshProfileKeys(editor);
+      picker.querySelector("[data-open-keys]").focus();
+      return;
+    }
     if (event.target.closest("[data-add-profile]")) {
       const rows = editor.querySelector("[data-profile-rows]");
       rows.insertAdjacentHTML("beforeend", profileRow());
       syncIdentityFields(editor.closest("[data-endpoint-identity]"));
+      refreshProfileKeys(editor);
       rows.lastElementChild.querySelector("input:not([type=hidden])").focus();
     }
     if (event.target.closest("[data-remove-profile]")) {
       const row = event.target.closest("[data-profile-row]");
-      if (row.querySelector("textarea").value.trim()) {
+      if (row.querySelector("[data-profile-keys]").value.trim()) {
         editor.querySelector("[data-profile-notice]").textContent = "Remove this profile’s key assignments explicitly before removing it.";
         return;
       }
       row.remove();
+      refreshProfileKeys(editor);
     }
   });
 }
@@ -525,10 +627,11 @@ const profile = {
   required_roles: "Optional comma-separated roles. Every listed role is required; blank adds no role restriction. Up to 64 entries, each up to 512 bytes without whitespace.",
   allowed_groups: "Optional comma-separated group IDs. At least one listed group must match; blank adds no group restriction. Up to 64 entries, each up to 512 bytes without whitespace.",
   allow_apigee: "Allow HMAC-verified Apigee identity for this Entra profile only. Matching audience, unexpired identity and required claims still apply; unsigned headers are never trusted.",
-  keys: "Existing Relayna key UUIDs, one per line or separated by commas. Blank assigns no callers. Each key can belong to only one profile on this route; service keys must belong to the service's project. This does not grant route permission."
+  keys: "Select existing Relayna keys. No selection assigns no callers. Each key can belong to only one profile on this route; service keys must belong to the service's project. This does not grant route permission."
 };
 const shared = {
   endpoint_entra_mode: "Choose the endpoint identity policy. Gateway setting inherits Settings; No Entra retains the route's credential checks; Require Entra uses one audience policy. Explicit profiles select policy by an assigned Relayna key and reject unassigned callers. Once saved, explicit profiles cannot be removed by switching back to legacy mode.",
+  profile_keys_search: "Search by key prefix, UUID, project name or ID, or service. Add keys to this profile; keys assigned elsewhere must be removed from that profile first. Selection changes are applied only when you save the form.",
   profile_binding: "Assign this key to exactly one profile on this route. Unassigned denies access on a profiled route; a disabled profile also denies access. Save applies immediately to new policy reads and does not grant route permissions.",
   endpoint_audience: "Exact audience required when Require Entra is selected. Other modes ignore this field. This does not add the audience to other endpoints.",
   endpoint_scopes: "Comma-separated scopes. Every listed scope is required; blank adds no scope requirement for this endpoint.",
@@ -653,7 +756,7 @@ const filterText = {
   to: "End time in your local timezone. Usage Custom includes records before this time; blank gives no upper bound."
 };
 function fieldGuidance(name, context) {
-  if (context === "profile") return profile[name.split(".").at(-1)];
+  if (context === "profile") return profile[name.split(".").at(-1)] || shared[name];
   if (context === "owner") {
     if (name === "owner-range-select") return "Time window for this resource's dashboard and request logs.";
     if (name === "owner-outcome-select") return filterText.status;
@@ -17835,6 +17938,7 @@ async function services() {
   document.querySelectorAll("[data-service-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(serviceAction));
   });
+  prepareProfileKeys(content);
   organizeView("services");
 }
 function pricingRulesEditor(rules) {
@@ -18046,7 +18150,7 @@ function serviceEditForm(service) {
         <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
         <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       `)}
-      ${endpointAccessFields(service.access || {})}
+      ${endpointAccessFields(service.access || {}, service.project_id || "")}
       ${formSection("Usage pricing", "Update cost source and request-matching rules.", `
         <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
         <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
@@ -19688,10 +19792,10 @@ function guardrailExecutionTable(rows) {
     ])
   );
 }
-function endpointIdentityFields(access = {}) {
+function endpointIdentityFields(access = {}, projectId = "") {
   const entra = access.entra || {};
   const mode = access.authentication_profiles ? "profiles" : access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
-  return `<div class="wide-field form-grid" data-endpoint-identity><label class="wide-field">Entra verification<select name="endpoint_entra_mode">
+  return `<div class="wide-field form-grid" data-endpoint-identity data-key-project="${attr(projectId)}"><label class="wide-field">Entra verification<select name="endpoint_entra_mode">
     <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Explicit authentication profiles</option>
     <option value="inherit" ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
     <option value="required" ${mode === "required" ? "selected" : ""}>Require Entra</option>
@@ -19729,6 +19833,7 @@ function editRouteIdentity(event) {
     </form></div>`;
   document.body.appendChild(backdrop);
   let saving = false;
+  prepareProfileKeys(backdrop);
   const close = mountDialog(backdrop, { initialFocus: "select", dismissible: false });
   backdrop.querySelector("[data-close-modal]").addEventListener("click", () => {
     if (!saving) close();
@@ -19751,10 +19856,10 @@ function editRouteIdentity(event) {
     }
   }));
 }
-function endpointAccessFields(access) {
+function endpointAccessFields(access, projectId = "") {
   const binding = access.accessa || {};
   return formSection("Endpoint identity and Accessa", "Apply identity requirements to this registered route. Accessa preserves the public path and requires an explicit key service binding.", `
-    ${endpointIdentityFields(access)}
+    ${endpointIdentityFields(access, projectId)}
     <label class="check"><input name="accessa_enabled" type="checkbox" ${access.accessa ? "checked" : ""}> Accessa channel binding</label>
     <label>Accessa app<input name="accessa_app" value="${attr(binding.app || "")}" placeholder="tara"></label>
     <label>Accessa channel<input name="accessa_channel" value="${attr(binding.channel || "")}" placeholder="tara-frontend"></label>
@@ -21159,7 +21264,16 @@ function renderAccessState(member) {
   document.querySelector("#login-error").textContent = member.email || member.object_id;
 }
 initializePortal();
-bindProfileEditor();
+async function profileKeyCatalog() {
+  const [keys2, projects2] = await Promise.all([api("/admin-ui/admin/keys"), api("/admin-ui/admin/projects")]);
+  return { keys: keys2, projects: projects2 };
+}
+function prepareProfileKeys(root) {
+  root.querySelectorAll("[data-profile-editor]").forEach((editor) => {
+    void loadProfileKeys(editor, profileKeyCatalog);
+  });
+}
+bindProfileEditor(document, profileKeyCatalog);
 document.addEventListener("click", handleAsync(async (event) => {
   const button = event.target.closest("[data-key-profile-bindings]");
   if (!button) return;

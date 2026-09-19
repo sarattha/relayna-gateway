@@ -76,3 +76,67 @@ assert.match(profileRow({type:'relayna_key_only'}), /data-profile-entra hidden/)
 assert.match(profileRow({type:'relayna_key_only'}), /input disabled name="profile-\d+\.audience"/);
 assert.match(profileRow(), /input required name="profile-\d+\.audience"/);
 console.log('ok - dynamic identity modes hide and exclude inactive controls, require Entra audience only, and preserve drafts');
+
+const {profileKeyOptions,selectedKeyIds,loadProfileKeys,refreshProfileKeys}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const secondId='00000000-0000-0000-0000-000000000002';
+const inventory={keys:[{id,key_prefix:'rk_employee',project_id:'project-one',service_names:['responses']},{id:secondId,key_prefix:'rk_robot',project_id:'project-two',disabled:true,service_names:['embeddings']}],projects:[{id:'project-one',name:'Research'},{id:'project-two',name:'Automation'}]};
+for(const query of ['RK_EMPLOYEE',id,'research','PROJECT-ONE','responses','research employee'])assert.deepEqual(profileKeyOptions(inventory.keys,inventory.projects,query).map(k=>k.id),[id]);
+assert.equal(profileKeyOptions(inventory.keys,inventory.projects,'missing').length,0);
+assert.deepEqual(profileKeyOptions(inventory.keys,inventory.projects,'','project-two').map(k=>k.id),[secondId]);
+assert.equal(profileKeyOptions(inventory.keys,inventory.projects,'robot')[0].status,'Disabled');
+assert.deepEqual(selectedKeyIds(' ABC ,\n DEF '),['abc','def']);
+assert.doesNotMatch(profileRow(),/<textarea/);
+assert.match(profileRow(),/type="search" data-key-search/);
+const pickerHandlers={};
+const makePicker=value=>{
+  const nodes={
+    '[data-profile-keys]':{value},'[data-selected-keys]':{innerHTML:''},
+    '[data-key-search]':{value:'',focus(){this.focused=true;}},
+    '[data-key-search-panel]':{hidden:true},'[data-key-results]':{innerHTML:''},
+    '[data-key-results-status]':{textContent:''},'[data-open-keys]':{focus(){},setAttribute(){}}
+  };
+  return {nodes,querySelector:selector=>nodes[selector]};
+};
+const firstPicker=makePicker(id),secondPicker=makePicker('');
+const pickerRoot={dataset:{keyProject:''},querySelector:()=>({value:'profiles'})};
+const pickerEditor={isConnected:true,closest:()=>pickerRoot,querySelectorAll:selector=>selector==='[data-profile-keys]'?[firstPicker.nodes[selector],secondPicker.nodes[selector]]:[firstPicker,secondPicker]};
+bindProfileEditor({addEventListener:(type,fn)=>pickerHandlers[type]=fn},async()=>inventory);
+const clickPicker=(picker,action,key)=>pickerHandlers.click({target:{closest:selector=>selector==='[data-profile-editor]'?pickerEditor:selector==='[data-key-picker]'?picker:selector===action?{dataset:{addKey:key,removeKey:key},setAttribute(){}}:null}});
+await loadProfileKeys(pickerEditor,async()=>inventory);
+assert.match(firstPicker.nodes['[data-selected-keys]'].innerHTML,/rk_employee.*Research/s);
+assert.match(secondPicker.nodes['[data-key-results]'].innerHTML,/Assigned elsewhere/);
+await clickPicker(secondPicker,'[data-add-key]',id);
+assert.equal(secondPicker.nodes['[data-profile-keys]'].value,'','cannot assign a key already bound to another profile');
+await clickPicker(secondPicker,'[data-add-key]',secondId);
+assert.equal(secondPicker.nodes['[data-profile-keys]'].value,secondId);
+await clickPicker(firstPicker,'[data-remove-key]',id);
+assert.equal(firstPicker.nodes['[data-profile-keys]'].value,'');
+await clickPicker(secondPicker,'[data-add-key]',id);
+assert.equal(secondPicker.nodes['[data-profile-keys]'].value,`${secondId},${id}`);
+await clickPicker(secondPicker,'[data-remove-key]',secondId);
+pickerRoot.dataset.keyProject='project-one';
+await clickPicker(firstPicker,'[data-add-key]',secondId);
+assert.equal(firstPicker.nodes['[data-profile-keys]'].value,'','unassigned keys from another project cannot be added');
+pickerRoot.dataset.keyProject='';
+await clickPicker(secondPicker,'[data-add-key]',secondId);
+secondPicker.nodes['[data-profile-keys]'].value=[secondId,id].join(',');
+pickerRoot.dataset.keyProject='project-one';
+secondPicker.nodes['[data-key-search]'].value='missing';refreshProfileKeys(pickerEditor);
+assert.equal(secondPicker.nodes['[data-key-results]'].innerHTML,'');
+assert.match(secondPicker.nodes['[data-selected-keys]'].innerHTML,/rk_robot/,'search never drops selected keys');
+await loadProfileKeys(pickerEditor,async()=>{throw new Error('offline')});
+assert.match(secondPicker.nodes['[data-key-results-status]'].textContent,/Existing selections are kept/);
+assert.equal(secondPicker.nodes['[data-profile-keys]'].value,`${secondId},${id}`);
+await loadProfileKeys(pickerEditor,async()=>inventory);
+assert.doesNotMatch(secondPicker.nodes['[data-key-results-status]'].textContent,/Could not load/);
+const unknown='00000000-0000-0000-0000-000000000099';firstPicker.nodes['[data-profile-keys]'].value=unknown;
+await loadProfileKeys(pickerEditor,async()=>({keys:[{id:secondId,key_prefix:'<script>"',project_id:'project-two'}],projects:inventory.projects}));
+assert.match(firstPicker.nodes['[data-selected-keys]'].innerHTML,/Key details unavailable/);
+assert.equal(firstPicker.nodes['[data-profile-keys]'].value,unknown);
+assert.doesNotMatch(secondPicker.nodes['[data-selected-keys]'].innerHTML,/<script>/);
+assert.match(secondPicker.nodes['[data-selected-keys]'].innerHTML,/&lt;script&gt;/);
+console.log('ok - key picker search, project scope, duplicate prevention, explicit removal, failure/retry, preserved unknown selections and escaped labels');
+
+let preventedSearchSubmit=false;
+pickerHandlers.keydown({key:'Enter',target:{matches:()=>true},preventDefault(){preventedSearchSubmit=true;}});
+assert.equal(preventedSearchSubmit,true,'Enter in key search must not submit the identity form');

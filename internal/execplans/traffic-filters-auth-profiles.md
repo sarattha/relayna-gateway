@@ -8,6 +8,8 @@ Repair applied Traffic filters using simulated requests through a real local gat
 
 ## Progress
 
+- [x] (2026-09-20) Replace manual profile UUID entry with searchable key inventory, selected summaries and explicit add/remove; test loading failures, duplicate prevention and project restrictions; validate desktop/mobile with Computer Use. All ten checks pass (368/368), UI regressions pass and changed Rust coverage remains 137/137.
+
 - [x] (2026-09-20) Remove duplicated inline tooltip explanations, retain concise profile status, verify desktop/narrow layouts and all ten checks (368/368 tests); deliver through PR #121.
 
 - [x] (2026-09-19) Read repository skills, UI rules, manifesto and issue #120; created `codex/traffic-filters-auth-profiles` from clean main at 872614b.
@@ -29,6 +31,8 @@ The Traffic project callback clears a newly submitted key whenever project chang
 Follow-up: uppercase UUIDs and zero-padded status values disagreed with live predicates; an old history cursor remained usable while filters reloaded. Normalization and cursor invalidation now have regression coverage. Previous tests verified the reproduced failures but did not exhaust every filter. The profile editor also exposed Entra-only controls in key-only mode and lacked field-level guidance.
 
 ## Decision Log
+
+- 2026-09-20 picker: preserve existing profile binding payloads and released key/project APIs. Search existing inventory locally; retain saved selections if details fail to load. Registered-service project ownership and server validation remain authoritative.
 
 - 2026-09-19: Preserve released v0.1.37 contracts; new profiles are explicit opt-in, route-local, and use exactly one key binding per canonical route. Legacy inheritance and native LiteLLM behavior remain unchanged outside opted-in routes. User explicitly requested issue #120 implementation including this compatibility boundary.
 - 2026-09-19: Use the existing strict >98% changed executable production Rust line coverage gate, documenting denominator and exclusions; separately report whole-workspace coverage rather than conflate the metrics.

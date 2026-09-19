@@ -17,8 +17,16 @@ export function profileRow(profile = {}, bindings = []) {
     ${['required_scopes','required_roles','allowed_groups'].map(name => `<label>${escape({required_scopes:'Scopes (optional)',required_roles:'Roles (optional)',allowed_groups:'Groups (optional)'}[name])}<input ${keyOnly ? 'disabled' : ''} name="${id}.${name}" value="${escape((entra[name] || []).join(', '))}"></label>`).join('')}
     <label class="check"><input type="checkbox" ${keyOnly ? 'disabled' : ''} name="${id}.allow_apigee" ${entra.allow_apigee ? 'checked' : ''}> Accept signed Apigee identity</label></div>
     <p class="help wide-field" data-profile-key-only ${keyOnly ? '' : 'hidden'}>Authenticates the assigned Relayna key. No Entra JWT, audience or claims are used.</p>
-    <label class="wide-field">Assigned key UUIDs<textarea name="${id}.keys" rows="2">${escape(keys.join('\n'))}</textarea></label>
-    <p class="help wide-field">${keys.length} saved bindings.</p>
+    <section class="wide-field profile-key-picker" data-key-picker>
+      <input type="hidden" name="${id}.keys" data-profile-keys value="${escape(keys.join(','))}">
+      <div class="panel-heading"><strong>Assigned keys</strong><button type="button" data-open-keys aria-expanded="false">Select keys</button></div>
+      <div data-selected-keys>${keys.map(key => `<div class="profile-key-item"><code>${escape(key)}</code></div>`).join('') || '<p class="help">No keys assigned.</p>'}</div>
+      <div data-key-search-panel hidden>
+        <label>Search keys<input type="search" data-key-search data-guidance-name="profile_keys_search" placeholder="Key prefix, UUID, project or service" autocomplete="off"></label>
+        <p class="help" role="status" data-key-results-status></p>
+        <div class="profile-key-results" data-key-results></div>
+      </div>
+    </section>
     <button type="button" data-remove-profile>Remove unbound profile</button>
   </fieldset>`;
 }
@@ -79,24 +87,112 @@ export function syncIdentityFields(root) {
   }
 }
 
-export function bindProfileEditor(doc = document) {
+const keyCatalogs = new WeakMap();
+export const selectedKeyIds = value => String(value || '').split(/[,\n]/).map(id => id.trim().toLowerCase()).filter(Boolean);
+export function profileKeyOptions(keys, projects, query = '', projectId = '') {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return keys.filter(key => !projectId || key.project_id === projectId).map(key => {
+    const project = projects.find(project => project.id === key.project_id);
+    const name = key.name || key.key_prefix || key.id;
+    const owner = project?.name || key.project_id || 'Individual';
+    const status = key.revoked_at ? 'Revoked' : key.disabled ? 'Disabled' : key.expires_at && Date.parse(key.expires_at) <= Date.now() ? 'Expired' : 'Active';
+    const searchable = [name,key.key_prefix,key.id,owner,key.project_id,...(key.service_names || [])].join(' ').toLowerCase();
+    return {id:key.id,name,owner,status,searchable};
+  }).filter(key => terms.every(term => key.searchable.includes(term)));
+}
+function keyDescription(key) {
+  return `<span><strong>${escape(key.name)}</strong><small>${escape(key.owner)} · ${escape(key.status)}</small><code>${escape(key.id)}</code></span>`;
+}
+export function refreshProfileKeys(editor) {
+  const state = keyCatalogs.get(editor);
+  if (!state) return;
+  const catalog = state.catalog || {keys:[],projects:[]};
+  const all = profileKeyOptions(catalog.keys, catalog.projects);
+  const assignments = [...editor.querySelectorAll('[data-profile-keys]')].flatMap(input => selectedKeyIds(input.value));
+  const root = editor.closest('[data-endpoint-identity]');
+  const active = root.querySelector('[name="endpoint_entra_mode"]').value === 'profiles';
+  for (const picker of editor.querySelectorAll('[data-key-picker]')) {
+    const ids = selectedKeyIds(picker.querySelector('[data-profile-keys]').value);
+    picker.querySelector('[data-selected-keys]').innerHTML = ids.map(id => {
+      const key = all.find(key => key.id === id) || {id,name:'Key details unavailable',owner:'Saved assignment',status:'Unknown'};
+      return `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-remove-key="${escape(id)}" aria-label="Remove ${escape(key.name)} (${escape(id)})" ${active ? '' : 'disabled'}>Remove</button></div>`;
+    }).join('') || '<p class="help">No keys assigned.</p>';
+    const matches = profileKeyOptions(catalog.keys, catalog.projects, picker.querySelector('[data-key-search]').value, root.dataset.keyProject || '');
+    picker.querySelector('[data-key-results-status]').textContent = state.loading ? 'Loading keys…' : state.error ? 'Could not load keys. Existing selections are kept. Close and reopen Select keys to retry.' : `${matches.length} matching keys${matches.length > 30 ? ' · showing the first 30; refine your search' : ''}.`;
+    picker.querySelector('[data-key-results]').innerHTML = state.loading || state.error ? '' : matches.slice(0,30).map(key => {
+      const assigned = assignments.includes(key.id);
+      const label = ids.includes(key.id) ? 'Selected' : assigned ? 'Assigned elsewhere' : 'Add';
+      return `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-add-key="${escape(key.id)}" aria-label="${label} ${escape(key.name)} (${escape(key.id)})" ${assigned || !active ? 'disabled' : ''}>${label}</button></div>`;
+    }).join('');
+  }
+}
+export async function loadProfileKeys(editor, loadCatalog) {
+  if (keyCatalogs.get(editor)?.loading) return;
+  const state = {catalog:keyCatalogs.get(editor)?.catalog,loading:true,error:false};
+  keyCatalogs.set(editor,state);
+  refreshProfileKeys(editor);
+  try { state.catalog = await loadCatalog(); }
+  catch { state.error = true; }
+  finally { state.loading = false; if (editor.isConnected) refreshProfileKeys(editor); }
+}
+
+export function bindProfileEditor(doc = document, loadCatalog = async () => ({keys:[],projects:[]})) {
   doc.addEventListener('change', event => {
     if (!event.target.matches('[name="endpoint_entra_mode"], [data-profile-type]')) return;
-    syncIdentityFields(event.target.closest('[data-endpoint-identity]'));
+    const root = event.target.closest('[data-endpoint-identity]');
+    syncIdentityFields(root);
+    refreshProfileKeys(root.querySelector('[data-profile-editor]'));
   });
-  doc.addEventListener('click', event => {
+  doc.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && event.target.matches('[data-key-search]')) event.preventDefault();
+  });
+  doc.addEventListener('input', event => {
+    if (event.target.matches('[data-key-search]')) refreshProfileKeys(event.target.closest('[data-profile-editor]'));
+  });
+  doc.addEventListener('click', async event => {
     const editor = event.target.closest('[data-profile-editor]');
     if (!editor) return;
+    const picker = event.target.closest('[data-key-picker]');
+    if (event.target.closest('[data-open-keys]')) {
+      const panel = picker.querySelector('[data-key-search-panel]');
+      panel.hidden = !panel.hidden;
+      event.target.closest('[data-open-keys]').setAttribute('aria-expanded', String(!panel.hidden));
+      if (!panel.hidden) {
+        picker.querySelector('[data-key-search]').focus();
+        await loadProfileKeys(editor, loadCatalog);
+      }
+      return;
+    }
+    const add = event.target.closest('[data-add-key]');
+    const remove = event.target.closest('[data-remove-key]');
+    if (add || remove) {
+      const input = picker.querySelector('[data-profile-keys]');
+      const ids = selectedKeyIds(input.value);
+      if (remove) input.value = ids.filter(id => id !== remove.dataset.removeKey).join(',');
+      else {
+        const id = add.dataset.addKey;
+        const catalog = keyCatalogs.get(editor)?.catalog;
+        const project = editor.closest('[data-endpoint-identity]').dataset.keyProject || '';
+        const assigned = [...editor.querySelectorAll('[data-profile-keys]')].flatMap(control => selectedKeyIds(control.value));
+        if (!catalog || assigned.includes(id) || !catalog.keys.some(key => key.id === id && (!project || key.project_id === project))) return;
+        input.value = [...ids,id].join(',');
+      }
+      refreshProfileKeys(editor);
+      picker.querySelector('[data-open-keys]').focus();
+      return;
+    }
     if (event.target.closest('[data-add-profile]')) {
       const rows = editor.querySelector('[data-profile-rows]');
       rows.insertAdjacentHTML('beforeend',profileRow());
       syncIdentityFields(editor.closest('[data-endpoint-identity]'));
+      refreshProfileKeys(editor);
       rows.lastElementChild.querySelector('input:not([type=hidden])').focus();
     }
     if (event.target.closest('[data-remove-profile]')) {
       const row = event.target.closest('[data-profile-row]');
-      if (row.querySelector('textarea').value.trim()) { editor.querySelector('[data-profile-notice]').textContent = 'Remove this profile’s key assignments explicitly before removing it.'; return; }
+      if (row.querySelector('[data-profile-keys]').value.trim()) { editor.querySelector('[data-profile-notice]').textContent = 'Remove this profile’s key assignments explicitly before removing it.'; return; }
       row.remove();
+      refreshProfileKeys(editor);
     }
   });
 }

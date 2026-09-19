@@ -1,4 +1,4 @@
-import { profileFields, profilesFromForm, bindProfileEditor, showProfileError } from "./auth-profiles";
+import { profileFields, profilesFromForm, bindProfileEditor, loadProfileKeys, showProfileError } from "./auth-profiles";
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic } from "./traffic";
 import { installComponentGuidance } from "./design-system/guidance";
@@ -2181,6 +2181,7 @@ async function services() {
   document.querySelectorAll("[data-service-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(serviceAction));
   });
+  prepareProfileKeys(content);
   organizeView("services");
 }
 
@@ -2392,7 +2393,7 @@ function serviceEditForm(service) {
         <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
         <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       `)}
-      ${endpointAccessFields(service.access || {})}
+      ${endpointAccessFields(service.access || {}, service.project_id || "")}
       ${formSection("Usage pricing", "Update cost source and request-matching rules.", `
         <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
         <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
@@ -4125,10 +4126,10 @@ function guardrailExecutionTable(rows) {
   );
 }
 
-function endpointIdentityFields(access = {}) {
+function endpointIdentityFields(access = {}, projectId = "") {
   const entra = access.entra || {};
   const mode = access.authentication_profiles ? "profiles" : access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
-  return `<div class="wide-field form-grid" data-endpoint-identity><label class="wide-field">Entra verification<select name="endpoint_entra_mode">
+  return `<div class="wide-field form-grid" data-endpoint-identity data-key-project="${attr(projectId)}"><label class="wide-field">Entra verification<select name="endpoint_entra_mode">
     <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Explicit authentication profiles</option>
     <option value="inherit" ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
     <option value="required" ${mode === "required" ? "selected" : ""}>Require Entra</option>
@@ -4171,6 +4172,7 @@ function editRouteIdentity(event) {
     </form></div>`;
   document.body.appendChild(backdrop);
   let saving = false;
+  prepareProfileKeys(backdrop);
   const close = mountDialog(backdrop, { initialFocus: "select", dismissible: false });
   backdrop.querySelector("[data-close-modal]").addEventListener("click", () => { if (!saving) close(); });
   backdrop.addEventListener("keydown", (keyEvent) => { if (keyEvent.key === "Escape" && !saving) close(); });
@@ -4188,10 +4190,10 @@ function editRouteIdentity(event) {
   }));
 }
 
-function endpointAccessFields(access) {
+function endpointAccessFields(access, projectId = "") {
   const binding = access.accessa || {};
   return formSection("Endpoint identity and Accessa", "Apply identity requirements to this registered route. Accessa preserves the public path and requires an explicit key service binding.", `
-    ${endpointIdentityFields(access)}
+    ${endpointIdentityFields(access, projectId)}
     <label class="check"><input name="accessa_enabled" type="checkbox" ${access.accessa ? "checked" : ""}> Accessa channel binding</label>
     <label>Accessa app<input name="accessa_app" value="${attr(binding.app || "")}" placeholder="tara"></label>
     <label>Accessa channel<input name="accessa_channel" value="${attr(binding.channel || "")}" placeholder="tara-frontend"></label>
@@ -5643,7 +5645,14 @@ function renderAccessState(member) {
 
 initializePortal();
 
-bindProfileEditor();
+async function profileKeyCatalog() {
+  const [keys, projects] = await Promise.all([api('/admin-ui/admin/keys'),api('/admin-ui/admin/projects')]);
+  return {keys,projects};
+}
+function prepareProfileKeys(root) {
+  root.querySelectorAll('[data-profile-editor]').forEach(editor => { void loadProfileKeys(editor, profileKeyCatalog); });
+}
+bindProfileEditor(document, profileKeyCatalog);
 
 document.addEventListener("click", handleAsync(async (event) => {
   const button = event.target.closest("[data-key-profile-bindings]");

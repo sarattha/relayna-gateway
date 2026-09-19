@@ -34,5 +34,5 @@ for(const name of ['request_id','service','project_id','key_id','status','failur
 assert.match(fieldGuidance('profile-1.id','profile'),/Required.*1–64.*keep it unchanged/);
 assert.match(fieldGuidance('profile-1.required_scopes','profile'),/Optional.*Every.*blank adds no/);
 assert.match(fieldGuidance('profile-1.allowed_groups','profile'),/At least one.*blank adds no/);
-assert.match(fieldGuidance('profile-1.keys','profile'),/Blank assigns no callers/);
+assert.match(fieldGuidance('profile-1.keys','profile'),/No selection assigns no callers/);
 console.log('ok - every profile, identity and Traffic filter field has reviewed contextual guidance');

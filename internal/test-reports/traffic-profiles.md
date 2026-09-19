@@ -149,3 +149,25 @@ The original open form was preserved in its tab. Local screenshots:
 Validation: `npm test`, `npm run build:admin-ui`, `cargo build -p gateway-api`
 and all ten mandatory verification steps passed; nextest passed 368/368 with
 zero skips. No production Rust changes or coverage exclusions were introduced.
+
+## Searchable profile key picker (2026-09-20)
+
+Replaced UUID textareas with searchable key inventory and explicit Add/Remove
+actions. Search matches case-insensitive terms across prefix, UUID, project
+name/ID and service; current keys have no persisted editable display name.
+Selections show project, lifecycle and UUID, survive filtering/loading failure,
+and preserve unknown saved keys until explicitly removed. Keys assigned in
+another profile cannot be added; service project ownership scopes the inventory.
+The submitted bindings and server validation are unchanged.
+
+Regression tests cover search intersections, project scope, duplicate prevention,
+removal, retained unknown selections, failed-load retry, escaped labels and Enter
+not submitting the identity form. Computer Use verified real project-name/UUID
+search, add/remove drafts, unavailable duplicate choices, save/reopen, keyboard
+submission prevention and the 390px layout. Screenshots: `key-picker-desktop.png`
+and `key-picker-narrow.png`. A disposable project/key fixture was created in the
+local demo database; no production services or credentials were used.
+
+Final picker validation: UI tests/build, strict docs, release metadata and all ten
+mandatory checks passed; nextest 368/368, zero skipped. The existing changed
+production Rust coverage gate remains 137/137 (100%), with no added exclusions.
