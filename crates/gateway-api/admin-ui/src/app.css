@@ -2923,3 +2923,20 @@ button.help-trigger {
   overflow-wrap: anywhere;
 }
 .component-tooltip::backdrop { background: transparent; pointer-events: none; }
+
+/* Profile editors keep creation beside the heading and footer actions outside
+   the scrolling form body, including when several profiles are expanded. */
+[data-profile-editor] .panel-heading h4 { margin: 0; }
+[data-profile-rows] { display: grid; gap: var(--rg-space-4); }
+.authentication-profile {
+  min-width: 0;
+  margin: 0;
+  padding: var(--rg-space-4);
+  border: 1px solid var(--rg-color-border);
+  border-radius: var(--rg-radius-sm);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.authentication-profile legend { padding: 0 var(--rg-space-2); font-weight: 600; }
+@media (max-width: 760px) {
+  .authentication-profile { grid-template-columns: minmax(0, 1fr); }
+}

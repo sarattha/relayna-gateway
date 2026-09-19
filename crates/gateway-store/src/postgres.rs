@@ -2638,9 +2638,42 @@ impl AdminOpenAiRouteStore for PostgresStore {
         setting: gateway_core::endpoint_access::RouteIdentitySetting,
     ) -> GatewayResult<gateway_core::endpoint_access::RouteIdentitySetting> {
         setting.validate()?;
-        sqlx::query("INSERT INTO route_identity_settings (route, access) VALUES ($1,$2) ON CONFLICT (route) DO UPDATE SET access=EXCLUDED.access, updated_at=now()")
-            .bind(&setting.route).bind(Json(&setting.access)).execute(&self.pool).await.map_err(|_| GatewayError::StoreUnavailable)?;
-        Ok(setting)
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 120))")
+            .bind(&setting.route)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM route_identity_settings WHERE route=$1)",
+        )
+        .bind(&setting.route)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        let statement = if exists {
+            "UPDATE route_identity_settings SET access=$2, updated_at=now() WHERE route=$1 RETURNING access"
+        } else {
+            "INSERT INTO route_identity_settings (route, access) VALUES ($1,$2) RETURNING access"
+        };
+        let access = sqlx::query_scalar::<_, Json<gateway_core::EndpointAccess>>(statement)
+            .bind(&setting.route)
+            .bind(Json(&setting.access))
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(profile_write_error)?
+            .0;
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(gateway_core::endpoint_access::RouteIdentitySetting {
+            route: setting.route,
+            access,
+        })
     }
 
     async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
@@ -3913,7 +3946,9 @@ impl AdminServiceStore for PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(|error| {
-            if is_unique_violation(&error) {
+            if matches!(error.as_database_error().and_then(|e| e.code()).as_deref(), Some("40001" | "22023")) {
+                profile_write_error(error)
+            } else if is_unique_violation(&error) {
                 GatewayError::DuplicateService
             } else if is_foreign_key_violation(&error) {
                 GatewayError::MissingProject
@@ -4101,7 +4136,12 @@ impl AdminServiceStore for PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(|error| {
-            if is_unique_violation(&error) {
+            if matches!(
+                error.as_database_error().and_then(|e| e.code()).as_deref(),
+                Some("40001" | "22023")
+            ) {
+                profile_write_error(error)
+            } else if is_unique_violation(&error) {
                 GatewayError::DuplicateService
             } else if is_foreign_key_violation(&error) {
                 GatewayError::MissingProject
@@ -5368,6 +5408,7 @@ fn parse_routes(values: &[String]) -> GatewayResult<Vec<Route>> {
             "/v1/responses" => Ok(Route::Responses),
             "/v1/embeddings" => Ok(Route::LiteLlmEmbeddings),
             "/v1/rerank" => Ok(Route::LiteLlmRerank),
+            "/litellm/*" => Ok(Route::LiteLlmPassthrough),
             "/v1/messages" => Ok(Route::AnthropicMessages),
             "/v1/messages/count_tokens" => Ok(Route::AnthropicMessagesCountTokens),
             "/v1/messages/batches" => Ok(Route::AnthropicMessageBatches),
@@ -8044,6 +8085,14 @@ impl gateway_core::traffic::TrafficStore for PostgresStore {
     }
 }
 
+fn profile_write_error(error: sqlx::Error) -> GatewayError {
+    match error.as_database_error().and_then(|e| e.code()).as_deref() {
+        Some("40001") => GatewayError::AuthenticationProfileConflict,
+        Some("22023") => GatewayError::InvalidServicePayload,
+        _ => GatewayError::StoreUnavailable,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -8051,6 +8100,14 @@ mod tests {
     use gateway_core::PolicyLookup;
     use http::Method;
     use sqlx::Execute;
+
+    #[test]
+    fn profile_write_transport_errors_remain_unavailable() {
+        assert_eq!(
+            profile_write_error(sqlx::Error::PoolClosed),
+            GatewayError::StoreUnavailable
+        );
+    }
 
     #[test]
     fn summary_from_row_preserves_zero_cost_aggregate() {

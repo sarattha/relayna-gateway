@@ -148,3 +148,5 @@ pub use usage::{
 };
 
 pub mod traffic;
+
+pub mod auth_profiles;

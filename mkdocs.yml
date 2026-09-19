@@ -29,6 +29,7 @@ nav:
   - Getting Started: getting-started.md
   - Admin Portal: admin-portal.md
   - Traffic Monitor: operations/traffic-monitor.md
+  - Authentication Profiles: operations/authentication-profiles.md
   - Entra Portal and Service-owner Monitoring: operations/entra-portal-and-owner-monitoring.md
   - Entra Integration Requirements: operations/entra-integration-requirements.md
   - Accessa Channels: accessa-channels.md

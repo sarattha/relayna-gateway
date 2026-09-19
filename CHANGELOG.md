@@ -2,6 +2,22 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Route-local authentication profiles with explicit virtual-key assignments,
+  independent Entra policies, revision-checked edits, and Traffic/Usage snapshots.
+  Opted-in routes require a Relayna key in every forwarding mode; Accessa
+  revalidates its Entra profile on each turn.
+
+### Fixed
+
+- Trim applied Traffic filters, preserve newly selected project/key pairs, and
+  prevent buffered live updates from replacing history after a mode switch.
+- Keep the authentication profile editor's Add action beside its heading and
+  Save/Cancel visible while scrolling, with validation feedback inside the dialog.
+
 ## 0.1.37 - 2026-09-17
 
 ### Added

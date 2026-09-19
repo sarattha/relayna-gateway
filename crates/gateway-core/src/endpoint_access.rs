@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct EndpointAccess {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authentication_profiles: Option<crate::auth_profiles::AuthenticationProfiles>,
     /// Explicit key-only mode; absent overrides retain released authentication.
     pub skip_entra: bool,
     pub entra: Option<EndpointEntraPolicy>,
@@ -39,7 +41,23 @@ pub struct AccessaBinding {
 }
 
 impl EndpointAccess {
+    pub fn identity_for_key(
+        &self,
+        key_id: uuid::Uuid,
+    ) -> GatewayResult<Option<&EndpointEntraPolicy>> {
+        match &self.authentication_profiles {
+            Some(profiles) => Ok(profiles.select(key_id)?.entra()),
+            None => Ok(self.entra.as_ref()),
+        }
+    }
+
     pub fn validate(&self, route_pattern: &str) -> GatewayResult<()> {
+        if let Some(profiles) = &self.authentication_profiles {
+            profiles.validate(self.accessa.is_some())?;
+            if self.skip_entra || self.entra.is_some() {
+                return Err(GatewayError::InvalidServicePayload);
+            }
+        }
         if self.skip_entra && (self.entra.is_some() || self.accessa.is_some()) {
             return Err(GatewayError::InvalidServicePayload);
         }
@@ -56,7 +74,7 @@ impl EndpointAccess {
             }
         }
         if let Some(binding) = &self.accessa {
-            if self.entra.is_none()
+            if (self.entra.is_none() && self.authentication_profiles.is_none())
                 || !valid_segment(&binding.channel)
                 || binding
                     .app

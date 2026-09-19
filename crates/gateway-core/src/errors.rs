@@ -6,6 +6,10 @@ pub type GatewayResult<T> = Result<T, GatewayError>;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum GatewayError {
+    #[error("authentication profile selection denied")]
+    AuthenticationProfileDenied,
+    #[error("authentication profile configuration changed")]
+    AuthenticationProfileConflict,
     #[error("missing authorization header")]
     MissingAuthorization,
     #[error("malformed authorization header")]
@@ -154,6 +158,8 @@ impl GatewayError {
     pub fn status_code(&self) -> StatusCode {
         match self {
             Self::MissingAuthorization | Self::MalformedAuthorization => StatusCode::UNAUTHORIZED,
+            Self::AuthenticationProfileDenied => StatusCode::FORBIDDEN,
+            Self::AuthenticationProfileConflict => StatusCode::CONFLICT,
             Self::InvalidVirtualKey
             | Self::DisabledVirtualKey
             | Self::RevokedVirtualKey
@@ -218,6 +224,8 @@ impl GatewayError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::MissingAuthorization => "missing_authorization",
+            Self::AuthenticationProfileDenied => "authentication_profile_denied",
+            Self::AuthenticationProfileConflict => "authentication_profile_conflict",
             Self::MalformedAuthorization => "malformed_authorization",
             Self::InvalidVirtualKey => "invalid_virtual_key",
             Self::DisabledVirtualKey => "disabled_virtual_key",
@@ -287,6 +295,8 @@ impl GatewayError {
     pub fn public_message(&self) -> &'static str {
         match self {
             Self::MissingAuthorization => "Authorization header is required.",
+            Self::AuthenticationProfileDenied => "Authentication profile selection denied.",
+            Self::AuthenticationProfileConflict => "Authentication configuration changed. Reload before saving.",
             Self::MalformedAuthorization => "Authorization header must be a Bearer Relayna key.",
             Self::InvalidVirtualKey => "Virtual key is invalid.",
             Self::DisabledVirtualKey => "Virtual key is disabled.",

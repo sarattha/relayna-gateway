@@ -1,0 +1,54 @@
+{
+  "base": "872614b",
+  "scope": "changed production Rust executable lines; tests excluded",
+  "covered": 137,
+  "executable": 137,
+  "percent": 100.0,
+  "files": {
+    "crates/gateway-core/src/accessa.rs": {
+      "covered": 0,
+      "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/auth_profiles.rs": {
+      "covered": 81,
+      "executable": 81,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/endpoint_access.rs": {
+      "covered": 15,
+      "executable": 15,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/errors.rs": {
+      "covered": 6,
+      "executable": 6,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/lib.rs": {
+      "covered": 0,
+      "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/traffic.rs": {
+      "covered": 0,
+      "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/accessa_runtime.rs": {
+      "covered": 12,
+      "executable": 12,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/pingora_plane.rs": {
+      "covered": 8,
+      "executable": 8,
+      "uncovered_lines": []
+    },
+    "crates/gateway-store/src/postgres.rs": {
+      "covered": 15,
+      "executable": 15,
+      "uncovered_lines": []
+    }
+  }
+}

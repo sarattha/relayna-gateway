@@ -841,5 +841,57 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
             .status(),
         401
     );
+    // Opt-in profiles on the second channel preserve multiple admitted turns;
+    // a new revision blocks subsequent admissions on the already-open socket.
+    let service = store.get_service(&service_names[1]).await.unwrap().unwrap();
+    let mut access = serde_json::to_value(service.access).unwrap();
+    let entra = access["entra"].take();
+    access["authentication_profiles"] = json!({"revision":0,"profiles":[{"id":"channel-users","name":"Channel users","enabled":true,"type":"entra_and_relayna_key","entra":entra}],"bindings":[{"key_id":key_ids[1],"profile_id":"channel-users"}]});
+    let service = store
+        .patch_service(
+            &service_names[1],
+            serde_json::from_value(json!({"access":access})).unwrap(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        service
+            .access
+            .authentication_profiles
+            .as_ref()
+            .unwrap()
+            .revision,
+        1
+    );
+    let path = format!("/app/tara/channel/{}/v1/run", channels[1]);
+    let (mut profiled, _) = connect_async(direct_request(&token, &keys[1], &path))
+        .await
+        .unwrap();
+    let conversation = Uuid::new_v4().to_string();
+    chat_turn(&mut profiled, &conversation, &["Profile turn one"]).await;
+    chat_turn(
+        &mut profiled,
+        &conversation,
+        &["Profile turn one", "Profile turn two"],
+    )
+    .await;
+    let before = state.dispatches.load(Ordering::SeqCst);
+    let mut access = serde_json::to_value(service.access).unwrap();
+    access["authentication_profiles"]["profiles"][0]["enabled"] = json!(false);
+    store
+        .patch_service(
+            &service_names[1],
+            serde_json::from_value(json!({"access":access})).unwrap(),
+        )
+        .await
+        .unwrap();
+    profiled.send(Message::Text(json!({"command":"turn","turn_id":Uuid::new_v4().to_string(),"conversation_id":conversation,"message":"must not dispatch"}).to_string().into())).await.unwrap();
+    assert_eq!(next_json(&mut profiled).await["type"], "error");
+    assert_eq!(state.dispatches.load(Ordering::SeqCst), before);
+    profiled.close(None).await.unwrap();
+    assert!(connect_async(direct_request(&token, &keys[1], &path))
+        .await
+        .is_err());
     println!("Accessa E2E: two adapters, BFF, Router, agent, Entra isolation, heartbeat, limits, revocation, budget and replay passed");
 }

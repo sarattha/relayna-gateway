@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import "./admin-ui-dialog.test.mjs";
+import "./admin-ui-auth-profiles.test.mjs";
 import "./admin-ui-reliability-cost.test.mjs";
 import "./admin-ui-investigation.test.mjs";
 import "./admin-ui-guidance.test.mjs";
@@ -874,7 +875,7 @@ for (const selected of ['deleted-project','another-project']) {
 console.log('ok - successful selected-project deletion clears its scope without clearing other selections');
 
 for (const newProject of ['original', 'next-project', '']) {
-  const filterState = {projectScope:'original',usageFilters:{project_id:'original',key_id:'old-key',status:'failure'}};
+  const filterState = {projectScope:'original',trafficFilters:{key_id:'old-key'},usageFilters:{project_id:'original',key_id:'old-key',status:'failure'}};
   let resetCount = 0;
   const apply = new Function('state','resetUsagePagination','syncProjectScope','persistMonitoringHash','synchronizeProjectScope', `${sourceFunction('applyTrafficFilters')}; return applyTrafficFilters;`)(filterState,()=>resetCount++,()=>{},()=>{},bindProjectScope(filterState));
   const submitted = {project_id:newProject,key_id:'old-key',outcome:'failures'};
@@ -886,6 +887,14 @@ for (const newProject of ['original', 'next-project', '']) {
   assert.equal(filterState.usageFilters.key_id,newProject === 'original' ? 'old-key' : '');
   assert.equal(filterState.usageFilters.status,'failure');
   assert.equal(resetCount,newProject === 'original' ? 0 : 1);
+}
+{
+  const filterState = {projectScope:'original',trafficFilters:{key_id:'old-key'},usageFilters:{key_id:'old-key'}};
+  const apply = new Function('state','resetUsagePagination','syncProjectScope','persistMonitoringHash','synchronizeProjectScope', `${sourceFunction('applyTrafficFilters')}; return applyTrafficFilters;`)(filterState,()=>{},()=>{},()=>{},bindProjectScope(filterState));
+  const submitted = {project_id:'next-project',key_id:'new-key'};
+  apply(submitted);
+  assert.equal(submitted.key_id,'new-key','a key explicitly submitted with its new project must remain applied');
+  assert.equal(filterState.usageFilters.key_id,'','stale Usage key still clears on project change');
 }
 console.log('ok - Traffic project changes synchronize Usage and discard cross-project key filters');
 

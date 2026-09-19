@@ -15,6 +15,8 @@ pub struct AccessaSession {
     pub service_name: String,
     pub identity: EntraIdentityContext,
     pub access: EndpointAccess,
+    #[serde(default)]
+    pub authentication_profile: Option<crate::traffic::AuthenticationProfileDiagnostics>,
     pub expires_at: i64,
 }
 
