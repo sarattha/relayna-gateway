@@ -697,7 +697,81 @@ where
         ctx.relayna_key_header = auth.config.relayna_key_header.clone();
         let now = Utc::now();
         let authorization = header_value(req, "authorization");
-        if let Some(endpoint) = ctx.access.entra.as_ref() {
+        let mut profile_key = None;
+        let mut endpoint_policy = ctx.access.entra.clone();
+        if let Some(profiles) = &ctx.access.authentication_profiles {
+            if let Err(error) = profiles.validate(ctx.access.accessa.is_some()) {
+                respond_error(session, error, ctx).await?;
+                return Ok(true);
+            }
+            ctx.traffic.diagnostics.authentication_profile =
+                Some(gateway_core::traffic::AuthenticationProfileDiagnostics {
+                    revision: profiles.revision,
+                    binding_source: "route_key_assignment".into(),
+                    outcome: "credential_pending".into(),
+                    ..Default::default()
+                });
+            let dedicated = header_value(req, &auth.config.relayna_key_header);
+            let result = if req.headers.get_all("authorization").iter().count() > 1
+                || req
+                    .headers
+                    .get_all(&auth.config.relayna_key_header)
+                    .iter()
+                    .count()
+                    > 1
+                || (dedicated.is_some() && authorization_has_relayna_key(authorization))
+            {
+                Err(GatewayError::MalformedAuthorization)
+            } else if dedicated.is_some() {
+                Authenticator::new(self.store.clone())
+                    .authenticate_raw_key(dedicated, now)
+                    .await
+            } else {
+                Authenticator::new(self.store.clone())
+                    .authenticate_authorization(authorization, now)
+                    .await
+            };
+            let key = match result {
+                Ok(key) => key,
+                Err(error) => {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(true);
+                }
+            };
+            ctx.key = Some(key.clone());
+            let diagnostic = ctx
+                .traffic
+                .diagnostics
+                .authentication_profile
+                .as_mut()
+                .unwrap();
+            diagnostic.outcome = "selection_pending".into();
+            let profile = match profiles.select(key.key_id) {
+                Ok(profile) => profile,
+                Err(error) => {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(true);
+                }
+            };
+            diagnostic.id = Some(profile.id.clone());
+            diagnostic.name = Some(profile.name.clone());
+            diagnostic.authentication_type = Some(profile.authentication_type().into());
+            diagnostic.outcome = "identity_pending".into();
+            if profile.entra().is_none() {
+                // Key-only accepts one key form, never extra JWT/Apigee credentials.
+                if (dedicated.is_some() && authorization.is_some())
+                    || header_value(req, "x-apigee-entra-identity").is_some()
+                    || header_value(req, "x-apigee-entra-signature").is_some()
+                {
+                    respond_error(session, GatewayError::MalformedAuthorization, ctx).await?;
+                    return Ok(true);
+                }
+                diagnostic.outcome = "entra_not_required".into();
+            }
+            endpoint_policy = profile.entra().cloned();
+            profile_key = Some(key);
+        }
+        if let Some(endpoint) = endpoint_policy.as_ref() {
             ctx.traffic.diagnostics.entra =
                 Some(gateway_core::traffic::EntraDiagnostics::endpoint(endpoint));
             match self
@@ -712,6 +786,9 @@ where
                         .unwrap()
                         .verified(&identity);
                     ctx.entra_identity = Some(identity);
+                    if let Some(profile) = &mut ctx.traffic.diagnostics.authentication_profile {
+                        profile.outcome = "verified".into();
+                    }
                 }
                 Err(error) => {
                     respond_error(session, error, ctx).await?;
@@ -719,7 +796,10 @@ where
                 }
             }
         }
-        if ctx.litellm_passthrough && matched.route == Route::LiteLlmPassthrough {
+        if ctx.access.authentication_profiles.is_none()
+            && ctx.litellm_passthrough
+            && matched.route == Route::LiteLlmPassthrough
+        {
             match self.store.litellm_passthrough_settings().await {
                 Ok(settings)
                     if settings
@@ -743,7 +823,8 @@ where
         if gateway_core::is_litellm_canonical_route(matched.route) {
             match self.route_mode(matched.route).await {
                 Ok(OpenAiRouteMode::DirectLiteLlmPassthrough)
-                    if ctx.access.entra.is_none()
+                    if ctx.access.authentication_profiles.is_none()
+                        && ctx.access.entra.is_none()
                         && !authorization_has_relayna_key(authorization)
                         && (!ctx.access.skip_entra
                             || header_value(req, &auth.config.relayna_key_header).is_none()) =>
@@ -783,7 +864,9 @@ where
                 }
             }
         }
-        let key_result = if ctx.access.entra.is_some() {
+        let key_result = if let Some(key) = profile_key {
+            Ok(key)
+        } else if ctx.access.entra.is_some() {
             Authenticator::new(self.store.clone())
                 .authenticate_raw_key(header_value(req, &auth.config.relayna_key_header), now)
                 .await
@@ -1345,7 +1428,9 @@ where
             respond_error(session, error, ctx).await?;
             return Ok(false);
         }
-        if bypass_gateway_governance_for_passthrough(route, ctx.litellm_passthrough) {
+        if ctx.access.authentication_profiles.is_none()
+            && bypass_gateway_governance_for_passthrough(route, ctx.litellm_passthrough)
+        {
             gateway_telemetry::record_provider_selection();
             return Ok(true);
         }
@@ -3645,6 +3730,15 @@ fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
 }
 
 fn traffic_gateway_error(ctx: &mut PingoraContext, error: &GatewayError) {
+    if let Some(profile) = &mut ctx.traffic.diagnostics.authentication_profile {
+        profile.outcome = match profile.outcome.as_str() {
+            "credential_pending" => "credential_failed",
+            "selection_pending" => "selection_failed",
+            "identity_pending" => "identity_failed",
+            other => other,
+        }
+        .to_owned();
+    }
     if let Some(identity) = &mut ctx.traffic.diagnostics.entra {
         if identity.verification == "pending" {
             identity.verification = "failed".into();

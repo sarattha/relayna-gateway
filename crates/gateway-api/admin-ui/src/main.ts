@@ -1,3 +1,4 @@
+import { profileFields, profilesFromForm, bindProfileEditor, showProfileError } from "./auth-profiles";
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic } from "./traffic";
 import { installComponentGuidance } from "./design-system/guidance";
@@ -155,7 +156,7 @@ function handleAsync(handler) {
       await handler(event);
     } catch (error) {
       if (generation !== viewGeneration || error.name === "AbortError") return;
-      setNotice(error.message);
+      if (!showProfileError(pendingRoot, error.message)) setNotice(error.message);
     } finally {
       setPending(pendingRoot, false, pendingControls);
     }
@@ -1230,6 +1231,7 @@ function keyEditForm(key) {
         <label class="check"><input name="no_expires_at" type="checkbox" ${key.expires_at ? "" : "checked"}> No expiration</label>
         <label class="check"><input name="disabled" type="checkbox" ${key.disabled ? "checked" : ""}> Disabled</label>
       `, true)}
+      <div class="wide-field"><button type="button" data-key-profile-bindings="${attr(key.id)}">Inspect and assign route authentication profiles</button><p class="help">Assignments are per route and do not grant additional route permissions. The raw key is never needed.</p></div>
       ${formSection("Access and limits", "Edit the effective key policy.", policyFields(key))}
       ${formSection("Guardrail policy", "Edit mandatory, optional, and forbidden safeguards.", guardrailPolicyFields(key))}
       <div class="form-actions sticky-form-actions wide-field">
@@ -4124,8 +4126,9 @@ function guardrailExecutionTable(rows) {
 
 function endpointIdentityFields(access = {}) {
   const entra = access.entra || {};
-  const mode = access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
+  const mode = access.authentication_profiles ? "profiles" : access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
   return `<label class="wide-field">Entra verification<select name="endpoint_entra_mode">
+    <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Explicit authentication profiles</option>
     <option value="inherit" ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
     <option value="required" ${mode === "required" ? "selected" : ""}>Require Entra</option>
     <option value="disabled" ${mode === "disabled" ? "selected" : ""}>No Entra</option>
@@ -4135,11 +4138,11 @@ function endpointIdentityFields(access = {}) {
     <label>Required roles<input name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
     <label>Allowed groups<input name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
     <label class="check"><input name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label>
-    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claims below apply only to Require Entra.</p>`;
+    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claims below apply only to Require Entra.</p>${profileFields(access)}`;
 }
 
 function endpointIdentityBadge(access = {}) {
-  return access.entra ? `<span class="badge good">Entra required</span><div class="subtle">${esc(access.entra.audience)}</div>`
+  return access.authentication_profiles ? `<span class="badge good">${esc(access.authentication_profiles.profiles.length)} authentication profiles</span><div class="subtle">Revision ${esc(access.authentication_profiles.revision)} · explicit key bindings</div>` : access.entra ? `<span class="badge good">Entra required</span><div class="subtle">${esc(access.entra.audience)}</div>`
     : access.skip_entra ? '<span class="badge">No Entra</span>' : '<span class="badge warn">Gateway setting</span>';
 }
 
@@ -4161,7 +4164,7 @@ function editRouteIdentity(event) {
   const titleId = `dialog-title-${++dialogCounter}`;
   backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
     <h3 id="${titleId}">Endpoint identity · ${esc(route)}</h3>
-    <form class="form-grid">${endpointIdentityFields(setting.access)}
+    <form class="modal-form"><div class="modal-scroll form-grid">${endpointIdentityFields(setting.access)}</div>
       <div class="form-actions"><button class="primary">Save identity</button><button type="button" data-close-modal>Cancel</button></div>
     </form></div>`;
   document.body.appendChild(backdrop);
@@ -4202,10 +4205,11 @@ function endpointAccessFromForm(form) {
   const mode = String(form.get("endpoint_entra_mode") || "inherit");
   const audience = mode === "required" ? String(form.get("endpoint_audience") || "").trim() : "";
   const accessa = form.has("accessa_enabled");
-  if (accessa && !audience) throw new Error("Accessa requires an endpoint Entra audience and Require Entra mode.");
+  if (accessa && mode !== "profiles" && !audience) throw new Error("Accessa requires an endpoint Entra audience and Require Entra mode.");
   if (mode === "required" && !audience) throw new Error("Require Entra needs an endpoint audience.");
-  if (!["inherit", "required", "disabled"].includes(mode)) throw new Error("Choose an Entra verification mode.");
+  if (!["inherit", "required", "disabled", "profiles"].includes(mode)) throw new Error("Choose an Entra verification mode.");
   return {
+    ...(mode === "profiles" ? { authentication_profiles: profilesFromForm(form, accessa) } : {}),
     skip_entra: mode === "disabled",
     entra: audience ? {
       audience, required_scopes: csv(form.get("endpoint_scopes")), required_roles: csv(form.get("endpoint_roles")),
@@ -5359,7 +5363,7 @@ function synchronizeProjectScope(projectScope) {
 function applyTrafficFilters(filters) {
   const projectScope = filters.project_id || "";
   const changedProject = state.projectScope !== projectScope;
-  if (changedProject) filters.key_id = "";
+  if (changedProject && filters.key_id === state.trafficFilters.key_id) filters.key_id = "";
   synchronizeProjectScope(projectScope);
   state.trafficFilters = filters;
   if (changedProject) resetUsagePagination();
@@ -5636,3 +5640,43 @@ function renderAccessState(member) {
 }
 
 initializePortal();
+
+bindProfileEditor();
+
+document.addEventListener("click", handleAsync(async (event) => {
+  const button = event.target.closest("[data-key-profile-bindings]");
+  if (!button) return;
+  const keyId = button.dataset.keyProfileBindings;
+  const [routes, services] = await Promise.all([api("/admin-ui/admin/route-identities"), api("/admin-ui/admin/services")]);
+  const entries = [...routes.map(row => ({...row,url:"/admin-ui/admin/route-identities",method:"PUT"})),
+    ...services.map(row => ({route:row.route_pattern,access:row.access,url:`/admin-ui/admin/services/${encodeURIComponent(row.name)}`,method:"PATCH"}))];
+  const backdrop = document.createElement("section"); backdrop.className = "modal-backdrop";
+  const titleId = `dialog-title-${++dialogCounter}`;
+  backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><h3 id="${titleId}">Route authentication bindings</h3><div class="modal-form"><div class="modal-scroll">
+    <p class="help">Key ${esc(keyId)}. Each assignment applies only to the named route and its existing aliases. Unassigned keys cannot call routes with explicit profiles.</p>
+    <div class="form-grid">${entries.map((entry,index) => {
+      const set = entry.access?.authentication_profiles;
+      if (!set) return `<p class="wide-field">${esc(entry.route)} · Inherited / legacy identity; no explicit profile binding.</p>`;
+      const selected = set.bindings.find(binding => binding.key_id === keyId)?.profile_id;
+      return `<label>${esc(entry.route)}<select data-binding-select="${index}"><option value="">Unassigned · deny access</option>${set.profiles.map(profile=>`<option value="${attr(profile.id)}" ${selected===profile.id?'selected':''}>${esc(profile.name)} · ${profile.enabled?'enabled':'disabled'}</option>`).join('')}</select></label><div><button type="button" data-save-binding="${index}">Save route assignment</button></div>`;
+    }).join('')}</div><p role="status" data-binding-result></p></div><div class="form-actions"><button type="button" data-close-modal>Close</button></div></div></div>`;
+  document.body.appendChild(backdrop);
+  let saving = false;
+  const close = mountDialog(backdrop, {dismissible:false});
+  backdrop.querySelector('[data-close-modal]').addEventListener('click',()=>{if(!saving)close();});
+  backdrop.addEventListener('keydown',event=>{if(event.key==='Escape'&&!saving)close();});
+  backdrop.querySelectorAll('[data-save-binding]').forEach(button=>button.addEventListener('click',handleAsync(async()=>{
+    if(saving)return;
+    const index=Number(button.dataset.saveBinding), entry=entries[index];
+    const profileId=backdrop.querySelector(`[data-binding-select="${index}"]`).value;
+    const access=structuredClone(entry.access);
+    access.authentication_profiles.bindings=access.authentication_profiles.bindings.filter(binding=>binding.key_id!==keyId);
+    if(profileId)access.authentication_profiles.bindings.push({key_id:keyId,profile_id:profileId});
+    saving=true;
+    try {
+      const result=await api(entry.url,{method:entry.method,body:JSON.stringify(entry.method==='PUT'?{route:entry.route,access}:{access})});
+      entry.access=result.access;
+      backdrop.querySelector('[data-binding-result]').textContent=`Assignment saved for ${entry.route}.`;
+    } finally {saving=false;}
+  })));
+}));

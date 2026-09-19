@@ -156,7 +156,9 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
       reader = response.body.getReader();
       const decoder = new TextDecoder(); let pending = "";
       while (!disposed && mode === "live" && !paused && generation === connectionGeneration) {
-        const { value, done } = await reader.read(); if (done) break;
+        const { value, done } = await reader.read();
+        // An aborted read may still resolve with buffered data after a mode change.
+        if (done || disposed || paused || mode !== "live" || generation !== connectionGeneration) break;
         clearTimeout(watchdog); watchdog = setTimeout(() => attempt.abort(), 12000);
         pending += decoder.decode(value, { stream: true });
         const parsed = parseTrafficFrames(pending); pending = parsed.remainder;
@@ -196,7 +198,9 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     } catch (error) { if (!disposed && generation === historyGeneration) { warning = `History unavailable: ${error.message}`; connection("History unavailable"); render(); } }
   }
   element("traffic-filters").addEventListener("submit", (event) => {
-    event.preventDefault(); filters = Object.fromEntries(new FormData(event.currentTarget)); onFilters(filters);
+    event.preventDefault();
+    filters = Object.fromEntries([...new FormData(event.currentTarget)].map(([name, value]) => [name, String(value).trim()]));
+    onFilters(filters);
     event.currentTarget.elements.namedItem("key_id").value = filters.key_id || "";
     if (mode === "history") history(); else render();
   });

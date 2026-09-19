@@ -14,6 +14,8 @@ const TIMELINE_CAPACITY: usize = 32;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RequestDiagnostics {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authentication_profile: Option<AuthenticationProfileDiagnostics>,
     #[serde(default)]
     pub protocol: Option<String>,
     #[serde(default)]
@@ -31,6 +33,18 @@ pub struct RequestDiagnostics {
     pub outcome: Option<String>,
     pub upstream_status: Option<u16>,
     pub instance_id: Option<String>,
+}
+
+/// Historical metadata, copied from validated configuration; never caller hints.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct AuthenticationProfileDiagnostics {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub revision: u64,
+    pub authentication_type: Option<String>,
+    pub binding_source: String,
+    pub outcome: String,
 }
 
 /// Metadata observed at proxy frame hooks; counts exclude HTTP headers and TLS overhead.
