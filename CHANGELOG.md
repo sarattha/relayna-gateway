@@ -15,6 +15,10 @@ All notable changes to Relayna Gateway are documented in this file.
 
 - Trim applied Traffic filters, preserve newly selected project/key pairs, and
   prevent buffered live updates from replacing history after a mode switch.
+- Normalize Traffic UUID/status filters and reset history cursors while loading
+  new filters; expand live and saved-history filter regressions.
+- Show only the active endpoint/profile identity fields, preserve inactive drafts,
+  and add field guidance with accessible tooltips.
 - Keep the authentication profile editor's Add action beside its heading and
   Save/Cancel visible while scrolling, with validation feedback inside the dialog.
 

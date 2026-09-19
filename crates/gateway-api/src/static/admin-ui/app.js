@@ -41,19 +41,22 @@ var _a;
 })();
 const escape = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 let slot = 0;
-function profileRow(profile = {}, bindings = []) {
+function profileRow(profile2 = {}, bindings = []) {
   const id = `profile-${++slot}`;
-  const entra = profile.entra || {};
-  const keys2 = bindings.filter((binding) => binding.profile_id === profile.id).map((binding) => binding.key_id);
+  const entra = profile2.entra || {};
+  const keyOnly = profile2.type === "relayna_key_only";
+  const keys2 = bindings.filter((binding) => binding.profile_id === profile2.id).map((binding) => binding.key_id);
   return `<fieldset class="authentication-profile form-grid" data-profile-row>
     <legend>Authentication profile</legend><input type="hidden" name="profile_slot" value="${id}">
-    <label>Stable profile ID<input name="${id}.id" value="${escape(profile.id)}" maxlength="64" pattern="(?:[A-Za-z0-9_]|-)+"></label>
-    <label>Profile name<input name="${id}.name" value="${escape(profile.name)}" maxlength="120"></label>
-    <label>Authentication type<select name="${id}.type"><option value="entra_and_relayna_key">Entra + Relayna key</option><option value="relayna_key_only" ${profile.type === "relayna_key_only" ? "selected" : ""}>Relayna key only</option></select></label>
-    <label class="check"><input type="checkbox" name="${id}.enabled" ${profile.enabled !== false ? "checked" : ""}> Enabled</label>
-    <label>Profile audience<input name="${id}.audience" value="${escape(entra.audience)}"></label>
-    ${["required_scopes", "required_roles", "allowed_groups"].map((name) => `<label>${escape(name.replaceAll("_", " "))}<input name="${id}.${name}" value="${escape((entra[name] || []).join(", "))}"></label>`).join("")}
-    <label class="check"><input type="checkbox" name="${id}.allow_apigee" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label>
+    <label>Stable profile ID (required)<input required placeholder="internal-automation" name="${id}.id" value="${escape(profile2.id)}" maxlength="64" pattern="(?:[A-Za-z0-9_]|-)+"></label>
+    <label>Profile name (required)<input required placeholder="Internal automation" name="${id}.name" value="${escape(profile2.name)}" maxlength="120"></label>
+    <label>Authentication type<select data-profile-type name="${id}.type"><option value="entra_and_relayna_key">Entra + Relayna key</option><option value="relayna_key_only" ${profile2.type === "relayna_key_only" ? "selected" : ""}>Relayna key only</option></select></label>
+    <label class="check"><input type="checkbox" name="${id}.enabled" ${profile2.enabled !== false ? "checked" : ""}> Enabled</label>
+    <div class="wide-field form-grid" data-profile-entra ${keyOnly ? "hidden" : ""}>
+    <label>Profile audience (required)<input ${keyOnly ? "disabled" : "required"} name="${id}.audience" value="${escape(entra.audience)}" placeholder="api://employees"></label>
+    ${["required_scopes", "required_roles", "allowed_groups"].map((name) => `<label>${escape({ required_scopes: "Scopes (optional)", required_roles: "Roles (optional)", allowed_groups: "Groups (optional)" }[name])}<input ${keyOnly ? "disabled" : ""} name="${id}.${name}" value="${escape((entra[name] || []).join(", "))}"></label>`).join("")}
+    <label class="check"><input type="checkbox" ${keyOnly ? "disabled" : ""} name="${id}.allow_apigee" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label></div>
+    <p class="help wide-field" data-profile-key-only ${keyOnly ? "" : "hidden"}>Authenticates the assigned Relayna key. No Entra JWT, audience or claims are used.</p>
     <label class="wide-field">Assigned key UUIDs<textarea name="${id}.keys" rows="2">${escape(keys2.join("\n"))}</textarea></label>
     <p class="help wide-field">${keys2.length} saved bindings. One UUID per line or comma; a key may appear in only one profile on this route. Disabling blocks every assigned key. Remove assignments explicitly before removing a profile. Key only still requires an authenticated Relayna key. Audience and claim fields apply only to Entra profiles.</p>
     <button type="button" data-remove-profile>Remove unbound profile</button>
@@ -61,10 +64,10 @@ function profileRow(profile = {}, bindings = []) {
 }
 function profileFields(access = {}) {
   const set2 = access.authentication_profiles;
-  return `<section class="wide-field" data-profile-editor><div class="panel-heading"><h4>Authentication profiles</h4><div class="actions"><button type="button" data-add-profile>Add profile</button></div></div>
+  return `<section class="wide-field" data-profile-editor ${set2 ? "" : "hidden"}><div class="panel-heading"><h4>Authentication profiles</h4><div class="actions"><button type="button" data-add-profile>Add profile</button></div></div>
     <p class="help">Choose Explicit authentication profiles above to opt in. Unassigned keys are rejected. Profiles govern identity independently of forwarding mode; canonical aliases share these assignments. Existing gateway setting and single-policy modes keep legacy behavior.</p>
     <input type="hidden" name="profiles_revision" value="${(set2 == null ? void 0 : set2.revision) || 0}">
-    <div data-profile-rows>${((set2 == null ? void 0 : set2.profiles) || []).map((profile) => profileRow(profile, set2.bindings)).join("")}</div>
+    <div data-profile-rows>${((set2 == null ? void 0 : set2.profiles) || []).map((profile2) => profileRow(profile2, set2.bindings)).join("")}</div>
     <p role="status" data-profile-notice></p></section>`;
 }
 function profilesFromForm(form, accessa = false) {
@@ -77,18 +80,18 @@ function profilesFromForm(form, accessa = false) {
     if (!["entra_and_relayna_key", "relayna_key_only"].includes(type) || accessa && type !== "entra_and_relayna_key") throw new Error("Accessa profiles require Entra + Relayna key.");
     ids.add(id);
     names2.add(name.toLowerCase());
-    const profile = { id, name, type, enabled: form.has(`${slot2}.enabled`) };
+    const profile2 = { id, name, type, enabled: form.has(`${slot2}.enabled`) };
     if (type === "entra_and_relayna_key") {
       const audience = read("audience");
       if (!audience || /\s/.test(audience) || audience.length > 512) throw new Error("Each Entra profile requires a valid audience.");
-      profile.entra = { audience, allow_apigee: form.has(`${slot2}.allow_apigee`) };
+      profile2.entra = { audience, allow_apigee: form.has(`${slot2}.allow_apigee`) };
       for (const field of ["required_scopes", "required_roles", "allowed_groups"]) {
         const claims = split(read(field));
         if (claims.length > 64 || claims.some((claim) => claim.length > 512 || /\s/.test(claim))) throw new Error("Profile claim lists allow at most 64 values without whitespace.");
-        profile.entra[field] = claims;
+        profile2.entra[field] = claims;
       }
     }
-    profiles.push(profile);
+    profiles.push(profile2);
     for (const key of split(read("keys"))) {
       const key_id = key.toLowerCase();
       if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(key_id) || keys2.has(key_id)) throw new Error("Each assigned key must be a valid UUID and appear only once on this route.");
@@ -99,13 +102,38 @@ function profilesFromForm(form, accessa = false) {
   if (!profiles.length || profiles.length > 32 || bindings.length > 1024) throw new Error("Configure 1–32 profiles and at most 1,024 bindings per route.");
   return { revision: Number(form.get("profiles_revision") || 0), profiles, bindings };
 }
+function syncIdentityFields(root) {
+  const mode = root.querySelector('[name="endpoint_entra_mode"]').value;
+  const toggle = (group, active) => {
+    group.hidden = !active;
+    group.querySelectorAll("input, select, textarea, button").forEach((control) => {
+      control.disabled = !active;
+    });
+  };
+  const endpoint = root.querySelector("[data-endpoint-entra]");
+  toggle(endpoint, mode === "required");
+  endpoint.querySelector('[name="endpoint_audience"]').required = mode === "required";
+  const editor = root.querySelector("[data-profile-editor]");
+  toggle(editor, mode === "profiles");
+  for (const row of editor.querySelectorAll("[data-profile-row]")) {
+    const entra = row.querySelector("[data-profile-type]").value === "entra_and_relayna_key";
+    toggle(row.querySelector("[data-profile-entra]"), mode === "profiles" && entra);
+    row.querySelector('[name$=".audience"]').required = mode === "profiles" && entra;
+    row.querySelector("[data-profile-key-only]").hidden = entra;
+  }
+}
 function bindProfileEditor(doc = document) {
+  doc.addEventListener("change", (event) => {
+    if (!event.target.matches('[name="endpoint_entra_mode"], [data-profile-type]')) return;
+    syncIdentityFields(event.target.closest("[data-endpoint-identity]"));
+  });
   doc.addEventListener("click", (event) => {
     const editor = event.target.closest("[data-profile-editor]");
     if (!editor) return;
     if (event.target.closest("[data-add-profile]")) {
       const rows = editor.querySelector("[data-profile-rows]");
       rows.insertAdjacentHTML("beforeend", profileRow());
+      syncIdentityFields(editor.closest("[data-endpoint-identity]"));
       rows.lastElementChild.querySelector("input:not([type=hidden])").focus();
     }
     if (event.target.closest("[data-remove-profile]")) {
@@ -368,6 +396,11 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
     }
   }
   async function history2(older = false) {
+    const before = older ? historyCursor : null;
+    if (older && !before) return;
+    historyCursor = null;
+    element("traffic-older").disabled = true;
+    element("traffic-newest").disabled = true;
     const generation = ++historyGeneration;
     rows = [];
     selected = null;
@@ -379,9 +412,9 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
       if (filters.outcome === "active") throw new Error("Active requests are available in Live instance mode.");
       if (filters.outcome === "failures") query.set("failures_only", "true");
       for (const key of ["from", "to"]) if (filters[key]) query.set(key, new Date(filters[key]).toISOString());
-      if (older && historyCursor) {
-        query.set("before", historyCursor.started_at);
-        query.set("before_id", historyCursor.id);
+      if (before) {
+        query.set("before", before.started_at);
+        query.set("before_id", before.id);
       }
       const result = await api2(`/admin-ui/admin/traffic/history?${query}`);
       if (disposed || mode !== "history" || generation !== historyGeneration) return;
@@ -398,13 +431,20 @@ function mountTraffic({ content: content2, api: api2, headers, esc: esc2, attr: 
         connection("History unavailable");
         render();
       }
+    } finally {
+      if (!disposed && mode === "history" && generation === historyGeneration) element("traffic-newest").disabled = false;
     }
   }
   element("traffic-filters").addEventListener("submit", (event) => {
     event.preventDefault();
     filters = Object.fromEntries([...new FormData(event.currentTarget)].map(([name, value]) => [name, String(value).trim()]));
+    for (const name of ["project_id", "key_id"]) if (filters[name]) filters[name] = filters[name].toLowerCase();
+    if (filters.status) filters.status = String(Number(filters.status));
     onFilters(filters);
-    event.currentTarget.elements.namedItem("key_id").value = filters.key_id || "";
+    for (const [name, value] of Object.entries(filters)) {
+      const field = event.currentTarget.elements.namedItem(name);
+      if (field) field.value = value;
+    }
     if (mode === "history") history2();
     else render();
   });
@@ -475,7 +515,21 @@ const policy = {
   allow_streaming: "Permit streamed responses at this layer. Other policy layers can still deny streaming.",
   allow_tools: "Permit tool/function calling at this layer. Other policy layers can still deny it."
 };
+const profile = {
+  id: "Required. Choose a stable ID, such as internal-automation: 1–64 letters, numbers, hyphens or underscores. Unique within this route; keep it unchanged after assigning keys.",
+  name: "Required display name, up to 120 UTF-8 bytes. Unique on this route ignoring case. You can rename it without changing its stable ID or key assignments.",
+  type: "Entra + Relayna key requires a verified Entra identity and an assigned key. Relayna key only requires the assigned key, with no Entra audience or claims. Accessa supports only Entra + Relayna key.",
+  enabled: "Allow assigned keys to use this profile. Turning it off blocks every assigned key; it does not move callers to another profile.",
+  audience: "Required for Entra profiles. Exact expected JWT audience, such as api://employees; no spaces, up to 512 bytes. Tenant, issuer and JWKS come from Settings.",
+  required_scopes: "Optional comma-separated scopes. Every listed scope is required; blank adds no scope restriction. Up to 64 entries, each up to 512 bytes without whitespace.",
+  required_roles: "Optional comma-separated roles. Every listed role is required; blank adds no role restriction. Up to 64 entries, each up to 512 bytes without whitespace.",
+  allowed_groups: "Optional comma-separated group IDs. At least one listed group must match; blank adds no group restriction. Up to 64 entries, each up to 512 bytes without whitespace.",
+  allow_apigee: "Allow HMAC-verified Apigee identity for this Entra profile only. Matching audience, unexpired identity and required claims still apply; unsigned headers are never trusted.",
+  keys: "Existing Relayna key UUIDs, one per line or separated by commas. Blank assigns no callers. Each key can belong to only one profile on this route; service keys must belong to the service's project. This does not grant route permission."
+};
 const shared = {
+  endpoint_entra_mode: "Choose the endpoint identity policy. Gateway setting inherits Settings; No Entra retains the route's credential checks; Require Entra uses one audience policy. Explicit profiles select policy by an assigned Relayna key and reject unassigned callers. Once saved, explicit profiles cannot be removed by switching back to legacy mode.",
+  profile_binding: "Assign this key to exactly one profile on this route. Unassigned denies access on a profiled route; a disabled profile also denies access. Save applies immediately to new policy reads and does not grant route permissions.",
   endpoint_audience: "Exact audience required when Require Entra is selected. Other modes ignore this field. This does not add the audience to other endpoints.",
   endpoint_scopes: "Comma-separated scopes. Every listed scope is required; blank adds no scope requirement for this endpoint.",
   endpoint_roles: "Comma-separated roles. Every listed role is required; blank adds no role requirement for this endpoint.",
@@ -599,6 +653,7 @@ const filterText = {
   to: "End time in your local timezone. Usage Custom includes records before this time; blank gives no upper bound."
 };
 function fieldGuidance(name, context) {
+  if (context === "profile") return profile[name.split(".").at(-1)];
   if (context === "owner") {
     if (name === "owner-range-select") return "Time window for this resource's dashboard and request logs.";
     if (name === "owner-outcome-select") return filterText.status;
@@ -608,6 +663,8 @@ function fieldGuidance(name, context) {
   if (context === "traffic") {
     const traffic = {
       request_id: "Client correlation ID. Live mode matches contained text; saved history matches the exact ID. Blank includes all requests.",
+      service: "Exact registered service name. Blank includes every service, including requests without a selected service.",
+      failure_code: "Exact recorded failure code, such as control_state_unavailable. Blank includes every reason and requests without a failure. Click a reason chip to apply or clear it.",
       status: "Client HTTP status, such as 503. A 200 can still be an interrupted stream; inspect its outcome.",
       outcome: "Failures selects recorded failure reasons. Active means unfinished requests and is available only in live mode.",
       from: "Saved-history start in local time. Blank defaults to the last 24 hours. Ignored in live mode.",
@@ -687,6 +744,8 @@ function tooltipPosition(anchor, size, viewport) {
   return { left, top };
 }
 function contextFor(control) {
+  if (control.closest("[data-profile-row]")) return "profile";
+  if (control.closest("[data-endpoint-identity]")) return "identity";
   if (control.closest("[data-pricing-rule-row]")) return "pricing";
   if (control.closest("#traffic-filters")) return "traffic";
   if (control.closest("#usage-form")) return "usage";
@@ -789,7 +848,7 @@ function installComponentGuidance(doc = document) {
     if (seen.has(control)) return;
     seen.add(control);
     if (control.hasAttribute("aria-describedby") || control.type === "checkbox" && !control.closest("label.check")) return;
-    const name = control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
+    const name = control.dataset.guidanceName || control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
     const explanation = fieldGuidance(name, contextFor(control));
     const label = control.closest("label");
     if (!explanation || !label) return;
@@ -803,6 +862,20 @@ function installComponentGuidance(doc = document) {
     help.textContent = explanation;
     control.setAttribute("aria-describedby", help.id);
     label.append(help);
+    if (["profile", "identity", "traffic"].includes(contextFor(control)) || control.dataset.guidanceName) {
+      const trigger = doc.createElement("button");
+      trigger.type = "button";
+      trigger.className = "help-trigger";
+      trigger.setAttribute("aria-label", `About ${title}`);
+      trigger.dataset.helpTooltip = explanation;
+      trigger.textContent = "?";
+      const caption = doc.createElement("span");
+      caption.className = "field-label-with-help";
+      for (const node of [...label.childNodes]) if (node.nodeType === 3) caption.append(node);
+      caption.append(trigger);
+      label.insertBefore(caption, control.type === "checkbox" ? help : control);
+      bindTooltip(trigger);
+    }
   };
   const enhance = (root) => {
     if (root.closest(".component-tooltip, .field-hint")) return;
@@ -917,7 +990,7 @@ function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle
   const d = (traffic == null ? void 0 : traffic.diagnostics) || (usage2 == null ? void 0 : usage2.diagnostics) || {};
   const socket = d.websocket;
   const identity = d.entra;
-  const profile = d.authentication_profile;
+  const profile2 = d.authentication_profile;
   const requestId = (traffic == null ? void 0 : traffic.request_id) || (usage2 == null ? void 0 : usage2.request_id) || (bundle == null ? void 0 : bundle.request_id) || "Unknown request";
   const status = (traffic == null ? void 0 : traffic.client_status) ?? (usage2 == null ? void 0 : usage2.status_code);
   const failed = Boolean(d.failure_code) || status >= 400 || (usage2 == null ? void 0 : usage2.status) === "failure";
@@ -983,13 +1056,13 @@ function requestInvestigationView({ traffic = null, usage: usage2 = null, bundle
       ${facts([["State", socket.state], ["App / channel", [socket.app, socket.channel].filter(Boolean).join(" / ")], ["Opened", socket.opened_at ? time2(socket.opened_at) : null], ["Closed", socket.closed_at ? time2(socket.closed_at) : null], ["Last client activity", socket.last_client_activity_at ? time2(socket.last_client_activity_at) : null], ["Last upstream activity", socket.last_upstream_activity_at ? time2(socket.last_upstream_activity_at) : null], ["Idle read/write limit", `${socket.idle_timeout_ms} ms`], ["Session expires", socket.session_expires_at ? time2(socket.session_expires_at) : null], ["Frame/message limit", `${socket.max_frame_bytes} B`], ["Client / upstream frame headers", `${socket.client_frames} / ${socket.upstream_frames}`], ["Close frame observed", `Client: ${socket.client_close_frame ? "yes" : "no"} · upstream: ${socket.upstream_close_frame ? "yes" : "no"}`], ["Close cause", socket.close_cause || "Not closed"], ["Last sample", socket.observed_at ? time2(socket.observed_at) : null]])}
       <dl class="investigation-facts">${Object.entries({ duration: "Open duration", upload: "Client → upstream", download: "Upstream → client", upload_rate: "Average upload", download_rate: "Average download", idle: "Upstream idle remaining · estimate", expiry: "Session expiry remaining" }).map(([key, title]) => `<div><dt>${esc2(title)}</dt><dd data-websocket-metric="${key}">${esc2(websocketMetrics(socket, (traffic == null ? void 0 : traffic.completed) === false)[key])}</dd></div>`).join("")}</dl>
     </div>`) : ""}
-    ${section("Authentication profile", profile ? facts([
-    ["Profile ID", profile.id],
-    ["Profile name", profile.name],
-    ["Configuration revision", profile.revision],
-    ["Binding source", profile.binding_source],
-    ["Authentication type", profile.authentication_type],
-    ["Outcome", profile.outcome === "entra_not_required" ? "Entra not required by selected profile" : profile.outcome]
+    ${section("Authentication profile", profile2 ? facts([
+    ["Profile ID", profile2.id],
+    ["Profile name", profile2.name],
+    ["Configuration revision", profile2.revision],
+    ["Binding source", profile2.binding_source],
+    ["Authentication type", profile2.authentication_type],
+    ["Outcome", profile2.outcome === "entra_not_required" ? "Entra not required by selected profile" : profile2.outcome]
   ]) : '<p class="help">Legacy authentication or profile selection not recorded.</p>')}
     ${section("Entra verification", identity ? `${identity.truncated ? '<p class="notice">Claim display was truncated to bounded diagnostic limits.</p>' : ""}<p class="help">Policy and claims captured for this request. Claims appear only after successful verification; token strings and private payloads are never recorded. Gateway-inherited policy requirements are not captured in this snapshot.</p>${facts([
     ["Policy source", identity.policy_source],
@@ -17670,6 +17743,7 @@ function applyServiceTypePreset(form, type) {
   const identity = form.elements.namedItem("endpoint_entra_mode").closest("details");
   if (identity) identity.open = preset.mode === "required";
   updateServiceTransportFields(form);
+  form.elements.namedItem("endpoint_entra_mode").dispatchEvent(new Event("change", { bubbles: true }));
 }
 function updateServiceRouteSuggestion(form) {
   const value = (name) => String(form.elements.namedItem(name).value).trim();
@@ -19616,18 +19690,19 @@ function guardrailExecutionTable(rows) {
 function endpointIdentityFields(access = {}) {
   const entra = access.entra || {};
   const mode = access.authentication_profiles ? "profiles" : access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
-  return `<label class="wide-field">Entra verification<select name="endpoint_entra_mode">
+  return `<div class="wide-field form-grid" data-endpoint-identity><label class="wide-field">Entra verification<select name="endpoint_entra_mode">
     <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Explicit authentication profiles</option>
     <option value="inherit" ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
     <option value="required" ${mode === "required" ? "selected" : ""}>Require Entra</option>
     <option value="disabled" ${mode === "disabled" ? "selected" : ""}>No Entra</option>
   </select></label>
-    <label>Entra audience<input name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
-    <label>Required scopes<input name="endpoint_scopes" value="${attr(listValue(entra.required_scopes, ""))}"></label>
-    <label>Required roles<input name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
-    <label>Allowed groups<input name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
-    <label class="check"><input name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label>
-    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claims below apply only to Require Entra.</p>${profileFields(access)}`;
+    <div class="wide-field form-grid" data-endpoint-entra ${mode === "required" ? "" : "hidden"}>
+    <label>Entra audience (required)<input ${mode === "required" ? "required" : "disabled"} name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
+    <label>Scopes (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_scopes" value="${attr(listValue(entra.required_scopes, ""))}"></label>
+    <label>Roles (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
+    <label>Groups (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
+    <label class="check"><input ${mode === "required" ? "" : "disabled"} name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label></div>
+    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claim fields appear only for the selected Entra mode.</p>${profileFields(access)}</div>`;
 }
 function endpointIdentityBadge(access = {}) {
   return access.authentication_profiles ? `<span class="badge good">${esc(access.authentication_profiles.profiles.length)} authentication profiles</span><div class="subtle">Revision ${esc(access.authentication_profiles.revision)} · explicit key bindings</div>` : access.entra ? `<span class="badge good">Entra required</span><div class="subtle">${esc(access.entra.audience)}</div>` : access.skip_entra ? '<span class="badge">No Entra</span>' : '<span class="badge warn">Gateway setting</span>';
@@ -21103,7 +21178,7 @@ document.addEventListener("click", handleAsync(async (event) => {
     const set2 = (_a2 = entry.access) == null ? void 0 : _a2.authentication_profiles;
     if (!set2) return `<p class="wide-field">${esc(entry.route)} · Inherited / legacy identity; no explicit profile binding.</p>`;
     const selected = (_b = set2.bindings.find((binding) => binding.key_id === keyId)) == null ? void 0 : _b.profile_id;
-    return `<label>${esc(entry.route)}<select data-binding-select="${index2}"><option value="">Unassigned · deny access</option>${set2.profiles.map((profile) => `<option value="${attr(profile.id)}" ${selected === profile.id ? "selected" : ""}>${esc(profile.name)} · ${profile.enabled ? "enabled" : "disabled"}</option>`).join("")}</select></label><div><button type="button" data-save-binding="${index2}">Save route assignment</button></div>`;
+    return `<label>${esc(entry.route)}<select data-guidance-name="profile_binding" data-binding-select="${index2}"><option value="">Unassigned · deny access</option>${set2.profiles.map((profile2) => `<option value="${attr(profile2.id)}" ${selected === profile2.id ? "selected" : ""}>${esc(profile2.name)} · ${profile2.enabled ? "enabled" : "disabled"}</option>`).join("")}</select></label><div><button type="button" data-save-binding="${index2}">Save route assignment</button></div>`;
   }).join("")}</div><p role="status" data-binding-result></p></div><div class="form-actions"><button type="button" data-close-modal>Close</button></div></div></div>`;
   document.body.appendChild(backdrop);
   let saving = false;

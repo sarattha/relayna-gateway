@@ -220,3 +220,9 @@ for claim bounds and rollout guidance.
 
 See [route authentication profiles](authentication-profiles.md) for per-route
 caller assignments and historical profile/verification snapshots.
+
+Applied project/key UUIDs are normalized to lowercase, and HTTP status filters
+use their numeric value (for example, `0503` matches `503`). Changing a history
+filter resets pagination; Older is unavailable while the new page loads, so a
+previous filter's cursor cannot skip the new results. Dates apply only to saved
+history, and Active only applies to live requests.

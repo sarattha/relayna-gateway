@@ -11,6 +11,8 @@ export function tooltipPosition(anchor, size, viewport) {
 }
 
 function contextFor(control: HTMLElement): string {
+  if (control.closest('[data-profile-row]')) return 'profile';
+  if (control.closest('[data-endpoint-identity]')) return 'identity';
   if (control.closest('[data-pricing-rule-row]')) return 'pricing';
   if (control.closest('#traffic-filters')) return 'traffic';
   if (control.closest('#usage-form')) return 'usage';
@@ -106,7 +108,7 @@ export function installComponentGuidance(doc: Document = document) {
     // Export fields already have individually authored help. Grouped selections
     // have shared guidance, rather than repeating it for every checkbox row.
     if (control.hasAttribute('aria-describedby') || (control.type === 'checkbox' && !control.closest('label.check'))) return;
-    const name = control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
+    const name = control.dataset.guidanceName || control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
     const explanation = fieldGuidance(name, contextFor(control));
     const label = control.closest('label');
     if (!explanation || !label) return;
@@ -122,6 +124,20 @@ export function installComponentGuidance(doc: Document = document) {
     help.textContent = explanation;
     control.setAttribute('aria-describedby', help.id);
     label.append(help);
+    if (['profile', 'identity', 'traffic'].includes(contextFor(control)) || control.dataset.guidanceName) {
+      const trigger = doc.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'help-trigger';
+      trigger.setAttribute('aria-label', `About ${title}`);
+      trigger.dataset.helpTooltip = explanation;
+      trigger.textContent = '?';
+      const caption = doc.createElement('span');
+      caption.className = 'field-label-with-help';
+      for (const node of [...label.childNodes]) if (node.nodeType === 3) caption.append(node);
+      caption.append(trigger);
+      label.insertBefore(caption, control.type === 'checkbox' ? help : control);
+      bindTooltip(trigger);
+    }
   };
   const enhance = (root: Element) => {
     if (root.closest('.component-tooltip, .field-hint')) return;

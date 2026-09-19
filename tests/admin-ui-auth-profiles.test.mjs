@@ -39,3 +39,40 @@ assert.equal(showProfileError({querySelector:()=>notice}, 'Each Entra profile re
 assert.equal(notice.textContent,'Each Entra profile requires a valid audience.');
 assert.equal(notice.attributes.role,'alert');assert.equal(notice.focused,true);assert.equal(notice.scrolled,true);
 assert.equal(showProfileError({querySelector:()=>null},'error'),false);
+
+const {syncIdentityFields,bindProfileEditor}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+function control(name,value='',type='text') {return {name,value,type,disabled:false,required:false,checked:true};}
+function group(controls,extra={}) {return {hidden:false,querySelectorAll:()=>controls,querySelector:selector=>extra[selector],...extra};}
+const mode=control('endpoint_entra_mode','profiles');
+const endpointAudience=control('endpoint_audience','api://legacy');
+const endpoint=group([endpointAudience],{'[name="endpoint_audience"]':endpointAudience});
+const profileControls=[control('profile_slot','test'),control('test.id','automation'),control('test.name','Automation'),control('test.type','entra_and_relayna_key'),control('test.enabled','on','checkbox'),control('test.audience','api://employees'),control('test.required_scopes','invoke'),control('test.keys',id)];
+const entraGroup=group(profileControls.slice(5,7));
+const keyHint={hidden:true};
+const row={querySelector:selector=>({'[data-profile-type]':profileControls[3],'[data-profile-entra]':entraGroup,'[name$=".audience"]':profileControls[5],'[data-profile-key-only]':keyHint}[selector])};
+const editor={hidden:false,querySelectorAll:selector=>selector==='[data-profile-row]'?[row]:profileControls};
+const root={querySelector:selector=>({'[name="endpoint_entra_mode"]':mode,'[data-endpoint-entra]':endpoint,'[data-profile-editor]':editor}[selector])};
+const handlers={};bindProfileEditor({addEventListener:(event,handler)=>{handlers[event]=handler;}});
+const change=target=>handlers.change({target:{matches:()=>true,closest:()=>root,...target}});
+const submitted=()=>{const data=new FormData();for(const c of profileControls)if(!c.disabled&&(c.type!=='checkbox'||c.checked))data.append(c.name,c.value);return data;};
+syncIdentityFields(root);
+assert.equal(endpoint.hidden,true);assert.equal(endpointAudience.disabled,true);
+assert.equal(editor.hidden,false);assert.equal(entraGroup.hidden,false);assert.equal(profileControls[5].required,true);
+assert.equal(profilesFromForm(submitted()).profiles[0].entra.audience,'api://employees');
+profileControls[3].value='relayna_key_only';change(profileControls[3]);
+assert.equal(entraGroup.hidden,true);assert.equal(profileControls[5].disabled,true);assert.equal(profileControls[5].required,false);assert.equal(keyHint.hidden,false);
+assert.equal(submitted().has('test.audience'),false);assert.equal(profilesFromForm(submitted()).profiles[0].entra,undefined);
+profileControls[3].value='entra_and_relayna_key';change(profileControls[3]);
+assert.equal(profileControls[5].value,'api://employees','switching back retains the unsaved audience');
+assert.deepEqual(profilesFromForm(submitted()).profiles[0].entra.required_scopes,['invoke']);
+for(const selected of ['inherit','disabled','required']) {
+  mode.value=selected;change(mode);
+  assert.equal(editor.hidden,true);assert.equal(profileControls.every(c=>c.disabled),true);
+  assert.equal(endpoint.hidden,selected!=='required');assert.equal(endpointAudience.required,selected==='required');
+  assert.equal(submitted().has('profile_slot'),false,'inactive profile drafts do not submit');
+}
+mode.value='profiles';change(mode);assert.equal(profileControls[1].value,'automation');assert.equal(profileControls[1].disabled,false);
+assert.match(profileRow({type:'relayna_key_only'}), /data-profile-entra hidden/);
+assert.match(profileRow({type:'relayna_key_only'}), /input disabled name="profile-\d+\.audience"/);
+assert.match(profileRow(), /input required name="profile-\d+\.audience"/);
+console.log('ok - dynamic identity modes hide and exclude inactive controls, require Entra audience only, and preserve drafts');

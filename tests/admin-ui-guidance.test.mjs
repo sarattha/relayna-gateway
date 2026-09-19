@@ -28,3 +28,11 @@ assert.deepEqual(tooltipPosition({left:30,top:20,bottom:44},{width:200,height:70
 assert.deepEqual(tooltipPosition({left:360,top:740,bottom:764},{width:320,height:100},{width:390,height:800}),{left:62,top:632});
 assert.deepEqual(tooltipPosition({left:-20,top:5,bottom:29},{width:304,height:180},{width:320,height:200}),{left:8,top:8});
 console.log("ok - guidance preserves contextual zero/blank semantics and clamps tooltip placement");
+for(const name of ['id','name','type','enabled','audience','required_scopes','required_roles','allowed_groups','allow_apigee','keys']) assert.ok(fieldGuidance(`profile-12.${name}`,'profile'),`missing guidance for ${name}`);
+for(const name of ['endpoint_entra_mode','endpoint_audience','endpoint_scopes','endpoint_roles','endpoint_groups','endpoint_apigee','profile_binding']) assert.ok(fieldGuidance(name,'identity'),`missing identity guidance for ${name}`);
+for(const name of ['request_id','service','project_id','key_id','status','failure_code','outcome','from','to']) assert.ok(fieldGuidance(name,'traffic'),`missing Traffic guidance for ${name}`);
+assert.match(fieldGuidance('profile-1.id','profile'),/Required.*1–64.*keep it unchanged/);
+assert.match(fieldGuidance('profile-1.required_scopes','profile'),/Optional.*Every.*blank adds no/);
+assert.match(fieldGuidance('profile-1.allowed_groups','profile'),/At least one.*blank adds no/);
+assert.match(fieldGuidance('profile-1.keys','profile'),/Blank assigns no callers/);
+console.log('ok - every profile, identity and Traffic filter field has reviewed contextual guidance');

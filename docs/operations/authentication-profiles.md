@@ -10,8 +10,14 @@ Native LiteLLM credentials are not an authentication profile.
 
 In **Routes → Edit identity**, choose **Explicit authentication profiles**.
 Add named profiles with stable IDs, enabled state and authentication type.
-For Entra profiles, configure audience, required scopes, required roles and
-allowed groups. All scopes and roles are required; any listed group may match.
+Choose a stable ID (1–64 letters, numbers, hyphens or underscores) and a display
+name; both are required. Keep the ID unchanged after assigning keys. Field help
+and keyboard/tap-accessible tooltips explain each control.
+
+The editor shows only fields for the selected endpoint mode and profile type.
+For Entra profiles, an audience is required; scopes, roles and groups are optional.
+Key-only profiles hide those fields and signed-Apigee settings. Switching back
+restores draft values, while inactive fields are excluded from a save. All scopes and roles are required; any listed group may match.
 Tenant, issuer, signing algorithms, JWKS and JWT clock skew still come from
 Settings. Signed Apigee identity is accepted only when enabled on the selected
 profile; its expiry remains strict.

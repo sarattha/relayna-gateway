@@ -179,6 +179,11 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     }
   }
   async function history(older = false) {
+    const before = older ? historyCursor : null;
+    if (older && !before) return;
+    historyCursor = null;
+    element("traffic-older").disabled = true;
+    element("traffic-newest").disabled = true;
     const generation = ++historyGeneration;
     rows = []; selected = null; render();
     connection("Loading saved history");
@@ -188,7 +193,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
       if (filters.outcome === "active") throw new Error("Active requests are available in Live instance mode.");
       if (filters.outcome === "failures") query.set("failures_only", "true");
       for (const key of ["from", "to"]) if (filters[key]) query.set(key, new Date(filters[key]).toISOString());
-      if (older && historyCursor) { query.set("before", historyCursor.started_at); query.set("before_id", historyCursor.id); }
+      if (before) { query.set("before", before.started_at); query.set("before_id", before.id); }
       const result = await api(`/admin-ui/admin/traffic/history?${query}`);
       if (disposed || mode !== "history" || generation !== historyGeneration) return;
       rows = result; historyCursor = rows.at(-1); selected = null;
@@ -196,12 +201,18 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
       warning = "Saved history contains records successfully written to the database. Recording failures and in-flight requests may only be available in live records or gateway logs.";
       connection("Saved history"); render();
     } catch (error) { if (!disposed && generation === historyGeneration) { warning = `History unavailable: ${error.message}`; connection("History unavailable"); render(); } }
+    finally { if (!disposed && mode === "history" && generation === historyGeneration) element("traffic-newest").disabled = false; }
   }
   element("traffic-filters").addEventListener("submit", (event) => {
     event.preventDefault();
     filters = Object.fromEntries([...new FormData(event.currentTarget)].map(([name, value]) => [name, String(value).trim()]));
+    for (const name of ["project_id", "key_id"]) if (filters[name]) filters[name] = filters[name].toLowerCase();
+    if (filters.status) filters.status = String(Number(filters.status));
     onFilters(filters);
-    event.currentTarget.elements.namedItem("key_id").value = filters.key_id || "";
+    for (const [name, value] of Object.entries(filters)) {
+      const field = event.currentTarget.elements.namedItem(name);
+      if (field) field.value = value;
+    }
     if (mode === "history") history(); else render();
   });
   element("traffic-mode").addEventListener("change", (event) => {

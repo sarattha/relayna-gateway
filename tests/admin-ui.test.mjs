@@ -1049,7 +1049,7 @@ test("service presets produce supported access contracts and preserve operator-o
   const fieldNames = ["service_type", "name", "route_pattern", "upstream_base_url", "credential", "cost_mode", "timeout_ms", "health_check_path", "endpoint_entra_mode", "endpoint_audience", "endpoint_scopes", "endpoint_roles", "endpoint_groups", "endpoint_apigee", "accessa_enabled", "accessa_app", "accessa_channel", "socket_idle_ms", "socket_connections", "socket_key_connections", "socket_frame_bytes"];
   for (const name of fieldNames) {
     const label = { hidden: false };
-    fields[name] = { value: "", checked: false, events: {}, closest: (tag) => tag === "details" ? identity : label, addEventListener(event, fn) { this.events[event] = fn; } };
+    fields[name] = { value: "", checked: false, events: {}, dispatchEvent(event) { this.lastEvent = event; }, closest: (tag) => tag === "details" ? identity : label, addEventListener(event, fn) { this.events[event] = fn; } };
   }
   fields.name.value = "orders";
   fields.upstream_base_url.value = "http://orders:8080";

@@ -20,7 +20,21 @@ const policy: Record<string, string> = {
   allow_streaming: "Permit streamed responses at this layer. Other policy layers can still deny streaming.",
   allow_tools: "Permit tool/function calling at this layer. Other policy layers can still deny it.",
 };
+const profile: Record<string, string> = {
+  id: "Required. Choose a stable ID, such as internal-automation: 1–64 letters, numbers, hyphens or underscores. Unique within this route; keep it unchanged after assigning keys.",
+  name: "Required display name, up to 120 UTF-8 bytes. Unique on this route ignoring case. You can rename it without changing its stable ID or key assignments.",
+  type: "Entra + Relayna key requires a verified Entra identity and an assigned key. Relayna key only requires the assigned key, with no Entra audience or claims. Accessa supports only Entra + Relayna key.",
+  enabled: "Allow assigned keys to use this profile. Turning it off blocks every assigned key; it does not move callers to another profile.",
+  audience: "Required for Entra profiles. Exact expected JWT audience, such as api://employees; no spaces, up to 512 bytes. Tenant, issuer and JWKS come from Settings.",
+  required_scopes: "Optional comma-separated scopes. Every listed scope is required; blank adds no scope restriction. Up to 64 entries, each up to 512 bytes without whitespace.",
+  required_roles: "Optional comma-separated roles. Every listed role is required; blank adds no role restriction. Up to 64 entries, each up to 512 bytes without whitespace.",
+  allowed_groups: "Optional comma-separated group IDs. At least one listed group must match; blank adds no group restriction. Up to 64 entries, each up to 512 bytes without whitespace.",
+  allow_apigee: "Allow HMAC-verified Apigee identity for this Entra profile only. Matching audience, unexpired identity and required claims still apply; unsigned headers are never trusted.",
+  keys: "Existing Relayna key UUIDs, one per line or separated by commas. Blank assigns no callers. Each key can belong to only one profile on this route; service keys must belong to the service's project. This does not grant route permission.",
+};
 const shared: Record<string, string> = {
+  endpoint_entra_mode: "Choose the endpoint identity policy. Gateway setting inherits Settings; No Entra retains the route's credential checks; Require Entra uses one audience policy. Explicit profiles select policy by an assigned Relayna key and reject unassigned callers. Once saved, explicit profiles cannot be removed by switching back to legacy mode.",
+  profile_binding: "Assign this key to exactly one profile on this route. Unassigned denies access on a profiled route; a disabled profile also denies access. Save applies immediately to new policy reads and does not grant route permissions.",
   endpoint_audience: "Exact audience required when Require Entra is selected. Other modes ignore this field. This does not add the audience to other endpoints.",
   endpoint_scopes: "Comma-separated scopes. Every listed scope is required; blank adds no scope requirement for this endpoint.",
   endpoint_roles: "Comma-separated roles. Every listed role is required; blank adds no role requirement for this endpoint.",
@@ -145,6 +159,7 @@ const filterText: Record<string, string> = {
 };
 
 export function fieldGuidance(name: string, context: string): string | undefined {
+  if (context === "profile") return profile[name.split(".").at(-1)];
   if (context === "owner") {
     if (name === "owner-range-select") return "Time window for this resource's dashboard and request logs.";
     if (name === "owner-outcome-select") return filterText.status;
@@ -154,6 +169,8 @@ export function fieldGuidance(name: string, context: string): string | undefined
   if (context === "traffic") {
     const traffic: Record<string, string> = {
       request_id: "Client correlation ID. Live mode matches contained text; saved history matches the exact ID. Blank includes all requests.",
+      service: "Exact registered service name. Blank includes every service, including requests without a selected service.",
+      failure_code: "Exact recorded failure code, such as control_state_unavailable. Blank includes every reason and requests without a failure. Click a reason chip to apply or clear it.",
       status: "Client HTTP status, such as 503. A 200 can still be an interrupted stream; inspect its outcome.",
       outcome: "Failures selects recorded failure reasons. Active means unfinished requests and is available only in live mode.",
       from: "Saved-history start in local time. Blank defaults to the last 24 hours. Ignored in live mode.",

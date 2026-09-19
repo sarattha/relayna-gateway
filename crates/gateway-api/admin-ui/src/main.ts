@@ -2087,6 +2087,7 @@ function applyServiceTypePreset(form, type) {
   const identity = form.elements.namedItem("endpoint_entra_mode").closest("details");
   if (identity) identity.open = preset.mode === "required";
   updateServiceTransportFields(form);
+  form.elements.namedItem("endpoint_entra_mode").dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function updateServiceRouteSuggestion(form) {
@@ -4127,18 +4128,19 @@ function guardrailExecutionTable(rows) {
 function endpointIdentityFields(access = {}) {
   const entra = access.entra || {};
   const mode = access.authentication_profiles ? "profiles" : access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
-  return `<label class="wide-field">Entra verification<select name="endpoint_entra_mode">
+  return `<div class="wide-field form-grid" data-endpoint-identity><label class="wide-field">Entra verification<select name="endpoint_entra_mode">
     <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Explicit authentication profiles</option>
     <option value="inherit" ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
     <option value="required" ${mode === "required" ? "selected" : ""}>Require Entra</option>
     <option value="disabled" ${mode === "disabled" ? "selected" : ""}>No Entra</option>
   </select></label>
-    <label>Entra audience<input name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
-    <label>Required scopes<input name="endpoint_scopes" value="${attr(listValue(entra.required_scopes, ""))}"></label>
-    <label>Required roles<input name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
-    <label>Allowed groups<input name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
-    <label class="check"><input name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label>
-    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claims below apply only to Require Entra.</p>${profileFields(access)}`;
+    <div class="wide-field form-grid" data-endpoint-entra ${mode === "required" ? "" : "hidden"}>
+    <label>Entra audience (required)<input ${mode === "required" ? "required" : "disabled"} name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
+    <label>Scopes (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_scopes" value="${attr(listValue(entra.required_scopes, ""))}"></label>
+    <label>Roles (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
+    <label>Groups (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
+    <label class="check"><input ${mode === "required" ? "" : "disabled"} name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label></div>
+    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claim fields appear only for the selected Entra mode.</p>${profileFields(access)}</div>`;
 }
 
 function endpointIdentityBadge(access = {}) {
@@ -5658,7 +5660,7 @@ document.addEventListener("click", handleAsync(async (event) => {
       const set = entry.access?.authentication_profiles;
       if (!set) return `<p class="wide-field">${esc(entry.route)} · Inherited / legacy identity; no explicit profile binding.</p>`;
       const selected = set.bindings.find(binding => binding.key_id === keyId)?.profile_id;
-      return `<label>${esc(entry.route)}<select data-binding-select="${index}"><option value="">Unassigned · deny access</option>${set.profiles.map(profile=>`<option value="${attr(profile.id)}" ${selected===profile.id?'selected':''}>${esc(profile.name)} · ${profile.enabled?'enabled':'disabled'}</option>`).join('')}</select></label><div><button type="button" data-save-binding="${index}">Save route assignment</button></div>`;
+      return `<label>${esc(entry.route)}<select data-guidance-name="profile_binding" data-binding-select="${index}"><option value="">Unassigned · deny access</option>${set.profiles.map(profile=>`<option value="${attr(profile.id)}" ${selected===profile.id?'selected':''}>${esc(profile.name)} · ${profile.enabled?'enabled':'disabled'}</option>`).join('')}</select></label><div><button type="button" data-save-binding="${index}">Save route assignment</button></div>`;
     }).join('')}</div><p role="status" data-binding-result></p></div><div class="form-actions"><button type="button" data-close-modal>Close</button></div></div></div>`;
   document.body.appendChild(backdrop);
   let saving = false;

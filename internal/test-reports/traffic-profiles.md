@@ -17,8 +17,8 @@ history after switching modes. Existing filter/SSE tests remain in the suite.
 `authentication_profiles_e2e` runs a real Pingora proxy and Axum admin API with
 an isolated migrated database, Redis, mock OIDC/JWKS, signed JWTs and upstream.
 It checks three simultaneous caller populations in managed and direct forwarding,
-aliases, independent claims, JWT skew/issuer/tenant/expiry, signed Apigee,
-missing/ambiguous/disabled bindings, invalid/revoked/expired credentials,
+aliases, independent claims, JWT skew/issuer/tenant/expiry and signed Apigee identity.
+It also checks missing, ambiguous or disabled bindings and invalid credentials,
 native/trusted-ingress bypass rejection, upstream mapping and header stripping.
 All three populations retain rate and budget enforcement in both modes.
 
@@ -87,5 +87,51 @@ workspace tests, audit, deny, machete, nextest, Trivy, Gitleaks and Semgrep).
 
 Final result: all ten mandatory verification commands passed. Nextest ran
 368 tests: 368 passed, zero failed, zero skipped. UI tests, reproducible generated
-assets, strict docs and release metadata checks also passed. Existing audit
-exceptions remain unchanged; no verification exclusions were added.
+assets, strict docs and release metadata checks also passed. Existing dependency audit exceptions and coverage exclusions remain unchanged.
+
+## Follow-up: dynamic forms, guidance and complete filter audit
+
+The earlier regressions targeted the reproduced failures; they did not establish
+coverage of every filter. The follow-up audits every visible Traffic filter:
+request ID, service, project ID, key ID, client status, failure reason, all three
+outcome choices, and both history date boundaries.
+
+- Live predicate tests cover all six text/numeric filters independently,
+  192 combinations with outcome choices, blank/missing metadata, HTTP status
+  classes, and HTTP-200 stream interruptions.
+- Mounted form tests exercise trimming, uppercase UUIDs, zero-padded status,
+  all history query parameters, local-time conversion, the live-only Active
+  restriction, reason chips, pagination/reset, empty results, pause/resume and
+  rows leaving Active after completion. The delayed-read regression remains.
+- Real admin API/PostgreSQL tests verify each saved-history predicate,
+  intersected predicates, exact request IDs, inclusive date boundaries,
+  same-timestamp cursor tie-breaking and invalid UUID/status/range rejection.
+- Newly found bugs: UUID casing/status formatting could hide returned records;
+  an old pagination cursor could skip results while a replacement filter loaded.
+  Values are now normalized, and pagination resets and disables while loading.
+
+Dynamic endpoint/profile tests prove that inactive groups are hidden and disabled,
+only Entra audiences are required, key-only payloads omit Entra fields, and
+switching back retains draft values. Service presets dispatch the same mode
+change. Every identity/profile/Traffic filter field has reviewed contextual help;
+secondary detail is available through accessible help triggers beside labels.
+
+Computer Use verifies inherited/profile mode transitions, Entra/key-only switching,
+retained audience drafts, save with hidden Entra fields, tooltip clicks without
+checkbox changes, Escape dismissing only the tooltip, and desktop/narrow layout.
+Local follow-up screenshots include `dynamic-key-only.png`,
+`stable-id-tooltip.png`, and `dynamic-profiles-narrow.png` in the same ignored
+screenshot directory. Tests bound the known behavior; they cannot prove that no
+possible combination of inputs, timing or deployment state has any future bug.
+
+The added Rust work is integration-test coverage only; production Rust is unchanged.
+The instrumented Traffic integration test passed and the unchanged coverage gate
+still reports 137/137 (100%) changed executable production Rust lines.
+
+The follow-up history scan flagged report prose as `generic-api-key`; no credential
+was present. Rephrased the current sentence and documented an exact historical
+commit/file/line false-positive exception in `docs/security-exceptions.md`.
+
+Final follow-up verification: all ten mandatory commands passed again; nextest
+ran 368 tests, all passed with zero skipped. UI tests, generated asset build,
+strict documentation and release metadata validation also passed.

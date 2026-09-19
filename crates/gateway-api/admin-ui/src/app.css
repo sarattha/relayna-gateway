@@ -2884,6 +2884,8 @@ td { font-size: 13px; }
 label.check > .field-hint { grid-column: 1 / -1; grid-row: 2; }
 .form-section-grid > label, .form-grid > label { align-self: start; }
 .field-hint { white-space: normal; overflow-wrap: anywhere; }
+.field-label-with-help { display: flex; align-items: center; gap: var(--rg-space-1); }
+.field-label-with-help > .help-trigger { flex-shrink: 0; }
 button.help-trigger {
   display: inline-grid;
   place-items: center;
@@ -2936,7 +2938,8 @@ button.help-trigger {
   border-radius: var(--rg-radius-sm);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+[data-profile-entra], [data-endpoint-entra] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .authentication-profile legend { padding: 0 var(--rg-space-2); font-weight: 600; }
 @media (max-width: 760px) {
-  .authentication-profile { grid-template-columns: minmax(0, 1fr); }
+  .authentication-profile, [data-profile-entra], [data-endpoint-entra] { grid-template-columns: minmax(0, 1fr); }
 }

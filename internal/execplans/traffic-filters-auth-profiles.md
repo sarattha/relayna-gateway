@@ -16,9 +16,15 @@ Repair applied Traffic filters using simulated requests through a real local gat
 - [x] Finished the final verification sequence: 368 nextest tests passed, zero skipped; all ten mandatory checks passed.
 - [x] Prepared the verified branch and draft PR description for publication.
 
+- [x] (2026-09-19 follow-up) Add contextual guidance/tooltips and dynamic endpoint/profile fields, preserving drafts while excluding inactive inputs.
+- [x] Audit all Traffic filters across live/history, combinations, reason chips, mode transitions and pagination; extend behavioral regressions.
+- [x] Rebuild, validate with Computer Use and rerun all ten mandatory checks (368/368, zero skipped); publish follow-up through draft PR #121.
+
 ## Surprises & Discoveries
 
 The Traffic project callback clears a newly submitted key whenever project changes. The live reader lacks a generation check after awaiting a read, potentially overwriting history after a mode switch. Mounted regressions now prove both. Real traffic also reproduced surrounding-whitespace filters returning no rows. Computer Use found the overflowing bottom Add button, invalid HTML pattern under Unicode-v rules, and errors outside the dialog; all were corrected. Generic LiteLLM passthrough had a second governance bypass that also needed to exclude explicitly profiled routes.
+
+Follow-up: uppercase UUIDs and zero-padded status values disagreed with live predicates; an old history cursor remained usable while filters reloaded. Normalization and cursor invalidation now have regression coverage. Previous tests verified the reproduced failures but did not exhaust every filter. The profile editor also exposed Entra-only controls in key-only mode and lacked field-level guidance.
 
 ## Decision Log
 
@@ -27,7 +33,11 @@ The Traffic project callback clears a newly submitted key whenever project chang
 
 - 2026-09-19: Store bounded profiles and bindings in existing EndpointAccess JSON. PostgreSQL triggers enforce optimistic revisions and key ownership; old readers reject new configuration and old writers cannot erase it. Opted-in routes cannot silently return to legacy mode. Accessa requires reconnect after any profile configuration edit.
 
+- 2026-09-19 follow-up: this UI change preserves v0.1.37 API/persistence contracts. Hide and disable inactive controls without clearing drafts; require only the Entra audience, with optional scope/role/group restrictions. Use the shared accessible tooltip installer.
+
 ## Outcomes & Retrospective
+
+Follow-up completed: contextual field tooltips and dynamic identity controls preserve drafts and omit inactive fields. Every Traffic filter now has independent and combined regressions; normalization and pagination defects found during the audit are fixed. Computer Use desktop/narrow checks and the full mandatory verification sequence pass. Changed production Rust coverage stays 137/137 (100%).
 
 Implemented the Traffic fixes and issue #120. Full LLVM suite plus the final focused policy/ownership regressions produce 137/137 changed executable production Rust lines covered. Desktop and 390px Computer Use checks verify profile creation, rename, disable, save/reopen, key assignments, inline validation, Traffic live/history filtering and Traffic/Usage snapshots. All mandatory checks passed on the final code. The verified branch is ready for draft PR publication. Detailed reproduction, test commands, coverage denominator/exclusions and Computer Use evidence are recorded in `internal/test-reports/traffic-profiles.md`.
 
