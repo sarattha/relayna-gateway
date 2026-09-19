@@ -4140,7 +4140,7 @@ function endpointIdentityFields(access = {}) {
     <label>Roles (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
     <label>Groups (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
     <label class="check"><input ${mode === "required" ? "" : "disabled"} name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label></div>
-    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claim fields appear only for the selected Entra mode.</p>${profileFields(access)}</div>`;
+    ${profileFields(access)}</div>`;
 }
 
 function endpointIdentityBadge(access = {}) {

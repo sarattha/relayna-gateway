@@ -8,6 +8,8 @@ Repair applied Traffic filters using simulated requests through a real local gat
 
 ## Progress
 
+- [x] (2026-09-20) Remove duplicated inline tooltip explanations, retain concise profile status, verify desktop/narrow layouts and all ten checks (368/368 tests); deliver through PR #121.
+
 - [x] (2026-09-19) Read repository skills, UI rules, manifesto and issue #120; created `codex/traffic-filters-auth-profiles` from clean main at 872614b.
 - [x] Reproduced whitespace filter failures with real mock-upstream traffic; fixed trimming, simultaneous project/key selection, and stale live-reader updates with mounted regressions.
 - [x] Implemented core profiles, atomic PostgreSQL revisions/references, request-plane enforcement before passthrough shortcuts, and Accessa per-turn snapshots/revalidation.

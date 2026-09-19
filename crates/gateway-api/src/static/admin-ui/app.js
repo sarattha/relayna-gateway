@@ -58,14 +58,14 @@ function profileRow(profile2 = {}, bindings = []) {
     <label class="check"><input type="checkbox" ${keyOnly ? "disabled" : ""} name="${id}.allow_apigee" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label></div>
     <p class="help wide-field" data-profile-key-only ${keyOnly ? "" : "hidden"}>Authenticates the assigned Relayna key. No Entra JWT, audience or claims are used.</p>
     <label class="wide-field">Assigned key UUIDs<textarea name="${id}.keys" rows="2">${escape(keys2.join("\n"))}</textarea></label>
-    <p class="help wide-field">${keys2.length} saved bindings. One UUID per line or comma; a key may appear in only one profile on this route. Disabling blocks every assigned key. Remove assignments explicitly before removing a profile. Key only still requires an authenticated Relayna key. Audience and claim fields apply only to Entra profiles.</p>
+    <p class="help wide-field">${keys2.length} saved bindings.</p>
     <button type="button" data-remove-profile>Remove unbound profile</button>
   </fieldset>`;
 }
 function profileFields(access = {}) {
   const set2 = access.authentication_profiles;
   return `<section class="wide-field" data-profile-editor ${set2 ? "" : "hidden"}><div class="panel-heading"><h4>Authentication profiles</h4><div class="actions"><button type="button" data-add-profile>Add profile</button></div></div>
-    <p class="help">Choose Explicit authentication profiles above to opt in. Unassigned keys are rejected. Profiles govern identity independently of forwarding mode; canonical aliases share these assignments. Existing gateway setting and single-policy modes keep legacy behavior.</p>
+    <p class="help">Assign each key to one profile. Unassigned keys are denied.</p>
     <input type="hidden" name="profiles_revision" value="${(set2 == null ? void 0 : set2.revision) || 0}">
     <div data-profile-rows>${((set2 == null ? void 0 : set2.profiles) || []).map((profile2) => profileRow(profile2, set2.bindings)).join("")}</div>
     <p role="status" data-profile-notice></p></section>`;
@@ -863,6 +863,7 @@ function installComponentGuidance(doc = document) {
     control.setAttribute("aria-describedby", help.id);
     label.append(help);
     if (["profile", "identity", "traffic"].includes(contextFor(control)) || control.dataset.guidanceName) {
+      help.hidden = true;
       const trigger = doc.createElement("button");
       trigger.type = "button";
       trigger.className = "help-trigger";
@@ -19702,7 +19703,7 @@ function endpointIdentityFields(access = {}) {
     <label>Roles (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
     <label>Groups (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
     <label class="check"><input ${mode === "required" ? "" : "disabled"} name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label></div>
-    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claim fields appear only for the selected Entra mode.</p>${profileFields(access)}</div>`;
+    ${profileFields(access)}</div>`;
 }
 function endpointIdentityBadge(access = {}) {
   return access.authentication_profiles ? `<span class="badge good">${esc(access.authentication_profiles.profiles.length)} authentication profiles</span><div class="subtle">Revision ${esc(access.authentication_profiles.revision)} · explicit key bindings</div>` : access.entra ? `<span class="badge good">Entra required</span><div class="subtle">${esc(access.entra.audience)}</div>` : access.skip_entra ? '<span class="badge">No Entra</span>' : '<span class="badge warn">Gateway setting</span>';

@@ -115,8 +115,8 @@ export function installComponentGuidance(doc: Document = document) {
     const labelCopy = label.cloneNode(true) as HTMLElement;
     labelCopy.querySelectorAll('input, select, textarea, .field-hint, .subtle').forEach(node => node.remove());
     const title = labelCopy.textContent?.replace(/\s+/g, ' ').trim();
-    // Help remains visible within the existing label, including when conditional
-    // controls hide it. Keep the accessible name concise and describe separately.
+    // Keep a separate accessible description. Fields with tooltips expose the
+    // detailed text on demand instead of repeating it beneath each control.
     if (title && !control.hasAttribute('aria-label') && !control.hasAttribute('aria-labelledby')) control.setAttribute('aria-label', title);
     const help = doc.createElement('small');
     help.id = `component-field-help-${++sequence}`;
@@ -125,6 +125,7 @@ export function installComponentGuidance(doc: Document = document) {
     control.setAttribute('aria-describedby', help.id);
     label.append(help);
     if (['profile', 'identity', 'traffic'].includes(contextFor(control)) || control.dataset.guidanceName) {
+      help.hidden = true;
       const trigger = doc.createElement('button');
       trigger.type = 'button';
       trigger.className = 'help-trigger';

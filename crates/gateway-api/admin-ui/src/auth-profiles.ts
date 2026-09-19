@@ -18,14 +18,14 @@ export function profileRow(profile = {}, bindings = []) {
     <label class="check"><input type="checkbox" ${keyOnly ? 'disabled' : ''} name="${id}.allow_apigee" ${entra.allow_apigee ? 'checked' : ''}> Accept signed Apigee identity</label></div>
     <p class="help wide-field" data-profile-key-only ${keyOnly ? '' : 'hidden'}>Authenticates the assigned Relayna key. No Entra JWT, audience or claims are used.</p>
     <label class="wide-field">Assigned key UUIDs<textarea name="${id}.keys" rows="2">${escape(keys.join('\n'))}</textarea></label>
-    <p class="help wide-field">${keys.length} saved bindings. One UUID per line or comma; a key may appear in only one profile on this route. Disabling blocks every assigned key. Remove assignments explicitly before removing a profile. Key only still requires an authenticated Relayna key. Audience and claim fields apply only to Entra profiles.</p>
+    <p class="help wide-field">${keys.length} saved bindings.</p>
     <button type="button" data-remove-profile>Remove unbound profile</button>
   </fieldset>`;
 }
 export function profileFields(access = {}) {
   const set = access.authentication_profiles;
   return `<section class="wide-field" data-profile-editor ${set ? '' : 'hidden'}><div class="panel-heading"><h4>Authentication profiles</h4><div class="actions"><button type="button" data-add-profile>Add profile</button></div></div>
-    <p class="help">Choose Explicit authentication profiles above to opt in. Unassigned keys are rejected. Profiles govern identity independently of forwarding mode; canonical aliases share these assignments. Existing gateway setting and single-policy modes keep legacy behavior.</p>
+    <p class="help">Assign each key to one profile. Unassigned keys are denied.</p>
     <input type="hidden" name="profiles_revision" value="${set?.revision || 0}">
     <div data-profile-rows>${(set?.profiles || []).map(profile => profileRow(profile,set.bindings)).join('')}</div>
     <p role="status" data-profile-notice></p></section>`;

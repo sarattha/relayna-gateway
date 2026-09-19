@@ -135,3 +135,17 @@ commit/file/line false-positive exception in `docs/security-exceptions.md`.
 Final follow-up verification: all ten mandatory commands passed again; nextest
 ran 368 tests, all passed with zero skipped. UI tests, generated asset build,
 strict documentation and release metadata validation also passed.
+
+## Concise guidance follow-up (2026-09-20)
+
+Removed duplicated inline explanations from fields with tooltips, while keeping
+accessible descriptions, required/optional labels, the unassigned-key warning
+and saved-binding counts. Removed redundant endpoint/profile paragraphs.
+Computer Use confirmed the compact desktop and 390px form, on-demand help,
+keyboard tooltip access and Escape dismissing help without closing the editor.
+The original open form was preserved in its tab. Local screenshots:
+`concise-desktop.png` and `concise-narrow.png`.
+
+Validation: `npm test`, `npm run build:admin-ui`, `cargo build -p gateway-api`
+and all ten mandatory verification steps passed; nextest passed 368/368 with
+zero skips. No production Rust changes or coverage exclusions were introduced.
