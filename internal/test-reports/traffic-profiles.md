@@ -171,3 +171,26 @@ local demo database; no production services or credentials were used.
 Final picker validation: UI tests/build, strict docs, release metadata and all ten
 mandatory checks passed; nextest 368/368, zero skipped. The existing changed
 production Rust coverage gate remains 137/137 (100%), with no added exclusions.
+
+## Modal key selection (2026-09-20)
+
+The profile now contains only assigned-key summaries. Select keys opens a separate
+modal using the shared focus/inert stack. Each popup starts with a blank query;
+Add clears it and available results exclude selected keys and keys bound elsewhere.
+Selection edits are isolated until Apply; Cancel, Escape and outside dismissal
+discard them. Saving the identity form remains the persistence boundary.
+
+Regressions verify draft isolation, Apply/Cancel, query reset, result exclusion,
+project restrictions, failed lookup/retry and closing during pending lookup.
+Computer Use checked real project search, Add clearing the query, Escape returning
+focus without closing the parent editor, discarded popup edits, Apply updating
+only selected summaries, and the 390px popup layout. Screenshots are
+`key-popup-desktop.png` and `key-popup-narrow.png`. Test selection changes were
+not persisted to the endpoint.
+
+Clarified the relationship in the editor: a profile accepts multiple keys, but
+each key belongs to at most one profile per route.
+
+Final popup verification: UI tests/build, gateway build, strict docs and release
+metadata passed. All ten mandatory checks passed; nextest ran 368/368 with zero
+skips. Changed executable production Rust coverage remains 137/137 (100%).

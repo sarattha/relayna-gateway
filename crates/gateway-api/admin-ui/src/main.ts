@@ -5652,7 +5652,7 @@ async function profileKeyCatalog() {
 function prepareProfileKeys(root) {
   root.querySelectorAll('[data-profile-editor]').forEach(editor => { void loadProfileKeys(editor, profileKeyCatalog); });
 }
-bindProfileEditor(document, profileKeyCatalog);
+bindProfileEditor(document, profileKeyCatalog, mountDialog);
 
 document.addEventListener("click", handleAsync(async (event) => {
   const button = event.target.closest("[data-key-profile-bindings]");

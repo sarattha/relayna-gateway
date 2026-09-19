@@ -59,13 +59,8 @@ function profileRow(profile2 = {}, bindings = []) {
     <p class="help wide-field" data-profile-key-only ${keyOnly ? "" : "hidden"}>Authenticates the assigned Relayna key. No Entra JWT, audience or claims are used.</p>
     <section class="wide-field profile-key-picker" data-key-picker>
       <input type="hidden" name="${id}.keys" data-profile-keys value="${escape(keys2.join(","))}">
-      <div class="panel-heading"><strong>Assigned keys</strong><button type="button" data-open-keys aria-expanded="false">Select keys</button></div>
+      <div class="panel-heading"><strong>Assigned keys</strong><button type="button" data-open-keys aria-haspopup="dialog">Select keys</button></div>
       <div data-selected-keys>${keys2.map((key) => `<div class="profile-key-item"><code>${escape(key)}</code></div>`).join("") || '<p class="help">No keys assigned.</p>'}</div>
-      <div data-key-search-panel hidden>
-        <label>Search keys<input type="search" data-key-search data-guidance-name="profile_keys_search" placeholder="Key prefix, UUID, project or service" autocomplete="off"></label>
-        <p class="help" role="status" data-key-results-status></p>
-        <div class="profile-key-results" data-key-results></div>
-      </div>
     </section>
     <button type="button" data-remove-profile>Remove unbound profile</button>
   </fieldset>`;
@@ -73,7 +68,7 @@ function profileRow(profile2 = {}, bindings = []) {
 function profileFields(access = {}) {
   const set2 = access.authentication_profiles;
   return `<section class="wide-field" data-profile-editor ${set2 ? "" : "hidden"}><div class="panel-heading"><h4>Authentication profiles</h4><div class="actions"><button type="button" data-add-profile>Add profile</button></div></div>
-    <p class="help">Assign each key to one profile. Unassigned keys are denied.</p>
+    <p class="help">A profile can have multiple keys. Each key can belong to only one profile on this route. Unassigned keys are denied.</p>
     <input type="hidden" name="profiles_revision" value="${(set2 == null ? void 0 : set2.revision) || 0}">
     <div data-profile-rows>${((set2 == null ? void 0 : set2.profiles) || []).map((profile2) => profileRow(profile2, set2.bindings)).join("")}</div>
     <p role="status" data-profile-notice></p></section>`;
@@ -131,6 +126,7 @@ function syncIdentityFields(root) {
   }
 }
 const keyCatalogs = /* @__PURE__ */ new WeakMap();
+const keyDialogs = /* @__PURE__ */ new WeakMap();
 const selectedKeyIds = (value) => String(value || "").split(/[,\n]/).map((id) => id.trim().toLowerCase()).filter(Boolean);
 function profileKeyOptions(keys2, projects2, query = "", projectId = "") {
   const terms2 = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -147,11 +143,11 @@ function keyDescription(key) {
   return `<span><strong>${escape(key.name)}</strong><small>${escape(key.owner)} · ${escape(key.status)}</small><code>${escape(key.id)}</code></span>`;
 }
 function refreshProfileKeys(editor) {
+  var _a2;
   const state2 = keyCatalogs.get(editor);
   if (!state2) return;
   const catalog = state2.catalog || { keys: [], projects: [] };
   const all = profileKeyOptions(catalog.keys, catalog.projects);
-  const assignments = [...editor.querySelectorAll("[data-profile-keys]")].flatMap((input) => selectedKeyIds(input.value));
   const root = editor.closest("[data-endpoint-identity]");
   const active = root.querySelector('[name="endpoint_entra_mode"]').value === "profiles";
   for (const picker of editor.querySelectorAll("[data-key-picker]")) {
@@ -160,14 +156,8 @@ function refreshProfileKeys(editor) {
       const key = all.find((key2) => key2.id === id) || { id, name: "Key details unavailable", owner: "Saved assignment", status: "Unknown" };
       return `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-remove-key="${escape(id)}" aria-label="Remove ${escape(key.name)} (${escape(id)})" ${active ? "" : "disabled"}>Remove</button></div>`;
     }).join("") || '<p class="help">No keys assigned.</p>';
-    const matches = profileKeyOptions(catalog.keys, catalog.projects, picker.querySelector("[data-key-search]").value, root.dataset.keyProject || "");
-    picker.querySelector("[data-key-results-status]").textContent = state2.loading ? "Loading keys…" : state2.error ? "Could not load keys. Existing selections are kept. Close and reopen Select keys to retry." : `${matches.length} matching keys${matches.length > 30 ? " · showing the first 30; refine your search" : ""}.`;
-    picker.querySelector("[data-key-results]").innerHTML = state2.loading || state2.error ? "" : matches.slice(0, 30).map((key) => {
-      const assigned = assignments.includes(key.id);
-      const label = ids.includes(key.id) ? "Selected" : assigned ? "Assigned elsewhere" : "Add";
-      return `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-add-key="${escape(key.id)}" aria-label="${label} ${escape(key.name)} (${escape(key.id)})" ${assigned || !active ? "disabled" : ""}>${label}</button></div>`;
-    }).join("");
   }
+  (_a2 = keyDialogs.get(editor)) == null ? void 0 : _a2();
 }
 async function loadProfileKeys(editor, loadCatalog) {
   var _a2, _b;
@@ -184,48 +174,107 @@ async function loadProfileKeys(editor, loadCatalog) {
     if (editor.isConnected) refreshProfileKeys(editor);
   }
 }
-function bindProfileEditor(doc = document, loadCatalog = async () => ({ keys: [], projects: [] })) {
+function openProfileKeyDialog(picker, editor, { doc = document, loadCatalog, mountDialog: mountDialog2 }) {
+  const input = picker.querySelector("[data-profile-keys]");
+  const original = new Set(selectedKeyIds(input.value));
+  const selected = new Set(original);
+  const root = editor.closest("[data-endpoint-identity]");
+  const project = root.dataset.keyProject || "";
+  const elsewhere = () => new Set([...editor.querySelectorAll("[data-profile-keys]")].filter((control) => control !== input).flatMap((control) => selectedKeyIds(control.value)));
+  const backdrop = doc.createElement("section");
+  backdrop.className = "modal-backdrop";
+  const title = `profile-key-dialog-${++slot}`;
+  backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${title}">
+    <h3 id="${title}">Select keys</h3>
+    <div class="modal-form"><div class="modal-scroll">
+      <label>Search keys<input type="search" data-key-search data-guidance-name="profile_keys_search" placeholder="Key prefix, UUID, project or service" autocomplete="off"></label>
+      <p class="help" role="status" data-key-results-status></p>
+      <button type="button" data-key-retry hidden>Retry loading keys</button>
+      <div class="profile-key-results" data-key-results></div>
+      <h4 data-key-selection-count>Selected keys</h4><div data-key-draft></div>
+      <p class="help">Apply updates this profile’s draft. Save identity to save the assignments.</p>
+    </div><div class="form-actions"><button type="button" class="primary" data-key-apply>Apply selection</button><button type="button" data-key-cancel>Cancel</button></div></div>
+  </div>`;
+  const search = backdrop.querySelector("[data-key-search]");
+  const render = () => {
+    const state2 = keyCatalogs.get(editor) || {};
+    const catalog = state2.catalog || { keys: [], projects: [] };
+    const all = profileKeyOptions(catalog.keys, catalog.projects);
+    const unavailable = elsewhere();
+    const matches = profileKeyOptions(catalog.keys, catalog.projects, search.value, project).filter((key) => !selected.has(key.id) && !unavailable.has(key.id));
+    backdrop.querySelector("[data-key-results-status]").textContent = state2.loading ? "Loading keys…" : state2.error ? "Could not load keys. Your selections are kept." : `${matches.length} available matching keys${matches.length > 30 ? " · showing the first 30; refine your search" : ""}. Keys already assigned to a profile are excluded.`;
+    backdrop.querySelector("[data-key-retry]").hidden = !state2.error;
+    backdrop.querySelector("[data-key-apply]").disabled = !state2.catalog || state2.loading || state2.error;
+    backdrop.querySelector("[data-key-results]").innerHTML = state2.loading || state2.error ? "" : matches.slice(0, 30).map((key) => `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-dialog-add-key="${escape(key.id)}" aria-label="Add ${escape(key.name)} (${escape(key.id)})">Add</button></div>`).join("");
+    backdrop.querySelector("[data-key-selection-count]").textContent = `Selected keys (${selected.size})`;
+    backdrop.querySelector("[data-key-draft]").innerHTML = [...selected].map((id) => {
+      const key = all.find((key2) => key2.id === id) || { id, name: "Key details unavailable", owner: "Saved assignment", status: "Unknown" };
+      return `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-dialog-remove-key="${escape(id)}" aria-label="Remove ${escape(key.name)} (${escape(id)})">Remove</button></div>`;
+    }).join("") || '<p class="help">No keys selected.</p>';
+  };
+  doc.body.appendChild(backdrop);
+  keyDialogs.set(editor, render);
+  const close = mountDialog2(backdrop, { initialFocus: "[data-key-search]", restoreFocus: picker.querySelector("[data-open-keys]"), onClose: () => {
+    if (keyDialogs.get(editor) === render) keyDialogs.delete(editor);
+  } });
+  search.addEventListener("input", render);
+  search.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") event.preventDefault();
+  });
+  backdrop.querySelector("[data-key-cancel]").addEventListener("click", () => close());
+  backdrop.querySelector("[data-key-retry]").addEventListener("click", () => {
+    void loadProfileKeys(editor, loadCatalog);
+  });
+  backdrop.querySelector("[data-key-apply]").addEventListener("click", () => {
+    const state2 = keyCatalogs.get(editor);
+    if (!(state2 == null ? void 0 : state2.catalog) || state2.loading || state2.error || !picker.isConnected) return;
+    const allowed = new Set(profileKeyOptions(state2.catalog.keys, state2.catalog.projects, "", project).map((key) => key.id));
+    const unavailable = elsewhere();
+    if ([...selected].some((id) => unavailable.has(id) || !original.has(id) && !allowed.has(id))) {
+      render();
+      return;
+    }
+    input.value = [...selected].join(",");
+    refreshProfileKeys(editor);
+    close();
+  });
+  backdrop.addEventListener("click", (event) => {
+    const add = event.target.closest("[data-dialog-add-key]");
+    const remove = event.target.closest("[data-dialog-remove-key]");
+    if (add) {
+      const state2 = keyCatalogs.get(editor);
+      const id = add.dataset.dialogAddKey;
+      if (!(state2 == null ? void 0 : state2.catalog) || state2.loading || state2.error || elsewhere().has(id) || !profileKeyOptions(state2.catalog.keys, state2.catalog.projects, "", project).some((key) => key.id === id)) return;
+      selected.add(id);
+      search.value = "";
+    } else if (remove) selected.delete(remove.dataset.dialogRemoveKey);
+    else return;
+    render();
+    search.focus();
+  });
+  render();
+  void loadProfileKeys(editor, loadCatalog);
+  return backdrop;
+}
+function bindProfileEditor(doc = document, loadCatalog = async () => ({ keys: [], projects: [] }), mountDialog2) {
   doc.addEventListener("change", (event) => {
     if (!event.target.matches('[name="endpoint_entra_mode"], [data-profile-type]')) return;
     const root = event.target.closest("[data-endpoint-identity]");
     syncIdentityFields(root);
     refreshProfileKeys(root.querySelector("[data-profile-editor]"));
   });
-  doc.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && event.target.matches("[data-key-search]")) event.preventDefault();
-  });
-  doc.addEventListener("input", (event) => {
-    if (event.target.matches("[data-key-search]")) refreshProfileKeys(event.target.closest("[data-profile-editor]"));
-  });
   doc.addEventListener("click", async (event) => {
-    var _a2;
     const editor = event.target.closest("[data-profile-editor]");
     if (!editor) return;
     const picker = event.target.closest("[data-key-picker]");
     if (event.target.closest("[data-open-keys]")) {
-      const panel2 = picker.querySelector("[data-key-search-panel]");
-      panel2.hidden = !panel2.hidden;
-      event.target.closest("[data-open-keys]").setAttribute("aria-expanded", String(!panel2.hidden));
-      if (!panel2.hidden) {
-        picker.querySelector("[data-key-search]").focus();
-        await loadProfileKeys(editor, loadCatalog);
-      }
+      openProfileKeyDialog(picker, editor, { doc, loadCatalog, mountDialog: mountDialog2 });
       return;
     }
-    const add = event.target.closest("[data-add-key]");
     const remove = event.target.closest("[data-remove-key]");
-    if (add || remove) {
+    if (remove) {
       const input = picker.querySelector("[data-profile-keys]");
-      const ids = selectedKeyIds(input.value);
-      if (remove) input.value = ids.filter((id) => id !== remove.dataset.removeKey).join(",");
-      else {
-        const id = add.dataset.addKey;
-        const catalog = (_a2 = keyCatalogs.get(editor)) == null ? void 0 : _a2.catalog;
-        const project = editor.closest("[data-endpoint-identity]").dataset.keyProject || "";
-        const assigned = [...editor.querySelectorAll("[data-profile-keys]")].flatMap((control) => selectedKeyIds(control.value));
-        if (!catalog || assigned.includes(id) || !catalog.keys.some((key) => key.id === id && (!project || key.project_id === project))) return;
-        input.value = [...ids, id].join(",");
-      }
+      input.value = selectedKeyIds(input.value).filter((id) => id !== remove.dataset.removeKey).join(",");
       refreshProfileKeys(editor);
       picker.querySelector("[data-open-keys]").focus();
       return;
@@ -627,11 +676,11 @@ const profile = {
   required_roles: "Optional comma-separated roles. Every listed role is required; blank adds no role restriction. Up to 64 entries, each up to 512 bytes without whitespace.",
   allowed_groups: "Optional comma-separated group IDs. At least one listed group must match; blank adds no group restriction. Up to 64 entries, each up to 512 bytes without whitespace.",
   allow_apigee: "Allow HMAC-verified Apigee identity for this Entra profile only. Matching audience, unexpired identity and required claims still apply; unsigned headers are never trusted.",
-  keys: "Select existing Relayna keys. No selection assigns no callers. Each key can belong to only one profile on this route; service keys must belong to the service's project. This does not grant route permission."
+  keys: "A profile can have multiple Relayna keys. No selection assigns no callers. Each key can belong to only one profile on this route; service keys must belong to the service's project. This does not grant route permission."
 };
 const shared = {
   endpoint_entra_mode: "Choose the endpoint identity policy. Gateway setting inherits Settings; No Entra retains the route's credential checks; Require Entra uses one audience policy. Explicit profiles select policy by an assigned Relayna key and reject unassigned callers. Once saved, explicit profiles cannot be removed by switching back to legacy mode.",
-  profile_keys_search: "Search by key prefix, UUID, project name or ID, or service. Add keys to this profile; keys assigned elsewhere must be removed from that profile first. Selection changes are applied only when you save the form.",
+  profile_keys_search: "Search by key prefix, UUID, project name or ID, or service. Keys already assigned to a profile are excluded from results. Adding a key clears the search. Apply selection updates this profile’s draft; Cancel discards popup changes. Save the identity form to persist assignments.",
   profile_binding: "Assign this key to exactly one profile on this route. Unassigned denies access on a profiled route; a disabled profile also denies access. Save applies immediately to new policy reads and does not grant route permissions.",
   endpoint_audience: "Exact audience required when Require Entra is selected. Other modes ignore this field. This does not add the audience to other endpoints.",
   endpoint_scopes: "Comma-separated scopes. Every listed scope is required; blank adds no scope requirement for this endpoint.",
@@ -21273,7 +21322,7 @@ function prepareProfileKeys(root) {
     void loadProfileKeys(editor, profileKeyCatalog);
   });
 }
-bindProfileEditor(document, profileKeyCatalog);
+bindProfileEditor(document, profileKeyCatalog, mountDialog);
 document.addEventListener("click", handleAsync(async (event) => {
   const button = event.target.closest("[data-key-profile-bindings]");
   if (!button) return;

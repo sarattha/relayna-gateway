@@ -8,6 +8,8 @@ Repair applied Traffic filters using simulated requests through a real local gat
 
 ## Progress
 
+- [x] (2026-09-20) Replace inline key search with a modal popup, isolated selection drafts, Apply/Cancel, search reset and available-only results; validate nested-dialog focus and desktop/mobile layouts. Clarify many keys per profile / one profile per key per route. UI regressions and all ten checks pass (368/368).
+
 - [x] (2026-09-20) Replace manual profile UUID entry with searchable key inventory, selected summaries and explicit add/remove; test loading failures, duplicate prevention and project restrictions; validate desktop/mobile with Computer Use. All ten checks pass (368/368), UI regressions pass and changed Rust coverage remains 137/137.
 
 - [x] (2026-09-20) Remove duplicated inline tooltip explanations, retain concise profile status, verify desktop/narrow layouts and all ten checks (368/368 tests); deliver through PR #121.

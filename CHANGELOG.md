@@ -6,7 +6,8 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Added
 
-- Searchable authentication-profile key picker with project/service search,
+- Searchable authentication-profile key popup with Apply/Cancel, fresh search,
+  available-only results, project/service search,
   selected-key summaries, lifecycle status and duplicate-assignment prevention.
 
 - Route-local authentication profiles with explicit virtual-key assignments,
