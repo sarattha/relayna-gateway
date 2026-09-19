@@ -194,3 +194,15 @@ each key belongs to at most one profile per route.
 Final popup verification: UI tests/build, gateway build, strict docs and release
 metadata passed. All ten mandatory checks passed; nextest ran 368/368 with zero
 skips. Changed executable production Rust coverage remains 137/137 (100%).
+
+## Picker visual refinement (2026-09-20)
+
+Assigned keys and Selected keys now use the surrounding form-label styling. Key
+names use regular weight, metadata uses muted text, and the popup is capped at
+680px. Computer Use verified desktop and 390×844 layouts, including wrapping UUIDs
+and visible action buttons. Screenshots: `key-popup-style-desktop.png` and
+`key-popup-style-narrow.png`.
+
+UI tests, asset build, gateway build and diff checks passed. This refinement
+changes presentation only; the full Rust verification stack and coverage were
+not rerun after the preceding successful checks recorded above.

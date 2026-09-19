@@ -19,7 +19,7 @@ export function profileRow(profile = {}, bindings = []) {
     <p class="help wide-field" data-profile-key-only ${keyOnly ? '' : 'hidden'}>Authenticates the assigned Relayna key. No Entra JWT, audience or claims are used.</p>
     <section class="wide-field profile-key-picker" data-key-picker>
       <input type="hidden" name="${id}.keys" data-profile-keys value="${escape(keys.join(','))}">
-      <div class="panel-heading"><strong>Assigned keys</strong><button type="button" data-open-keys aria-haspopup="dialog">Select keys</button></div>
+      <div class="panel-heading"><span class="profile-key-label">Assigned keys</span><button type="button" data-open-keys aria-haspopup="dialog">Select keys</button></div>
       <div data-selected-keys>${keys.map(key => `<div class="profile-key-item"><code>${escape(key)}</code></div>`).join('') || '<p class="help">No keys assigned.</p>'}</div>
     </section>
     <button type="button" data-remove-profile>Remove unbound profile</button>
@@ -97,7 +97,7 @@ export function profileKeyOptions(keys, projects, query = '', projectId = '') {
   }).filter(key => terms.every(term => key.searchable.includes(term)));
 }
 function keyDescription(key) {
-  return `<span><strong>${escape(key.name)}</strong><small>${escape(key.owner)} · ${escape(key.status)}</small><code>${escape(key.id)}</code></span>`;
+  return `<span><span class="profile-key-name">${escape(key.name)}</span><small>${escape(key.owner)} · ${escape(key.status)}</small><code>${escape(key.id)}</code></span>`;
 }
 export function refreshProfileKeys(editor) {
   const state = keyCatalogs.get(editor);
@@ -136,14 +136,14 @@ export function openProfileKeyDialog(picker, editor, {doc = document, loadCatalo
   const backdrop = doc.createElement('section');
   backdrop.className = 'modal-backdrop';
   const title = `profile-key-dialog-${++slot}`;
-  backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${title}">
+  backdrop.innerHTML = `<div class="modal profile-key-dialog" role="dialog" aria-modal="true" aria-labelledby="${title}">
     <h3 id="${title}">Select keys</h3>
     <div class="modal-form"><div class="modal-scroll">
       <label>Search keys<input type="search" data-key-search data-guidance-name="profile_keys_search" placeholder="Key prefix, UUID, project or service" autocomplete="off"></label>
       <p class="help" role="status" data-key-results-status></p>
       <button type="button" data-key-retry hidden>Retry loading keys</button>
       <div class="profile-key-results" data-key-results></div>
-      <h4 data-key-selection-count>Selected keys</h4><div data-key-draft></div>
+      <h4 class="profile-key-label" data-key-selection-count>Selected keys</h4><div data-key-draft></div>
       <p class="help">Apply updates this profile’s draft. Save identity to save the assignments.</p>
     </div><div class="form-actions"><button type="button" class="primary" data-key-apply>Apply selection</button><button type="button" data-key-cancel>Cancel</button></div></div>
   </div>`;

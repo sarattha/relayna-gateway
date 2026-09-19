@@ -3124,3 +3124,21 @@ button.help-trigger {
 .profile-key-item button { flex-shrink: 0; }
 
 .profile-key-results { max-height: 260px; overflow-y: auto; }
+
+/* Key assignment is a form field; keep its visual weight aligned with labels. */
+
+.profile-key-label { margin: 0; font-size: 12px; font-weight: 550; color: var(--rg-color-muted); }
+
+.profile-key-picker > .panel-heading { margin-bottom: var(--rg-space-1); }
+
+.profile-key-name { display: block; font-size: 13px; font-weight: 400; }
+
+.profile-key-item small { font-size: 12px; color: var(--rg-color-muted); }
+
+.profile-key-item code { font-size: 11px; color: var(--rg-color-muted); }
+
+.modal.profile-key-dialog { width: min(680px, calc(100vw - 32px)); }
+
+.profile-key-dialog > h3 { font-weight: 550; }
+
+.profile-key-dialog [data-key-selection-count] { margin-top: var(--rg-space-3); }
