@@ -85,8 +85,26 @@ and save while **Enable Entra ID** remains checked, or PATCH
 `{"unverified_bearer_enabled":false}`. For environment-only configuration, set
 `GATEWAY_UNVERIFIED_BEARER_ENABLED=false` and restart with `ENTRA_AUTH_ENABLED=true`.
 Keep the same Relayna key header. Verify a valid JWT succeeds and an invalid JWT
-fails. Admin-saved changes apply to new requests on the serving process; follow
-your existing restart/rollout procedure for every replica using these settings.
+fails. Admin-saved changes apply immediately on the serving process. Every
+gateway replica sharing the PostgreSQL database refreshes these settings every
+five seconds, so other replicas apply them to new requests on their next
+successful refresh without a rollout. Refresh attempts time out after three
+seconds; failures retain the last valid configuration and retry on the next
+tick. Propagation is eventual, not simultaneous. During a database outage a
+replica can continue enforcing its previous policy; check refresh warnings and
+verify each replica when making urgent access changes. Unchanged configuration
+preserves the existing JWKS cache.
+
+Deploy the synchronization-capable gateway version to every replica once before
+relying on this behavior; older binaries still need a restart to load changes.
+
+This synchronization covers persisted gateway front-door settings, including
+Entra trust/claims, the Relayna key header, unverified-bearer mode and trusted
+Apigee configuration. It does not reload process environment variables,
+Kubernetes Secrets, portal OIDC sign-in configuration or owner-monitoring Entra
+configuration. Those deployment settings still require a rollout. Persisted
+settings continue to take precedence over environment defaults. In-flight
+requests keep their acquired authentication snapshot.
 
 The migration adds a false-default `gateway_auth_settings.unverified_bearer_enabled`
 column and a constraint forbidding trusted Apigee coexistence. Existing rows keep

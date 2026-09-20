@@ -131,8 +131,8 @@ fn main() -> anyhow::Result<()> {
         store.clone(),
         redis,
         studio,
-        auth_env,
-        shared_auth,
+        auth_env.clone(),
+        shared_auth.clone(),
         config.litellm_base_url.clone(),
         config.litellm_service_key.clone(),
         portal_oidc,
@@ -141,6 +141,7 @@ fn main() -> anyhow::Result<()> {
     let control_bind_addr = config.gateway_control_bind_addr;
     let reconciler_store = store.clone();
     let reconciler_redis = redis_control.clone();
+    let auth_store = store.clone();
     thread::spawn(move || {
         let runtime = match tokio::runtime::Runtime::new() {
             Ok(runtime) => runtime,
@@ -158,9 +159,16 @@ fn main() -> anyhow::Result<()> {
                 }
             };
             tracing::info!(addr = %listener.local_addr().unwrap_or(control_bind_addr), "gateway control API listening");
-            let budget_reconciler = tokio::spawn(run_budget_counter_reconciler(
+            // Dropping the task set stops both reconcilers with the control API.
+            let mut reconcilers = tokio::task::JoinSet::new();
+            reconcilers.spawn(run_budget_counter_reconciler(
                 reconciler_store,
                 reconciler_redis,
+            ));
+            reconcilers.spawn(gateway_api::auth_sync::run_gateway_auth_refresh(
+                auth_store,
+                auth_env,
+                shared_auth,
             ));
             if let Err(error) = axum::serve(listener, app)
                 .with_graceful_shutdown(shutdown_signal())
@@ -168,7 +176,6 @@ fn main() -> anyhow::Result<()> {
             {
                 tracing::error!(%error, "gateway control API stopped with error");
             }
-            budget_reconciler.abort();
         });
     });
 

@@ -603,10 +603,14 @@ The panel shows the current auth source in the Settings summary:
 
 ![Settings view with Entra ID and Apigee panel](assets/screenshots/admin-auth-settings/01-settings-auth-panel-context.png)
 
-Saved Admin portal settings are applied immediately to proxy traffic. They do
-not change Admin UI sign-in; `/admin-ui/*` remains protected by operator
-tokens. Existing secret values are write-only and are never rendered back into
-the browser.
+Saved Admin portal settings apply immediately to new proxy requests on the pod
+handling the save. Other pods sharing PostgreSQL refresh every five seconds;
+no rollout is needed for these saved settings. Failed or timed-out refreshes
+retain the last valid configuration and retry. Propagation is eventual, so
+verify each replica for urgent policy changes. See [replica synchronization and
+deployment-only settings](entra-id-auth.md#temporarily-pause-verification-while-keeping-both-headers).
+These controls do not change Admin UI sign-in or owner-monitoring authentication.
+Existing secret values are write-only and are never rendered back into the browser.
 
 ### Enablement and Relayna key header
 

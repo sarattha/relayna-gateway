@@ -4700,12 +4700,13 @@ async fn patch_gateway_auth_settings(
     };
 
     match state.store.patch_gateway_auth_settings(patch).await {
-        Ok(_) => match effective_gateway_auth_settings(&state).await {
+        Ok(_) => match state
+            .auth_runtime
+            .refresh_from_store(&state.store, &state.auth_env)
+            .await
+        {
             Ok(settings) => {
                 let response = settings.response();
-                if let Err(error) = state.auth_runtime.update(settings.runtime_config()) {
-                    return error_response(&headers, error);
-                }
                 if let Err(error) = record_admin_audit(
                     &state,
                     &headers,
