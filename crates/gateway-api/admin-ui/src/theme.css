@@ -678,3 +678,7 @@ input[type="radio"] {
   margin: 0;
   justify-content: center;
 }
+
+/* Key assignments keep each route, control and feedback together. */
+.binding-route { display: grid; gap: 10px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+.binding-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }

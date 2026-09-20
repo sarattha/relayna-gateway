@@ -26,6 +26,10 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Fixed
 
+- Simplify per-key route assignments with searchable profile routes, collapsed
+  existing-settings routes, contextual authentication guidance, per-route save
+  and error feedback, and confirmation before discarding unsaved selections.
+
 - Applied Traffic filters are normalized; project/key selections stay consistent,
   stale live reads cannot replace saved history, and filter changes reset paging.
 - Clear empty key searches and searches after adding a key; preserve selected

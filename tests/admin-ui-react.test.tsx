@@ -735,3 +735,95 @@ describe("route configuration drawer", () => {
     }
   });
 });
+
+// Per-key route assignment workflow: actual profile wire shape and revision state.
+import { KeyRouteBindings, mountKeyRouteBindings, type BindingEntry } from "../crates/gateway-api/admin-ui/src/react/key-route-bindings";
+const bindingEntries = (): BindingEntry[] => [
+  { route: "/v1/responses", url: "/routes", method: "PUT", access: { other_policy: "preserved", authentication_profiles: { revision: 3,
+    profiles: [
+      { id: "employees", name: "Employees", enabled: true, type: "entra_and_relayna_key" },
+      { id: "automation", name: "Automation", enabled: true, type: "relayna_key_only" },
+      { id: "disabled", name: "Disabled profile", enabled: false, type: "relayna_key_only" },
+    ], bindings: [{ key_id: "other", profile_id: "employees" }] } } },
+  { route: "/services/test", url: "/services/test", method: "PATCH", access: { authentication_profiles: { revision: 2,
+    profiles: [{ id: "service", name: "Service profile", enabled: true, type: "relayna_key_only" }], bindings: [{ key_id: "this-key", profile_id: "service" }] } } },
+  { route: "/v1/embeddings", url: "/routes", method: "PUT", access: {} },
+];
+function bindingsProps() {
+  return { keyId: "this-key", keyName: "Production automation", entries: bindingEntries(), trigger: document.createElement("button"),
+    onClose: vi.fn(), save: vi.fn(async (_entry, access) => ({ ...access, authentication_profiles: { ...access.authentication_profiles, revision: access.authentication_profiles.revision + 1 } })) };
+}
+describe("key route assignment dialog", () => {
+  it("groups routes, searches paths, explains types and saves only the changed key with fresh revisions", async () => {
+    const props = bindingsProps(); const user = userEvent.setup(); render(<KeyRouteBindings {...props} />);
+    expect(screen.getByText("Production automation")).toBeTruthy();
+    const row = within(screen.getByRole("group", { name: "/v1/responses" }));
+    expect(row.getByRole("button", { name: "Save" }).disabled).toBe(true);
+    expect(screen.getByText("Routes using existing settings (1)").parentElement.open).toBe(false);
+    await user.click(screen.getByText("Routes using existing settings (1)"));
+    await user.type(screen.getByLabelText("Find a route"), " NO MATCH ");
+    expect(screen.getByText("No profile routes match your search.")).toBeTruthy();
+    expect(screen.getByText("No routes match your search.")).toBeTruthy();
+    await user.clear(screen.getByLabelText("Find a route"));
+    const select = screen.getAllByLabelText("Authentication profile")[0];
+    await user.selectOptions(select, "employees");
+    expect(screen.getByText("After saving: Requires this Relayna key and a verified Entra identity.")).toBeTruthy();
+    await user.selectOptions(select, "disabled");
+    expect(screen.getByText(/After saving: This profile is disabled/)).toBeTruthy();
+    await user.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    expect(screen.getByText("Profile disabled")).toBeTruthy();
+    await user.selectOptions(select, "automation");
+    await user.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    expect(props.save.mock.calls[1][1].authentication_profiles.revision).toBe(4);
+    expect(props.save.mock.calls[1][1].other_policy).toBe("preserved");
+    expect(props.save.mock.calls[1][1].authentication_profiles.bindings).toEqual([{key_id:"other",profile_id:"employees"},{key_id:"this-key",profile_id:"automation"}]);
+    expect(screen.getAllByText("Requires this Relayna key only.")).toHaveLength(2);
+    await user.selectOptions(select, "");
+    expect(screen.getByText("After saving: This key cannot call this route.")).toBeTruthy();
+    await user.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    expect(props.save.mock.calls[2][1].authentication_profiles.bindings).toEqual([{key_id:"other",profile_id:"employees"}]);
+    expect(screen.getByRole("status").textContent).toBe("Saved");
+    await user.click(screen.getByRole("button", { name: "Done" })); expect(props.onClose).toHaveBeenCalledOnce();
+  });
+  it("keeps failed drafts, explains conflicts, guards pending saves and supports retry", async () => {
+    const props = bindingsProps(); let reject;
+    props.save.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    const user = userEvent.setup(); render(<KeyRouteBindings {...props} />);
+    await user.selectOptions(screen.getAllByLabelText("Authentication profile")[0], "employees");
+    await user.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    expect(screen.getByRole("button", { name: "Done" }).disabled).toBe(true);
+    expect(screen.getAllByLabelText("Authentication profile").every(control => control.disabled)).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Close dialog" })); expect(props.onClose).not.toHaveBeenCalled();
+    await act(async () => reject(new Error("authentication_profile_conflict: stale")));
+    expect(screen.getByRole("alert").textContent).toContain("Close and reopen");
+    expect(screen.getAllByLabelText("Authentication profile")[0].value).toBe("employees");
+    props.save.mockRejectedValueOnce(new Error("Network unavailable"));
+    await user.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    expect(screen.getByRole("alert").textContent).toContain("Network unavailable");
+    await user.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    expect(screen.getByRole("status").textContent).toBe("Saved");
+  });
+  it("confirms discarding unsaved changes and keeps saved routes independent", async () => {
+    const props = bindingsProps(); const user = userEvent.setup(); render(<KeyRouteBindings {...props} />);
+    await user.selectOptions(screen.getAllByLabelText("Authentication profile")[1], "");
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.getByRole("alert").textContent).toContain("Assignments already saved will stay");
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(screen.getAllByLabelText("Authentication profile")[1].value).toBe("");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(props.onClose).toHaveBeenCalledOnce(); expect(props.save).not.toHaveBeenCalled();
+  });
+  it("shows setup guidance with no profile routes and mounts/cleans up the dialog", async () => {
+    const props = bindingsProps(); props.entries = [props.entries[2]];
+    let close;
+    await act(async () => { close = mountKeyRouteBindings(props); });
+    expect(screen.getByText(/No routes use profiles yet/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    props.entries = [];
+    await act(async () => { close = mountKeyRouteBindings(props); });
+    expect(screen.queryByText(/Routes using existing settings/)).toBeNull();
+    await act(async () => close());
+  });
+});

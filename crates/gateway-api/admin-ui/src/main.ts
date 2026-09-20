@@ -1,4 +1,5 @@
 import { mountRouteConfiguration } from "./react/route-configuration";
+import { mountKeyRouteBindings } from "./react/key-route-bindings";
 import { mountIdentityEditor } from "./react/mount-identity-editor";
 import { profileFields, profilesFromForm, showProfileError, profileKeyOptions } from "./auth-profiles";
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
@@ -5677,33 +5678,14 @@ document.addEventListener("click", handleAsync(async (event) => {
   const [routes, services] = await Promise.all([api("/admin-ui/admin/route-identities"), api("/admin-ui/admin/services")]);
   const entries = [...routes.map(row => ({...row,url:"/admin-ui/admin/route-identities",method:"PUT"})),
     ...services.map(row => ({route:row.route_pattern,access:row.access,url:`/admin-ui/admin/services/${encodeURIComponent(row.name)}`,method:"PATCH"}))];
-  const backdrop = document.createElement("section"); backdrop.className = "modal-backdrop";
-  const titleId = `dialog-title-${++dialogCounter}`;
-  backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><h3 id="${titleId}">Route authentication bindings</h3><div class="modal-form"><div class="modal-scroll">
-    <p class="help">Key ${esc(keyId)}. Each assignment applies only to the named route and its existing aliases. Unassigned keys cannot call routes with explicit profiles.</p>
-    <div class="form-grid">${entries.map((entry,index) => {
-      const set = entry.access?.authentication_profiles;
-      if (!set) return `<p class="wide-field">${esc(entry.route)} · Inherited / legacy identity; no explicit profile binding.</p>`;
-      const selected = set.bindings.find(binding => binding.key_id === keyId)?.profile_id;
-      return `<label>${esc(entry.route)}<select data-guidance-name="profile_binding" data-binding-select="${index}"><option value="">Unassigned · deny access</option>${set.profiles.map(profile=>`<option value="${attr(profile.id)}" ${selected===profile.id?'selected':''}>${esc(profile.name)} · ${profile.enabled?'enabled':'disabled'}</option>`).join('')}</select></label><div><button type="button" data-save-binding="${index}">Save route assignment</button></div>`;
-    }).join('')}</div><p role="status" data-binding-result></p></div><div class="form-actions"><button type="button" data-close-modal>Close</button></div></div></div>`;
-  document.body.appendChild(backdrop);
-  let saving = false;
-  const close = mountDialog(backdrop, {dismissible:false});
-  backdrop.querySelector('[data-close-modal]').addEventListener('click',()=>{if(!saving)close();});
-  backdrop.addEventListener('keydown',event=>{if(event.key==='Escape'&&!saving)close();});
-  backdrop.querySelectorAll('[data-save-binding]').forEach(button=>button.addEventListener('click',handleAsync(async()=>{
-    if(saving)return;
-    const index=Number(button.dataset.saveBinding), entry=entries[index];
-    const profileId=backdrop.querySelector(`[data-binding-select="${index}"]`).value;
-    const access=structuredClone(entry.access);
-    access.authentication_profiles.bindings=access.authentication_profiles.bindings.filter(binding=>binding.key_id!==keyId);
-    if(profileId)access.authentication_profiles.bindings.push({key_id:keyId,profile_id:profileId});
-    saving=true;
-    try {
-      const result=await api(entry.url,{method:entry.method,body:JSON.stringify(entry.method==='PUT'?{route:entry.route,access}:{access})});
-      entry.access=result.access;
-      backdrop.querySelector('[data-binding-result]').textContent=`Assignment saved for ${entry.route}.`;
-    } finally {saving=false;}
-  })));
+  mountKeyRouteBindings({
+    keyId, keyName: keyName(keyId), entries, trigger: button,
+    save: async (entry, access) => {
+      const result = await api(entry.url, {
+        method: entry.method,
+        body: JSON.stringify(entry.method === 'PUT' ? {route: entry.route, access} : {access}),
+      });
+      return result.access;
+    },
+  });
 }));

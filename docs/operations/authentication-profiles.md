@@ -196,16 +196,32 @@ form once. A key cannot belong to both profiles on the same route.
 ### Inspect assignments from Virtual keys
 
 Open **Virtual keys → Edit → Inspect and assign route authentication profiles**.
-Each profile-enabled route has its own selection and **Save route assignment**
-button. These saves are independent of **Save changes** in the key editor;
-closing the key editor does not undo an assignment already saved here.
-**Unassigned · deny access** removes that key's assignment for the selected route.
-Inherited/legacy routes are listed without a profile selection.
+The **Route assignments** dialog identifies the key by name and prefix. Routes
+using profiles appear first; use **Find a route** to narrow the list by path.
 
-[![Route authentication bindings inspector with independent profile selectors and Save route assignment buttons for each opted-in route](../assets/screenshots/authentication-profiles/09-key-route-assignments.jpg)](../assets/screenshots/authentication-profiles/09-key-route-assignments.jpg)
+1. Choose an **Authentication profile** for a route. The explanation below shows
+   whether the selection requires Entra, accepts the Relayna key only, or denies
+   access. A changed selection is marked **Unsaved** and previews its effect
+   **after saving**.
+2. Click that row's **Save**. **Saved** confirms the assignment took effect. Each
+   route saves independently of other rows and **Save changes** in the key editor.
+3. Select **Unassigned — deny access** and save to remove this key's assignment.
+   Assigning a disabled profile also denies access.
+4. Expand **Routes using existing settings** to inspect routes without profiles.
+   They require no profile assignment; their existing authentication and access
+   rules still apply.
 
-*This view edits one key's assignments across routes. It never displays or
-requires the raw key and does not grant additional route permissions.*
+**Done** closes the dialog. If selections are unsaved, choose **Keep editing** or
+**Discard changes**; assignments already saved remain in effect. Failed saves keep
+the selection and show the problem beside that route. If another operator changed
+the route, close and reopen the dialog to load the latest configuration before
+choosing and saving again.
+
+[![Route assignments dialog showing the named key, searchable profile routes, per-route selectors and Save buttons, and collapsed routes using existing settings](../assets/screenshots/authentication-profiles/09-key-route-assignments.jpg)](../assets/screenshots/authentication-profiles/09-key-route-assignments.jpg)
+
+*This view edits one key's assignments across routes, including their aliases.
+It never displays or requires the raw key and does not grant additional route
+permissions.*
 
 ## Profiles and direct LiteLLM passthrough
 
