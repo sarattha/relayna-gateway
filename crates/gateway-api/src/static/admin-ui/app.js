@@ -20634,9 +20634,9 @@ function mountRouteConfiguration(form, openDrawer) {
 	placeholder.append(form);
 	const root = (0, import_client$2.createRoot)(host);
 	root.render(/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
-		className: "flex flex-wrap items-center gap-3",
+		className: mode ? "grid grid-cols-[1fr_auto] items-center gap-3" : "flex items-center",
 		children: [mode && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("span", {
-			className: "text-xs text-muted-foreground",
+			className: "whitespace-nowrap text-xs text-muted-foreground",
 			children: mode.replaceAll("_", " ")
 		}), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Button, {
 			size: "sm",

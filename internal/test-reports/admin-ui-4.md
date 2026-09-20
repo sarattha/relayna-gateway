@@ -173,3 +173,17 @@ pass; nextest reports 373/373 with no skips. All 27 mounted React tests pass wit
 lines (210/210). Shared serializer regressions separately cover ID normalization,
 bounds, collisions, custom IDs and matching bindings. No production Rust changed;
 the prior complete-PR changed-line LLVM result remains 162/162 (100%).
+
+## Route configuration alignment
+
+Provider-route configuration cells now use two grid columns: mode labels on
+the left and consistently aligned Configure buttons on the right. Labels stay
+on one line; wide tables retain horizontal scrolling. Service rows without a
+mode retain their compact single-button layout.
+
+Computer Use verified alignment on desktop and at 390 × 844, horizontal mobile
+scrolling, and opening/closing the correct route drawer. UI build, existing
+regressions, typecheck and gateway build pass. All 27 React tests pass with 100%
+statements, branches (108/108), functions and lines in the measured component
+scope. This presentation-only change does not change runtime behavior; no new
+tests or full Rust stack rerun were needed after the preceding complete check.

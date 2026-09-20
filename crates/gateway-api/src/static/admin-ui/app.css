@@ -4064,6 +4064,10 @@
     resize: both;
   }
 
+  .grid-cols-\[1fr_auto\] {
+    grid-template-columns: 1fr auto;
+  }
+
   .flex-col {
     flex-direction: column;
   }
@@ -4252,6 +4256,10 @@
 
   .break-all {
     word-break: break-all;
+  }
+
+  .whitespace-nowrap {
+    white-space: nowrap;
   }
 
   .text-background {

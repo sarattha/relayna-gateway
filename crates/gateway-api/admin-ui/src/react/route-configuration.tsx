@@ -28,9 +28,9 @@ export function mountRouteConfiguration(
   placeholder.append(form);
   const root = createRoot(host);
   root.render(
-    <div className="flex flex-wrap items-center gap-3">
+    <div className={mode ? "grid grid-cols-[1fr_auto] items-center gap-3" : "flex items-center"}>
       {mode && (
-        <span className="text-xs text-muted-foreground">
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
           {mode.replaceAll("_", " ")}
         </span>
       )}
