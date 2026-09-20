@@ -51,7 +51,19 @@ impl FoundryTokenCache {
 }
 
 async fn acquire_token(config: &FoundryRuntimeConfig) -> GatewayResult<(String, u64)> {
-    let error = || GatewayError::FoundryCredentialUnavailable;
+    acquire_token_checked(config)
+        .await
+        .map_err(|_| GatewayError::FoundryCredentialUnavailable)
+}
+
+async fn acquire_token_checked(
+    config: &FoundryRuntimeConfig,
+) -> Result<(String, u64), IdentityFailure> {
+    config
+        .identity
+        .validate(&config.base_url, config.secret.is_some())
+        .map_err(|_| IdentityFailure::Configuration)?;
+    let error = || IdentityFailure::TokenResponse;
     let builder = reqwest::Client::builder();
     let builder = if config.identity.method == FoundryIdentityMethod::ManagedIdentity {
         builder.no_proxy()
@@ -66,7 +78,8 @@ async fn acquire_token(config: &FoundryRuntimeConfig) -> GatewayResult<(String, 
         .map_err(|_| error())?;
     let method = config.identity.method;
     let request = if method == FoundryIdentityMethod::ManagedIdentity {
-        let endpoint = token_endpoint(config, Uuid::nil())?;
+        let endpoint =
+            token_endpoint(config, Uuid::nil()).map_err(|_| IdentityFailure::Configuration)?;
         let mut request = client.get(endpoint).header("Metadata", "true").query(&[
             ("api-version", "2018-02-01"),
             ("resource", "https://ai.azure.com"),
@@ -77,7 +90,8 @@ async fn acquire_token(config: &FoundryRuntimeConfig) -> GatewayResult<(String, 
         request
     } else {
         let tenant = config.identity.tenant_id.ok_or_else(error)?;
-        let endpoint = token_endpoint(config, tenant)?;
+        let endpoint =
+            token_endpoint(config, tenant).map_err(|_| IdentityFailure::Configuration)?;
         let mut form = vec![
             ("grant_type", "client_credentials".to_owned()),
             (
@@ -90,7 +104,8 @@ async fn acquire_token(config: &FoundryRuntimeConfig) -> GatewayResult<(String, 
             form.push(("client_secret", config.secret.clone().ok_or_else(error)?));
         } else {
             // The deployment controls this path, never the public/admin request.
-            let path = std::env::var("AZURE_FEDERATED_TOKEN_FILE").map_err(|_| error())?;
+            let path = std::env::var("AZURE_FEDERATED_TOKEN_FILE")
+                .map_err(|_| IdentityFailure::WorkloadMissing)?;
             let assertion = tokio::task::spawn_blocking(move || {
                 use std::io::Read;
                 let mut text = String::new();
@@ -100,10 +115,10 @@ async fn acquire_token(config: &FoundryRuntimeConfig) -> GatewayResult<(String, 
                 Ok::<_, std::io::Error>(text)
             })
             .await
-            .map_err(|_| error())?
-            .map_err(|_| error())?;
+            .map_err(|_| IdentityFailure::WorkloadUnreadable)?
+            .map_err(|_| IdentityFailure::WorkloadUnreadable)?;
             if assertion.trim().is_empty() || assertion.len() > 65_536 {
-                return Err(error());
+                return Err(IdentityFailure::WorkloadInvalid);
             }
             form.push((
                 "client_assertion_type",
@@ -113,9 +128,9 @@ async fn acquire_token(config: &FoundryRuntimeConfig) -> GatewayResult<(String, 
         }
         client.post(endpoint).form(&form)
     };
-    let mut response = request.send().await.map_err(|_| error())?;
+    let mut response = request.send().await.map_err(IdentityFailure::transport)?;
     if !response.status().is_success() {
-        return Err(error());
+        return Err(IdentityFailure::Rejected(response.status().as_u16()));
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| error())? {
@@ -176,6 +191,165 @@ fn token_endpoint(config: &FoundryRuntimeConfig, tenant: Uuid) -> GatewayResult<
     Ok(format!(
         "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
     ))
+}
+
+/// Safe diagnostic fields only: never serialize Azure response bodies or tokens.
+#[derive(Debug, serde::Serialize)]
+pub struct FoundryCheckStep {
+    pub status: &'static str,
+    pub code: &'static str,
+    pub message: &'static str,
+    pub http_status: Option<u16>,
+}
+impl FoundryCheckStep {
+    fn new(
+        status: &'static str,
+        code: &'static str,
+        message: &'static str,
+        http_status: Option<u16>,
+    ) -> Self {
+        Self {
+            status,
+            code,
+            message,
+            http_status,
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct FoundryConnectionCheck {
+    pub identity: FoundryCheckStep,
+    pub project: FoundryCheckStep,
+}
+
+#[derive(Debug)]
+enum IdentityFailure {
+    Configuration,
+    WorkloadMissing,
+    WorkloadUnreadable,
+    WorkloadInvalid,
+    Rejected(u16),
+    Network,
+    Timeout,
+    TokenResponse,
+}
+impl IdentityFailure {
+    fn transport(error: reqwest::Error) -> Self {
+        if error.is_timeout() {
+            Self::Timeout
+        } else {
+            Self::Network
+        }
+    }
+    fn step(self, method: FoundryIdentityMethod) -> FoundryCheckStep {
+        let (code, message, status) = match self {
+            Self::Configuration => ("identity_configuration", "The saved Azure identity configuration is incomplete or invalid. Check the project endpoint, tenant ID, client ID and identity method, then save and retry.", None),
+            Self::WorkloadMissing => ("workload_token_missing", "AZURE_FEDERATED_TOKEN_FILE is not set on this gateway instance. Enable AKS workload identity, label the pod azure.workload.identity/use=true and configure its service account, then recreate the pod and retry.", None),
+            Self::WorkloadUnreadable => ("workload_token_unreadable", "The gateway cannot read the projected workload token. Check the pod's token volume mount and file permissions, then retry.", None),
+            Self::WorkloadInvalid => ("workload_token_invalid", "The projected workload token is empty, invalid or too large. Check the service-account token projection and restart the affected pod before retrying.", None),
+            Self::Rejected(status) => ("identity_rejected", match method {
+                FoundryIdentityMethod::WorkloadIdentity => "Azure rejected the workload token exchange. Check the tenant and client IDs and the federated credential's issuer, service-account subject and api://AzureADTokenExchange audience. If Azure is throttling or unavailable, retry later.",
+                FoundryIdentityMethod::ManagedIdentity => "Azure's VM identity endpoint rejected the request. Enable managed identity on the VM and confirm the configured client ID is assigned to it. For AKS, select Workload identity instead. Retry later if Azure is unavailable.",
+                FoundryIdentityMethod::ClientSecret => "Azure rejected the client credentials. Check the tenant, client ID and secret value/expiry, save any correction and retry. Retry later if Azure is throttling or unavailable.",
+            }, Some(status)),
+            Self::Network => ("identity_network", match method {
+                FoundryIdentityMethod::ManagedIdentity => "The gateway cannot reach Azure VM IMDS. Run on an Azure VM with managed identity and allow access to 169.254.169.254. For AKS, select Workload identity instead.",
+                _ => "The gateway cannot connect securely to Microsoft Entra. Check DNS, TLS trust, proxy and outbound HTTPS access to login.microsoftonline.com, then retry.",
+            }, None),
+            Self::Timeout => ("identity_timeout", "Azure token acquisition timed out. Check this instance's identity endpoint connectivity and retry.", None),
+            Self::TokenResponse => ("identity_response_invalid", "Azure did not return a usable bearer token. Check the identity endpoint/network proxy and retry; inspect Azure identity diagnostics if this persists.", None),
+        };
+        FoundryCheckStep::new("failed", code, message, status)
+    }
+}
+
+/// Fresh acquisition deliberately bypasses the forwarding cache so broken mounts
+/// and rotated credentials are tested now. This check never invokes an agent.
+pub async fn verify_foundry_connection(config: &FoundryRuntimeConfig) -> FoundryConnectionCheck {
+    let token = match acquire_token_checked(config).await {
+        Ok((token, _)) => token,
+        Err(error) => {
+            return FoundryConnectionCheck {
+                identity: error.step(config.identity.method),
+                project: FoundryCheckStep::new(
+                    "skipped",
+                    "identity_required",
+                    "Fix the Azure identity check, then retry to check Foundry project access.",
+                    None,
+                ),
+            }
+        }
+    };
+    FoundryConnectionCheck {
+        identity: FoundryCheckStep::new(
+            "passed",
+            "token_acquired",
+            "Azure issued a fresh token for Foundry using the saved identity configuration.",
+            None,
+        ),
+        project: check_project(config, &token).await,
+    }
+}
+
+async fn check_project(config: &FoundryRuntimeConfig, token: &str) -> FoundryCheckStep {
+    let result = async {
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(10))
+            .build()?;
+        client
+            .get(format!("{}/agents", config.base_url.trim_end_matches('/')))
+            .query(&[("api-version", "v1"), ("limit", "1")])
+            .header(reqwest::header::ACCEPT, "application/json")
+            .bearer_auth(token)
+            .send()
+            .await
+    }
+    .await;
+    let mut response = match result {
+        Ok(response) => response,
+        Err(error) => {
+            return if error.is_timeout() {
+                FoundryCheckStep::new("failed", "project_timeout", "Foundry did not respond in time. Check this instance's network access and retry.", None)
+            } else {
+                FoundryCheckStep::new("failed", "project_network", "Cannot connect securely to Foundry. Check the project endpoint, DNS, TLS trust, proxy, firewall and private-endpoint routing from this instance.", None)
+            }
+        }
+    };
+    let status = response.status().as_u16();
+    if status == 200 {
+        // Validate a bounded list envelope, never expose agent data or follow links.
+        let mut bytes = Vec::new();
+        let complete = loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) if bytes.len() + chunk.len() <= 65_536 => {
+                    bytes.extend_from_slice(&chunk)
+                }
+                Ok(None) => break true,
+                _ => break false,
+            }
+        };
+        if complete
+            && serde_json::from_slice::<serde_json::Value>(&bytes)
+                .ok()
+                .is_some_and(|v| v.get("data").is_some_and(|v| v.is_array()))
+        {
+            return FoundryCheckStep::new("passed", "project_read_verified", "Foundry accepted the token and allowed the read-only agents check. Agent execution, tools and model access have not been tested.", Some(status));
+        }
+        return FoundryCheckStep::new("failed", "project_response_invalid", "Foundry returned an unexpected or oversized response. Confirm the project endpoint and any proxy configuration, then retry.", Some(status));
+    }
+    let (state, code, message) = match status {
+        401 => ("failed", "project_unauthorized", "Foundry rejected the fresh Azure token. Confirm this project belongs to the configured tenant and the identity is intended for this Foundry resource."),
+        403 => ("inconclusive", "project_read_forbidden", "Azure identity works, but Foundry denied the read-only agents check. Check project RBAC scope and network restrictions. An invocation-only role may legitimately lack read permission; do not broaden its role just to pass this check. Agent invocation remains unverified."),
+        404 => ("failed", "project_not_found", "Foundry could not find this project/API path. Copy the project endpoint from Foundry and confirm it supports the v1 agents API, then save and retry."),
+        429 => ("inconclusive", "project_throttled", "Foundry throttled the read-only check. Wait and retry; identity token acquisition succeeded."),
+        500..=599 => ("inconclusive", "project_unavailable", "Foundry is temporarily unavailable. Retry later; identity token acquisition succeeded."),
+        300..=399 => ("failed", "project_redirect", "Foundry redirected the check. Redirects are not followed to protect credentials. Save the correct project endpoint and retry."),
+        _ => ("failed", "project_rejected", "Foundry rejected the read-only agents check. Confirm the project endpoint and support for the v1 agents API, then retry."),
+    };
+    FoundryCheckStep::new(state, code, message, Some(status))
 }
 
 /// Observe individual SSE data lines without delaying forwarding. Oversized
@@ -342,12 +516,24 @@ mod tests {
         c.identity.method = FoundryIdentityMethod::WorkloadIdentity;
         std::env::remove_var("AZURE_FEDERATED_TOKEN_FILE");
         assert!(acquire_token(&c).await.is_err());
+        assert_eq!(
+            verify_foundry_connection(&c).await.identity.code,
+            "workload_token_missing"
+        );
         let path = std::env::temp_dir().join(format!("foundry-assertion-{}", Uuid::new_v4()));
         std::env::set_var("AZURE_FEDERATED_TOKEN_FILE", &path);
         assert!(acquire_token(&c).await.is_err());
+        assert_eq!(
+            verify_foundry_connection(&c).await.identity.code,
+            "workload_token_unreadable"
+        );
         for content in ["".to_owned(), "x".repeat(65_537)] {
             std::fs::write(&path, content).unwrap();
             assert!(acquire_token(&c).await.is_err());
+            assert_eq!(
+                verify_foundry_connection(&c).await.identity.code,
+                "workload_token_invalid"
+            );
         }
         std::fs::write(&path, "mock-federated-assertion").unwrap();
         std::env::set_var(
@@ -355,6 +541,33 @@ mod tests {
             mock_response(200, valid),
         );
         assert_eq!(acquire_token(&c).await.unwrap().0, "token");
+        for method in [
+            FoundryIdentityMethod::ClientSecret,
+            FoundryIdentityMethod::WorkloadIdentity,
+            FoundryIdentityMethod::ManagedIdentity,
+        ] {
+            c.identity.method = method;
+            c.base_url = format!(
+                "{}/api/projects/mock",
+                mock_response(200, serde_json::json!({"data":[]}).to_string())
+                    .trim_end_matches("/token")
+            );
+            std::env::set_var("GATEWAY_FOUNDRY_MOCK_TOKEN_ENDPOINT", mock_response(200, serde_json::json!({"access_token":"token","token_type":"Bearer","expires_in":60}).to_string()));
+            let report = verify_foundry_connection(&c).await;
+            assert_eq!(report.identity.status, "passed");
+            assert_eq!(report.project.status, "passed");
+            std::env::set_var(
+                "GATEWAY_FOUNDRY_MOCK_TOKEN_ENDPOINT",
+                mock_response(401, "secret Azure error".into()),
+            );
+            let report = verify_foundry_connection(&c).await;
+            assert_eq!(report.identity.code, "identity_rejected");
+            assert_eq!(report.project.status, "skipped");
+            assert!(!serde_json::to_string(&report)
+                .unwrap()
+                .contains("secret Azure error"));
+        }
+        c.identity.method = FoundryIdentityMethod::WorkloadIdentity;
         std::fs::remove_file(path).unwrap();
         std::env::remove_var("AZURE_FEDERATED_TOKEN_FILE");
         for endpoint in [
@@ -372,5 +585,82 @@ mod tests {
         assert!(token_endpoint(&c, Uuid::nil())
             .unwrap()
             .starts_with("https://login.microsoftonline.com"));
+    }
+    #[tokio::test]
+    async fn project_probe_rejects_malformed_oversized_and_unreachable_responses() {
+        let mut c = config();
+        for body in [
+            "{}".into(),
+            "<html>login</html>".into(),
+            "x".repeat(65_537),
+            serde_json::json!({"data":[],"padding":"x".repeat(65_536)}).to_string(),
+        ] {
+            c.base_url = mock_response(200, body);
+            assert_eq!(
+                check_project(&c, "safe-test-token").await.code,
+                "project_response_invalid"
+            );
+        }
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        c.base_url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        assert_eq!(
+            check_project(&c, "safe-test-token").await.code,
+            "project_network"
+        );
+        c.base_url = "invalid URL".into();
+        assert_eq!(
+            verify_foundry_connection(&c).await.identity.code,
+            "identity_configuration"
+        );
+    }
+
+    #[test]
+    fn identity_diagnostics_are_actionable_and_method_specific() {
+        for method in [
+            FoundryIdentityMethod::ClientSecret,
+            FoundryIdentityMethod::WorkloadIdentity,
+            FoundryIdentityMethod::ManagedIdentity,
+        ] {
+            for error in [
+                IdentityFailure::Rejected(401),
+                IdentityFailure::Network,
+                IdentityFailure::Timeout,
+                IdentityFailure::TokenResponse,
+            ] {
+                let step = error.step(method);
+                assert_eq!(step.status, "failed");
+                assert!(!step.message.is_empty());
+                assert!(!step.code.is_empty());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn transport_failures_distinguish_timeout_from_connection_failure() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(20))
+            .build()
+            .unwrap();
+        let error = client.get(&endpoint).send().await.unwrap_err();
+        assert!(matches!(
+            IdentityFailure::transport(error),
+            IdentityFailure::Timeout
+        ));
+        let mut c = config();
+        c.base_url = endpoint.clone();
+        // Production's fixed 10-second timeout must also bound the project probe.
+        assert_eq!(
+            check_project(&c, "safe-test-token").await.code,
+            "project_timeout"
+        );
+        drop(listener);
+        let error = client.get(&endpoint).send().await.unwrap_err();
+        assert!(matches!(
+            IdentityFailure::transport(error),
+            IdentityFailure::Network
+        ));
     }
 }

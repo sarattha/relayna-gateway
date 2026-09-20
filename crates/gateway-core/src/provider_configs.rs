@@ -124,6 +124,13 @@ pub struct LiteLlmCredentialMappingRuntime {
 
 #[async_trait]
 pub trait AdminProviderConfigStore: Send + Sync {
+    /// Saved configuration for an operator check, including disabled connections.
+    async fn foundry_config_for_check(
+        &self,
+        _id: Uuid,
+    ) -> GatewayResult<Option<crate::foundry::FoundryRuntimeConfig>> {
+        Ok(None)
+    }
     async fn create_provider_config(
         &self,
         request: ProviderConfigCreateRequest,
@@ -164,6 +171,12 @@ impl<T> AdminProviderConfigStore for std::sync::Arc<T>
 where
     T: AdminProviderConfigStore + ?Sized,
 {
+    async fn foundry_config_for_check(
+        &self,
+        id: Uuid,
+    ) -> GatewayResult<Option<crate::foundry::FoundryRuntimeConfig>> {
+        (**self).foundry_config_for_check(id).await
+    }
     async fn create_provider_config(
         &self,
         request: ProviderConfigCreateRequest,

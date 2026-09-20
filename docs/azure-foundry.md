@@ -74,7 +74,67 @@ require a rollout.
 
 Secrets are write-only in the admin API. On edit, leaving **Replace client secret**
 blank preserves the saved secret. The provider's **configured** indicator describes
-saved configuration; it is not a successful Azure connectivity or RBAC check.
+saved configuration. Use **Verify connection** for a live identity and project-read check.
+
+## Verify the Azure connection
+
+After saving a connection, open **Providers → Verify connection → Check connection**.
+Save any identity edits first: the check always uses saved settings. You can check
+a disabled connection without enabling traffic.
+
+![Foundry connection verification results](assets/screenshots/foundry/verification.png)
+
+*Local mock example. The two results distinguish Azure identity from project access.*
+
+The gateway performs two steps:
+
+1. **Azure identity:** obtain a fresh token for `https://ai.azure.com/.default`
+   (IMDS resource `https://ai.azure.com` for VM managed identity), using the same
+   authentication code as requests. Bypassing the forwarding cache reveals a
+   broken workload-token mount or rejected rotated secret immediately.
+2. **Foundry project read access:** send `GET /agents?api-version=v1&limit=1`
+   to the saved project endpoint. No agent or tool runs, and no agent listing,
+   credential or raw Azure error body is returned to the browser.
+
+| Result | Meaning and next step |
+| --- | --- |
+| Both **Verified** | Azure issued a token and Foundry permitted the read. Agent invocation, model permissions, quota and tools still require a functional test. |
+| `workload_token_missing` | On the reported pod, enable AKS workload identity, set the `azure.workload.identity/use: "true"` pod label, configure the service account and projected token, and recreate the pod. |
+| `workload_token_unreadable` / `workload_token_invalid` | Check the projected token volume and file permissions. `AZURE_FEDERATED_TOKEN_FILE` must point to a readable, nonempty token file. |
+| `identity_rejected` | For workload identity, check tenant/client IDs and federated credential issuer, service-account subject and `api://AzureADTokenExchange` audience. For VM identity, confirm the identity is attached to that VM. For client secret, check its value and expiry. The HTTP status also distinguishes Azure throttling/service failures. |
+| Identity network/timeout | Check outbound Entra HTTPS, DNS, TLS trust and proxy settings; VM managed identity needs IMDS at `169.254.169.254`. AKS should use Workload identity. |
+| Project **Not verified · HTTP 403** | Token acquisition succeeded, but the read was denied. Check project RBAC scope and network restrictions. An invocation-only role can legitimately lack agent-list permission: do not broaden its role merely to pass this check. |
+| Project HTTP 401 / 404 | Check the configured tenant and project endpoint; a 404 may also mean the API path/version is unsupported. |
+| Project HTTP 429 / 5xx | Wait and **Check again**. Azure identity succeeded; project access remains unverified. |
+| Project network/timeout | Check this instance's Foundry DNS, TLS, firewall, proxy and private-endpoint routing. |
+
+![Workload identity failure with repair instructions](assets/screenshots/foundry/verification-workload-error.png)
+
+*Removing the local mock token file fails the identity step and skips the project
+probe. Restore the mount and use Check again; a cached token cannot hide the problem.*
+
+Each result includes the check time and gateway instance ID. A load-balanced
+request tests **only the instance that handled it**, not every replica. Target
+individual control-plane pods (for example, using a port-forward) to verify each
+pod's workload identity and networking. Results are point-in-time diagnostics,
+not a persistent health flag. They do not change routing or enable providers.
+
+The protected admin API is
+`POST /admin-ui/admin/providers/{provider_id}/verify-connection`, requiring
+`providers:update` (or an authenticated admin portal session with CSRF protection).
+A completed diagnostic returns HTTP 200 even if a stage fails; inspect the
+`identity` and `project` objects' `status`, `code`, `message` and `http_status`.
+Statuses are `passed`, `failed`, `inconclusive` or `skipped`. The response also
+contains `provider_id`, `configuration_revision`, `identity_method`, `checked_at`
+and `instance_id`. Missing/non-Foundry providers return 404; unauthorized callers
+receive 401/403. Checks are audited as `providers:verify_connection` without
+credentials or raw upstream error bodies. Each HTTP operation has a 10-second
+timeout, 5-second connect timeout and 64 KiB response limit. Redirects are never
+followed.
+
+The probe follows Microsoft's [agents REST reference](https://learn.microsoft.com/en-us/rest/api/microsoft-foundry/aiproject).
+The distinction between read and invocation permissions follows Microsoft's
+[Foundry RBAC guidance](https://learn.microsoft.com/en-us/azure/foundry/concepts/rbac-foundry).
 
 ## 2A. Register an existing agent
 

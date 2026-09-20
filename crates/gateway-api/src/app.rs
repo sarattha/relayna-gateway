@@ -578,6 +578,10 @@ pub fn router_with_state(state: AppState) -> Router {
                 .delete(delete_provider),
         )
         .route(
+            "/admin-ui/admin/providers/{provider_id}/verify-connection",
+            post(verify_foundry_provider),
+        )
+        .route(
             "/admin-ui/admin/providers/{provider_id}/disable",
             post(disable_provider),
         )
@@ -3753,6 +3757,43 @@ async fn create_provider(
         |store| async move { store.create_provider_config(request).await },
     )
     .await
+}
+
+async fn verify_foundry_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(provider_id): Path<uuid::Uuid>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_PROVIDERS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let config = match state.store.foundry_config_for_check(provider_id).await {
+        Ok(Some(config)) => config,
+        Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": {"code": "foundry_connection_not_found", "message": "This saved Azure Foundry connection no longer exists or is another provider type. Refresh Providers and select an Azure Foundry connection."}}))).into_response(),
+        Err(error) => return error_response(&headers, error),
+    };
+    let check = gateway_proxy::verify_foundry_connection(&config).await;
+    let result = serde_json::json!({
+        "provider_id": provider_id, "configuration_revision": config.revision,
+        "checked_at": Utc::now(), "instance_id": traffic::monitor().instance_id,
+        "identity_method": config.identity.method, "identity": check.identity, "project": check.project,
+    });
+    if let Err(error) = record_admin_audit(
+        &state,
+        &headers,
+        &actor,
+        "providers:verify_connection",
+        "provider",
+        Some(provider_id.to_string()),
+        None,
+        Some(result.clone()),
+    )
+    .await
+    {
+        return error_response(&headers, error);
+    }
+    ([(header::CACHE_CONTROL, "no-store")], Json(result)).into_response()
 }
 
 async fn list_providers(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -13322,6 +13363,43 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(value["name"], "Studio");
         assert!(Uuid::parse_str(value["id"].as_str().expect("project id")).is_ok());
+    }
+
+    #[tokio::test]
+    async fn foundry_check_requires_admin_session_and_csrf_before_lookup() {
+        let store = default_store();
+        let (owner, owner_csrf) = seed_portal_session(&store, active_portal_member(false));
+        let (admin, admin_csrf) = seed_portal_session(&store, active_portal_member(true));
+        let app = router_with_state(test_state(store));
+        let route = format!(
+            "/admin-ui/admin/providers/{}/verify-connection",
+            Uuid::new_v4()
+        );
+        for (session, csrf, header, expected) in [
+            (
+                &owner,
+                &owner_csrf,
+                Some(owner_csrf.as_str()),
+                StatusCode::FORBIDDEN,
+            ),
+            (&admin, &admin_csrf, None, StatusCode::FORBIDDEN),
+            (
+                &admin,
+                &admin_csrf,
+                Some(admin_csrf.as_str()),
+                StatusCode::NOT_FOUND,
+            ),
+        ] {
+            let response =
+                portal_request(app.clone(), Method::POST, &route, session, csrf, header, "").await;
+            assert_eq!(response.status(), expected);
+            if expected == StatusCode::NOT_FOUND {
+                assert_eq!(
+                    response_json(response).await["error"]["code"],
+                    "foundry_connection_not_found"
+                );
+            }
+        }
     }
 
     #[tokio::test]

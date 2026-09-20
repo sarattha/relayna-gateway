@@ -5,6 +5,8 @@ mod foundry;
 pub mod pingora_plane;
 mod request_timing;
 
+pub use foundry::{verify_foundry_connection, FoundryConnectionCheck};
+
 pub use body_admission::{
     BodyAdmissionController, BodyAdmissionLease, DEFAULT_MAX_BUFFERED_REQUESTS,
     DEFAULT_MAX_INFLIGHT_BUFFER_BYTES,

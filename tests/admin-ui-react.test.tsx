@@ -876,3 +876,40 @@ describe("Foundry connection and service editors", () => {
     const p=props();let close;await act(async()=>{close=mountFoundryEditor(p)});expect(screen.getByRole("dialog")).toBeTruthy();await act(async()=>close());expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
+
+import { FoundryCheck, mountFoundryCheck, type FoundryCheckResult } from "../crates/gateway-api/admin-ui/src/react/foundry-check";
+describe("Foundry connection verification", () => {
+  const result: FoundryCheckResult = { provider_id:"p1", configuration_revision:1, checked_at:"2026-09-20T10:00:00Z", instance_id:"gateway-instance-1", identity_method:"workload_identity", identity:{status:"passed",code:"token_acquired",message:"Fresh Azure token acquired.",http_status:null}, project:{status:"passed",code:"project_read_verified",message:"Project read verified; invocation not tested.",http_status:200} };
+  it("runs only on request, shows stages and instance, clears stale results on retry", async () => {
+    const user=userEvent.setup(); const close=vi.fn(); const onCheck=vi.fn().mockResolvedValue(result);
+    render(<FoundryCheck name="Production Foundry" onCheck={onCheck} onClose={close}/>);
+    expect(onCheck).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button",{name:"Check connection"}));
+    expect(await screen.findByText("Fresh Azure token acquired.")).toBeTruthy();
+    expect(screen.getByText(/Gateway instance: gateway-instance-1/)).toBeTruthy();
+    expect(screen.getByText("Verified · HTTP 200")).toBeTruthy();
+    let resolve!: (r:FoundryCheckResult)=>void;
+    onCheck.mockImplementationOnce(()=>new Promise(r=>{resolve=r;}));
+    await user.click(screen.getByRole("button",{name:"Check again"}));
+    expect(screen.queryByText("Fresh Azure token acquired.")).toBeNull();
+    expect(screen.getByRole("button",{name:"Checking…"}).hasAttribute("disabled")).toBe(true);
+    await user.keyboard("{Escape}"); expect(close).not.toHaveBeenCalled();
+    await act(async()=>resolve({...result,project:{status:"inconclusive",code:"project_read_forbidden",message:"Read permission denied; invocation is unverified.",http_status:403}}));
+    expect(screen.getByText("Not verified · HTTP 403")).toBeTruthy();
+    await user.click(screen.getByRole("button",{name:"Close"}));expect(close).toHaveBeenCalledOnce();
+  });
+  it("keeps identity failure, skipped probe and request failure distinct",async()=>{
+    const user=userEvent.setup();const close=vi.fn();
+    const onCheck=vi.fn().mockResolvedValueOnce({...result,identity:{status:"failed",code:"workload_token_missing",message:"Configure the pod workload token.",http_status:null},project:{status:"skipped",code:"identity_required",message:"Fix identity and retry.",http_status:null}}).mockRejectedValueOnce(new Error("private diagnostic"));
+    render(<FoundryCheck name="Connection" onCheck={onCheck} onClose={close}/>);
+    await user.click(screen.getByRole("button",{name:"Check connection"}));
+    expect(screen.getByText("Failed")).toBeTruthy(); expect(screen.getByText("Not checked")).toBeTruthy();
+    await user.click(screen.getByRole("button",{name:"Check again"}));
+    expect(screen.getByRole("alert").textContent).toContain("provider-management permission");expect(screen.queryByText("private diagnostic")).toBeNull();
+    await user.keyboard("{Escape}");expect(close).toHaveBeenCalledOnce();
+  });
+  it("mounts and unmounts its own dialog",async()=>{
+    await act(async()=>{mountFoundryCheck({name:"Connection",onCheck:vi.fn()});});
+    await userEvent.setup().click(screen.getByRole("button",{name:"Close"}));expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});

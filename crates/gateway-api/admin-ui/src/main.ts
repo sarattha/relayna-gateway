@@ -1,3 +1,4 @@
+import { mountFoundryCheck } from "./react/foundry-check";
 import { mountFoundryEditor } from "./react/foundry-editor";
 import { mountRouteConfiguration } from "./react/route-configuration";
 import { mountKeyRouteBindings } from "./react/key-route-bindings";
@@ -1659,6 +1660,10 @@ async function providers() {
     </section>
   `;
   document.querySelectorAll("[data-foundry-provider]").forEach(button => button.addEventListener("click", handleAsync(() => openFoundryEditor("provider", state.providers.find(p => p.id === button.dataset.foundryProvider), button))));
+  document.querySelectorAll("[data-foundry-check]").forEach(button => button.addEventListener("click", () => {
+    const provider = state.providers.find(p => p.id === button.dataset.foundryCheck);
+    mountFoundryCheck({ name: provider.name, restoreFocus: button, onCheck: () => api(`/admin-ui/admin/providers/${provider.id}/verify-connection`, { method: "POST" }) });
+  }));
   document.querySelector("#provider-form").addEventListener("submit", handleAsync(createProvider));
   document.querySelector("#litellm-credential-form").addEventListener("submit", handleAsync(saveLiteLlmCredentialMapping));
   document.querySelector("#litellm-passthrough-form").addEventListener("submit", handleAsync(saveLiteLlmPassthroughSettings));
@@ -1724,7 +1729,7 @@ function providerTable(rows) {
 }
 
 function providerAuthSettingsForm(row) {
-  if (row.provider === "azure-foundry") return `<button type="button" data-foundry-provider="${attr(row.id)}">Configure Azure identity</button>`;
+  if (row.provider === "azure-foundry") return `<div class="actions"><button type="button" data-foundry-provider="${attr(row.id)}">Configure Azure identity</button><button type="button" data-foundry-check="${attr(row.id)}">Verify connection</button></div>`;
   if (row.provider !== "litellm") {
     return '<span class="subtle">not applicable</span>';
   }

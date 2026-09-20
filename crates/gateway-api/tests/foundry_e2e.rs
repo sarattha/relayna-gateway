@@ -4,7 +4,7 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use gateway_core::traffic::TrafficStore;
@@ -24,6 +24,8 @@ use uuid::Uuid;
 #[derive(Default)]
 struct Mock {
     tokens: AtomicUsize,
+    reads: AtomicUsize,
+    read_status: AtomicUsize,
     calls: Mutex<Vec<(HeaderMap, Value)>>,
 }
 async fn serve(app: Router) -> String {
@@ -44,6 +46,26 @@ async fn token(
     }
     assert_eq!(form["client_secret"], "mock-client-secret");
     Json(json!({"access_token":"mock-azure-access-token","token_type":"Bearer","expires_in":3}))
+        .into_response()
+}
+async fn agents(
+    State(state): State<Arc<Mock>>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> axum::response::Response {
+    state.reads.fetch_add(1, Ordering::SeqCst);
+    assert_eq!(headers["authorization"], "Bearer mock-azure-access-token");
+    assert_eq!(query["api-version"], "v1");
+    assert_eq!(query["limit"], "1");
+    assert!(!headers.contains_key("cookie"));
+    let status = state.read_status.load(Ordering::SeqCst);
+    if status == 0 {
+        return Json(json!({"data":[], "nextLink":"https://never-follow.example"})).into_response();
+    }
+    (
+        StatusCode::from_u16(status as u16).unwrap(),
+        "private upstream details",
+    )
         .into_response()
 }
 async fn responses(
@@ -137,6 +159,7 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
     let upstream = serve(
         Router::new()
             .route("/token", post(token))
+            .route("/api/projects/demo/agents", get(agents))
             .route("/api/projects/demo/openai/v1/responses", post(responses))
             .with_state(mock.clone()),
     )
@@ -180,6 +203,163 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
     let provider = admin(&client,&admin_url,&operator.raw_token,reqwest::Method::POST,"providers",json!({"provider":"azure-foundry","name":"Mock Foundry","base_url":format!("{upstream}/api/projects/demo"),"credential":"mock-client-secret","foundry":{"method":"client_secret","tenant_id":Uuid::nil(),"client_id":Uuid::nil()}}),200).await;
     assert!(!provider.to_string().contains("mock-client-secret"));
     let provider_id = provider["id"].as_str().unwrap();
+    let check_path = format!("providers/{provider_id}/verify-connection");
+    let check_url = format!("{admin_url}/admin-ui/admin/{check_path}");
+    assert_eq!(client.post(&check_url).send().await.unwrap().status(), 401);
+    assert_eq!(mock.tokens.load(Ordering::SeqCst), 0);
+    sqlx::query("UPDATE operator_tokens SET scopes=ARRAY['usage:read'] WHERE token_prefix=$1")
+        .bind(&operator.token_prefix)
+        .execute(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .post(&check_url)
+            .bearer_auth(&operator.raw_token)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert_eq!(mock.tokens.load(Ordering::SeqCst), 0);
+    sqlx::query("UPDATE operator_tokens SET scopes=ARRAY['*'] WHERE token_prefix=$1")
+        .bind(&operator.token_prefix)
+        .execute(store.pool())
+        .await
+        .unwrap();
+    for (status, expected, code) in [
+        (0, "passed", "project_read_verified"),
+        (403, "inconclusive", "project_read_forbidden"),
+        (401, "failed", "project_unauthorized"),
+        (404, "failed", "project_not_found"),
+        (429, "inconclusive", "project_throttled"),
+        (503, "inconclusive", "project_unavailable"),
+        (302, "failed", "project_redirect"),
+        (400, "failed", "project_rejected"),
+        (200, "failed", "project_response_invalid"),
+    ] {
+        mock.read_status.store(status, Ordering::SeqCst);
+        let before = mock.tokens.load(Ordering::SeqCst);
+        let result = admin(
+            &client,
+            &admin_url,
+            &operator.raw_token,
+            reqwest::Method::POST,
+            &check_path,
+            json!({}),
+            200,
+        )
+        .await;
+        assert_eq!(result["identity"]["status"], "passed");
+        assert_eq!(result["project"]["status"], expected);
+        assert_eq!(result["project"]["code"], code);
+        assert!(result["instance_id"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty()));
+        assert_eq!(
+            mock.tokens.load(Ordering::SeqCst),
+            before + 1,
+            "every check acquires a fresh token"
+        );
+        for secret in [
+            "mock-client-secret",
+            "mock-azure-access-token",
+            "private upstream details",
+            "nextLink",
+        ] {
+            assert!(!result.to_string().contains(secret));
+        }
+        assert!(
+            mock.calls.lock().unwrap().is_empty(),
+            "verification must never execute an agent"
+        );
+    }
+    mock.read_status.store(0, Ordering::SeqCst);
+    admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::POST,
+        &format!("providers/{provider_id}/disable"),
+        json!({}),
+        200,
+    )
+    .await;
+    assert!(store
+        .foundry_config(Uuid::parse_str(provider_id).unwrap())
+        .await
+        .unwrap()
+        .is_none());
+    let result = admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::POST,
+        &check_path,
+        json!({}),
+        200,
+    )
+    .await;
+    assert_eq!(result["project"]["status"], "passed");
+    admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::POST,
+        &format!("providers/{provider_id}/enable"),
+        json!({}),
+        200,
+    )
+    .await;
+    admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::PATCH,
+        &format!("providers/{provider_id}"),
+        json!({"credential":"invalid-secret"}),
+        200,
+    )
+    .await;
+    let before = mock.reads.load(Ordering::SeqCst);
+    let result = admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::POST,
+        &check_path,
+        json!({}),
+        200,
+    )
+    .await;
+    assert_eq!(result["identity"]["code"], "identity_rejected");
+    assert_eq!(result["project"]["status"], "skipped");
+    assert_eq!(mock.reads.load(Ordering::SeqCst), before);
+    assert!(!result.to_string().contains("never leak"));
+    admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::PATCH,
+        &format!("providers/{provider_id}"),
+        json!({"credential":"mock-client-secret"}),
+        200,
+    )
+    .await;
+    admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::POST,
+        &format!("providers/{}/verify-connection", Uuid::new_v4()),
+        json!({}),
+        404,
+    )
+    .await;
+    // Reset counters used by the existing forwarding/cache assertions below.
+    mock.tokens.store(0, Ordering::SeqCst);
+
     let key = VirtualKeyMaterial::generate().unwrap();
     let record = store.create_admin_key(serde_json::from_value(json!({"owner_type":"individual","policy":{"allowed_routes":["/services/*"],"allowed_providers":["internal-service"],"allowed_models":[],"allowed_services":["research","foundry"],"allow_streaming":true,"allow_tools":true}})).unwrap(),&key).await.unwrap();
     let outsider = VirtualKeyMaterial::generate().unwrap();
@@ -233,7 +413,12 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
         server.add_service(service);
         server.run_forever();
     });
-    for _ in 0..500 {
+    let started = Instant::now();
+    loop {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "mock-test proxy did not start"
+        );
         if tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
             .is_ok()

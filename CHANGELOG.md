@@ -8,6 +8,10 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Added
 
+- Azure Foundry connection verification with fresh workload/managed/client-secret
+  token acquisition, a read-only project probe, actionable staged diagnostics and
+  per-instance results in Providers. Checks also work for disabled connections.
+
 - Azure Foundry connections with renewable client-secret, AKS workload and Azure VM
   managed identities; governed registered-agent and project Responses passthrough
   services, JSON/SSE forwarding, mock end-to-end tests and an illustrated setup guide.

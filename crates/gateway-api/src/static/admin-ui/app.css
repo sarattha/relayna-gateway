@@ -4112,6 +4112,10 @@
     justify-items: start;
   }
 
+  .gap-1 {
+    gap: var(--spacing);
+  }
+
   .gap-1\.5 {
     gap: calc(var(--spacing) * 1.5);
   }
@@ -4252,6 +4256,10 @@
 
   .pt-4 {
     padding-top: calc(var(--spacing) * 4);
+  }
+
+  .pb-3 {
+    padding-bottom: calc(var(--spacing) * 3);
   }
 
   .pl-4 {

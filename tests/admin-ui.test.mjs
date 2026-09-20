@@ -1175,3 +1175,8 @@ test("service presets produce supported access contracts and preserve operator-o
   fields.name.events.input();
   assert.equal(fields.route_pattern.value,"/services/next/*");
 });
+
+test("Foundry verification uses the protected admin API namespace", () => {
+  assert.match(sourceJs, /api\(`\/admin-ui\/admin\/providers\/\$\{provider\.id\}\/verify-connection`, \{ method: "POST" \}\)/);
+  assert.match(sourceJs, /data-foundry-check=/);
+});

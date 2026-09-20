@@ -3189,6 +3189,12 @@ impl OpenAiRouteSettingsLookup for PostgresStore {
 
 #[async_trait]
 impl AdminProviderConfigStore for PostgresStore {
+    async fn foundry_config_for_check(
+        &self,
+        id: Uuid,
+    ) -> GatewayResult<Option<gateway_core::foundry::FoundryRuntimeConfig>> {
+        self.load_foundry_config(id, false).await
+    }
     async fn create_provider_config(
         &self,
         request: ProviderConfigCreateRequest,
@@ -3630,14 +3636,14 @@ impl AdminProviderConfigStore for PostgresStore {
     }
 }
 
-#[async_trait]
-impl ProviderConfigLookup for PostgresStore {
-    async fn foundry_config(
+impl PostgresStore {
+    async fn load_foundry_config(
         &self,
         id: Uuid,
+        enabled_only: bool,
     ) -> GatewayResult<Option<gateway_core::foundry::FoundryRuntimeConfig>> {
-        let row = sqlx::query("SELECT id, base_url, foundry, credential_secret, updated_at FROM provider_configs WHERE id=$1 AND provider='azure-foundry' AND enabled")
-            .bind(id).fetch_optional(&self.pool).await.map_err(|_| GatewayError::StoreUnavailable)?;
+        let row = sqlx::query("SELECT id, base_url, foundry, credential_secret, updated_at FROM provider_configs WHERE id=$1 AND provider='azure-foundry' AND (NOT $2 OR enabled)")
+            .bind(id).bind(enabled_only).fetch_optional(&self.pool).await.map_err(|_| GatewayError::StoreUnavailable)?;
         row.map(|r| {
             Ok(gateway_core::foundry::FoundryRuntimeConfig {
                 id,
@@ -3658,6 +3664,16 @@ impl ProviderConfigLookup for PostgresStore {
             })
         })
         .transpose()
+    }
+}
+
+#[async_trait]
+impl ProviderConfigLookup for PostgresStore {
+    async fn foundry_config(
+        &self,
+        id: Uuid,
+    ) -> GatewayResult<Option<gateway_core::foundry::FoundryRuntimeConfig>> {
+        self.load_foundry_config(id, true).await
     }
 
     async fn active_litellm_config(&self) -> GatewayResult<Option<ProviderRuntimeConfig>> {
