@@ -46,7 +46,7 @@ export function KeyPicker({
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [conflict, setConflict] = useState(false);
+  const [showConflicts, setShowConflicts] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     let active = true;
@@ -70,25 +70,26 @@ export function KeyPicker({
   const choose = (id: string) => {
     setSelected((ids) => [...ids, id]);
     setQuery("");
-    setConflict(false);
     input.current?.focus();
   };
   const remove = (id: string) => {
     setSelected((ids) => ids.filter((item) => item !== id));
-    setConflict(false);
     input.current?.focus();
   };
-  const apply = () => {
+  const selectionConflicts = () => {
     const unavailable = elsewhere();
-    if (
-      selected.some(
-        (id) =>
-          unavailable.has(id) ||
-          (!initial.includes(id) &&
-            !catalog.eligible.some((key) => key.id === id)),
-      )
-    ) {
-      setConflict(true);
+    return selected.flatMap((id) => {
+      const keyName = catalog.all.find((key) => key.id === id)?.name;
+      const keyLabel = keyName ? `${keyName} (${id})` : id;
+      if (unavailable.has(id)) return [`${keyLabel} is assigned to another profile on this route. Remove it here, or Cancel and remove its other assignment first.`];
+      if (!initial.includes(id) && !catalog.eligible.some((key) => key.id === id)) return [`${keyLabel} is no longer available for this route. Remove it from this selection, then reopen Select keys to refresh the list.`];
+      return [];
+    });
+  };
+  const conflict = showConflicts ? selectionConflicts() : [];
+  const apply = () => {
+    if (selectionConflicts().length) {
+      setShowConflicts(true);
       return;
     }
     onApply(selected);
@@ -124,7 +125,6 @@ export function KeyPicker({
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
-              setConflict(false);
             }}
             onKeyDown={(event) => {
               if (event.key === "Enter") event.preventDefault();
@@ -137,12 +137,12 @@ export function KeyPicker({
           {loading
             ? "Loading keys…"
             : failed
-              ? "Could not load keys. Your selections are kept."
+              ? "Could not load keys. Your selections are kept. Choose Retry loading keys to try again."
               : !query.trim()
                 ? "Type to search keys."
                 : available.length
                   ? `${available.length} matching keys${available.length > 30 ? " · showing the first 30; refine your search" : ""}.`
-                  : "No available keys match your search."}
+                  : "No available keys match your search. Try a different name or UUID. Keys already selected, assigned to another profile, or outside this route’s project are excluded."}
         </div>
         {failed && (
           <Button onClick={() => setAttempt((value) => value + 1)}>
@@ -191,11 +191,11 @@ export function KeyPicker({
             <p className="text-xs text-muted-foreground">No keys selected.</p>
           )}
         </section>
-        {conflict && (
-          <p role="alert" className="text-xs text-destructive">
-            An assignment changed. Remove keys that are assigned elsewhere or no
-            longer available.
-          </p>
+        {conflict.length > 0 && (
+          <div role="alert" className="text-xs text-destructive">
+            <p>Selection was not applied:</p>
+            <ul className="mt-1 list-disc pl-4">{conflict.map((message) => <li key={message}>{message}</li>)}</ul>
+          </div>
         )}
         <p className="text-xs text-muted-foreground">
           Apply updates this profile’s draft. Save identity to save the

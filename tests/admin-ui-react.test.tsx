@@ -164,7 +164,7 @@ describe("key selection behavior", () => {
     expect(document.querySelector("img")).toBeNull();
     fireEvent.change(search(), { target: { value: "nothing" } });
     expect(
-      screen.getByText("No available keys match your search."),
+      screen.getByText(/No available keys match your search.*Try a different name/),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Apply selection" }));
     expect(props.onApply).toHaveBeenCalledWith(["unknown", "a"]);
@@ -185,10 +185,22 @@ describe("key selection behavior", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add key-a (a)" }));
     taken.add("a");
     fireEvent.click(screen.getByRole("button", { name: "Apply selection" }));
-    expect(screen.getByRole("alert").textContent).toMatch(/assignment changed/);
+    expect(screen.getByRole("alert").textContent).toMatch(/key-a \(a\) is assigned to another profile.*Remove it here/);
     expect(props.onApply).not.toHaveBeenCalled();
+    fireEvent.change(search(), { target: { value: "another search" } });
+    expect(screen.getByRole("alert").textContent).toMatch(/key-a/);
     fireEvent.click(screen.getByRole("button", { name: "Remove key-a (a)" }));
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("identifies a key that becomes unavailable before Apply", async () => {
+    const changing = { all: [key("a")], eligible: [key("a")] };
+    const { props } = await popup({ load: async () => changing });
+    fireEvent.change(search(), { target: { value: "key-a" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add key-a (a)" }));
+    changing.eligible = []; changing.all = [];
+    fireEvent.click(screen.getByRole("button", { name: "Apply selection" }));
+    expect(screen.getByRole("alert").textContent).toMatch(/a is no longer available.*reopen Select keys/);
+    expect(props.onApply).not.toHaveBeenCalled();
   });
   it("keeps selections during failure, disables Apply and supports retry", async () => {
     const load = vi
@@ -372,15 +384,9 @@ describe("identity editor", () => {
   });
   it("adds and removes unbound profiles but protects bound profiles", async () => {
     const { form } = await editor();
-    fireEvent.click(
-      within(screen.getByRole("group", { name: "Employees" })).getByRole(
-        "button",
-        { name: "Remove unbound profile" },
-      ),
-    );
-    expect(screen.getByRole("alert").textContent).toMatch(
-      /Remove this profile/,
-    );
+    const employees = within(screen.getByRole("group", { name: "Employees" }));
+    expect(employees.getByRole("button", { name: "Remove profile" }).hasAttribute("disabled")).toBe(true);
+    expect(employees.getByText(/This profile has 1 assigned key.*Remove its Assigned keys first/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Add profile" }));
     expect(new FormData(form).getAll("profile_slot")).toHaveLength(3);
     expect(document.activeElement).toBe(
@@ -391,7 +397,7 @@ describe("identity editor", () => {
     fireEvent.click(
       within(
         screen.getByRole("group", { name: "New authentication profile" }),
-      ).getByRole("button", { name: "Remove unbound profile" }),
+      ).getByRole("button", { name: "Remove profile" }),
     );
     expect(new FormData(form).getAll("profile_slot")).toHaveLength(2);
     fireEvent.click(
@@ -401,6 +407,40 @@ describe("identity editor", () => {
       ),
     );
     expect(new FormData(form).get("employee.keys")).toBe("");
+  });
+  it("prevents removing the last saved profile and allows Undo of draft removal", async () => {
+    const initial = draft(); initial.profiles[0].keys = [];
+    const { form } = await editor(initial);
+    const removeEmployee = within(screen.getByRole("group", { name: "Employees" })).getByRole("button", { name: "Remove profile" });
+    fireEvent.click(removeEmployee);
+    expect(new FormData(form).getAll("profile_slot")).toEqual(["automation"]);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Undo removal" }));
+    expect(screen.getByRole("button", { name: "Remove profile" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/Keep at least one profile.*Add a replacement/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Undo removal" }));
+    expect(new FormData(form).getAll("profile_slot")).toEqual(["employee", "automation"]);
+    expect(new FormData(form).get("employee.audience")).toBe("api://employees");
+    expect(document.activeElement).toBe(within(screen.getByRole("group", { name: "Employees" })).getByRole("textbox", { name: "Stable profile ID (optional)" }));
+    expect(screen.queryByRole("button", { name: "Undo removal" })).toBeNull();
+  });
+  it("keeps removal reversible for new drafts and explains the profile limit", async () => {
+    const initial = draft(); initial.revision = 0; initial.profiles = [];
+    const { form, unmount } = await editor(initial);
+    fireEvent.click(screen.getByRole("button", { name: "Add profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove profile" }));
+    expect(new FormData(form).getAll("profile_slot")).toHaveLength(0);
+    expect(screen.getByText(/“New authentication profile” removed/)).toBeTruthy();
+    unmount();
+    initial.profiles = Array.from({ length: 31 }, (_, i) => ({ ...draft().profiles[1], slot: `slot-${i}`, id: `profile-${i}`, name: `Profile ${i}` }));
+    initial.profiles[0].keys = ["a", "b"];
+    await editor(initial);
+    expect(screen.getByText(/This profile has 2 assigned keys/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add profile" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "New authentication profile" })).getByRole("button", { name: "Remove profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add profile" }));
+    expect(screen.getByRole("button", { name: "Add profile" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Undo removal" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/32-profile limit reached.*Cancel to discard/)).toBeTruthy();
   });
   it("integrates popup drafts, excludes keys assigned elsewhere and updates hidden bindings on Apply", async () => {
     const { form } = await editor();
@@ -542,6 +582,10 @@ describe("lifecycle and server error regressions", () => {
     );
     await act(async () => {});
     const notice = result.container.querySelector("[data-profile-notice]")!;
+    const scrolledText: string[] = [];
+    const scroll = vi.spyOn(notice, "scrollIntoView").mockImplementation(() => {
+      scrolledText.push(notice.textContent || "");
+    });
     act(() =>
       notice.dispatchEvent(
         new CustomEvent("profile-error", {
@@ -551,6 +595,9 @@ describe("lifecycle and server error regressions", () => {
       ),
     );
     expect(screen.getByRole("alert").textContent).toMatch(/Revision conflict/);
+    expect(document.activeElement).toBe(notice);
+    expect(scrolledText).toEqual(["Revision conflict. Reload and try again."]);
+    scroll.mockRestore();
     fireEvent.change(
       screen.getAllByRole("textbox", { name: "Profile name (required)" })[0],
       { target: { value: "Changed" } },

@@ -50,8 +50,12 @@ No key secret is displayed or recreated. Assignments are saved separately from
 key lifecycle edits. Profile editing uses existing administrator scopes and
 audited route/service update endpoints; service owners cannot use admin APIs.
 
-Disabling a profile blocks all its assigned keys. Remove its assignments
-explicitly before removing the profile. To reassign callers, edit the profile
+Disabling a profile blocks all its assigned keys. **Remove profile** is unavailable
+while keys are assigned; remove or move those assignments first. The editor also
+prevents removing the last saved profile. Add a replacement first, or turn off
+**Enabled** and save if the goal is to deny access. Removing a profile changes
+only the draft: **Undo removal** restores the most recently removed profile;
+**Cancel** discards all edits. To reassign callers, edit the profile
 and binding set in one save. Never use profile order as authorization. Retain at
 least one profile after opting in; to stop all access, disable every profile.
 Returning an opted-in route to legacy authentication is intentionally rejected.
@@ -60,6 +64,11 @@ The editor explains this restriction beside **Entra verification** and disables
 have been saved. Service presets retain those saved profiles. Before the first
 profile save, you can still switch modes. A genuine concurrent-edit conflict
 continues to require reloading the latest configuration before retrying.
+
+Validation messages identify the profile and field to correct. Key-selection
+conflicts name the affected key and remain visible until resolved. A concurrent
+configuration change preserves the draft and explains how to reopen the latest
+settings; it never automatically overwrites another administrator’s changes.
 
 ## API and revisions
 

@@ -14,8 +14,8 @@ assert.deepEqual(result.profiles[0].entra.required_scopes,['run','read']);
 assert.deepEqual(result.bindings,[{key_id:id,profile_id:'employees'}]);
 assert.equal(result.profiles[1].entra,undefined);
 assert.throws(()=>profilesFromForm(form,true),/Accessa/);
-form.set('automation.keys',id);assert.throws(()=>profilesFromForm(form),/only once/);form.delete('automation.keys');
-form.set('automation.id','employees');assert.throws(()=>profilesFromForm(form),/unique/);form.set('automation.id','automation');
+form.set('automation.keys',id);assert.throws(()=>profilesFromForm(form),/assigned more than once/);form.delete('automation.keys');
+form.set('automation.id','employees');assert.throws(()=>profilesFromForm(form),/already used/);form.set('automation.id','automation');
 form.set('employee.audience','');assert.throws(()=>profilesFromForm(form),/audience/);form.set('employee.audience','api://employees');
 form.delete('employee.enabled');assert.equal(profilesFromForm(form).profiles[0].enabled,false);
 form.set('employee.required_roles',Array(65).fill('role').join(','));assert.throws(()=>profilesFromForm(form),/at most 64/);
@@ -28,11 +28,11 @@ for (let index = 0; index < 33; index++) {
   limitForm.set(`${slot}.name`, slot);
   limitForm.set(`${slot}.type`, 'relayna_key_only');
 }
-assert.throws(()=>profilesFromForm(limitForm), /at most 32 authentication profiles/);
+assert.throws(()=>profilesFromForm(limitForm), /more than 32 authentication profiles/);
 limitForm.delete('profile_slot');
 limitForm.append('profile_slot', 'limit-0');
 limitForm.set('limit-0.keys', Array.from({length:1025}, (_, index) => `00000000-0000-0000-0000-${String(index).padStart(12,'0')}`).join(','));
-assert.throws(()=>profilesFromForm(limitForm), /at most 1,024 assigned keys/);
+assert.throws(()=>profilesFromForm(limitForm), /more than 1,024 assigned keys/);
 assert.match(profileFields({authentication_profiles:result}),/4/);
 const hostile=profileRow({id:'<img>',name:'"<script>',entra:{audience:'<svg>'}},[]);
 assert.doesNotMatch(hostile,/<img>|<script>|<svg>/);assert.match(hostile,/&lt;script&gt;/);
@@ -57,7 +57,7 @@ generatedForm.set('new.id','Custom_ID');
 assert.equal(profilesFromForm(generatedForm).profiles[0].id,'Custom_ID');
 assert.equal(profilesFromForm(generatedForm).bindings[0].profile_id,'Custom_ID');
 generatedForm.set('new.id','invalid id');
-assert.throws(()=>profilesFromForm(generatedForm),/unique profile IDs/);
+assert.throws(()=>profilesFromForm(generatedForm),/Stable profile ID must use/);
 const getRandomValues = crypto.getRandomValues;
 try {
   let calls = 0;
@@ -157,3 +157,46 @@ const pickerEditor={isConnected:true,closest:()=>pickerRoot,querySelectorAll:sel
 await loadProfileKeys(pickerEditor,async()=>inventory);
 assert.match(firstPicker.nodes['[data-selected-keys]'].innerHTML,/rk_employee.*Research/s);
 console.log('ok - profile key catalog and selected summaries preserve assignments');
+
+// Errors name the offending profile/field and the corrective action.
+const validProfile = () => {
+  const data = new FormData();
+  data.append('profile_slot', 'one');
+  for (const [field, value] of Object.entries({id:'staff',name:'Staff',type:'entra_and_relayna_key',audience:'api://staff'})) data.set(`one.${field}`, value);
+  return data;
+};
+for (const [field, value, message] of [
+  ['name', '', /Profile 1: enter a Profile name/],
+  ['name', 'é'.repeat(61), /Profile name is too long.*Shorten/],
+  ['name', 'Staff\u0085Name', /contains control characters.*retype/],
+  ['id', 'bad id', /Stable profile ID must use.*Correct it/],
+  ['type', 'invalid', /Authentication type/],
+  ['audience', '', /Profile 1.*Staff.*enter a Profile audience/],
+  ['audience', 'api://with space', /audience must contain no whitespace/],
+  ['audience', 'api://with\u0085space', /audience must contain no whitespace/],
+  ['audience', 'é'.repeat(257), /at most 512 UTF-8 bytes/],
+  ['required_scopes', 'two words', /Scopes value.*Separate values with commas/],
+  ['required_roles', 'é'.repeat(257), /Roles value.*512 UTF-8 bytes/],
+  ['allowed_groups', Array(65).fill('group').join(','), /Groups allows at most 64 values.*Remove/],
+  ['keys', 'invalid', /invalid UUID.*Select keys/],
+]) {
+  const data = validProfile(); data.set(`one.${field}`, value);
+  assert.throws(() => profilesFromForm(data), message);
+}
+const utf8Boundary = validProfile();
+utf8Boundary.set('one.name', 'é'.repeat(60));
+utf8Boundary.set('one.audience', 'é'.repeat(256));
+assert.equal(profilesFromForm(utf8Boundary).profiles[0].name.length, 60);
+const duplicateName = validProfile();
+duplicateName.append('profile_slot', 'two');
+for(const [field,value] of Object.entries({id:'other',name:'STAFF',type:'relayna_key_only'})) duplicateName.set(`two.${field}`,value);
+assert.throws(() => profilesFromForm(duplicateName), /Profile 2.*Profile name is already used.*Choose a different name/);
+for (const [raw, expected] of [
+  ['authentication_profile_conflict: Authentication configuration changed. Reload before saving.', /draft was not saved.*close this editor without saving and reopen/],
+  ['store_unavailable: Store unavailable.', /Keep this draft open and retry Save/],
+  ['control_state_unavailable: unavailable', /cannot access saved settings/],
+  ['Unexpected gateway response: 502', /Unexpected gateway response: 502/],
+]) {
+  showProfileError({querySelector:()=>notice},raw);
+  assert.match(notice.textContent,expected);
+}

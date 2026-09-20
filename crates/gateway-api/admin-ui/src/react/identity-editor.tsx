@@ -72,7 +72,19 @@ export function IdentityEditor({
     trigger: HTMLElement;
   } | null>(null);
   const [notice, setNotice] = useState("");
+  const [removed, setRemoved] = useState<{ profile: ProfileDraft; index: number } | null>(null);
   const host = useRef<HTMLDivElement>(null);
+  const noticeElement = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (notice) {
+      noticeElement.current!.focus();
+      noticeElement.current!.scrollIntoView({ block: "nearest" });
+    }
+  }, [notice]);
+  const undoButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (removed) undoButton.current!.focus();
+  }, [removed]);
   const pendingFocus = useRef<string | null>(null);
   useEffect(() => {
     if (pendingFocus.current) {
@@ -147,16 +159,18 @@ export function IdentityEditor({
     });
   };
   const remove = (profile: ProfileDraft) => {
-    if (profile.keys.length) {
-      setNotice(
-        "Remove this profile’s key assignments explicitly before removing it.",
-      );
-      return;
-    }
+    setRemoved({ profile, index: draft.profiles.indexOf(profile) });
     update({
       ...draft,
       profiles: draft.profiles.filter((item) => item.slot !== profile.slot),
     });
+  };
+  const undoRemove = () => {
+    const profiles = [...draft.profiles];
+    profiles.splice(removed!.index, 0, removed!.profile);
+    pendingFocus.current = removed!.profile.slot;
+    update({ ...draft, profiles });
+    setRemoved(null);
   };
   const current = draft.profiles.find(
     (profile) => profile.slot === picker?.slot,
@@ -209,6 +223,16 @@ export function IdentityEditor({
           A profile can have multiple keys. Each key belongs to one profile per
           route. Unassigned keys are denied.
         </p>
+        {draft.profiles.length >= 32 && (
+          <p className="mb-4 text-xs text-muted-foreground">32 profiles is the limit. Remove an unused profile before adding another.</p>
+        )}
+        {removed && (
+          <div role="status" className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>“{removed.profile.name || "New authentication profile"}” removed from this draft. Save identity to apply.</span>
+            <Button ref={undoButton} size="sm" onClick={undoRemove} disabled={draft.profiles.length >= 32}>Undo removal</Button>
+            {draft.profiles.length >= 32 && <span>32-profile limit reached. Cancel to discard all draft changes.</span>}
+          </div>
+        )}
         <Input
           type="hidden"
           name="profiles_revision"
@@ -377,18 +401,29 @@ export function IdentityEditor({
                   )}
                 </div>
               </section>
-              <Button
-                className="mt-3"
-                variant="ghost"
-                onClick={() => remove(profile)}
-              >
-                Remove unbound profile
-              </Button>
+              <div className="mt-3 grid justify-items-start gap-2">
+                <Button
+                  variant="ghost"
+                  disabled={Boolean(profile.keys.length) || (savedProfiles && draft.profiles.length === 1)}
+                  aria-describedby={`${profile.slot}-remove-help`}
+                  onClick={() => remove(profile)}
+                >
+                  Remove profile
+                </Button>
+                <p id={`${profile.slot}-remove-help`} className="text-xs text-muted-foreground">
+                  {savedProfiles && draft.profiles.length === 1
+                    ? "Keep at least one profile on this route. Add a replacement before removing this one. To deny access instead, turn off Enabled and save."
+                    : profile.keys.length
+                      ? `This profile has ${profile.keys.length} assigned ${profile.keys.length === 1 ? "key" : "keys"}. Remove its Assigned keys first; reassign them to another profile before saving if they still need access.`
+                      : "Removal takes effect when you Save identity. Cancel discards your changes."}
+                </p>
+              </div>
             </fieldset>
           ))}
         </div>
       </section>
       <p
+        ref={noticeElement}
         data-profile-notice
         data-react-error
         tabIndex={-1}

@@ -47,36 +47,48 @@ export function generateProfileId(name, reserved) {
 export function profilesFromForm(form, accessa = false) {
   const profiles = [], bindings = [], ids = new Set(), names = new Set(), keys = new Set();
   const split = value => String(value || '').split(/[,\n]/).map(value => value.trim()).filter(Boolean);
+  const bytes = value => new TextEncoder().encode(value).length;
   const reserved = new Set(form.getAll('profile_slot').map(slot => String(form.get(`${slot}.id`) || '').trim() || String(form.get(`${slot}.original_id`) || '').trim()));
   for (const slot of form.getAll('profile_slot')) {
     const read = name => String(form.get(`${slot}.${name}`) || '').trim();
     const name = read('name'), type = read('type');
     const id = read('id') || read('original_id') || generateProfileId(name, reserved);
     reserved.add(id);
-    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !name || name.length > 120 || /[\x00-\x1f\x7f]/.test(name) || ids.has(id) || names.has(name.toLowerCase())) throw new Error('Use unique profile IDs and names, without control characters.');
-    if (!['entra_and_relayna_key','relayna_key_only'].includes(type) || (accessa && type !== 'entra_and_relayna_key')) throw new Error('Accessa profiles require Entra + Relayna key.');
+    const label = `Profile ${profiles.length + 1}${name ? ` (“${name}”)` : ''}`;
+    if (!name) throw new Error(`${label}: enter a Profile name.`);
+    if (bytes(name) > 120) throw new Error(`${label}: Profile name is too long. Shorten it to 120 UTF-8 bytes or fewer; some characters use more than one byte.`);
+    if (/\p{Cc}/u.test(name)) throw new Error(`${label}: Profile name contains control characters. Remove them or retype the name.`);
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new Error(`${label}: Stable profile ID must use 1–64 letters, numbers, hyphens or underscores. Correct it, or leave it blank to generate one.`);
+    if (ids.has(id)) throw new Error(`${label}: Stable profile ID “${id}” is already used by another profile on this route. Choose a different ID.`);
+    if (names.has(name.toLowerCase())) throw new Error(`${label}: Profile name is already used on this route (ignoring case). Choose a different name.`);
+    if (!['entra_and_relayna_key','relayna_key_only'].includes(type)) throw new Error(`${label}: select Entra + Relayna key or Relayna key only under Authentication type.`);
+    if (accessa && type !== 'entra_and_relayna_key') throw new Error(`${label}: Accessa profiles require Entra + Relayna key. Change Authentication type and enter a Profile audience.`);
     ids.add(id); names.add(name.toLowerCase());
     const profile = {id,name,type,enabled:form.has(`${slot}.enabled`)};
     if (type === 'entra_and_relayna_key') {
       const audience = read('audience');
-      if (!audience || /\s/.test(audience) || audience.length > 512) throw new Error('Each Entra profile requires a valid audience.');
+      if (!audience) throw new Error(`${label}: enter a Profile audience for Entra + Relayna key, such as api://employees.`);
+      if (/\p{White_Space}/u.test(audience) || bytes(audience) > 512) throw new Error(`${label}: Profile audience must contain no whitespace and be at most 512 UTF-8 bytes. Correct the audience.`);
       profile.entra = {audience,allow_apigee:form.has(`${slot}.allow_apigee`)};
       for (const field of ['required_scopes','required_roles','allowed_groups']) {
         const claims = split(read(field));
-        if (claims.length > 64 || claims.some(claim => claim.length > 512 || /\s/.test(claim))) throw new Error('Profile claim lists allow at most 64 values without whitespace.');
+        const fieldLabel = {required_scopes:'Scopes',required_roles:'Roles',allowed_groups:'Groups'}[field];
+        if (claims.length > 64) throw new Error(`${label}: ${fieldLabel} allows at most 64 values. Remove extra entries.`);
+        if (claims.some(claim => bytes(claim) > 512 || /\p{White_Space}/u.test(claim))) throw new Error(`${label}: each ${fieldLabel} value must contain no whitespace and be at most 512 UTF-8 bytes. Separate values with commas.`);
         profile.entra[field] = claims;
       }
     }
     profiles.push(profile);
     for (const key of split(read('keys'))) {
       const key_id = key.toLowerCase();
-      if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(key_id) || keys.has(key_id)) throw new Error('Each assigned key must be a valid UUID and appear only once on this route.');
+      if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(key_id)) throw new Error(`${label}: an assigned key has an invalid UUID. Remove that assignment and select the key again using Select keys.`);
+      if (keys.has(key_id)) throw new Error(`${label}: key ${key_id} is assigned more than once on this route. Remove its other assignment before adding it here.`);
       keys.add(key_id); bindings.push({key_id,profile_id:id});
     }
   }
   if (!profiles.length) throw new Error('Add at least one authentication profile before saving.');
-  if (profiles.length > 32) throw new Error('A route supports at most 32 authentication profiles.');
-  if (bindings.length > 1024) throw new Error('A route supports at most 1,024 assigned keys across all profiles.');
+  if (profiles.length > 32) throw new Error('This route has more than 32 authentication profiles. Remove an unused profile before saving.');
+  if (bindings.length > 1024) throw new Error('This route has more than 1,024 assigned keys across its profiles. Remove extra assignments before saving.');
   return {revision:Number(form.get('profiles_revision') || 0),profiles,bindings};
 }
 export function syncIdentityFields(root) {
@@ -180,7 +192,13 @@ export function bindProfileEditor(doc = document, loadCatalog = async () => ({ke
 }
 
 // Keep validation and conflict feedback inside the active dialog's focus boundary.
+export function profileErrorMessage(message) {
+  if (message.startsWith('authentication_profile_conflict:')) return 'These authentication settings changed after you opened the editor. Your draft was not saved. Copy any changes you want to keep, then close this editor without saving and reopen it to review the latest settings before applying them again.';
+  if (message.startsWith('store_unavailable:') || message.startsWith('control_state_unavailable:')) return 'The gateway cannot access saved settings right now. Keep this draft open and retry Save when the service is available. If the result is uncertain, reopen the editor to check the saved settings before retrying.';
+  return message;
+}
 export function showProfileError(root, message) {
+  message = profileErrorMessage(message);
   const notice = root.querySelector?.('[data-profile-notice]')
     || root.closest?.('[role=dialog]')?.querySelector('[data-profile-notice], [data-binding-result]');
   if (!notice) return false;
