@@ -8,8 +8,10 @@ Native LiteLLM credentials are not an authentication profile.
 
 ## Configure a route
 
-In **Routes → Edit identity**, choose **Explicit authentication profiles**.
-Add named profiles with stable IDs, enabled state and authentication type.
+In **Routes → Edit identity**, set **Route authentication mode** to **Use authentication profiles**.
+Within each profile, use **Profile authentication** to choose **Entra + Relayna key**
+or **Relayna key only**. This control remains editable after profiles are saved.
+Add named profiles with stable IDs and enabled state.
 Enter a display name. For a new profile, leave the stable ID blank to generate
 it on save from the name plus a random suffix, such as `internal-automation-a1b2c3d4`.
 Names without an ASCII slug use `profile` as the prefix. You can also supply a
@@ -59,7 +61,7 @@ only the draft: **Undo removal** restores the most recently removed profile;
 and binding set in one save. Never use profile order as authorization. Retain at
 least one profile after opting in; to stop all access, disable every profile.
 Returning an opted-in route to legacy authentication is intentionally rejected.
-The editor explains this restriction beside **Entra verification** and disables
+The editor explains this restriction beside **Route authentication mode** and disables
 **Use existing gateway setting**, **Require Entra** and **No Entra** after profiles
 have been saved. Service presets retain those saved profiles. Before the first
 profile save, you can still switch modes. A genuine concurrent-edit conflict

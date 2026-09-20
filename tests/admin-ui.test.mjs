@@ -1064,7 +1064,7 @@ test("endpoint identity controls select explicit modes without retaining hidden 
   form.set("endpoint_audience", "");
   assert.throws(() => parse(form), /needs an endpoint audience/);
   form.set("endpoint_entra_mode", "invalid");
-  assert.throws(() => parse(form), /Choose an Entra/);
+  assert.throws(() => parse(form), /Choose a Route authentication mode/);
   form.set("endpoint_entra_mode", "disabled");
   form.set("accessa_enabled", "on");
   assert.throws(() => parse(form), /Accessa requires/);

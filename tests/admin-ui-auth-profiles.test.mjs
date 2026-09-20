@@ -170,7 +170,7 @@ for (const [field, value, message] of [
   ['name', 'é'.repeat(61), /Profile name is too long.*Shorten/],
   ['name', 'Staff\u0085Name', /contains control characters.*retype/],
   ['id', 'bad id', /Stable profile ID must use.*Correct it/],
-  ['type', 'invalid', /Authentication type/],
+  ['type', 'invalid', /Profile authentication/],
   ['audience', '', /Profile 1.*Staff.*enter a Profile audience/],
   ['audience', 'api://with space', /audience must contain no whitespace/],
   ['audience', 'api://with\u0085space', /audience must contain no whitespace/],

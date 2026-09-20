@@ -11,6 +11,9 @@ profile assignment per key per route.
 
 ## Progress
 
+- [x] (2026-09-20 follow-up) Clarified route mode versus profile authentication labels and matching guidance/errors/docs. UI build, regressions, 32 React tests at 100% coverage, typecheck and strict docs passed. Computer Use checked desktop/390px and reversible Entra/key-only changes; canceled draft, revision 4 preserved.
+- [x] (2026-09-20 follow-up) All ten mandatory checks passed, nextest 377/377. Labeling update prepared for draft PR #121.
+
 - [x] (2026-09-20) Reviewed shared route/service editor, serializer, key picker and error delivery.
 - [x] (2026-09-20) Implemented removal guidance, Undo/focus recovery, named validation errors and persistent key-conflict details.
 - [x] (2026-09-20) 32 React tests pass: 100% statements (251/251), branches (150/150), functions (107/107), lines (230/230). UI build, JavaScript regressions, typecheck and strict docs build pass.
@@ -85,3 +88,22 @@ Local ignored screenshots: `internal/test-reports/admin4/profile-last-removal-gu
 the targeted guardrail rerun (`/tmp/profile-maintenance-nextest-recheck.log`).
 The UI build, regression suite, typecheck and coverage were rerun after the
 Computer Use timing fix. No saved policies or backend contracts changed.
+
+## Label clarity follow-up (2026-09-20)
+
+The user confused the route mode selector with the per-profile credential
+requirement. Rename the top control to Route authentication mode and its profile
+choice to Use authentication profiles. Rename Authentication type to Profile
+authentication. The saved-mode note explicitly directs key-only changes to the
+profile control. Update route/service markup, tooltips, validation messages and
+operator documentation together. No API, stored value or authentication rule
+changes; compatibility remains unchanged from v0.1.37. Verify the saved route
+mode stays fixed while Profile authentication can select Relayna key only.
+Run existing UI tests, React coverage, typecheck, full verification and inspect
+the rebuilt local UI with Computer Use; cancel all validation drafts.
+
+Label follow-up outcome: desktop and 390px Computer Use screenshots are saved
+locally as `profile-labels-desktop.jpg` and `profile-labels-mobile.jpg`. All ten
+checks passed in `/tmp/profile-labels-verification.log`; React coverage remains
+100% across the existing measured modules. UI build, JavaScript regressions,
+typecheck and strict MkDocs build pass. No authentication policies were saved.

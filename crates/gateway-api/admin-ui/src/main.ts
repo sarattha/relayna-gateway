@@ -1868,7 +1868,7 @@ async function routes() {
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <section class="panel"><div class="panel-heading"><h3>Additional endpoint identity</h3></div>
-      <p class="field-hint">Choose Entra verification for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
+      <p class="field-hint">Choose authentication requirements for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
       ${table(["Route", "Protocol", "Identity", "Actions"], state.routeIdentities.filter((row) => ![...state.openaiRoutes, ...state.anthropicRoutes].some((item) => item.route === row.route)).map((row) => [`<code>${esc(row.route)}</code>`, '<span class="badge">HTTP</span>', endpointIdentityBadge(row.access), routeIdentityButton(row.route)]))}
     </section>
     <section class="panel">
@@ -4137,8 +4137,8 @@ function endpointIdentityFields(access = {}, projectId = "") {
   const entra = access.entra || {};
   const mode = access.authentication_profiles ? "profiles" : access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
   const savedProfiles = mode === "profiles" && access.authentication_profiles.revision > 0;
-  return `<div class="wide-field form-grid" data-endpoint-identity data-key-project="${attr(projectId)}">${savedProfiles ? '<input type="hidden" name="profiles_saved" value="true">' : ""}<label class="wide-field">Entra verification<select name="endpoint_entra_mode">
-    <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Explicit authentication profiles</option>
+  return `<div class="wide-field form-grid" data-endpoint-identity data-key-project="${attr(projectId)}">${savedProfiles ? '<input type="hidden" name="profiles_saved" value="true">' : ""}<label class="wide-field">Route authentication mode<select name="endpoint_entra_mode">
+    <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Use authentication profiles</option>
     <option value="inherit" ${savedProfiles ? "disabled" : ""} ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
     <option value="required" ${savedProfiles ? "disabled" : ""} ${mode === "required" ? "selected" : ""}>Require Entra</option>
     <option value="disabled" ${savedProfiles ? "disabled" : ""} ${mode === "disabled" ? "selected" : ""}>No Entra</option>
@@ -4164,7 +4164,7 @@ function routeIdentityControl(route) {
 }
 
 function routeIdentityButton(route) {
-  return `<button type="button" data-route-identity="${attr(route)}" aria-label="Edit Entra verification for ${attr(route)}">Edit identity</button>`;
+  return `<button type="button" data-route-identity="${attr(route)}" aria-label="Edit route authentication for ${attr(route)}">Edit identity</button>`;
 }
 
 function editRouteIdentity(event) {
@@ -4220,7 +4220,7 @@ function endpointAccessFromForm(form) {
   const accessa = form.has("accessa_enabled");
   if (accessa && mode !== "profiles" && !audience) throw new Error("Accessa requires an endpoint Entra audience and Require Entra mode.");
   if (mode === "required" && !audience) throw new Error("Require Entra needs an endpoint audience.");
-  if (!["inherit", "required", "disabled", "profiles"].includes(mode)) throw new Error("Choose an Entra verification mode.");
+  if (!["inherit", "required", "disabled", "profiles"].includes(mode)) throw new Error("Choose a Route authentication mode.");
   return {
     ...(mode === "profiles" ? { authentication_profiles: profilesFromForm(form, accessa) } : {}),
     skip_entra: mode === "disabled",

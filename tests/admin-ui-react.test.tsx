@@ -281,7 +281,7 @@ describe("identity editor", () => {
     expect(data.has("automation.audience")).toBe(false);
     expect(data.has("endpoint_audience")).toBe(false);
     fireEvent.change(
-      screen.getByRole("combobox", { name: "Entra verification" }),
+      screen.getByRole("combobox", { name: "Route authentication mode" }),
       { target: { value: "required" } },
     );
     data = new FormData(form);
@@ -289,7 +289,7 @@ describe("identity editor", () => {
     expect(data.getAll("profile_slot")).toEqual([]);
     for (const mode of ["disabled", "inherit"]) {
       fireEvent.change(
-        screen.getByRole("combobox", { name: "Entra verification" }),
+        screen.getByRole("combobox", { name: "Route authentication mode" }),
         { target: { value: mode } },
       );
       data = new FormData(form);
@@ -297,15 +297,15 @@ describe("identity editor", () => {
       expect(data.has("employee.audience")).toBe(false);
     }
     fireEvent.change(
-      screen.getByRole("combobox", { name: "Entra verification" }),
+      screen.getByRole("combobox", { name: "Route authentication mode" }),
       { target: { value: "profiles" } },
     );
     expect(new FormData(form).get("employee.audience")).toBe("api://employees");
   });
   it("explains saved-profile restrictions and preserves assignments through mode and preset attempts", async () => {
     const { form, onDirty } = await editor();
-    const mode = screen.getByRole("combobox", { name: "Entra verification" });
-    expect(document.getElementById(mode.getAttribute("aria-describedby")!)?.textContent).toContain("Edit the profiles below instead");
+    const mode = screen.getByRole("combobox", { name: "Route authentication mode" });
+    expect(document.getElementById(mode.getAttribute("aria-describedby")!)?.textContent?.replace(/\s+/g, " ")).toContain("To use Relayna key only, change Profile authentication below.");
     const before = [...new FormData(form).entries()];
     expect(new FormData(form).get("profiles_saved")).toBe("true");
     for (const value of ["inherit", "required", "disabled"]) {
@@ -318,6 +318,13 @@ describe("identity editor", () => {
     const stale = "Authentication configuration changed. Reload before saving.";
     fireEvent(mode, new CustomEvent("profile-error", { bubbles: true, detail: stale }));
     expect(screen.getByText(stale)).toBeTruthy();
+    expect(within(mode).getByRole("option", { name: "Use authentication profiles" })).toBeTruthy();
+    const profileAuth = screen.getAllByRole("combobox", { name: "Profile authentication" })[0];
+    expect((profileAuth as HTMLSelectElement).disabled).toBe(false);
+    fireEvent.change(profileAuth, { target: { value: "relayna_key_only" } });
+    expect(new FormData(form).get("employee.type")).toBe("relayna_key_only");
+    expect(new FormData(form).has("employee.audience")).toBe(false);
+    expect(new FormData(form).get("endpoint_entra_mode")).toBe("profiles");
   });
   it("guides operators through an empty profile draft and clears the prompt after Add", async () => {
     const initial = draft();
@@ -353,12 +360,12 @@ describe("identity editor", () => {
     expect(data.has("employee.enabled")).toBe(false);
     expect(data.has("employee.allow_apigee")).toBe(true);
     fireEvent.change(
-      within(group).getByRole("combobox", { name: "Authentication type" }),
+      within(group).getByRole("combobox", { name: "Profile authentication" }),
       { target: { value: "relayna_key_only" } },
     );
     expect(new FormData(form).has("employee.audience")).toBe(false);
     fireEvent.change(
-      within(group).getByRole("combobox", { name: "Authentication type" }),
+      within(group).getByRole("combobox", { name: "Profile authentication" }),
       { target: { value: "entra_and_relayna_key" } },
     );
     expect(new FormData(form).get("employee.audience")).toBe("api://staff");
@@ -476,7 +483,7 @@ describe("identity editor", () => {
       screen.getByRole("textbox", { name: "Entra audience (required)" }),
       { target: { value: "api://old" } },
     );
-    const mode = screen.getByRole("combobox", { name: "Entra verification" });
+    const mode = screen.getByRole("combobox", { name: "Route authentication mode" });
     fireEvent(
       mode,
       new CustomEvent("identity-preset", { bubbles: true, detail: "disabled" }),

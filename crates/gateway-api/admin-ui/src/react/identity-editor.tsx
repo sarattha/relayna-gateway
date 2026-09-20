@@ -38,10 +38,10 @@ const blankEntra = (): EntraPolicy => ({
   allow_apigee: false,
 });
 const help = {
-  mode: "Gateway setting inherits Settings. Require Entra applies one audience policy. Explicit profiles choose policy by an assigned Relayna key and deny unassigned callers. Saved explicit profiles cannot be removed by switching to a legacy mode.",
+  mode: "Choose how this route determines authentication requirements. Gateway setting inherits Settings; Require Entra uses one audience policy; No Entra retains the route’s credential checks. Use authentication profiles selects a profile by its assigned Relayna key. Saved profiles cannot be removed by switching route modes.",
   id: "Optional. Leave blank to generate an ID from the profile name plus a random suffix when saving. Custom IDs use 1–64 letters, numbers, hyphens or underscores and must be unique on this route. Saved IDs are preserved when left blank or when the name changes.",
   name: "Required display name, up to 120 UTF-8 bytes. Unique on this route ignoring case. Renaming preserves key assignments.",
-  type: "Entra + Relayna key requires a verified Entra identity and an assigned key. Relayna key only requires the assigned key. Accessa requires Entra + Relayna key.",
+  type: "Choose what callers assigned to this profile must provide. Entra + Relayna key requires both a verified Entra identity and the assigned key. Relayna key only requires the assigned key. Accessa requires Entra + Relayna key.",
   enabled:
     "Allow assigned keys to use this profile. Turning it off blocks those keys without moving them to another profile.",
   audience:
@@ -178,7 +178,7 @@ export function IdentityEditor({
   return (
     <div ref={host} data-react-ui className="grid gap-5 w-full">
       {savedProfiles && <Input type="hidden" name="profiles_saved" value="true" />}
-      <Field label="Entra verification" help={help.mode}>
+      <Field label="Route authentication mode" help={help.mode}>
         <NativeSelect
           name="endpoint_entra_mode"
           value={draft.mode}
@@ -187,7 +187,7 @@ export function IdentityEditor({
             if (!savedProfiles) update({ ...draft, mode: event.target.value });
           }}
         >
-          <option value="profiles">Explicit authentication profiles</option>
+          <option value="profiles">Use authentication profiles</option>
           <option value="inherit" disabled={savedProfiles}>Use existing gateway setting</option>
           <option value="required" disabled={savedProfiles}>Require Entra</option>
           <option value="disabled" disabled={savedProfiles}>No Entra</option>
@@ -195,9 +195,8 @@ export function IdentityEditor({
       </Field>
       {savedProfiles && (
         <p id={`${unique}-mode-restriction`} className="-mt-3 text-xs text-muted-foreground">
-          This route has saved authentication profiles. Switching to gateway defaults,
-          Require Entra or No Entra is unavailable because it would remove those
-          profiles. Edit the profiles below instead.
+          Saved profiles keep this route in profile mode. To use Relayna key only,
+          change Profile authentication below.
         </p>
       )}
       <div data-endpoint-entra hidden={draft.mode !== "required"}>
@@ -287,7 +286,7 @@ export function IdentityEditor({
                     placeholder="Internal automation"
                   />
                 </Field>
-                <Field label="Authentication type" help={help.type}>
+                <Field label="Profile authentication" help={help.type}>
                   <NativeSelect
                     data-profile-type
                     name={`${profile.slot}.type`}

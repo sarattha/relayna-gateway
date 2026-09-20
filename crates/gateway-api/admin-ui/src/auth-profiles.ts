@@ -11,7 +11,7 @@ export function profileRow(profile = {}, bindings = []) {
     <input type="hidden" name="${id}.original_id" value="${escape(profile.id)}">
     <label>Stable profile ID (optional)<input placeholder="Generated from profile name on save" name="${id}.id" value="${escape(profile.id)}" maxlength="64" pattern="(?:[A-Za-z0-9_]|-)+"></label>
     <label>Profile name (required)<input required placeholder="Internal automation" name="${id}.name" value="${escape(profile.name)}" maxlength="120"></label>
-    <label>Authentication type<select data-profile-type name="${id}.type"><option value="entra_and_relayna_key">Entra + Relayna key</option><option value="relayna_key_only" ${profile.type === 'relayna_key_only' ? 'selected' : ''}>Relayna key only</option></select></label>
+    <label>Profile authentication<select data-profile-type name="${id}.type"><option value="entra_and_relayna_key">Entra + Relayna key</option><option value="relayna_key_only" ${profile.type === 'relayna_key_only' ? 'selected' : ''}>Relayna key only</option></select></label>
     <label class="check"><input type="checkbox" name="${id}.enabled" ${profile.enabled !== false ? 'checked' : ''}> Enabled</label>
     <div class="wide-field form-grid" data-profile-entra ${keyOnly ? 'hidden' : ''}>
     <label>Profile audience (required)<input ${keyOnly ? 'disabled' : 'required'} name="${id}.audience" value="${escape(entra.audience)}" placeholder="api://employees"></label>
@@ -61,8 +61,8 @@ export function profilesFromForm(form, accessa = false) {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new Error(`${label}: Stable profile ID must use 1–64 letters, numbers, hyphens or underscores. Correct it, or leave it blank to generate one.`);
     if (ids.has(id)) throw new Error(`${label}: Stable profile ID “${id}” is already used by another profile on this route. Choose a different ID.`);
     if (names.has(name.toLowerCase())) throw new Error(`${label}: Profile name is already used on this route (ignoring case). Choose a different name.`);
-    if (!['entra_and_relayna_key','relayna_key_only'].includes(type)) throw new Error(`${label}: select Entra + Relayna key or Relayna key only under Authentication type.`);
-    if (accessa && type !== 'entra_and_relayna_key') throw new Error(`${label}: Accessa profiles require Entra + Relayna key. Change Authentication type and enter a Profile audience.`);
+    if (!['entra_and_relayna_key','relayna_key_only'].includes(type)) throw new Error(`${label}: select Entra + Relayna key or Relayna key only under Profile authentication.`);
+    if (accessa && type !== 'entra_and_relayna_key') throw new Error(`${label}: Accessa profiles require Entra + Relayna key. Change Profile authentication and enter a Profile audience.`);
     ids.add(id); names.add(name.toLowerCase());
     const profile = {id,name,type,enabled:form.has(`${slot}.enabled`)};
     if (type === 'entra_and_relayna_key') {

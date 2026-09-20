@@ -20984,7 +20984,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 				value: "true"
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Field, {
-				label: "Entra verification",
+				label: "Route authentication mode",
 				help: help.mode,
 				children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)(NativeSelect, {
 					name: "endpoint_entra_mode",
@@ -20999,7 +20999,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("option", {
 							value: "profiles",
-							children: "Explicit authentication profiles"
+							children: "Use authentication profiles"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("option", {
 							value: "inherit",
@@ -21022,7 +21022,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 			savedProfiles && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("p", {
 				id: `${unique}-mode-restriction`,
 				className: "-mt-3 text-xs text-muted-foreground",
-				children: "This route has saved authentication profiles. Switching to gateway defaults, Require Entra or No Entra is unavailable because it would remove those profiles. Edit the profiles below instead."
+				children: "Saved profiles keep this route in profile mode. To use Relayna key only, change Profile authentication below."
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("div", {
 				"data-endpoint-entra": true,
@@ -21140,7 +21140,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 											})
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Field, {
-											label: "Authentication type",
+											label: "Profile authentication",
 											help: help.type,
 											children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)(NativeSelect, {
 												"data-profile-type": true,
@@ -21355,10 +21355,10 @@ var init_identity_editor = __esmMin((() => {
 		allow_apigee: false
 	});
 	help = {
-		mode: "Gateway setting inherits Settings. Require Entra applies one audience policy. Explicit profiles choose policy by an assigned Relayna key and deny unassigned callers. Saved explicit profiles cannot be removed by switching to a legacy mode.",
+		mode: "Choose how this route determines authentication requirements. Gateway setting inherits Settings; Require Entra uses one audience policy; No Entra retains the route’s credential checks. Use authentication profiles selects a profile by its assigned Relayna key. Saved profiles cannot be removed by switching route modes.",
 		id: "Optional. Leave blank to generate an ID from the profile name plus a random suffix when saving. Custom IDs use 1–64 letters, numbers, hyphens or underscores and must be unique on this route. Saved IDs are preserved when left blank or when the name changes.",
 		name: "Required display name, up to 120 UTF-8 bytes. Unique on this route ignoring case. Renaming preserves key assignments.",
-		type: "Entra + Relayna key requires a verified Entra identity and an assigned key. Relayna key only requires the assigned key. Accessa requires Entra + Relayna key.",
+		type: "Choose what callers assigned to this profile must provide. Entra + Relayna key requires both a verified Entra identity and the assigned key. Relayna key only requires the assigned key. Accessa requires Entra + Relayna key.",
 		enabled: "Allow assigned keys to use this profile. Turning it off blocks those keys without moving them to another profile.",
 		audience: "Exact expected JWT audience, such as api://employees. Required for Entra; no whitespace, up to 512 bytes. Tenant, issuer and JWKS come from Settings.",
 		required_scopes: "Optional comma-separated scopes. Every listed scope is required. Blank adds no scope restriction.",
@@ -21452,7 +21452,7 @@ function profileRow(profile = {}, bindings = []) {
     <input type="hidden" name="${id}.original_id" value="${escape(profile.id)}">
     <label>Stable profile ID (optional)<input placeholder="Generated from profile name on save" name="${id}.id" value="${escape(profile.id)}" maxlength="64" pattern="(?:[A-Za-z0-9_]|-)+"></label>
     <label>Profile name (required)<input required placeholder="Internal automation" name="${id}.name" value="${escape(profile.name)}" maxlength="120"></label>
-    <label>Authentication type<select data-profile-type name="${id}.type"><option value="entra_and_relayna_key">Entra + Relayna key</option><option value="relayna_key_only" ${profile.type === "relayna_key_only" ? "selected" : ""}>Relayna key only</option></select></label>
+    <label>Profile authentication<select data-profile-type name="${id}.type"><option value="entra_and_relayna_key">Entra + Relayna key</option><option value="relayna_key_only" ${profile.type === "relayna_key_only" ? "selected" : ""}>Relayna key only</option></select></label>
     <label class="check"><input type="checkbox" name="${id}.enabled" ${profile.enabled !== false ? "checked" : ""}> Enabled</label>
     <div class="wide-field form-grid" data-profile-entra ${keyOnly ? "hidden" : ""}>
     <label>Profile audience (required)<input ${keyOnly ? "disabled" : "required"} name="${id}.audience" value="${escape(entra.audience)}" placeholder="api://employees"></label>
@@ -21508,8 +21508,8 @@ function profilesFromForm(form, accessa = false) {
 		if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new Error(`${label}: Stable profile ID must use 1–64 letters, numbers, hyphens or underscores. Correct it, or leave it blank to generate one.`);
 		if (ids.has(id)) throw new Error(`${label}: Stable profile ID “${id}” is already used by another profile on this route. Choose a different ID.`);
 		if (names.has(name.toLowerCase())) throw new Error(`${label}: Profile name is already used on this route (ignoring case). Choose a different name.`);
-		if (!["entra_and_relayna_key", "relayna_key_only"].includes(type)) throw new Error(`${label}: select Entra + Relayna key or Relayna key only under Authentication type.`);
-		if (accessa && type !== "entra_and_relayna_key") throw new Error(`${label}: Accessa profiles require Entra + Relayna key. Change Authentication type and enter a Profile audience.`);
+		if (!["entra_and_relayna_key", "relayna_key_only"].includes(type)) throw new Error(`${label}: select Entra + Relayna key or Relayna key only under Profile authentication.`);
+		if (accessa && type !== "entra_and_relayna_key") throw new Error(`${label}: Accessa profiles require Entra + Relayna key. Change Profile authentication and enter a Profile audience.`);
 		ids.add(id);
 		names.add(name.toLowerCase());
 		const profile = {
@@ -22082,7 +22082,7 @@ var init_guidance_content = __esmMin((() => {
 		keys: "A profile can have multiple Relayna keys. No selection assigns no callers. Each key can belong to only one profile on this route; service keys must belong to the service's project. This does not grant route permission."
 	};
 	shared = {
-		endpoint_entra_mode: "Choose the endpoint identity policy. Gateway setting inherits Settings; No Entra retains the route's credential checks; Require Entra uses one audience policy. Explicit profiles select policy by an assigned Relayna key and reject unassigned callers. Once saved, explicit profiles cannot be removed by switching back to legacy mode.",
+		endpoint_entra_mode: "Choose how this route determines authentication requirements. Gateway setting inherits Settings; No Entra retains the route's credential checks; Require Entra uses one audience policy. Use authentication profiles selects a profile by its assigned Relayna key and denies unassigned callers. Change Profile authentication within each profile to choose Entra + Relayna key or Relayna key only. Saved profiles cannot be removed by switching route modes.",
 		profile_keys_search: "Search by key prefix, UUID, project name or ID, or service. Keys already assigned to a profile are excluded from results. Adding a key clears the search. Apply selection updates this profile’s draft; Cancel discards popup changes. Save the identity form to persist assignments.",
 		profile_binding: "Assign this key to exactly one profile on this route. Unassigned denies access on a profiled route; a disabled profile also denies access. Save applies immediately to new policy reads and does not grant route permissions.",
 		endpoint_audience: "Exact audience required when Require Entra is selected. Other modes ignore this field. This does not add the audience to other endpoints.",
@@ -37510,7 +37510,7 @@ async function routes() {
 	if (renderId !== renderGeneration) return;
 	content.innerHTML = `
     <section class="panel"><div class="panel-heading"><h3>Additional endpoint identity</h3></div>
-      <p class="field-hint">Choose Entra verification for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
+      <p class="field-hint">Choose authentication requirements for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
       ${table([
 		"Route",
 		"Protocol",
@@ -39891,8 +39891,8 @@ function endpointIdentityFields(access = {}, projectId = "") {
 	const entra = access.entra || {};
 	const mode = access.authentication_profiles ? "profiles" : access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
 	const savedProfiles = mode === "profiles" && access.authentication_profiles.revision > 0;
-	return `<div class="wide-field form-grid" data-endpoint-identity data-key-project="${attr(projectId)}">${savedProfiles ? "<input type=\"hidden\" name=\"profiles_saved\" value=\"true\">" : ""}<label class="wide-field">Entra verification<select name="endpoint_entra_mode">
-    <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Explicit authentication profiles</option>
+	return `<div class="wide-field form-grid" data-endpoint-identity data-key-project="${attr(projectId)}">${savedProfiles ? "<input type=\"hidden\" name=\"profiles_saved\" value=\"true\">" : ""}<label class="wide-field">Route authentication mode<select name="endpoint_entra_mode">
+    <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Use authentication profiles</option>
     <option value="inherit" ${savedProfiles ? "disabled" : ""} ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
     <option value="required" ${savedProfiles ? "disabled" : ""} ${mode === "required" ? "selected" : ""}>Require Entra</option>
     <option value="disabled" ${savedProfiles ? "disabled" : ""} ${mode === "disabled" ? "selected" : ""}>No Entra</option>
@@ -39914,7 +39914,7 @@ function routeIdentityControl(route) {
 	return `<div class="route-identity-control">${endpointIdentityBadge(setting.access)}${routeIdentityButton(route)}</div>`;
 }
 function routeIdentityButton(route) {
-	return `<button type="button" data-route-identity="${attr(route)}" aria-label="Edit Entra verification for ${attr(route)}">Edit identity</button>`;
+	return `<button type="button" data-route-identity="${attr(route)}" aria-label="Edit route authentication for ${attr(route)}">Edit identity</button>`;
 }
 function editRouteIdentity(event) {
 	const route = event.currentTarget.dataset.routeIdentity;
@@ -39987,7 +39987,7 @@ function endpointAccessFromForm(form) {
 		"required",
 		"disabled",
 		"profiles"
-	].includes(mode)) throw new Error("Choose an Entra verification mode.");
+	].includes(mode)) throw new Error("Choose a Route authentication mode.");
 	return {
 		...mode === "profiles" ? { authentication_profiles: profilesFromForm(form, accessa) } : {},
 		skip_entra: mode === "disabled",
