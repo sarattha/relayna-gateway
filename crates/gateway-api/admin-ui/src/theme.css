@@ -81,9 +81,27 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible,
-a:focus-visible {
+a:focus-visible,
+.table-wrap:focus-visible {
+  /* Stay inside the control so scrollports cannot clip the focus indicator. */
   outline: 2px solid var(--primary);
-  outline-offset: 2px;
+  outline-offset: -2px;
+  box-shadow: none;
+}
+.sidebar :focus-visible,
+button.primary:focus-visible,
+.rg-button.bg-primary:focus-visible,
+.rg-button.bg-destructive:focus-visible,
+.skip-link:focus-visible {
+  outline-color: #fff;
+  outline-offset: -4px;
+}
+input:is([type="checkbox"], [type="radio"]):checked:focus-visible {
+  outline-color: #fff;
+}
+.login-primary:focus-visible img {
+  /* The link itself carries the shared indicator; avoid a second outer ring. */
+  outline: none;
 }
 input:not([type="checkbox"]):not([type="radio"]),
 select,

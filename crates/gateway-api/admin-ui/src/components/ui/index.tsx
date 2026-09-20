@@ -11,7 +11,7 @@ export function cn(...values: ClassValue[]) {
 }
 // Owned, composable primitives following shadcn/ui's open component pattern.
 const buttonVariants = cva(
-  "rg-button inline-flex items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+  "rg-button inline-flex items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
@@ -48,7 +48,7 @@ export const Input = React.forwardRef<
   <input
     ref={ref}
     className={cn(
-      "rg-input h-9 w-full rounded-md border border-input bg-background px-3 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+      "rg-input h-9 w-full rounded-md border border-input bg-background px-3 text-[13px] disabled:opacity-50",
       className,
     )}
     {...props}

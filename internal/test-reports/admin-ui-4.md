@@ -114,3 +114,22 @@ rows on desktop and retained horizontal table scrolling at 390px. UI build,
 existing UI tests, gateway build and whitespace checks pass. This presentation-only
 change does not alter runtime behavior or coverage; the full Rust stack was not
 rerun after the preceding complete verification.
+
+## Focus highlight refinement
+
+Shared focus outlines now render inside controls and focusable table containers,
+so modal, drawer and table scrollports cannot clip their edges. Removed the
+duplicate React outer-ring utilities and the login image's separate outer ring.
+Primary actions and dark navigation retain contrasting white inset indicators;
+light controls retain green indicators. Scrolling and focus handling are unchanged.
+
+Computer Use reproduced the clipped endpoint selector before the fix and verified
+the complete outline afterward. Checks covered the endpoint selector, text input,
+primary and secondary actions, a checked checkbox, the nested key-picker search,
+and dark sidebar keyboard focus. The Entra form was also checked at 390 × 844.
+Test drafts were cancelled without saving changes to route policies.
+
+UI build, existing UI regressions, gateway build and whitespace checks pass.
+All 26 React tests pass; measured component coverage remains 100% statements,
+branches, functions and lines. This styling-only refinement does not change Rust
+runtime behavior; the full Rust verification stack was not rerun.

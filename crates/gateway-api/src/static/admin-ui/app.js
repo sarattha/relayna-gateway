@@ -19895,7 +19895,7 @@ var init_ui = __esmMin((() => {
 	init_clsx();
 	init_bundle_mjs();
 	import_jsx_runtime$5 = require_jsx_runtime();
-	buttonVariants = cva("rg-button inline-flex items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", {
+	buttonVariants = cva("rg-button inline-flex items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50", {
 		variants: {
 			variant: {
 				default: "bg-primary text-primary-foreground hover:bg-primary/90",
@@ -19928,7 +19928,7 @@ var init_ui = __esmMin((() => {
 	Button.displayName = "Button";
 	Input = import_react$2.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("input", {
 		ref,
-		className: cn("rg-input h-9 w-full rounded-md border border-input bg-background px-3 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50", className),
+		className: cn("rg-input h-9 w-full rounded-md border border-input bg-background px-3 text-[13px] disabled:opacity-50", className),
 		...props
 	}));
 	Input.displayName = "Input";
