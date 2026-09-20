@@ -647,3 +647,16 @@ input[type="radio"] {
 .owner-request-panel {
   margin-top: 0;
 }
+
+/* Keep outcome labels and HTTP codes aligned across request rows. */
+.usage-status {
+  display: inline-grid;
+  grid-template-columns: 4rem auto;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.usage-status .badge {
+  margin: 0;
+  justify-content: center;
+}

@@ -5075,6 +5075,19 @@ input[type="checkbox"], input[type="radio"] {
   margin-top: 0;
 }
 
+.usage-status {
+  white-space: nowrap;
+  grid-template-columns: 4rem auto;
+  align-items: center;
+  gap: 8px;
+  display: inline-grid;
+}
+
+.usage-status .badge {
+  justify-content: center;
+  margin: 0;
+}
+
 @property --tw-translate-x {
   syntax: "*";
   inherits: false;

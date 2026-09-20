@@ -104,3 +104,13 @@ stacking and React service-preset state synchronization.
 
 These checks bound known behavior; neither coverage nor visual checks establish
 that all possible inputs, timing, deployments and external services are defect-free.
+
+## Status alignment refinement
+
+Usage and Owner request rows now use a fixed-width outcome badge column and a
+consistent gap before the HTTP code. Removed the badge's inherited bottom/right
+margin so badge and code centers align. Computer Use verified success/failure
+rows on desktop and retained horizontal table scrolling at 390px. UI build,
+existing UI tests, gateway build and whitespace checks pass. This presentation-only
+change does not alter runtime behavior or coverage; the full Rust stack was not
+rerun after the preceding complete verification.

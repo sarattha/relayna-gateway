@@ -39134,7 +39134,7 @@ function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {
 		`<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
 		esc(row.model || ""),
 		esc(row.provider),
-		`${badge(row.status, row.status === "success" ? "good" : "bad")} <code>${esc(row.status_code)}</code>`,
+		`<span class="usage-status">${badge(row.status, row.status === "success" ? "good" : "bad")}<code>${esc(row.status_code)}</code></span>`,
 		`${esc(row.latency_ms)} ms`,
 		esc(usageValue(row.diagnostics, row.total_tokens)),
 		esc(usageValue(row.diagnostics, row.estimated_cost_usd, money)),
