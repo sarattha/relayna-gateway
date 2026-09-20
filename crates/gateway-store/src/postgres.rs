@@ -3669,7 +3669,7 @@ impl PostgresStore {
         id: Uuid,
         enabled_only: bool,
     ) -> GatewayResult<Option<gateway_core::foundry::FoundryRuntimeConfig>> {
-        let row = sqlx::query("SELECT id, base_url, foundry, credential_secret, updated_at FROM provider_configs WHERE id=$1 AND provider='azure-foundry' AND (NOT $2 OR enabled)")
+        let row = sqlx::query("SELECT id, base_url, foundry, credential_secret, config_revision FROM provider_configs WHERE id=$1 AND provider='azure-foundry' AND (NOT $2 OR enabled)")
             .bind(id).bind(enabled_only).fetch_optional(&self.pool).await.map_err(|_| GatewayError::StoreUnavailable)?;
         row.map(|r| {
             Ok(gateway_core::foundry::FoundryRuntimeConfig {
@@ -3685,9 +3685,8 @@ impl PostgresStore {
                     .try_get("credential_secret")
                     .map_err(|_| GatewayError::StoreUnavailable)?,
                 revision: r
-                    .try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
-                    .map_err(|_| GatewayError::StoreUnavailable)?
-                    .timestamp_micros(),
+                    .try_get("config_revision")
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
             })
         })
         .transpose()

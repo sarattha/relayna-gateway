@@ -37,6 +37,9 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Fixed
 
+- Use database-incremented provider revisions for Foundry token caching, avoiding
+  repeated Azure exchanges when overlapping edits move timestamps backward.
+
 - Reject Foundry service route patterns without `/*` on create and update, so
   saved routes can match the Responses endpoint.
 - Coalesce concurrent Azure token refreshes per connection, preventing duplicate

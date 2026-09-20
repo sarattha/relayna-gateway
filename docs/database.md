@@ -220,6 +220,12 @@ setup instructions and rollback behavior.
 
 `provider_configs` stores operator-managed upstream provider settings.
 
+`20260920000400_provider_config_revision.sql` adds `config_revision` (positive
+`bigint`, initially 1). A database trigger increments it on every row update,
+including direct SQL and enable/disable changes. Foundry token caches use this
+revision instead of `updated_at`, whose transaction-start timestamp can move
+backward under overlapping edits. Rollbacks also roll back the revision change.
+
 Azure Foundry connections use provider kind `azure-foundry` and a nullable `foundry`
 JSON object containing the Azure identity method and tenant/client IDs. Client
 secrets use the existing write-only `credential_secret` column; access tokens are

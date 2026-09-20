@@ -281,6 +281,42 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
     // A rename queued behind an identity change must read the committed identity,
     // not restore the old client-secret snapshot with a now-cleared credential.
     let id = Uuid::parse_str(provider_id).unwrap();
+    // An older transaction committing last can move now() backwards, but not
+    // the cache revision. Establish its timestamp before the newer edit.
+    let mut older = store.pool().begin().await.unwrap();
+    let older_time: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT now()")
+        .fetch_one(&mut *older)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    let newer_revision: i64 = sqlx::query_scalar(
+        "UPDATE provider_configs SET updated_at=now() WHERE id=$1 RETURNING config_revision",
+    )
+    .bind(id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    let (final_revision, final_time): (i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+        "UPDATE provider_configs SET updated_at=now(), config_revision=1 WHERE id=$1 RETURNING config_revision, updated_at")
+        .bind(id).fetch_one(&mut *older).await.unwrap();
+    older.commit().await.unwrap();
+    assert_eq!(final_time, older_time);
+    assert_eq!(final_revision, newer_revision + 1);
+    assert_eq!(
+        store.foundry_config(id).await.unwrap().unwrap().revision,
+        final_revision
+    );
+    let mut rollback = store.pool().begin().await.unwrap();
+    sqlx::query("UPDATE provider_configs SET updated_at=now() WHERE id=$1")
+        .bind(id)
+        .execute(&mut *rollback)
+        .await
+        .unwrap();
+    rollback.rollback().await.unwrap();
+    assert_eq!(
+        store.foundry_config(id).await.unwrap().unwrap().revision,
+        final_revision
+    );
     let mut transaction = store.pool().begin().await.unwrap();
     sqlx::query("UPDATE provider_configs SET foundry=$2, credential_secret=NULL WHERE id=$1")
         .bind(id)
