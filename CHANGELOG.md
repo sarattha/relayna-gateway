@@ -37,6 +37,10 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Fixed
 
+- Reserve Foundry tokens per minute once per request using the full rewritten
+  body, avoiding duplicate header-stage charges and premature quota denials.
+  Responses token estimates also reserve the requested `max_output_tokens`.
+
 - Reject key project changes that would invalidate saved service-profile bindings,
   including direct database writes; explain how to remove assignments first.
 - Serialize provider edits so overlapping renames cannot restore stale identity

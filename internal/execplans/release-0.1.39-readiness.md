@@ -41,3 +41,12 @@ Focused ownership E2E (including a concurrent binding-save/key-move), Foundry id
 Review of 23897fb found stale read/merge/write behavior in provider PATCH. Serialize the existing provider read and update using one transaction and SELECT FOR UPDATE. This preserves released request/response shapes and migration state while preventing lost updates and invalid identity/credential combinations. Test a rename waiting behind an uncommitted identity/secret change, then assert the new identity is retained and rejected edits release the transaction for a valid retry. Run focused Foundry E2E and the complete mandatory stack before pushing. No additional feature scope.
 
 Second-review verification: focused Foundry E2E, workspace build, release metadata and all ten mandatory verification commands pass, including 388/388 Nextest tests with no skips. No new exceptions or frontend changes. Ready to push and request review of the transaction fix.
+
+
+## Third review follow-up
+
+Review of ba7c3a8 found Foundry TPM reservation occurs at both header admission and full-body processing. Keep the full rewritten-body reservation and skip only the earlier shared estimate for Foundry; all other providers retain their released behavior. No schema/API change. Add real Redis quota-boundary checks for registered agents and endpoint passthrough: exact-limit success, exact single counter increment, and exhausted-quota rejection before upstream invocation. Run focused Foundry E2E and full mandatory verification before pushing; Content Safety remains deferred.
+
+The same quota inspection found the shared estimator omitted Responses `max_output_tokens`. Add it as a fallback without changing existing max_tokens/max_completion_tokens priority, and exclude it from input estimation. This corrects Responses quota reservation, including the released Responses path; request/response shapes remain unchanged. Explicit reservation tests and both Foundry quota-boundary cases cover it.
+
+Third-review verification: exact-boundary and Redis single-reservation checks pass for both Foundry modes. Workspace build, release metadata and all ten mandatory commands pass, including 388/388 Nextest tests with zero skips. Ready to push and request review of the TPM fix.

@@ -1592,30 +1592,34 @@ where
             }
         }
 
-        match self
-            .control_state
-            .check_token_rate_limit(key.key_id, policy.tpm_limit, estimated_tokens, now)
-            .await
-        {
-            Ok(RateLimitDecision::Allowed { .. }) => {}
-            Ok(RateLimitDecision::Exceeded {
-                retry_after_seconds,
-                ..
-            }) => {
-                gateway_telemetry::record_rate_limit_rejection(route.as_str(), "token");
-                let error = GatewayError::TokenRateLimitExceeded {
+        // Foundry reserves TPM once from the complete rewritten body in the
+        // body filter. This header-stage estimate must not charge it again.
+        if ctx.foundry.is_none() {
+            match self
+                .control_state
+                .check_token_rate_limit(key.key_id, policy.tpm_limit, estimated_tokens, now)
+                .await
+            {
+                Ok(RateLimitDecision::Allowed { .. }) => {}
+                Ok(RateLimitDecision::Exceeded {
                     retry_after_seconds,
-                };
-                self.record_terminal_usage(ctx, &key, route, &error, now)
-                    .await;
-                respond_error(session, error, ctx).await?;
-                return Ok(false);
-            }
-            Err(error) => {
-                self.record_terminal_usage(ctx, &key, route, &error, now)
-                    .await;
-                respond_error(session, error, ctx).await?;
-                return Ok(false);
+                    ..
+                }) => {
+                    gateway_telemetry::record_rate_limit_rejection(route.as_str(), "token");
+                    let error = GatewayError::TokenRateLimitExceeded {
+                        retry_after_seconds,
+                    };
+                    self.record_terminal_usage(ctx, &key, route, &error, now)
+                        .await;
+                    respond_error(session, error, ctx).await?;
+                    return Ok(false);
+                }
+                Err(error) => {
+                    self.record_terminal_usage(ctx, &key, route, &error, now)
+                        .await;
+                    respond_error(session, error, ctx).await?;
+                    return Ok(false);
+                }
             }
         }
 

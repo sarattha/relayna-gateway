@@ -7,6 +7,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use gateway_core::admin::KeyPolicyPatch;
 use gateway_core::traffic::TrafficStore;
 use gateway_core::*;
 use gateway_proxy::{PingoraLiteLlmConfig, RelaynaPingoraProxy};
@@ -616,6 +617,114 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
         .unwrap();
     assert_eq!(response.status(), 429);
     assert_eq!(response.headers()["retry-after"], "2");
+    // At the exact TPM boundary, one rewritten request consumes one reservation.
+    // Use both modes; Redis inspection catches even a one-token header-stage charge.
+    let mut counters = redis::Client::open(redis.clone())
+        .unwrap()
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap();
+    for target in [&endpoint, &passthrough] {
+        let payload = json!({"input":"TPM boundary","model":"deployment","max_output_tokens":12});
+        // Registered agents forbid model overrides.
+        let payload = if target == &endpoint {
+            json!({"input":"TPM boundary","max_output_tokens":12})
+        } else {
+            payload
+        };
+        let baseline = client
+            .post(target)
+            .bearer_auth(&key.raw_key)
+            .json(&payload)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(baseline.status(), 200);
+        let rewritten = mock.calls.lock().unwrap().last().unwrap().1.clone();
+        let estimate = estimate_generation_tokens(&serde_json::to_vec(&rewritten).unwrap());
+        store
+            .patch_admin_key(
+                record.id,
+                AdminKeyPatch {
+                    policy: Some(KeyPolicyPatch {
+                        tpm_limit: Some(Some(i32::try_from(estimate).unwrap())),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let now = chrono::Utc::now();
+        let windows: Vec<_> = [-1, 0, 1]
+            .into_iter()
+            .map(|m| {
+                gateway_core::rate_limits::token_rate_limit_key(
+                    record.id,
+                    now + chrono::Duration::minutes(m),
+                )
+            })
+            .collect();
+        let _: i64 = redis::cmd("DEL")
+            .arg(&windows)
+            .query_async(&mut counters)
+            .await
+            .unwrap();
+        let accepted = client
+            .post(target)
+            .bearer_auth(&key.raw_key)
+            .json(&payload)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(accepted.status(), 200, "{}", accepted.text().await.unwrap());
+        let counts: Vec<Option<i64>> = redis::cmd("MGET")
+            .arg(&windows)
+            .query_async(&mut counters)
+            .await
+            .unwrap();
+        assert_eq!(counts.into_iter().flatten().sum::<i64>(), estimate);
+        // Seed adjacent windows to keep the rejection assertion stable across a
+        // minute rollover, without touching any other test key's counters.
+        for window in &windows {
+            let _: () = redis::cmd("SET")
+                .arg(window)
+                .arg(estimate)
+                .arg("EX")
+                .arg(70)
+                .query_async(&mut counters)
+                .await
+                .unwrap();
+        }
+        let before = mock.calls.lock().unwrap().len();
+        let denied = client
+            .post(target)
+            .bearer_auth(&key.raw_key)
+            .json(&payload)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), 429);
+        assert_eq!(mock.calls.lock().unwrap().len(), before);
+        store
+            .patch_admin_key(
+                record.id,
+                AdminKeyPatch {
+                    policy: Some(KeyPolicyPatch {
+                        tpm_limit: Some(None),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let _: i64 = redis::cmd("DEL")
+            .arg(&windows)
+            .query_async(&mut counters)
+            .await
+            .unwrap();
+    }
     // Update policies without restarting the proxy; complete request fields must
     // be checked even though Pingora admits headers before reading the body.
     for (patch, payload) in [
