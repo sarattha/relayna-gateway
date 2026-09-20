@@ -39,7 +39,7 @@ const blankEntra = (): EntraPolicy => ({
 });
 const help = {
   mode: "Gateway setting inherits Settings. Require Entra applies one audience policy. Explicit profiles choose policy by an assigned Relayna key and deny unassigned callers. Saved explicit profiles cannot be removed by switching to a legacy mode.",
-  id: "Required: 1–64 letters, numbers, hyphens or underscores. Unique within this route. Keep the ID unchanged after assigning keys.",
+  id: "Optional. Leave blank to generate an ID from the profile name plus a random suffix when saving. Custom IDs use 1–64 letters, numbers, hyphens or underscores and must be unique on this route. Saved IDs are preserved when left blank or when the name changes.",
   name: "Required display name, up to 120 UTF-8 bytes. Unique on this route ignoring case. Renaming preserves key assignments.",
   type: "Entra + Relayna key requires a verified Entra identity and an assigned key. Relayna key only requires the assigned key. Accessa requires Entra + Relayna key.",
   enabled:
@@ -214,18 +214,22 @@ export function IdentityEditor({
                 {profile.name || "New authentication profile"}
               </legend>
               <Input type="hidden" name="profile_slot" value={profile.slot} />
+              <Input
+                type="hidden"
+                name={`${profile.slot}.original_id`}
+                value={initial.profiles.find((saved) => saved.slot === profile.slot)?.id || ""}
+              />
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Stable profile ID (required)" help={help.id}>
+                <Field label="Stable profile ID (optional)" help={help.id}>
                   <Input
                     name={`${profile.slot}.id`}
                     value={profile.id}
                     onChange={(event) =>
                       patch(profile.slot, { id: event.target.value })
                     }
-                    required
                     maxLength={64}
                     pattern="(?:[A-Za-z0-9_]|-)+"
-                    placeholder="internal-automation"
+                    placeholder="Generated from profile name on save"
                   />
                 </Field>
                 <Field label="Profile name (required)" help={help.name}>

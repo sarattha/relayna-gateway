@@ -153,3 +153,23 @@ UI build/regressions/typecheck pass; 26 React tests retain 100% component covera
 Fresh workspace LLVM coverage passes the strict >98% changed-production-line gate:
 25/25 for key naming and 162/162 for the complete PR. See
 `virtual-key-names-coverage.json` and `../execplans/virtual-key-names.md`.
+
+## Generated authentication profile IDs
+
+New profiles can omit the stable ID. On save, the shared route/service serializer
+uses a normalized name and eight random hexadecimal characters, bounded to 64
+characters. A `profile` fallback covers names with no ASCII slug. Explicit IDs
+are reserved before generation; collisions retry. Saved IDs remain unchanged
+through renames and cleared inputs. Backend API ID requirements are unchanged.
+
+Computer Use confirmed a blank-ID save/reopen generated
+`profile-id-qa-fd66dd87`, then preserved it after renaming and clearing the ID.
+The disabled, unbound test profile was removed; original profiles and bindings
+were compared and preserved. See `../execplans/generated-profile-ids.md`.
+
+UI build/regressions/typecheck, strict MkDocs build and all ten repository checks
+pass; nextest reports 373/373 with no skips. All 27 mounted React tests pass with
+100% measured statements (224/224), branches (106/106), functions (100/100) and
+lines (210/210). Shared serializer regressions separately cover ID normalization,
+bounds, collisions, custom IDs and matching bindings. No production Rust changed;
+the prior complete-PR changed-line LLVM result remains 162/162 (100%).

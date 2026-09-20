@@ -8,7 +8,8 @@ export function profileRow(profile = {}, bindings = []) {
   const keys = bindings.filter(binding => binding.profile_id === profile.id).map(binding => binding.key_id);
   return `<fieldset class="authentication-profile form-grid" data-profile-row>
     <legend>Authentication profile</legend><input type="hidden" name="profile_slot" value="${id}">
-    <label>Stable profile ID (required)<input required placeholder="internal-automation" name="${id}.id" value="${escape(profile.id)}" maxlength="64" pattern="(?:[A-Za-z0-9_]|-)+"></label>
+    <input type="hidden" name="${id}.original_id" value="${escape(profile.id)}">
+    <label>Stable profile ID (optional)<input placeholder="Generated from profile name on save" name="${id}.id" value="${escape(profile.id)}" maxlength="64" pattern="(?:[A-Za-z0-9_]|-)+"></label>
     <label>Profile name (required)<input required placeholder="Internal automation" name="${id}.name" value="${escape(profile.name)}" maxlength="120"></label>
     <label>Authentication type<select data-profile-type name="${id}.type"><option value="entra_and_relayna_key">Entra + Relayna key</option><option value="relayna_key_only" ${profile.type === 'relayna_key_only' ? 'selected' : ''}>Relayna key only</option></select></label>
     <label class="check"><input type="checkbox" name="${id}.enabled" ${profile.enabled !== false ? 'checked' : ''}> Enabled</label>
@@ -33,12 +34,25 @@ export function profileFields(access = {}) {
     <div data-profile-rows>${(set?.profiles || []).map(profile => profileRow(profile,set.bindings)).join('')}</div>
     <p role="status" data-profile-notice></p></section>`;
 }
+export function generateProfileId(name, reserved) {
+  const slug = name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 55).replace(/-+$/g, '') || 'profile';
+  let id;
+  do {
+    const suffix = crypto.getRandomValues(new Uint32Array(1))[0].toString(16).padStart(8, '0');
+    id = `${slug}-${suffix}`;
+  } while (reserved.has(id));
+  return id;
+}
 export function profilesFromForm(form, accessa = false) {
   const profiles = [], bindings = [], ids = new Set(), names = new Set(), keys = new Set();
   const split = value => String(value || '').split(/[,\n]/).map(value => value.trim()).filter(Boolean);
+  const reserved = new Set(form.getAll('profile_slot').map(slot => String(form.get(`${slot}.id`) || '').trim() || String(form.get(`${slot}.original_id`) || '').trim()));
   for (const slot of form.getAll('profile_slot')) {
     const read = name => String(form.get(`${slot}.${name}`) || '').trim();
-    const id = read('id'), name = read('name'), type = read('type');
+    const name = read('name'), type = read('type');
+    const id = read('id') || read('original_id') || generateProfileId(name, reserved);
+    reserved.add(id);
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !name || name.length > 120 || /[\x00-\x1f\x7f]/.test(name) || ids.has(id) || names.has(name.toLowerCase())) throw new Error('Use unique profile IDs and names, without control characters.');
     if (!['entra_and_relayna_key','relayna_key_only'].includes(type) || (accessa && type !== 'entra_and_relayna_key')) throw new Error('Accessa profiles require Entra + Relayna key.');
     ids.add(id); names.add(name.toLowerCase());

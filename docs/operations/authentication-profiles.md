@@ -10,9 +10,13 @@ Native LiteLLM credentials are not an authentication profile.
 
 In **Routes → Edit identity**, choose **Explicit authentication profiles**.
 Add named profiles with stable IDs, enabled state and authentication type.
-Choose a stable ID (1–64 letters, numbers, hyphens or underscores) and a display
-name; both are required. Keep the ID unchanged after assigning keys. Field help
-and keyboard/tap-accessible tooltips explain each control.
+Enter a display name. For a new profile, leave the stable ID blank to generate
+it on save from the name plus a random suffix, such as `internal-automation-a1b2c3d4`.
+Names without an ASCII slug use `profile` as the prefix. You can also supply a
+unique ID of 1–64 letters, numbers, hyphens or underscores. Renaming a saved
+profile or clearing its ID field preserves its existing ID and assignments.
+Keep saved IDs unchanged after assigning keys. Keyboard/tap-accessible tooltips
+explain each control. API clients must still supply profile IDs explicitly.
 
 The editor shows only fields for the selected endpoint mode and profile type.
 For Entra profiles, an audience is required; scopes, roles and groups are optional.
@@ -22,15 +26,15 @@ Tenant, issuer, signing algorithms, JWKS and JWT clock skew still come from
 Settings. Signed Apigee identity is accepted only when enabled on the selected
 profile; its expiry remains strict.
 
-Use **Assigned keys → Select keys** to search by key prefix, UUID, project name
+Use **Assigned keys → Select keys** to search by key name, prefix, UUID, project name
 or ID, or service in a separate popup. Available results exclude keys already
 selected or assigned to another profile. Adding a key clears the search; reopening
 the popup starts with an empty search. Review selected keys and use **Apply
 selection** to update the profile draft, or **Cancel** / Escape to discard popup
 edits. The profile shows only its assigned keys. Changes take effect when the
 identity form is saved. Failed lookups retain selections and offer **Retry loading
-keys**. The current key API identifies keys by
-prefix and UUID rather than an editable display name. A profile can have multiple keys; a key may have exactly one assignment
+keys**. Set optional key names under **Virtual keys** to make selection easier.
+A profile can have multiple keys; a key may have exactly one assignment
 on a route; an absent, disabled or invalid assignment denies access. Assigning a
 profile never grants a route forbidden by the key's effective policy. Existing
 route, project, provider, rate and budget controls continue to apply according

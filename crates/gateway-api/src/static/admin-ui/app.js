@@ -21030,20 +21030,24 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 									name: "profile_slot",
 									value: profile.slot
 								}),
+								/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Input, {
+									type: "hidden",
+									name: `${profile.slot}.original_id`,
+									value: initial.profiles.find((saved) => saved.slot === profile.slot)?.id || ""
+								}),
 								/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
 									className: "grid gap-4 sm:grid-cols-2",
 									children: [
 										/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Field, {
-											label: "Stable profile ID (required)",
+											label: "Stable profile ID (optional)",
 											help: help.id,
 											children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Input, {
 												name: `${profile.slot}.id`,
 												value: profile.id,
 												onChange: (event) => patch(profile.slot, { id: event.target.value }),
-												required: true,
 												maxLength: 64,
 												pattern: "(?:[A-Za-z0-9_]|-)+",
-												placeholder: "internal-automation"
+												placeholder: "Generated from profile name on save"
 											})
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Field, {
@@ -21266,7 +21270,7 @@ var init_identity_editor = __esmMin((() => {
 	});
 	help = {
 		mode: "Gateway setting inherits Settings. Require Entra applies one audience policy. Explicit profiles choose policy by an assigned Relayna key and deny unassigned callers. Saved explicit profiles cannot be removed by switching to a legacy mode.",
-		id: "Required: 1–64 letters, numbers, hyphens or underscores. Unique within this route. Keep the ID unchanged after assigning keys.",
+		id: "Optional. Leave blank to generate an ID from the profile name plus a random suffix when saving. Custom IDs use 1–64 letters, numbers, hyphens or underscores and must be unique on this route. Saved IDs are preserved when left blank or when the name changes.",
 		name: "Required display name, up to 120 UTF-8 bytes. Unique on this route ignoring case. Renaming preserves key assignments.",
 		type: "Entra + Relayna key requires a verified Entra identity and an assigned key. Relayna key only requires the assigned key. Accessa requires Entra + Relayna key.",
 		enabled: "Allow assigned keys to use this profile. Turning it off blocks those keys without moving them to another profile.",
@@ -21359,7 +21363,8 @@ function profileRow(profile = {}, bindings = []) {
 	const keys = bindings.filter((binding) => binding.profile_id === profile.id).map((binding) => binding.key_id);
 	return `<fieldset class="authentication-profile form-grid" data-profile-row>
     <legend>Authentication profile</legend><input type="hidden" name="profile_slot" value="${id}">
-    <label>Stable profile ID (required)<input required placeholder="internal-automation" name="${id}.id" value="${escape(profile.id)}" maxlength="64" pattern="(?:[A-Za-z0-9_]|-)+"></label>
+    <input type="hidden" name="${id}.original_id" value="${escape(profile.id)}">
+    <label>Stable profile ID (optional)<input placeholder="Generated from profile name on save" name="${id}.id" value="${escape(profile.id)}" maxlength="64" pattern="(?:[A-Za-z0-9_]|-)+"></label>
     <label>Profile name (required)<input required placeholder="Internal automation" name="${id}.name" value="${escape(profile.name)}" maxlength="120"></label>
     <label>Authentication type<select data-profile-type name="${id}.type"><option value="entra_and_relayna_key">Entra + Relayna key</option><option value="relayna_key_only" ${profile.type === "relayna_key_only" ? "selected" : ""}>Relayna key only</option></select></label>
     <label class="check"><input type="checkbox" name="${id}.enabled" ${profile.enabled !== false ? "checked" : ""}> Enabled</label>
@@ -21392,12 +21397,23 @@ function profileFields(access = {}) {
     <div data-profile-rows>${(set?.profiles || []).map((profile) => profileRow(profile, set.bindings)).join("")}</div>
     <p role="status" data-profile-notice></p></section>`;
 }
+function generateProfileId(name, reserved) {
+	const slug = name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 55).replace(/-+$/g, "") || "profile";
+	let id;
+	do
+		id = `${slug}-${crypto.getRandomValues(/* @__PURE__ */ new Uint32Array(1))[0].toString(16).padStart(8, "0")}`;
+	while (reserved.has(id));
+	return id;
+}
 function profilesFromForm(form, accessa = false) {
 	const profiles = [], bindings = [], ids = /* @__PURE__ */ new Set(), names = /* @__PURE__ */ new Set(), keys = /* @__PURE__ */ new Set();
 	const split = (value) => String(value || "").split(/[,\n]/).map((value) => value.trim()).filter(Boolean);
+	const reserved = new Set(form.getAll("profile_slot").map((slot) => String(form.get(`${slot}.id`) || "").trim() || String(form.get(`${slot}.original_id`) || "").trim()));
 	for (const slot of form.getAll("profile_slot")) {
 		const read = (name) => String(form.get(`${slot}.${name}`) || "").trim();
-		const id = read("id"), name = read("name"), type = read("type");
+		const name = read("name"), type = read("type");
+		const id = read("id") || read("original_id") || generateProfileId(name, reserved);
+		reserved.add(id);
 		if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !name || name.length > 120 || /[\x00-\x1f\x7f]/.test(name) || ids.has(id) || names.has(name.toLowerCase())) throw new Error("Use unique profile IDs and names, without control characters.");
 		if (!["entra_and_relayna_key", "relayna_key_only"].includes(type) || accessa && type !== "entra_and_relayna_key") throw new Error("Accessa profiles require Entra + Relayna key.");
 		ids.add(id);
@@ -21944,7 +21960,7 @@ var init_guidance_content = __esmMin((() => {
 		allow_tools: "Permit tool/function calling at this layer. Other policy layers can still deny it."
 	};
 	profile = {
-		id: "Required. Choose a stable ID, such as internal-automation: 1–64 letters, numbers, hyphens or underscores. Unique within this route; keep it unchanged after assigning keys.",
+		id: "Optional. Leave blank to generate an ID from the profile name plus a random suffix when saving. Custom IDs use 1–64 letters, numbers, hyphens or underscores and must be unique on this route. Saved IDs are preserved when left blank or when the name changes.",
 		name: "Required display name, up to 120 UTF-8 bytes. Unique on this route ignoring case. You can rename it without changing its stable ID or key assignments.",
 		type: "Entra + Relayna key requires a verified Entra identity and an assigned key. Relayna key only requires the assigned key, with no Entra audience or claims. Accessa supports only Entra + Relayna key.",
 		enabled: "Allow assigned keys to use this profile. Turning it off blocks every assigned key; it does not move callers to another profile.",

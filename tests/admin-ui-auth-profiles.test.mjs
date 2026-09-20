@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 const source=readFileSync(new URL('../crates/gateway-api/admin-ui/src/auth-profiles.ts',import.meta.url),'utf8');
 const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText;
-const {profileRow,profileFields,profilesFromForm,showProfileError}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const {profileRow,profileFields,profilesFromForm,showProfileError,generateProfileId}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const id='00000000-0000-0000-0000-000000000001';
 const form=new FormData();
 form.set('profiles_revision','4');form.append('profile_slot','employee');form.append('profile_slot','automation');
@@ -23,6 +23,45 @@ assert.throws(()=>profilesFromForm(new FormData()),/1–32/);
 assert.match(profileFields({authentication_profiles:result}),/4/);
 const hostile=profileRow({id:'<img>',name:'"<script>',entra:{audience:'<svg>'}},[]);
 assert.doesNotMatch(hostile,/<img>|<script>|<svg>/);assert.match(hostile,/&lt;script&gt;/);
+const generatedForm = new FormData();
+generatedForm.append('profile_slot','new');
+generatedForm.set('new.name','Pródüction Worker / 2026');
+generatedForm.set('new.type','relayna_key_only');
+generatedForm.set('new.keys',id);
+const generated = profilesFromForm(generatedForm);
+assert.match(generated.profiles[0].id,/^production-worker-2026-[a-f0-9]{8}$/);
+assert.equal(generated.bindings[0].profile_id,generated.profiles[0].id);
+assert.notEqual(profilesFromForm(generatedForm).profiles[0].id,generated.profiles[0].id);
+for (const name of ['a'.repeat(120),'ทีมงาน','---','0']) {
+  const autoId = generateProfileId(name,new Set());
+  assert.match(autoId,/^[a-z0-9-]{1,64}$/);
+  if (name === 'ทีมงาน' || name === '---') assert.match(autoId,/^profile-/);
+}
+generatedForm.set('new.original_id',generated.profiles[0].id);
+generatedForm.set('new.name','Renamed worker');
+assert.equal(profilesFromForm(generatedForm).profiles[0].id,generated.profiles[0].id);
+generatedForm.set('new.id','Custom_ID');
+assert.equal(profilesFromForm(generatedForm).profiles[0].id,'Custom_ID');
+assert.equal(profilesFromForm(generatedForm).bindings[0].profile_id,'Custom_ID');
+generatedForm.set('new.id','invalid id');
+assert.throws(()=>profilesFromForm(generatedForm),/unique profile IDs/);
+const getRandomValues = crypto.getRandomValues;
+try {
+  let calls = 0;
+  crypto.getRandomValues = values => { values[0] = ++calls < 3 ? 0xaaaaaaaa : 0xbbbbbbbb; return values; };
+  const collisionForm = new FormData();
+  for (const slot of ['auto','manual']) {
+    collisionForm.append('profile_slot',slot);
+    collisionForm.set(`${slot}.name`,slot === 'auto' ? 'Worker' : 'Manual worker');
+    collisionForm.set(`${slot}.type`,'relayna_key_only');
+  }
+  collisionForm.set('manual.id','worker-aaaaaaaa');
+  const resolved = profilesFromForm(collisionForm);
+  assert.equal(calls,3,'retry collisions even with an explicit ID later in the form');
+  assert.equal(resolved.profiles[0].id,'worker-bbbbbbbb');
+  assert.equal(resolved.profiles[1].id,'worker-aaaaaaaa');
+} finally { crypto.getRandomValues = getRandomValues; }
+console.log('ok - omitted profile IDs derive bounded slugs with random suffixes, avoid collisions and preserve saved IDs/bindings');
 console.log('ok - authentication profile forms validate bindings, independent claims, Accessa restrictions, revisions and escaped values');
 
 assert.match(profileFields({}), /panel-heading[^]*data-add-profile>Add profile/);

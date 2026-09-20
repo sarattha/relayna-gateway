@@ -31,7 +31,7 @@ console.log("ok - guidance preserves contextual zero/blank semantics and clamps 
 for(const name of ['id','name','type','enabled','audience','required_scopes','required_roles','allowed_groups','allow_apigee','keys']) assert.ok(fieldGuidance(`profile-12.${name}`,'profile'),`missing guidance for ${name}`);
 for(const name of ['endpoint_entra_mode','endpoint_audience','endpoint_scopes','endpoint_roles','endpoint_groups','endpoint_apigee','profile_binding']) assert.ok(fieldGuidance(name,'identity'),`missing identity guidance for ${name}`);
 for(const name of ['request_id','service','project_id','key_id','status','failure_code','outcome','from','to']) assert.ok(fieldGuidance(name,'traffic'),`missing Traffic guidance for ${name}`);
-assert.match(fieldGuidance('profile-1.id','profile'),/Required.*1–64.*keep it unchanged/);
+assert.match(fieldGuidance('profile-1.id','profile'),/Optional.*profile name.*random suffix.*1–64.*Saved IDs are preserved/);
 assert.match(fieldGuidance('profile-1.required_scopes','profile'),/Optional.*Every.*blank adds no/);
 assert.match(fieldGuidance('profile-1.allowed_groups','profile'),/At least one.*blank adds no/);
 assert.match(fieldGuidance('profile-1.keys','profile'),/No selection assigns no callers/);

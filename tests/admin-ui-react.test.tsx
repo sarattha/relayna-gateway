@@ -292,7 +292,7 @@ describe("identity editor", () => {
     const { form, onDirty } = await editor();
     const group = screen.getByRole("group", { name: "Employees" });
     const fields = [
-      ["Stable profile ID (required)", "staff"],
+      ["Stable profile ID (optional)", "staff"],
       ["Profile name (required)", "Staff"],
       ["Profile audience (required)", "api://staff"],
       ["Scopes (optional)", "read,write"],
@@ -323,6 +323,24 @@ describe("identity editor", () => {
     expect(new FormData(form).get("employee.audience")).toBe("api://staff");
     expect(onDirty).toHaveBeenCalled();
   });
+  it("makes profile IDs optional while retaining saved IDs through name edits", async () => {
+    const { form } = await editor();
+    const group = screen.getByRole("group", { name: "Employees" });
+    const id = within(group).getByRole("textbox", { name: "Stable profile ID (optional)" }) as HTMLInputElement;
+    expect(id.required).toBe(false);
+    fireEvent.change(id, {target:{value:""}});
+    fireEvent.change(within(group).getByRole("textbox", {name:"Profile name (required)"}), {target:{value:"Renamed employees"}});
+    const data = new FormData(form);
+    expect(data.get("employee.original_id")).toBe("employees");
+    expect(data.get("employee.id")).toBe("");
+    fireEvent.click(screen.getByRole("button", {name:"Add profile"}));
+    const fresh = screen.getByRole("group", {name:"New authentication profile"});
+    const freshId = within(fresh).getByRole("textbox", {name:"Stable profile ID (optional)"}) as HTMLInputElement;
+    expect(freshId.required).toBe(false);
+    expect(freshId.placeholder).toMatch(/Generated from profile name/);
+    const freshSlot = new FormData(form).getAll("profile_slot").at(-1);
+    expect(new FormData(form).get(`${freshSlot}.original_id`)).toBe("");
+  });
   it("adds and removes unbound profiles but protects bound profiles", async () => {
     const { form } = await editor();
     fireEvent.click(
@@ -339,7 +357,7 @@ describe("identity editor", () => {
     expect(document.activeElement).toBe(
       within(
         screen.getByRole("group", { name: "New authentication profile" }),
-      ).getByRole("textbox", { name: "Stable profile ID (required)" }),
+      ).getByRole("textbox", { name: "Stable profile ID (optional)" }),
     );
     fireEvent.click(
       within(

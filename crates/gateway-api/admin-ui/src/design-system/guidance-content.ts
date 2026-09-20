@@ -21,7 +21,7 @@ const policy: Record<string, string> = {
   allow_tools: "Permit tool/function calling at this layer. Other policy layers can still deny it.",
 };
 const profile: Record<string, string> = {
-  id: "Required. Choose a stable ID, such as internal-automation: 1–64 letters, numbers, hyphens or underscores. Unique within this route; keep it unchanged after assigning keys.",
+  id: "Optional. Leave blank to generate an ID from the profile name plus a random suffix when saving. Custom IDs use 1–64 letters, numbers, hyphens or underscores and must be unique on this route. Saved IDs are preserved when left blank or when the name changes.",
   name: "Required display name, up to 120 UTF-8 bytes. Unique on this route ignoring case. You can rename it without changing its stable ID or key assignments.",
   type: "Entra + Relayna key requires a verified Entra identity and an assigned key. Relayna key only requires the assigned key, with no Entra audience or claims. Accessa supports only Entra + Relayna key.",
   enabled: "Allow assigned keys to use this profile. Turning it off blocks every assigned key; it does not move callers to another profile.",
