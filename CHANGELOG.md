@@ -4,7 +4,7 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
-## 0.1.38 - 2026-09-20
+## 0.1.39 - 2026-09-20
 
 ### Added
 
@@ -53,9 +53,12 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Upgrade notes
 
+- Startup adds Foundry provider/service configuration and a foreign key that
+  prevents deleting connections still used by services. Upgrade all replicas
+  before registering Foundry services; see the illustrated Foundry guide.
 - Startup applies additive key-name storage and authentication-profile revision
   guards. Existing routes retain their prior authentication until opted in.
-- Upgrade every replica to 0.1.38 before saving profiles. 0.1.37 cannot read the
+- Upgrade every replica to 0.1.39 before saving profiles. 0.1.37 cannot read the
   new profile configuration; profile-enabled routes cannot return to legacy
   mode through the editor or old writers. Keep database guards during rollback.
 - Saved profile edits apply on each new request's policy read. Gateway-wide

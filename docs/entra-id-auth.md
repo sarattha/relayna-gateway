@@ -105,7 +105,7 @@ replica can continue enforcing its previous policy; check refresh warnings and
 verify each replica when making urgent access changes. Unchanged configuration
 preserves the existing JWKS cache.
 
-Deploy gateway 0.1.38 or newer to every replica once before
+Deploy gateway 0.1.39 or newer to every replica once before
 relying on this behavior; older binaries still need a restart to load changes.
 
 This synchronization covers persisted gateway front-door settings, including
@@ -373,7 +373,7 @@ empty placeholders for required Entra values.
 Useful local checks after changing Entra configuration or code:
 
 ```bash
-python3 scripts/validate-release-metadata.py v0.1.38
+python3 scripts/validate-release-metadata.py v0.1.39
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
 cargo test --workspace --all-features

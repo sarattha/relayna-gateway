@@ -1,14 +1,20 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.38` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.39` is the
 current release target.
 
-Version `0.1.38` adds Admin UI 4.0, explicit authentication profiles, editable key
+Version `0.1.39` adds Admin UI 4.0, explicit authentication profiles, editable key
 names, corrected Traffic filters and automatic refresh of persisted gateway Entra
 settings across replicas. The [illustrated profile guide](operations/authentication-profiles.md)
 explains both authentication types and key assignment. Upgrade every replica
 before opting in; old binaries cannot read saved profiles. See
 [deployment](deployment.md) for migrations, synchronization and rollback.
+
+Azure Foundry is available through **Providers → Create provider → Azure Foundry**.
+Connections support workload, managed and client-secret identities, read-only
+connection verification, registered agents and project Responses passthrough.
+See the [illustrated Foundry guide](azure-foundry.md), including API and streaming
+limitations.
 
 Version `0.1.37` added Accessa channel WebSockets, endpoint-specific Entra
 requirements, service creation presets and WebSocket/verified-identity diagnostics
@@ -71,7 +77,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.38
+   python3 scripts/validate-release-metadata.py v0.1.39
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -89,15 +95,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.38 .
+   docker build -t relayna-gateway:0.1.39 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.38 -m "Release v0.1.38"
-   git push origin v0.1.38
+   git tag -a v0.1.39 -m "Release v0.1.39"
+   git push origin v0.1.39
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -107,10 +113,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.38`, the workflow publishes:
+For `v0.1.39`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.38
+ghcr.io/sarattha/relayna-gateway:0.1.39
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

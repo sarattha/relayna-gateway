@@ -5,11 +5,15 @@ different authentication requirements. For example, employee applications can
 require **Entra + Relayna key**, while an internal automation client uses
 **Relayna key only** on the same endpoint.
 
-This guide covers gateway **0.1.38** and **Admin UI 4.0**. The screenshots show
+This guide covers gateway **0.1.39** and **Admin UI 4.0**. The screenshots show
 local sample data and unsaved setup drafts, not production credentials. Setup
 examples use `/v1/embeddings`; the same controls apply to `/v1/chat/completions`,
 `/v1/responses` and supported registered services. Click an image to view it at
 full size.
+
+Screenshots use local sample data captured during development. Some show the
+previous 0.1.38 version label or older background actions; follow the current
+steps below for the 0.1.39 controls.
 
 ## Understand the three settings
 
@@ -35,7 +39,7 @@ all its assigned keys; callers do not fall back to another profile.
 
 ## Before you begin
 
-1. Upgrade every gateway replica to **0.1.38 or newer** before saving profiles.
+1. Upgrade every gateway replica to **0.1.39 or newer** before saving profiles.
    See [rollout and rollback](#rollout-compatibility-and-rollback).
 2. Sign in as an administrator and identify the route and its intended callers.
 3. Create or choose active Relayna virtual keys. Check their permitted routes,
@@ -389,14 +393,14 @@ identity mid-session. Already admitted work is not retroactively cancelled.
 
 ## Rollout, compatibility and rollback
 
-Gateway 0.1.38 startup applies migration
+Gateway 0.1.39 startup applies migration
 `20260919000100_authentication_profile_revisions.sql`. Apply it before
 using profiles. It adds write guards to the existing route/service access JSON;
 no legacy rows are rewritten. Existing inherited Entra, explicit single-policy,
 No Entra and native direct LiteLLM routes retain released v0.1.37 behavior until
 explicitly opted in. Inherited routes still follow later gateway-setting edits.
 
-Upgrade every replica to 0.1.38 or newer before opting in. Effective policy is read from PostgreSQL
+Upgrade every replica to 0.1.39 or newer before opting in. Effective policy is read from PostgreSQL
 for every new request and Accessa turn, with no profile cache. Committed edits
 therefore affect the next policy read; requests already past that read may finish
 under their recorded snapshot. Store failures fail closed. Gateway-wide Entra

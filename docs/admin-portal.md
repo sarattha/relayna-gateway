@@ -14,7 +14,8 @@ Design 4.0 upgrades the shared shell and every Admin/Owner page with consistent
 neutral surfaces, compact typography, table spacing, field labels and semantic
 status colors. The design version is separate from the gateway release version.
 
-React owns the shell and authentication editor. Existing operational controllers
+React owns the shell, authentication and route-assignment editors, and provider
+creation and Foundry dialogs. Existing operational controllers
 continue to own their page content and API workflows through explicit DOM
 boundaries; this is not a wholesale rewrite of those controllers into JSX.
 Native React controls use shared shadcn-style components backed by Radix, with
@@ -63,7 +64,8 @@ Workload identity registration is available from People & identities → Workloa
 identities. Use Jump to a page or the contextual page actions to begin work.
 
 Inventories precede creation forms. Create and edit actions open contextual
-drawers; closing a creation drawer retains its draft on that page. Leaving or
+drawers or dialogs. Some existing creation drawers retain drafts on that page;
+provider creation dialogs discard their draft when cancelled. Leaving or
 refreshing a page with unsaved input requires a discard confirmation. Canceling
 also preserves the current workspace and project scope. Navigation waits for an
 in-flight write to finish.
@@ -459,7 +461,7 @@ for temporary testing.
 
 ### 9. Configure policy before issuing the key
 
-Open Keys. Configure the policy directly on the key, or create an inherited
+Open **Virtual keys**. Configure the policy directly on the key, or create an inherited
 policy layer first when the same limits should apply to many keys. For a first
 project key, set the routes, models, providers, rate limits, token limits,
 budgets, request/response byte limits, streaming/tools settings, allowed UTC

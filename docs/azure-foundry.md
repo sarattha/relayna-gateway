@@ -1,10 +1,14 @@
 # Azure Foundry agents and endpoint passthrough
 
-Relayna Gateway 0.1.38 can authenticate and govern requests before forwarding them
+Relayna Gateway 0.1.39 can authenticate and govern requests before forwarding them
 to Microsoft Foundry Agent Service. Add an **Azure Foundry connection** in
 Providers, then register a **Foundry service**. Azure runs the agent and its tools;
 Relayna handles caller authentication, service permissions, limits and traffic
 records. The Rust gateway serves the same embedded Admin UI 4.0 deployment.
+
+Screenshots use local sample data captured during development. Some show the
+previous 0.1.38 version label or older background actions; follow the current
+steps below for the 0.1.39 controls.
 
 ## Choose an integration mode
 

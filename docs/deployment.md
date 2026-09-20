@@ -2,15 +2,19 @@
 
 Relayna Gateway ships as one binary and one Docker image. The image serves both the core proxy and the admin portal because the admin UI is embedded in the `gateway-api` binary.
 
-Version `0.1.38` includes Admin UI 4.0, route authentication profiles, named
-virtual keys and replica synchronization of saved gateway Entra settings.
+Version `0.1.39` includes Admin UI 4.0, route authentication profiles, named
+virtual keys, Azure Foundry connections and registered agents, and replica
+synchronization of saved gateway Entra settings.
 The UI remains embedded in the Rust binary; no separate frontend service is needed.
 
-## Upgrade to 0.1.38
+## Upgrade to 0.1.39
 
 1. Back up PostgreSQL and deploy the updated binary/image to **every replica**.
-   Startup applies `20260919000100_authentication_profile_revisions.sql` and
-   `20260920000100_virtual_key_names.sql` (nullable key aliases). Existing routes keep their previous policy.
+   Startup applies `20260919000100_authentication_profile_revisions.sql`,
+   `20260920000100_virtual_key_names.sql` (nullable key aliases), and
+   `20260920000200_foundry_connections.sql` (Foundry provider/service configuration
+   and a foreign key preventing deletion of connections used by services).
+   Existing routes keep their previous policy.
 2. Verify readiness and existing traffic on each replica before enabling profiles.
    A saved profile is unreadable by 0.1.37, so mixed versions cannot safely serve
    a profile-enabled route.
@@ -18,8 +22,14 @@ The UI remains embedded in the Rust binary; no separate frontend service is need
    to configure a nonproduction route, assign keys and test both allowed and
    denied callers before configuring production routes.
 4. Preserve database revision guards during rollback. Old binaries may leave
-   opted-in routes unavailable; restore 0.1.38 to regain access. Do not erase
+   opted-in routes unavailable; restore 0.1.39 to regain access. Do not erase
    profile JSON or drop guards to bypass this protection.
+
+Create Foundry providers and services only after every replica is upgraded.
+Older binaries do not support these configurations. Before rolling back, disable
+Foundry services and remove their registrations before removing their provider;
+retain the additive migration. Follow the [Foundry guide](azure-foundry.md) to
+configure workload identity and verify the connection on each replica.
 
 Profile configuration is read from PostgreSQL for each new request and Accessa
 turn. Gateway-wide Entra settings saved in Admin Settings refresh independently
@@ -40,7 +50,7 @@ channel bindings are enabled; see [Accessa channels](accessa-channels.md).
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.38 .
+docker build -t relayna-gateway:0.1.39 .
 ```
 
 Run it with required dependencies:
@@ -60,7 +70,7 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.38
+  relayna-gateway:0.1.39
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -120,13 +130,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.38
+   ghcr.io/sarattha/relayna-gateway:0.1.39
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.38"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.39"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -134,7 +144,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.38
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.39
    ```
 
 3. Store secrets through your cluster secret manager:
