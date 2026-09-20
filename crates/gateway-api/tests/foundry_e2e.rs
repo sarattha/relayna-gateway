@@ -247,6 +247,39 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
         .await;
         assert_eq!(restored["credential_configured"], true);
     }
+    // A rename queued behind an identity change must read the committed identity,
+    // not restore the old client-secret snapshot with a now-cleared credential.
+    let id = Uuid::parse_str(provider_id).unwrap();
+    let mut transaction = store.pool().begin().await.unwrap();
+    sqlx::query("UPDATE provider_configs SET foundry=$2, credential_secret=NULL WHERE id=$1")
+        .bind(id)
+        .bind(sqlx::types::Json(
+            json!({"method":"workload_identity","tenant_id":Uuid::nil(),"client_id":Uuid::nil()}),
+        ))
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    let rename = store.patch_provider_config(
+        id,
+        serde_json::from_value(json!({"name":"Renamed Foundry"})).unwrap(),
+    );
+    tokio::pin!(rename);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut rename)
+            .await
+            .is_err()
+    );
+    transaction.commit().await.unwrap();
+    let renamed = rename.await.unwrap().unwrap();
+    assert_eq!(renamed.name, "Renamed Foundry");
+    assert_eq!(
+        renamed.foundry.unwrap().method,
+        gateway_core::foundry::FoundryIdentityMethod::WorkloadIdentity
+    );
+    assert!(!renamed.credential_configured);
+    // Invalid edits roll back; a subsequent valid patch can still acquire the row.
+    admin(&client, &admin_url, &operator.raw_token, reqwest::Method::PATCH, &format!("providers/{provider_id}"), json!({"foundry":{"method":"client_secret","tenant_id":Uuid::nil(),"client_id":Uuid::nil()}}), 400).await;
+    admin(&client, &admin_url, &operator.raw_token, reqwest::Method::PATCH, &format!("providers/{provider_id}"), json!({"foundry":{"method":"client_secret","tenant_id":Uuid::nil(),"client_id":Uuid::nil()},"credential":"mock-client-secret"}), 200).await;
     let check_path = format!("providers/{provider_id}/verify-connection");
     let check_url = format!("{admin_url}/admin-ui/admin/{check_path}");
     assert_eq!(client.post(&check_url).send().await.unwrap().status(), 401);

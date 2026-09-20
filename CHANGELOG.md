@@ -39,6 +39,8 @@ All notable changes to Relayna Gateway are documented in this file.
 
 - Reject key project changes that would invalidate saved service-profile bindings,
   including direct database writes; explain how to remove assignments first.
+- Serialize provider edits so overlapping renames cannot restore stale identity
+  settings after a credential change.
 - Clear stored Foundry client secrets when switching to workload or managed identity.
   Returning to client-secret authentication requires a new credential.
 - Keep valid Foundry token-cache reads independent of slow refreshes for other

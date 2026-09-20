@@ -3329,6 +3329,13 @@ impl AdminProviderConfigStore for PostgresStore {
         patch: ProviderConfigPatchRequest,
     ) -> GatewayResult<Option<ProviderConfigResponse>> {
         patch.validate()?;
+        // Derive merged identity/credential state from the latest locked row.
+        // A concurrent rename must not restore a superseded identity snapshot.
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         let Some(row) = sqlx::query(
             r#"
             SELECT
@@ -3346,10 +3353,11 @@ impl AdminProviderConfigStore for PostgresStore {
                 updated_at
             FROM provider_configs
             WHERE id = $1
+            FOR UPDATE
             "#,
         )
         .bind(provider_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?
         else {
@@ -3397,7 +3405,7 @@ impl AdminProviderConfigStore for PostgresStore {
         )?;
         response.validate_header_settings()?;
 
-        sqlx::query(
+        let updated = sqlx::query(
             r#"
             UPDATE provider_configs
             SET name = $2,
@@ -3437,7 +3445,7 @@ impl AdminProviderConfigStore for PostgresStore {
             response.credential_header_value_format,
         ))
         .bind(response.foundry.map(Json))
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map(|row| {
             row.map(|row| provider_config_response_from_row(&row))
@@ -3449,7 +3457,11 @@ impl AdminProviderConfigStore for PostgresStore {
             } else {
                 GatewayError::StoreUnavailable
             }
-        })?
+        })??;
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(updated)
     }
 
     async fn delete_provider_config(&self, provider_id: Uuid) -> GatewayResult<bool> {
