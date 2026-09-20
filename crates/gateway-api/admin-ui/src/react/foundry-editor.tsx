@@ -15,10 +15,22 @@ type Props = {
   restoreFocus?: HTMLElement | null;
 };
 
+export function FoundryIdentityFields({ identity, credentialConfigured = false }: { identity?: Identity; credentialConfigured?: boolean }) {
+  const [method, setMethod] = useState(identity?.method || "workload_identity");
+  return <>
+        <Field label="Azure identity"><NativeSelect name="foundry_method" value={method} onChange={e => setMethod(e.target.value)}>
+          <option value="workload_identity">Workload identity (AKS)</option><option value="managed_identity">Managed identity (Azure VM)</option><option value="client_secret">Client secret</option>
+        </NativeSelect></Field>
+        {method !== "managed_identity" && <Field label="Tenant ID"><Input name="tenant_id" required defaultValue={identity?.tenant_id || ""} /></Field>}
+        <Field label={method === "managed_identity" ? "Client ID (optional)" : "Client ID"} help="For a user-assigned identity, enter its client ID. Leave blank for the VM's system-assigned identity."><Input name="client_id" required={method !== "managed_identity"} defaultValue={identity?.client_id || ""} /></Field>
+        {method === "client_secret" && <Field label={credentialConfigured ? "Replace client secret (optional)" : "Client secret"}><Input name="credential" type="password" autoComplete="new-password" required={!credentialConfigured} /></Field>}
+        {method === "workload_identity" && <p className="text-xs text-muted-foreground">Configure the pod’s federated identity and AZURE_FEDERATED_TOKEN_FILE before invoking this connection.</p>}
+  </>;
+}
+
 export function FoundryEditor({ kind, record, providers, projects, onSave, onClose, restoreFocus }: Props) {
   const identity = record?.foundry as Identity | undefined;
   const binding = record?.foundry as Binding | undefined;
-  const [method, setMethod] = useState(identity?.method || "workload_identity");
   const [mode, setMode] = useState(binding?.mode || "registered_agent");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,7 +43,7 @@ export function FoundryEditor({ kind, record, providers, projects, onSave, onClo
     if (provider) {
       body = {
         name: value("name"), base_url: value("base_url"),
-        foundry: { method, tenant_id: value("tenant_id") || null, client_id: value("client_id") || null },
+        foundry: { method: value("foundry_method"), tenant_id: value("tenant_id") || null, client_id: value("client_id") || null },
         ...(record ? {} : { provider: "azure-foundry", enabled: true }),
       };
       const secret = String(data.get("credential") || "");
@@ -56,13 +68,7 @@ export function FoundryEditor({ kind, record, providers, projects, onSave, onClo
       {(provider || !record) && <Field label="Name"><Input name="name" required defaultValue={record?.name || ""} pattern={provider ? undefined : "[a-z0-9][a-z0-9-]{0,62}[a-z0-9]|[a-z0-9]"} placeholder={provider ? "Production Foundry" : "research-agent"} /></Field>}
       {provider ? <>
         <Field label="Project endpoint" help="Copy the project endpoint from Foundry. Use https://ACCOUNT.services.ai.azure.com/api/projects/PROJECT. Do not paste an agent or model deployment URL."><Input name="base_url" required type="url" defaultValue={record?.base_url || ""} placeholder="https://account.services.ai.azure.com/api/projects/project" /></Field>
-        <Field label="Azure identity"><NativeSelect value={method} onChange={e => setMethod(e.target.value)}>
-          <option value="workload_identity">Workload identity (AKS)</option><option value="managed_identity">Managed identity (Azure VM)</option><option value="client_secret">Client secret</option>
-        </NativeSelect></Field>
-        {method !== "managed_identity" && <Field label="Tenant ID"><Input name="tenant_id" required defaultValue={identity?.tenant_id || ""} /></Field>}
-        <Field label={method === "managed_identity" ? "Client ID (optional)" : "Client ID"} help="For a user-assigned identity, enter its client ID. Leave blank for the VM's system-assigned identity."><Input name="client_id" required={method !== "managed_identity"} defaultValue={identity?.client_id || ""} /></Field>
-        {method === "client_secret" && <Field label={record?.credential_configured ? "Replace client secret (optional)" : "Client secret"}><Input name="credential" type="password" autoComplete="new-password" required={!record?.credential_configured} /></Field>}
-        {method === "workload_identity" && <p className="text-xs text-muted-foreground">Configure the pod’s federated identity and AZURE_FEDERATED_TOKEN_FILE before invoking this connection.</p>}
+        <FoundryIdentityFields identity={identity} credentialConfigured={record?.credential_configured} />
       </> : <>
         <Field label="Foundry connection"><NativeSelect name="provider_id" required defaultValue={binding?.provider_id || ""}><option value="">Choose a connection…</option>{providers.map(p => <option key={p.id} value={p.id}>{p.name}{p.enabled ? "" : " (disabled)"}</option>)}</NativeSelect></Field>
         {!providers.length && <p role="status" className="text-xs text-muted-foreground">Add an Azure Foundry connection in Providers first.</p>}

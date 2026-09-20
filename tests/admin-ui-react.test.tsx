@@ -913,3 +913,58 @@ describe("Foundry connection verification", () => {
     await userEvent.setup().click(screen.getByRole("button",{name:"Close"}));expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
+
+import { ProviderCreate, mountProviderCreate } from "../crates/gateway-api/admin-ui/src/react/provider-create";
+describe("unified provider creation", () => {
+  const props = () => ({onSave:vi.fn().mockResolvedValue(undefined),onClose:vi.fn()});
+  const fill = (label:string,value:string) => fireEvent.change(screen.getByLabelText(label),{target:{value}});
+  const submit = () => fireEvent.submit(screen.getByRole("button",{name:"Create provider"}).closest("form")!);
+  const common = () => {fill("Name","Production");fill("Endpoint","http://localhost:4000");};
+  it("offers all providers and preserves ordinary provider creation and enabled state",async()=>{
+    const p=props();render(<ProviderCreate {...p}/>);
+    expect(screen.getByRole("option",{name:"Azure Foundry"})).toBeTruthy();
+    expect((screen.getByLabelText("Name") as HTMLInputElement).required).toBe(true);
+    expect((screen.getByLabelText("Endpoint") as HTMLInputElement).required).toBe(true);
+    common();await userEvent.setup().click(screen.getByLabelText("Enabled"));
+    await act(async()=>submit());expect(p.onSave).toHaveBeenCalledWith({provider:"litellm",name:"Production",base_url:"http://localhost:4000",enabled:false,credential_header_mode:"authorization_bearer",credential_header_name:null,credential_header_value_format:"raw"});
+    expect(p.onClose).toHaveBeenCalledOnce();
+  });
+  it("supports custom headers and clears credentials when switching provider types",async()=>{
+    const p=props();const user=userEvent.setup();render(<ProviderCreate {...p}/>);common();
+    fill("Default credential (optional)","do-not-carry-over");await user.selectOptions(screen.getByLabelText("Credential mode"),"custom_header");fill("Custom header","x-litellm-key");
+    await user.selectOptions(screen.getByLabelText("Provider"),"internal-service");
+    expect((screen.getByLabelText("Default credential (optional)") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Custom header") as HTMLInputElement).required).toBe(true);
+    fill("Default credential (optional)"," preserve whitespace ");fill("Custom header","x-service-key");await user.selectOptions(screen.getByLabelText("Header value"),"bearer");
+    await act(async()=>submit());expect(p.onSave).toHaveBeenLastCalledWith(expect.objectContaining({provider:"internal-service",enabled:true,credential:" preserve whitespace ",credential_header_mode:"custom_header",credential_header_name:"x-service-key",credential_header_value_format:"bearer"}));
+    await user.selectOptions(screen.getByLabelText("Credential mode"),"authorization_bearer");expect(screen.queryByLabelText("Custom header")).toBeNull();
+    await act(async()=>submit());expect(p.onSave.mock.lastCall![0].credential_header_name).toBeNull();
+  });
+  it("creates Azure identities without generic credentials or stale hidden fields",async()=>{
+    const p=props();const user=userEvent.setup();render(<ProviderCreate {...p}/>);common();fill("Default credential (optional)","generic-secret");
+    await user.selectOptions(screen.getByLabelText("Provider"),"azure-foundry");
+    expect(screen.queryByLabelText("Credential mode")).toBeNull();expect(screen.queryByLabelText("Default credential (optional)")).toBeNull();
+    fill("Project endpoint","https://account.services.ai.azure.com/api/projects/demo");fill("Tenant ID","tenant");fill("Client ID","client");
+    await act(async()=>submit());expect(p.onSave.mock.lastCall![0]).toEqual({provider:"azure-foundry",name:"Production",base_url:"https://account.services.ai.azure.com/api/projects/demo",enabled:true,foundry:{method:"workload_identity",tenant_id:"tenant",client_id:"client"}});
+    await user.selectOptions(screen.getByLabelText("Azure identity"),"client_secret");expect((screen.getByLabelText("Client secret") as HTMLInputElement).required).toBe(true);fill("Client secret"," azure-secret ");
+    await act(async()=>submit());expect(p.onSave.mock.lastCall![0]).toMatchObject({credential:" azure-secret ",foundry:{method:"client_secret"}});
+    await user.selectOptions(screen.getByLabelText("Azure identity"),"managed_identity");fill("Client ID (optional)","");
+    expect(screen.queryByLabelText("Tenant ID")).toBeNull();expect(screen.queryByLabelText("Client secret")).toBeNull();
+    await act(async()=>submit());expect(p.onSave.mock.lastCall![0]).toMatchObject({foundry:{method:"managed_identity",tenant_id:null,client_id:null}});expect(p.onSave.mock.lastCall![0]).not.toHaveProperty("credential");
+    await user.selectOptions(screen.getByLabelText("Provider"),"litellm");
+    expect(screen.queryByLabelText("Azure identity")).toBeNull();expect((screen.getByLabelText("Default credential (optional)") as HTMLInputElement).value).toBe("");
+  });
+  it("shows errors for correction and blocks closing or editing during a save",async()=>{
+    const p=props();const user=userEvent.setup();let resolve!:()=>void;p.onSave.mockRejectedValueOnce(new Error("Endpoint is invalid.")).mockRejectedValueOnce("Try again.").mockImplementationOnce(()=>new Promise<void>(r=>{resolve=r;}));
+    render(<ProviderCreate {...p}/>);common();await act(async()=>submit());expect(screen.getByRole("alert").textContent).toBe("Endpoint is invalid.");await act(async()=>submit());expect(screen.getByRole("alert").textContent).toBe("Try again.");
+    await user.selectOptions(screen.getByLabelText("Provider"),"internal-service");expect(screen.queryByRole("alert")).toBeNull();await act(async()=>submit());
+    expect((screen.getByRole("button",{name:"Creating…"}) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByLabelText("Provider").closest("fieldset")!.disabled).toBe(true);
+    await user.keyboard("{Escape}");expect(p.onClose).not.toHaveBeenCalled();await act(async()=>resolve());expect(p.onClose).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button",{name:"Cancel"}));expect(p.onClose).toHaveBeenCalledTimes(2);await user.keyboard("{Escape}");expect(p.onClose).toHaveBeenCalledTimes(3);
+  });
+  it("mounts and closes the shared create dialog",async()=>{
+    await act(async()=>{mountProviderCreate({onSave:vi.fn()});});
+    await userEvent.setup().click(screen.getByRole("button",{name:"Cancel"}));expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});

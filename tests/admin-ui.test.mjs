@@ -257,7 +257,6 @@ test("admin portal surfaces async action failures", () => {
     "createKey",
     "submitService",
     "patchService",
-    "createProvider",
     "saveStudioConnection",
     "submitGuardrail",
   ]) {
@@ -1179,4 +1178,9 @@ test("service presets produce supported access contracts and preserve operator-o
 test("Foundry verification uses the protected admin API namespace", () => {
   assert.match(sourceJs, /api\(`\/admin-ui\/admin\/providers\/\$\{provider\.id\}\/verify-connection`, \{ method: "POST" \}\)/);
   assert.match(sourceJs, /data-foundry-check=/);
+});
+
+test("provider creation has one shared entry point for every provider", () => {
+  assert.match(sourceJs, /mountProviderCreate\(\{ restoreFocus: createButton, onSave: createProvider \}\)/);
+  assert.doesNotMatch(sourceJs, /Add Azure Foundry|id="provider-form"/);
 });

@@ -8,6 +8,9 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Added
 
+- One Create provider flow for LiteLLM, Internal service and Azure Foundry, with
+  provider-specific fields and shared Azure identity controls.
+
 - Azure Foundry connection verification with fresh workload/managed/client-secret
   token acquisition, a read-only project probe, actionable staged diagnostics and
   per-instance results in Providers. Checks also work for disabled connections.

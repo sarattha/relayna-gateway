@@ -1,3 +1,4 @@
+import { mountProviderCreate } from "./react/provider-create";
 import { mountFoundryCheck } from "./react/foundry-check";
 import { mountFoundryEditor } from "./react/foundry-editor";
 import { mountRouteConfiguration } from "./react/route-configuration";
@@ -1614,31 +1615,6 @@ async function providers() {
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <section class="panel">
-      <div class="panel-heading"><h3>Create provider</h3><button type="button" data-foundry-provider>Add Azure Foundry</button></div>
-      <form id="provider-form" class="form-grid">
-        ${formSection("Identity and endpoint", "Choose the adapter and upstream address.", `
-          <label>Provider<select name="provider">${option("litellm", "litellm")}${option("internal-service", "")}</select></label>
-          <label>Name<input name="name" required value="LiteLLM"></label>
-          <label>Endpoint<input name="base_url" required placeholder="http://litellm:4000"></label>
-          <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
-        `, true)}
-        ${formSection("Authentication", "Credentials remain write-only after save.", `
-          <label>Default credential<input name="credential" type="password" autocomplete="new-password"></label>
-          <label>Credential mode<select name="credential_header_mode">
-            ${option("authorization_bearer", "authorization_bearer")}
-            ${option("custom_header", "")}
-          </select></label>
-          <label>Custom header<input name="credential_header_name" placeholder="x-litellm-api-key"></label>
-          <label>Header value<select name="credential_header_value_format">
-            ${option("raw", "raw")}
-            ${option("bearer", "")}
-          </select></label>
-          <div class="help wide-field">Use raw for headers like x-litellm-api-key: &lt;key&gt;. Use bearer for LiteLLM deployments that expect x-litellm-key: Bearer &lt;key&gt;.</div>
-        `)}
-        <div class="form-actions sticky-form-actions wide-field"><button class="primary">Create provider</button></div>
-      </form>
-    </section>
-    <section class="panel">
       <div class="panel-heading"><h3>Provider configuration</h3><span class="subtle">${state.providers.length} total</span></div>
       ${providerTable(state.providers)}
     </section>
@@ -1664,7 +1640,6 @@ async function providers() {
     const provider = state.providers.find(p => p.id === button.dataset.foundryCheck);
     mountFoundryCheck({ name: provider.name, restoreFocus: button, onCheck: () => api(`/admin-ui/admin/providers/${provider.id}/verify-connection`, { method: "POST" }) });
   }));
-  document.querySelector("#provider-form").addEventListener("submit", handleAsync(createProvider));
   document.querySelector("#litellm-credential-form").addEventListener("submit", handleAsync(saveLiteLlmCredentialMapping));
   document.querySelector("#litellm-passthrough-form").addEventListener("submit", handleAsync(saveLiteLlmPassthroughSettings));
   document.querySelector("[data-litellm-mapping-scope]").addEventListener("change", updateLiteLlmMappingTargetVisibility);
@@ -1679,6 +1654,12 @@ async function providers() {
     button.addEventListener("click", handleAsync(liteLlmCredentialMappingAction));
   });
   organizeView("providers");
+  const createButton = document.createElement("button");
+  createButton.type = "button";
+  createButton.className = "primary";
+  createButton.textContent = "Create provider";
+  createButton.addEventListener("click", () => mountProviderCreate({ restoreFocus: createButton, onSave: createProvider }));
+  document.querySelector("#page-actions").appendChild(createButton);
 }
 
 function litellmPassthroughForm(settings) {
@@ -1766,25 +1747,8 @@ function litellmCredentialMappingTable(rows) {
   );
 }
 
-async function createProvider(event) {
-  event.preventDefault();
-  const form = new FormData(event.target);
-  const credentialHeaderMode = form.get("credential_header_mode");
-  const credentialHeaderName = nullableString(form.get("credential_header_name"));
-  const credentialHeaderValueFormat = form.get("credential_header_value_format");
-  await api("/admin-ui/admin/providers", {
-    method: "POST",
-    body: JSON.stringify({
-      provider: form.get("provider"),
-      name: form.get("name"),
-      base_url: form.get("base_url"),
-      credential: blankToUndefined(form.get("credential")),
-      credential_header_mode: credentialHeaderMode,
-      credential_header_name: credentialHeaderMode === "custom_header" ? credentialHeaderName : null,
-      credential_header_value_format: credentialHeaderValueFormat,
-      enabled: form.has("enabled"),
-    }),
-  });
+async function createProvider(body) {
+  await api("/admin-ui/admin/providers", { method: "POST", body: JSON.stringify(body) });
   setNotice("Provider saved.", "success");
   await providers();
 }
@@ -5472,7 +5436,7 @@ function organizeView(view) {
   // Move existing, bound forms rather than cloning them: validation, handlers,
   // write-only credentials, imports and pricing editors remain functional.
   if (view === "routes") content.querySelectorAll('form.route-config-form').forEach(form => mountRouteConfiguration(form, showContentDrawer));
-  const createForms = { projects: "project-form", keys: "key-form", services: "service-form", providers: "provider-form", managedIdentities: "managed-identity-form" };
+  const createForms = { projects: "project-form", keys: "key-form", services: "service-form", managedIdentities: "managed-identity-form" };
   const id = createForms[view];
   const create = id && content.querySelector(`#${id}`)?.closest(".panel");
   if (create) {
@@ -5488,7 +5452,7 @@ function organizeView(view) {
     button.className = "primary";
     button.textContent = title;
     actions.appendChild(button);
-    const foundryAction = create.querySelector("[data-foundry-provider], [data-foundry-service]");
+    const foundryAction = create.querySelector("[data-foundry-service]");
     if (foundryAction) actions.appendChild(foundryAction);
     button.addEventListener("click", () => showContentDrawer(title, create, () => placeholder.appendChild(create)));
   }

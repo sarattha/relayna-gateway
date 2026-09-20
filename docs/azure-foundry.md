@@ -51,7 +51,8 @@ compatible modern agent before it can be registered here.
 
 ## 1. Add a connection
 
-Open **Providers → Add Azure Foundry**. Enter a recognizable name, the complete
+Open **Providers → Create provider**, then choose **Azure Foundry** in the
+**Provider** selector. Enter a recognizable name, the complete
 project endpoint, and an Azure identity method.
 
 ![Foundry connection using workload identity](assets/screenshots/foundry/connection.png)
