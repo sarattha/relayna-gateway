@@ -1213,3 +1213,10 @@ Gateway key. Its `status` is `available`, `not_mapped` or `unavailable`;
 Newly created virtual keys remain visible until **Close** is explicitly activated.
 Backdrop clicks and Escape cannot dismiss show-once credentials. Copy the key and
 store it before closing; the raw value cannot be recovered afterward.
+
+## Azure Foundry
+
+Add an Azure Foundry connection in Providers, then register a fixed agent or a
+project Responses passthrough service. Both use Relayna caller authentication and
+service policy. See the [illustrated Foundry guide](azure-foundry.md) for Azure
+identity setup, the two modes, request examples and supported API boundaries.

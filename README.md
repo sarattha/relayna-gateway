@@ -358,3 +358,9 @@ See:
 - `docs/provider-intelligence.md`
 - `docs/operations.md`
 - `CHANGELOG.md`
+
+### Azure Foundry integration
+
+Register existing Foundry agents or expose a governed project Responses endpoint.
+See the [Azure Foundry setup guide](docs/azure-foundry.md) for identity configuration,
+illustrated Admin UI steps, API examples, supported boundaries and mock E2E tests.

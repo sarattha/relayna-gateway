@@ -12,6 +12,7 @@ pub enum ProviderConfigKind {
     LiteLlm,
     #[serde(rename = "internal-service")]
     InternalService,
+    AzureFoundry,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,6 +33,7 @@ pub enum CredentialHeaderValueFormat {
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct ProviderConfigCreateRequest {
+    pub foundry: Option<crate::foundry::FoundryIdentity>,
     pub provider: ProviderConfigKind,
     pub name: String,
     pub base_url: String,
@@ -49,6 +51,7 @@ pub struct ProviderConfigCreateRequest {
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 pub struct ProviderConfigPatchRequest {
+    pub foundry: Option<crate::foundry::FoundryIdentity>,
     pub name: Option<String>,
     pub base_url: Option<String>,
     pub enabled: Option<bool>,
@@ -60,6 +63,7 @@ pub struct ProviderConfigPatchRequest {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ProviderConfigResponse {
+    pub foundry: Option<crate::foundry::FoundryIdentity>,
     pub id: Uuid,
     pub provider: ProviderConfigKind,
     pub name: String,
@@ -230,6 +234,12 @@ where
 
 #[async_trait]
 pub trait ProviderConfigLookup: Send + Sync {
+    async fn foundry_config(
+        &self,
+        _id: Uuid,
+    ) -> GatewayResult<Option<crate::foundry::FoundryRuntimeConfig>> {
+        Ok(None)
+    }
     async fn active_litellm_config(&self) -> GatewayResult<Option<ProviderRuntimeConfig>>;
     async fn litellm_credential_mapping_for_context(
         &self,
@@ -243,6 +253,13 @@ impl<T> ProviderConfigLookup for std::sync::Arc<T>
 where
     T: ProviderConfigLookup + ?Sized,
 {
+    async fn foundry_config(
+        &self,
+        id: Uuid,
+    ) -> GatewayResult<Option<crate::foundry::FoundryRuntimeConfig>> {
+        (**self).foundry_config(id).await
+    }
+
     async fn active_litellm_config(&self) -> GatewayResult<Option<ProviderRuntimeConfig>> {
         (**self).active_litellm_config().await
     }
@@ -260,6 +277,17 @@ where
 
 impl ProviderConfigCreateRequest {
     pub fn validate(&self) -> GatewayResult<()> {
+        validate_foundry_config(
+            self.provider,
+            self.foundry.as_ref(),
+            &self.base_url,
+            self.credential.is_some(),
+        )?;
+        if self.provider == ProviderConfigKind::AzureFoundry
+            && self.credential_header_mode != CredentialHeaderMode::AuthorizationBearer
+        {
+            return Err(GatewayError::InvalidFoundryConfiguration);
+        }
         validate_name(&self.name)?;
         validate_base_url(&self.base_url)?;
         validate_optional_secret(self.credential.as_deref())?;
@@ -296,6 +324,11 @@ impl ProviderConfigPatchRequest {
 
 impl ProviderConfigResponse {
     pub fn validate_header_settings(&self) -> GatewayResult<()> {
+        if self.provider == ProviderConfigKind::AzureFoundry
+            && self.credential_header_mode != CredentialHeaderMode::AuthorizationBearer
+        {
+            return Err(GatewayError::InvalidFoundryConfiguration);
+        }
         validate_header_settings(
             self.credential_header_mode,
             self.credential_header_name.as_deref(),
@@ -307,6 +340,7 @@ pub fn provider_config_kind_str(provider: ProviderConfigKind) -> &'static str {
     match provider {
         ProviderConfigKind::LiteLlm => "litellm",
         ProviderConfigKind::InternalService => "internal-service",
+        ProviderConfigKind::AzureFoundry => "azure-foundry",
     }
 }
 
@@ -314,6 +348,7 @@ pub fn parse_provider_config_kind(value: &str) -> GatewayResult<ProviderConfigKi
     match value {
         "litellm" => Ok(ProviderConfigKind::LiteLlm),
         "internal-service" => Ok(ProviderConfigKind::InternalService),
+        "azure-foundry" => Ok(ProviderConfigKind::AzureFoundry),
         _ => Err(GatewayError::InvalidProviderConfigPayload),
     }
 }
@@ -426,9 +461,71 @@ fn default_enabled() -> bool {
     true
 }
 
+pub fn validate_foundry_config(
+    kind: ProviderConfigKind,
+    foundry: Option<&crate::foundry::FoundryIdentity>,
+    endpoint: &str,
+    secret_present: bool,
+) -> GatewayResult<()> {
+    match (kind, foundry) {
+        (ProviderConfigKind::AzureFoundry, Some(identity)) => {
+            identity.validate(endpoint, secret_present)
+        }
+        (ProviderConfigKind::AzureFoundry, None) | (_, Some(_)) => {
+            Err(GatewayError::InvalidFoundryConfiguration)
+        }
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn foundry_provider_rejects_mixed_identity_and_custom_authentication() {
+        let identity = crate::foundry::FoundryIdentity {
+            method: crate::foundry::FoundryIdentityMethod::ManagedIdentity,
+            tenant_id: None,
+            client_id: None,
+        };
+        assert!(validate_foundry_config(
+            ProviderConfigKind::LiteLlm,
+            Some(&identity),
+            "https://a.example",
+            false
+        )
+        .is_err());
+        let mut request: ProviderConfigCreateRequest = serde_json::from_value(serde_json::json!({
+            "provider":"azure-foundry", "name":"test", "base_url":"https://a.services.ai.azure.com/api/projects/demo"
+        })).unwrap();
+        assert!(
+            request.validate().is_err(),
+            "Foundry needs explicit identity"
+        );
+        request.foundry = Some(identity);
+        request.validate().unwrap();
+        request.credential_header_mode = CredentialHeaderMode::CustomHeader;
+        assert!(
+            request.validate().is_err(),
+            "Azure token must use Authorization"
+        );
+        let response = ProviderConfigResponse {
+            id: Uuid::nil(),
+            provider: request.provider,
+            foundry: request.foundry,
+            name: request.name,
+            base_url: request.base_url,
+            enabled: true,
+            credential_configured: false,
+            credential_header_mode: request.credential_header_mode,
+            credential_header_name: Some("x-custom".into()),
+            credential_header_value_format: CredentialHeaderValueFormat::Raw,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        assert!(response.validate_header_settings().is_err());
+    }
 
     #[test]
     fn validates_litellm_custom_header_names() {

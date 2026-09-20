@@ -1,3 +1,4 @@
+import { mountFoundryEditor } from "./react/foundry-editor";
 import { mountRouteConfiguration } from "./react/route-configuration";
 import { mountKeyRouteBindings } from "./react/key-route-bindings";
 import { mountIdentityEditor } from "./react/mount-identity-editor";
@@ -1584,6 +1585,20 @@ function liteLlmSpendContent(snapshot) {
   return `<div class="stat"><span>LiteLLM reported spend · USD</span><strong>${money(snapshot.spend_usd)}</strong></div><p>${esc(scope)} · Retrieved ${time(snapshot.fetched_at)}</p>`;
 }
 
+async function openFoundryEditor(kind, record, trigger) {
+  if (kind === "service") state.providers = await api("/admin-ui/admin/providers");
+  mountFoundryEditor({ kind, record, restoreFocus: trigger,
+    providers: (state.providers || []).filter(p => p.provider === "azure-foundry"), projects: state.projects || [],
+    onSave: async body => {
+      const collection = kind === "provider" ? "providers" : "services";
+      const id = record && (kind === "provider" ? record.id : record.name);
+      await api(`/admin-ui/admin/${collection}${id ? `/${encodeURIComponent(id)}` : ""}`, { method: record ? "PATCH" : "POST", body: JSON.stringify(body) });
+      setNotice(kind === "provider" ? "Foundry connection saved." : "Foundry service saved. Configure caller profiles and service limits with Edit.", "success");
+      if (kind === "provider") await providers(); else await services();
+    },
+  });
+}
+
 async function providers() {
   const renderId = ++renderGeneration;
   const loaded = await Promise.all([
@@ -1598,7 +1613,7 @@ async function providers() {
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <section class="panel">
-      <div class="panel-heading"><h3>Create provider</h3></div>
+      <div class="panel-heading"><h3>Create provider</h3><button type="button" data-foundry-provider>Add Azure Foundry</button></div>
       <form id="provider-form" class="form-grid">
         ${formSection("Identity and endpoint", "Choose the adapter and upstream address.", `
           <label>Provider<select name="provider">${option("litellm", "litellm")}${option("internal-service", "")}</select></label>
@@ -1643,6 +1658,7 @@ async function providers() {
       ${litellmPassthroughForm(state.litellmPassthroughSettings)}
     </section>
   `;
+  document.querySelectorAll("[data-foundry-provider]").forEach(button => button.addEventListener("click", handleAsync(() => openFoundryEditor("provider", state.providers.find(p => p.id === button.dataset.foundryProvider), button))));
   document.querySelector("#provider-form").addEventListener("submit", handleAsync(createProvider));
   document.querySelector("#litellm-credential-form").addEventListener("submit", handleAsync(saveLiteLlmCredentialMapping));
   document.querySelector("#litellm-passthrough-form").addEventListener("submit", handleAsync(saveLiteLlmPassthroughSettings));
@@ -1691,12 +1707,12 @@ function litellmPassthroughForm(settings) {
 
 function providerTable(rows) {
   return table(
-    ["Provider", "Endpoint", "State", "Credential", "LiteLLM auth", "Updated", "Actions"],
+    ["Provider", "Endpoint", "State", "Credential", "Authentication", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.provider)}</div>`,
       `<code>${esc(row.base_url)}</code>`,
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
-      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+      (row.credential_configured || (row.foundry && row.foundry.method !== "client_secret")) ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
       providerAuthSettingsForm(row),
       time(row.updated_at),
       `<div class="actions">
@@ -1708,6 +1724,7 @@ function providerTable(rows) {
 }
 
 function providerAuthSettingsForm(row) {
+  if (row.provider === "azure-foundry") return `<button type="button" data-foundry-provider="${attr(row.id)}">Configure Azure identity</button>`;
   if (row.provider !== "litellm") {
     return '<span class="subtle">not applicable</span>';
   }
@@ -1966,10 +1983,10 @@ function serviceRouteTable(rows) {
       endpointIdentityBadge(row.access),
       serviceBadges(row),
       esc(listValue(row.allowed_methods, "none")),
-      esc(row.upstream_base_url || "missing"),
+      esc(row.foundry ? `Azure Foundry · ${row.foundry.mode === "registered_agent" ? row.foundry.agent_name : "Responses passthrough"}` : row.upstream_base_url || "missing"),
       serviceRouteTimeoutForm(row),
-      esc(healthCheckLabel(row)),
-      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+      esc(row.foundry ? "Not probed" : healthCheckLabel(row)),
+      row.foundry ? '<span class="badge">Azure identity</span>' : row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
     ]),
   );
 }
@@ -2135,7 +2152,7 @@ async function services() {
       <section class="panel">
         <div class="panel-heading">
           <h3>Create service</h3>
-          <button type="button" data-service-action="studio-import">Import from Studio</button>
+          <div class="actions"><button type="button" data-foundry-service>Register Foundry service</button><button type="button" data-service-action="studio-import">Import from Studio</button></div>
         </div>
         <form id="service-form" class="form-grid">
           <label class="wide-field">Service type<select name="service_type" required aria-describedby="service-type-help">
@@ -2186,6 +2203,12 @@ async function services() {
   document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
   bindPricingRuleEditors();
   bindEndpointPricingEditors();
+  document.querySelectorAll("[data-foundry-service]").forEach(button => button.addEventListener("click", handleAsync(() => openFoundryEditor("service", state.services.find(p => p.name === button.dataset.foundryService), button))));
+  if (editing?.foundry) {
+    const form = document.querySelector("#service-edit-form");
+    for (const name of ["upstream_base_url", "credential", "clear_credential", "fallback_services", "health_check_path", "health_check_method", "studio_service_id", "sync_status"]) form.elements.namedItem(name).closest("label").hidden = true;
+    form.querySelectorAll('[name="allowed_methods"]').forEach(input => { input.disabled = input.value !== "POST"; });
+  }
   document.querySelectorAll("[data-service-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(serviceAction));
   });
@@ -2384,6 +2407,7 @@ function serviceEditForm(service) {
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
     <form id="service-edit-form" class="form-grid" data-service-name="${attr(service.name)}">
       <div class="field wide-field"><span>Saved endpoint protocols</span><div>${serviceProtocolSummary(service)}</div><small class="field-hint">WS means WebSocket and applies only to the displayed run path. Other endpoints use HTTP; SSE also uses HTTP. Labels describe saved configuration, not current availability.</small></div>
+      ${service.foundry ? `<div class="wide-field"><span class="subtle">Azure Foundry · ${service.foundry.mode === "registered_agent" ? esc(service.foundry.agent_name) : "Endpoint passthrough"}</span> <button type="button" data-foundry-service="${attr(service.name)}">Configure Foundry</button></div>` : ""}
       ${formSection("Identity and routing", "Update registry identity, route, upstream, and methods.", `
         <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
         <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
@@ -2401,13 +2425,13 @@ function serviceEditForm(service) {
         <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
         <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       `)}
-      ${endpointAccessFields(service.access || {}, service.project_id || "")}
+      ${service.foundry ? formSection("Caller authentication", "Require a Relayna key and optionally an Entra identity for this service.", endpointIdentityFields(service.access || {}, service.project_id || "")) : endpointAccessFields(service.access || {}, service.project_id || "")}
       ${formSection("Usage pricing", "Update cost source and request-matching rules.", `
         <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
         <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
         <div class="help wide-field">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
         ${pricingRulesEditor(service.pricing_rules || [])}
-        ${openApiEndpointPricingEditor(service)}
+        ${service.foundry ? "" : openApiEndpointPricingEditor(service)}
       `)}
       <div class="form-actions sticky-form-actions wide-field">
         <button type="submit" class="primary">Save service</button>
@@ -2755,7 +2779,7 @@ function servicePickerTable(rows, selected) {
       <td><strong>${esc(row.name)}</strong><div class="subtle">${esc(row.studio_service_id || "local")}</div></td>
       <td>${esc(row.sync_status || (row.enabled ? "enabled" : "disabled"))}</td>
       <td><code>${esc(row.route_pattern)}</code></td>
-      <td><code>${esc(row.upstream_base_url || "missing")}</code></td>
+      <td><code>${esc(row.foundry ? `Azure Foundry · ${row.foundry.mode === "registered_agent" ? row.foundry.agent_name : "Responses passthrough"}` : row.upstream_base_url || "missing")}</code></td>
     </tr>`)
     .join("")}</tbody></table></div>`;
 }
@@ -2888,9 +2912,9 @@ function serviceTable(rows) {
       `<code>${esc(row.route_pattern)}</code>`,
       serviceProtocolSummary(row),
       endpointIdentityBadge(row.access),
-      esc(row.upstream_base_url || "missing"),
-      esc(healthCheckLabel(row)),
-      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+      esc(row.foundry ? `Azure Foundry · ${row.foundry.mode === "registered_agent" ? row.foundry.agent_name : "Responses passthrough"}` : row.upstream_base_url || "missing"),
+      esc(row.foundry ? "Not probed" : healthCheckLabel(row)),
+      row.foundry ? '<span class="badge">Azure identity</span>' : row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
       `${esc(row.cost_mode)} ${row.estimated_cost_usd == null ? "" : money(row.estimated_cost_usd)}`,
       `<div class="actions">
         <button data-service-action="edit" data-service-name="${attr(row.name)}" aria-label="Edit service ${attr(row.name)}">Edit</button>
@@ -5459,6 +5483,8 @@ function organizeView(view) {
     button.className = "primary";
     button.textContent = title;
     actions.appendChild(button);
+    const foundryAction = create.querySelector("[data-foundry-provider], [data-foundry-service]");
+    if (foundryAction) actions.appendChild(foundryAction);
     button.addEventListener("click", () => showContentDrawer(title, create, () => placeholder.appendChild(create)));
   }
   content.querySelectorAll(".muted-panel").forEach((panel) => { panel.hidden = true; });

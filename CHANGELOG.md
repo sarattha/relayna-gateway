@@ -8,6 +8,10 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Added
 
+- Azure Foundry connections with renewable client-secret, AKS workload and Azure VM
+  managed identities; governed registered-agent and project Responses passthrough
+  services, JSON/SSE forwarding, mock end-to-end tests and an illustrated setup guide.
+
 - Admin UI 4.0: React/TypeScript/Vite shell and identity/key dialogs, shared
   Tailwind/Radix component foundation, consistent compact styling across all
   Admin/Owner pages, and the existing Rust-embedded static-asset deployment.

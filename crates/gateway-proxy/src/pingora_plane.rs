@@ -222,6 +222,7 @@ pub struct RelaynaPingoraProxy<S, R> {
     config: PingoraLiteLlmConfig,
     auth_runtime: SharedGatewayAuthRuntime,
     connection_limits: Arc<ConnectionLimits>,
+    foundry_tokens: crate::foundry::FoundryTokenCache,
 }
 
 impl<S, R> RelaynaPingoraProxy<S, R>
@@ -256,6 +257,7 @@ where
             config,
             auth_runtime,
             connection_limits: Arc::new(ConnectionLimits::default()),
+            foundry_tokens: Default::default(),
         }
     }
 }
@@ -317,6 +319,7 @@ pub struct PingoraContext {
     body_prefix: Vec<u8>,
     body_bytes_seen: usize,
     response_body_prefix: Vec<u8>,
+    foundry_usage: crate::foundry::FoundryUsage,
     response_bytes_seen: usize,
     policy: Option<KeyPolicy>,
     request_rewriter: Option<BoundedBodyRewriter>,
@@ -335,6 +338,10 @@ pub struct PingoraContext {
     terminal_usage_recorded: bool,
     terminal_status_code: Option<u16>,
     upstream_timeout: bool,
+    foundry: Option<(
+        gateway_core::foundry::FoundryBinding,
+        gateway_core::foundry::FoundryRuntimeConfig,
+    )>,
     service_upstream: Option<PingoraUpstreamConfig>,
     service_route_pattern: Option<String>,
     service_version: Option<String>,
@@ -405,6 +412,7 @@ where
             body_prefix: Vec::new(),
             body_bytes_seen: 0,
             response_body_prefix: Vec::new(),
+            foundry_usage: Default::default(),
             response_bytes_seen: 0,
             policy: None,
             request_rewriter: None,
@@ -423,6 +431,7 @@ where
             terminal_usage_recorded: false,
             terminal_status_code: None,
             upstream_timeout: false,
+            foundry: None,
             service_upstream: None,
             service_route_pattern: None,
             service_version: None,
@@ -524,7 +533,10 @@ where
         let mut matched = if let Some(registration) = persisted_service {
             ctx.access = registration.access.clone();
             let service_name = registration.name.clone();
-            let upstream = match service_upstream_from_registration(&registration) {
+            let upstream = match self
+                .service_upstream(&registration, &req.method, &req.uri, ctx)
+                .await
+            {
                 Ok(upstream) => upstream,
                 Err(error) => {
                     respond_error(session, error, ctx).await?;
@@ -979,7 +991,10 @@ where
                         respond_error(session, GatewayError::UnsupportedRoute, ctx).await?;
                         return Ok(true);
                     }
-                    let upstream = match service_upstream_from_registration(&registration) {
+                    let upstream = match self
+                        .service_upstream(&registration, &req.method, &req.uri, ctx)
+                        .await
+                    {
                         Ok(upstream) => upstream,
                         Err(error) => {
                             respond_error(session, error, ctx).await?;
@@ -1170,7 +1185,16 @@ where
             return Ok(());
         }
 
-        let raw_body = rewriter.take_buffer();
+        let mut raw_body = rewriter.take_buffer();
+        if let Some((binding, _)) = &ctx.foundry {
+            raw_body = match binding.prepare_request(&raw_body) {
+                Ok(body) => body,
+                Err(error) => {
+                    ctx.guardrail_error = Some(error);
+                    return Err(PingoraError::new(ErrorType::InternalError));
+                }
+            };
+        }
         let key = ctx.key.clone();
         let route = ctx.route;
         let route_match = ctx.route_match.clone();
@@ -1192,7 +1216,7 @@ where
             .await;
         }
         let analysis = analyze_generation_request(&raw_body);
-        let features = analysis
+        let mut features = analysis
             .as_ref()
             .map(|analysis| analysis.features.clone())
             .unwrap_or_default();
@@ -1209,6 +1233,58 @@ where
                 .await
             {
                 Ok(effective) => {
+                    if ctx.foundry.is_some() {
+                        let matched = ctx.route_match.as_ref().expect("Foundry route resolved");
+                        features.service_name = matched.service_name.clone();
+                        ctx.is_streaming = features.stream;
+                        let checked = evaluate_policy(
+                            &effective.policy,
+                            matched.route,
+                            matched.provider,
+                            &features,
+                        )
+                        .and_then(|_| {
+                            evaluate_policy_limits(
+                                &effective.policy,
+                                Utc::now(),
+                                Some(ctx.body_bytes_seen as i64),
+                                None,
+                                i32::try_from(estimate_generation_tokens(&raw_body)).ok(),
+                                None,
+                                matched.estimated_cost_usd,
+                            )
+                        });
+                        if let Err(error) = checked {
+                            ctx.guardrail_error = Some(error);
+                            return Err(PingoraError::new(ErrorType::InternalError));
+                        }
+                        match self
+                            .control_state
+                            .check_token_rate_limit(
+                                key.key_id,
+                                effective.policy.tpm_limit,
+                                estimate_generation_tokens(&raw_body),
+                                Utc::now(),
+                            )
+                            .await
+                        {
+                            Ok(RateLimitDecision::Allowed { .. }) => {}
+                            Ok(RateLimitDecision::Exceeded {
+                                retry_after_seconds,
+                                ..
+                            }) => {
+                                ctx.guardrail_error = Some(GatewayError::TokenRateLimitExceeded {
+                                    retry_after_seconds,
+                                });
+                                return Err(PingoraError::new(ErrorType::InternalError));
+                            }
+                            Err(error) => {
+                                ctx.guardrail_error = Some(error);
+                                return Err(PingoraError::new(ErrorType::InternalError));
+                            }
+                        }
+                        ctx.policy = Some(effective.policy);
+                    }
                     policy = effective.guardrail_policy;
                     ctx.guardrail_policy = policy.clone();
                 }
@@ -1571,6 +1647,27 @@ where
                         gateway_telemetry::stream_started();
                     }
                 }
+                if let Some((_, config)) = &ctx.foundry {
+                    let result = tokio::time::timeout(
+                        Duration::from_millis(matched.timeout_ms),
+                        self.foundry_tokens.token(config),
+                    )
+                    .await
+                    .unwrap_or(Err(GatewayError::UpstreamTimeout));
+                    match result {
+                        Ok(token) => {
+                            if let Some(upstream) = &mut ctx.service_upstream {
+                                upstream.service_key = token;
+                            }
+                        }
+                        Err(error) => {
+                            self.record_terminal_usage(ctx, &key, route, &error, now)
+                                .await;
+                            respond_error(session, error, ctx).await?;
+                            return Ok(false);
+                        }
+                    }
+                }
                 gateway_telemetry::record_provider_selection();
                 Ok(true)
             }
@@ -1756,7 +1853,10 @@ where
             rewrite_direct_openai_uri(upstream_request)?;
         }
         if let Some(matched) = &ctx.route_match {
-            if matched.route == Route::ServiceWildcard && ctx.access.accessa.is_none() {
+            if matched.route == Route::ServiceWildcard
+                && ctx.access.accessa.is_none()
+                && ctx.foundry.is_none()
+            {
                 if let Some(service_name) = matched.service_name.as_deref() {
                     rewrite_service_wildcard_uri(
                         upstream_request,
@@ -1764,6 +1864,26 @@ where
                         ctx.service_route_pattern.as_deref(),
                     )?;
                 }
+            }
+        }
+        if let Some((_, config)) = &ctx.foundry {
+            let url = gateway_core::foundry::project_url(&config.base_url)
+                .map_err(|_| PingoraError::new(ErrorType::InternalError))?;
+            let path = format!("{}/openai/v1/responses", url.path().trim_end_matches('/'));
+            upstream_request.set_uri(
+                path.parse()
+                    .map_err(|_| PingoraError::new(ErrorType::InternalError))?,
+            );
+            for name in [
+                "api-key",
+                "cookie",
+                "openai-organization",
+                "openai-project",
+                "foundry-features",
+                "x-ms-client-principal",
+                "x-ms-authorization-auxiliary",
+            ] {
+                upstream_request.remove_header(name);
             }
         }
         upstream_request.insert_header("x-relayna-request-id", &ctx.request_id)?;
@@ -1788,14 +1908,21 @@ where
                 upstream_request.insert_header("x-relayna-service", service_name)?;
             }
         }
-        if ctx
-            .pre_guardrail_plan
-            .as_ref()
-            .is_some_and(|plan| !plan.entries.is_empty())
+        if ctx.foundry.is_some()
+            || ctx
+                .pre_guardrail_plan
+                .as_ref()
+                .is_some_and(|plan| !plan.entries.is_empty())
         {
             if let Some(rewritten_len) = ctx.rewritten_request_len {
                 prepare_rewritten_request_headers(upstream_request, rewritten_len);
             }
+        }
+
+        if ctx.foundry.is_some() {
+            upstream_request.remove_header("content-length");
+            upstream_request.insert_header("transfer-encoding", "chunked")?;
+            upstream_request.insert_header("content-type", "application/json")?;
         }
 
         // This callback prepares headers; it does not prove upstream application receipt.
@@ -2029,7 +2156,7 @@ where
             observe_response_body_chunk(ctx, body);
             if end_of_stream {
                 if let Some(policy) = &ctx.policy {
-                    let (_, output_tokens, _) = extract_usage_tokens(&ctx.response_body_prefix);
+                    let (_, output_tokens, _) = response_usage_tokens(ctx);
                     if let Err(error) = evaluate_policy_limits(
                         policy,
                         Utc::now(),
@@ -2089,7 +2216,7 @@ where
             let (input_tokens, output_tokens, total_tokens) = if ctx.litellm_passthrough {
                 (None, None, None)
             } else {
-                extract_usage_tokens(&ctx.response_body_prefix)
+                response_usage_tokens(ctx)
             };
             let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
             let provider = provider_for_usage(ctx);
@@ -2407,6 +2534,35 @@ where
             self.store.anthropic_route_mode(route).await
         } else {
             self.store.openai_route_mode(route).await
+        }
+    }
+
+    async fn service_upstream(
+        &self,
+        registration: &gateway_core::ServiceRegistration,
+        method: &http::Method,
+        uri: &http::Uri,
+        ctx: &mut PingoraContext,
+    ) -> GatewayResult<PingoraUpstreamConfig>
+    where
+        S: ProviderConfigLookup,
+    {
+        if let Some(binding) = &registration.foundry {
+            registration.ensure_routable()?;
+            binding.validate_path(method, uri, &registration.route_pattern)?;
+            let config = self
+                .store
+                .foundry_config(binding.provider_id())
+                .await?
+                .ok_or(GatewayError::InvalidFoundryConfiguration)?;
+            config
+                .identity
+                .validate(&config.base_url, config.secret.is_some())?;
+            let upstream = PingoraUpstreamConfig::from_base_url(&config.base_url, String::new())?;
+            ctx.foundry = Some((binding.clone(), config));
+            Ok(upstream)
+        } else {
+            service_upstream_from_registration(registration)
         }
     }
 
@@ -2892,7 +3048,18 @@ fn apply_service_registration_runtime_limits(
     Ok(())
 }
 
+fn response_usage_tokens(ctx: &PingoraContext) -> (Option<i64>, Option<i64>, Option<i64>) {
+    if ctx.foundry.is_some() && ctx.is_streaming {
+        ctx.foundry_usage.tokens
+    } else {
+        extract_usage_tokens(&ctx.response_body_prefix)
+    }
+}
+
 fn observe_response_body_chunk(ctx: &mut PingoraContext, body: &[u8]) {
+    if ctx.foundry.is_some() && ctx.is_streaming {
+        ctx.foundry_usage.feed(body);
+    }
     if ctx.is_streaming && !ctx.first_chunk_recorded {
         ctx.first_chunk_recorded = true;
         let latency_ms = u64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(u64::MAX);
@@ -3073,7 +3240,11 @@ fn managed_service_request_can_stream(ctx: &PingoraContext) -> bool {
         .request_content_type
         .as_deref()
         .is_some_and(|content_type| !is_json_content_type(content_type));
-    if !is_service || !is_non_json || ctx.policy.is_none() || !ctx.service_pricing_rules.is_empty()
+    if ctx.foundry.is_some()
+        || !is_service
+        || !is_non_json
+        || ctx.policy.is_none()
+        || !ctx.service_pricing_rules.is_empty()
     {
         return false;
     }
@@ -3538,6 +3709,7 @@ fn default_proxy_failure_status(error: &PingoraError) -> u16 {
 #[cfg(test)]
 fn new_pingora_context_for_tests() -> PingoraContext {
     PingoraContext {
+        foundry: None,
         access: Default::default(),
         socket: false,
         socket_upgraded: false,
@@ -3559,6 +3731,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         body_prefix: Vec::new(),
         body_bytes_seen: 0,
         response_body_prefix: Vec::new(),
+        foundry_usage: Default::default(),
         response_bytes_seen: 0,
         policy: None,
         request_rewriter: None,
@@ -4121,6 +4294,7 @@ mod tests {
     fn service_endpoint_context_uses_template_with_concrete_fallback() {
         let now = Utc::now();
         let registration = gateway_core::ServiceRegistration {
+            foundry: None,
             access: Default::default(),
             name: "jobs".to_owned(),
             project_id: None,
@@ -4953,6 +5127,7 @@ mod tests {
         let store = Arc::new(MemoryUsageStore::default());
         let control_state = Arc::new(MemoryControlState::default());
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state,
@@ -5000,6 +5175,7 @@ mod tests {
     #[tokio::test]
     async fn accessa_socket_hooks_reject_expiry_and_bad_frames_without_buffering_or_retry() {
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store: Arc::new(MemoryUsageStore::default()),
             control_state: Arc::new(MemoryControlState::default()),
@@ -5051,6 +5227,7 @@ mod tests {
     #[tokio::test]
     async fn connection_errors_resolve_conditional_retry_and_keep_attempt_evidence() {
         let mut proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store: Arc::new(MemoryUsageStore::default()),
             control_state: Arc::new(MemoryControlState::default()),
@@ -5112,6 +5289,7 @@ mod tests {
         let store = Arc::new(MemoryUsageStore::default());
         *store.openai_routes_enabled.lock().expect("routes lock") = false;
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state: Arc::new(MemoryControlState::default()),
@@ -5314,6 +5492,7 @@ mod tests {
             credential_header_value_format: CredentialHeaderValueFormat::Raw,
         });
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state: Arc::new(MemoryControlState::default()),
@@ -5364,6 +5543,7 @@ mod tests {
             credential: "mapped-litellm-key".to_owned(),
         });
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state: Arc::new(MemoryControlState::default()),
@@ -5406,6 +5586,7 @@ mod tests {
             credential_header_value_format: CredentialHeaderValueFormat::Bearer,
         });
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state: Arc::new(MemoryControlState::default()),
@@ -5492,6 +5673,7 @@ mod tests {
         let store = Arc::new(MemoryUsageStore::default());
         let control_state = Arc::new(MemoryControlState::default());
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store: store.clone(),
             control_state,
@@ -5619,6 +5801,7 @@ mod tests {
         *store.openai_route_mode.lock().expect("route mode lock") =
             OpenAiRouteMode::DirectLiteLlmPassthrough;
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store,
             control_state: Arc::new(MemoryControlState::default()),
@@ -6051,6 +6234,7 @@ mod tests {
         let store = Arc::new(MemoryUsageStore::default());
         let control_state = Arc::new(MemoryControlState::default());
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store: store.clone(),
             control_state: control_state.clone(),
@@ -6103,6 +6287,7 @@ mod tests {
         let store = Arc::new(MemoryUsageStore::default());
         let control_state = Arc::new(MemoryControlState::default());
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             connection_limits: Arc::new(ConnectionLimits::default()),
             store: store.clone(),
             control_state,

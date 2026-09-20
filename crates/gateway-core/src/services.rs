@@ -37,6 +37,7 @@ pub enum ServiceCostMode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServiceRegistration {
+    pub foundry: Option<crate::foundry::FoundryBinding>,
     pub access: crate::EndpointAccess,
     pub name: String,
     pub project_id: Option<Uuid>,
@@ -69,6 +70,7 @@ pub struct ServiceRegistration {
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct ServiceCreateRequest {
+    pub foundry: Option<crate::foundry::FoundryBinding>,
     #[serde(default)]
     pub access: crate::EndpointAccess,
     pub name: String,
@@ -112,6 +114,7 @@ pub struct ServiceCreateRequest {
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 pub struct ServicePatchRequest {
+    pub foundry: Option<crate::foundry::FoundryBinding>,
     pub access: Option<crate::EndpointAccess>,
     pub project_id: Option<Option<Uuid>>,
     pub studio_service_id: Option<Option<String>>,
@@ -287,6 +290,7 @@ pub struct StudioServiceImportPreview {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ServiceResponse {
+    pub foundry: Option<crate::foundry::FoundryBinding>,
     pub access: crate::EndpointAccess,
     pub name: String,
     pub project_id: Option<Uuid>,
@@ -460,6 +464,17 @@ where
 
 impl ServiceCreateRequest {
     pub fn validate(&self) -> GatewayResult<()> {
+        if self.foundry.is_some() && self.studio_service_id.is_some() {
+            return Err(GatewayError::InvalidFoundryConfiguration);
+        }
+        validate_foundry_service(
+            self.foundry.as_ref(),
+            &self.allowed_methods,
+            self.upstream_base_url.as_deref(),
+            self.credential.as_deref(),
+            &self.fallback_services,
+            &self.access,
+        )?;
         validate_service_name(&self.name)?;
         let route_pattern = self
             .route_pattern
@@ -627,7 +642,25 @@ impl StudioCatalogService {
 }
 
 impl ServiceRegistration {
+    pub fn validate_foundry(&self) -> GatewayResult<()> {
+        if self.foundry.is_some() && self.studio_service_id.is_some() {
+            return Err(GatewayError::InvalidFoundryConfiguration);
+        }
+        validate_foundry_service(
+            self.foundry.as_ref(),
+            &self.allowed_methods,
+            self.upstream_base_url.as_deref(),
+            self.credential_secret.as_deref(),
+            &self.fallback_services,
+            &self.access,
+        )?;
+        Ok(())
+    }
+
     pub fn missing_runtime_fields(&self) -> Vec<String> {
+        if self.foundry.is_some() {
+            return Vec::new();
+        }
         let mut fields = Vec::new();
         if self.upstream_base_url.as_deref().is_none_or(str::is_empty) {
             fields.push("upstream_base_url".to_owned());
@@ -646,6 +679,7 @@ impl ServiceRegistration {
             return Err(GatewayError::IncompleteService);
         }
         validate_optional_upstream(self.upstream_base_url.as_deref())?;
+        self.validate_foundry()?;
         Ok(())
     }
 
@@ -665,6 +699,7 @@ impl ServiceRegistration {
 
     pub fn to_response(&self) -> ServiceResponse {
         ServiceResponse {
+            foundry: self.foundry.clone(),
             access: self.access.clone(),
             name: self.name.clone(),
             project_id: self.project_id,
@@ -1276,6 +1311,28 @@ fn default_max_body_bytes() -> i64 {
     DEFAULT_MAX_BODY_BYTES
 }
 
+fn validate_foundry_service(
+    binding: Option<&crate::foundry::FoundryBinding>,
+    methods: &[String],
+    upstream: Option<&str>,
+    credential: Option<&str>,
+    fallbacks: &[String],
+    access: &crate::EndpointAccess,
+) -> GatewayResult<()> {
+    if let Some(binding) = binding {
+        binding.validate()?;
+        if methods != ["POST"]
+            || upstream.is_some()
+            || credential.is_some()
+            || !fallbacks.is_empty()
+            || access.accessa.is_some()
+        {
+            return Err(GatewayError::InvalidFoundryConfiguration);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1298,6 +1355,7 @@ mod tests {
     fn redacts_service_credentials_in_response() {
         let now = Utc::now();
         let registration = ServiceRegistration {
+            foundry: None,
             access: Default::default(),
             name: "summary".to_owned(),
             project_id: None,
@@ -1837,6 +1895,7 @@ mod tests {
 
     fn valid_create_request() -> ServiceCreateRequest {
         ServiceCreateRequest {
+            foundry: None,
             access: Default::default(),
             name: "summary".to_owned(),
             project_id: None,
@@ -1866,6 +1925,7 @@ mod tests {
     ) -> ServiceRegistration {
         let now = Utc::now();
         ServiceRegistration {
+            foundry: None,
             access: Default::default(),
             name: "summary".to_owned(),
             project_id: None,

@@ -313,3 +313,15 @@ If Gateway returns `studio_unavailable`, check that the backend URL is reachable
 from the Gateway process, that the path `/studio/gateway/services` exists, that
 the effective token matches Studio's expected token when authentication is
 enabled, and that Studio returns valid service names and route patterns.
+
+## Azure Foundry identities
+
+Foundry provider connections are saved in PostgreSQL; each gateway replica obtains
+and refreshes its own Azure access token. AKS workload identity requires the
+projected assertion file at `AZURE_FEDERATED_TOKEN_FILE` on every replica. Azure VM
+managed identity uses IMDS directly. Client-secret connections use the provider's
+write-only credential field. Changing a saved connection invalidates its token on
+the next request; changing deployment environment or identity mounts still needs
+a rollout. Upgrade all replicas before adding Foundry services. See the
+[illustrated Foundry guide](azure-foundry.md) for both integration modes, networking,
+Azure roles, supported API scope and rollback notes.

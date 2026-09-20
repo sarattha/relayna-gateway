@@ -95,3 +95,10 @@ runtime credentials are write-only and are not returned to clients.
 
 Gateway-owned runtime fields, including health-check path and method, are
 preserved when Studio metadata is re-imported.
+
+## Azure Foundry
+
+Add an Azure Foundry connection in Providers, then register a fixed agent or a
+project Responses passthrough service. Both use Relayna caller authentication and
+service policy. See the [illustrated Foundry guide](azure-foundry.md) for Azure
+identity setup, the two modes, request examples and supported API boundaries.

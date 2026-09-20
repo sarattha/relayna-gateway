@@ -8621,6 +8621,7 @@ mod tests {
             request.validate()?;
             let now = Utc::now();
             Ok(ProviderConfigResponse {
+                foundry: None,
                 id: Uuid::new_v4(),
                 provider: request.provider,
                 name: request.name,
@@ -8730,6 +8731,7 @@ mod tests {
             }
             let now = Utc::now();
             let response = ServiceResponse {
+                foundry: None,
                 access: Default::default(),
                 name: request.name.clone(),
                 project_id: request.project_id,
@@ -8918,6 +8920,7 @@ mod tests {
             }
 
             let response = ServiceResponse {
+                foundry: None,
                 access: Default::default(),
                 name: request.name.clone(),
                 project_id: request.project_id,
@@ -10691,6 +10694,7 @@ mod tests {
     fn openapi_test_service(upstream_base_url: String) -> ServiceResponse {
         let now = Utc::now();
         ServiceResponse {
+            foundry: None,
             access: Default::default(),
             name: "ocr".to_owned(),
             project_id: None,

@@ -517,6 +517,7 @@ mod tests {
     ) {
         let access=serde_json::from_value(serde_json::json!({"entra":{"audience":"accessa","required_scopes":["run"]},"accessa":{"app":"tara","channel":"web","idle_timeout_ms":1000,"max_connections":2,"max_connections_per_key":1,"max_frame_bytes":1024}})).unwrap();
         let registration = ServiceRegistration {
+            foundry: None,
             access,
             name: "accessa".into(),
             project_id: None,
@@ -560,6 +561,7 @@ mod tests {
         ctx.entra_identity = Some(identity());
         ctx.route_match = Some(RouteMatch::service(Route::ServiceWildcard, "accessa"));
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             store: Arc::new(Store {
                 key: Mutex::new(Some(StoredVirtualKey {
                     id: key.key_id,
@@ -880,6 +882,7 @@ mod endpoint_tests {
         })
         .unwrap();
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             store: Arc::new(()),
             control_state: Arc::new(()),
             config: PingoraLiteLlmConfig::from_base_url("http://localhost", "test").unwrap(),

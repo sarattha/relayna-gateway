@@ -104,8 +104,16 @@ pub enum GatewayError {
     DuplicateProviderConfig,
     #[error("provider configuration was not found")]
     MissingProviderConfig,
+    #[error("provider configuration is in use")]
+    ProviderConfigInUse,
     #[error("provider configuration payload is invalid")]
     InvalidProviderConfigPayload,
+    #[error("invalid Foundry configuration")]
+    InvalidFoundryConfiguration,
+    #[error("invalid Foundry request")]
+    InvalidFoundryRequest,
+    #[error("Foundry credential unavailable")]
+    FoundryCredentialUnavailable,
     #[error("service registration already exists")]
     DuplicateService,
     #[error("service registration was not found")]
@@ -198,8 +206,12 @@ impl GatewayError {
             Self::DuplicateProject | Self::DuplicateProviderConfig | Self::DuplicateService => {
                 StatusCode::CONFLICT
             }
-            Self::ProjectInUse => StatusCode::CONFLICT,
+            Self::ProjectInUse | Self::ProviderConfigInUse => StatusCode::CONFLICT,
             Self::MissingProject | Self::MissingProviderConfig => StatusCode::NOT_FOUND,
+            Self::FoundryCredentialUnavailable => StatusCode::BAD_GATEWAY,
+            Self::InvalidFoundryConfiguration | Self::InvalidFoundryRequest => {
+                StatusCode::BAD_REQUEST
+            }
             Self::InvalidProjectPayload | Self::InvalidProviderConfigPayload => {
                 StatusCode::BAD_REQUEST
             }
@@ -273,7 +285,11 @@ impl GatewayError {
             Self::ProjectInUse => "project_in_use",
             Self::InvalidProjectPayload => "invalid_project_payload",
             Self::DuplicateProviderConfig => "duplicate_provider_config",
+            Self::ProviderConfigInUse => "provider_config_in_use",
             Self::MissingProviderConfig => "missing_provider_config",
+            Self::InvalidFoundryConfiguration => "invalid_foundry_configuration",
+            Self::InvalidFoundryRequest => "invalid_foundry_request",
+            Self::FoundryCredentialUnavailable => "foundry_credential_unavailable",
             Self::InvalidProviderConfigPayload => "invalid_provider_config_payload",
             Self::DuplicateService => "duplicate_service",
             Self::MissingService => "missing_service",
@@ -347,7 +363,11 @@ impl GatewayError {
             Self::ProjectInUse => "Project is still referenced.",
             Self::InvalidProjectPayload => "Project payload is invalid.",
             Self::DuplicateProviderConfig => "Provider configuration already exists.",
+            Self::ProviderConfigInUse => "This provider is used by registered Foundry services. Reassign or delete those services before deleting the provider.",
             Self::MissingProviderConfig => "Provider configuration was not found.",
+            Self::InvalidFoundryConfiguration => "Check the Foundry project endpoint, Azure identity and provider connection. Registered agents need a valid agent name and optional version.",
+            Self::InvalidFoundryRequest => "Use POST responses with inline text input. Stored conversations, response IDs, background execution and registered-agent overrides are not supported.",
+            Self::FoundryCredentialUnavailable => "The gateway could not obtain an Azure token. Ask an administrator to check the Foundry identity credentials and Azure connectivity.",
             Self::InvalidProviderConfigPayload => "Provider configuration payload is invalid.",
             Self::DuplicateService => "Service registration already exists.",
             Self::MissingService => "Service registration was not found.",

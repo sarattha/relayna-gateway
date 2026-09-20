@@ -179,7 +179,7 @@ services.
 | Unique keys | `studio_service_id` is unique when present. |
 | Foreign keys | `project_id` references `projects(id)` with `ON DELETE RESTRICT` when present. |
 | Checks | `name` must be lowercase DNS-label style; `source` is `gateway` or `studio`; `sync_status` is `local`, `synced`, `incomplete`, `stale`, or `failed`; `cost_mode` is `fixed`, `passthrough`, or `none`; `health_check_method` is `GET` or `HEAD`; `timeout_ms` and `max_body_bytes` must be positive. |
-| Runtime fields | `route_pattern`, `upstream_base_url`, `health_check_path`, `health_check_method`, `enabled`, `allowed_methods`, `timeout_ms`, `max_body_bytes`, `cost_mode`, `estimated_cost_usd`, `pricing_rules`, `credential_secret`, and `fallback_services`. |
+| Runtime fields | `route_pattern`, `upstream_base_url`, `health_check_path`, `health_check_method`, `enabled`, `allowed_methods`, `timeout_ms`, `max_body_bytes`, `cost_mode`, `estimated_cost_usd`, `pricing_rules`, `credential_secret`, `fallback_services`, and optional `foundry` binding. |
 | OpenAPI fields | `openapi_source_path`, `openapi_schema_hash`, and `openapi_synced_at` record the reviewed source; `openapi_endpoints` stores the compact discovered method/path catalog; `endpoint_pricing_rules` stores per-operation `none`, `fixed`, or `passthrough` billing. These JSONB fields default safely for registrations created before `0.1.21`. |
 | Indexes | `service_registrations_studio_service_id_idx`, `service_registrations_source_status_idx`, and `service_registrations_project_id_idx`. |
 | Required data | A service must be enabled and have complete runtime fields before the proxy can forward matching service traffic. |
@@ -220,11 +220,20 @@ setup instructions and rollback behavior.
 
 `provider_configs` stores operator-managed upstream provider settings.
 
+Azure Foundry connections use provider kind `azure-foundry` and a nullable `foundry`
+JSON object containing the Azure identity method and tenant/client IDs. Client
+secrets use the existing write-only `credential_secret` column; access tokens are
+not persisted. `20260920000200_foundry_connections.sql` also adds a nullable service
+`foundry` binding and generated `foundry_provider_id` foreign key. The foreign key
+prevents deleting a provider while services reference it. Existing providers and
+services retain NULL Foundry configuration. See [Azure Foundry](azure-foundry.md)
+for registration, permissions and rollout boundaries.
+
 | Key | Details |
 | --- | --- |
 | Primary key | `id uuid` generated with `gen_random_uuid()`. |
 | Unique keys | `(provider, name)` is unique. Only one enabled `litellm` config is allowed. |
-| Checks | `provider` must be `litellm` or `internal-service`; `name` must be non-empty and at most 120 characters; `base_url` must start with `http://` or `https://`; LiteLLM credential header mode is `authorization_bearer` or `custom_header`; custom header value format is `raw` or `bearer`. |
+| Checks | `provider` must be `litellm`, `internal-service` or `azure-foundry`; `name` must be non-empty and at most 120 characters; `base_url` must start with `http://` or `https://`; LiteLLM credential header mode is `authorization_bearer` or `custom_header`; custom header value format is `raw` or `bearer`. |
 | Header fields | `credential_header_mode`, `credential_header_name`, and `credential_header_value_format` control whether LiteLLM receives `Authorization: Bearer <key>`, a raw custom credential header such as `x-litellm-api-key: <key>`, or a bearer-prefixed custom header such as `x-litellm-key: Bearer <key>`. |
 | Secret fields | `credential_secret` stores the internal upstream credential and is treated as write-only by API responses. |
 | Required data | Needed when operators configure runtime provider settings through the admin API or portal instead of environment fallback. |

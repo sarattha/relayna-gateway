@@ -1,6 +1,7 @@
 mod accessa_transport;
 pub mod body_admission;
 pub mod body_rewrite;
+mod foundry;
 pub mod pingora_plane;
 mod request_timing;
 

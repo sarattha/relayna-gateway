@@ -1,0 +1,65 @@
+{
+  "base": "53f90d9",
+  "scope": "changed production Rust executable lines; tests excluded",
+  "covered": 510,
+  "executable": 517,
+  "percent": 98.64603481624758,
+  "files": {
+    "crates/gateway-core/src/errors.rs": {
+      "covered": 11,
+      "executable": 11,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/lib.rs": {
+      "covered": 0,
+      "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/provider_configs.rs": {
+      "covered": 30,
+      "executable": 32,
+      "uncovered_lines": [
+        240,
+        242
+      ]
+    },
+    "crates/gateway-core/src/services.rs": {
+      "covered": 50,
+      "executable": 50,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/lib.rs": {
+      "covered": 0,
+      "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/pingora_plane.rs": {
+      "covered": 54,
+      "executable": 57,
+      "uncovered_lines": [
+        1871,
+        1875,
+        1915
+      ]
+    },
+    "crates/gateway-store/src/postgres.rs": {
+      "covered": 40,
+      "executable": 41,
+      "uncovered_lines": [
+        3449
+      ]
+    },
+    "crates/gateway-core/src/foundry.rs": {
+      "covered": 163,
+      "executable": 164,
+      "uncovered_lines": [
+        122
+      ]
+    },
+    "crates/gateway-proxy/src/foundry.rs": {
+      "covered": 162,
+      "executable": 162,
+      "uncovered_lines": []
+    }
+  }
+}

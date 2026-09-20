@@ -827,3 +827,52 @@ describe("key route assignment dialog", () => {
     await act(async () => close());
   });
 });
+
+import { FoundryEditor, mountFoundryEditor } from "../crates/gateway-api/admin-ui/src/react/foundry-editor";
+describe("Foundry connection and service editors", () => {
+  const props = () => ({kind:"provider" as const,providers:[],projects:[],onSave:vi.fn().mockResolvedValue(undefined),onClose:vi.fn()});
+  const fill = (label, value) => fireEvent.change(screen.getByLabelText(label), {target:{value}});
+  const submit = () => fireEvent.submit(screen.getByRole("button",{name:"Save"}).closest("form"));
+  it("creates workload, managed and client-secret identities and retains errors for correction", async () => {
+    const p=props(); const user=userEvent.setup(); const view=render(<FoundryEditor {...p}/>);
+    fill("Name","Azure");fill("Project endpoint","https://account.services.ai.azure.com/api/projects/demo");fill("Tenant ID","tenant");fill("Client ID","client");
+    await act(async()=>submit()); expect(p.onSave).toHaveBeenLastCalledWith(expect.objectContaining({provider:"azure-foundry",foundry:{method:"workload_identity",tenant_id:"tenant",client_id:"client"}}));
+    view.unmount();
+    const managed=props();render(<FoundryEditor {...managed}/>);
+    await user.selectOptions(screen.getByLabelText("Azure identity"),"managed_identity");expect(screen.queryByLabelText("Tenant ID")).toBeNull();fill("Name","Managed");fill("Project endpoint","https://account.services.ai.azure.com/api/projects/demo");
+    managed.onSave.mockRejectedValueOnce(new Error("Check the project endpoint."));await act(async()=>submit());expect(screen.getByRole("alert").textContent).toBe("Check the project endpoint.");
+    expect(managed.onSave).toHaveBeenLastCalledWith(expect.objectContaining({foundry:{method:"managed_identity",tenant_id:null,client_id:null}}));
+    await user.selectOptions(screen.getByLabelText("Azure identity"),"client_secret");fill("Tenant ID","tenant");fill("Client ID","client");fill("Client secret","keep spaces ");
+    managed.onSave.mockRejectedValueOnce("Unavailable");await act(async()=>submit());expect(screen.getByRole("alert").textContent).toBe("Unavailable");
+    await act(async()=>submit());expect(managed.onSave).toHaveBeenLastCalledWith(expect.objectContaining({credential:"keep spaces ",foundry:{method:"client_secret",tenant_id:"tenant",client_id:"client"}}));
+    expect(managed.onClose).toHaveBeenCalledOnce();
+  });
+  it("edits connections without erasing their saved secret and prevents closing a pending save", async()=>{
+    const p=props();let resolve;p.onSave.mockImplementationOnce(()=>new Promise(r=>{resolve=r}));const user=userEvent.setup();
+    render(<FoundryEditor {...p} record={{id:"provider",name:"Existing",base_url:"https://account.services.ai.azure.com/api/projects/demo",credential_configured:true,foundry:{method:"client_secret",tenant_id:"tenant",client_id:"client"}}}/>);
+    expect(screen.getByLabelText("Replace client secret (optional)").required).toBe(false);
+    await act(async()=>submit());expect(screen.getByRole("button",{name:"Saving…"}).disabled).toBe(true);
+    await user.click(screen.getByRole("button",{name:"Close dialog"}));expect(p.onClose).not.toHaveBeenCalled();
+    expect(p.onSave.mock.calls[0][0]).not.toHaveProperty("credential");expect(p.onSave.mock.calls[0][0]).not.toHaveProperty("provider");
+    await act(async()=>resolve());expect(p.onClose).toHaveBeenCalledOnce();
+  });
+  it("creates registered and passthrough services and explains missing connections",async()=>{
+    const p={...props(),kind:"service" as const};const view=render(<FoundryEditor {...p}/>);
+    expect(screen.getByRole("button",{name:"Save"}).disabled).toBe(true);expect(screen.getByRole("status").textContent).toContain("Providers first");view.unmount();
+    const user=userEvent.setup();const next={...p,providers:[{id:"p1",name:"Production",enabled:true},{id:"p2",name:"Disabled",enabled:false}],projects:[{id:"project",name:"Research"}]};
+    render(<FoundryEditor {...next}/>);fill("Name","research");await user.selectOptions(screen.getByLabelText("Foundry connection"),"p1");fill("Agent name","web-research");fill("Agent version (optional)","3");await user.selectOptions(screen.getByLabelText("Project (optional)"),"project");await user.selectOptions(screen.getByLabelText("Caller authentication"),"key_only");
+    await act(async()=>submit());expect(p.onSave).toHaveBeenLastCalledWith(expect.objectContaining({name:"research",project_id:"project",access:{skip_entra:true},foundry:{mode:"registered_agent",provider_id:"p1",agent_name:"web-research",agent_version:"3"}}));
+    await user.selectOptions(screen.getByLabelText("Integration mode"),"endpoint_passthrough");expect(screen.queryByLabelText("Agent name")).toBeNull();await user.selectOptions(screen.getByLabelText("Project (optional)"),"");await user.selectOptions(screen.getByLabelText("Caller authentication"),"inherit");
+    await act(async()=>submit());expect(p.onSave).toHaveBeenLastCalledWith(expect.objectContaining({project_id:null,access:{skip_entra:false},foundry:{mode:"endpoint_passthrough",provider_id:"p1"}}));
+  });
+  it("edits an agent binding independently of route authentication and restores optional version",async()=>{
+    const p={...props(),kind:"service" as const,providers:[{id:"p1",name:"Production",enabled:true}]};const user=userEvent.setup();
+    render(<FoundryEditor {...p} record={{name:"research",foundry:{mode:"registered_agent",provider_id:"p1",agent_name:"agent",agent_version:"2"}}}/>);
+    expect(screen.queryByLabelText("Name")).toBeNull();expect(screen.queryByLabelText("Caller authentication")).toBeNull();fill("Agent version (optional)","");await act(async()=>submit());expect(p.onSave).toHaveBeenLastCalledWith({foundry:{mode:"registered_agent",provider_id:"p1",agent_name:"agent",agent_version:null}});
+    await user.click(screen.getByRole("button",{name:"Cancel"}));expect(p.onClose).toHaveBeenCalledTimes(2);
+    await user.click(screen.getByRole("button",{name:"Close dialog"}));expect(p.onClose).toHaveBeenCalledTimes(3);
+  });
+  it("mounts and removes the standalone dialog",async()=>{
+    const p=props();let close;await act(async()=>{close=mountFoundryEditor(p)});expect(screen.getByRole("dialog")).toBeTruthy();await act(async()=>close());expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
