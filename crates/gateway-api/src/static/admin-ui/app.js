@@ -20707,7 +20707,8 @@ function FoundryEditor({ kind, record, providers, projects, onSave, onClose, res
 				}
 			};
 			const secret = String(data.get("credential") || "");
-			if (secret) body.credential = secret;
+			if (value("foundry_method") !== "client_secret") body.credential = null;
+			else if (secret) body.credential = secret;
 		} else body = {
 			foundry: {
 				mode,

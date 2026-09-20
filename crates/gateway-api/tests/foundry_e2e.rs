@@ -203,6 +203,50 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
     let provider = admin(&client,&admin_url,&operator.raw_token,reqwest::Method::POST,"providers",json!({"provider":"azure-foundry","name":"Mock Foundry","base_url":format!("{upstream}/api/projects/demo"),"credential":"mock-client-secret","foundry":{"method":"client_secret","tenant_id":Uuid::nil(),"client_id":Uuid::nil()}}),200).await;
     assert!(!provider.to_string().contains("mock-client-secret"));
     let provider_id = provider["id"].as_str().unwrap();
+    // API clients omitting credential must also clear it when leaving secret auth.
+    for method in ["workload_identity", "managed_identity"] {
+        let changed = admin(
+            &client,
+            &admin_url,
+            &operator.raw_token,
+            reqwest::Method::PATCH,
+            &format!("providers/{provider_id}"),
+            json!({"foundry":{"method":method,"tenant_id":Uuid::nil(),"client_id":Uuid::nil()}}),
+            200,
+        )
+        .await;
+        assert_eq!(changed["credential_configured"], false);
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT credential_secret FROM provider_configs WHERE id=$1")
+                .bind(Uuid::parse_str(provider_id).unwrap())
+                .fetch_one(store.pool())
+                .await
+                .unwrap();
+        assert!(stored.is_none());
+        let secret_identity =
+            json!({"method":"client_secret","tenant_id":Uuid::nil(),"client_id":Uuid::nil()});
+        admin(
+            &client,
+            &admin_url,
+            &operator.raw_token,
+            reqwest::Method::PATCH,
+            &format!("providers/{provider_id}"),
+            json!({"foundry":secret_identity}),
+            400,
+        )
+        .await;
+        let restored = admin(
+            &client,
+            &admin_url,
+            &operator.raw_token,
+            reqwest::Method::PATCH,
+            &format!("providers/{provider_id}"),
+            json!({"foundry":secret_identity,"credential":"mock-client-secret"}),
+            200,
+        )
+        .await;
+        assert_eq!(restored["credential_configured"], true);
+    }
     let check_path = format!("providers/{provider_id}/verify-connection");
     let check_url = format!("{admin_url}/admin-ui/admin/{check_path}");
     assert_eq!(client.post(&check_url).send().await.unwrap().status(), 401);

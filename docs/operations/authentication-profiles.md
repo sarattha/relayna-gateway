@@ -419,3 +419,12 @@ rewrite access JSON to bypass rejection. Restore the upgraded binary to regain
 access. To avoid disruption, complete an all-replica upgrade and validate a
 nonproduction route before opting in. Shared profile templates, native LiteLLM
 key profiles and multiple issuer trust authorities are deferred.
+
+### Moving a key to another project
+
+A key assigned to a project-owned service profile cannot move to another project
+or become an individual key while that assignment remains. Remove its service
+profile assignments first, change the key project, then assign it to appropriate
+profiles in the new project. A rejected move leaves both ownership and assignments
+unchanged. Built-in route assignments are route-local and do not impose this
+service-project restriction.

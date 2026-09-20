@@ -359,3 +359,7 @@ connections ignore that override. Do not configure this variable in production.
 Mock tests verify gateway contracts and streaming, not a particular tenant's
 Azure RBAC, network, agent deployment or Bing tool setup. Validate one real Azure
 invocation in your environment before production use.
+
+Changing a saved connection from client-secret authentication to workload or
+managed identity deletes its stored client secret. Switching back requires a
+new secret; the previous credential is not restored.

@@ -47,7 +47,8 @@ export function FoundryEditor({ kind, record, providers, projects, onSave, onClo
         ...(record ? {} : { provider: "azure-foundry", enabled: true }),
       };
       const secret = String(data.get("credential") || "");
-      if (secret) body.credential = secret;
+      if (value("foundry_method") !== "client_secret") body.credential = null;
+      else if (secret) body.credential = secret;
     } else {
       body = {
         foundry: { mode, provider_id: value("provider_id"), ...(mode === "registered_agent" ? { agent_name: value("agent_name"), agent_version: value("agent_version") || null } : {}) },

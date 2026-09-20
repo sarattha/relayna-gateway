@@ -124,6 +124,8 @@ pub enum GatewayError {
     IncompleteService,
     #[error("service registration payload is invalid")]
     InvalidServicePayload,
+    #[error("key project conflicts with service authentication profile assignments")]
+    KeyProfileProjectConflict,
     #[error("service upstream configuration is invalid")]
     InvalidServiceUpstream,
     #[error("service OpenAPI document is unavailable")]
@@ -225,7 +227,7 @@ impl GatewayError {
             | Self::InvalidServiceOpenApi
             | Self::InvalidUsageQuery
             | Self::InvalidStudioConnectionPayload => StatusCode::BAD_REQUEST,
-            Self::ServiceOpenApiChanged => StatusCode::CONFLICT,
+            Self::ServiceOpenApiChanged | Self::KeyProfileProjectConflict => StatusCode::CONFLICT,
             Self::StudioUnavailable => StatusCode::BAD_GATEWAY,
             Self::ServiceOpenApiUnavailable => StatusCode::BAD_GATEWAY,
             Self::UpstreamTimeout => StatusCode::GATEWAY_TIMEOUT,
@@ -295,6 +297,7 @@ impl GatewayError {
             Self::MissingService => "missing_service",
             Self::DisabledService => "disabled_service",
             Self::IncompleteService => "incomplete_service",
+            Self::KeyProfileProjectConflict => "key_profile_project_conflict",
             Self::InvalidServicePayload => "invalid_service_payload",
             Self::InvalidServiceUpstream => "invalid_service_upstream",
             Self::ServiceOpenApiUnavailable => "service_openapi_unavailable",
@@ -373,6 +376,7 @@ impl GatewayError {
             Self::MissingService => "Service registration was not found.",
             Self::DisabledService => "Service registration is disabled.",
             Self::IncompleteService => "Service registration is incomplete.",
+            Self::KeyProfileProjectConflict => "This key is assigned to authentication profiles in its current project. Remove those service profile assignments before changing the key project, then assign it to profiles in the new project.",
             Self::InvalidServicePayload => "Service registration payload is invalid.",
             Self::InvalidServiceUpstream => "Service upstream configuration is invalid.",
             Self::ServiceOpenApiUnavailable => "Service OpenAPI document is unavailable.",

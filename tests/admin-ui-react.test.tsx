@@ -856,6 +856,21 @@ describe("Foundry connection and service editors", () => {
     expect(p.onSave.mock.calls[0][0]).not.toHaveProperty("credential");expect(p.onSave.mock.calls[0][0]).not.toHaveProperty("provider");
     await act(async()=>resolve());expect(p.onClose).toHaveBeenCalledOnce();
   });
+  it("clears saved secrets when changing to workload or managed identity", async()=>{
+    for (const method of ["workload_identity", "managed_identity"]) {
+      const p=props(); const user=userEvent.setup();
+      const view=render(<FoundryEditor {...p} record={{id:"provider",name:"Existing",base_url:"https://account.services.ai.azure.com/api/projects/demo",credential_configured:true,foundry:{method:"client_secret",tenant_id:"tenant",client_id:"client"}}}/>);
+      await user.selectOptions(screen.getByLabelText("Azure identity"),method);
+      expect(screen.queryByLabelText("Replace client secret (optional)")).toBeNull();
+      await act(async()=>submit());
+      expect(p.onSave).toHaveBeenCalledWith(expect.objectContaining({credential:null,foundry:expect.objectContaining({method})}));
+      view.unmount();
+      const next=render(<FoundryEditor {...props()} record={{id:"provider",name:"Existing",credential_configured:false,foundry:{method,tenant_id:"tenant",client_id:"client"}}}/>);
+      await user.selectOptions(screen.getByLabelText("Azure identity"),"client_secret");
+      expect((screen.getByLabelText("Client secret") as HTMLInputElement).required).toBe(true);
+      next.unmount();
+    }
+  });
   it("creates registered and passthrough services and explains missing connections",async()=>{
     const p={...props(),kind:"service" as const};const view=render(<FoundryEditor {...p}/>);
     expect(screen.getByRole("button",{name:"Save"}).disabled).toBe(true);expect(screen.getByRole("status").textContent).toContain("Providers first");view.unmount();

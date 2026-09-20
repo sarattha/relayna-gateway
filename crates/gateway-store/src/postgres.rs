@@ -2067,7 +2067,11 @@ impl AdminKeyStore for PostgresStore {
         .execute(&mut *tx)
         .await
         .map_err(|error| {
-            if is_foreign_key_violation(&error) {
+            if error.as_database_error().and_then(|e| e.constraint())
+                == Some("authentication_profile_key_project")
+            {
+                GatewayError::KeyProfileProjectConflict
+            } else if is_foreign_key_violation(&error) {
                 GatewayError::MissingProject
             } else {
                 GatewayError::StoreUnavailable
@@ -3373,19 +3377,25 @@ impl AdminProviderConfigStore for PostgresStore {
         if let Some(foundry) = patch.foundry {
             response.foundry = Some(foundry);
         }
+        // Non-secret identities must never retain or reactivate an old client secret.
+        let credential_secret = if response.foundry.as_ref().is_some_and(|identity| {
+            identity.method != gateway_core::foundry::FoundryIdentityMethod::ClientSecret
+        }) {
+            Some(None)
+        } else {
+            patch.credential
+        };
         gateway_core::provider_configs::validate_foundry_config(
             response.provider,
             response.foundry.as_ref(),
             &response.base_url,
-            patch
-                .credential
+            credential_secret
                 .as_ref()
                 .map_or(response.credential_configured, |value| {
                     value.as_ref().is_some_and(|v| !v.trim().is_empty())
                 }),
         )?;
         response.validate_header_settings()?;
-        let credential_secret: Option<Option<String>> = patch.credential;
 
         sqlx::query(
             r#"

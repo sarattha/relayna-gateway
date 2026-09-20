@@ -549,6 +549,123 @@ async fn explicit_profiles_enforce_bindings_across_aliases_and_forwarding_modes(
             .project_id,
         None
     );
+    // A key move must not retain a service profile from a different project.
+    store
+        .patch_admin_key(
+            ids[2],
+            serde_json::from_value(json!({"owner_type":"project","project_id":project.id}))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut owned = service_body.clone();
+    owned["name"] = json!("owned-profile-service");
+    owned["route_pattern"] = json!("/owned-profile/*");
+    owned["project_id"] = json!(project.id);
+    owned["access"]["authentication_profiles"]["bindings"] =
+        json!([{"key_id":ids[2],"profile_id":"automation"}]);
+    let owned = store
+        .create_service(serde_json::from_value(owned).unwrap())
+        .await
+        .unwrap();
+    let other = store
+        .create_project(ProjectCreateRequest {
+            name: "other-profile-project".into(),
+        })
+        .await
+        .unwrap();
+    for project_id in [Some(other.id), None] {
+        let error = store
+            .patch_admin_key(
+                ids[2],
+                AdminKeyPatch {
+                    owner_type: Some(if project_id.is_some() {
+                        AdminKeyOwnerType::Project
+                    } else {
+                        AdminKeyOwnerType::Individual
+                    }),
+                    project_id: Some(project_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error, GatewayError::KeyProfileProjectConflict);
+        assert_eq!(error.status_code(), http::StatusCode::CONFLICT);
+        assert!(error
+            .public_message()
+            .contains("Remove those service profile assignments"));
+    }
+    // Old writers/direct SQL also cannot bypass the ownership guard.
+    assert!(sqlx::query("UPDATE api_keys SET project_id=$2 WHERE id=$1")
+        .bind(ids[2])
+        .bind(other.id)
+        .execute(store.pool())
+        .await
+        .is_err());
+    // Unrelated edits and keeping the same project remain valid.
+    store
+        .patch_admin_key(
+            ids[2],
+            serde_json::from_value(json!({"name":"Renamed bound key","project_id":project.id}))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut unbound = serde_json::to_value(owned.access).unwrap();
+    unbound["authentication_profiles"]["bindings"] = json!([]);
+    store
+        .patch_service(
+            "owned-profile-service",
+            serde_json::from_value(json!({"access":unbound})).unwrap(),
+        )
+        .await
+        .unwrap();
+    store
+        .patch_admin_key(
+            ids[2],
+            serde_json::from_value(json!({"project_id":other.id})).unwrap(),
+        )
+        .await
+        .unwrap();
+    // Concurrent binding creation holds the key row until commit. A waiting
+    // project move must see the newly committed assignment and reject it.
+    store
+        .patch_admin_key(
+            ids[2],
+            serde_json::from_value(json!({"project_id":project.id})).unwrap(),
+        )
+        .await
+        .unwrap();
+    let current = store
+        .get_service("owned-profile-service")
+        .await
+        .unwrap()
+        .unwrap();
+    let mut rebound = serde_json::to_value(current.access).unwrap();
+    rebound["authentication_profiles"]["bindings"] =
+        json!([{"key_id":ids[2],"profile_id":"automation"}]);
+    let mut transaction = store.pool().begin().await.unwrap();
+    sqlx::query("UPDATE service_registrations SET access=$1 WHERE name='owned-profile-service'")
+        .bind(sqlx::types::Json(rebound))
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    let moving = store.patch_admin_key(
+        ids[2],
+        serde_json::from_value(json!({"project_id":other.id})).unwrap(),
+    );
+    tokio::pin!(moving);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut moving)
+            .await
+            .is_err()
+    );
+    transaction.commit().await.unwrap();
+    assert_eq!(
+        moving.await.unwrap_err(),
+        GatewayError::KeyProfileProjectConflict
+    );
     let mut new_access = serde_json::to_value(service.access).unwrap();
     let stale = new_access.clone();
     new_access["authentication_profiles"]["profiles"][2]["name"] = json!("Renamed automation");

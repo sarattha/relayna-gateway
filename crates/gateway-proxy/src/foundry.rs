@@ -26,13 +26,24 @@ impl FoundryTokenCache {
         config
             .identity
             .validate(&config.base_url, config.secret.is_some())?;
-        let mut entries = self.entries.lock().await;
+        let entries = self.entries.lock().await;
         if let Some(cached) = entries.get(&config.id) {
             if cached.revision == config.revision && cached.refresh_at > Instant::now() {
                 return Ok(cached.token.clone());
             }
         }
+        drop(entries);
         let (token, lifetime) = acquire_token(config).await?;
+        let mut entries = self.entries.lock().await;
+        if let Some(cached) = entries.get(&config.id) {
+            // An older in-flight request must not overwrite a newer revision.
+            if cached.revision > config.revision {
+                return Ok(token);
+            }
+            if cached.revision == config.revision && cached.refresh_at > Instant::now() {
+                return Ok(cached.token.clone());
+            }
+        }
         entries.retain(|_, v| v.refresh_at > Instant::now());
         if entries.len() >= 256 {
             entries.clear();
@@ -482,6 +493,71 @@ mod tests {
             mock_response(200, valid.clone()),
         );
         cache.token(&c).await.unwrap();
+        // A stalled acquisition must not block a valid token for another provider.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        std::env::set_var(
+            "GATEWAY_FOUNDRY_MOCK_TOKEN_ENDPOINT",
+            format!("http://{}/token", listener.local_addr().unwrap()),
+        );
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let body = valid.clone();
+        let server = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buffer = [0; 4096];
+            assert!(socket.read(&mut buffer).await.unwrap() > 0);
+            started_tx.send(()).unwrap();
+            release_rx.await.unwrap();
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+        });
+        let mut slow_config = c.clone();
+        slow_config.id = Uuid::new_v4();
+        let slow = cache.token(&slow_config);
+        tokio::pin!(slow);
+        tokio::select! {
+            result = &mut slow => panic!("acquisition unexpectedly completed: {result:?}"),
+            _ = started_rx => {}
+        }
+        assert_eq!(
+            tokio::time::timeout(Duration::from_millis(200), cache.token(&c))
+                .await
+                .unwrap()
+                .unwrap(),
+            "token"
+        );
+        // Simulate a newer revision completing before this slow old request.
+        cache.entries.lock().await.insert(
+            slow_config.id,
+            CachedToken {
+                revision: slow_config.revision + 1,
+                token: "newer".into(),
+                refresh_at: Instant::now() + Duration::from_secs(60),
+            },
+        );
+        release_tx.send(()).unwrap();
+        assert_eq!(slow.await.unwrap(), "token");
+        assert_eq!(
+            cache
+                .entries
+                .lock()
+                .await
+                .get(&slow_config.id)
+                .unwrap()
+                .token,
+            "newer"
+        );
+        server.await.unwrap();
         for _ in 0..256 {
             cache.entries.lock().await.insert(
                 Uuid::new_v4(),

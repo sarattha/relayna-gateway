@@ -11,9 +11,11 @@ The UI remains embedded in the Rust binary; no separate frontend service is need
 
 1. Back up PostgreSQL and deploy the updated binary/image to **every replica**.
    Startup applies `20260919000100_authentication_profile_revisions.sql`,
-   `20260920000100_virtual_key_names.sql` (nullable key aliases), and
+   `20260920000100_virtual_key_names.sql` (nullable key aliases),
    `20260920000200_foundry_connections.sql` (Foundry provider/service configuration
-   and a foreign key preventing deletion of connections used by services).
+   and a foreign key preventing deletion of connections used by services), and
+   `20260920000300_profile_key_project_guard.sql` (service-profile ownership
+   checks when a key changes projects).
    Existing routes keep their previous policy.
 2. Verify readiness and existing traffic on each replica before enabling profiles.
    A saved profile is unreadable by 0.1.37, so mixed versions cannot safely serve

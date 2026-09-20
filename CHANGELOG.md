@@ -37,6 +37,13 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Fixed
 
+- Reject key project changes that would invalidate saved service-profile bindings,
+  including direct database writes; explain how to remove assignments first.
+- Clear stored Foundry client secrets when switching to workload or managed identity.
+  Returning to client-secret authentication requires a new credential.
+- Keep valid Foundry token-cache reads independent of slow refreshes for other
+  connections, and prevent old refreshes from replacing newer revisions.
+
 - Simplify per-key route assignments with searchable profile routes, collapsed
   existing-settings routes, contextual authentication guidance, per-route save
   and error feedback, and confirmation before discarding unsaved selections.

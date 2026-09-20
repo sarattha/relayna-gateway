@@ -9,7 +9,7 @@ Prepare branch codex/traffic-filters-auth-profiles and PR #121 for review and me
 - [x] Create Content Safety feature request and clarify deferred scope.
 - [x] Audit current documentation and update version to 0.1.39.
 - [x] Run verification and inspect final changes.
-- [ ] Push release metadata, update PR, and mark ready.
+- [x] Push release metadata, update PR, and mark ready.
 - [ ] Monitor checks/reviews and merge when GitHub requirements are met.
 
 ## Plan and acceptance
@@ -27,3 +27,10 @@ User clarified Content Safety belongs in the feature request only. Advance the u
 ## Outcomes & Retrospective
 
 All ten mandatory verification commands passed, including 388/388 Nextest tests without skips. Workspace build, 49 React tests (100% statements/functions/lines; 99.71% branches), operational UI tests, strict typecheck, release metadata and strict MkDocs passed. Checked 1,793 local links/assets/anchors across 25 rendered pages with no failures. PR readiness is pending. If approval is unavailable after checks, retain the merge requirement and monitor for it rather than bypassing it.
+
+
+## Review follow-up (2026-09-20)
+
+Automated review found project reassignment could bypass service profile ownership, identity changes retained stale secrets, and network token refresh held a global cache lock. All three are in the authorized merge-readiness scope. Latest released boundary remains v0.1.37. Preserve already applied migration checksums: add a migration replacing the profile guard with a key row update lock and adding the reverse key-project guard. Reject incompatible ownership changes atomically with an actionable error, rather than silently deleting assignments. Clear irrelevant secrets in the backend as well as the UI. Release the token map lock before I/O and recheck before caching to preserve newer revisions. Verify database ownership and identity transitions through real E2E, cached access during a deliberately stalled refresh, and mounted React submission; then rerun mandatory checks. No Content Safety implementation.
+
+Focused ownership E2E (including a concurrent binding-save/key-move), Foundry identity-transition E2E, and stalled token-cache regression pass. Frontend checks pass with 50 mounted tests, 436/436 statements, 348/349 branches, 159/159 functions and 358/358 lines. Strict docs and workspace build pass. Iteration caught and fixed a test method typo and socket read-count lint; a first proxy startup attempt failed before the tested changes and passed on rerun. The project-clearing store test uses an explicit nullable patch because existing JSON null decoding omits that field; this review does not alter the released PATCH contract. All ten mandatory verification commands passed after the fixes, including 388/388 Nextest tests, zero skipped, and security scans with existing advisory exceptions. The three review findings are ready to close with this follow-up commit; merge still awaits required GitHub approval and checks for its new head.
