@@ -511,6 +511,14 @@ First-time setup is complete when:
   project-owned virtual keys. Use `Select services` to open the service picker
   modal and manage a project's linked services.
 - Keys creates, edits, disables, enables, revokes, and inspects virtual keys.
+  Set **Key name (optional)** when creating or editing a key to give it a
+  searchable alias, such as `Production automation`. In a route's authentication
+  profile, **Select keys** searches names, prefixes, UUIDs, projects and services.
+  Names may repeat; the picker shows the UUID to distinguish keys. Clearing the
+  field removes the name. Renaming preserves the credential and profile bindings.
+  Names are limited to 120 characters, cannot contain control characters, and
+  are visible in administration responses and audit history; do not put secrets
+  in them.
   Project-owned keys inherit service access from their selected project.
   Individual keys use `Select services` to open the service picker modal and
   choose services directly. Use `No expiration` for service keys whose rotation
@@ -519,6 +527,12 @@ First-time setup is complete when:
   debugging keys; presets seed conservative policy limits and can be tightened
   before creation. Lifecycle fields show rotation due dates and last-used
   metadata when available.
+
+  The key create API accepts an optional `name`. PATCH requests can set
+  `{"name":"Production automation"}` or clear it with `{"name":null}` (a blank
+  string also clears it). Omitting `name` from a PATCH preserves the saved value.
+  List, get, create and update responses include the nullable `name` field.
+  Metadata updates require the existing `policies:update` operator scope.
 - The Keys view also includes a policy simulator. Operators can dry-run a route,
   model, provider, stream/tools flags, and request/response byte projections
   against a stored key or the default policy before issuing or changing access.

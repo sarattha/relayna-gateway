@@ -101,6 +101,7 @@ keys are never stored.
 | Checks | `owner_type` must be `project` or `individual`; project keys require `project_id`, individual keys require `project_id IS NULL`. |
 | Lifecycle fields | `disabled`, `revoked_at`, and `expires_at` determine whether a key can authenticate. `rotation_due_at` helps operators plan rotation, and `last_used_at` records the last observed key use when populated by runtime paths. |
 | Secret fields | `key_hash` stores an Argon2 hash of the raw `rk_live_...` key. |
+| Display metadata | Nullable `name` is an optional, non-unique alias (1–120 characters when set). It is independent of key authentication and profile bindings. Existing keys remain unnamed after the additive migration. |
 | Referenced by | `key_policies`, `key_guardrail_policies`, `key_service_links`, `usage_events`, `guardrail_execution_events`, and legacy `route_policies`. |
 
 ### `key_policies`

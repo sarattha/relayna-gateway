@@ -17,6 +17,8 @@ const LOOKUP_PREFIX_LEN: usize = 16;
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct AdminKeyCreate {
     #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
     pub owner_type: AdminKeyOwnerType,
     #[serde(default)]
     pub project_id: Option<Uuid>,
@@ -35,6 +37,8 @@ pub struct AdminKeyCreate {
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 pub struct AdminKeyPatch {
+    #[serde(default, deserialize_with = "deserialize_key_name_patch")]
+    pub name: Option<Option<String>>,
     pub owner_type: Option<AdminKeyOwnerType>,
     pub project_id: Option<Option<Uuid>>,
     pub service_names: Option<Vec<String>>,
@@ -45,6 +49,26 @@ pub struct AdminKeyPatch {
     pub policy: Option<KeyPolicyPatch>,
     #[serde(default)]
     pub guardrail_policy: Option<GuardrailPolicyPatch>,
+}
+
+fn deserialize_key_name_patch<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
+}
+
+/// Names are optional discovery metadata; they never participate in authentication.
+pub fn normalize_key_name(name: Option<String>) -> GatewayResult<Option<String>> {
+    let Some(name) = name else { return Ok(None) };
+    if name.chars().any(char::is_control) {
+        return Err(GatewayError::InvalidKeyPayload);
+    }
+    let name = name.trim();
+    if name.chars().count() > 120 {
+        return Err(GatewayError::InvalidKeyPayload);
+    }
+    Ok((!name.is_empty()).then(|| name.to_owned()))
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -157,6 +181,7 @@ pub struct CreatedAdminKeyResponse {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct AdminKeyResponse {
+    pub name: Option<String>,
     pub id: Uuid,
     pub owner_type: AdminKeyOwnerType,
     pub project_id: Option<Uuid>,
@@ -402,6 +427,52 @@ impl VirtualKeyMaterial {
 mod tests {
     use super::*;
     use crate::auth::verify_secret;
+
+    #[test]
+    fn key_names_normalize_without_affecting_key_identity() {
+        for value in [None, Some("".into()), Some("   ".into())] {
+            assert_eq!(normalize_key_name(value).unwrap(), None);
+        }
+        for value in ["Production worker", "ทีมงาน", &"é".repeat(120)] {
+            assert_eq!(
+                normalize_key_name(Some(format!("  {value}  "))).unwrap(),
+                Some(value.into())
+            );
+        }
+        for value in [
+            "a".repeat(121),
+            "é".repeat(121),
+            "bad\nname".into(),
+            "bad\0name".into(),
+            "\tname".into(),
+        ] {
+            assert_eq!(
+                normalize_key_name(Some(value)),
+                Err(GatewayError::InvalidKeyPayload)
+            );
+        }
+        assert_eq!(
+            GatewayError::InvalidKeyPayload.status_code(),
+            http::StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            GatewayError::InvalidKeyPayload.code(),
+            "invalid_key_payload"
+        );
+    }
+
+    #[test]
+    fn key_name_patch_distinguishes_omission_null_and_value() {
+        let patch: AdminKeyPatch = serde_json::from_str("{}").unwrap();
+        assert_eq!(patch.name, None);
+        let patch: AdminKeyPatch = serde_json::from_str(r#"{"name":null}"#).unwrap();
+        assert_eq!(patch.name, Some(None));
+        let patch: AdminKeyPatch = serde_json::from_str(r#"{"name":"Production"}"#).unwrap();
+        assert_eq!(patch.name, Some(Some("Production".into())));
+        assert!(serde_json::from_str::<AdminKeyPatch>(r#"{"name":17}"#).is_err());
+        let create: AdminKeyCreate = serde_json::from_str("{}").unwrap();
+        assert_eq!(create.name, None);
+    }
 
     #[test]
     fn generated_key_returns_hash_and_lookup_prefix() {

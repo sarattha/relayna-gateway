@@ -22047,6 +22047,7 @@ var init_guidance_content = __esmMin((() => {
 		config_schema: "JSON schema describing valid per-key configuration overrides. Enter a JSON object.",
 		guardrail_override_names: "Enable a configuration override for this key. Unchecking removes this override when the key policy is saved.",
 		runtime_config: "JSON object used when executing this guardrail. Check its schema and avoid embedding secrets.",
+		key_name: "Optional searchable alias, up to 120 characters. Blank removes the name. Renaming does not change the credential or profile assignments; UUIDs distinguish keys with the same name.",
 		display_name: "Human-readable name for this workload identity binding.",
 		client_id: "Entra application/client UUID of the workload allowed to use this binding.",
 		object_id: "Optional exact service-principal object UUID. Blank matches by the other configured identity constraints.",
@@ -36606,7 +36607,7 @@ async function keys() {
         <span class="subtle">Dry-run key governance</span>
       </div>
       <form id="policy-sim-form" class="form-grid">
-        <label>Key<select name="key_id"><option value="">Default policy</option>${state.keys.map((key) => `<option value="${attr(key.id)}">${esc(key.key_prefix)}</option>`).join("")}</select></label>
+        <label>Key<select name="key_id"><option value="">Default policy</option>${state.keys.map((key) => `<option value="${attr(key.id)}">${esc(keyName(key.id))}</option>`).join("")}</select></label>
         <label>Team scope<input name="team_id" placeholder="team identifier"></label>
         <label>Path<input name="path" value="/v1/chat/completions" data-policy-sim-path></label>
         <label>Provider<select name="provider" data-policy-sim-provider>
@@ -36714,6 +36715,7 @@ function guardrailOverrideControls(overrides = {}, selectedNames = []) {
 function keyOwnershipFields(key = null) {
 	const ownerType = key?.owner_type || "project";
 	return `
+    <label>Key name (optional)<input data-guidance-name="key_name" name="key_name" maxlength="120" value="${attr(key?.name || "")}" placeholder="Production automation"></label>
     <label>Owner<select name="owner_type">
       <option value="project" ${ownerType === "project" ? "selected" : ""}>Project</option>
       <option value="individual" ${ownerType === "individual" ? "selected" : ""}>Individual</option>
@@ -36748,7 +36750,7 @@ function keyEditForm(key) {
 }
 function keyTable(rows) {
 	return table([
-		"Prefix",
+		"Key",
 		"Owner",
 		"Services",
 		"Status",
@@ -36757,7 +36759,7 @@ function keyTable(rows) {
 		"Updated",
 		"Actions"
 	], rows.map((key) => [
-		`<code>${esc(key.key_prefix)}</code>`,
+		`${key.name ? `<span>${esc(key.name)}</span><br>` : ""}<code>${esc(key.key_prefix)}</code>`,
 		keyOwnerLabel(key),
 		esc(listValue(key.service_names, "derived")),
 		keyStatus(key),
@@ -36791,7 +36793,7 @@ function policyLayerTable(rows) {
 	]));
 }
 function keyLifecycleActions(key) {
-	const keyLabel = attr(key.key_prefix);
+	const keyLabel = attr(key.name ? `${key.name} (${key.key_prefix})` : key.key_prefix);
 	const toggle = key.revoked_at ? "" : key.disabled ? `<button data-key-action="enable" data-key-id="${attr(key.id)}" aria-label="Enable virtual key ${keyLabel}">Enable</button>` : `<button data-key-action="disable" data-key-id="${attr(key.id)}" aria-label="Disable virtual key ${keyLabel}">Disable</button>`;
 	return `<div class="actions">
         <button data-key-action="edit" data-key-id="${attr(key.id)}" aria-label="Edit virtual key ${keyLabel}">Edit</button>
@@ -36812,6 +36814,7 @@ async function createKey(event) {
 		return;
 	}
 	const body = {
+		name: String(form.get("key_name") || "").trim() || null,
 		owner_type: form.get("owner_type"),
 		project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
 		service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
@@ -36850,6 +36853,7 @@ async function patchKey(event) {
 		return;
 	}
 	const body = {
+		name: String(form.get("key_name") || "").trim() || null,
 		owner_type: form.get("owner_type"),
 		project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
 		service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
@@ -40043,7 +40047,7 @@ function serviceOptions(selected = "") {
 	return state.services.map((service) => `<option value="${attr(service.name)}" ${service.name === selected ? "selected" : ""}>${esc(service.name)}</option>`).join("");
 }
 function keyOptions(selected = "") {
-	return state.keys.map((key) => `<option value="${attr(key.id)}" ${key.id === selected ? "selected" : ""}>${esc(key.key_prefix)} (${esc(key.owner_type || "project")})</option>`).join("");
+	return state.keys.map((key) => `<option value="${attr(key.id)}" ${key.id === selected ? "selected" : ""}>${esc(keyName(key.id))} (${esc(key.owner_type || "project")})</option>`).join("");
 }
 function serviceSelectionControl(selected = [], name = "service_names", title = "Select services") {
 	const values = Array.isArray(selected) ? selected : [];
@@ -40096,7 +40100,8 @@ function projectName(projectId) {
 	return state.projects.find((project) => project.id === projectId)?.name || projectId;
 }
 function keyName(keyId) {
-	return state.keys.find((key) => key.id === keyId)?.key_prefix || keyId;
+	const key = state.keys.find((key) => key.id === keyId);
+	return key?.name ? `${key.name} (${key.key_prefix})` : key?.key_prefix || keyId;
 }
 function mappingTargetName(mapping) {
 	return mapping.scope === "project" ? projectName(mapping.target_id) : keyName(mapping.target_id);

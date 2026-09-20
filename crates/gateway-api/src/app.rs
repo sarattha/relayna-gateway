@@ -3507,7 +3507,8 @@ fn key_patch_required_scopes(patch: &AdminKeyPatch) -> Vec<&'static str> {
     if patch.disabled.is_some() {
         scopes.push(SCOPE_KEYS_DISABLE);
     }
-    if patch.owner_type.is_some()
+    if patch.name.is_some()
+        || patch.owner_type.is_some()
         || patch.project_id.is_some()
         || patch.service_names.is_some()
         || patch.expires_at.is_some()
@@ -8149,6 +8150,7 @@ mod tests {
                 .map(|preset| preset.apply(KeyPolicy::default()))
                 .unwrap_or_default();
             let key = AdminKeyResponse {
+                name: gateway_core::admin::normalize_key_name(request.name)?,
                 id: Uuid::new_v4(),
                 owner_type: request.owner_type,
                 project_id: request.project_id,
@@ -8223,6 +8225,9 @@ mod tests {
         ) -> GatewayResult<Option<AdminKeyResponse>> {
             let mut key = self.admin_key.lock().expect("lock poisoned");
             if let Some(key) = key.as_mut() {
+                if let Some(name) = patch.name {
+                    key.name = gateway_core::admin::normalize_key_name(name)?;
+                }
                 if let Some(expires_at) = patch.expires_at {
                     key.expires_at = expires_at;
                 }
@@ -9791,6 +9796,7 @@ mod tests {
     ) -> AdminKeyResponse {
         let now = Utc::now();
         AdminKeyResponse {
+            name: None,
             id: stored.id,
             owner_type: gateway_core::AdminKeyOwnerType::Project,
             project_id: stored.project_id,
@@ -13127,6 +13133,95 @@ mod tests {
             .expect("body");
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert!(value["key"]["expires_at"].is_null());
+    }
+
+    #[tokio::test]
+    async fn admin_key_names_create_rename_clear_validate_and_audit() {
+        let store = default_store();
+        let audits = store.audit_events.clone();
+        let app = router_with_state(test_state(store));
+        let response = admin_post(
+            app.clone(),
+            "/admin-ui/admin/keys",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"owner_type":"individual","name":"  Production worker  "}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let created = response_json(response).await;
+        assert_eq!(created["key"]["name"], "Production worker");
+        let path = format!(
+            "/admin-ui/admin/keys/{}",
+            created["key"]["id"].as_str().unwrap()
+        );
+        for (patch, expected) in [
+            (serde_json::json!({"name":"  ทีมงาน  "}), Some("ทีมงาน")),
+            (serde_json::json!({}), Some("ทีมงาน")),
+            (serde_json::json!({"name":null}), None),
+            (serde_json::json!({"name":"Automation"}), Some("Automation")),
+            (serde_json::json!({"name":"   "}), None),
+        ] {
+            let response = admin_patch(
+                app.clone(),
+                &path,
+                Some(TEST_OPERATOR_TOKEN),
+                &patch.to_string(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let value = response_json(response).await;
+            assert_eq!(value["name"], serde_json::json!(expected));
+            assert_eq!(value["id"], created["key"]["id"]);
+            assert_eq!(value["key_prefix"], created["key"]["key_prefix"]);
+            assert!(value.get("raw_key").is_none());
+        }
+        for name in ["x".repeat(121), "bad\nname".into()] {
+            let body = serde_json::json!({"name":name}).to_string();
+            for response in [
+                admin_patch(app.clone(), &path, Some(TEST_OPERATOR_TOKEN), &body).await,
+                admin_post(
+                    app.clone(),
+                    "/admin-ui/admin/keys",
+                    Some(TEST_OPERATOR_TOKEN),
+                    &body,
+                )
+                .await,
+            ] {
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                assert_eq!(
+                    response_json(response).await["error"]["code"],
+                    "invalid_key_payload"
+                );
+            }
+        }
+        let response = admin_patch(app, &path, None, r#"{"name":"Unauthorized"}"#).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let audit = serde_json::to_string(&*audits.lock().unwrap()).unwrap();
+        assert!(audit.contains("Production worker"));
+        assert!(audit.contains("Automation"));
+        assert!(!audit.contains(created["raw_key"].as_str().unwrap()));
+    }
+
+    #[test]
+    fn key_rename_requires_metadata_scope_even_with_disable_permission() {
+        for value in [
+            serde_json::json!({"name":"Worker"}),
+            serde_json::json!({"name":null}),
+            serde_json::json!({"name":""}),
+        ] {
+            let patch: AdminKeyPatch = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(
+                key_patch_required_scopes(&patch),
+                vec![SCOPE_POLICIES_UPDATE]
+            );
+            let mut mixed = value;
+            mixed["disabled"] = serde_json::json!(true);
+            let patch: AdminKeyPatch = serde_json::from_value(mixed).unwrap();
+            assert_eq!(
+                key_patch_required_scopes(&patch),
+                vec![SCOPE_KEYS_DISABLE, SCOPE_POLICIES_UPDATE]
+            );
+        }
     }
 
     #[tokio::test]

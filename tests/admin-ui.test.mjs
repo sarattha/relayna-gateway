@@ -397,6 +397,41 @@ test("routes view exposes canonical provider route modes", () => {
   assert.match(js, /max_response_body_bytes: nullableNumber\(form\.get\("max_response_body_bytes"\)\)/);
 });
 
+test("key names are escaped in forms and inventory, submitted on create/edit and shown in selectors", () => {
+  const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  const ownership = new Function('attr','projectOptions','serviceSelectionControl', `return (${sourceFunction('keyOwnershipFields')});`)(escape, () => '', () => '');
+  assert.match(ownership(), /Key name \(optional\)/);
+  assert.match(ownership(), /name="key_name" maxlength="120" value=""/);
+  const malicious = '<img src=x onerror=alert(1)>"';
+  assert.ok(ownership({name:malicious}).includes(escape(malicious)));
+  assert.ok(!ownership({name:malicious}).includes('<img'));
+  const render = new Function('table','esc','keyOwnerLabel','listValue','keyStatus','keyExpiry','keyPolicySummary','time','keyLifecycleActions', `return (${sourceFunction('keyTable')});`)((headers, rows)=>rows, escape, ()=>'',()=>'',()=>'',()=>'',()=>'',()=>'',()=>'');
+  assert.ok(render([{name:malicious,key_prefix:'rk_safe'}])[0][0].includes(escape(malicious)));
+  assert.equal(render([{name:null,key_prefix:'rk_safe'}])[0][0],'<code>rk_safe</code>');
+  const label = new Function('state', `return (${sourceFunction('keyName')});`)({keys:[{id:'named',name:'Production',key_prefix:'rk_1'},{id:'unnamed',key_prefix:'rk_2'}]});
+  assert.equal(label('named'),'Production (rk_1)');
+  assert.equal(label('unnamed'),'rk_2');
+  assert.equal(label('missing'),'missing');
+});
+
+for (const handler of ['createKey', 'patchKey']) {
+  for (const [input, expected] of [['  Production automation  ', 'Production automation'], ['', null], ['   ', null], ['ทีมงาน', 'ทีมงาน']]) {
+    let sent;
+    const form = new Map([['key_name', input], ['owner_type', 'individual'], ['no_expires_at', 'on']]);
+    form.getAll = () => [];
+    const submit = new Function('FormData','guardrailPolicyBody','policyBody','isoDate','confirmAction','projectName','api','closeContentDrawer','state','setNotice','keys','showRawToken', `return async ${sourceFunction(handler)};`)(
+      function () { return form; }, () => ({}), () => ({}), () => null, async () => true, () => '',
+      async (path, options) => { sent = {path, ...options, body: JSON.parse(options.body)}; return {raw_key:'test-only'}; },
+      () => {}, {}, () => {}, async () => {}, () => {},
+    );
+    await submit({preventDefault() {}, target:{dataset:{keyId:'existing-id'}}});
+    assert.equal(sent.body.name, expected);
+    assert.equal(sent.method, handler === 'createKey' ? 'POST' : 'PATCH');
+    assert.equal(sent.path, handler === 'createKey' ? '/admin-ui/admin/keys' : '/admin-ui/admin/keys/existing-id');
+  }
+}
+console.log('ok - key create/edit submit trimmed aliases and explicit clear values');
+
 test("virtual keys use explicit owner and service selection controls", () => {
   assert.match(js, /function keyOwnershipFields\(key = null\)/);
   assert.match(js, /name="owner_type"/);

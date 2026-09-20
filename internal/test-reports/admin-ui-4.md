@@ -133,3 +133,23 @@ UI build, existing UI regressions, gateway build and whitespace checks pass.
 All 26 React tests pass; measured component coverage remains 100% statements,
 branches, functions and lines. This styling-only refinement does not change Rust
 runtime behavior; the full Rust verification stack was not rerun.
+
+## Searchable virtual-key names
+
+Admin key creation/editing now accepts an optional `name`, displayed as the key's
+alias in inventory and selectors. Profile search already supported names; the
+new additive API field and nullable PostgreSQL column supply them durably.
+Names can be renamed or cleared without changing credentials or UUID bindings.
+Shared compact field help explains the optional name without an inline paragraph.
+
+Computer Use verified the real demo save/reload/restart, clear and restore flows,
+case-insensitive alias search, Add query clearing and selected labels on desktop
+and 390px. Profile drafts were cancelled after the checks. Automated tests cover
+API validation, omission versus null, scopes and audit, real PostgreSQL persistence,
+legacy unnamed keys, unchanged hashes, UI escaping and submitted create/edit bodies.
+
+The full ten-command verification stack passed (nextest 373/373, zero skipped).
+UI build/regressions/typecheck pass; 26 React tests retain 100% component coverage.
+Fresh workspace LLVM coverage passes the strict >98% changed-production-line gate:
+25/25 for key naming and 162/162 for the complete PR. See
+`virtual-key-names-coverage.json` and `../execplans/virtual-key-names.md`.

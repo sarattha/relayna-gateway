@@ -1093,7 +1093,7 @@ async function keys() {
         <span class="subtle">Dry-run key governance</span>
       </div>
       <form id="policy-sim-form" class="form-grid">
-        <label>Key<select name="key_id"><option value="">Default policy</option>${state.keys.map((key) => `<option value="${attr(key.id)}">${esc(key.key_prefix)}</option>`).join("")}</select></label>
+        <label>Key<select name="key_id"><option value="">Default policy</option>${state.keys.map((key) => `<option value="${attr(key.id)}">${esc(keyName(key.id))}</option>`).join("")}</select></label>
         <label>Team scope<input name="team_id" placeholder="team identifier"></label>
         <label>Path<input name="path" value="/v1/chat/completions" data-policy-sim-path></label>
         <label>Provider<select name="provider" data-policy-sim-provider>
@@ -1210,6 +1210,7 @@ function guardrailOverrideControls(overrides = {}, selectedNames = []) {
 function keyOwnershipFields(key = null) {
   const ownerType = key?.owner_type || "project";
   return `
+    <label>Key name (optional)<input data-guidance-name="key_name" name="key_name" maxlength="120" value="${attr(key?.name || "")}" placeholder="Production automation"></label>
     <label>Owner<select name="owner_type">
       <option value="project" ${ownerType === "project" ? "selected" : ""}>Project</option>
       <option value="individual" ${ownerType === "individual" ? "selected" : ""}>Individual</option>
@@ -1246,9 +1247,9 @@ function keyEditForm(key) {
 
 function keyTable(rows) {
   return table(
-    ["Prefix", "Owner", "Services", "Status", "Expiry", "Policy", "Updated", "Actions"],
+    ["Key", "Owner", "Services", "Status", "Expiry", "Policy", "Updated", "Actions"],
     rows.map((key) => [
-      `<code>${esc(key.key_prefix)}</code>`,
+      `${key.name ? `<span>${esc(key.name)}</span><br>` : ""}<code>${esc(key.key_prefix)}</code>`,
       keyOwnerLabel(key),
       esc(listValue(key.service_names, "derived")),
       keyStatus(key),
@@ -1276,7 +1277,7 @@ function policyLayerTable(rows) {
 }
 
 function keyLifecycleActions(key) {
-  const keyLabel = attr(key.key_prefix);
+  const keyLabel = attr(key.name ? `${key.name} (${key.key_prefix})` : key.key_prefix);
   const toggle = key.revoked_at
     ? ""
     : key.disabled
@@ -1302,6 +1303,7 @@ async function createKey(event) {
     return;
   }
   const body = {
+    name: String(form.get("key_name") || "").trim() || null,
     owner_type: form.get("owner_type"),
     project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
     service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
@@ -1334,6 +1336,7 @@ async function patchKey(event) {
     return;
   }
   const body = {
+    name: String(form.get("key_name") || "").trim() || null,
     owner_type: form.get("owner_type"),
     project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
     service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
@@ -4432,7 +4435,7 @@ function serviceOptions(selected = "") {
 
 function keyOptions(selected = "") {
   return state.keys
-    .map((key) => `<option value="${attr(key.id)}" ${key.id === selected ? "selected" : ""}>${esc(key.key_prefix)} (${esc(key.owner_type || "project")})</option>`)
+    .map((key) => `<option value="${attr(key.id)}" ${key.id === selected ? "selected" : ""}>${esc(keyName(key.id))} (${esc(key.owner_type || "project")})</option>`)
     .join("");
 }
 
@@ -4508,7 +4511,8 @@ function projectName(projectId) {
 }
 
 function keyName(keyId) {
-  return state.keys.find((key) => key.id === keyId)?.key_prefix || keyId;
+  const key = state.keys.find((key) => key.id === keyId);
+  return key?.name ? `${key.name} (${key.key_prefix})` : key?.key_prefix || keyId;
 }
 
 function mappingTargetName(mapping) {

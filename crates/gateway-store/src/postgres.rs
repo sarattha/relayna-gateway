@@ -10,7 +10,7 @@ use gateway_core::{
         ServiceMembership, ServiceMembershipUpsertRequest, StoredPortalSession, PORTAL_ROLE_ADMIN,
     },
     admin::{
-        AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse,
+        normalize_key_name, AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse,
         AdminPolicyLayerResponse, AdminPolicyLayerUpsert, AdminPolicyResponse,
     },
     auth::{StoredVirtualKey, VirtualKeyLookup},
@@ -319,6 +319,7 @@ impl PostgresStore {
                 k.owner_type,
                 k.project_id,
                 k.key_prefix,
+                k.name,
                 k.disabled,
                 k.revoked_at,
                 k.expires_at,
@@ -1865,6 +1866,7 @@ impl AdminKeyStore for PostgresStore {
         material: &VirtualKeyMaterial,
     ) -> GatewayResult<AdminKeyResponse> {
         let key_id = Uuid::new_v4();
+        let name = normalize_key_name(request.name)?;
         validate_key_owner(request.owner_type, request.project_id)?;
         let base_policy = request
             .preset
@@ -1881,8 +1883,8 @@ impl AdminKeyStore for PostgresStore {
 
         sqlx::query(
             r#"
-            INSERT INTO api_keys (id, owner_type, project_id, key_prefix, key_hash, expires_at, rotation_due_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO api_keys (id, owner_type, project_id, key_prefix, key_hash, expires_at, rotation_due_at, name)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
         .bind(key_id)
@@ -1892,6 +1894,7 @@ impl AdminKeyStore for PostgresStore {
         .bind(&material.key_hash)
         .bind(request.expires_at)
         .bind(request.rotation_due_at)
+        .bind(name)
         .execute(&mut *tx)
         .await
         .map_err(|error| {
@@ -1921,6 +1924,7 @@ impl AdminKeyStore for PostgresStore {
                 k.owner_type,
                 k.project_id,
                 k.key_prefix,
+                k.name,
                 k.disabled,
                 k.revoked_at,
                 k.expires_at,
@@ -1990,6 +1994,8 @@ impl AdminKeyStore for PostgresStore {
         key_id: Uuid,
         patch: AdminKeyPatch,
     ) -> GatewayResult<Option<AdminKeyResponse>> {
+        let update_name = patch.name.is_some();
+        let name = normalize_key_name(patch.name.flatten())?;
         let update_expires_at = patch.expires_at.is_some();
         let expires_at = patch.expires_at.flatten();
         let update_rotation_due_at = patch.rotation_due_at.is_some();
@@ -2041,6 +2047,7 @@ impl AdminKeyStore for PostgresStore {
                 expires_at = CASE WHEN $2 THEN $3 ELSE expires_at END,
                 disabled = COALESCE($4, disabled),
                 rotation_due_at = CASE WHEN $8 THEN $9 ELSE rotation_due_at END,
+                name = CASE WHEN $10 THEN $11 ELSE name END,
                 updated_at = now()
             WHERE id = $1
               AND revoked_at IS NULL
@@ -2055,6 +2062,8 @@ impl AdminKeyStore for PostgresStore {
         .bind(project_id)
         .bind(update_rotation_due_at)
         .bind(rotation_due_at)
+        .bind(update_name)
+        .bind(name)
         .execute(&mut *tx)
         .await
         .map_err(|error| {
@@ -5992,6 +6001,9 @@ fn admin_key_response_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<Adm
         .try_get("owner_type")
         .map_err(|_| GatewayError::StoreUnavailable)?;
     Ok(AdminKeyResponse {
+        name: row
+            .try_get("name")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
         id: row
             .try_get("id")
             .map_err(|_| GatewayError::StoreUnavailable)?,

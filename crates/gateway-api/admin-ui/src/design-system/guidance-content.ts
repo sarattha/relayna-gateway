@@ -124,6 +124,7 @@ const shared: Record<string, string> = {
   config_schema: "JSON schema describing valid per-key configuration overrides. Enter a JSON object.",
   guardrail_override_names: "Enable a configuration override for this key. Unchecking removes this override when the key policy is saved.",
   runtime_config: "JSON object used when executing this guardrail. Check its schema and avoid embedding secrets.",
+  key_name: "Optional searchable alias, up to 120 characters. Blank removes the name. Renaming does not change the credential or profile assignments; UUIDs distinguish keys with the same name.",
   display_name: "Human-readable name for this workload identity binding.",
   client_id: "Entra application/client UUID of the workload allowed to use this binding.",
   object_id: "Optional exact service-principal object UUID. Blank matches by the other configured identity constraints.",

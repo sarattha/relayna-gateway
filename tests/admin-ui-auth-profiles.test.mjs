@@ -82,6 +82,13 @@ const secondId='00000000-0000-0000-0000-000000000002';
 const inventory={keys:[{id,key_prefix:'rk_employee',project_id:'project-one',service_names:['responses']},{id:secondId,key_prefix:'rk_robot',project_id:'project-two',disabled:true,service_names:['embeddings']}],projects:[{id:'project-one',name:'Research'},{id:'project-two',name:'Automation'}]};
 for(const query of ['RK_EMPLOYEE',id,'research','PROJECT-ONE','responses','research employee'])assert.deepEqual(profileKeyOptions(inventory.keys,inventory.projects,query).map(k=>k.id),[id]);
 assert.equal(profileKeyOptions(inventory.keys,inventory.projects,'missing').length,0);
+const namedKeys = inventory.keys.map(key => ({...key, name:'Production assistant'}));
+assert.deepEqual(profileKeyOptions(namedKeys,inventory.projects,'PRODUCTION assistant research').map(k=>k.id),[id]);
+assert.equal(profileKeyOptions(namedKeys,inventory.projects,'production').length,2,'duplicate names retain distinct UUIDs');
+assert.equal(profileKeyOptions(namedKeys,inventory.projects,id)[0].name,'Production assistant');
+assert.equal(profileKeyOptions(namedKeys,inventory.projects,'rk_employee')[0].id,id,'prefix search remains available after naming');
+assert.equal(profileKeyOptions([{...inventory.keys[0],name:null}],inventory.projects,'rk_employee')[0].name,'rk_employee');
+
 assert.deepEqual(profileKeyOptions(inventory.keys,inventory.projects,'','project-two').map(k=>k.id),[secondId]);
 assert.equal(profileKeyOptions(inventory.keys,inventory.projects,'robot')[0].status,'Disabled');
 assert.deepEqual(selectedKeyIds(' ABC ,\n DEF '),['abc','def']);

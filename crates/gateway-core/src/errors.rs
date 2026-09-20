@@ -14,6 +14,8 @@ pub enum GatewayError {
     MissingAuthorization,
     #[error("malformed authorization header")]
     MalformedAuthorization,
+    #[error("virtual key metadata is invalid")]
+    InvalidKeyPayload,
     #[error("invalid virtual key")]
     InvalidVirtualKey,
     #[error("virtual key is disabled")]
@@ -192,7 +194,7 @@ impl GatewayError {
             Self::BudgetExceeded => StatusCode::PAYMENT_REQUIRED,
             Self::GuardrailBlocked | Self::GuardrailForbidden => StatusCode::FORBIDDEN,
             Self::GuardrailUnavailable => StatusCode::BAD_GATEWAY,
-            Self::InvalidGuardrailRequest => StatusCode::BAD_REQUEST,
+            Self::InvalidGuardrailRequest | Self::InvalidKeyPayload => StatusCode::BAD_REQUEST,
             Self::DuplicateProject | Self::DuplicateProviderConfig | Self::DuplicateService => {
                 StatusCode::CONFLICT
             }
@@ -227,6 +229,7 @@ impl GatewayError {
             Self::AuthenticationProfileDenied => "authentication_profile_denied",
             Self::AuthenticationProfileConflict => "authentication_profile_conflict",
             Self::MalformedAuthorization => "malformed_authorization",
+            Self::InvalidKeyPayload => "invalid_key_payload",
             Self::InvalidVirtualKey => "invalid_virtual_key",
             Self::DisabledVirtualKey => "disabled_virtual_key",
             Self::RevokedVirtualKey => "revoked_virtual_key",
@@ -298,6 +301,7 @@ impl GatewayError {
             Self::AuthenticationProfileDenied => "Authentication profile selection denied.",
             Self::AuthenticationProfileConflict => "Authentication configuration changed. Reload before saving.",
             Self::MalformedAuthorization => "Authorization header must be a Bearer Relayna key.",
+            Self::InvalidKeyPayload => "Key name must be at most 120 characters without control characters.",
             Self::InvalidVirtualKey => "Virtual key is invalid.",
             Self::DisabledVirtualKey => "Virtual key is disabled.",
             Self::RevokedVirtualKey => "Virtual key is revoked.",

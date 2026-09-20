@@ -191,6 +191,7 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     store
         .create_admin_key(
             AdminKeyCreate {
+                name: None,
                 owner_type: AdminKeyOwnerType::Project,
                 project_id: Some(project.id),
                 service_names: vec![service_name.clone()],
@@ -249,6 +250,7 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     store
         .create_admin_key(
             AdminKeyCreate {
+                name: None,
                 owner_type: AdminKeyOwnerType::Project,
                 project_id: Some(project.id),
                 service_names: vec![stream_service_name.clone()],
@@ -475,6 +477,7 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     store
         .create_admin_key(
             AdminKeyCreate {
+                name: None,
                 owner_type: AdminKeyOwnerType::Project,
                 project_id: Some(embeddings_project.id),
                 service_names: vec![embeddings_service_name.clone()],
