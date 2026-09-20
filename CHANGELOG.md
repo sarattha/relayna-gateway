@@ -37,6 +37,9 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Fixed
 
+- Honor explicit `foundry: null` service patches, allowing conversion to a normal
+  upstream without deleting the service or its authentication assignments.
+
 - Reserve Foundry tokens per minute once per request using the full rewritten
   body, avoiding duplicate header-stage charges and premature quota denials.
   Responses token estimates also reserve the requested `max_output_tokens`.

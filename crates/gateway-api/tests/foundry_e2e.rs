@@ -911,6 +911,108 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
         400
     );
     assert_eq!(mock.tokens.load(Ordering::SeqCst), tokens);
+    // Omission retains the binding; explicit null removes it without recreating
+    // the service or losing its caller authentication policy.
+    let saved = store.get_service("research").await.unwrap().unwrap();
+    let unchanged = admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::PATCH,
+        "services/research",
+        json!({"timeout_ms":119000}),
+        200,
+    )
+    .await;
+    assert_eq!(
+        unchanged["foundry"],
+        serde_json::to_value(&saved.foundry).unwrap()
+    );
+    let cleared = admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::PATCH,
+        "services/research",
+        json!({"foundry":null}),
+        200,
+    )
+    .await;
+    assert!(cleared["foundry"].is_null());
+    assert_eq!(
+        cleared["access"],
+        serde_json::to_value(&saved.access).unwrap()
+    );
+    let provider_reference: Option<Uuid> = sqlx::query_scalar(
+        "SELECT foundry_provider_id FROM service_registrations WHERE name='research'",
+    )
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert!(provider_reference.is_none());
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .bearer_auth(&key.raw_key)
+            .json(&json!({"input":"hi"}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    // A replacement binding remains supported and is still validated.
+    admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::PATCH,
+        "services/research",
+        json!({"foundry":{"mode":"endpoint_passthrough","provider_id":Uuid::new_v4()}}),
+        400,
+    )
+    .await;
+    admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::PATCH,
+        "services/research",
+        json!({"foundry":saved.foundry}),
+        200,
+    )
+    .await;
+    let ordinary = serve(Router::new().route(
+        "/responses",
+        post(|headers: HeaderMap, Json(body): Json<Value>| async move {
+            assert_eq!(
+                headers["authorization"],
+                "Bearer replacement-service-secret"
+            );
+            assert!(body.get("agent").is_none());
+            Json(json!({"converted":true}))
+        }),
+    ))
+    .await;
+    let converted = admin(&client,&admin_url,&operator.raw_token,reqwest::Method::PATCH,"services/research",json!({"foundry":null,"upstream_base_url":ordinary,"credential":"replacement-service-secret"}),200).await;
+    assert!(converted["foundry"].is_null());
+    assert_eq!(converted["name"], "research");
+    assert_eq!(
+        converted["created_at"],
+        serde_json::to_value(saved.created_at).unwrap()
+    );
+    assert_eq!(converted["access"], cleared["access"]);
+    let calls_before = mock.calls.lock().unwrap().len();
+    let response = client
+        .post(&endpoint)
+        .bearer_auth(&key.raw_key)
+        .json(&json!({"input":"hi"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.json::<Value>().await.unwrap()["converted"], true);
+    assert_eq!(mock.calls.lock().unwrap().len(), calls_before);
     let rows = store
         .traffic_history(gateway_core::traffic::TrafficQuery::default())
         .await

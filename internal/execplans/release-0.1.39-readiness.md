@@ -50,3 +50,10 @@ Review of ba7c3a8 found Foundry TPM reservation occurs at both header admission 
 The same quota inspection found the shared estimator omitted Responses `max_output_tokens`. Add it as a fallback without changing existing max_tokens/max_completion_tokens priority, and exclude it from input estimation. This corrects Responses quota reservation, including the released Responses path; request/response shapes remain unchanged. Explicit reservation tests and both Foundry quota-boundary cases cover it.
 
 Third-review verification: exact-boundary and Redis single-reservation checks pass for both Foundry modes. Workspace build, release metadata and all ten mandatory commands pass, including 388/388 Nextest tests with zero skips. Ready to push and request review of the TPM fix.
+
+
+## Fourth review follow-up
+
+Review of 5774001 found explicit null Foundry service patches were silently ignored. Distinguish missing, null and object via a nullable optional field with a custom deserializer, and apply the inner value in the store. The field is unreleased after v0.1.37; no migration or compatibility shim is needed. Existing validation and incomplete-service denial remain. Verify omission, clearing generated provider reference, retained identity/ID, replacement validation, and real forwarding to a normal upstream after one-step conversion. Document the admin API conversion path and rerun mandatory verification before push.
+
+Fourth-review verification: focused Foundry conversion E2E, strict documentation, workspace build, release metadata and all ten mandatory verification commands passed. Nextest: 389/389, no skipped tests. Ready for push and fresh review.

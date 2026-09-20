@@ -363,3 +363,23 @@ invocation in your environment before production use.
 Changing a saved connection from client-secret authentication to workload or
 managed identity deletes its stored client secret. Switching back requires a
 new secret; the previous credential is not restored.
+
+## Convert a Foundry service to a normal upstream
+
+Use the admin API `PATCH /admin-ui/admin/services/{name}` with `foundry: null`.
+Omitting `foundry` retains the current binding; an object replaces it. To make the
+converted service immediately routable, provide `upstream_base_url` and the new
+service `credential` in the same patch. Its route, identity policy and assigned
+keys are retained unless explicitly changed. Clearing only the binding leaves
+an incomplete service that rejects calls until its upstream and credential are
+configured. The Azure provider connection remains available to other services.
+
+Example JSON body (use your normal authenticated admin API client):
+
+```json
+{
+  "foundry": null,
+  "upstream_base_url": "https://internal-service.example",
+  "credential": "REPLACEMENT_SERVICE_SECRET"
+}
+```

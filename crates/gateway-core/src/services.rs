@@ -114,7 +114,8 @@ pub struct ServiceCreateRequest {
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 pub struct ServicePatchRequest {
-    pub foundry: Option<crate::foundry::FoundryBinding>,
+    #[serde(default, deserialize_with = "deserialize_foundry_binding_patch")]
+    pub foundry: Option<Option<crate::foundry::FoundryBinding>>,
     pub access: Option<crate::EndpointAccess>,
     pub project_id: Option<Option<Uuid>>,
     pub studio_service_id: Option<Option<String>>,
@@ -137,6 +138,15 @@ pub struct ServicePatchRequest {
     pub endpoint_pricing_rules: Option<Vec<ServiceEndpointPricingRule>>,
     pub fallback_services: Option<Vec<String>>,
     pub sync_status: Option<ServiceSyncStatus>,
+}
+
+fn deserialize_foundry_binding_patch<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<crate::foundry::FoundryBinding>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<crate::foundry::FoundryBinding>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -1336,6 +1346,22 @@ fn validate_foundry_service(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn foundry_patch_distinguishes_omitted_null_and_replacement() {
+        let omitted: ServicePatchRequest = serde_json::from_str("{}").unwrap();
+        assert_eq!(omitted.foundry, None);
+        let cleared: ServicePatchRequest = serde_json::from_str(r#"{"foundry":null}"#).unwrap();
+        assert_eq!(cleared.foundry, Some(None));
+        let replaced: ServicePatchRequest = serde_json::from_value(serde_json::json!({"foundry":{"mode":"endpoint_passthrough","provider_id":Uuid::nil()}})).unwrap();
+        assert_eq!(
+            replaced.foundry,
+            Some(Some(crate::foundry::FoundryBinding::EndpointPassthrough {
+                provider_id: Uuid::nil()
+            }))
+        );
+        assert!(serde_json::from_str::<ServicePatchRequest>(r#"{"foundry":{}}"#).is_err());
+    }
 
     #[test]
     fn validates_service_names() {

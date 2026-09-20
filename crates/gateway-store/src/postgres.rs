@@ -4185,7 +4185,7 @@ impl AdminServiceStore for PostgresStore {
             registration.fallback_services = fallback_services;
         }
         if let Some(binding) = patch.foundry {
-            registration.foundry = Some(binding);
+            registration.foundry = binding;
         }
         registration.validate_foundry()?;
         if let Some(binding) = &registration.foundry {
