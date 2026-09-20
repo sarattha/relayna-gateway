@@ -19,7 +19,20 @@ form.set('automation.id','employees');assert.throws(()=>profilesFromForm(form),/
 form.set('employee.audience','');assert.throws(()=>profilesFromForm(form),/audience/);form.set('employee.audience','api://employees');
 form.delete('employee.enabled');assert.equal(profilesFromForm(form).profiles[0].enabled,false);
 form.set('employee.required_roles',Array(65).fill('role').join(','));assert.throws(()=>profilesFromForm(form),/at most 64/);
-assert.throws(()=>profilesFromForm(new FormData()),/1–32/);
+assert.throws(()=>profilesFromForm(new FormData()),/^Error: Add at least one authentication profile before saving\.$/);
+const limitForm = new FormData();
+for (let index = 0; index < 33; index++) {
+  const slot = `limit-${index}`;
+  limitForm.append('profile_slot', slot);
+  limitForm.set(`${slot}.id`, slot);
+  limitForm.set(`${slot}.name`, slot);
+  limitForm.set(`${slot}.type`, 'relayna_key_only');
+}
+assert.throws(()=>profilesFromForm(limitForm), /at most 32 authentication profiles/);
+limitForm.delete('profile_slot');
+limitForm.append('profile_slot', 'limit-0');
+limitForm.set('limit-0.keys', Array.from({length:1025}, (_, index) => `00000000-0000-0000-0000-${String(index).padStart(12,'0')}`).join(','));
+assert.throws(()=>profilesFromForm(limitForm), /at most 1,024 assigned keys/);
 assert.match(profileFields({authentication_profiles:result}),/4/);
 const hostile=profileRow({id:'<img>',name:'"<script>',entra:{audience:'<svg>'}},[]);
 assert.doesNotMatch(hostile,/<img>|<script>|<svg>/);assert.match(hostile,/&lt;script&gt;/);

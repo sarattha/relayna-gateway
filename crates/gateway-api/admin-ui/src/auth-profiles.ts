@@ -74,7 +74,9 @@ export function profilesFromForm(form, accessa = false) {
       keys.add(key_id); bindings.push({key_id,profile_id:id});
     }
   }
-  if (!profiles.length || profiles.length > 32 || bindings.length > 1024) throw new Error('Configure 1–32 profiles and at most 1,024 bindings per route.');
+  if (!profiles.length) throw new Error('Add at least one authentication profile before saving.');
+  if (profiles.length > 32) throw new Error('A route supports at most 32 authentication profiles.');
+  if (bindings.length > 1024) throw new Error('A route supports at most 1,024 assigned keys across all profiles.');
   return {revision:Number(form.get('profiles_revision') || 0),profiles,bindings};
 }
 export function syncIdentityFields(root) {

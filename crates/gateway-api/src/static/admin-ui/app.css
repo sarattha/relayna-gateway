@@ -4159,6 +4159,11 @@
     border-bottom-width: 1px;
   }
 
+  .border-dashed {
+    --tw-border-style: dashed;
+    border-style: dashed;
+  }
+
   .border-border, .border-input {
     border-color: var(--border);
   }

@@ -215,6 +215,12 @@ export function IdentityEditor({
           value={draft.revision}
           disabled={draft.mode !== "profiles"}
         />
+        {!draft.profiles.length && (
+          <p className="rounded-md border border-dashed border-border p-4 text-xs text-muted-foreground">
+            No authentication profiles. Use Add profile to configure who can access
+            this route. At least one profile is needed before saving.
+          </p>
+        )}
         <div data-profile-rows className="grid gap-4">
           {draft.profiles.map((profile) => (
             <fieldset

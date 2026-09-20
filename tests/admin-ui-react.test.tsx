@@ -307,6 +307,16 @@ describe("identity editor", () => {
     fireEvent(mode, new CustomEvent("profile-error", { bubbles: true, detail: stale }));
     expect(screen.getByText(stale)).toBeTruthy();
   });
+  it("guides operators through an empty profile draft and clears the prompt after Add", async () => {
+    const initial = draft();
+    initial.revision = 0;
+    initial.profiles = [];
+    await editor(initial);
+    expect(screen.getByText(/No authentication profiles\. Use Add profile/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add profile" }));
+    expect(screen.queryByText(/No authentication profiles\. Use Add profile/)).toBeNull();
+    expect(screen.getByRole("group", { name: "New authentication profile" })).toBeTruthy();
+  });
   it("updates all claim and identity fields and changes key-only mode dynamically", async () => {
     const { form, onDirty } = await editor();
     const group = screen.getByRole("group", { name: "Employees" });

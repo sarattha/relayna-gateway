@@ -18,7 +18,14 @@ profile configuration by changing modes is already prohibited by the backend.
 - [x] (2026-09-20) All ten mandatory verification steps passed; nextest 377/377 with zero skips.
 - [x] (2026-09-20) Prepared verified changes and summary for existing draft PR #121.
 
+- [x] (2026-09-20) Follow-up: split empty-profile, profile-count and assignment-count errors; add actionable empty-state guidance with regressions.
+- [x] (2026-09-20) Computer Use: empty Save gives precise missing-profile error; Add clears error and prompt and focuses new profile. Canceled without saving. UI build, regressions, typecheck and 29 React tests pass; coverage is 100%, including 122/122 branches.
+- [x] (2026-09-20) Empty-state follow-up: all ten verification steps passed; nextest 377/377, no skips (`/tmp/profile-empty-verification.log`).
+
 ## Surprises & Discoveries
+
+An empty draft previously produced a combined 1–32 profiles / 1,024 bindings
+error, obscuring the actual missing-profile problem.
 
 Service type presets can also set the identity mode. They must preserve saved
 profiles even when a preset normally chooses a single Entra policy.
@@ -70,3 +77,8 @@ reload guidance. Browser screenshots are local ignored evidence at
 `internal/test-reports/admin4/unsaved-profile-mode-reversible.jpg`.
 Full repository verification passed (`/tmp/profile-mode-verification.log`);
 UI coverage exceeds 98%. No backend contracts or saved policies changed.
+
+Follow-up evidence: `internal/test-reports/admin4/empty-profile-guidance.jpg`
+and `internal/test-reports/admin4/empty-profile-validation.jpg` (ignored local
+screenshots). Complete removal of profile mode is a separate product decision;
+this follow-up changes only empty-state guidance and validation messages.
