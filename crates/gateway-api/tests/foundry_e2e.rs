@@ -25,6 +25,7 @@ use uuid::Uuid;
 #[derive(Default)]
 struct Mock {
     tokens: AtomicUsize,
+    short_token_lifetime: std::sync::atomic::AtomicBool,
     reads: AtomicUsize,
     read_status: AtomicUsize,
     calls: Mutex<Vec<(HeaderMap, Value)>>,
@@ -46,7 +47,7 @@ async fn token(
         return (StatusCode::UNAUTHORIZED, "never leak token error details").into_response();
     }
     assert_eq!(form["client_secret"], "mock-client-secret");
-    Json(json!({"access_token":"mock-azure-access-token","token_type":"Bearer","expires_in":3}))
+    Json(json!({"access_token":"mock-azure-access-token","token_type":"Bearer","expires_in":if state.short_token_lifetime.load(Ordering::SeqCst) { 3 } else { 3600 }}))
         .into_response()
 }
 async fn agents(
@@ -204,6 +205,35 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
     let provider = admin(&client,&admin_url,&operator.raw_token,reqwest::Method::POST,"providers",json!({"provider":"azure-foundry","name":"Mock Foundry","base_url":format!("{upstream}/api/projects/demo"),"credential":"mock-client-secret","foundry":{"method":"client_secret","tenant_id":Uuid::nil(),"client_id":Uuid::nil()}}),200).await;
     assert!(!provider.to_string().contains("mock-client-secret"));
     let provider_id = provider["id"].as_str().unwrap();
+    // Non-secret identities discard irrelevant credentials on creation too.
+    for method in ["workload_identity", "managed_identity"] {
+        let created = admin(
+            &client,
+            &admin_url,
+            &operator.raw_token,
+            reqwest::Method::POST,
+            "providers",
+            json!({"provider":"azure-foundry", "name":format!("Create {method}"),
+            "base_url":format!("{upstream}/api/projects/demo"), "credential":"unused-secret",
+            "foundry":{"method":method,"tenant_id":Uuid::nil(),"client_id":Uuid::nil()}}),
+            200,
+        )
+        .await;
+        assert_eq!(created["credential_configured"], false);
+        let id = created["id"].as_str().unwrap();
+        let secret: Option<String> =
+            sqlx::query_scalar("SELECT credential_secret FROM provider_configs WHERE id=$1")
+                .bind(Uuid::parse_str(id).unwrap())
+                .fetch_one(store.pool())
+                .await
+                .unwrap();
+        assert!(secret.is_none());
+        admin(&client, &admin_url, &operator.raw_token, reqwest::Method::PATCH,
+            &format!("providers/{id}"), json!({"foundry":{"method":"client_secret","tenant_id":Uuid::nil(),"client_id":Uuid::nil()}}), 400).await;
+        let replaced = admin(&client, &admin_url, &operator.raw_token, reqwest::Method::PATCH,
+            &format!("providers/{id}"), json!({"foundry":{"method":"client_secret","tenant_id":Uuid::nil(),"client_id":Uuid::nil()},"credential":"mock-client-secret"}), 200).await;
+        assert_eq!(replaced["credential_configured"], true);
+    }
     // API clients omitting credential must also clear it when leaving secret auth.
     for method in ["workload_identity", "managed_identity"] {
         let changed = admin(
@@ -877,6 +907,30 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
         400,
     )
     .await;
+    // Cache-reuse assertions use a long TTL; enable short expiry only here.
+    mock.short_token_lifetime.store(true, Ordering::SeqCst);
+    admin(
+        &client,
+        &admin_url,
+        &operator.raw_token,
+        reqwest::Method::PATCH,
+        &format!("providers/{provider_id}"),
+        json!({"name":"Short expiry test"}),
+        200,
+    )
+    .await;
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .bearer_auth(&key.raw_key)
+            .json(&json!({"input":"prime short token"}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let before_expiry = mock.tokens.load(Ordering::SeqCst);
     tokio::time::sleep(Duration::from_secs(3)).await;
     assert_eq!(
         client
@@ -889,7 +943,7 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
             .status(),
         200
     );
-    assert!(mock.tokens.load(Ordering::SeqCst) >= 2);
+    assert_eq!(mock.tokens.load(Ordering::SeqCst), before_expiry + 1);
     admin(
         &client,
         &admin_url,

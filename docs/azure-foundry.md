@@ -82,6 +82,10 @@ Secrets are write-only in the admin API. On edit, leaving **Replace client secre
 blank preserves the saved secret. The provider's **configured** indicator describes
 saved configuration. Use **Verify connection** for a live identity and project-read check.
 
+Unused client secrets supplied when creating a workload- or managed-identity
+connection are discarded. Switching that connection to client-secret authentication
+requires supplying a new secret.
+
 ## Verify the Azure connection
 
 After saving a connection, open **Providers → Verify connection → Check connection**.

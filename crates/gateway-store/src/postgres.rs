@@ -3201,9 +3201,14 @@ impl AdminProviderConfigStore for PostgresStore {
     }
     async fn create_provider_config(
         &self,
-        request: ProviderConfigCreateRequest,
+        mut request: ProviderConfigCreateRequest,
     ) -> GatewayResult<ProviderConfigResponse> {
         request.validate()?;
+        if request.foundry.as_ref().is_some_and(|identity| {
+            identity.method != gateway_core::foundry::FoundryIdentityMethod::ClientSecret
+        }) {
+            request.credential = None;
+        }
         let row = sqlx::query(
             r#"
             INSERT INTO provider_configs (
