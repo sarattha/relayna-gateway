@@ -541,6 +541,31 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
         mock.calls.lock().unwrap()[0].1["agent_reference"],
         json!({"type":"agent_reference","name":"bing-research","version":"2"})
     );
+    // Exact paths cannot select the Responses child route. Reject both writes.
+    for route_pattern in ["/research", "/research*"] {
+        admin(&client, &admin_url, &operator.raw_token, reqwest::Method::POST,
+            "services", json!({"name":"invalid-pattern", "route_pattern":route_pattern,
+                "allowed_methods":["POST"], "foundry":{"mode":"endpoint_passthrough","provider_id":provider_id}}), 400).await;
+        admin(
+            &client,
+            &admin_url,
+            &operator.raw_token,
+            reqwest::Method::PATCH,
+            "services/research",
+            json!({"route_pattern":route_pattern}),
+            400,
+        )
+        .await;
+        assert_eq!(
+            store
+                .service_registration("research")
+                .await
+                .unwrap()
+                .unwrap()
+                .route_pattern,
+            "/services/research/*"
+        );
+    }
     let passthrough = format!("http://127.0.0.1:{port}/services/foundry/responses");
     let response = client
         .post(&passthrough)

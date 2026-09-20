@@ -70,7 +70,8 @@ project endpoint, and an Azure identity method.
 | **Client secret** | Tenant ID, client ID and client secret | Store and rotate the Entra application secret through the connection editor. |
 
 The gateway requests scope `https://ai.azure.com/.default` (the equivalent resource
-for VM IMDS). Azure tokens are cached only in memory and refreshed before expiry.
+for VM IMDS). Azure tokens are cached only in memory and refreshed before expiry. Concurrent
+requests for the same connection share its refresh; other connections do not wait.
 Each replica acquires its own token. Editing or disabling a connection affects
 new requests through the shared database; identity changes invalidate its cached
 token on the next lookup. An in-flight request can finish with its existing token.
@@ -156,6 +157,11 @@ Open **Services → Register Foundry service**:
    authentication and save.
 
 ![Registered agent with a pinned version](assets/screenshots/foundry/registered-agent.png)
+
+Both Foundry modes require a route pattern ending in `/*`, such as
+`/services/research-agent/*`. The UI generates this pattern. When using the admin
+API, an exact pattern such as `/research-agent` is rejected because callers need
+the child path `/responses`.
 
 The gateway inserts this reference into the upstream request:
 

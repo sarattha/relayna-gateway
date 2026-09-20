@@ -57,3 +57,10 @@ Third-review verification: exact-boundary and Redis single-reservation checks pa
 Review of 5774001 found explicit null Foundry service patches were silently ignored. Distinguish missing, null and object via a nullable optional field with a custom deserializer, and apply the inner value in the store. The field is unreleased after v0.1.37; no migration or compatibility shim is needed. Existing validation and incomplete-service denial remain. Verify omission, clearing generated provider reference, retained identity/ID, replacement validation, and real forwarding to a normal upstream after one-step conversion. Document the admin API conversion path and rerun mandatory verification before push.
 
 Fourth-review verification: focused Foundry conversion E2E, strict documentation, workspace build, release metadata and all ten mandatory verification commands passed. Nextest: 389/389, no skipped tests. Ready for push and fresh review.
+
+
+## Fifth review follow-up
+
+Review of fcf0f8c found unusable exact Foundry route patterns and concurrent token acquisitions for the same provider. Foundry is unreleased after v0.1.37; validate the effective route pattern at creation and the saved registration during updates, requiring `/*` without a migration or shim. Add weak per-provider refresh locks, recheck the token cache after acquiring a lock, and keep Azure I/O outside the global map lock. Idle locks are reclaimed on subsequent misses; cancelled acquisitions release their lock. Test rejected creates/patches without changing the saved pattern, concurrent cold/expired cache misses against a one-response mock, and retain different-provider/cache-revision tests. Run focused tests and full mandatory verification before push.
+
+Fifth-review verification: focused mock token and Foundry E2E tests, strict documentation, workspace build, release metadata, and all ten mandatory commands passed. Nextest: 389/389, no skips. Existing scanner exclusions remain unchanged. Ready to push both fixes and request fresh review; required approval remains a merge prerequisite.

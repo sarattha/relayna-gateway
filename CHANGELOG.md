@@ -37,6 +37,11 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Fixed
 
+- Reject Foundry service route patterns without `/*` on create and update, so
+  saved routes can match the Responses endpoint.
+- Coalesce concurrent Azure token refreshes per connection, preventing duplicate
+  acquisitions during startup and expiry without blocking other connections.
+
 - Honor explicit `foundry: null` service patches, allowing conversion to a normal
   upstream without deleting the service or its authentication assignments.
 

@@ -477,20 +477,21 @@ impl ServiceCreateRequest {
         if self.foundry.is_some() && self.studio_service_id.is_some() {
             return Err(GatewayError::InvalidFoundryConfiguration);
         }
-        validate_foundry_service(
-            self.foundry.as_ref(),
-            &self.allowed_methods,
-            self.upstream_base_url.as_deref(),
-            self.credential.as_deref(),
-            &self.fallback_services,
-            &self.access,
-        )?;
         validate_service_name(&self.name)?;
         let route_pattern = self
             .route_pattern
             .clone()
             .or_else(|| default_route_pattern(&self.name))
             .unwrap_or_else(|| format!("/services/{}/*", self.name));
+        validate_foundry_service(
+            self.foundry.as_ref(),
+            &route_pattern,
+            &self.allowed_methods,
+            self.upstream_base_url.as_deref(),
+            self.credential.as_deref(),
+            &self.fallback_services,
+            &self.access,
+        )?;
         validate_route_pattern(&route_pattern)?;
         self.access.validate(&route_pattern)?;
         validate_optional_upstream(self.upstream_base_url.as_deref())?;
@@ -658,6 +659,7 @@ impl ServiceRegistration {
         }
         validate_foundry_service(
             self.foundry.as_ref(),
+            &self.route_pattern,
             &self.allowed_methods,
             self.upstream_base_url.as_deref(),
             self.credential_secret.as_deref(),
@@ -1323,6 +1325,7 @@ fn default_max_body_bytes() -> i64 {
 
 fn validate_foundry_service(
     binding: Option<&crate::foundry::FoundryBinding>,
+    route_pattern: &str,
     methods: &[String],
     upstream: Option<&str>,
     credential: Option<&str>,
@@ -1331,7 +1334,8 @@ fn validate_foundry_service(
 ) -> GatewayResult<()> {
     if let Some(binding) = binding {
         binding.validate()?;
-        if methods != ["POST"]
+        if !route_pattern.ends_with("/*")
+            || methods != ["POST"]
             || upstream.is_some()
             || credential.is_some()
             || !fallbacks.is_empty()

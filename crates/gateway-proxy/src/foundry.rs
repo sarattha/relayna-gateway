@@ -4,6 +4,7 @@ use gateway_core::{
 };
 use std::{
     collections::HashMap,
+    sync::{Arc, Weak},
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
@@ -19,6 +20,7 @@ struct CachedToken {
 #[derive(Default)]
 pub(crate) struct FoundryTokenCache {
     entries: Mutex<HashMap<Uuid, CachedToken>>,
+    refreshes: Mutex<HashMap<Uuid, Weak<Mutex<()>>>>,
 }
 
 impl FoundryTokenCache {
@@ -26,6 +28,28 @@ impl FoundryTokenCache {
         config
             .identity
             .validate(&config.base_url, config.secret.is_some())?;
+        let entries = self.entries.lock().await;
+        if let Some(cached) = entries.get(&config.id) {
+            if cached.revision == config.revision && cached.refresh_at > Instant::now() {
+                return Ok(cached.token.clone());
+            }
+        }
+        drop(entries);
+        // Only callers for the same provider wait on its network acquisition.
+        // Weak entries retain no idle locks; active waiters keep their lock alive.
+        let refresh = {
+            let mut refreshes = self.refreshes.lock().await;
+            refreshes.retain(|_, lock| lock.strong_count() > 0);
+            match refreshes.get(&config.id).and_then(Weak::upgrade) {
+                Some(lock) => lock,
+                None => {
+                    let lock = Arc::new(Mutex::new(()));
+                    refreshes.insert(config.id, Arc::downgrade(&lock));
+                    lock
+                }
+            }
+        };
+        let _refresh = refresh.lock().await;
         let entries = self.entries.lock().await;
         if let Some(cached) = entries.get(&config.id) {
             if cached.revision == config.revision && cached.refresh_at > Instant::now() {
@@ -493,6 +517,34 @@ mod tests {
             mock_response(200, valid.clone()),
         );
         cache.token(&c).await.unwrap();
+        // A one-response server proves concurrent misses share one acquisition.
+        for expired in [false, true] {
+            let mut burst = c.clone();
+            burst.id = Uuid::new_v4();
+            if expired {
+                cache.entries.lock().await.insert(
+                    burst.id,
+                    CachedToken {
+                        revision: burst.revision,
+                        token: "expired".into(),
+                        refresh_at: Instant::now(),
+                    },
+                );
+            }
+            std::env::set_var(
+                "GATEWAY_FOUNDRY_MOCK_TOKEN_ENDPOINT",
+                mock_response(200, valid.clone()),
+            );
+            let (a, b, d, e) = tokio::join!(
+                cache.token(&burst),
+                cache.token(&burst),
+                cache.token(&burst),
+                cache.token(&burst)
+            );
+            for result in [a, b, d, e] {
+                assert_eq!(result.unwrap(), "token");
+            }
+        }
         // A stalled acquisition must not block a valid token for another provider.
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         std::env::set_var(
