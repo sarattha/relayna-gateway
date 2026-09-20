@@ -392,23 +392,40 @@ struct GatewayAuthRuntimeState {
 #[derive(Debug, Clone)]
 pub struct SharedGatewayAuthRuntime {
     inner: Arc<RwLock<GatewayAuthRuntimeState>>,
+    refresh_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl SharedGatewayAuthRuntime {
     pub fn new(config: GatewayAuthRuntimeConfig) -> GatewayResult<Self> {
         Ok(Self {
             inner: Arc::new(RwLock::new(GatewayAuthRuntimeState::new(config)?)),
+            refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
         })
     }
 
     pub fn update(&self, config: GatewayAuthRuntimeConfig) -> GatewayResult<()> {
-        let next = GatewayAuthRuntimeState::new(config)?;
         let mut guard = self
             .inner
             .write()
             .map_err(|_| GatewayError::InvalidConfiguration)?;
-        *guard = next;
+        if guard.config != config {
+            *guard = GatewayAuthRuntimeState::new(config)?;
+        }
         Ok(())
+    }
+
+    /// Serialize source reads with installation so an older poll cannot replace
+    /// the settings installed by a completed local Admin save.
+    pub async fn refresh_from_store<S: AdminGatewayAuthSettingsStore + ?Sized>(
+        &self,
+        store: &S,
+        env: &GatewayAuthEnv,
+    ) -> GatewayResult<EffectiveGatewayAuthSettings> {
+        let _refresh = self.refresh_lock.lock().await;
+        let settings =
+            EffectiveGatewayAuthSettings::from_sources(store.gateway_auth_settings().await?, env)?;
+        self.update(settings.runtime_config())?;
+        Ok(settings)
     }
 
     pub fn snapshot(&self) -> GatewayResult<GatewayAuthRuntimeSnapshot> {
@@ -684,6 +701,162 @@ mod tests {
                 .apply_patch(patch)
                 .unwrap_err(),
             GatewayError::InvalidConfiguration
+        );
+    }
+}
+
+#[cfg(test)]
+mod refresh_tests {
+    use super::*;
+    use tokio::sync::Notify;
+
+    struct Store {
+        value: std::sync::Mutex<GatewayResult<Option<StoredGatewayAuthSettings>>>,
+        read_started: Notify,
+        release_read: Notify,
+        block_next: std::sync::atomic::AtomicBool,
+    }
+    #[async_trait]
+    impl AdminGatewayAuthSettingsStore for Store {
+        async fn gateway_auth_settings(&self) -> GatewayResult<Option<StoredGatewayAuthSettings>> {
+            let value = self.value.lock().unwrap().clone();
+            if self
+                .block_next
+                .swap(false, std::sync::atomic::Ordering::SeqCst)
+            {
+                self.read_started.notify_one();
+                self.release_read.notified().await;
+            }
+            value
+        }
+        async fn patch_gateway_auth_settings(
+            &self,
+            _: GatewayAuthSettingsPatchRequest,
+        ) -> GatewayResult<StoredGatewayAuthSettings> {
+            unreachable!("fixture changes are controlled directly")
+        }
+    }
+    fn stored(audience: &str) -> StoredGatewayAuthSettings {
+        StoredGatewayAuthSettings {
+            entra_enabled: true,
+            tenant_id: Some("tenant".into()),
+            audience: Some(audience.into()),
+            issuer: Some("https://issuer.test".into()),
+            oidc_discovery_url: Some("https://issuer.test/discovery".into()),
+            ..Default::default()
+        }
+    }
+    fn store() -> Store {
+        Store {
+            value: std::sync::Mutex::new(Ok(Some(stored("first")))),
+            read_started: Notify::new(),
+            release_read: Notify::new(),
+            block_next: false.into(),
+        }
+    }
+    #[tokio::test]
+    async fn refresh_preserves_cache_and_last_valid_settings_then_recovers() {
+        let store = store();
+        let runtime = SharedGatewayAuthRuntime::new(Default::default()).unwrap();
+        let env = GatewayAuthEnv::default();
+        runtime.refresh_from_store(&store, &env).await.unwrap();
+        let first = runtime.snapshot().unwrap();
+        runtime.refresh_from_store(&store, &env).await.unwrap();
+        assert!(Arc::ptr_eq(
+            first.entra_verifier.as_ref().unwrap(),
+            runtime.snapshot().unwrap().entra_verifier.as_ref().unwrap()
+        ));
+        for invalid in [
+            Err(GatewayError::StoreUnavailable),
+            Ok(Some(StoredGatewayAuthSettings {
+                entra_enabled: true,
+                ..Default::default()
+            })),
+        ] {
+            *store.value.lock().unwrap() = invalid;
+            assert!(runtime.refresh_from_store(&store, &env).await.is_err());
+            assert_eq!(runtime.snapshot().unwrap().config, first.config);
+        }
+        *store.value.lock().unwrap() = Ok(Some(stored("second")));
+        runtime.refresh_from_store(&store, &env).await.unwrap();
+        assert_eq!(
+            runtime
+                .snapshot()
+                .unwrap()
+                .config
+                .entra_auth
+                .unwrap()
+                .audience,
+            "second"
+        );
+        assert!(!Arc::ptr_eq(
+            first.entra_verifier.as_ref().unwrap(),
+            runtime.snapshot().unwrap().entra_verifier.as_ref().unwrap()
+        ));
+        let valid = runtime.snapshot().unwrap().config;
+        assert!(runtime
+            .update(GatewayAuthRuntimeConfig {
+                relayna_key_header: "invalid header".into(),
+                ..valid.clone()
+            })
+            .is_err());
+        assert_eq!(runtime.snapshot().unwrap().config, valid);
+        *store.value.lock().unwrap() = Ok(Some(StoredGatewayAuthSettings::default()));
+        runtime.refresh_from_store(&store, &env).await.unwrap();
+        assert!(!runtime.snapshot().unwrap().entra_enabled());
+        *store.value.lock().unwrap() = Ok(None);
+        let env = GatewayAuthEnv {
+            entra_auth: first.config.entra_auth,
+            ..Default::default()
+        };
+        assert_eq!(
+            runtime
+                .refresh_from_store(&store, &env)
+                .await
+                .unwrap()
+                .source,
+            GatewayAuthSettingsSource::Environment
+        );
+    }
+    #[tokio::test]
+    async fn slow_poll_cannot_overwrite_a_completed_refresh_after_save() {
+        let store = Arc::new(store());
+        store
+            .block_next
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let runtime = SharedGatewayAuthRuntime::new(Default::default()).unwrap();
+        let poll_runtime = runtime.clone();
+        let poll_store = store.clone();
+        let poll = tokio::spawn(async move {
+            poll_runtime
+                .refresh_from_store(&poll_store, &GatewayAuthEnv::default())
+                .await
+                .unwrap()
+        });
+        store.read_started.notified().await;
+        *store.value.lock().unwrap() = Ok(Some(stored("newest")));
+        let save_runtime = runtime.clone();
+        let save_store = store.clone();
+        let save = tokio::spawn(async move {
+            save_runtime
+                .refresh_from_store(&save_store, &GatewayAuthEnv::default())
+                .await
+                .unwrap()
+        });
+        tokio::task::yield_now().await;
+        assert!(!save.is_finished());
+        store.release_read.notify_one();
+        poll.await.unwrap();
+        save.await.unwrap();
+        assert_eq!(
+            runtime
+                .snapshot()
+                .unwrap()
+                .config
+                .entra_auth
+                .unwrap()
+                .audience,
+            "newest"
         );
     }
 }

@@ -6,10 +6,16 @@ pub type GatewayResult<T> = Result<T, GatewayError>;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum GatewayError {
+    #[error("authentication profile selection denied")]
+    AuthenticationProfileDenied,
+    #[error("authentication profile configuration changed")]
+    AuthenticationProfileConflict,
     #[error("missing authorization header")]
     MissingAuthorization,
     #[error("malformed authorization header")]
     MalformedAuthorization,
+    #[error("virtual key metadata is invalid")]
+    InvalidKeyPayload,
     #[error("invalid virtual key")]
     InvalidVirtualKey,
     #[error("virtual key is disabled")]
@@ -98,8 +104,16 @@ pub enum GatewayError {
     DuplicateProviderConfig,
     #[error("provider configuration was not found")]
     MissingProviderConfig,
+    #[error("provider configuration is in use")]
+    ProviderConfigInUse,
     #[error("provider configuration payload is invalid")]
     InvalidProviderConfigPayload,
+    #[error("invalid Foundry configuration")]
+    InvalidFoundryConfiguration,
+    #[error("invalid Foundry request")]
+    InvalidFoundryRequest,
+    #[error("Foundry credential unavailable")]
+    FoundryCredentialUnavailable,
     #[error("service registration already exists")]
     DuplicateService,
     #[error("service registration was not found")]
@@ -110,6 +124,8 @@ pub enum GatewayError {
     IncompleteService,
     #[error("service registration payload is invalid")]
     InvalidServicePayload,
+    #[error("key project conflicts with service authentication profile assignments")]
+    KeyProfileProjectConflict,
     #[error("service upstream configuration is invalid")]
     InvalidServiceUpstream,
     #[error("service OpenAPI document is unavailable")]
@@ -154,6 +170,8 @@ impl GatewayError {
     pub fn status_code(&self) -> StatusCode {
         match self {
             Self::MissingAuthorization | Self::MalformedAuthorization => StatusCode::UNAUTHORIZED,
+            Self::AuthenticationProfileDenied => StatusCode::FORBIDDEN,
+            Self::AuthenticationProfileConflict => StatusCode::CONFLICT,
             Self::InvalidVirtualKey
             | Self::DisabledVirtualKey
             | Self::RevokedVirtualKey
@@ -186,12 +204,16 @@ impl GatewayError {
             Self::BudgetExceeded => StatusCode::PAYMENT_REQUIRED,
             Self::GuardrailBlocked | Self::GuardrailForbidden => StatusCode::FORBIDDEN,
             Self::GuardrailUnavailable => StatusCode::BAD_GATEWAY,
-            Self::InvalidGuardrailRequest => StatusCode::BAD_REQUEST,
+            Self::InvalidGuardrailRequest | Self::InvalidKeyPayload => StatusCode::BAD_REQUEST,
             Self::DuplicateProject | Self::DuplicateProviderConfig | Self::DuplicateService => {
                 StatusCode::CONFLICT
             }
-            Self::ProjectInUse => StatusCode::CONFLICT,
+            Self::ProjectInUse | Self::ProviderConfigInUse => StatusCode::CONFLICT,
             Self::MissingProject | Self::MissingProviderConfig => StatusCode::NOT_FOUND,
+            Self::FoundryCredentialUnavailable => StatusCode::BAD_GATEWAY,
+            Self::InvalidFoundryConfiguration | Self::InvalidFoundryRequest => {
+                StatusCode::BAD_REQUEST
+            }
             Self::InvalidProjectPayload | Self::InvalidProviderConfigPayload => {
                 StatusCode::BAD_REQUEST
             }
@@ -205,7 +227,7 @@ impl GatewayError {
             | Self::InvalidServiceOpenApi
             | Self::InvalidUsageQuery
             | Self::InvalidStudioConnectionPayload => StatusCode::BAD_REQUEST,
-            Self::ServiceOpenApiChanged => StatusCode::CONFLICT,
+            Self::ServiceOpenApiChanged | Self::KeyProfileProjectConflict => StatusCode::CONFLICT,
             Self::StudioUnavailable => StatusCode::BAD_GATEWAY,
             Self::ServiceOpenApiUnavailable => StatusCode::BAD_GATEWAY,
             Self::UpstreamTimeout => StatusCode::GATEWAY_TIMEOUT,
@@ -218,7 +240,10 @@ impl GatewayError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::MissingAuthorization => "missing_authorization",
+            Self::AuthenticationProfileDenied => "authentication_profile_denied",
+            Self::AuthenticationProfileConflict => "authentication_profile_conflict",
             Self::MalformedAuthorization => "malformed_authorization",
+            Self::InvalidKeyPayload => "invalid_key_payload",
             Self::InvalidVirtualKey => "invalid_virtual_key",
             Self::DisabledVirtualKey => "disabled_virtual_key",
             Self::RevokedVirtualKey => "revoked_virtual_key",
@@ -262,12 +287,17 @@ impl GatewayError {
             Self::ProjectInUse => "project_in_use",
             Self::InvalidProjectPayload => "invalid_project_payload",
             Self::DuplicateProviderConfig => "duplicate_provider_config",
+            Self::ProviderConfigInUse => "provider_config_in_use",
             Self::MissingProviderConfig => "missing_provider_config",
+            Self::InvalidFoundryConfiguration => "invalid_foundry_configuration",
+            Self::InvalidFoundryRequest => "invalid_foundry_request",
+            Self::FoundryCredentialUnavailable => "foundry_credential_unavailable",
             Self::InvalidProviderConfigPayload => "invalid_provider_config_payload",
             Self::DuplicateService => "duplicate_service",
             Self::MissingService => "missing_service",
             Self::DisabledService => "disabled_service",
             Self::IncompleteService => "incomplete_service",
+            Self::KeyProfileProjectConflict => "key_profile_project_conflict",
             Self::InvalidServicePayload => "invalid_service_payload",
             Self::InvalidServiceUpstream => "invalid_service_upstream",
             Self::ServiceOpenApiUnavailable => "service_openapi_unavailable",
@@ -287,7 +317,10 @@ impl GatewayError {
     pub fn public_message(&self) -> &'static str {
         match self {
             Self::MissingAuthorization => "Authorization header is required.",
+            Self::AuthenticationProfileDenied => "Authentication profile selection denied.",
+            Self::AuthenticationProfileConflict => "Authentication configuration changed. Reload before saving.",
             Self::MalformedAuthorization => "Authorization header must be a Bearer Relayna key.",
+            Self::InvalidKeyPayload => "Key name must be at most 120 characters without control characters.",
             Self::InvalidVirtualKey => "Virtual key is invalid.",
             Self::DisabledVirtualKey => "Virtual key is disabled.",
             Self::RevokedVirtualKey => "Virtual key is revoked.",
@@ -333,12 +366,17 @@ impl GatewayError {
             Self::ProjectInUse => "Project is still referenced.",
             Self::InvalidProjectPayload => "Project payload is invalid.",
             Self::DuplicateProviderConfig => "Provider configuration already exists.",
+            Self::ProviderConfigInUse => "This provider is used by registered Foundry services. Reassign or delete those services before deleting the provider.",
             Self::MissingProviderConfig => "Provider configuration was not found.",
+            Self::InvalidFoundryConfiguration => "Check the Foundry project endpoint, Azure identity and provider connection. Registered agents need a valid agent name and optional version.",
+            Self::InvalidFoundryRequest => "Use POST responses with inline text input. Stored conversations, response IDs, background execution and registered-agent overrides are not supported.",
+            Self::FoundryCredentialUnavailable => "The gateway could not obtain an Azure token. Ask an administrator to check the Foundry identity credentials and Azure connectivity.",
             Self::InvalidProviderConfigPayload => "Provider configuration payload is invalid.",
             Self::DuplicateService => "Service registration already exists.",
             Self::MissingService => "Service registration was not found.",
             Self::DisabledService => "Service registration is disabled.",
             Self::IncompleteService => "Service registration is incomplete.",
+            Self::KeyProfileProjectConflict => "This key is assigned to authentication profiles in its current project. Remove those service profile assignments before changing the key project, then assign it to profiles in the new project.",
             Self::InvalidServicePayload => "Service registration payload is invalid.",
             Self::InvalidServiceUpstream => "Service upstream configuration is invalid.",
             Self::ServiceOpenApiUnavailable => "Service OpenAPI document is unavailable.",

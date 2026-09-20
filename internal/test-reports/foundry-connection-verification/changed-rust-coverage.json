@@ -1,0 +1,37 @@
+{
+  "base": "5b7546d",
+  "scope": "changed production Rust executable lines; tests excluded",
+  "covered": 168,
+  "executable": 170,
+  "percent": 98.82352941176471,
+  "files": {
+    "crates/gateway-api/src/app.rs": {
+      "covered": 30,
+      "executable": 32,
+      "uncovered_lines": [
+        3774,
+        3794
+      ]
+    },
+    "crates/gateway-core/src/provider_configs.rs": {
+      "covered": 4,
+      "executable": 4,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/foundry.rs": {
+      "covered": 126,
+      "executable": 126,
+      "uncovered_lines": []
+    },
+    "crates/gateway-proxy/src/lib.rs": {
+      "covered": 0,
+      "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-store/src/postgres.rs": {
+      "covered": 8,
+      "executable": 8,
+      "uncovered_lines": []
+    }
+  }
+}

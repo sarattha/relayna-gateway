@@ -171,12 +171,13 @@ See `internal/test-reports/accessa/` for UI and coverage evidence.
 
 ## Entra verification for every request-plane endpoint
 
-Services → Edit → Endpoint identity and Accessa now has an **Entra verification**
+Services → Edit → Endpoint identity and Accessa has a **Route authentication mode**
 selector. Routes offers **Edit identity** for each built-in route, including
 OpenAI, Anthropic, direct OpenAI, LiteLLM passthrough and built-in service aliases.
 
 | Selection | Result |
 | --- | --- |
+| Use authentication profiles | Select an explicitly assigned profile by Relayna key. Accessa supports Entra + Relayna key profiles only. |
 | Require Entra | Verify this endpoint's audience, scopes, roles and groups. |
 | No Entra | Skip Entra for this endpoint; retain its credential and policy checks. |
 | Use existing gateway setting | Preserve the released gateway-wide behavior. |
@@ -187,7 +188,11 @@ trust configuration in Settings. Enable/configure that verifier before selecting
 Require Entra. Missing verifier configuration fails closed. The troubleshooting
 unverified-bearer switch cannot bypass an explicit endpoint policy.
 
-For a service, `access: {"skip_entra": true}` selects No Entra. `access: {}` restores
+Use the [illustrated authentication profile guide](operations/authentication-profiles.md)
+for profile fields, key assignment and maintenance. Once saved, profiles cannot
+be removed by switching back to the other route authentication modes.
+
+For a service without saved profiles, `access: {"skip_entra": true}` selects No Entra. `access: {}` restores
 legacy behavior. `access: {"entra": {"audience": "api://service"}}` requires Entra.
 `skip_entra` cannot be combined with `entra` or an Accessa binding. Accessa always
 requires its own Entra policy. Service aliases use the same saved service policy.

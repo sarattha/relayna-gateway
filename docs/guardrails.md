@@ -33,7 +33,7 @@ are rejected with stable guardrail error envelopes.
 ## Set Up the Catalog
 
 1. Start Gateway and sign in to Admin portal with the operator token.
-2. Open Guardrails.
+2. Open **Policies & guardrails**.
 3. Select `pii-redact` or click `New guardrail` for a custom HTTP guardrail.
 4. Configure global catalog fields:
 
@@ -58,7 +58,7 @@ events.
 
 ## Configure Each Key
 
-Open Keys in Admin portal and use the guardrail pickers:
+Open **Virtual keys** in Admin portal and use the guardrail pickers:
 
 1. Add guardrails that must always run to Mandatory guardrails.
 2. Add guardrails clients may request to Optional guardrails.
@@ -145,3 +145,11 @@ curl -sS \
 Proxy traffic uses the same effective config as the test endpoint. Guarded
 streaming requests require selected response guardrails to support
 `during_call`; otherwise Gateway fails closed with `guardrail_unavailable`.
+
+## Azure AI Content Safety
+
+A native Azure AI Content Safety integration is not included in this release.
+[Feature request #122](https://github.com/sarattha/relayna-gateway/issues/122)
+tracks category thresholds, supported safety APIs, identity verification and
+context-dependent checks. The existing HTTP guardrail expects Relayna’s guardrail
+contract; it is not a direct adapter for Azure Content Safety endpoints.

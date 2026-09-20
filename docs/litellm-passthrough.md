@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.37` behavior.
+This page covers the `0.1.39` behavior.
 
 ## Request Model
 
@@ -22,11 +22,28 @@ Client request contracts:
 | Entra enabled | `Authorization: Bearer <Entra JWT>` and `X-Relayna-Key: <Relayna rk_live_... key>` unless the Relayna key header has been renamed. |
 | Trusted Apigee mode | Signed Apigee identity headers plus the configured Relayna key header. |
 
-Canonical routes set to `direct_litellm_passthrough` have one intentional
-exception: a non-Relayna `Authorization: Bearer ...` credential is treated as a
+Canonical routes set to `direct_litellm_passthrough` **without authentication
+profiles** have one intentional exception: a non-Relayna `Authorization: Bearer ...` credential is treated as a
 LiteLLM credential and translated to the configured upstream LiteLLM header.
 Relayna `rk_live_...` bearer keys are not consumed as LiteLLM credentials; they
 continue through the Relayna-authenticated direct passthrough path.
+
+### Authentication profiles with direct forwarding
+
+**Direct LiteLLM passthrough does not bypass a saved authentication profile.**
+The forwarding mode selects the upstream path; the profile selects the caller's
+credentials. Every caller on a profile-enabled route needs an active Relayna key
+assigned to an enabled profile:
+
+| Profile authentication | Client credentials |
+| --- | --- |
+| Relayna key only | Relayna key in `Authorization: Bearer <key>` **or** the configured Relayna key header, never both. No Entra token. |
+| Entra + Relayna key | Entra JWT in `Authorization: Bearer <JWT>` plus the assigned Relayna key in the configured key header (normally `X-Relayna-Key`). |
+
+A native LiteLLM key alone is rejected on profile-enabled routes. Unassigned keys
+and disabled profiles are denied; there is no fallback to native LiteLLM or
+another profile. Upstream credential mapping still applies after authentication.
+See [profile setup and examples](operations/authentication-profiles.md).
 
 Gateway strips the following before forwarding to LiteLLM:
 
@@ -122,18 +139,19 @@ OpenAI-compatible or Anthropic-compatible endpoint.
 | Mode | Behavior |
 | --- | --- |
 | `managed_by_gateway` | Full Gateway governance path. Gateway authenticates the Relayna key, checks global route enablement, evaluates policy, enforces model/provider allowlists, checks RPM/TPM and budgets, runs configured guardrails, forwards upstream, and records full usage when accounting data is available. |
-| `direct_litellm_passthrough` | Direct LiteLLM forwarding. Relayna bearer keys keep Gateway governance: route enablement, policy, model/provider allowlists, RPM/TPM, budgets, credential stripping/injection, and status-only usage. Non-Relayna bearer credentials bypass Relayna key lookup and are delegated to LiteLLM using the configured upstream credential header. Guardrail body rewriting and token accounting are bypassed. |
+| `direct_litellm_passthrough` | Direct LiteLLM forwarding. Relayna bearer keys keep Gateway governance: route enablement, policy, model/provider allowlists, RPM/TPM, budgets, credential stripping/injection, and status-only usage. Only routes without authentication profiles delegate non-Relayna bearer credentials to LiteLLM. Profile-enabled routes always authenticate an assigned Relayna key first. Guardrail body rewriting and token accounting are bypassed. |
 
 Use direct mode when a canonical route must behave closest to LiteLLM. Relayna
 keys still preserve Relayna access control and credential isolation; non-Relayna
-bearer credentials leave authentication and authorization to LiteLLM.
+bearer credentials leave authentication and authorization to LiteLLM only when
+the route has no authentication profiles.
 
 The unversioned `/chat/completions` and `/responses` aliases share the same
 canonical route settings, policy paths, runtime limits, and usage identities as
 their `/v1/...` counterparts. As with the rerank aliases, Gateway preserves the
 path selected by the client when forwarding the request to LiteLLM.
 
-Example direct LiteLLM bearer call:
+Example native LiteLLM bearer call, for a direct route **without authentication profiles**:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/responses \

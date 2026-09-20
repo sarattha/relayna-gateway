@@ -5,6 +5,9 @@ requests before authentication, current processing stage, upstream attempts,
 client and upstream HTTP statuses, elapsed time, and failure/recording reasons.
 Use **Inspect** for the timeline, project/key attribution and gateway instance.
 Filter by request ID, service, project/key UUID, HTTP status or failure reason;
+leading/trailing whitespace in pasted values is removed when applying filters.
+A newly entered key is preserved when its project is submitted at the same time;
+an unchanged key from the old project is cleared on project changes.
 click a reason count to filter its requests, then click the highlighted count
 again to clear that reason while preserving other filters. The selected reason
 remains removable even with zero matching records. **Pause** freezes the live display;
@@ -214,3 +217,12 @@ the requirements and failure without unverified claims. Tokens and payloads are
 excluded; old records may lack these optional fields. Gateway-inherited policy
 requirements are not captured. See [Accessa monitoring](../accessa-channels.md)
 for claim bounds and rollout guidance.
+
+See [route authentication profiles](authentication-profiles.md) for per-route
+caller assignments and historical profile/verification snapshots.
+
+Applied project/key UUIDs are normalized to lowercase, and HTTP status filters
+use their numeric value (for example, `0503` matches `503`). Changing a history
+filter resets pagination; Older is unavailable while the new page loads, so a
+previous filter's cursor cannot skip the new results. Dates apply only to saved
+history, and Active only applies to live requests.

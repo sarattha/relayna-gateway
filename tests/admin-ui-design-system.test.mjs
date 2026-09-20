@@ -21,7 +21,7 @@ function test(name, fn) {
 
 const packageJson = read("package.json");
 const viteConfig = read("crates/gateway-api/admin-ui/vite.config.ts");
-const sourceHtml = read("crates/gateway-api/admin-ui/index.html");
+const sourceHtml = read("crates/gateway-api/src/static/admin-ui/index.html");
 const designSystemShim = read("crates/gateway-api/admin-ui/src/design-system.ts");
 const designSystemIndex = read("crates/gateway-api/admin-ui/src/design-system/index.ts");
 const viewMeta = read("crates/gateway-api/admin-ui/src/design-system/view-meta.ts");

@@ -32,6 +32,8 @@ Each exception must include:
 | Historical fake token fingerprints in `.gitleaksignore` | Relayna Gateway maintainers | Existing test fixtures and example tokens predate strict secret scanning. New Gitleaks findings must be fixed or documented separately. | `.gitleaksignore` | 2026-08-31 |
 | Gitleaks `generic-api-key` in PR #102's initial example Secret | Relayna Gateway maintainers | The finding is the literal prose placeholder `replace-with-pkcs8-or-pkcs1-rsa-private-key-pem`, never PEM or usable key material. The current Secret value is empty; the ignore is limited to the obsolete commit fingerprint. | https://github.com/sarattha/relayna-gateway/pull/102 | 2026-08-31 |
 
+| Gitleaks `generic-api-key` in PR #121 verification prose | Relayna Gateway maintainers | A comma after the word Apigee followed by a slash-separated list of binding rejection cases was misclassified as a credential. No secret existed. Current prose is rephrased; only the exact historical commit/file/line fingerprint is ignored. | https://github.com/sarattha/relayna-gateway/pull/121 | 2026-12-19 |
+
 ## Local Tooling
 
 Install the local security tools when you need to reproduce CI:

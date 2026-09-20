@@ -1,5 +1,6 @@
 pub mod accessa;
 pub mod endpoint_access;
+pub mod foundry;
 pub use endpoint_access::{AccessaBinding, EndpointAccess, EndpointEntraPolicy};
 pub mod access;
 pub mod admin;
@@ -148,3 +149,5 @@ pub use usage::{
 };
 
 pub mod traffic;
+
+pub mod auth_profiles;

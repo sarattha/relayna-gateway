@@ -15,7 +15,7 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
   and managed-identity bindings.
 - Redis-backed request rate-limit, token rate-limit, budget, and reservation
   state, with budget counters rehydrated from PostgreSQL usage records.
-- Embedded Admin UI 2.0 for Monitor, Discover, and Govern workflows across
+- Embedded Admin UI 4.0 for Monitor, Discover, and Govern workflows across
   project-first keys, services, usage, health, audit, and policy operations.
 
 ## Runtime Requirements
@@ -33,10 +33,12 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
   endpoint-level usage metadata, keys, and operational data.
 - [Redis Keys](redis.md) documents rate-limit, budget, and reservation keys used in Redis.
 - [Getting Started](getting-started.md) covers local PostgreSQL, Redis, LiteLLM, and gateway startup.
+- [Authentication Profiles](operations/authentication-profiles.md) provides illustrated setup
+  for Entra + key and key-only profiles, searchable key assignments and troubleshooting.
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
 - [OpenAPI Service Pricing](openapi-service-pricing.md) explains registered
   service discovery, endpoint billing, multipart selectors, and budget rules.
-- [Current Feature Highlights](current-features.md) summarizes the `v0.1.37`
+- [Current Feature Highlights](current-features.md) summarizes the `v0.1.39`
   feature set, including Admin UI screenshots.
 - [Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md)
   covers browser OIDC, member approval, service assignments, managed

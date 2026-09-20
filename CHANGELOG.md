@@ -2,6 +2,96 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## Unreleased
+
+## 0.1.39 - 2026-09-20
+
+### Added
+
+- One Create provider flow for LiteLLM, Internal service and Azure Foundry, with
+  provider-specific fields and shared Azure identity controls.
+
+- Azure Foundry connection verification with fresh workload/managed/client-secret
+  token acquisition, a read-only project probe, actionable staged diagnostics and
+  per-instance results in Providers. Checks also work for disabled connections.
+
+- Azure Foundry connections with renewable client-secret, AKS workload and Azure VM
+  managed identities; governed registered-agent and project Responses passthrough
+  services, JSON/SSE forwarding, mock end-to-end tests and an illustrated setup guide.
+
+- Admin UI 4.0: React/TypeScript/Vite shell and identity/key dialogs, shared
+  Tailwind/Radix component foundation, consistent compact styling across all
+  Admin/Owner pages, and the existing Rust-embedded static-asset deployment.
+- Route-local authentication profiles with explicit virtual-key assignments,
+  separate Entra and key-only policies, revision-checked edits, and Traffic/Usage
+  snapshots. Opted-in routes require an assigned Relayna key in every forwarding
+  mode; Accessa revalidates its Entra profile on each turn.
+- Optional virtual-key names (aliases), searchable alongside prefix, UUID,
+  project and service in an isolated key-selection popup with Apply/Cancel.
+- Optional UI-generated profile IDs, dynamic Entra fields, accessible tooltips,
+  actionable validation errors and reversible draft profile removal.
+- Automatic five-second refresh of persisted gateway Entra settings across
+  replicas, with immediate local application and last-valid state on failures.
+- Illustrated profile setup and maintenance guide for both authentication types,
+  credential headers, forwarding modes, key assignment and error recovery.
+
+### Fixed
+
+- Use database-incremented provider revisions for Foundry token caching, avoiding
+  repeated Azure exchanges when overlapping edits move timestamps backward.
+
+- Reject Foundry service route patterns without `/*` on create and update, so
+  saved routes can match the Responses endpoint.
+- Coalesce concurrent Azure token refreshes per connection, preventing duplicate
+  acquisitions during startup and expiry without blocking other connections.
+
+- Honor explicit `foundry: null` service patches, allowing conversion to a normal
+  upstream without deleting the service or its authentication assignments.
+
+- Reserve Foundry tokens per minute once per request using the full rewritten
+  body, avoiding duplicate header-stage charges and premature quota denials.
+  Responses token estimates also reserve the requested `max_output_tokens`.
+
+- Reject key project changes that would invalidate saved service-profile bindings,
+  including direct database writes; explain how to remove assignments first.
+- Serialize provider edits so overlapping renames cannot restore stale identity
+  settings after a credential change.
+- Discard unused Foundry client secrets when creating workload or managed identity
+  connections, and clear stored secrets when switching to those identities.
+  Returning to client-secret authentication requires a new credential.
+- Keep valid Foundry token-cache reads independent of slow refreshes for other
+  connections, and prevent old refreshes from replacing newer revisions.
+
+- Simplify per-key route assignments with searchable profile routes, collapsed
+  existing-settings routes, contextual authentication guidance, per-route save
+  and error feedback, and confirmation before discarding unsaved selections.
+
+- Applied Traffic filters are normalized; project/key selections stay consistent,
+  stale live reads cannot replace saved history, and filter changes reset paging.
+- Clear empty key searches and searches after adding a key; preserve selected
+  keys and exclude assignments already used by another profile on the route.
+- Distinguish Route authentication mode from Profile authentication. Explain
+  saved-mode and removal restrictions, identify invalid fields and conflicting
+  keys, and scroll errors into view after rendering.
+- Align status codes and route configuration actions; prevent clipped focus
+  highlights and keep dialog actions visible at desktop and mobile widths.
+
+### Upgrade notes
+
+- Startup adds Foundry provider/service configuration and a foreign key that
+  prevents deleting connections still used by services. Upgrade all replicas
+  before registering Foundry services; see the illustrated Foundry guide.
+- Startup applies additive key-name storage and authentication-profile revision
+  guards. Existing routes retain their prior authentication until opted in.
+- Upgrade every replica to 0.1.39 before saving profiles. 0.1.37 cannot read the
+  new profile configuration; profile-enabled routes cannot return to legacy
+  mode through the editor or old writers. Keep database guards during rollback.
+- Saved profile edits apply on each new request's policy read. Gateway-wide
+  Entra settings propagate on the next successful refresh (normally within five
+  seconds); startup environment/OIDC deployment changes still need a rollout.
+- See the [profile guide](docs/operations/authentication-profiles.md) and
+  [deployment notes](docs/deployment.md) before enabling profiles.
+
 ## 0.1.37 - 2026-09-17
 
 ### Added

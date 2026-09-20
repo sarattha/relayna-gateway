@@ -68,6 +68,7 @@ export function requestInvestigationView({ traffic = null, usage = null, bundle 
   const d = traffic?.diagnostics || usage?.diagnostics || {};
   const socket = d.websocket;
   const identity = d.entra;
+  const profile = d.authentication_profile;
   const requestId = traffic?.request_id || usage?.request_id || bundle?.request_id || "Unknown request";
   const status = traffic?.client_status ?? usage?.status_code;
   const failed = Boolean(d.failure_code) || status >= 400 || usage?.status === "failure";
@@ -129,6 +130,11 @@ export function requestInvestigationView({ traffic = null, usage = null, bundle 
       ${facts([["State",socket.state],["App / channel",[socket.app,socket.channel].filter(Boolean).join(" / ")],["Opened",socket.opened_at ? time(socket.opened_at) : null],["Closed",socket.closed_at ? time(socket.closed_at) : null],["Last client activity",socket.last_client_activity_at ? time(socket.last_client_activity_at) : null],["Last upstream activity",socket.last_upstream_activity_at ? time(socket.last_upstream_activity_at) : null],["Idle read/write limit",`${socket.idle_timeout_ms} ms`],["Session expires",socket.session_expires_at ? time(socket.session_expires_at) : null],["Frame/message limit",`${socket.max_frame_bytes} B`],["Client / upstream frame headers",`${socket.client_frames} / ${socket.upstream_frames}`],["Close frame observed",`Client: ${socket.client_close_frame ? "yes" : "no"} · upstream: ${socket.upstream_close_frame ? "yes" : "no"}`],["Close cause",socket.close_cause || "Not closed"],["Last sample",socket.observed_at ? time(socket.observed_at) : null]])}
       <dl class="investigation-facts">${Object.entries({duration:"Open duration",upload:"Client → upstream",download:"Upstream → client",upload_rate:"Average upload",download_rate:"Average download",idle:"Upstream idle remaining · estimate",expiry:"Session expiry remaining"}).map(([key,title]) => `<div><dt>${esc(title)}</dt><dd data-websocket-metric="${key}">${esc(websocketMetrics(socket, traffic?.completed === false)[key])}</dd></div>`).join("")}</dl>
     </div>`) : ""}
+    ${section("Authentication profile", profile ? facts([
+      ["Profile ID",profile.id],["Profile name",profile.name],["Configuration revision",profile.revision],
+      ["Binding source",profile.binding_source],["Authentication type",profile.authentication_type],
+      ["Outcome",profile.outcome === "entra_not_required" ? "Entra not required by selected profile" : profile.outcome],
+    ]) : '<p class="help">Legacy authentication or profile selection not recorded.</p>', "authentication-profile")}
     ${section("Entra verification", identity ? `${identity.truncated ? '<p class="notice">Claim display was truncated to bounded diagnostic limits.</p>' : ""}<p class="help">Policy and claims captured for this request. Claims appear only after successful verification; token strings and private payloads are never recorded. Gateway-inherited policy requirements are not captured in this snapshot.</p>${facts([
       ["Policy source",identity.policy_source],["Verification",identity.verification],["Identity source",identity.source],["Expected audience",identity.expected_audience],
       ["Required scopes",identity.required_scopes?.join(", ") || "None recorded"],["Required roles",identity.required_roles?.join(", ") || "None recorded"],["Allowed groups · any match",identity.allowed_groups?.join(", ") || "None recorded"],

@@ -185,6 +185,7 @@ where
                 service_name: service,
                 identity,
                 access: ctx.access.clone(),
+                authentication_profile: ctx.traffic.diagnostics.authentication_profile.clone(),
                 expires_at,
             };
             let token = Uuid::new_v4().to_string();
@@ -234,6 +235,10 @@ where
             .ok_or(GatewayError::InvalidVirtualKey)?;
         let snapshot: AccessaSession =
             serde_json::from_str(&value).map_err(|_| GatewayError::ControlStateUnavailable)?;
+        ctx.traffic.diagnostics.authentication_profile = snapshot.authentication_profile.clone();
+        if let Some(profile) = &mut ctx.traffic.diagnostics.authentication_profile {
+            profile.outcome = "credential_pending".into();
+        }
         let now = Utc::now();
         if snapshot.expires_at <= now.timestamp() {
             return Err(GatewayError::ExpiredEntraToken);
@@ -279,6 +284,9 @@ where
         if !registration.enabled {
             return Err(GatewayError::DisabledService);
         }
+        if let Some(profile) = &mut ctx.traffic.diagnostics.authentication_profile {
+            profile.outcome = "selection_pending".into();
+        }
         if registration.access != snapshot.access
             || registration
                 .access
@@ -290,10 +298,12 @@ where
         }
         snapshot
             .access
-            .entra
-            .as_ref()
+            .identity_for_key(snapshot.key_id)?
             .ok_or(GatewayError::InvalidConfiguration)?
             .authorize(&snapshot.identity, now.timestamp())?;
+        if let Some(profile) = &mut ctx.traffic.diagnostics.authentication_profile {
+            profile.outcome = "verified".into();
+        }
         let policy = self
             .accessa_policy(&key, &snapshot.service_name, true)
             .await?;
@@ -507,6 +517,7 @@ mod tests {
     ) {
         let access=serde_json::from_value(serde_json::json!({"entra":{"audience":"accessa","required_scopes":["run"]},"accessa":{"app":"tara","channel":"web","idle_timeout_ms":1000,"max_connections":2,"max_connections_per_key":1,"max_frame_bytes":1024}})).unwrap();
         let registration = ServiceRegistration {
+            foundry: None,
             access,
             name: "accessa".into(),
             project_id: None,
@@ -550,6 +561,7 @@ mod tests {
         ctx.entra_identity = Some(identity());
         ctx.route_match = Some(RouteMatch::service(Route::ServiceWildcard, "accessa"));
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             store: Arc::new(Store {
                 key: Mutex::new(Some(StoredVirtualKey {
                     id: key.key_id,
@@ -870,6 +882,7 @@ mod endpoint_tests {
         })
         .unwrap();
         let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
             store: Arc::new(()),
             control_state: Arc::new(()),
             config: PingoraLiteLlmConfig::from_base_url("http://localhost", "test").unwrap(),

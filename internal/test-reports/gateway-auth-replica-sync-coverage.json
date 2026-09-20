@@ -1,0 +1,34 @@
+{
+  "base": "144d9cb",
+  "scope": "changed production Rust executable lines; tests excluded",
+  "covered": 44,
+  "executable": 44,
+  "percent": 100.0,
+  "files": {
+    "crates/gateway-api/src/app.rs": {
+      "covered": 4,
+      "executable": 4,
+      "uncovered_lines": []
+    },
+    "crates/gateway-api/src/lib.rs": {
+      "covered": 0,
+      "executable": 0,
+      "uncovered_lines": []
+    },
+    "crates/gateway-api/src/main.rs": {
+      "covered": 11,
+      "executable": 11,
+      "uncovered_lines": []
+    },
+    "crates/gateway-core/src/auth_settings.rs": {
+      "covered": 15,
+      "executable": 15,
+      "uncovered_lines": []
+    },
+    "crates/gateway-api/src/auth_sync.rs": {
+      "covered": 14,
+      "executable": 14,
+      "uncovered_lines": []
+    }
+  }
+}

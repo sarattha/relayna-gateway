@@ -245,6 +245,7 @@ pub fn estimate_generation_tokens(body: &[u8]) -> i64 {
     let reserved_output_tokens = value
         .get("max_completion_tokens")
         .or_else(|| value.get("max_tokens"))
+        .or_else(|| value.get("max_output_tokens"))
         .and_then(Value::as_i64)
         .filter(|tokens| *tokens > 0)
         .unwrap_or(0);
@@ -259,7 +260,9 @@ fn estimate_value_tokens(value: &Value) -> i64 {
         Value::Object(values) => values
             .iter()
             .filter(|(key, _)| {
-                key.as_str() != "max_tokens" && key.as_str() != "max_completion_tokens"
+                key.as_str() != "max_tokens"
+                    && key.as_str() != "max_completion_tokens"
+                    && key.as_str() != "max_output_tokens"
             })
             .map(|(_, value)| estimate_value_tokens(value))
             .sum(),
@@ -325,6 +328,14 @@ mod tests {
                 br#"{"messages":[{"role":"user","content":"abcdefgh"}],"max_tokens":12}"#
             ),
             15
+        );
+        assert_eq!(
+            estimate_generation_tokens(br#"{"input":"abcdefgh","max_output_tokens":12}"#),
+            14
+        );
+        assert_eq!(
+            estimate_generation_tokens(br#"{"input":"abcdefgh","max_output_tokens":0}"#),
+            2
         );
         assert_eq!(estimate_generation_tokens(b"not json"), 2);
     }

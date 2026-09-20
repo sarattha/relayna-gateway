@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import "./admin-ui-dialog.test.mjs";
+import "./admin-ui-auth-profiles.test.mjs";
 import "./admin-ui-reliability-cost.test.mjs";
 import "./admin-ui-investigation.test.mjs";
 import "./admin-ui-guidance.test.mjs";
@@ -53,8 +54,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.37/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.37/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.39/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.39/);
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
@@ -256,7 +257,6 @@ test("admin portal surfaces async action failures", () => {
     "createKey",
     "submitService",
     "patchService",
-    "createProvider",
     "saveStudioConnection",
     "submitGuardrail",
   ]) {
@@ -395,6 +395,41 @@ test("routes view exposes canonical provider route modes", () => {
   assert.match(js, /max_request_body_bytes: nullableNumber\(form\.get\("max_request_body_bytes"\)\)/);
   assert.match(js, /max_response_body_bytes: nullableNumber\(form\.get\("max_response_body_bytes"\)\)/);
 });
+
+test("key names are escaped in forms and inventory, submitted on create/edit and shown in selectors", () => {
+  const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  const ownership = new Function('attr','projectOptions','serviceSelectionControl', `return (${sourceFunction('keyOwnershipFields')});`)(escape, () => '', () => '');
+  assert.match(ownership(), /Key name \(optional\)/);
+  assert.match(ownership(), /name="key_name" maxlength="120" value=""/);
+  const malicious = '<img src=x onerror=alert(1)>"';
+  assert.ok(ownership({name:malicious}).includes(escape(malicious)));
+  assert.ok(!ownership({name:malicious}).includes('<img'));
+  const render = new Function('table','esc','keyOwnerLabel','listValue','keyStatus','keyExpiry','keyPolicySummary','time','keyLifecycleActions', `return (${sourceFunction('keyTable')});`)((headers, rows)=>rows, escape, ()=>'',()=>'',()=>'',()=>'',()=>'',()=>'',()=>'');
+  assert.ok(render([{name:malicious,key_prefix:'rk_safe'}])[0][0].includes(escape(malicious)));
+  assert.equal(render([{name:null,key_prefix:'rk_safe'}])[0][0],'<code>rk_safe</code>');
+  const label = new Function('state', `return (${sourceFunction('keyName')});`)({keys:[{id:'named',name:'Production',key_prefix:'rk_1'},{id:'unnamed',key_prefix:'rk_2'}]});
+  assert.equal(label('named'),'Production (rk_1)');
+  assert.equal(label('unnamed'),'rk_2');
+  assert.equal(label('missing'),'missing');
+});
+
+for (const handler of ['createKey', 'patchKey']) {
+  for (const [input, expected] of [['  Production automation  ', 'Production automation'], ['', null], ['   ', null], ['ทีมงาน', 'ทีมงาน']]) {
+    let sent;
+    const form = new Map([['key_name', input], ['owner_type', 'individual'], ['no_expires_at', 'on']]);
+    form.getAll = () => [];
+    const submit = new Function('FormData','guardrailPolicyBody','policyBody','isoDate','confirmAction','projectName','api','closeContentDrawer','state','setNotice','keys','showRawToken', `return async ${sourceFunction(handler)};`)(
+      function () { return form; }, () => ({}), () => ({}), () => null, async () => true, () => '',
+      async (path, options) => { sent = {path, ...options, body: JSON.parse(options.body)}; return {raw_key:'test-only'}; },
+      () => {}, {}, () => {}, async () => {}, () => {},
+    );
+    await submit({preventDefault() {}, target:{dataset:{keyId:'existing-id'}}});
+    assert.equal(sent.body.name, expected);
+    assert.equal(sent.method, handler === 'createKey' ? 'POST' : 'PATCH');
+    assert.equal(sent.path, handler === 'createKey' ? '/admin-ui/admin/keys' : '/admin-ui/admin/keys/existing-id');
+  }
+}
+console.log('ok - key create/edit submit trimmed aliases and explicit clear values');
 
 test("virtual keys use explicit owner and service selection controls", () => {
   assert.match(js, /function keyOwnershipFields\(key = null\)/);
@@ -874,7 +909,7 @@ for (const selected of ['deleted-project','another-project']) {
 console.log('ok - successful selected-project deletion clears its scope without clearing other selections');
 
 for (const newProject of ['original', 'next-project', '']) {
-  const filterState = {projectScope:'original',usageFilters:{project_id:'original',key_id:'old-key',status:'failure'}};
+  const filterState = {projectScope:'original',trafficFilters:{key_id:'old-key'},usageFilters:{project_id:'original',key_id:'old-key',status:'failure'}};
   let resetCount = 0;
   const apply = new Function('state','resetUsagePagination','syncProjectScope','persistMonitoringHash','synchronizeProjectScope', `${sourceFunction('applyTrafficFilters')}; return applyTrafficFilters;`)(filterState,()=>resetCount++,()=>{},()=>{},bindProjectScope(filterState));
   const submitted = {project_id:newProject,key_id:'old-key',outcome:'failures'};
@@ -886,6 +921,14 @@ for (const newProject of ['original', 'next-project', '']) {
   assert.equal(filterState.usageFilters.key_id,newProject === 'original' ? 'old-key' : '');
   assert.equal(filterState.usageFilters.status,'failure');
   assert.equal(resetCount,newProject === 'original' ? 0 : 1);
+}
+{
+  const filterState = {projectScope:'original',trafficFilters:{key_id:'old-key'},usageFilters:{key_id:'old-key'}};
+  const apply = new Function('state','resetUsagePagination','syncProjectScope','persistMonitoringHash','synchronizeProjectScope', `${sourceFunction('applyTrafficFilters')}; return applyTrafficFilters;`)(filterState,()=>{},()=>{},()=>{},bindProjectScope(filterState));
+  const submitted = {project_id:'next-project',key_id:'new-key'};
+  apply(submitted);
+  assert.equal(submitted.key_id,'new-key','a key explicitly submitted with its new project must remain applied');
+  assert.equal(filterState.usageFilters.key_id,'','stale Usage key still clears on project change');
 }
 console.log('ok - Traffic project changes synchronize Usage and discard cross-project key filters');
 
@@ -1020,10 +1063,15 @@ test("endpoint identity controls select explicit modes without retaining hidden 
   form.set("endpoint_audience", "");
   assert.throws(() => parse(form), /needs an endpoint audience/);
   form.set("endpoint_entra_mode", "invalid");
-  assert.throws(() => parse(form), /Choose an Entra/);
+  assert.throws(() => parse(form), /Choose a Route authentication mode/);
   form.set("endpoint_entra_mode", "disabled");
   form.set("accessa_enabled", "on");
   assert.throws(() => parse(form), /Accessa requires/);
+  form.set("profiles_saved", "true");
+  for (const mode of ["inherit", "required", "disabled"]) {
+    form.set("endpoint_entra_mode", mode);
+    assert.throws(() => parse(form), /saved authentication profiles.*not supported/);
+  }
   const badge = new Function(`${sourceFunction("esc")}\n${sourceFunction("endpointIdentityBadge")}\nreturn endpointIdentityBadge;`)();
   assert.match(badge(), /Gateway setting/);
   assert.match(badge({ skip_entra: true }), /No Entra/);
@@ -1040,7 +1088,7 @@ test("service presets produce supported access contracts and preserve operator-o
   const fieldNames = ["service_type", "name", "route_pattern", "upstream_base_url", "credential", "cost_mode", "timeout_ms", "health_check_path", "endpoint_entra_mode", "endpoint_audience", "endpoint_scopes", "endpoint_roles", "endpoint_groups", "endpoint_apigee", "accessa_enabled", "accessa_app", "accessa_channel", "socket_idle_ms", "socket_connections", "socket_key_connections", "socket_frame_bytes"];
   for (const name of fieldNames) {
     const label = { hidden: false };
-    fields[name] = { value: "", checked: false, events: {}, closest: (tag) => tag === "details" ? identity : label, addEventListener(event, fn) { this.events[event] = fn; } };
+    fields[name] = { value: "", checked: false, events: {}, dispatchEvent(event) { this.lastEvent = event; }, closest: (tag) => tag === "details" ? identity : label, addEventListener(event, fn) { this.events[event] = fn; } };
   }
   fields.name.value = "orders";
   fields.upstream_base_url.value = "http://orders:8080";
@@ -1091,6 +1139,14 @@ test("service presets produce supported access contracts and preserve operator-o
       assert.deepEqual(methods.filter(m=>m.checked).map(m=>m.value),["GET"]);
     }
   }
+  fields.profiles_saved = { value: "true" };
+  for (const type of ["internal_http", "entra_http", "accessa_channel"]) {
+    select(type);
+    assert.equal(fields.endpoint_entra_mode.value, "profiles");
+    assert.equal(fields.endpoint_entra_mode.lastEvent.detail, "profiles");
+    assert.equal(identity.open, true);
+  }
+  delete fields.profiles_saved;
   select("relayna_http");
   assert.equal(fields.health_check_path.value,"/health");
   assert.equal(fields.timeout_ms.value,120000);
@@ -1117,4 +1173,14 @@ test("service presets produce supported access contracts and preserve operator-o
   fields.name.value="next";
   fields.name.events.input();
   assert.equal(fields.route_pattern.value,"/services/next/*");
+});
+
+test("Foundry verification uses the protected admin API namespace", () => {
+  assert.match(sourceJs, /api\(`\/admin-ui\/admin\/providers\/\$\{provider\.id\}\/verify-connection`, \{ method: "POST" \}\)/);
+  assert.match(sourceJs, /data-foundry-check=/);
+});
+
+test("provider creation has one shared entry point for every provider", () => {
+  assert.match(sourceJs, /mountProviderCreate\(\{ restoreFocus: createButton, onSave: createProvider \}\)/);
+  assert.doesNotMatch(sourceJs, /Add Azure Foundry|id="provider-form"/);
 });

@@ -419,6 +419,159 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
             .status(),
         400
     );
+    // Exercise every saved-history filter through the real admin API and PostgreSQL.
+    // A bounded historical window isolates these fixtures from the live requests above.
+    let start = chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let project_id = Uuid::new_v4();
+    let fixture_key = Uuid::new_v4();
+    let mut fixtures = Vec::new();
+    for variant in 0..9 {
+        let mut record = row.clone();
+        record.id = Uuid::new_v4();
+        record.request_id = if variant == 1 {
+            "filter-matrix-extra"
+        } else {
+            "filter-matrix"
+        }
+        .into();
+        record.service = Some(
+            if variant == 2 {
+                "other-service"
+            } else {
+                "filter-service"
+            }
+            .into(),
+        );
+        record.project_id = Some(if variant == 3 {
+            Uuid::new_v4()
+        } else {
+            project_id
+        });
+        record.key_id = Some(if variant == 4 {
+            Uuid::new_v4()
+        } else {
+            fixture_key
+        });
+        record.client_status = Some(if variant == 5 { 200 } else { 503 });
+        record.diagnostics.failure_code = if variant == 6 {
+            None
+        } else {
+            Some("control_state_unavailable".into())
+        };
+        record.started_at = start
+            + chrono::Duration::seconds(match variant {
+                7 => -1,
+                8 => 1,
+                _ => 0,
+            });
+        store.insert_traffic(&record).await.unwrap();
+        fixtures.push(record);
+    }
+    let query_history = |filters: Vec<(String, String)>| {
+        client
+            .get(format!("{control}/admin-ui/admin/traffic/history"))
+            .bearer_auth(&operator.raw_token)
+            .query(&filters)
+    };
+    let bounds = vec![
+        ("from".to_owned(), start.to_rfc3339()),
+        ("to".to_owned(), start.to_rfc3339()),
+    ];
+    let filter_cases = vec![
+        ("request_id", "filter-matrix".to_owned()),
+        ("service", "filter-service".to_owned()),
+        ("project_id", project_id.to_string().to_uppercase()),
+        ("key_id", fixture_key.to_string().to_uppercase()),
+        ("status", "503".to_owned()),
+        ("failure_code", "control_state_unavailable".to_owned()),
+        ("failures_only", "true".to_owned()),
+    ];
+    for (name, value) in &filter_cases {
+        let mut filters = bounds.clone();
+        filters.push((name.to_string(), value.clone()));
+        let response = query_history(filters).send().await.unwrap();
+        assert_eq!(response.status(), 200, "{name}");
+        let records: Vec<gateway_core::traffic::TrafficRequest> = response.json().await.unwrap();
+        assert_eq!(records.len(), 6, "filter {name}");
+    }
+    let mut combined = bounds.clone();
+    combined.extend(
+        filter_cases
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.clone())),
+    );
+    let records: Vec<gateway_core::traffic::TrafficRequest> = query_history(combined)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].id, fixtures[0].id);
+    // Exact request IDs do not perform the live view's substring match.
+    let mut no_match = bounds.clone();
+    no_match.push(("request_id".into(), "matrix".into()));
+    assert!(query_history(no_match)
+        .send()
+        .await
+        .unwrap()
+        .json::<Vec<Value>>()
+        .await
+        .unwrap()
+        .is_empty());
+    let boundary = (start + chrono::Duration::seconds(1)).to_rfc3339();
+    let records: Vec<gateway_core::traffic::TrafficRequest> = query_history(vec![
+        ("from".into(), boundary.clone()),
+        ("to".into(), boundary),
+    ])
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].id, fixtures[8].id);
+    // Same-timestamp pagination uses the UUID tie-breaker without duplicates or omissions.
+    let mut found = std::collections::HashSet::new();
+    let mut cursor = None;
+    loop {
+        let mut filters = bounds.clone();
+        filters.push(("limit".into(), "2".into()));
+        if let Some(id) = cursor {
+            filters.push(("before".into(), start.to_rfc3339()));
+            filters.push(("before_id".into(), id));
+        }
+        let page: Vec<gateway_core::traffic::TrafficRequest> = query_history(filters)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if page.is_empty() {
+            break;
+        }
+        for record in &page {
+            assert!(found.insert(record.id));
+        }
+        cursor = Some(page.last().unwrap().id.to_string());
+    }
+    assert_eq!(found.len(), 7);
+    for invalid in [
+        vec![("project_id".into(), "invalid".into())],
+        vec![("key_id".into(), "invalid".into())],
+        vec![("status".into(), "600".into())],
+        vec![
+            ("from".into(), "2020-01-02T00:00:00Z".into()),
+            ("to".into(), start.to_rfc3339()),
+        ],
+    ] {
+        assert_eq!(query_history(invalid).send().await.unwrap().status(), 400);
+    }
     // Every diagnostic destination fails independently; observe live evidence and logs.
     for table in ["usage_events", "request_debug_bundles", "request_traffic"] {
         sqlx::query(&format!("ALTER TABLE {table} ADD CONSTRAINT test_recording_failure CHECK (request_id <> 'recording-failure') NOT VALID"))

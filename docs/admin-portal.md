@@ -4,14 +4,46 @@ Monitor → Traffic shows live request timelines, failure reasons and saved hist
 
 The admin portal is a static operator console embedded in `gateway-api`. It is served from the control listener at `/admin-ui` and calls the same `/admin-ui/admin/*` APIs used by automation.
 
-For a current-branch tour of the current Admin UI 3.0 redesign and
+For a current-branch tour of the current Admin UI 4.0 redesign and
 related governance, provider intelligence, usage analytics, and supply-chain
 features, see [Current Feature Highlights](current-features.md).
 
+## Design 4.0
+
+Design 4.0 upgrades the shared shell and every Admin/Owner page with consistent
+neutral surfaces, compact typography, table spacing, field labels and semantic
+status colors. The design version is separate from the gateway release version.
+
+React owns the shell, authentication and route-assignment editors, and provider
+creation and Foundry dialogs. Existing operational controllers
+continue to own their page content and API workflows through explicit DOM
+boundaries; this is not a wholesale rewrite of those controllers into JSX.
+Native React controls use shared shadcn-style components backed by Radix, with
+Tailwind tokens in `src/theme.css`. Identity policy changes preserve inactive
+field drafts, and key selection is isolated until Apply. An empty key search
+shows no results; selected keys remain visible.
+
+Run `npm run typecheck:admin-ui` for strict checks of the React components and
+`npm run test:react:coverage` for mounted interaction coverage, alongside
+`npm test` for existing operational regressions. CI checks both suites.
+
+## Configure authentication profiles
+
+Open **Routes → Edit identity → Route authentication mode → Use authentication
+profiles**. The route mode chooses how the route determines authentication;
+**Profile authentication** inside each profile chooses **Entra + Relayna key**
+or **Relayna key only**. Direct LiteLLM forwarding still requires an assigned
+Relayna key when profiles are enabled.
+
+Use the [illustrated profile guide](operations/authentication-profiles.md) for
+both setup paths, generated profile IDs, named-key search, Apply/Save behavior,
+profile removal and actionable error recovery. A profile can have multiple keys;
+each key belongs to at most one profile on a given route.
+
 ## Frontend Source
 
-Admin UI 3.0 source files live in
-`crates/gateway-api/admin-ui`. Build the Vite/TypeScript source into the static
+Admin UI 4.0 source files live in
+`crates/gateway-api/admin-ui`. Use Node.js 24.15 or newer. Build the React/TypeScript/Vite source into the static
 assets embedded by `gateway-api` with:
 
 ```bash
@@ -24,7 +56,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.37` Admin UI 3.0 shell organizes navigation into Monitor, Discover,
+The Admin UI 4.0 shell organizes navigation into Monitor, Discover,
 and Govern. Monitor contains Overview, Traffic, Usage & cost and Health;
 Discover contains Projects, Services, Providers and Routes; Govern contains
 Virtual keys, Policies & guardrails, People & identities, Audit log and Settings.
@@ -32,7 +64,8 @@ Workload identity registration is available from People & identities → Workloa
 identities. Use Jump to a page or the contextual page actions to begin work.
 
 Inventories precede creation forms. Create and edit actions open contextual
-drawers; closing a creation drawer retains its draft on that page. Leaving or
+drawers or dialogs. Some existing creation drawers retain drafts on that page;
+provider creation dialogs discard their draft when cancelled. Leaving or
 refreshing a page with unsaved input requires a discard confirmation. Canceling
 also preserves the current workspace and project scope. Navigation waits for an
 in-flight write to finish.
@@ -67,12 +100,12 @@ drawer. Owner details remain exact-resource scoped and contain only sanitized
 usage metadata plus an optional redacted debug bundle. Project dashboards scope
 usage by persisted project attribution and add service-level breakdowns.
 
-![Admin UI 3.0 Overview with local fixture data](assets/screenshots/admin-ui-3/overview.png)
+![Admin UI 4.0 Overview with synthetic local traffic](assets/screenshots/admin-ui-4/overview.jpg)
 
 On narrow screens, the same Monitor, Discover, and Govern structure moves into
-an accessible drawer without removing operator workflows.
-
-![Admin UI 3.0 on a narrow screen](assets/screenshots/admin-ui-3/mobile-overview.png)
+an accessible drawer without removing operator workflows. The identity form
+stacks its fields and keeps Save/Cancel visible; key selection uses a separate
+scrollable dialog.
 
 ## Authentication
 
@@ -428,7 +461,7 @@ for temporary testing.
 
 ### 9. Configure policy before issuing the key
 
-Open Keys. Configure the policy directly on the key, or create an inherited
+Open **Virtual keys**. Configure the policy directly on the key, or create an inherited
 policy layer first when the same limits should apply to many keys. For a first
 project key, set the routes, models, providers, rate limits, token limits,
 budgets, request/response byte limits, streaming/tools settings, allowed UTC
@@ -493,6 +526,14 @@ First-time setup is complete when:
   project-owned virtual keys. Use `Select services` to open the service picker
   modal and manage a project's linked services.
 - Keys creates, edits, disables, enables, revokes, and inspects virtual keys.
+  Set **Key name (optional)** when creating or editing a key to give it a
+  searchable alias, such as `Production automation`. In a route's authentication
+  profile, **Select keys** searches names, prefixes, UUIDs, projects and services.
+  Names may repeat; the picker shows the UUID to distinguish keys. Clearing the
+  field removes the name. Renaming preserves the credential and profile bindings.
+  Names are limited to 120 characters, cannot contain control characters, and
+  are visible in administration responses and audit history; do not put secrets
+  in them.
   Project-owned keys inherit service access from their selected project.
   Individual keys use `Select services` to open the service picker modal and
   choose services directly. Use `No expiration` for service keys whose rotation
@@ -501,6 +542,12 @@ First-time setup is complete when:
   debugging keys; presets seed conservative policy limits and can be tightened
   before creation. Lifecycle fields show rotation due dates and last-used
   metadata when available.
+
+  The key create API accepts an optional `name`. PATCH requests can set
+  `{"name":"Production automation"}` or clear it with `{"name":null}` (a blank
+  string also clears it). Omitting `name` from a PATCH preserves the saved value.
+  List, get, create and update responses include the nullable `name` field.
+  Metadata updates require the existing `policies:update` operator scope.
 - The Keys view also includes a policy simulator. Operators can dry-run a route,
   model, provider, stream/tools flags, and request/response byte projections
   against a stored key or the default policy before issuing or changing access.
@@ -571,10 +618,14 @@ The panel shows the current auth source in the Settings summary:
 
 ![Settings view with Entra ID and Apigee panel](assets/screenshots/admin-auth-settings/01-settings-auth-panel-context.png)
 
-Saved Admin portal settings are applied immediately to proxy traffic. They do
-not change Admin UI sign-in; `/admin-ui/*` remains protected by operator
-tokens. Existing secret values are write-only and are never rendered back into
-the browser.
+Saved Admin portal settings apply immediately to new proxy requests on the pod
+handling the save. Other pods sharing PostgreSQL refresh every five seconds;
+no rollout is needed for these saved settings. Failed or timed-out refreshes
+retain the last valid configuration and retry. Propagation is eventual, so
+verify each replica for urgent policy changes. See [replica synchronization and
+deployment-only settings](entra-id-auth.md#temporarily-pause-verification-while-keeping-both-headers).
+These controls do not change Admin UI sign-in or owner-monitoring authentication.
+Existing secret values are write-only and are never rendered back into the browser.
 
 ### Enablement and Relayna key header
 
@@ -1164,3 +1215,10 @@ Gateway key. Its `status` is `available`, `not_mapped` or `unavailable`;
 Newly created virtual keys remain visible until **Close** is explicitly activated.
 Backdrop clicks and Escape cannot dismiss show-once credentials. Copy the key and
 store it before closing; the raw value cannot be recovered afterward.
+
+## Azure Foundry
+
+Add an Azure Foundry connection in Providers, then register a fixed agent or a
+project Responses passthrough service. Both use Relayna caller authentication and
+service policy. See the [illustrated Foundry guide](azure-foundry.md) for Azure
+identity setup, the two modes, request examples and supported API boundaries.

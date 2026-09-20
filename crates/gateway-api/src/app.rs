@@ -578,6 +578,10 @@ pub fn router_with_state(state: AppState) -> Router {
                 .delete(delete_provider),
         )
         .route(
+            "/admin-ui/admin/providers/{provider_id}/verify-connection",
+            post(verify_foundry_provider),
+        )
+        .route(
             "/admin-ui/admin/providers/{provider_id}/disable",
             post(disable_provider),
         )
@@ -3507,7 +3511,8 @@ fn key_patch_required_scopes(patch: &AdminKeyPatch) -> Vec<&'static str> {
     if patch.disabled.is_some() {
         scopes.push(SCOPE_KEYS_DISABLE);
     }
-    if patch.owner_type.is_some()
+    if patch.name.is_some()
+        || patch.owner_type.is_some()
         || patch.project_id.is_some()
         || patch.service_names.is_some()
         || patch.expires_at.is_some()
@@ -3752,6 +3757,43 @@ async fn create_provider(
         |store| async move { store.create_provider_config(request).await },
     )
     .await
+}
+
+async fn verify_foundry_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(provider_id): Path<uuid::Uuid>,
+) -> Response {
+    let actor = match require_admin_scope(&state, &headers, SCOPE_PROVIDERS_UPDATE).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let config = match state.store.foundry_config_for_check(provider_id).await {
+        Ok(Some(config)) => config,
+        Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": {"code": "foundry_connection_not_found", "message": "This saved Azure Foundry connection no longer exists or is another provider type. Refresh Providers and select an Azure Foundry connection."}}))).into_response(),
+        Err(error) => return error_response(&headers, error),
+    };
+    let check = gateway_proxy::verify_foundry_connection(&config).await;
+    let result = serde_json::json!({
+        "provider_id": provider_id, "configuration_revision": config.revision,
+        "checked_at": Utc::now(), "instance_id": traffic::monitor().instance_id,
+        "identity_method": config.identity.method, "identity": check.identity, "project": check.project,
+    });
+    if let Err(error) = record_admin_audit(
+        &state,
+        &headers,
+        &actor,
+        "providers:verify_connection",
+        "provider",
+        Some(provider_id.to_string()),
+        None,
+        Some(result.clone()),
+    )
+    .await
+    {
+        return error_response(&headers, error);
+    }
+    ([(header::CACHE_CONTROL, "no-store")], Json(result)).into_response()
 }
 
 async fn list_providers(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -4699,12 +4741,13 @@ async fn patch_gateway_auth_settings(
     };
 
     match state.store.patch_gateway_auth_settings(patch).await {
-        Ok(_) => match effective_gateway_auth_settings(&state).await {
+        Ok(_) => match state
+            .auth_runtime
+            .refresh_from_store(&state.store, &state.auth_env)
+            .await
+        {
             Ok(settings) => {
                 let response = settings.response();
-                if let Err(error) = state.auth_runtime.update(settings.runtime_config()) {
-                    return error_response(&headers, error);
-                }
                 if let Err(error) = record_admin_audit(
                     &state,
                     &headers,
@@ -8149,6 +8192,7 @@ mod tests {
                 .map(|preset| preset.apply(KeyPolicy::default()))
                 .unwrap_or_default();
             let key = AdminKeyResponse {
+                name: gateway_core::admin::normalize_key_name(request.name)?,
                 id: Uuid::new_v4(),
                 owner_type: request.owner_type,
                 project_id: request.project_id,
@@ -8223,6 +8267,9 @@ mod tests {
         ) -> GatewayResult<Option<AdminKeyResponse>> {
             let mut key = self.admin_key.lock().expect("lock poisoned");
             if let Some(key) = key.as_mut() {
+                if let Some(name) = patch.name {
+                    key.name = gateway_core::admin::normalize_key_name(name)?;
+                }
                 if let Some(expires_at) = patch.expires_at {
                     key.expires_at = expires_at;
                 }
@@ -8615,6 +8662,7 @@ mod tests {
             request.validate()?;
             let now = Utc::now();
             Ok(ProviderConfigResponse {
+                foundry: None,
                 id: Uuid::new_v4(),
                 provider: request.provider,
                 name: request.name,
@@ -8724,6 +8772,7 @@ mod tests {
             }
             let now = Utc::now();
             let response = ServiceResponse {
+                foundry: None,
                 access: Default::default(),
                 name: request.name.clone(),
                 project_id: request.project_id,
@@ -8912,6 +8961,7 @@ mod tests {
             }
 
             let response = ServiceResponse {
+                foundry: None,
                 access: Default::default(),
                 name: request.name.clone(),
                 project_id: request.project_id,
@@ -9791,6 +9841,7 @@ mod tests {
     ) -> AdminKeyResponse {
         let now = Utc::now();
         AdminKeyResponse {
+            name: None,
             id: stored.id,
             owner_type: gateway_core::AdminKeyOwnerType::Project,
             project_id: stored.project_id,
@@ -10684,6 +10735,7 @@ mod tests {
     fn openapi_test_service(upstream_base_url: String) -> ServiceResponse {
         let now = Utc::now();
         ServiceResponse {
+            foundry: None,
             access: Default::default(),
             name: "ocr".to_owned(),
             project_id: None,
@@ -13130,6 +13182,95 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_key_names_create_rename_clear_validate_and_audit() {
+        let store = default_store();
+        let audits = store.audit_events.clone();
+        let app = router_with_state(test_state(store));
+        let response = admin_post(
+            app.clone(),
+            "/admin-ui/admin/keys",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"owner_type":"individual","name":"  Production worker  "}"#,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let created = response_json(response).await;
+        assert_eq!(created["key"]["name"], "Production worker");
+        let path = format!(
+            "/admin-ui/admin/keys/{}",
+            created["key"]["id"].as_str().unwrap()
+        );
+        for (patch, expected) in [
+            (serde_json::json!({"name":"  ทีมงาน  "}), Some("ทีมงาน")),
+            (serde_json::json!({}), Some("ทีมงาน")),
+            (serde_json::json!({"name":null}), None),
+            (serde_json::json!({"name":"Automation"}), Some("Automation")),
+            (serde_json::json!({"name":"   "}), None),
+        ] {
+            let response = admin_patch(
+                app.clone(),
+                &path,
+                Some(TEST_OPERATOR_TOKEN),
+                &patch.to_string(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let value = response_json(response).await;
+            assert_eq!(value["name"], serde_json::json!(expected));
+            assert_eq!(value["id"], created["key"]["id"]);
+            assert_eq!(value["key_prefix"], created["key"]["key_prefix"]);
+            assert!(value.get("raw_key").is_none());
+        }
+        for name in ["x".repeat(121), "bad\nname".into()] {
+            let body = serde_json::json!({"name":name}).to_string();
+            for response in [
+                admin_patch(app.clone(), &path, Some(TEST_OPERATOR_TOKEN), &body).await,
+                admin_post(
+                    app.clone(),
+                    "/admin-ui/admin/keys",
+                    Some(TEST_OPERATOR_TOKEN),
+                    &body,
+                )
+                .await,
+            ] {
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                assert_eq!(
+                    response_json(response).await["error"]["code"],
+                    "invalid_key_payload"
+                );
+            }
+        }
+        let response = admin_patch(app, &path, None, r#"{"name":"Unauthorized"}"#).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let audit = serde_json::to_string(&*audits.lock().unwrap()).unwrap();
+        assert!(audit.contains("Production worker"));
+        assert!(audit.contains("Automation"));
+        assert!(!audit.contains(created["raw_key"].as_str().unwrap()));
+    }
+
+    #[test]
+    fn key_rename_requires_metadata_scope_even_with_disable_permission() {
+        for value in [
+            serde_json::json!({"name":"Worker"}),
+            serde_json::json!({"name":null}),
+            serde_json::json!({"name":""}),
+        ] {
+            let patch: AdminKeyPatch = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(
+                key_patch_required_scopes(&patch),
+                vec![SCOPE_POLICIES_UPDATE]
+            );
+            let mut mixed = value;
+            mixed["disabled"] = serde_json::json!(true);
+            let patch: AdminKeyPatch = serde_json::from_value(mixed).unwrap();
+            assert_eq!(
+                key_patch_required_scopes(&patch),
+                vec![SCOPE_KEYS_DISABLE, SCOPE_POLICIES_UPDATE]
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn admin_key_patch_requires_key_disable_scope_for_disabled_field() {
         let raw = "rk_live_patchdisabled";
         let stored = stored_key(raw);
@@ -13222,6 +13363,43 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(value["name"], "Studio");
         assert!(Uuid::parse_str(value["id"].as_str().expect("project id")).is_ok());
+    }
+
+    #[tokio::test]
+    async fn foundry_check_requires_admin_session_and_csrf_before_lookup() {
+        let store = default_store();
+        let (owner, owner_csrf) = seed_portal_session(&store, active_portal_member(false));
+        let (admin, admin_csrf) = seed_portal_session(&store, active_portal_member(true));
+        let app = router_with_state(test_state(store));
+        let route = format!(
+            "/admin-ui/admin/providers/{}/verify-connection",
+            Uuid::new_v4()
+        );
+        for (session, csrf, header, expected) in [
+            (
+                &owner,
+                &owner_csrf,
+                Some(owner_csrf.as_str()),
+                StatusCode::FORBIDDEN,
+            ),
+            (&admin, &admin_csrf, None, StatusCode::FORBIDDEN),
+            (
+                &admin,
+                &admin_csrf,
+                Some(admin_csrf.as_str()),
+                StatusCode::NOT_FOUND,
+            ),
+        ] {
+            let response =
+                portal_request(app.clone(), Method::POST, &route, session, csrf, header, "").await;
+            assert_eq!(response.status(), expected);
+            if expected == StatusCode::NOT_FOUND {
+                assert_eq!(
+                    response_json(response).await["error"]["code"],
+                    "foundry_connection_not_found"
+                );
+            }
+        }
     }
 
     #[tokio::test]

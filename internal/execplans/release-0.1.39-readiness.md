@@ -1,0 +1,80 @@
+# Release 0.1.39 readiness
+
+## Purpose and context
+
+Prepare branch codex/traffic-filters-auth-profiles and PR #121 for review and merge. The latest released compatibility boundary is v0.1.37; 0.1.38 was an unreleased target. This task changes metadata and documentation, not runtime contracts. Existing branch work adds Admin UI 4.0, route authentication profiles (key-to-policy assignments), and Azure Foundry provider/agent forwarding. Content Safety is follow-up issue #122 only.
+
+## Progress
+
+- [x] Create Content Safety feature request and clarify deferred scope.
+- [x] Audit current documentation and update version to 0.1.39.
+- [x] Run verification and inspect final changes.
+- [x] Push release metadata, update PR, and mark ready.
+- [ ] Monitor checks/reviews and merge when GitHub requirements are met.
+
+## Plan and acceptance
+
+Update Cargo workspace/lock versions, UI release labels, deployment examples and current docs together; regenerate embedded assets with npm run build:admin-ui. Preserve historical internal reports. Add missing Foundry migration/rollout guidance and clarify cancelled provider drafts. Run release metadata validation, strict MkDocs, frontend checks and the mandatory code-change-verification script with local PostgreSQL 15432 and Redis 16379. Build the workspace for release packaging. All must pass before pushing. Review latest PR checks and approvals before merging; never bypass branch protection.
+
+## Surprises & Discoveries
+
+Deployment notes omitted the Foundry migration. Existing draft-retention text incorrectly generalized provider dialogs. GitHub requires one approving review; no reviews were present at audit start.
+
+## Decision Log
+
+User clarified Content Safety belongs in the feature request only. Advance the unreleased patch target to 0.1.39 without inventing a published 0.1.38 release. Existing mock tests validate Foundry behavior; no live Azure validation is claimed.
+
+## Outcomes & Retrospective
+
+All ten mandatory verification commands passed, including 388/388 Nextest tests without skips. Workspace build, 49 React tests (100% statements/functions/lines; 99.71% branches), operational UI tests, strict typecheck, release metadata and strict MkDocs passed. Checked 1,793 local links/assets/anchors across 25 rendered pages with no failures. PR readiness is pending. If approval is unavailable after checks, retain the merge requirement and monitor for it rather than bypassing it.
+
+
+## Review follow-up (2026-09-20)
+
+Automated review found project reassignment could bypass service profile ownership, identity changes retained stale secrets, and network token refresh held a global cache lock. All three are in the authorized merge-readiness scope. Latest released boundary remains v0.1.37. Preserve already applied migration checksums: add a migration replacing the profile guard with a key row update lock and adding the reverse key-project guard. Reject incompatible ownership changes atomically with an actionable error, rather than silently deleting assignments. Clear irrelevant secrets in the backend as well as the UI. Release the token map lock before I/O and recheck before caching to preserve newer revisions. Verify database ownership and identity transitions through real E2E, cached access during a deliberately stalled refresh, and mounted React submission; then rerun mandatory checks. No Content Safety implementation.
+
+Focused ownership E2E (including a concurrent binding-save/key-move), Foundry identity-transition E2E, and stalled token-cache regression pass. Frontend checks pass with 50 mounted tests, 436/436 statements, 348/349 branches, 159/159 functions and 358/358 lines. Strict docs and workspace build pass. Iteration caught and fixed a test method typo and socket read-count lint; a first proxy startup attempt failed before the tested changes and passed on rerun. The project-clearing store test uses an explicit nullable patch because existing JSON null decoding omits that field; this review does not alter the released PATCH contract. All ten mandatory verification commands passed after the fixes, including 388/388 Nextest tests, zero skipped, and security scans with existing advisory exceptions. The three review findings are ready to close with this follow-up commit; merge still awaits required GitHub approval and checks for its new head.
+
+
+## Second review follow-up
+
+Review of 23897fb found stale read/merge/write behavior in provider PATCH. Serialize the existing provider read and update using one transaction and SELECT FOR UPDATE. This preserves released request/response shapes and migration state while preventing lost updates and invalid identity/credential combinations. Test a rename waiting behind an uncommitted identity/secret change, then assert the new identity is retained and rejected edits release the transaction for a valid retry. Run focused Foundry E2E and the complete mandatory stack before pushing. No additional feature scope.
+
+Second-review verification: focused Foundry E2E, workspace build, release metadata and all ten mandatory verification commands pass, including 388/388 Nextest tests with no skips. No new exceptions or frontend changes. Ready to push and request review of the transaction fix.
+
+
+## Third review follow-up
+
+Review of ba7c3a8 found Foundry TPM reservation occurs at both header admission and full-body processing. Keep the full rewritten-body reservation and skip only the earlier shared estimate for Foundry; all other providers retain their released behavior. No schema/API change. Add real Redis quota-boundary checks for registered agents and endpoint passthrough: exact-limit success, exact single counter increment, and exhausted-quota rejection before upstream invocation. Run focused Foundry E2E and full mandatory verification before pushing; Content Safety remains deferred.
+
+The same quota inspection found the shared estimator omitted Responses `max_output_tokens`. Add it as a fallback without changing existing max_tokens/max_completion_tokens priority, and exclude it from input estimation. This corrects Responses quota reservation, including the released Responses path; request/response shapes remain unchanged. Explicit reservation tests and both Foundry quota-boundary cases cover it.
+
+Third-review verification: exact-boundary and Redis single-reservation checks pass for both Foundry modes. Workspace build, release metadata and all ten mandatory commands pass, including 388/388 Nextest tests with zero skips. Ready to push and request review of the TPM fix.
+
+
+## Fourth review follow-up
+
+Review of 5774001 found explicit null Foundry service patches were silently ignored. Distinguish missing, null and object via a nullable optional field with a custom deserializer, and apply the inner value in the store. The field is unreleased after v0.1.37; no migration or compatibility shim is needed. Existing validation and incomplete-service denial remain. Verify omission, clearing generated provider reference, retained identity/ID, replacement validation, and real forwarding to a normal upstream after one-step conversion. Document the admin API conversion path and rerun mandatory verification before push.
+
+Fourth-review verification: focused Foundry conversion E2E, strict documentation, workspace build, release metadata and all ten mandatory verification commands passed. Nextest: 389/389, no skipped tests. Ready for push and fresh review.
+
+
+## Fifth review follow-up
+
+Review of fcf0f8c found unusable exact Foundry route patterns and concurrent token acquisitions for the same provider. Foundry is unreleased after v0.1.37; validate the effective route pattern at creation and the saved registration during updates, requiring `/*` without a migration or shim. Add weak per-provider refresh locks, recheck the token cache after acquiring a lock, and keep Azure I/O outside the global map lock. Idle locks are reclaimed on subsequent misses; cancelled acquisitions release their lock. Test rejected creates/patches without changing the saved pattern, concurrent cold/expired cache misses against a one-response mock, and retain different-provider/cache-revision tests. Run focused tests and full mandatory verification before push.
+
+Fifth-review verification: focused mock token and Foundry E2E tests, strict documentation, workspace build, release metadata, and all ten mandatory commands passed. Nextest: 389/389, no skips. Existing scanner exclusions remain unchanged. Ready to push both fixes and request fresh review; required approval remains a merge prerequisite.
+
+
+## Sixth review and CI follow-up
+
+The pull-request CI run on 51d4990 failed a token-reuse assertion while the push run passed: the three-second mock TTL expired during route-validation calls. Use a long token lifetime for ordinary E2E checks and explicitly prime a short-lived token for the expiry assertion, asserting exactly one refresh. A review-body finding (outside inline conversations) also identified irrelevant credentials retained at provider creation. Match PATCH behavior by discarding these credentials for workload/managed identity before insertion; test both persisted NULL secrets and rejected transition to client-secret without a replacement. Foundry remains unreleased after v0.1.37, so no migration or compatibility shim is required. Run focused E2E and the complete mandatory stack before pushing.
+
+Sixth-follow-up verification: focused mock Foundry E2E, all ten mandatory commands (389/389 Nextest, none skipped), workspace build, strict documentation and release metadata passed. No new scanner exceptions. Ready to push, refresh review and let CI validate the repaired timing assertion.
+
+
+## Seventh review follow-up
+
+Review of 0e54687 found PostgreSQL transaction-start timestamps can regress when commits finish out of order, defeating cache insertion. Add a separate additive migration for a positive provider config_revision incremented by a BEFORE UPDATE trigger under the row lock, including direct SQL and enable/disable writes. Read that revision for Foundry token caching. Preserve previous migration checksums and API timestamp fields. Latest released boundary is v0.1.37; the additive column preserves existing durable rows and requires no rewrite. Test an older transaction finishing after a newer update, explicit revision overwrite protection, runtime revision lookup and rollback behavior. Existing cache tests cover revision refresh and old in-flight insert protection. Run focused E2E, full verification and build before push.
+
+Seventh-follow-up verification: focused E2E, all ten mandatory verification commands (389/389 Nextest, no skips), workspace build, strict docs and metadata validation passed. New migration applied successfully in isolated integration databases; rollback assertion passed. The user requested no further Codex review requests after this fix; continue CI/approval monitoring without restarting that review loop.

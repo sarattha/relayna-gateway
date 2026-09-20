@@ -10,7 +10,7 @@ use gateway_core::{
         ServiceMembership, ServiceMembershipUpsertRequest, StoredPortalSession, PORTAL_ROLE_ADMIN,
     },
     admin::{
-        AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse,
+        normalize_key_name, AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse,
         AdminPolicyLayerResponse, AdminPolicyLayerUpsert, AdminPolicyResponse,
     },
     auth::{StoredVirtualKey, VirtualKeyLookup},
@@ -319,6 +319,7 @@ impl PostgresStore {
                 k.owner_type,
                 k.project_id,
                 k.key_prefix,
+                k.name,
                 k.disabled,
                 k.revoked_at,
                 k.expires_at,
@@ -1865,6 +1866,7 @@ impl AdminKeyStore for PostgresStore {
         material: &VirtualKeyMaterial,
     ) -> GatewayResult<AdminKeyResponse> {
         let key_id = Uuid::new_v4();
+        let name = normalize_key_name(request.name)?;
         validate_key_owner(request.owner_type, request.project_id)?;
         let base_policy = request
             .preset
@@ -1881,8 +1883,8 @@ impl AdminKeyStore for PostgresStore {
 
         sqlx::query(
             r#"
-            INSERT INTO api_keys (id, owner_type, project_id, key_prefix, key_hash, expires_at, rotation_due_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO api_keys (id, owner_type, project_id, key_prefix, key_hash, expires_at, rotation_due_at, name)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
         .bind(key_id)
@@ -1892,6 +1894,7 @@ impl AdminKeyStore for PostgresStore {
         .bind(&material.key_hash)
         .bind(request.expires_at)
         .bind(request.rotation_due_at)
+        .bind(name)
         .execute(&mut *tx)
         .await
         .map_err(|error| {
@@ -1921,6 +1924,7 @@ impl AdminKeyStore for PostgresStore {
                 k.owner_type,
                 k.project_id,
                 k.key_prefix,
+                k.name,
                 k.disabled,
                 k.revoked_at,
                 k.expires_at,
@@ -1990,6 +1994,8 @@ impl AdminKeyStore for PostgresStore {
         key_id: Uuid,
         patch: AdminKeyPatch,
     ) -> GatewayResult<Option<AdminKeyResponse>> {
+        let update_name = patch.name.is_some();
+        let name = normalize_key_name(patch.name.flatten())?;
         let update_expires_at = patch.expires_at.is_some();
         let expires_at = patch.expires_at.flatten();
         let update_rotation_due_at = patch.rotation_due_at.is_some();
@@ -2041,6 +2047,7 @@ impl AdminKeyStore for PostgresStore {
                 expires_at = CASE WHEN $2 THEN $3 ELSE expires_at END,
                 disabled = COALESCE($4, disabled),
                 rotation_due_at = CASE WHEN $8 THEN $9 ELSE rotation_due_at END,
+                name = CASE WHEN $10 THEN $11 ELSE name END,
                 updated_at = now()
             WHERE id = $1
               AND revoked_at IS NULL
@@ -2055,10 +2062,16 @@ impl AdminKeyStore for PostgresStore {
         .bind(project_id)
         .bind(update_rotation_due_at)
         .bind(rotation_due_at)
+        .bind(update_name)
+        .bind(name)
         .execute(&mut *tx)
         .await
         .map_err(|error| {
-            if is_foreign_key_violation(&error) {
+            if error.as_database_error().and_then(|e| e.constraint())
+                == Some("authentication_profile_key_project")
+            {
+                GatewayError::KeyProfileProjectConflict
+            } else if is_foreign_key_violation(&error) {
                 GatewayError::MissingProject
             } else {
                 GatewayError::StoreUnavailable
@@ -2638,9 +2651,42 @@ impl AdminOpenAiRouteStore for PostgresStore {
         setting: gateway_core::endpoint_access::RouteIdentitySetting,
     ) -> GatewayResult<gateway_core::endpoint_access::RouteIdentitySetting> {
         setting.validate()?;
-        sqlx::query("INSERT INTO route_identity_settings (route, access) VALUES ($1,$2) ON CONFLICT (route) DO UPDATE SET access=EXCLUDED.access, updated_at=now()")
-            .bind(&setting.route).bind(Json(&setting.access)).execute(&self.pool).await.map_err(|_| GatewayError::StoreUnavailable)?;
-        Ok(setting)
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 120))")
+            .bind(&setting.route)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM route_identity_settings WHERE route=$1)",
+        )
+        .bind(&setting.route)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        let statement = if exists {
+            "UPDATE route_identity_settings SET access=$2, updated_at=now() WHERE route=$1 RETURNING access"
+        } else {
+            "INSERT INTO route_identity_settings (route, access) VALUES ($1,$2) RETURNING access"
+        };
+        let access = sqlx::query_scalar::<_, Json<gateway_core::EndpointAccess>>(statement)
+            .bind(&setting.route)
+            .bind(Json(&setting.access))
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(profile_write_error)?
+            .0;
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(gateway_core::endpoint_access::RouteIdentitySetting {
+            route: setting.route,
+            access,
+        })
     }
 
     async fn list_openai_route_settings(&self) -> GatewayResult<Vec<OpenAiRouteSetting>> {
@@ -3147,11 +3193,22 @@ impl OpenAiRouteSettingsLookup for PostgresStore {
 
 #[async_trait]
 impl AdminProviderConfigStore for PostgresStore {
+    async fn foundry_config_for_check(
+        &self,
+        id: Uuid,
+    ) -> GatewayResult<Option<gateway_core::foundry::FoundryRuntimeConfig>> {
+        self.load_foundry_config(id, false).await
+    }
     async fn create_provider_config(
         &self,
-        request: ProviderConfigCreateRequest,
+        mut request: ProviderConfigCreateRequest,
     ) -> GatewayResult<ProviderConfigResponse> {
         request.validate()?;
+        if request.foundry.as_ref().is_some_and(|identity| {
+            identity.method != gateway_core::foundry::FoundryIdentityMethod::ClientSecret
+        }) {
+            request.credential = None;
+        }
         let row = sqlx::query(
             r#"
             INSERT INTO provider_configs (
@@ -3162,9 +3219,10 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_secret,
                 credential_header_mode,
                 credential_header_name,
-                credential_header_value_format
+                credential_header_value_format,
+                foundry
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING
                 id,
                 provider,
@@ -3175,6 +3233,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_header_mode,
                 credential_header_name,
                 credential_header_value_format,
+                foundry,
                 created_at,
                 updated_at
             "#,
@@ -3193,6 +3252,7 @@ impl AdminProviderConfigStore for PostgresStore {
         .bind(credential_header_value_format_str(
             request.credential_header_value_format,
         ))
+        .bind(request.foundry.map(Json))
         .fetch_one(&self.pool)
         .await
         .map_err(|error| {
@@ -3218,6 +3278,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_header_mode,
                 credential_header_name,
                 credential_header_value_format,
+                foundry,
                 created_at,
                 updated_at
             FROM provider_configs
@@ -3250,6 +3311,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_header_mode,
                 credential_header_name,
                 credential_header_value_format,
+                foundry,
                 created_at,
                 updated_at
             FROM provider_configs
@@ -3272,6 +3334,13 @@ impl AdminProviderConfigStore for PostgresStore {
         patch: ProviderConfigPatchRequest,
     ) -> GatewayResult<Option<ProviderConfigResponse>> {
         patch.validate()?;
+        // Derive merged identity/credential state from the latest locked row.
+        // A concurrent rename must not restore a superseded identity snapshot.
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
         let Some(row) = sqlx::query(
             r#"
             SELECT
@@ -3284,14 +3353,16 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_header_mode,
                 credential_header_name,
                 credential_header_value_format,
+                foundry,
                 created_at,
                 updated_at
             FROM provider_configs
             WHERE id = $1
+            FOR UPDATE
             "#,
         )
         .bind(provider_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?
         else {
@@ -3316,10 +3387,30 @@ impl AdminProviderConfigStore for PostgresStore {
         if let Some(format) = patch.credential_header_value_format {
             response.credential_header_value_format = format;
         }
+        if let Some(foundry) = patch.foundry {
+            response.foundry = Some(foundry);
+        }
+        // Non-secret identities must never retain or reactivate an old client secret.
+        let credential_secret = if response.foundry.as_ref().is_some_and(|identity| {
+            identity.method != gateway_core::foundry::FoundryIdentityMethod::ClientSecret
+        }) {
+            Some(None)
+        } else {
+            patch.credential
+        };
+        gateway_core::provider_configs::validate_foundry_config(
+            response.provider,
+            response.foundry.as_ref(),
+            &response.base_url,
+            credential_secret
+                .as_ref()
+                .map_or(response.credential_configured, |value| {
+                    value.as_ref().is_some_and(|v| !v.trim().is_empty())
+                }),
+        )?;
         response.validate_header_settings()?;
-        let credential_secret: Option<Option<String>> = patch.credential;
 
-        sqlx::query(
+        let updated = sqlx::query(
             r#"
             UPDATE provider_configs
             SET name = $2,
@@ -3329,6 +3420,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_header_mode = $7,
                 credential_header_name = $8,
                 credential_header_value_format = $9,
+                foundry = $10,
                 updated_at = now()
             WHERE id = $1
             RETURNING
@@ -3341,6 +3433,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_header_mode,
                 credential_header_name,
                 credential_header_value_format,
+                foundry,
                 created_at,
                 updated_at
             "#,
@@ -3356,7 +3449,8 @@ impl AdminProviderConfigStore for PostgresStore {
         .bind(credential_header_value_format_str(
             response.credential_header_value_format,
         ))
-        .fetch_optional(&self.pool)
+        .bind(response.foundry.map(Json))
+        .fetch_optional(&mut *tx)
         .await
         .map(|row| {
             row.map(|row| provider_config_response_from_row(&row))
@@ -3368,7 +3462,11 @@ impl AdminProviderConfigStore for PostgresStore {
             } else {
                 GatewayError::StoreUnavailable
             }
-        })?
+        })??;
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(updated)
     }
 
     async fn delete_provider_config(&self, provider_id: Uuid) -> GatewayResult<bool> {
@@ -3377,7 +3475,13 @@ impl AdminProviderConfigStore for PostgresStore {
             .execute(&self.pool)
             .await
             .map(|result| result.rows_affected() > 0)
-            .map_err(|_| GatewayError::StoreUnavailable)
+            .map_err(|error| {
+                if is_foreign_key_violation(&error) {
+                    GatewayError::ProviderConfigInUse
+                } else {
+                    GatewayError::StoreUnavailable
+                }
+            })
     }
 
     async fn set_provider_config_enabled(
@@ -3400,6 +3504,7 @@ impl AdminProviderConfigStore for PostgresStore {
                 credential_header_mode,
                 credential_header_name,
                 credential_header_value_format,
+                foundry,
                 created_at,
                 updated_at
             "#,
@@ -3558,8 +3663,45 @@ impl AdminProviderConfigStore for PostgresStore {
     }
 }
 
+impl PostgresStore {
+    async fn load_foundry_config(
+        &self,
+        id: Uuid,
+        enabled_only: bool,
+    ) -> GatewayResult<Option<gateway_core::foundry::FoundryRuntimeConfig>> {
+        let row = sqlx::query("SELECT id, base_url, foundry, credential_secret, config_revision FROM provider_configs WHERE id=$1 AND provider='azure-foundry' AND (NOT $2 OR enabled)")
+            .bind(id).bind(enabled_only).fetch_optional(&self.pool).await.map_err(|_| GatewayError::StoreUnavailable)?;
+        row.map(|r| {
+            Ok(gateway_core::foundry::FoundryRuntimeConfig {
+                id,
+                base_url: r
+                    .try_get("base_url")
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
+                identity: r
+                    .try_get::<Json<gateway_core::foundry::FoundryIdentity>, _>("foundry")
+                    .map_err(|_| GatewayError::StoreUnavailable)?
+                    .0,
+                secret: r
+                    .try_get("credential_secret")
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
+                revision: r
+                    .try_get("config_revision")
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
+            })
+        })
+        .transpose()
+    }
+}
+
 #[async_trait]
 impl ProviderConfigLookup for PostgresStore {
+    async fn foundry_config(
+        &self,
+        id: Uuid,
+    ) -> GatewayResult<Option<gateway_core::foundry::FoundryRuntimeConfig>> {
+        self.load_foundry_config(id, true).await
+    }
+
     async fn active_litellm_config(&self) -> GatewayResult<Option<ProviderRuntimeConfig>> {
         let row = sqlx::query(
             r#"
@@ -3842,6 +3984,18 @@ impl AdminServiceStore for PostgresStore {
         request: ServiceCreateRequest,
     ) -> GatewayResult<ServiceResponse> {
         request.validate()?;
+        if let Some(binding) = &request.foundry {
+            if !self
+                .get_provider_config(binding.provider_id())
+                .await?
+                .is_some_and(|provider| {
+                    provider.provider
+                        == gateway_core::provider_configs::ProviderConfigKind::AzureFoundry
+                })
+            {
+                return Err(GatewayError::InvalidFoundryConfiguration);
+            }
+        }
         let route_pattern = request
             .route_pattern
             .clone()
@@ -3883,9 +4037,10 @@ impl AdminServiceStore for PostgresStore {
                 sync_status,
                 last_synced_at,
                 disabled_at,
-                access
+                access,
+                foundry
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END, $22)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CASE WHEN $3 IS NULL THEN NULL ELSE now() END, CASE WHEN $8 THEN NULL ELSE now() END, $22, $23)
             "#,
         )
         .bind(&request.name)
@@ -3910,10 +4065,13 @@ impl AdminServiceStore for PostgresStore {
         .bind(if request.studio_service_id.is_some() { "studio" } else { "gateway" })
         .bind(service_sync_status_str(sync_status))
         .bind(Json(&request.access))
+        .bind(request.foundry.as_ref().map(Json))
         .execute(&self.pool)
         .await
         .map_err(|error| {
-            if is_unique_violation(&error) {
+            if matches!(error.as_database_error().and_then(|e| e.code()).as_deref(), Some("40001" | "22023")) {
+                profile_write_error(error)
+            } else if is_unique_violation(&error) {
                 GatewayError::DuplicateService
             } else if is_foreign_key_violation(&error) {
                 GatewayError::MissingProject
@@ -4030,6 +4188,22 @@ impl AdminServiceStore for PostgresStore {
         if let Some(fallback_services) = patch.fallback_services {
             registration.fallback_services = fallback_services;
         }
+        if let Some(binding) = patch.foundry {
+            registration.foundry = binding;
+        }
+        registration.validate_foundry()?;
+        if let Some(binding) = &registration.foundry {
+            if !self
+                .get_provider_config(binding.provider_id())
+                .await?
+                .is_some_and(|provider| {
+                    provider.provider
+                        == gateway_core::provider_configs::ProviderConfigKind::AzureFoundry
+                })
+            {
+                return Err(GatewayError::InvalidFoundryConfiguration);
+            }
+        }
         registration.sync_status = patch.sync_status.unwrap_or_else(|| {
             if registration.source == ServiceSource::Studio {
                 service_sync_status_for_runtime(
@@ -4069,6 +4243,7 @@ impl AdminServiceStore for PostgresStore {
                 source = $22,
                 sync_status = $23,
                 access = $24,
+                foundry = $25,
                 disabled_at = CASE WHEN $8 THEN NULL ELSE COALESCE(disabled_at, now()) END,
                 updated_at = now()
             WHERE name = $1
@@ -4098,10 +4273,16 @@ impl AdminServiceStore for PostgresStore {
         .bind(service_source_str(registration.source))
         .bind(service_sync_status_str(registration.sync_status))
         .bind(Json(&registration.access))
+        .bind(registration.foundry.as_ref().map(Json))
         .execute(&self.pool)
         .await
         .map_err(|error| {
-            if is_unique_violation(&error) {
+            if matches!(
+                error.as_database_error().and_then(|e| e.code()).as_deref(),
+                Some("40001" | "22023")
+            ) {
+                profile_write_error(error)
+            } else if is_unique_violation(&error) {
                 GatewayError::DuplicateService
             } else if is_foreign_key_violation(&error) {
                 GatewayError::MissingProject
@@ -4817,7 +4998,7 @@ impl ProviderIntelligenceStore for PostgresStore {
             r#"
             SELECT provider, name, base_url, credential_secret
             FROM provider_configs
-            WHERE enabled
+            WHERE enabled AND provider != 'azure-foundry'
             "#,
         )
         .fetch_all(&self.pool)
@@ -4833,7 +5014,8 @@ impl ProviderIntelligenceStore for PostgresStore {
                     .map_err(|_| GatewayError::StoreUnavailable)?,
                 provider: match parse_provider_config_kind(&provider)? {
                     gateway_core::ProviderConfigKind::LiteLlm => Provider::LiteLlm,
-                    gateway_core::ProviderConfigKind::InternalService => Provider::InternalService,
+                    gateway_core::ProviderConfigKind::InternalService
+                    | gateway_core::ProviderConfigKind::AzureFoundry => Provider::InternalService,
                 },
                 base_url: row.try_get("base_url").ok(),
                 health_check_path: None,
@@ -5368,6 +5550,7 @@ fn parse_routes(values: &[String]) -> GatewayResult<Vec<Route>> {
             "/v1/responses" => Ok(Route::Responses),
             "/v1/embeddings" => Ok(Route::LiteLlmEmbeddings),
             "/v1/rerank" => Ok(Route::LiteLlmRerank),
+            "/litellm/*" => Ok(Route::LiteLlmPassthrough),
             "/v1/messages" => Ok(Route::AnthropicMessages),
             "/v1/messages/count_tokens" => Ok(Route::AnthropicMessagesCountTokens),
             "/v1/messages/batches" => Ok(Route::AnthropicMessageBatches),
@@ -5780,6 +5963,10 @@ fn provider_config_response_from_row(
         .try_get("credential_secret")
         .map_err(|_| GatewayError::StoreUnavailable)?;
     Ok(ProviderConfigResponse {
+        foundry: row
+            .try_get::<Option<Json<gateway_core::foundry::FoundryIdentity>>, _>("foundry")
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .map(|v| v.0),
         id: row
             .try_get("id")
             .map_err(|_| GatewayError::StoreUnavailable)?,
@@ -5951,6 +6138,9 @@ fn admin_key_response_from_row(row: &sqlx::postgres::PgRow) -> GatewayResult<Adm
         .try_get("owner_type")
         .map_err(|_| GatewayError::StoreUnavailable)?;
     Ok(AdminKeyResponse {
+        name: row
+            .try_get("name")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
         id: row
             .try_get("id")
             .map_err(|_| GatewayError::StoreUnavailable)?,
@@ -6099,6 +6289,9 @@ fn service_registration_from_row(
         .try_get::<Json<Vec<ServiceEndpointPricingRule>>, _>("endpoint_pricing_rules")?
         .0;
     Ok(ServiceRegistration {
+        foundry: row
+            .try_get::<Option<Json<gateway_core::foundry::FoundryBinding>>, _>("foundry")?
+            .map(|v| v.0),
         access: row
             .try_get::<Json<gateway_core::EndpointAccess>, _>("access")?
             .0,
@@ -8044,6 +8237,14 @@ impl gateway_core::traffic::TrafficStore for PostgresStore {
     }
 }
 
+fn profile_write_error(error: sqlx::Error) -> GatewayError {
+    match error.as_database_error().and_then(|e| e.code()).as_deref() {
+        Some("40001") => GatewayError::AuthenticationProfileConflict,
+        Some("22023") => GatewayError::InvalidServicePayload,
+        _ => GatewayError::StoreUnavailable,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -8051,6 +8252,14 @@ mod tests {
     use gateway_core::PolicyLookup;
     use http::Method;
     use sqlx::Execute;
+
+    #[test]
+    fn profile_write_transport_errors_remain_unavailable() {
+        assert_eq!(
+            profile_write_error(sqlx::Error::PoolClosed),
+            GatewayError::StoreUnavailable
+        );
+    }
 
     #[test]
     fn summary_from_row_preserves_zero_cost_aggregate() {

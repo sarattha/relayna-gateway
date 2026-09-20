@@ -1,10 +1,17 @@
+import { mountProviderCreate } from "./react/provider-create";
+import { mountFoundryCheck } from "./react/foundry-check";
+import { mountFoundryEditor } from "./react/foundry-editor";
+import { mountRouteConfiguration } from "./react/route-configuration";
+import { mountKeyRouteBindings } from "./react/key-route-bindings";
+import { mountIdentityEditor } from "./react/mount-identity-editor";
+import { profileFields, profilesFromForm, showProfileError, profileKeyOptions } from "./auth-profiles";
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic } from "./traffic";
 import { installComponentGuidance } from "./design-system/guidance";
 import { refreshWebSocketMetrics, routingModeLabel, usageValue, requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 import Chart from "chart.js/auto";
-import "./app.css";
+
 import {
   actionGroup,
   applyViewChrome,
@@ -155,7 +162,7 @@ function handleAsync(handler) {
       await handler(event);
     } catch (error) {
       if (generation !== viewGeneration || error.name === "AbortError") return;
-      setNotice(error.message);
+      if (!showProfileError(pendingRoot, error.message)) setNotice(error.message);
     } finally {
       setPending(pendingRoot, false, pendingControls);
     }
@@ -1090,7 +1097,7 @@ async function keys() {
         <span class="subtle">Dry-run key governance</span>
       </div>
       <form id="policy-sim-form" class="form-grid">
-        <label>Key<select name="key_id"><option value="">Default policy</option>${state.keys.map((key) => `<option value="${attr(key.id)}">${esc(key.key_prefix)}</option>`).join("")}</select></label>
+        <label>Key<select name="key_id"><option value="">Default policy</option>${state.keys.map((key) => `<option value="${attr(key.id)}">${esc(keyName(key.id))}</option>`).join("")}</select></label>
         <label>Team scope<input name="team_id" placeholder="team identifier"></label>
         <label>Path<input name="path" value="/v1/chat/completions" data-policy-sim-path></label>
         <label>Provider<select name="provider" data-policy-sim-provider>
@@ -1207,6 +1214,7 @@ function guardrailOverrideControls(overrides = {}, selectedNames = []) {
 function keyOwnershipFields(key = null) {
   const ownerType = key?.owner_type || "project";
   return `
+    <label>Key name (optional)<input data-guidance-name="key_name" name="key_name" maxlength="120" value="${attr(key?.name || "")}" placeholder="Production automation"></label>
     <label>Owner<select name="owner_type">
       <option value="project" ${ownerType === "project" ? "selected" : ""}>Project</option>
       <option value="individual" ${ownerType === "individual" ? "selected" : ""}>Individual</option>
@@ -1230,6 +1238,7 @@ function keyEditForm(key) {
         <label class="check"><input name="no_expires_at" type="checkbox" ${key.expires_at ? "" : "checked"}> No expiration</label>
         <label class="check"><input name="disabled" type="checkbox" ${key.disabled ? "checked" : ""}> Disabled</label>
       `, true)}
+      <div class="wide-field"><button type="button" data-key-profile-bindings="${attr(key.id)}">Inspect and assign route authentication profiles</button><p class="help">Assignments are per route and do not grant additional route permissions. The raw key is never needed.</p></div>
       ${formSection("Access and limits", "Edit the effective key policy.", policyFields(key))}
       ${formSection("Guardrail policy", "Edit mandatory, optional, and forbidden safeguards.", guardrailPolicyFields(key))}
       <div class="form-actions sticky-form-actions wide-field">
@@ -1242,9 +1251,9 @@ function keyEditForm(key) {
 
 function keyTable(rows) {
   return table(
-    ["Prefix", "Owner", "Services", "Status", "Expiry", "Policy", "Updated", "Actions"],
+    ["Key", "Owner", "Services", "Status", "Expiry", "Policy", "Updated", "Actions"],
     rows.map((key) => [
-      `<code>${esc(key.key_prefix)}</code>`,
+      `${key.name ? `<span>${esc(key.name)}</span><br>` : ""}<code>${esc(key.key_prefix)}</code>`,
       keyOwnerLabel(key),
       esc(listValue(key.service_names, "derived")),
       keyStatus(key),
@@ -1272,7 +1281,7 @@ function policyLayerTable(rows) {
 }
 
 function keyLifecycleActions(key) {
-  const keyLabel = attr(key.key_prefix);
+  const keyLabel = attr(key.name ? `${key.name} (${key.key_prefix})` : key.key_prefix);
   const toggle = key.revoked_at
     ? ""
     : key.disabled
@@ -1298,6 +1307,7 @@ async function createKey(event) {
     return;
   }
   const body = {
+    name: String(form.get("key_name") || "").trim() || null,
     owner_type: form.get("owner_type"),
     project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
     service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
@@ -1330,6 +1340,7 @@ async function patchKey(event) {
     return;
   }
   const body = {
+    name: String(form.get("key_name") || "").trim() || null,
     owner_type: form.get("owner_type"),
     project_id: form.get("owner_type") === "project" ? form.get("project_id") : null,
     service_names: form.get("owner_type") === "individual" ? form.getAll("service_names") : [],
@@ -1576,6 +1587,20 @@ function liteLlmSpendContent(snapshot) {
   return `<div class="stat"><span>LiteLLM reported spend · USD</span><strong>${money(snapshot.spend_usd)}</strong></div><p>${esc(scope)} · Retrieved ${time(snapshot.fetched_at)}</p>`;
 }
 
+async function openFoundryEditor(kind, record, trigger) {
+  if (kind === "service") state.providers = await api("/admin-ui/admin/providers");
+  mountFoundryEditor({ kind, record, restoreFocus: trigger,
+    providers: (state.providers || []).filter(p => p.provider === "azure-foundry"), projects: state.projects || [],
+    onSave: async body => {
+      const collection = kind === "provider" ? "providers" : "services";
+      const id = record && (kind === "provider" ? record.id : record.name);
+      await api(`/admin-ui/admin/${collection}${id ? `/${encodeURIComponent(id)}` : ""}`, { method: record ? "PATCH" : "POST", body: JSON.stringify(body) });
+      setNotice(kind === "provider" ? "Foundry connection saved." : "Foundry service saved. Configure caller profiles and service limits with Edit.", "success");
+      if (kind === "provider") await providers(); else await services();
+    },
+  });
+}
+
 async function providers() {
   const renderId = ++renderGeneration;
   const loaded = await Promise.all([
@@ -1589,31 +1614,6 @@ async function providers() {
   [state.providers, state.litellmCredentialMappings, state.litellmPassthroughSettings, state.keys, state.projects] = loaded;
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
-    <section class="panel">
-      <div class="panel-heading"><h3>Create provider</h3></div>
-      <form id="provider-form" class="form-grid">
-        ${formSection("Identity and endpoint", "Choose the adapter and upstream address.", `
-          <label>Provider<select name="provider">${option("litellm", "litellm")}${option("internal-service", "")}</select></label>
-          <label>Name<input name="name" required value="LiteLLM"></label>
-          <label>Endpoint<input name="base_url" required placeholder="http://litellm:4000"></label>
-          <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
-        `, true)}
-        ${formSection("Authentication", "Credentials remain write-only after save.", `
-          <label>Default credential<input name="credential" type="password" autocomplete="new-password"></label>
-          <label>Credential mode<select name="credential_header_mode">
-            ${option("authorization_bearer", "authorization_bearer")}
-            ${option("custom_header", "")}
-          </select></label>
-          <label>Custom header<input name="credential_header_name" placeholder="x-litellm-api-key"></label>
-          <label>Header value<select name="credential_header_value_format">
-            ${option("raw", "raw")}
-            ${option("bearer", "")}
-          </select></label>
-          <div class="help wide-field">Use raw for headers like x-litellm-api-key: &lt;key&gt;. Use bearer for LiteLLM deployments that expect x-litellm-key: Bearer &lt;key&gt;.</div>
-        `)}
-        <div class="form-actions sticky-form-actions wide-field"><button class="primary">Create provider</button></div>
-      </form>
-    </section>
     <section class="panel">
       <div class="panel-heading"><h3>Provider configuration</h3><span class="subtle">${state.providers.length} total</span></div>
       ${providerTable(state.providers)}
@@ -1635,7 +1635,11 @@ async function providers() {
       ${litellmPassthroughForm(state.litellmPassthroughSettings)}
     </section>
   `;
-  document.querySelector("#provider-form").addEventListener("submit", handleAsync(createProvider));
+  document.querySelectorAll("[data-foundry-provider]").forEach(button => button.addEventListener("click", handleAsync(() => openFoundryEditor("provider", state.providers.find(p => p.id === button.dataset.foundryProvider), button))));
+  document.querySelectorAll("[data-foundry-check]").forEach(button => button.addEventListener("click", () => {
+    const provider = state.providers.find(p => p.id === button.dataset.foundryCheck);
+    mountFoundryCheck({ name: provider.name, restoreFocus: button, onCheck: () => api(`/admin-ui/admin/providers/${provider.id}/verify-connection`, { method: "POST" }) });
+  }));
   document.querySelector("#litellm-credential-form").addEventListener("submit", handleAsync(saveLiteLlmCredentialMapping));
   document.querySelector("#litellm-passthrough-form").addEventListener("submit", handleAsync(saveLiteLlmPassthroughSettings));
   document.querySelector("[data-litellm-mapping-scope]").addEventListener("change", updateLiteLlmMappingTargetVisibility);
@@ -1650,6 +1654,12 @@ async function providers() {
     button.addEventListener("click", handleAsync(liteLlmCredentialMappingAction));
   });
   organizeView("providers");
+  const createButton = document.createElement("button");
+  createButton.type = "button";
+  createButton.className = "primary";
+  createButton.textContent = "Create provider";
+  createButton.addEventListener("click", () => mountProviderCreate({ restoreFocus: createButton, onSave: createProvider }));
+  document.querySelector("#page-actions").appendChild(createButton);
 }
 
 function litellmPassthroughForm(settings) {
@@ -1683,12 +1693,12 @@ function litellmPassthroughForm(settings) {
 
 function providerTable(rows) {
   return table(
-    ["Provider", "Endpoint", "State", "Credential", "LiteLLM auth", "Updated", "Actions"],
+    ["Provider", "Endpoint", "State", "Credential", "Authentication", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.provider)}</div>`,
       `<code>${esc(row.base_url)}</code>`,
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
-      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+      (row.credential_configured || (row.foundry && row.foundry.method !== "client_secret")) ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
       providerAuthSettingsForm(row),
       time(row.updated_at),
       `<div class="actions">
@@ -1700,6 +1710,7 @@ function providerTable(rows) {
 }
 
 function providerAuthSettingsForm(row) {
+  if (row.provider === "azure-foundry") return `<div class="actions"><button type="button" data-foundry-provider="${attr(row.id)}">Configure Azure identity</button><button type="button" data-foundry-check="${attr(row.id)}">Verify connection</button></div>`;
   if (row.provider !== "litellm") {
     return '<span class="subtle">not applicable</span>';
   }
@@ -1736,25 +1747,8 @@ function litellmCredentialMappingTable(rows) {
   );
 }
 
-async function createProvider(event) {
-  event.preventDefault();
-  const form = new FormData(event.target);
-  const credentialHeaderMode = form.get("credential_header_mode");
-  const credentialHeaderName = nullableString(form.get("credential_header_name"));
-  const credentialHeaderValueFormat = form.get("credential_header_value_format");
-  await api("/admin-ui/admin/providers", {
-    method: "POST",
-    body: JSON.stringify({
-      provider: form.get("provider"),
-      name: form.get("name"),
-      base_url: form.get("base_url"),
-      credential: blankToUndefined(form.get("credential")),
-      credential_header_mode: credentialHeaderMode,
-      credential_header_name: credentialHeaderMode === "custom_header" ? credentialHeaderName : null,
-      credential_header_value_format: credentialHeaderValueFormat,
-      enabled: form.has("enabled"),
-    }),
-  });
+async function createProvider(body) {
+  await api("/admin-ui/admin/providers", { method: "POST", body: JSON.stringify(body) });
   setNotice("Provider saved.", "success");
   await providers();
 }
@@ -1861,7 +1855,7 @@ async function routes() {
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
     <section class="panel"><div class="panel-heading"><h3>Additional endpoint identity</h3></div>
-      <p class="field-hint">Choose Entra verification for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
+      <p class="field-hint">Choose authentication requirements for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
       ${table(["Route", "Protocol", "Identity", "Actions"], state.routeIdentities.filter((row) => ![...state.openaiRoutes, ...state.anthropicRoutes].some((item) => item.route === row.route)).map((row) => [`<code>${esc(row.route)}</code>`, '<span class="badge">HTTP</span>', endpointIdentityBadge(row.access), routeIdentityButton(row.route)]))}
     </section>
     <section class="panel">
@@ -1958,10 +1952,10 @@ function serviceRouteTable(rows) {
       endpointIdentityBadge(row.access),
       serviceBadges(row),
       esc(listValue(row.allowed_methods, "none")),
-      esc(row.upstream_base_url || "missing"),
+      esc(row.foundry ? `Azure Foundry · ${row.foundry.mode === "registered_agent" ? row.foundry.agent_name : "Responses passthrough"}` : row.upstream_base_url || "missing"),
       serviceRouteTimeoutForm(row),
-      esc(healthCheckLabel(row)),
-      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+      esc(row.foundry ? "Not probed" : healthCheckLabel(row)),
+      row.foundry ? '<span class="badge">Azure identity</span>' : row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
     ]),
   );
 }
@@ -2069,7 +2063,8 @@ function applyServiceTypePreset(form, type) {
   form.querySelectorAll('[name="allowed_methods"]').forEach((input) => { input.checked = preset.methods.includes(input.value); });
   set("timeout_ms", preset.timeout);
   set("health_check_path", preset.health || "");
-  set("endpoint_entra_mode", preset.mode);
+  const identityMode = form.elements.namedItem("profiles_saved") ? "profiles" : preset.mode;
+  set("endpoint_entra_mode", identityMode);
   for (const field of ["endpoint_audience", "endpoint_scopes", "endpoint_roles", "endpoint_groups"]) set(field, "");
   check("endpoint_apigee", !!preset.apigee);
   check("accessa_enabled", !!preset.accessa);
@@ -2083,8 +2078,10 @@ function applyServiceTypePreset(form, type) {
   form.dataset.suggestedRoute = "";
   updateServiceRouteSuggestion(form);
   const identity = form.elements.namedItem("endpoint_entra_mode").closest("details");
-  if (identity) identity.open = preset.mode === "required";
+  if (identity) identity.open = identityMode !== "inherit";
   updateServiceTransportFields(form);
+  form.elements.namedItem("endpoint_entra_mode").dispatchEvent(new Event("change", { bubbles: true }));
+  form.elements.namedItem("endpoint_entra_mode").dispatchEvent(new CustomEvent("identity-preset", { bubbles: true, detail: identityMode }));
 }
 
 function updateServiceRouteSuggestion(form) {
@@ -2124,7 +2121,7 @@ async function services() {
       <section class="panel">
         <div class="panel-heading">
           <h3>Create service</h3>
-          <button type="button" data-service-action="studio-import">Import from Studio</button>
+          <div class="actions"><button type="button" data-foundry-service>Register Foundry service</button><button type="button" data-service-action="studio-import">Import from Studio</button></div>
         </div>
         <form id="service-form" class="form-grid">
           <label class="wide-field">Service type<select name="service_type" required aria-describedby="service-type-help">
@@ -2175,9 +2172,16 @@ async function services() {
   document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
   bindPricingRuleEditors();
   bindEndpointPricingEditors();
+  document.querySelectorAll("[data-foundry-service]").forEach(button => button.addEventListener("click", handleAsync(() => openFoundryEditor("service", state.services.find(p => p.name === button.dataset.foundryService), button))));
+  if (editing?.foundry) {
+    const form = document.querySelector("#service-edit-form");
+    for (const name of ["upstream_base_url", "credential", "clear_credential", "fallback_services", "health_check_path", "health_check_method", "studio_service_id", "sync_status"]) form.elements.namedItem(name).closest("label").hidden = true;
+    form.querySelectorAll('[name="allowed_methods"]').forEach(input => { input.disabled = input.value !== "POST"; });
+  }
   document.querySelectorAll("[data-service-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(serviceAction));
   });
+  prepareProfileKeys(content);
   organizeView("services");
 }
 
@@ -2372,6 +2376,7 @@ function serviceEditForm(service) {
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
     <form id="service-edit-form" class="form-grid" data-service-name="${attr(service.name)}">
       <div class="field wide-field"><span>Saved endpoint protocols</span><div>${serviceProtocolSummary(service)}</div><small class="field-hint">WS means WebSocket and applies only to the displayed run path. Other endpoints use HTTP; SSE also uses HTTP. Labels describe saved configuration, not current availability.</small></div>
+      ${service.foundry ? `<div class="wide-field"><span class="subtle">Azure Foundry · ${service.foundry.mode === "registered_agent" ? esc(service.foundry.agent_name) : "Endpoint passthrough"}</span> <button type="button" data-foundry-service="${attr(service.name)}">Configure Foundry</button></div>` : ""}
       ${formSection("Identity and routing", "Update registry identity, route, upstream, and methods.", `
         <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
         <label>Route pattern<input name="route_pattern" list="service-routes" value="${attr(service.route_pattern)}"></label>
@@ -2389,13 +2394,13 @@ function serviceEditForm(service) {
         <label>Max body bytes<input name="max_body_bytes" type="number" min="1" value="${attr(service.max_body_bytes)}"></label>
         <label>Fallback services<input name="fallback_services" value="${attr(listValue(service.fallback_services, ""))}"></label>
       `)}
-      ${endpointAccessFields(service.access || {})}
+      ${service.foundry ? formSection("Caller authentication", "Require a Relayna key and optionally an Entra identity for this service.", endpointIdentityFields(service.access || {}, service.project_id || "")) : endpointAccessFields(service.access || {}, service.project_id || "")}
       ${formSection("Usage pricing", "Update cost source and request-matching rules.", `
         <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
         <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
         <div class="help wide-field">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
         ${pricingRulesEditor(service.pricing_rules || [])}
-        ${openApiEndpointPricingEditor(service)}
+        ${service.foundry ? "" : openApiEndpointPricingEditor(service)}
       `)}
       <div class="form-actions sticky-form-actions wide-field">
         <button type="submit" class="primary">Save service</button>
@@ -2529,7 +2534,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.37")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.39")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -2743,7 +2748,7 @@ function servicePickerTable(rows, selected) {
       <td><strong>${esc(row.name)}</strong><div class="subtle">${esc(row.studio_service_id || "local")}</div></td>
       <td>${esc(row.sync_status || (row.enabled ? "enabled" : "disabled"))}</td>
       <td><code>${esc(row.route_pattern)}</code></td>
-      <td><code>${esc(row.upstream_base_url || "missing")}</code></td>
+      <td><code>${esc(row.foundry ? `Azure Foundry · ${row.foundry.mode === "registered_agent" ? row.foundry.agent_name : "Responses passthrough"}` : row.upstream_base_url || "missing")}</code></td>
     </tr>`)
     .join("")}</tbody></table></div>`;
 }
@@ -2876,9 +2881,9 @@ function serviceTable(rows) {
       `<code>${esc(row.route_pattern)}</code>`,
       serviceProtocolSummary(row),
       endpointIdentityBadge(row.access),
-      esc(row.upstream_base_url || "missing"),
-      esc(healthCheckLabel(row)),
-      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+      esc(row.foundry ? `Azure Foundry · ${row.foundry.mode === "registered_agent" ? row.foundry.agent_name : "Responses passthrough"}` : row.upstream_base_url || "missing"),
+      esc(row.foundry ? "Not probed" : healthCheckLabel(row)),
+      row.foundry ? '<span class="badge">Azure identity</span>' : row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
       `${esc(row.cost_mode)} ${row.estimated_cost_usd == null ? "" : money(row.estimated_cost_usd)}`,
       `<div class="actions">
         <button data-service-action="edit" data-service-name="${attr(row.name)}" aria-label="Edit service ${attr(row.name)}">Edit</button>
@@ -3537,7 +3542,7 @@ function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {
       `<code>${esc(row.endpoint_template || row.endpoint_path || "")}</code>`,
       esc(row.model || ""),
       esc(row.provider),
-      `${badge(row.status, row.status === "success" ? "good" : "bad")} <code>${esc(row.status_code)}</code>`,
+      `<span class="usage-status">${badge(row.status, row.status === "success" ? "good" : "bad")}<code>${esc(row.status_code)}</code></span>`,
       `${esc(row.latency_ms)} ms`,
       esc(usageValue(row.diagnostics, row.total_tokens)),
       esc(usageValue(row.diagnostics, row.estimated_cost_usd, money)),
@@ -4122,24 +4127,27 @@ function guardrailExecutionTable(rows) {
   );
 }
 
-function endpointIdentityFields(access = {}) {
+function endpointIdentityFields(access = {}, projectId = "") {
   const entra = access.entra || {};
-  const mode = access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
-  return `<label class="wide-field">Entra verification<select name="endpoint_entra_mode">
-    <option value="inherit" ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
-    <option value="required" ${mode === "required" ? "selected" : ""}>Require Entra</option>
-    <option value="disabled" ${mode === "disabled" ? "selected" : ""}>No Entra</option>
+  const mode = access.authentication_profiles ? "profiles" : access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
+  const savedProfiles = mode === "profiles" && access.authentication_profiles.revision > 0;
+  return `<div class="wide-field form-grid" data-endpoint-identity data-key-project="${attr(projectId)}">${savedProfiles ? '<input type="hidden" name="profiles_saved" value="true">' : ""}<label class="wide-field">Route authentication mode<select name="endpoint_entra_mode">
+    <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Use authentication profiles</option>
+    <option value="inherit" ${savedProfiles ? "disabled" : ""} ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
+    <option value="required" ${savedProfiles ? "disabled" : ""} ${mode === "required" ? "selected" : ""}>Require Entra</option>
+    <option value="disabled" ${savedProfiles ? "disabled" : ""} ${mode === "disabled" ? "selected" : ""}>No Entra</option>
   </select></label>
-    <label>Entra audience<input name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
-    <label>Required scopes<input name="endpoint_scopes" value="${attr(listValue(entra.required_scopes, ""))}"></label>
-    <label>Required roles<input name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
-    <label>Allowed groups<input name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
-    <label class="check"><input name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label>
-    <p class="field-hint wide-field">Require Entra uses this audience and claims. No Entra skips identity verification while retaining the endpoint’s credential and policy checks. Gateway-managed traffic still requires a virtual key. Existing gateway setting preserves legacy behavior. Tenant, issuer and JWKS are shared in Settings. Audience and claims below apply only to Require Entra.</p>`;
+    <div class="wide-field form-grid" data-endpoint-entra ${mode === "required" ? "" : "hidden"}>
+    <label>Entra audience (required)<input ${mode === "required" ? "required" : "disabled"} name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
+    <label>Scopes (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_scopes" value="${attr(listValue(entra.required_scopes, ""))}"></label>
+    <label>Roles (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_roles" value="${attr(listValue(entra.required_roles, ""))}"></label>
+    <label>Groups (optional)<input ${mode === "required" ? "" : "disabled"} name="endpoint_groups" value="${attr(listValue(entra.allowed_groups, ""))}"></label>
+    <label class="check"><input ${mode === "required" ? "" : "disabled"} name="endpoint_apigee" type="checkbox" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label></div>
+    ${profileFields(access)}</div>`;
 }
 
 function endpointIdentityBadge(access = {}) {
-  return access.entra ? `<span class="badge good">Entra required</span><div class="subtle">${esc(access.entra.audience)}</div>`
+  return access.authentication_profiles ? `<span class="badge good">${esc(access.authentication_profiles.profiles.length)} authentication profiles</span><div class="subtle">Revision ${esc(access.authentication_profiles.revision)} · explicit key bindings</div>` : access.entra ? `<span class="badge good">Entra required</span><div class="subtle">${esc(access.entra.audience)}</div>`
     : access.skip_entra ? '<span class="badge">No Entra</span>' : '<span class="badge warn">Gateway setting</span>';
 }
 
@@ -4150,7 +4158,7 @@ function routeIdentityControl(route) {
 }
 
 function routeIdentityButton(route) {
-  return `<button type="button" data-route-identity="${attr(route)}" aria-label="Edit Entra verification for ${attr(route)}">Edit identity</button>`;
+  return `<button type="button" data-route-identity="${attr(route)}" aria-label="Edit route authentication for ${attr(route)}">Edit identity</button>`;
 }
 
 function editRouteIdentity(event) {
@@ -4161,11 +4169,12 @@ function editRouteIdentity(event) {
   const titleId = `dialog-title-${++dialogCounter}`;
   backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
     <h3 id="${titleId}">Endpoint identity · ${esc(route)}</h3>
-    <form class="form-grid">${endpointIdentityFields(setting.access)}
+    <form class="modal-form"><div class="modal-scroll form-grid">${endpointIdentityFields(setting.access)}</div>
       <div class="form-actions"><button class="primary">Save identity</button><button type="button" data-close-modal>Cancel</button></div>
     </form></div>`;
   document.body.appendChild(backdrop);
   let saving = false;
+  prepareProfileKeys(backdrop);
   const close = mountDialog(backdrop, { initialFocus: "select", dismissible: false });
   backdrop.querySelector("[data-close-modal]").addEventListener("click", () => { if (!saving) close(); });
   backdrop.addEventListener("keydown", (keyEvent) => { if (keyEvent.key === "Escape" && !saving) close(); });
@@ -4183,10 +4192,10 @@ function editRouteIdentity(event) {
   }));
 }
 
-function endpointAccessFields(access) {
+function endpointAccessFields(access, projectId = "") {
   const binding = access.accessa || {};
   return formSection("Endpoint identity and Accessa", "Apply identity requirements to this registered route. Accessa preserves the public path and requires an explicit key service binding.", `
-    ${endpointIdentityFields(access)}
+    ${endpointIdentityFields(access, projectId)}
     <label class="check"><input name="accessa_enabled" type="checkbox" ${access.accessa ? "checked" : ""}> Accessa channel binding</label>
     <label>Accessa app<input name="accessa_app" value="${attr(binding.app || "")}" placeholder="tara"></label>
     <label>Accessa channel<input name="accessa_channel" value="${attr(binding.channel || "")}" placeholder="tara-frontend"></label>
@@ -4200,12 +4209,14 @@ function endpointAccessFields(access) {
 
 function endpointAccessFromForm(form) {
   const mode = String(form.get("endpoint_entra_mode") || "inherit");
+  if (form.get("profiles_saved") === "true" && mode !== "profiles") throw new Error("This route has saved authentication profiles. Edit the profiles instead; switching identity modes would remove them and is not supported.");
   const audience = mode === "required" ? String(form.get("endpoint_audience") || "").trim() : "";
   const accessa = form.has("accessa_enabled");
-  if (accessa && !audience) throw new Error("Accessa requires an endpoint Entra audience and Require Entra mode.");
+  if (accessa && mode !== "profiles" && !audience) throw new Error("Accessa requires an endpoint Entra audience and Require Entra mode.");
   if (mode === "required" && !audience) throw new Error("Require Entra needs an endpoint audience.");
-  if (!["inherit", "required", "disabled"].includes(mode)) throw new Error("Choose an Entra verification mode.");
+  if (!["inherit", "required", "disabled", "profiles"].includes(mode)) throw new Error("Choose a Route authentication mode.");
   return {
+    ...(mode === "profiles" ? { authentication_profiles: profilesFromForm(form, accessa) } : {}),
     skip_entra: mode === "disabled",
     entra: audience ? {
       audience, required_scopes: csv(form.get("endpoint_scopes")), required_roles: csv(form.get("endpoint_roles")),
@@ -4421,7 +4432,7 @@ function serviceOptions(selected = "") {
 
 function keyOptions(selected = "") {
   return state.keys
-    .map((key) => `<option value="${attr(key.id)}" ${key.id === selected ? "selected" : ""}>${esc(key.key_prefix)} (${esc(key.owner_type || "project")})</option>`)
+    .map((key) => `<option value="${attr(key.id)}" ${key.id === selected ? "selected" : ""}>${esc(keyName(key.id))} (${esc(key.owner_type || "project")})</option>`)
     .join("");
 }
 
@@ -4497,7 +4508,8 @@ function projectName(projectId) {
 }
 
 function keyName(keyId) {
-  return state.keys.find((key) => key.id === keyId)?.key_prefix || keyId;
+  const key = state.keys.find((key) => key.id === keyId);
+  return key?.name ? `${key.name} (${key.key_prefix})` : key?.key_prefix || keyId;
 }
 
 function mappingTargetName(mapping) {
@@ -5359,7 +5371,7 @@ function synchronizeProjectScope(projectScope) {
 function applyTrafficFilters(filters) {
   const projectScope = filters.project_id || "";
   const changedProject = state.projectScope !== projectScope;
-  if (changedProject) filters.key_id = "";
+  if (changedProject && filters.key_id === state.trafficFilters.key_id) filters.key_id = "";
   synchronizeProjectScope(projectScope);
   state.trafficFilters = filters;
   if (changedProject) resetUsagePagination();
@@ -5423,7 +5435,8 @@ function organizeView(view) {
   syncProjectScope();
   // Move existing, bound forms rather than cloning them: validation, handlers,
   // write-only credentials, imports and pricing editors remain functional.
-  const createForms = { projects: "project-form", keys: "key-form", services: "service-form", providers: "provider-form", managedIdentities: "managed-identity-form" };
+  if (view === "routes") content.querySelectorAll('form.route-config-form').forEach(form => mountRouteConfiguration(form, showContentDrawer));
+  const createForms = { projects: "project-form", keys: "key-form", services: "service-form", managedIdentities: "managed-identity-form" };
   const id = createForms[view];
   const create = id && content.querySelector(`#${id}`)?.closest(".panel");
   if (create) {
@@ -5439,6 +5452,8 @@ function organizeView(view) {
     button.className = "primary";
     button.textContent = title;
     actions.appendChild(button);
+    const foundryAction = create.querySelector("[data-foundry-service]");
+    if (foundryAction) actions.appendChild(foundryAction);
     button.addEventListener("click", () => showContentDrawer(title, create, () => placeholder.appendChild(create)));
   }
   content.querySelectorAll(".muted-panel").forEach((panel) => { panel.hidden = true; });
@@ -5636,3 +5651,36 @@ function renderAccessState(member) {
 }
 
 initializePortal();
+
+async function profileKeyCatalog() {
+  const [keys, projects] = await Promise.all([api('/admin-ui/admin/keys'),api('/admin-ui/admin/projects')]);
+  return {keys,projects};
+}
+function prepareProfileKeys(root) {
+  root.querySelectorAll('[data-endpoint-identity]').forEach(host => {
+    const project = host.dataset.keyProject || '';
+    mountIdentityEditor(host, async () => {
+      const catalog = await profileKeyCatalog();
+      return {all: profileKeyOptions(catalog.keys,catalog.projects), eligible: profileKeyOptions(catalog.keys,catalog.projects,'',project)};
+    });
+  });
+}
+
+document.addEventListener("click", handleAsync(async (event) => {
+  const button = event.target.closest("[data-key-profile-bindings]");
+  if (!button) return;
+  const keyId = button.dataset.keyProfileBindings;
+  const [routes, services] = await Promise.all([api("/admin-ui/admin/route-identities"), api("/admin-ui/admin/services")]);
+  const entries = [...routes.map(row => ({...row,url:"/admin-ui/admin/route-identities",method:"PUT"})),
+    ...services.map(row => ({route:row.route_pattern,access:row.access,url:`/admin-ui/admin/services/${encodeURIComponent(row.name)}`,method:"PATCH"}))];
+  mountKeyRouteBindings({
+    keyId, keyName: keyName(keyId), entries, trigger: button,
+    save: async (entry, access) => {
+      const result = await api(entry.url, {
+        method: entry.method,
+        body: JSON.stringify(entry.method === 'PUT' ? {route: entry.route, access} : {access}),
+      });
+      return result.access;
+    },
+  });
+}));

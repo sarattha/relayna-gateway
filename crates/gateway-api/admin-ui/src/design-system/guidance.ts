@@ -11,6 +11,8 @@ export function tooltipPosition(anchor, size, viewport) {
 }
 
 function contextFor(control: HTMLElement): string {
+  if (control.closest('[data-profile-row]')) return 'profile';
+  if (control.closest('[data-endpoint-identity]')) return 'identity';
   if (control.closest('[data-pricing-rule-row]')) return 'pricing';
   if (control.closest('#traffic-filters')) return 'traffic';
   if (control.closest('#usage-form')) return 'usage';
@@ -86,7 +88,7 @@ export function installComponentGuidance(doc: Document = document) {
     });
   };
   const addTerm = (element: HTMLElement) => {
-    if (seen.has(element)) return;
+    if (seen.has(element) || element.closest('[data-react-ui]')) return;
     seen.add(element);
     const label = element.textContent?.trim() || '';
     const explanation = termGuidance[label];
@@ -101,20 +103,20 @@ export function installComponentGuidance(doc: Document = document) {
     bindTooltip(trigger);
   };
   const addField = (control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement) => {
-    if (seen.has(control)) return;
+    if (seen.has(control) || control.closest('[data-react-ui]')) return;
     seen.add(control);
     // Export fields already have individually authored help. Grouped selections
     // have shared guidance, rather than repeating it for every checkbox row.
     if (control.hasAttribute('aria-describedby') || (control.type === 'checkbox' && !control.closest('label.check'))) return;
-    const name = control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
+    const name = control.dataset.guidanceName || control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
     const explanation = fieldGuidance(name, contextFor(control));
     const label = control.closest('label');
     if (!explanation || !label) return;
     const labelCopy = label.cloneNode(true) as HTMLElement;
     labelCopy.querySelectorAll('input, select, textarea, .field-hint, .subtle').forEach(node => node.remove());
     const title = labelCopy.textContent?.replace(/\s+/g, ' ').trim();
-    // Help remains visible within the existing label, including when conditional
-    // controls hide it. Keep the accessible name concise and describe separately.
+    // Keep a separate accessible description. Fields with tooltips expose the
+    // detailed text on demand instead of repeating it beneath each control.
     if (title && !control.hasAttribute('aria-label') && !control.hasAttribute('aria-labelledby')) control.setAttribute('aria-label', title);
     const help = doc.createElement('small');
     help.id = `component-field-help-${++sequence}`;
@@ -122,6 +124,21 @@ export function installComponentGuidance(doc: Document = document) {
     help.textContent = explanation;
     control.setAttribute('aria-describedby', help.id);
     label.append(help);
+    if (['profile', 'identity', 'traffic'].includes(contextFor(control)) || control.dataset.guidanceName || control.type === 'checkbox') {
+      help.hidden = true;
+      const trigger = doc.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'help-trigger';
+      trigger.setAttribute('aria-label', `About ${title}`);
+      trigger.dataset.helpTooltip = explanation;
+      trigger.textContent = '?';
+      const caption = doc.createElement('span');
+      caption.className = 'field-label-with-help';
+      for (const node of [...label.childNodes]) if (node.nodeType === 3) caption.append(node);
+      caption.append(trigger);
+      label.insertBefore(caption, control.type === 'checkbox' ? help : control);
+      bindTooltip(trigger);
+    }
   };
   const enhance = (root: Element) => {
     if (root.closest('.component-tooltip, .field-hint')) return;

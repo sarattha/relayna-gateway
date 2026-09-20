@@ -2884,6 +2884,8 @@ td { font-size: 13px; }
 label.check > .field-hint { grid-column: 1 / -1; grid-row: 2; }
 .form-section-grid > label, .form-grid > label { align-self: start; }
 .field-hint { white-space: normal; overflow-wrap: anywhere; }
+.field-label-with-help { display: flex; align-items: center; gap: var(--rg-space-1); }
+.field-label-with-help > .help-trigger { flex-shrink: 0; }
 button.help-trigger {
   display: inline-grid;
   place-items: center;
@@ -2923,3 +2925,38 @@ button.help-trigger {
   overflow-wrap: anywhere;
 }
 .component-tooltip::backdrop { background: transparent; pointer-events: none; }
+
+/* Profile editors keep creation beside the heading and footer actions outside
+   the scrolling form body, including when several profiles are expanded. */
+[data-profile-editor] .panel-heading h4 { margin: 0; }
+[data-profile-rows] { display: grid; gap: var(--rg-space-4); }
+.authentication-profile {
+  min-width: 0;
+  margin: 0;
+  padding: var(--rg-space-4);
+  border: 1px solid var(--rg-color-border);
+  border-radius: var(--rg-radius-sm);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+[data-profile-entra], [data-endpoint-entra] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.authentication-profile legend { padding: 0 var(--rg-space-2); font-weight: 600; }
+@media (max-width: 760px) {
+  .authentication-profile, [data-profile-entra], [data-endpoint-entra] { grid-template-columns: minmax(0, 1fr); }
+}
+
+.profile-key-picker { min-width: 0; }
+.profile-key-item { display: flex; align-items: center; justify-content: space-between; gap: var(--rg-space-2); padding: var(--rg-space-2) 0; border-bottom: 1px solid var(--rg-color-border); }
+.profile-key-item > span { min-width: 0; }
+.profile-key-item small, .profile-key-item code { display: block; overflow-wrap: anywhere; }
+.profile-key-item button { flex-shrink: 0; }
+.profile-key-results { max-height: 260px; overflow-y: auto; }
+
+/* Key assignment is a form field; keep its visual weight aligned with labels. */
+.profile-key-label { margin: 0; font-size: 12px; font-weight: 550; color: var(--rg-color-muted); }
+.profile-key-picker > .panel-heading { margin-bottom: var(--rg-space-1); }
+.profile-key-name { display: block; font-size: 13px; font-weight: 400; }
+.profile-key-item small { font-size: 12px; color: var(--rg-color-muted); }
+.profile-key-item code { font-size: 11px; color: var(--rg-color-muted); }
+.modal.profile-key-dialog { width: min(680px, calc(100vw - 32px)); }
+.profile-key-dialog > h3 { font-weight: 550; }
+.profile-key-dialog [data-key-selection-count] { margin-top: var(--rg-space-3); }

@@ -26,7 +26,7 @@ of that schema.
 | Projects | `projects` | Groups project-owned virtual keys and service access. |
 | Virtual keys | `api_keys`, `key_policies`, `key_guardrail_policies`, `policy_layers` | Stores key identity, inherited request policy, limits, budgets, lifecycle metadata, and guardrail policy. |
 | Services | `service_registrations`, `project_service_links`, `key_service_links` | Registers `/services/<service-name>/*` routes and grants project or individual-key access. |
-| Providers and routes | `provider_configs`, `litellm_credential_mappings`, `litellm_passthrough_settings`, `openai_route_settings`, `anthropic_route_settings`, `route_policies` | Stores upstream provider settings, LiteLLM credential mapping, wildcard passthrough settings, and global OpenAI-compatible and Anthropic-compatible route toggles/modes. |
+| Providers and routes | `provider_configs`, `litellm_credential_mappings`, `litellm_passthrough_settings`, `openai_route_settings`, `anthropic_route_settings`, `route_identity_settings`, `route_policies` | Stores upstream provider settings, LiteLLM credential mapping, wildcard passthrough settings, and global OpenAI-compatible and Anthropic-compatible route toggles/modes. |
 | Guardrails | `guardrail_definitions`, `guardrail_execution_events` | Stores guardrail catalog entries and execution audit records. |
 | Studio settings | `studio_connection_settings` | Stores the optional Relayna Studio import connection. |
 | Operators | `operator_tokens` | Stores hashed tokens for `/admin-ui/admin/*` and `/admin-ui` access. |
@@ -101,6 +101,7 @@ keys are never stored.
 | Checks | `owner_type` must be `project` or `individual`; project keys require `project_id`, individual keys require `project_id IS NULL`. |
 | Lifecycle fields | `disabled`, `revoked_at`, and `expires_at` determine whether a key can authenticate. `rotation_due_at` helps operators plan rotation, and `last_used_at` records the last observed key use when populated by runtime paths. |
 | Secret fields | `key_hash` stores an Argon2 hash of the raw `rk_live_...` key. |
+| Display metadata | Nullable `name` is an optional, non-unique alias (1–120 characters when set). It is independent of key authentication and profile bindings. Existing keys remain unnamed after the additive migration. |
 | Referenced by | `key_policies`, `key_guardrail_policies`, `key_service_links`, `usage_events`, `guardrail_execution_events`, and legacy `route_policies`. |
 
 ### `key_policies`
@@ -178,7 +179,7 @@ services.
 | Unique keys | `studio_service_id` is unique when present. |
 | Foreign keys | `project_id` references `projects(id)` with `ON DELETE RESTRICT` when present. |
 | Checks | `name` must be lowercase DNS-label style; `source` is `gateway` or `studio`; `sync_status` is `local`, `synced`, `incomplete`, `stale`, or `failed`; `cost_mode` is `fixed`, `passthrough`, or `none`; `health_check_method` is `GET` or `HEAD`; `timeout_ms` and `max_body_bytes` must be positive. |
-| Runtime fields | `route_pattern`, `upstream_base_url`, `health_check_path`, `health_check_method`, `enabled`, `allowed_methods`, `timeout_ms`, `max_body_bytes`, `cost_mode`, `estimated_cost_usd`, `pricing_rules`, `credential_secret`, and `fallback_services`. |
+| Runtime fields | `route_pattern`, `upstream_base_url`, `health_check_path`, `health_check_method`, `enabled`, `allowed_methods`, `timeout_ms`, `max_body_bytes`, `cost_mode`, `estimated_cost_usd`, `pricing_rules`, `credential_secret`, `fallback_services`, and optional `foundry` binding. |
 | OpenAPI fields | `openapi_source_path`, `openapi_schema_hash`, and `openapi_synced_at` record the reviewed source; `openapi_endpoints` stores the compact discovered method/path catalog; `endpoint_pricing_rules` stores per-operation `none`, `fixed`, or `passthrough` billing. These JSONB fields default safely for registrations created before `0.1.21`. |
 | Indexes | `service_registrations_studio_service_id_idx`, `service_registrations_source_status_idx`, and `service_registrations_project_id_idx`. |
 | Required data | A service must be enabled and have complete runtime fields before the proxy can forward matching service traffic. |
@@ -188,15 +189,57 @@ runtime dependency for proxy traffic. See
 [OpenAPI Service Import and Endpoint Pricing](openapi-service-pricing.md) for
 the sync contract and cost precedence.
 
+### `route_identity_settings` and authentication profiles
+
+Built-in route identity settings use `route_identity_settings` with primary key
+`route text`, `access jsonb` (default `{}`) and `updated_at`. Registered services
+store the same strict endpoint-access shape in `service_registrations.access`.
+Forwarding mode remains in the separate route-settings tables.
+
+The `access.authentication_profiles` object contains a revision, profile list and
+key-to-profile bindings. Profiles carry stable IDs, display names, enabled state,
+authentication type and optional Entra requirements. Bindings reference existing
+Relayna key UUIDs; one key selects at most one profile per canonical route.
+Application validation enforces the profile/claim bounds and unique assignments.
+
+Migration `20260919000100_authentication_profile_revisions.sql` adds write guards
+on both tables. A writer submits the last observed revision (zero for initial
+opt-in); PostgreSQL rejects stale writes and attempts to erase a saved profile
+set, validates key existence and service-project ownership, and increments the
+revision for changed access. Identical policies can retain their revision.
+These guards protect opted-in policies from old writers as well as concurrent
+administrators. Do not remove them as a rollback shortcut.
+
+Gateway 0.1.37 cannot read the new profile shape. Upgrade every replica before
+opting in. New requests read the effective profile configuration from PostgreSQL;
+request diagnostics retain the selected revision without storing raw credentials.
+See [authentication profiles](operations/authentication-profiles.md) for the API,
+setup instructions and rollback behavior.
+
 ### `provider_configs`
 
 `provider_configs` stores operator-managed upstream provider settings.
+
+`20260920000400_provider_config_revision.sql` adds `config_revision` (positive
+`bigint`, initially 1). A database trigger increments it on every row update,
+including direct SQL and enable/disable changes. Foundry token caches use this
+revision instead of `updated_at`, whose transaction-start timestamp can move
+backward under overlapping edits. Rollbacks also roll back the revision change.
+
+Azure Foundry connections use provider kind `azure-foundry` and a nullable `foundry`
+JSON object containing the Azure identity method and tenant/client IDs. Client
+secrets use the existing write-only `credential_secret` column; access tokens are
+not persisted. `20260920000200_foundry_connections.sql` also adds a nullable service
+`foundry` binding and generated `foundry_provider_id` foreign key. The foreign key
+prevents deleting a provider while services reference it. Existing providers and
+services retain NULL Foundry configuration. See [Azure Foundry](azure-foundry.md)
+for registration, permissions and rollout boundaries.
 
 | Key | Details |
 | --- | --- |
 | Primary key | `id uuid` generated with `gen_random_uuid()`. |
 | Unique keys | `(provider, name)` is unique. Only one enabled `litellm` config is allowed. |
-| Checks | `provider` must be `litellm` or `internal-service`; `name` must be non-empty and at most 120 characters; `base_url` must start with `http://` or `https://`; LiteLLM credential header mode is `authorization_bearer` or `custom_header`; custom header value format is `raw` or `bearer`. |
+| Checks | `provider` must be `litellm`, `internal-service` or `azure-foundry`; `name` must be non-empty and at most 120 characters; `base_url` must start with `http://` or `https://`; LiteLLM credential header mode is `authorization_bearer` or `custom_header`; custom header value format is `raw` or `bearer`. |
 | Header fields | `credential_header_mode`, `credential_header_name`, and `credential_header_value_format` control whether LiteLLM receives `Authorization: Bearer <key>`, a raw custom credential header such as `x-litellm-api-key: <key>`, or a bearer-prefixed custom header such as `x-litellm-key: Bearer <key>`. |
 | Secret fields | `credential_secret` stores the internal upstream credential and is treated as write-only by API responses. |
 | Required data | Needed when operators configure runtime provider settings through the admin API or portal instead of environment fallback. |
