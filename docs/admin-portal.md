@@ -4,14 +4,32 @@ Monitor → Traffic shows live request timelines, failure reasons and saved hist
 
 The admin portal is a static operator console embedded in `gateway-api`. It is served from the control listener at `/admin-ui` and calls the same `/admin-ui/admin/*` APIs used by automation.
 
-For a current-branch tour of the current Admin UI 3.0 redesign and
+For a current-branch tour of the current Admin UI 4.0 redesign and
 related governance, provider intelligence, usage analytics, and supply-chain
 features, see [Current Feature Highlights](current-features.md).
 
+## Design 4.0
+
+Design 4.0 upgrades the shared shell and every Admin/Owner page with consistent
+neutral surfaces, compact typography, table spacing, field labels and semantic
+status colors. The design version is separate from the gateway release version.
+
+React owns the shell and authentication editor. Existing operational controllers
+continue to own their page content and API workflows through explicit DOM
+boundaries; this is not a wholesale rewrite of those controllers into JSX.
+Native React controls use shared shadcn-style components backed by Radix, with
+Tailwind tokens in `src/theme.css`. Identity policy changes preserve inactive
+field drafts, and key selection is isolated until Apply. An empty key search
+shows no results; selected keys remain visible.
+
+Run `npm run typecheck:admin-ui` for strict checks of the React components and
+`npm run test:react:coverage` for mounted interaction coverage, alongside
+`npm test` for existing operational regressions. CI checks both suites.
+
 ## Frontend Source
 
-Admin UI 3.0 source files live in
-`crates/gateway-api/admin-ui`. Build the Vite/TypeScript source into the static
+Admin UI 4.0 source files live in
+`crates/gateway-api/admin-ui`. Use Node.js 24.15 or newer. Build the React/TypeScript/Vite source into the static
 assets embedded by `gateway-api` with:
 
 ```bash
@@ -24,7 +42,7 @@ The generated files remain checked in under
 serve `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` without a
 separate frontend deployment.
 
-The `v0.1.37` Admin UI 3.0 shell organizes navigation into Monitor, Discover,
+The Admin UI 4.0 shell organizes navigation into Monitor, Discover,
 and Govern. Monitor contains Overview, Traffic, Usage & cost and Health;
 Discover contains Projects, Services, Providers and Routes; Govern contains
 Virtual keys, Policies & guardrails, People & identities, Audit log and Settings.
@@ -67,12 +85,12 @@ drawer. Owner details remain exact-resource scoped and contain only sanitized
 usage metadata plus an optional redacted debug bundle. Project dashboards scope
 usage by persisted project attribution and add service-level breakdowns.
 
-![Admin UI 3.0 Overview with local fixture data](assets/screenshots/admin-ui-3/overview.png)
+![Admin UI 4.0 Overview with synthetic local traffic](assets/screenshots/admin-ui-4/overview.jpg)
 
 On narrow screens, the same Monitor, Discover, and Govern structure moves into
-an accessible drawer without removing operator workflows.
-
-![Admin UI 3.0 on a narrow screen](assets/screenshots/admin-ui-3/mobile-overview.png)
+an accessible drawer without removing operator workflows. The identity form
+stacks its fields and keeps Save/Cancel visible; key selection uses a separate
+scrollable dialog.
 
 ## Authentication
 

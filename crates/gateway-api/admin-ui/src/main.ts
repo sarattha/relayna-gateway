@@ -1,11 +1,13 @@
-import { profileFields, profilesFromForm, bindProfileEditor, loadProfileKeys, showProfileError } from "./auth-profiles";
+import { mountRouteConfiguration } from "./react/route-configuration";
+import { mountIdentityEditor } from "./react/mount-identity-editor";
+import { profileFields, profilesFromForm, showProfileError, profileKeyOptions } from "./auth-profiles";
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic } from "./traffic";
 import { installComponentGuidance } from "./design-system/guidance";
 import { refreshWebSocketMetrics, routingModeLabel, usageValue, requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 import Chart from "chart.js/auto";
-import "./app.css";
+
 import {
   actionGroup,
   applyViewChrome,
@@ -2088,6 +2090,7 @@ function applyServiceTypePreset(form, type) {
   if (identity) identity.open = preset.mode === "required";
   updateServiceTransportFields(form);
   form.elements.namedItem("endpoint_entra_mode").dispatchEvent(new Event("change", { bubbles: true }));
+  form.elements.namedItem("endpoint_entra_mode").dispatchEvent(new CustomEvent("identity-preset", { bubbles: true, detail: preset.mode }));
 }
 
 function updateServiceRouteSuggestion(form) {
@@ -5431,6 +5434,7 @@ function organizeView(view) {
   syncProjectScope();
   // Move existing, bound forms rather than cloning them: validation, handlers,
   // write-only credentials, imports and pricing editors remain functional.
+  if (view === "routes") content.querySelectorAll('form.route-config-form').forEach(form => mountRouteConfiguration(form, showContentDrawer));
   const createForms = { projects: "project-form", keys: "key-form", services: "service-form", providers: "provider-form", managedIdentities: "managed-identity-form" };
   const id = createForms[view];
   const create = id && content.querySelector(`#${id}`)?.closest(".panel");
@@ -5650,9 +5654,14 @@ async function profileKeyCatalog() {
   return {keys,projects};
 }
 function prepareProfileKeys(root) {
-  root.querySelectorAll('[data-profile-editor]').forEach(editor => { void loadProfileKeys(editor, profileKeyCatalog); });
+  root.querySelectorAll('[data-endpoint-identity]').forEach(host => {
+    const project = host.dataset.keyProject || '';
+    mountIdentityEditor(host, async () => {
+      const catalog = await profileKeyCatalog();
+      return {all: profileKeyOptions(catalog.keys,catalog.projects), eligible: profileKeyOptions(catalog.keys,catalog.projects,'',project)};
+    });
+  });
 }
-bindProfileEditor(document, profileKeyCatalog, mountDialog);
 
 document.addEventListener("click", handleAsync(async (event) => {
   const button = event.target.closest("[data-key-profile-bindings]");

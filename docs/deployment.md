@@ -26,7 +26,7 @@ bearer-prefixed custom LiteLLM
 credential header values, LiteLLM wildcard passthrough, per-route canonical
 OpenAI mode selection, direct LiteLLM bearer delegation, trusted-ingress
 dashboard/admin passthrough, opt-in Microsoft Entra ID authorization, and
-Apigee gateway patterns. Admin UI 3.0 remains compiled into the same static
+Apigee gateway patterns. Admin UI 4.0 remains compiled into the same static
 asset contract on the gateway binary.
 See
 [Current Feature Highlights](current-features.md),

@@ -141,7 +141,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Install admin portal dependencies
         run: npm ci
@@ -153,7 +153,10 @@ jobs:
         run: git diff --exit-code -- crates/gateway-api/src/static/admin-ui/
 
       - name: Run admin portal tests
-        run: npm test
+        run: |
+          npm test
+          npm run typecheck:admin-ui
+          npm run test:react:coverage
 
   repository-metadata:
     name: repository metadata

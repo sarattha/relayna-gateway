@@ -83,7 +83,6 @@ export function syncIdentityFields(root) {
 }
 
 const keyCatalogs = new WeakMap();
-const keyDialogs = new WeakMap();
 export const selectedKeyIds = value => String(value || '').split(/[,\n]/).map(id => id.trim().toLowerCase()).filter(Boolean);
 export function profileKeyOptions(keys, projects, query = '', projectId = '') {
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -113,7 +112,6 @@ export function refreshProfileKeys(editor) {
       return `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-remove-key="${escape(id)}" aria-label="Remove ${escape(key.name)} (${escape(id)})" ${active ? '' : 'disabled'}>Remove</button></div>`;
     }).join('') || '<p class="help">No keys assigned.</p>';
   }
-  keyDialogs.get(editor)?.();
 }
 
 export async function loadProfileKeys(editor, loadCatalog) {
@@ -126,81 +124,7 @@ export async function loadProfileKeys(editor, loadCatalog) {
   finally { state.loading = false; if (editor.isConnected) refreshProfileKeys(editor); }
 }
 
-export function openProfileKeyDialog(picker, editor, {doc = document, loadCatalog, mountDialog}) {
-  const input = picker.querySelector('[data-profile-keys]');
-  const original = new Set(selectedKeyIds(input.value));
-  const selected = new Set(original);
-  const root = editor.closest('[data-endpoint-identity]');
-  const project = root.dataset.keyProject || '';
-  const elsewhere = () => new Set([...editor.querySelectorAll('[data-profile-keys]')].filter(control => control !== input).flatMap(control => selectedKeyIds(control.value)));
-  const backdrop = doc.createElement('section');
-  backdrop.className = 'modal-backdrop';
-  const title = `profile-key-dialog-${++slot}`;
-  backdrop.innerHTML = `<div class="modal profile-key-dialog" role="dialog" aria-modal="true" aria-labelledby="${title}">
-    <h3 id="${title}">Select keys</h3>
-    <div class="modal-form"><div class="modal-scroll">
-      <label>Search keys<input type="search" data-key-search data-guidance-name="profile_keys_search" placeholder="Key prefix, UUID, project or service" autocomplete="off"></label>
-      <p class="help" role="status" data-key-results-status></p>
-      <button type="button" data-key-retry hidden>Retry loading keys</button>
-      <div class="profile-key-results" data-key-results></div>
-      <h4 class="profile-key-label" data-key-selection-count>Selected keys</h4><div data-key-draft></div>
-      <p class="help">Apply updates this profile’s draft. Save identity to save the assignments.</p>
-    </div><div class="form-actions"><button type="button" class="primary" data-key-apply>Apply selection</button><button type="button" data-key-cancel>Cancel</button></div></div>
-  </div>`;
-  const search = backdrop.querySelector('[data-key-search]');
-  const render = () => {
-    const state = keyCatalogs.get(editor) || {};
-    const catalog = state.catalog || {keys:[],projects:[]};
-    const all = profileKeyOptions(catalog.keys,catalog.projects);
-    const unavailable = elsewhere();
-    const matches = profileKeyOptions(catalog.keys,catalog.projects,search.value,project).filter(key => !selected.has(key.id) && !unavailable.has(key.id));
-    backdrop.querySelector('[data-key-results-status]').textContent = state.loading ? 'Loading keys…' : state.error ? 'Could not load keys. Your selections are kept.' : `${matches.length} available matching keys${matches.length > 30 ? ' · showing the first 30; refine your search' : ''}. Keys already assigned to a profile are excluded.`;
-    backdrop.querySelector('[data-key-retry]').hidden = !state.error;
-    backdrop.querySelector('[data-key-apply]').disabled = !state.catalog || state.loading || state.error;
-    backdrop.querySelector('[data-key-results]').innerHTML = state.loading || state.error ? '' : matches.slice(0,30).map(key => `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-dialog-add-key="${escape(key.id)}" aria-label="Add ${escape(key.name)} (${escape(key.id)})">Add</button></div>`).join('');
-    backdrop.querySelector('[data-key-selection-count]').textContent = `Selected keys (${selected.size})`;
-    backdrop.querySelector('[data-key-draft]').innerHTML = [...selected].map(id => {
-      const key = all.find(key => key.id === id) || {id,name:'Key details unavailable',owner:'Saved assignment',status:'Unknown'};
-      return `<div class="profile-key-item">${keyDescription(key)}<button type="button" data-dialog-remove-key="${escape(id)}" aria-label="Remove ${escape(key.name)} (${escape(id)})">Remove</button></div>`;
-    }).join('') || '<p class="help">No keys selected.</p>';
-  };
-  doc.body.appendChild(backdrop);
-  keyDialogs.set(editor,render);
-  const close = mountDialog(backdrop, {initialFocus:'[data-key-search]',restoreFocus:picker.querySelector('[data-open-keys]'),onClose:() => {if (keyDialogs.get(editor) === render) keyDialogs.delete(editor);}});
-  search.addEventListener('input',render);
-  search.addEventListener('keydown',event => {if (event.key === 'Enter') event.preventDefault();});
-  backdrop.querySelector('[data-key-cancel]').addEventListener('click',() => close());
-  backdrop.querySelector('[data-key-retry]').addEventListener('click',() => {void loadProfileKeys(editor,loadCatalog);});
-  backdrop.querySelector('[data-key-apply]').addEventListener('click',() => {
-    const state = keyCatalogs.get(editor);
-    if (!state?.catalog || state.loading || state.error || !picker.isConnected) return;
-    const allowed = new Set(profileKeyOptions(state.catalog.keys,state.catalog.projects,'',project).map(key => key.id));
-    const unavailable = elsewhere();
-    if ([...selected].some(id => unavailable.has(id) || (!original.has(id) && !allowed.has(id)))) {render();return;}
-    input.value = [...selected].join(',');
-    refreshProfileKeys(editor);
-    close();
-  });
-  backdrop.addEventListener('click',event => {
-    const add = event.target.closest('[data-dialog-add-key]');
-    const remove = event.target.closest('[data-dialog-remove-key]');
-    if (add) {
-      const state = keyCatalogs.get(editor);
-      const id = add.dataset.dialogAddKey;
-      if (!state?.catalog || state.loading || state.error || elsewhere().has(id) || !profileKeyOptions(state.catalog.keys,state.catalog.projects,'',project).some(key => key.id === id)) return;
-      selected.add(id);
-      search.value = '';
-    } else if (remove) selected.delete(remove.dataset.dialogRemoveKey);
-    else return;
-    render();
-    search.focus();
-  });
-  render();
-  void loadProfileKeys(editor,loadCatalog);
-  return backdrop;
-}
-
-export function bindProfileEditor(doc = document, loadCatalog = async () => ({keys:[],projects:[]}), mountDialog) {
+export function bindProfileEditor(doc = document, loadCatalog = async () => ({keys:[],projects:[]}), openKeyPicker) {
   doc.addEventListener('change', event => {
     if (!event.target.matches('[name="endpoint_entra_mode"], [data-profile-type]')) return;
     const root = event.target.closest('[data-endpoint-identity]');
@@ -212,7 +136,7 @@ export function bindProfileEditor(doc = document, loadCatalog = async () => ({ke
     if (!editor) return;
     const picker = event.target.closest('[data-key-picker]');
     if (event.target.closest('[data-open-keys]')) {
-      openProfileKeyDialog(picker, editor, {doc, loadCatalog, mountDialog});
+      openKeyPicker(picker, editor);
       return;
     }
     const remove = event.target.closest('[data-remove-key]');
@@ -244,7 +168,8 @@ export function showProfileError(root, message) {
   const notice = root.querySelector?.('[data-profile-notice]')
     || root.closest?.('[role=dialog]')?.querySelector('[data-profile-notice], [data-binding-result]');
   if (!notice) return false;
-  notice.textContent = message;
+  if (notice.hasAttribute?.('data-react-error')) notice.dispatchEvent(new CustomEvent('profile-error',{bubbles:true,detail:message}));
+  else notice.textContent = message;
   notice.setAttribute('role', 'alert');
   notice.setAttribute('tabindex', '-1');
   notice.focus();

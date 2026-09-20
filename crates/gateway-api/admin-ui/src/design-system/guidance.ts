@@ -88,7 +88,7 @@ export function installComponentGuidance(doc: Document = document) {
     });
   };
   const addTerm = (element: HTMLElement) => {
-    if (seen.has(element)) return;
+    if (seen.has(element) || element.closest('[data-react-ui]')) return;
     seen.add(element);
     const label = element.textContent?.trim() || '';
     const explanation = termGuidance[label];
@@ -103,7 +103,7 @@ export function installComponentGuidance(doc: Document = document) {
     bindTooltip(trigger);
   };
   const addField = (control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement) => {
-    if (seen.has(control)) return;
+    if (seen.has(control) || control.closest('[data-react-ui]')) return;
     seen.add(control);
     // Export fields already have individually authored help. Grouped selections
     // have shared guidance, rather than repeating it for every checkbox row.
@@ -124,7 +124,7 @@ export function installComponentGuidance(doc: Document = document) {
     help.textContent = explanation;
     control.setAttribute('aria-describedby', help.id);
     label.append(help);
-    if (['profile', 'identity', 'traffic'].includes(contextFor(control)) || control.dataset.guidanceName) {
+    if (['profile', 'identity', 'traffic'].includes(contextFor(control)) || control.dataset.guidanceName || control.type === 'checkbox') {
       help.hidden = true;
       const trigger = doc.createElement('button');
       trigger.type = 'button';

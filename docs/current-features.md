@@ -29,11 +29,11 @@ filters and aligned actions improve day-to-day operation. See
 [Traffic Monitor](operations/traffic-monitor.md) for measurement definitions and
 retention limits, and [Admin Portal](admin-portal.md) for interaction details.
 
-The current console is **Admin UI 3.0**. Screenshots later in this feature
+The current console is **Admin UI 4.0**. Screenshots later in this feature
 catalog include historical UI 2.0 captures with sanitized local fixtures;
 see [Admin Portal](admin-portal.md) for current screenshots and navigation.
 
-## Admin UI 3.0
+## Admin UI 4.0
 
 The embedded console places inventories and monitoring results first. Creation
 and editing use contextual drawers; project scope follows Usage drilldowns and
@@ -48,7 +48,7 @@ Administrator navigation is grouped by task:
 - Govern: Virtual keys, Policies & guardrails, People & identities, Audit log,
   Settings. Workload identities are a tab under People & identities.
 
-The Vite/TypeScript source remains in `crates/gateway-api/admin-ui`. Existing
+The React/TypeScript/Vite source remains in `crates/gateway-api/admin-ui`. Existing
 `/admin-ui`, `/admin-ui/app.js`, `/admin-ui/app.css`, admin and owner APIs,
 authorization defaults and existing persisted data remain compatible.
 

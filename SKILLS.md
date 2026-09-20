@@ -4,7 +4,7 @@ This file defines repository-local UI implementation guidance for agents and
 contributors. Use it with `AGENTS.md` when changing the Admin UI or adding
 operator-facing frontend screens.
 
-## Admin UI 3.0 Design System
+## Admin UI 4.0 Design System
 
 Use this skill whenever work touches:
 
@@ -17,7 +17,7 @@ Use this skill whenever work touches:
 
 ### Design Intent
 
-Admin UI 3.0 is an operator console for governing AI traffic, not a marketing
+Admin UI 4.0 is an operator console for governing AI traffic, not a marketing
 site. The interface should be dense, calm, scannable, and optimized for repeat
 operations.
 
@@ -61,9 +61,10 @@ belongs in `crates/gateway-api/admin-ui/`.
 
 ### Component Rules
 
-Use existing Admin UI 3.0 tokens and component classes before adding new ones:
+Use existing Admin UI 4.0 tokens and component classes before adding new ones:
 
-- Tokens in `src/design-system/tokens.css`: `--rg-color-*`, `--rg-status-*`,
+- Theme and Tailwind colors in `src/theme.css`; structural tokens in
+  `src/design-system/tokens.css`: `--rg-color-*`, `--rg-status-*`,
   `--rg-space-*`, `--rg-radius-*`, `--rg-shadow-*`, and `--rg-focus-ring`.
 - View metadata in `src/design-system/view-meta.ts`.
 - Reusable helpers exported from `src/design-system/index.ts`, imported by
@@ -152,3 +153,12 @@ by `AGENTS.md`.
 When browser tooling is available, visually verify `/admin-ui/` at desktop and
 mobile widths, including login, navigation, modals, wide tables, and at least
 one Monitor, Discover, and Govern view.
+
+### React rendering boundaries
+
+Use `src/components/ui` for new React controls, dialogs and contextual help.
+`src/theme.css` defines Tailwind tokens and the shared 4.0 visual rules.
+Operational controllers retain ownership of their content hosts; React must not
+reconcile DOM children that those controllers move into drawers. Keep hooks,
+state and async cleanup inside native React components. Never pass raw secrets
+into persistent state, logs or local storage.
