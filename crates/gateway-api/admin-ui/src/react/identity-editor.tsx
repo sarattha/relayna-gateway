@@ -65,6 +65,7 @@ export function IdentityEditor({
   onDirty: () => void;
 }) {
   const [draft, setDraft] = useState(initial);
+  const savedProfiles = initial.mode === "profiles" && initial.revision > 0;
   const [catalog, setCatalog] = useState<KeyCatalog>({ all: [], eligible: [] });
   const [picker, setPicker] = useState<{
     slot: string;
@@ -89,6 +90,7 @@ export function IdentityEditor({
       setNotice((event as CustomEvent<string>).detail);
     const preset = (event: Event) => {
       const mode = (event as CustomEvent<string>).detail;
+      if (savedProfiles) return;
       setDraft((previous) => ({ ...previous, mode, entra: blankEntra() }));
       setNotice("");
     };
@@ -98,7 +100,7 @@ export function IdentityEditor({
       node.removeEventListener("profile-error", show);
       node.removeEventListener("identity-preset", preset);
     };
-  }, []);
+  }, [savedProfiles]);
   const unique = useId();
   const [sequence, setSequence] = useState(0);
   useEffect(() => {
@@ -161,18 +163,29 @@ export function IdentityEditor({
   );
   return (
     <div ref={host} data-react-ui className="grid gap-5 w-full">
+      {savedProfiles && <Input type="hidden" name="profiles_saved" value="true" />}
       <Field label="Entra verification" help={help.mode}>
         <NativeSelect
           name="endpoint_entra_mode"
           value={draft.mode}
-          onChange={(event) => update({ ...draft, mode: event.target.value })}
+          aria-describedby={savedProfiles ? `${unique}-mode-restriction` : undefined}
+          onChange={(event) => {
+            if (!savedProfiles) update({ ...draft, mode: event.target.value });
+          }}
         >
           <option value="profiles">Explicit authentication profiles</option>
-          <option value="inherit">Use existing gateway setting</option>
-          <option value="required">Require Entra</option>
-          <option value="disabled">No Entra</option>
+          <option value="inherit" disabled={savedProfiles}>Use existing gateway setting</option>
+          <option value="required" disabled={savedProfiles}>Require Entra</option>
+          <option value="disabled" disabled={savedProfiles}>No Entra</option>
         </NativeSelect>
       </Field>
+      {savedProfiles && (
+        <p id={`${unique}-mode-restriction`} className="-mt-3 text-xs text-muted-foreground">
+          This route has saved authentication profiles. Switching to gateway defaults,
+          Require Entra or No Entra is unavailable because it would remove those
+          profiles. Edit the profiles below instead.
+        </p>
+      )}
       <div data-endpoint-entra hidden={draft.mode !== "required"}>
         <EntraFields
           value={draft.entra}

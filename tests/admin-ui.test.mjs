@@ -1068,6 +1068,11 @@ test("endpoint identity controls select explicit modes without retaining hidden 
   form.set("endpoint_entra_mode", "disabled");
   form.set("accessa_enabled", "on");
   assert.throws(() => parse(form), /Accessa requires/);
+  form.set("profiles_saved", "true");
+  for (const mode of ["inherit", "required", "disabled"]) {
+    form.set("endpoint_entra_mode", mode);
+    assert.throws(() => parse(form), /saved authentication profiles.*not supported/);
+  }
   const badge = new Function(`${sourceFunction("esc")}\n${sourceFunction("endpointIdentityBadge")}\nreturn endpointIdentityBadge;`)();
   assert.match(badge(), /Gateway setting/);
   assert.match(badge({ skip_entra: true }), /No Entra/);
@@ -1135,6 +1140,14 @@ test("service presets produce supported access contracts and preserve operator-o
       assert.deepEqual(methods.filter(m=>m.checked).map(m=>m.value),["GET"]);
     }
   }
+  fields.profiles_saved = { value: "true" };
+  for (const type of ["internal_http", "entra_http", "accessa_channel"]) {
+    select(type);
+    assert.equal(fields.endpoint_entra_mode.value, "profiles");
+    assert.equal(fields.endpoint_entra_mode.lastEvent.detail, "profiles");
+    assert.equal(identity.open, true);
+  }
+  delete fields.profiles_saved;
   select("relayna_http");
   assert.equal(fields.health_check_path.value,"/health");
   assert.equal(fields.timeout_ms.value,120000);

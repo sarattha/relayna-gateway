@@ -55,6 +55,11 @@ explicitly before removing the profile. To reassign callers, edit the profile
 and binding set in one save. Never use profile order as authorization. Retain at
 least one profile after opting in; to stop all access, disable every profile.
 Returning an opted-in route to legacy authentication is intentionally rejected.
+The editor explains this restriction beside **Entra verification** and disables
+**Use existing gateway setting**, **Require Entra** and **No Entra** after profiles
+have been saved. Service presets retain those saved profiles. Before the first
+profile save, you can still switch modes. A genuine concurrent-edit conflict
+continues to require reloading the latest configuration before retrying.
 
 ## API and revisions
 

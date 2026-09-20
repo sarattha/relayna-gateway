@@ -20855,6 +20855,7 @@ var init_key_picker = __esmMin((() => {
 //#region crates/gateway-api/admin-ui/src/react/identity-editor.tsx
 function IdentityEditor({ initial, loadCatalog, onDirty }) {
 	const [draft, setDraft] = (0, import_react.useState)(initial);
+	const savedProfiles = initial.mode === "profiles" && initial.revision > 0;
 	const [catalog, setCatalog] = (0, import_react.useState)({
 		all: [],
 		eligible: []
@@ -20874,6 +20875,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 		const show = (event) => setNotice(event.detail);
 		const preset = (event) => {
 			const mode = event.detail;
+			if (savedProfiles) return;
 			setDraft((previous) => ({
 				...previous,
 				mode,
@@ -20887,7 +20889,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 			node.removeEventListener("profile-error", show);
 			node.removeEventListener("identity-preset", preset);
 		};
-	}, []);
+	}, [savedProfiles]);
 	const unique = (0, import_react.useId)();
 	const [sequence, setSequence] = (0, import_react.useState)(0);
 	(0, import_react.useEffect)(() => {
@@ -20944,16 +20946,24 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 		"data-react-ui": true,
 		className: "grid gap-5 w-full",
 		children: [
+			savedProfiles && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Input, {
+				type: "hidden",
+				name: "profiles_saved",
+				value: "true"
+			}),
 			/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Field, {
 				label: "Entra verification",
 				help: help.mode,
 				children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)(NativeSelect, {
 					name: "endpoint_entra_mode",
 					value: draft.mode,
-					onChange: (event) => update({
-						...draft,
-						mode: event.target.value
-					}),
+					"aria-describedby": savedProfiles ? `${unique}-mode-restriction` : void 0,
+					onChange: (event) => {
+						if (!savedProfiles) update({
+							...draft,
+							mode: event.target.value
+						});
+					},
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("option", {
 							value: "profiles",
@@ -20961,18 +20971,26 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("option", {
 							value: "inherit",
+							disabled: savedProfiles,
 							children: "Use existing gateway setting"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("option", {
 							value: "required",
+							disabled: savedProfiles,
 							children: "Require Entra"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("option", {
 							value: "disabled",
+							disabled: savedProfiles,
 							children: "No Entra"
 						})
 					]
 				})
+			}),
+			savedProfiles && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("p", {
+				id: `${unique}-mode-restriction`,
+				className: "-mt-3 text-xs text-muted-foreground",
+				children: "This route has saved authentication profiles. Switching to gateway defaults, Require Entra or No Entra is unavailable because it would remove those profiles. Edit the profiles below instead."
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("div", {
 				"data-endpoint-entra": true,
@@ -37679,7 +37697,8 @@ function applyServiceTypePreset(form, type) {
 	});
 	set("timeout_ms", preset.timeout);
 	set("health_check_path", preset.health || "");
-	set("endpoint_entra_mode", preset.mode);
+	const identityMode = form.elements.namedItem("profiles_saved") ? "profiles" : preset.mode;
+	set("endpoint_entra_mode", identityMode);
 	for (const field of [
 		"endpoint_audience",
 		"endpoint_scopes",
@@ -37698,12 +37717,12 @@ function applyServiceTypePreset(form, type) {
 	form.dataset.suggestedRoute = "";
 	updateServiceRouteSuggestion(form);
 	const identity = form.elements.namedItem("endpoint_entra_mode").closest("details");
-	if (identity) identity.open = preset.mode === "required";
+	if (identity) identity.open = identityMode !== "inherit";
 	updateServiceTransportFields(form);
 	form.elements.namedItem("endpoint_entra_mode").dispatchEvent(new Event("change", { bubbles: true }));
 	form.elements.namedItem("endpoint_entra_mode").dispatchEvent(new CustomEvent("identity-preset", {
 		bubbles: true,
-		detail: preset.mode
+		detail: identityMode
 	}));
 }
 function updateServiceRouteSuggestion(form) {
@@ -39779,11 +39798,12 @@ function guardrailExecutionTable(rows) {
 function endpointIdentityFields(access = {}, projectId = "") {
 	const entra = access.entra || {};
 	const mode = access.authentication_profiles ? "profiles" : access.skip_entra ? "disabled" : access.entra ? "required" : "inherit";
-	return `<div class="wide-field form-grid" data-endpoint-identity data-key-project="${attr(projectId)}"><label class="wide-field">Entra verification<select name="endpoint_entra_mode">
+	const savedProfiles = mode === "profiles" && access.authentication_profiles.revision > 0;
+	return `<div class="wide-field form-grid" data-endpoint-identity data-key-project="${attr(projectId)}">${savedProfiles ? "<input type=\"hidden\" name=\"profiles_saved\" value=\"true\">" : ""}<label class="wide-field">Entra verification<select name="endpoint_entra_mode">
     <option value="profiles" ${mode === "profiles" ? "selected" : ""}>Explicit authentication profiles</option>
-    <option value="inherit" ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
-    <option value="required" ${mode === "required" ? "selected" : ""}>Require Entra</option>
-    <option value="disabled" ${mode === "disabled" ? "selected" : ""}>No Entra</option>
+    <option value="inherit" ${savedProfiles ? "disabled" : ""} ${mode === "inherit" ? "selected" : ""}>Use existing gateway setting</option>
+    <option value="required" ${savedProfiles ? "disabled" : ""} ${mode === "required" ? "selected" : ""}>Require Entra</option>
+    <option value="disabled" ${savedProfiles ? "disabled" : ""} ${mode === "disabled" ? "selected" : ""}>No Entra</option>
   </select></label>
     <div class="wide-field form-grid" data-endpoint-entra ${mode === "required" ? "" : "hidden"}>
     <label>Entra audience (required)<input ${mode === "required" ? "required" : "disabled"} name="endpoint_audience" value="${attr(entra.audience || "")}" placeholder="api://accessa"></label>
@@ -39865,6 +39885,7 @@ function endpointAccessFields(access, projectId = "") {
 }
 function endpointAccessFromForm(form) {
 	const mode = String(form.get("endpoint_entra_mode") || "inherit");
+	if (form.get("profiles_saved") === "true" && mode !== "profiles") throw new Error("This route has saved authentication profiles. Edit the profiles instead; switching identity modes would remove them and is not supported.");
 	const audience = mode === "required" ? String(form.get("endpoint_audience") || "").trim() : "";
 	const accessa = form.has("accessa_enabled");
 	if (accessa && mode !== "profiles" && !audience) throw new Error("Accessa requires an endpoint Entra audience and Require Entra mode.");

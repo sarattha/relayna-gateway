@@ -260,9 +260,11 @@ describe("identity editor", () => {
     };
   }
   it("serializes enabled profile fields and omits inactive modes while preserving their drafts", async () => {
-    const { form } = await editor();
+    const initial = draft();
+    initial.revision = 0;
+    const { form } = await editor(initial);
     let data = new FormData(form);
-    expect(data.get("profiles_revision")).toBe("5");
+    expect(data.get("profiles_revision")).toBe("0");
     expect(data.getAll("profile_slot")).toEqual(["employee", "automation"]);
     expect(data.has("automation.audience")).toBe(false);
     expect(data.has("endpoint_audience")).toBe(false);
@@ -287,6 +289,23 @@ describe("identity editor", () => {
       { target: { value: "profiles" } },
     );
     expect(new FormData(form).get("employee.audience")).toBe("api://employees");
+  });
+  it("explains saved-profile restrictions and preserves assignments through mode and preset attempts", async () => {
+    const { form, onDirty } = await editor();
+    const mode = screen.getByRole("combobox", { name: "Entra verification" });
+    expect(document.getElementById(mode.getAttribute("aria-describedby")!)?.textContent).toContain("Edit the profiles below instead");
+    const before = [...new FormData(form).entries()];
+    expect(new FormData(form).get("profiles_saved")).toBe("true");
+    for (const value of ["inherit", "required", "disabled"]) {
+      expect((mode.querySelector(`[value="${value}"]`) as HTMLOptionElement).disabled).toBe(true);
+      fireEvent.change(mode, { target: { value } });
+      fireEvent(mode, new CustomEvent("identity-preset", { bubbles: true, detail: value }));
+      expect([...new FormData(form).entries()]).toEqual(before);
+    }
+    expect(onDirty).not.toHaveBeenCalled();
+    const stale = "Authentication configuration changed. Reload before saving.";
+    fireEvent(mode, new CustomEvent("profile-error", { bubbles: true, detail: stale }));
+    expect(screen.getByText(stale)).toBeTruthy();
   });
   it("updates all claim and identity fields and changes key-only mode dynamically", async () => {
     const { form, onDirty } = await editor();
