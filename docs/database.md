@@ -26,7 +26,7 @@ of that schema.
 | Projects | `projects` | Groups project-owned virtual keys and service access. |
 | Virtual keys | `api_keys`, `key_policies`, `key_guardrail_policies`, `policy_layers` | Stores key identity, inherited request policy, limits, budgets, lifecycle metadata, and guardrail policy. |
 | Services | `service_registrations`, `project_service_links`, `key_service_links` | Registers `/services/<service-name>/*` routes and grants project or individual-key access. |
-| Providers and routes | `provider_configs`, `litellm_credential_mappings`, `litellm_passthrough_settings`, `openai_route_settings`, `anthropic_route_settings`, `route_policies` | Stores upstream provider settings, LiteLLM credential mapping, wildcard passthrough settings, and global OpenAI-compatible and Anthropic-compatible route toggles/modes. |
+| Providers and routes | `provider_configs`, `litellm_credential_mappings`, `litellm_passthrough_settings`, `openai_route_settings`, `anthropic_route_settings`, `route_identity_settings`, `route_policies` | Stores upstream provider settings, LiteLLM credential mapping, wildcard passthrough settings, and global OpenAI-compatible and Anthropic-compatible route toggles/modes. |
 | Guardrails | `guardrail_definitions`, `guardrail_execution_events` | Stores guardrail catalog entries and execution audit records. |
 | Studio settings | `studio_connection_settings` | Stores the optional Relayna Studio import connection. |
 | Operators | `operator_tokens` | Stores hashed tokens for `/admin-ui/admin/*` and `/admin-ui` access. |
@@ -188,6 +188,33 @@ OpenAPI is fetched only during authenticated preview/sync actions and is not a
 runtime dependency for proxy traffic. See
 [OpenAPI Service Import and Endpoint Pricing](openapi-service-pricing.md) for
 the sync contract and cost precedence.
+
+### `route_identity_settings` and authentication profiles
+
+Built-in route identity settings use `route_identity_settings` with primary key
+`route text`, `access jsonb` (default `{}`) and `updated_at`. Registered services
+store the same strict endpoint-access shape in `service_registrations.access`.
+Forwarding mode remains in the separate route-settings tables.
+
+The `access.authentication_profiles` object contains a revision, profile list and
+key-to-profile bindings. Profiles carry stable IDs, display names, enabled state,
+authentication type and optional Entra requirements. Bindings reference existing
+Relayna key UUIDs; one key selects at most one profile per canonical route.
+Application validation enforces the profile/claim bounds and unique assignments.
+
+Migration `20260919000100_authentication_profile_revisions.sql` adds write guards
+on both tables. A writer submits the last observed revision (zero for initial
+opt-in); PostgreSQL rejects stale writes and attempts to erase a saved profile
+set, validates key existence and service-project ownership, and increments the
+revision for changed access. Identical policies can retain their revision.
+These guards protect opted-in policies from old writers as well as concurrent
+administrators. Do not remove them as a rollback shortcut.
+
+Gateway 0.1.37 cannot read the new profile shape. Upgrade every replica before
+opting in. New requests read the effective profile configuration from PostgreSQL;
+request diagnostics retain the selected revision without storing raw credentials.
+See [authentication profiles](operations/authentication-profiles.md) for the API,
+setup instructions and rollback behavior.
 
 ### `provider_configs`
 

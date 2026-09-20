@@ -2,47 +2,45 @@
 
 Relayna Gateway ships as one binary and one Docker image. The image serves both the core proxy and the admin portal because the admin UI is embedded in the `gateway-api` binary.
 
-Version `0.1.37` adds the `/embeddings` LiteLLM alias without a new migration.
-Deploy the updated binary or image to every proxy replica for consistent alias
-routing. Both embeddings paths use `/v1/embeddings` policy permission; explicit
-registered embeddings services retain their existing policy identity and
-precedence. Governed rerank aliases and bounded all-row usage exports remain
-available.
-Entra-authenticated portal sessions,
-request-plane authorization, and scoped owner monitoring remain on one
-confidential Web/API application. Separate managed identities receive
-`gateway.invoke` or `gateway.monitor.read`; the monitoring role can be reused
-for service and project bindings. Existing authorization diagnostics do not
-change public errors or decisions. The migration introduced in `0.1.34` adds the false-default
-unverified-bearer auth setting and rejects combining it with trusted Apigee
-headers. Existing auth defaults remain unchanged. See [pause and restore
-instructions](entra-id-auth.md#temporarily-pause-verification-while-keeping-both-headers).
-The released export API cap remains 10,000 rows per request. Existing
-operator-token access and registered-service traffic remain unchanged. It retains
-endpoint-level failure monitoring, buffered-body admission, OpenAPI
-discovery and endpoint billing, persisted service timeout controls, structured
-terminal timeout responses, the Aurora Teal Admin UI,
-bearer-prefixed custom LiteLLM
-credential header values, LiteLLM wildcard passthrough, per-route canonical
-OpenAI mode selection, direct LiteLLM bearer delegation, trusted-ingress
-dashboard/admin passthrough, opt-in Microsoft Entra ID authorization, and
-Apigee gateway patterns. Admin UI 4.0 remains compiled into the same static
-asset contract on the gateway binary.
-See
-[Current Feature Highlights](current-features.md),
-[Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md),
-[Entra Integration Requirements](operations/entra-integration-requirements.md),
-[OpenAPI Service Pricing](openapi-service-pricing.md),
-[Entra ID Auth](entra-id-auth.md),
-[Entra Authorization Debug Mode](operations/entra-authorization-debug.md), and
-[Apigee Gateway Path](apigee-gateway-path.md) for the public feature delta.
+Version `0.1.38` includes Admin UI 4.0, route authentication profiles, named
+virtual keys and replica synchronization of saved gateway Entra settings.
+The UI remains embedded in the Rust binary; no separate frontend service is needed.
+
+## Upgrade to 0.1.38
+
+1. Back up PostgreSQL and deploy the updated binary/image to **every replica**.
+   Startup applies `20260919000100_authentication_profile_revisions.sql` and
+   `20260920000100_virtual_key_names.sql` (nullable key aliases). Existing routes keep their previous policy.
+2. Verify readiness and existing traffic on each replica before enabling profiles.
+   A saved profile is unreadable by 0.1.37, so mixed versions cannot safely serve
+   a profile-enabled route.
+3. Follow the [illustrated profile guide](operations/authentication-profiles.md)
+   to configure a nonproduction route, assign keys and test both allowed and
+   denied callers before configuring production routes.
+4. Preserve database revision guards during rollback. Old binaries may leave
+   opted-in routes unavailable; restore 0.1.38 to regain access. Do not erase
+   profile JSON or drop guards to bypass this protection.
+
+Profile configuration is read from PostgreSQL for each new request and Accessa
+turn. Gateway-wide Entra settings saved in Admin Settings refresh independently
+on each replica every five seconds; the writer applies its change immediately.
+A failed or timed-out refresh retains the last valid policy, so propagation is
+not guaranteed within five seconds during an outage. Check each replica after an
+urgent change. Startup environment variables, portal OIDC settings and mounted
+secrets still require the relevant rollout. See
+[authentication synchronization](entra-id-auth.md#saved-settings-and-multiple-replicas).
+
+The `/embeddings` alias introduced in 0.1.36, Accessa channels introduced in
+0.1.37, existing service/project memberships and operator recovery access remain
+available. Accessa adapter/Router admission support must be deployed before
+channel bindings are enabled; see [Accessa channels](accessa-channels.md).
 
 ## Docker Image
 
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.37 .
+docker build -t relayna-gateway:0.1.38 .
 ```
 
 Run it with required dependencies:
@@ -62,17 +60,13 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.37
+  relayna-gateway:0.1.38
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
 
-Version `0.1.37` reuses existing portal members, exact service memberships,
-managed-identity bindings, OIDC login transactions, and opaque portal sessions.
-The forward migration creates separate project membership and workload-binding
-tables without rewriting service assignments. Existing operator tokens remain
-the break-glass bootstrap path, and existing projects are not granted to
-members automatically.
+Existing portal members, service/project memberships, workload bindings and
+opaque portal sessions are preserved. Upgrading does not grant new memberships.
 
 The body-admission defaults reserve no memory at startup. They cap concurrent
 managed body buffering at eight requests and 512 MiB of aggregate serialized
@@ -126,13 +120,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.37
+   ghcr.io/sarattha/relayna-gateway:0.1.38
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.37"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.38"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -140,7 +134,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.37
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.38
    ```
 
 3. Store secrets through your cluster secret manager:

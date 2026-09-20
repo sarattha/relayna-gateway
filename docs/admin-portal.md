@@ -26,6 +26,19 @@ Run `npm run typecheck:admin-ui` for strict checks of the React components and
 `npm run test:react:coverage` for mounted interaction coverage, alongside
 `npm test` for existing operational regressions. CI checks both suites.
 
+## Configure authentication profiles
+
+Open **Routes → Edit identity → Route authentication mode → Use authentication
+profiles**. The route mode chooses how the route determines authentication;
+**Profile authentication** inside each profile chooses **Entra + Relayna key**
+or **Relayna key only**. Direct LiteLLM forwarding still requires an assigned
+Relayna key when profiles are enabled.
+
+Use the [illustrated profile guide](operations/authentication-profiles.md) for
+both setup paths, generated profile IDs, named-key search, Apply/Save behavior,
+profile removal and actionable error recovery. A profile can have multiple keys;
+each key belongs to at most one profile on a given route.
+
 ## Frontend Source
 
 Admin UI 4.0 source files live in

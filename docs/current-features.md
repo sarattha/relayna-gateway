@@ -2,7 +2,14 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.37` feature set.
+This page summarizes the `v0.1.38` feature set.
+
+New in 0.1.38: **Admin UI 4.0**, route authentication profiles, optional key
+names and searchable key selection, corrected live/history Traffic filters, and
+automatic refresh of saved gateway Entra settings across replicas. Profiles
+require an assigned Relayna key even with direct LiteLLM forwarding. See the
+[illustrated profile setup guide](operations/authentication-profiles.md) and
+[replica synchronization](entra-id-auth.md#saved-settings-and-multiple-replicas).
 
 Accessa supports multiple channel adapters through registered HTTP and WebSocket
 routes. Services and built-in routes can select independent Entra audiences,
@@ -263,7 +270,7 @@ contracts.
 
 ## LiteLLM OpenAI-Compatible And Wildcard Passthrough
 
-Release `0.1.37` lets Gateway sit in front of LiteLLM as the single ingress
+Release `0.1.38` lets Gateway sit in front of LiteLLM as the single ingress
 target while preserving Relayna-owned identity, policy, and credential
 translation for governed traffic. Relayna-owned routes such as `/services/*`,
 control-plane routes under `/admin-ui/*`, health, readiness, metrics, and
@@ -308,7 +315,7 @@ Anthropic section, plus timeout, request payload, and response payload limits:
 | Mode | Behavior |
 | --- | --- |
 | `managed_by_gateway` | Current governed behavior. Gateway authenticates the Relayna key, evaluates route/model/provider policy, checks request and token rate limits, checks/reserves budgets, runs configured guardrails, forwards to LiteLLM or direct providers, and records full usage when response accounting data is available. |
-| `direct_litellm_passthrough` | Relayna `rk_live_...` bearer keys keep the Gateway-authenticated path: route enablement, policy, model/provider allowlists, rate limits, budgets, credential stripping/injection, and status-only usage. Non-Relayna `Authorization: Bearer ...` credentials bypass Relayna key lookup and are delegated to LiteLLM using the configured upstream credential header. Guardrail body rewriting and token accounting are bypassed. |
+| `direct_litellm_passthrough` | Relayna `rk_live_...` bearer keys keep the Gateway-authenticated path: route enablement, policy, model/provider allowlists, rate limits, budgets, credential stripping/injection, and status-only usage. Without authentication profiles, non-Relayna `Authorization: Bearer ...` credentials can be delegated to LiteLLM. Saved profiles always require an assigned Relayna key and enforce their selected Entra/key-only type. Guardrail body rewriting and token accounting are bypassed. |
 
 Route limits default to `timeout_ms = 120000`,
 `max_request_body_bytes = 1048576`, and
@@ -338,8 +345,9 @@ Gateway client credentials remain Relayna credentials for governed traffic. When
 Entra is disabled, clients use `Authorization: Bearer rk_live_...`. When Entra
 is enabled, clients use `Authorization: Bearer <Entra JWT>` plus the configured
 Relayna key header. Gateway never forwards those client credentials to LiteLLM.
-The direct-mode non-Relayna bearer exception leaves LiteLLM authentication and
-authorization to LiteLLM itself.
+The direct-mode non-Relayna bearer exception applies only without authentication
+profiles. See the [illustrated profile guide](operations/authentication-profiles.md)
+for credentials and assignment rules on opted-in routes.
 
 Operators can manage LiteLLM upstream authentication from Admin portal
 Providers. The provider default credential remains write-only, and the
@@ -367,7 +375,7 @@ passthrough against a real `litellm/litellm` container.
 
 ## Memory-Safe Body Processing
 
-Release `0.1.37` retains bounds on complete request and response buffering with one
+Release `0.1.38` retains bounds on complete request and response buffering with one
 process-wide admission controller. By default, at most eight managed requests
 or post-call responses may retain complete bodies, and their aggregate
 serialized reservations may not exceed 512 MiB. Operators can tune these
@@ -428,7 +436,7 @@ model/user values as labels.
 
 ## Supply Chain and Deployment Hardening
 
-The `v0.1.37` release retains CI and release workflow hardening with strict
+The `v0.1.38` release retains CI and release workflow hardening with strict
 dependency, secret, static-analysis, filesystem, and image checks. Release
 images publish with SBOM, signature, and provenance artifacts, and release
 metadata validation guards tag, workspace version, and changelog alignment.

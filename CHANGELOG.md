@@ -4,27 +4,50 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+## 0.1.38 - 2026-09-20
+
 ### Added
 
-- Searchable authentication-profile key popup with Apply/Cancel, fresh search,
-  available-only results, project/service search,
-  selected-key summaries, lifecycle status and duplicate-assignment prevention.
-
+- Admin UI 4.0: React/TypeScript/Vite shell and identity/key dialogs, shared
+  Tailwind/Radix component foundation, consistent compact styling across all
+  Admin/Owner pages, and the existing Rust-embedded static-asset deployment.
 - Route-local authentication profiles with explicit virtual-key assignments,
-  independent Entra policies, revision-checked edits, and Traffic/Usage snapshots.
-  Opted-in routes require a Relayna key in every forwarding mode; Accessa
-  revalidates its Entra profile on each turn.
+  separate Entra and key-only policies, revision-checked edits, and Traffic/Usage
+  snapshots. Opted-in routes require an assigned Relayna key in every forwarding
+  mode; Accessa revalidates its Entra profile on each turn.
+- Optional virtual-key names (aliases), searchable alongside prefix, UUID,
+  project and service in an isolated key-selection popup with Apply/Cancel.
+- Optional UI-generated profile IDs, dynamic Entra fields, accessible tooltips,
+  actionable validation errors and reversible draft profile removal.
+- Automatic five-second refresh of persisted gateway Entra settings across
+  replicas, with immediate local application and last-valid state on failures.
+- Illustrated profile setup and maintenance guide for both authentication types,
+  credential headers, forwarding modes, key assignment and error recovery.
 
 ### Fixed
 
-- Trim applied Traffic filters, preserve newly selected project/key pairs, and
-  prevent buffered live updates from replacing history after a mode switch.
-- Normalize Traffic UUID/status filters and reset history cursors while loading
-  new filters; expand live and saved-history filter regressions.
-- Show only the active endpoint/profile identity fields, preserve inactive drafts,
-  and add field guidance with accessible tooltips.
-- Keep the authentication profile editor's Add action beside its heading and
-  Save/Cancel visible while scrolling, with validation feedback inside the dialog.
+- Applied Traffic filters are normalized; project/key selections stay consistent,
+  stale live reads cannot replace saved history, and filter changes reset paging.
+- Clear empty key searches and searches after adding a key; preserve selected
+  keys and exclude assignments already used by another profile on the route.
+- Distinguish Route authentication mode from Profile authentication. Explain
+  saved-mode and removal restrictions, identify invalid fields and conflicting
+  keys, and scroll errors into view after rendering.
+- Align status codes and route configuration actions; prevent clipped focus
+  highlights and keep dialog actions visible at desktop and mobile widths.
+
+### Upgrade notes
+
+- Startup applies additive key-name storage and authentication-profile revision
+  guards. Existing routes retain their prior authentication until opted in.
+- Upgrade every replica to 0.1.38 before saving profiles. 0.1.37 cannot read the
+  new profile configuration; profile-enabled routes cannot return to legacy
+  mode through the editor or old writers. Keep database guards during rollback.
+- Saved profile edits apply on each new request's policy read. Gateway-wide
+  Entra settings propagate on the next successful refresh (normally within five
+  seconds); startup environment/OIDC deployment changes still need a rollout.
+- See the [profile guide](docs/operations/authentication-profiles.md) and
+  [deployment notes](docs/deployment.md) before enabling profiles.
 
 ## 0.1.37 - 2026-09-17
 

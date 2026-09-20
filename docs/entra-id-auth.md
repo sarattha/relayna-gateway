@@ -77,7 +77,8 @@ Raw bearer tokens are not logged by this mode.
 
 Select **Gateway managed** for the relevant OpenAI-compatible routes. The new
 option does not change **Direct LiteLLM passthrough**, whose non-Relayna bearer
-path still uses the client bearer as its LiteLLM credential. Trusted-ingress
+path still uses the client bearer as its LiteLLM credential on routes without
+authentication profiles. A saved profile always requires an assigned Relayna key. Trusted-ingress
 LiteLLM passthrough is also unchanged.
 
 To restore full verification, clear **Require unverified bearer (troubleshooting)**
@@ -85,7 +86,16 @@ and save while **Enable Entra ID** remains checked, or PATCH
 `{"unverified_bearer_enabled":false}`. For environment-only configuration, set
 `GATEWAY_UNVERIFIED_BEARER_ENABLED=false` and restart with `ENTRA_AUTH_ENABLED=true`.
 Keep the same Relayna key header. Verify a valid JWT succeeds and an invalid JWT
-fails. Admin-saved changes apply immediately on the serving process. Every
+fails.
+
+The migration adds a false-default `gateway_auth_settings.unverified_bearer_enabled`
+column and a constraint forbidding trusted Apigee coexistence. Existing rows keep
+their previous behavior. Disable this option before rolling back to an older
+binary; the additive column can remain in place.
+
+## Saved settings and multiple replicas
+
+Admin-saved changes apply immediately on the serving process. Every
 gateway replica sharing the PostgreSQL database refreshes these settings every
 five seconds, so other replicas apply them to new requests on their next
 successful refresh without a rollout. Refresh attempts time out after three
@@ -95,7 +105,7 @@ replica can continue enforcing its previous policy; check refresh warnings and
 verify each replica when making urgent access changes. Unchanged configuration
 preserves the existing JWKS cache.
 
-Deploy the synchronization-capable gateway version to every replica once before
+Deploy gateway 0.1.38 or newer to every replica once before
 relying on this behavior; older binaries still need a restart to load changes.
 
 This synchronization covers persisted gateway front-door settings, including
@@ -106,10 +116,8 @@ configuration. Those deployment settings still require a rollout. Persisted
 settings continue to take precedence over environment defaults. In-flight
 requests keep their acquired authentication snapshot.
 
-The migration adds a false-default `gateway_auth_settings.unverified_bearer_enabled`
-column and a constraint forbidding trusted Apigee coexistence. Existing rows keep
-their previous behavior. Disable this option before rolling back to an older
-binary; the additive column can remain in place.
+Route authentication profiles are read from PostgreSQL on each new request,
+independently of this refresh loop. See the [profile guide](operations/authentication-profiles.md#rollout-compatibility-and-rollback).
 
 ## Scope
 
@@ -328,8 +336,13 @@ service registration data.
 
 ## Route Behavior
 
-The auth contract is identical across proxy routes. The route resolver still
-decides policy, upstream type, body limits, and timeouts after Entra succeeds.
+For routes using the inherited Entra policy, the two-credential contract below
+applies. The route resolver also determines policy, upstream type, body limits
+and timeouts. Endpoint policies can require their own audience and claims.
+With **Use authentication profiles**, Gateway authenticates the Relayna key
+first to select its assigned profile; that profile then determines whether Entra
+is required. A key-only profile does not require a JWT. See the
+[profile setup guide](operations/authentication-profiles.md).
 
 | Route family | Entra behavior |
 | --- | --- |
@@ -360,7 +373,7 @@ empty placeholders for required Entra values.
 Useful local checks after changing Entra configuration or code:
 
 ```bash
-python3 scripts/validate-release-metadata.py v0.1.37
+python3 scripts/validate-release-metadata.py v0.1.38
 cargo test -p gateway-core entra::tests --all-features
 cargo test -p gateway-proxy relayna_key_header_is_available_for_apigee_only_mode --all-features
 cargo test --workspace --all-features

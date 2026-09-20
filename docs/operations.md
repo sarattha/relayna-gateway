@@ -101,7 +101,8 @@ cannot send the custom LiteLLM header required by your LiteLLM deployment.
 Gateway accepts Relayna credentials, strips all client credentials, and injects
 the resolved internal LiteLLM credential before forwarding.
 
-Client authentication remains Gateway authentication:
+For routes inheriting gateway settings, client authentication remains Gateway
+authentication:
 
 | Gateway auth mode | Client request contract |
 | --- | --- |
@@ -112,6 +113,12 @@ Client authentication remains Gateway authentication:
 Do not give clients the LiteLLM master key or LiteLLM virtual keys as Gateway
 credentials. Those secrets are upstream credentials selected by Gateway through
 the mapping/default/fallback precedence above.
+
+When a route uses authentication profiles, its selected profile determines the
+credential requirements instead. Both types require an assigned Relayna key;
+Entra profiles also require verified identity. Direct forwarding and trusted
+ingress shortcuts do not bypass saved profiles. See the
+[profile guide](operations/authentication-profiles.md).
 
 Configure passthrough from Admin portal Providers:
 
@@ -300,7 +307,7 @@ Before deploying a new release:
    For `0.1.26`, verify existing operator-token access remains available, new
    Entra identities start pending, exact service and project memberships scope owner data,
    and unmanaged workload identities are denied.
-5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.37`.
+5. Confirm release metadata validation passes for the intended tag, for example `python3 scripts/validate-release-metadata.py v0.1.38`.
 6. Roll out one gateway replica and check `/admin-ui/readyz`, `/admin-ui/metrics`, proxy traffic, route toggles, service routes, and the admin portal before scaling out.
 
 ## Supply Chain and Runtime Hardening

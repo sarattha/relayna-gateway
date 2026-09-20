@@ -1,76 +1,281 @@
-# Route authentication profiles
+# Authentication profiles: setup and maintenance
 
-Authentication profiles let one canonical route or registered service accept
-several explicitly assigned caller populations. The forwarding mode remains a
-separate setting. An Entra profile requires both a Relayna virtual key and a
-verified identity; a key-only profile still authenticates a Relayna virtual key.
-Native LiteLLM credentials are not an authentication profile.
+Authentication profiles let one route accept different groups of callers with
+different authentication requirements. For example, employee applications can
+require **Entra + Relayna key**, while an internal automation client uses
+**Relayna key only** on the same endpoint.
+
+This guide covers gateway **0.1.38** and **Admin UI 4.0**. The screenshots show
+local sample data and unsaved setup drafts, not production credentials. Setup
+examples use `/v1/embeddings`; the same controls apply to `/v1/chat/completions`,
+`/v1/responses` and supported registered services. Click an image to view it at
+full size.
+
+## Understand the three settings
+
+| Setting | Where to find it | What it controls |
+| --- | --- | --- |
+| **Route authentication mode** | Routes → Edit identity | Whether the route inherits gateway settings, uses one Entra policy, skips Entra, or selects an authentication profile by the caller's Relayna key. |
+| **Profile authentication** | Inside each authentication profile | Whether that profile requires **Entra + Relayna key** or **Relayna key only**. You can edit this after saving profiles. |
+| **Mode** (forwarding) | Routes → Configure | Whether accepted traffic uses `managed_by_gateway` or `direct_litellm_passthrough`. It does not disable profile authentication. |
+
+The route authentication choices are:
+
+| Route authentication mode | Meaning |
+| --- | --- |
+| **Use existing gateway setting** | Inherit the existing gateway-wide authentication behavior. |
+| **Require Entra** | Apply one endpoint-specific Entra audience/claim policy to callers, retaining the route's credential checks. |
+| **No Entra** | Skip Entra verification while retaining the route's other credential and policy checks. This is not the same as a key-only profile. |
+| **Use authentication profiles** | Authenticate a Relayna key, find its explicit assignment on this route, then enforce that profile's requirements. Unassigned keys are denied. |
+
+**A profile can have multiple keys. Each key can belong to at most one profile
+per route.** The same key can select a different profile on another route.
+Canonical aliases share their route's assignments. A disabled profile denies
+all its assigned keys; callers do not fall back to another profile.
+
+## Before you begin
+
+1. Upgrade every gateway replica to **0.1.38 or newer** before saving profiles.
+   See [rollout and rollback](#rollout-compatibility-and-rollback).
+2. Sign in as an administrator and identify the route and its intended callers.
+3. Create or choose active Relayna virtual keys. Check their permitted routes,
+   models, providers and any project/service restrictions. Assigning a profile
+   does **not** grant a route permission that the key's effective policy denies.
+4. For Entra profiles, configure the gateway's Entra verifier under
+   **Settings → Entra ID and Apigee front door**. Tenant, issuer, discovery/JWKS
+   and accepted signing algorithms are shared; profile audiences and claims
+   are configured separately. See [Entra setup](../entra-id-auth.md).
+
+Once profiles have been saved on a route, switching that route back to gateway
+defaults, Require Entra or No Entra is unavailable. Plan key assignments before
+opting in. You can continue changing individual profile requirements, names,
+enabled state and assignments.
 
 ## Configure a route
 
-In **Routes → Edit identity**, set **Route authentication mode** to **Use authentication profiles**.
-Within each profile, use **Profile authentication** to choose **Entra + Relayna key**
-or **Relayna key only**. This control remains editable after profiles are saved.
-Add named profiles with stable IDs and enabled state.
-Enter a display name. For a new profile, leave the stable ID blank to generate
-it on save from the name plus a random suffix, such as `internal-automation-a1b2c3d4`.
-Names without an ASCII slug use `profile` as the prefix. You can also supply a
-unique ID of 1–64 letters, numbers, hyphens or underscores. Renaming a saved
-profile or clearing its ID field preserves its existing ID and assignments.
-Keep saved IDs unchanged after assigning keys. Keyboard/tap-accessible tooltips
-explain each control. API clients must still supply profile IDs explicitly.
+1. Open **Discover → Routes**.
+2. Find the endpoint and select **Edit identity**.
+3. Set **Route authentication mode** to **Use authentication profiles**.
+4. Select **Add profile**, then follow one of the two setup paths below.
 
-The editor shows only fields for the selected endpoint mode and profile type.
-For Entra profiles, an audience is required; scopes, roles and groups are optional.
-Key-only profiles hide those fields and signed-Apigee settings. Switching back
-restores draft values, while inactive fields are excluded from a save. All scopes and roles are required; any listed group may match.
-Tenant, issuer, signing algorithms, JWKS and JWT clock skew still come from
-Settings. Signed Apigee identity is accepted only when enabled on the selected
-profile; its expiry remains strict.
+[![Route authentication mode set to Use authentication profiles, with Add profile and the empty-profile guidance visible](../assets/screenshots/authentication-profiles/01-route-profile-mode.jpg)](../assets/screenshots/authentication-profiles/01-route-profile-mode.jpg)
 
-Use **Assigned keys → Select keys** to search by key name, prefix, UUID, project name
-or ID, or service in a separate popup. Available results exclude keys already
-selected or assigned to another profile. Adding a key clears the search; reopening
-the popup starts with an empty search. Review selected keys and use **Apply
-selection** to update the profile draft, or **Cancel** / Escape to discard popup
-edits. The profile shows only its assigned keys. Changes take effect when the
-identity form is saved. Failed lookups retain selections and offer **Retry loading
-keys**. Set optional key names under **Virtual keys** to make selection easier.
-A profile can have multiple keys; a key may have exactly one assignment
-on a route; an absent, disabled or invalid assignment denies access. Assigning a
-profile never grants a route forbidden by the key's effective policy. Existing
-route, project, provider, rate and budget controls continue to apply according
-to the forwarding mode. Aliases share the canonical route's profile set.
+*Selecting profile mode starts a draft. At least one profile is required before
+Save identity can succeed.*
 
-Registered services expose the same editor under **Endpoint identity and
-Accessa**. Project-owned services accept bindings only for keys in that project.
-Accessa profiles must all require Entra, including disabled profiles.
+### Type 1: Entra + Relayna key
 
-In **Virtual keys → Edit → Inspect and assign route authentication profiles**,
-inspect inherited/legacy routes and save individual explicit route assignments.
-No key secret is displayed or recreated. Assignments are saved separately from
-key lifecycle edits. Profile editing uses existing administrator scopes and
-audited route/service update endpoints; service owners cannot use admin APIs.
+Use this type when callers must prove an Entra identity as well as possession of
+an assigned Relayna key.
 
-Disabling a profile blocks all its assigned keys. **Remove profile** is unavailable
-while keys are assigned; remove or move those assignments first. The editor also
-prevents removing the last saved profile. Add a replacement first, or turn off
-**Enabled** and save if the goal is to deny access. Removing a profile changes
-only the draft: **Undo removal** restores the most recently removed profile;
-**Cancel** discards all edits. To reassign callers, edit the profile
-and binding set in one save. Never use profile order as authorization. Retain at
-least one profile after opting in; to stop all access, disable every profile.
-Returning an opted-in route to legacy authentication is intentionally rejected.
-The editor explains this restriction beside **Route authentication mode** and disables
-**Use existing gateway setting**, **Require Entra** and **No Entra** after profiles
-have been saved. Service presets retain those saved profiles. Before the first
-profile save, you can still switch modes. A genuine concurrent-edit conflict
-continues to require reloading the latest configuration before retrying.
+1. Enter a **Profile name**, such as `Employee applications`.
+2. Leave **Stable profile ID** blank to generate it on save, or enter a custom ID.
+3. Choose **Profile authentication → Entra + Relayna key** and keep **Enabled**
+   checked if this profile should accept requests.
+4. Set **Profile audience** to the exact expected `aud` claim in the caller's
+   access token. `api://employees` in the screenshot is an example, not a value
+   to copy for every deployment. Use the actual audience issued for your API.
+5. Configure **Scopes**, **Roles** and **Groups** only where needed. Use commas
+   between entries. Every listed scope and role is required; at least one listed
+   group must match. Blank lists add no requirement of that kind.
+6. Leave **Accept signed Apigee identity** off for direct JWT callers. Enable it
+   only for a configured HMAC-verified Apigee identity path; the same audience,
+   expiry and claim requirements still apply. Unsigned identity headers are not
+   trusted. See [Apigee configuration](../apigee-gateway-path.md).
+7. [Select the caller keys](#select-and-assign-keys), apply the selection, then
+   select **Save identity**. Reopen the editor to confirm the saved profile.
 
-Validation messages identify the profile and field to correct. Key-selection
-conflicts name the affected key and remain visible until resolved. A concurrent
-configuration change preserves the draft and explains how to reopen the latest
-settings; it never automatically overwrites another administrator’s changes.
+[![Entra plus Relayna key profile with an example audience and embeddings.invoke scope, optional roles and groups, and the Select keys action](../assets/screenshots/authentication-profiles/02-entra-profile.jpg)](../assets/screenshots/authentication-profiles/02-entra-profile.jpg)
+
+*Entra fields appear for this type. Audience is required; the claim lists are
+optional. The illustrated draft has not yet assigned its caller keys.*
+
+Call the configured endpoint with both credentials:
+
+```bash
+# Use your proxy listener, an assigned Relayna key, a valid access token,
+# and an embedding model enabled by your provider/key policy.
+curl "$GATEWAY_PROXY_URL/v1/embeddings" \
+  -H "Authorization: Bearer $ENTRA_ACCESS_TOKEN" \
+  -H "X-Relayna-Key: $RELAYNA_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"your-embedding-model","input":"Profile setup check"}'
+```
+
+Use the configured key header if your gateway has renamed `X-Relayna-Key`.
+A missing/invalid JWT does not fall back to key-only authentication.
+
+### Type 2: Relayna key only
+
+Use this type when the assigned Relayna key is the caller credential and no
+Entra identity is required. Accessa does not support this type.
+
+1. Add a profile and enter a name, such as `Internal automation`.
+2. Leave **Stable profile ID** blank to generate it on save, or enter a custom ID.
+3. Choose **Profile authentication → Relayna key only**.
+4. Keep **Enabled** checked if callers should have access.
+5. [Select the caller keys](#select-and-assign-keys) and select **Apply selection**.
+6. Select **Save identity**. Reopen the editor to confirm the saved assignment.
+
+[![Key-only profile draft with Enabled checked and a named Relayna key assigned; no Entra audience or claim fields are shown](../assets/screenshots/authentication-profiles/05-key-only-profile.jpg)](../assets/screenshots/authentication-profiles/05-key-only-profile.jpg)
+
+*Key-only profiles require assigned Relayna keys. Entra audience, scopes, roles,
+groups and signed-Apigee controls are hidden and omitted from the save.*
+
+Send only the Relayna key:
+
+```bash
+curl "$GATEWAY_PROXY_URL/v1/embeddings" \
+  -H "Authorization: Bearer $RELAYNA_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"your-embedding-model","input":"Profile setup check"}'
+```
+
+Alternatively send the key in the configured Relayna key header and omit
+Authorization. Do not send the key in both headers, and do not add an Entra JWT
+to a key-only request. See the [credential contract](#credential-contract).
+
+### Profile field reference
+
+| Field | How to use it |
+| --- | --- |
+| **Profile name** | Required display name, unique on the route ignoring case and surrounding whitespace; up to 120 UTF-8 bytes. Renaming preserves assignments. |
+| **Stable profile ID** | Optional in the UI for new profiles. Blank generates a name-derived ID plus a random suffix, e.g. `internal-automation-a1b2c3d4`. Custom IDs use 1–64 ASCII letters, numbers, hyphens or underscores and must be unique on the route. |
+| **Enabled** | Off denies all keys assigned to this profile. It does not move them elsewhere. |
+| **Profile audience** | Required for Entra profiles; exact JWT audience, no whitespace, at most 512 UTF-8 bytes. |
+| **Scopes / Roles** | Optional comma-separated lists. All listed scopes and all listed roles must be present. |
+| **Groups** | Optional comma-separated group IDs. At least one listed group must match. |
+| **Assigned keys** | Existing Relayna keys that select this profile on this route. Empty means the profile has no callers. |
+
+Names without an ASCII slug use `profile` as the generated ID prefix. Renaming a
+saved profile or clearing its ID input preserves its existing ID. Keep saved IDs
+unchanged after assigning keys. API clients still supply IDs explicitly. Claim
+lists allow at most 64 entries, each at most 512 bytes without whitespace.
+
+## Select and assign keys
+
+### Give keys recognizable names
+
+Open **Govern → Virtual keys → Edit → Identity and lifecycle**. Enter a **Key name
+(optional)** and select **Save changes**. You can also name a key when creating it.
+Use names such as `Production automation` so administrators can find a caller
+without remembering its UUID. Clearing the field removes the alias. A name is
+metadata: it does not rotate the credential or change its UUID or assignments.
+
+[![Virtual key editor showing the optional key-name field above ownership and lifecycle settings](../assets/screenshots/authentication-profiles/08-key-name.jpg)](../assets/screenshots/authentication-profiles/08-key-name.jpg)
+
+*The name shown here is also searchable in the profile's Select keys popup.
+The displayed prefix is not a usable API key.*
+
+### Search, select, apply, then save
+
+1. In the profile, choose **Assigned keys → Select keys**.
+2. Search by key name, prefix, UUID, project name/ID or service.
+3. Check the result's project, lifecycle status and UUID, then select **Add**.
+   Repeat to assign several keys to the same profile.
+4. Review **Selected keys**. Use **Remove** for any unwanted selection.
+5. Select **Apply selection** to update this profile's draft.
+6. Select **Save identity** in the parent editor to persist the assignments.
+
+[![Select keys popup searching QA Production and showing a matching named key with project, status, UUID and Add button](../assets/screenshots/authentication-profiles/03-search-keys.jpg)](../assets/screenshots/authentication-profiles/03-search-keys.jpg)
+
+*Results identify the key and its owner. Keys already selected or assigned to
+another profile on this route are excluded. Service profiles also enforce the
+service's project boundary.*
+
+[![After adding a key, search is empty and the selected-key list remains visible above Apply selection and Cancel](../assets/screenshots/authentication-profiles/04-apply-key-selection.jpg)](../assets/screenshots/authentication-profiles/04-apply-key-selection.jpg)
+
+*Adding a key clears the search. An empty search shows no results; it does not
+clear your selected keys. Apply selection updates the draft; Save identity
+commits it. Cancel or Escape in the popup discards that popup's edits.*
+
+To move a key between profiles, remove its assignment from the old profile's
+**Assigned keys**, add it to the destination profile, and save the entire identity
+form once. A key cannot belong to both profiles on the same route.
+
+### Inspect assignments from Virtual keys
+
+Open **Virtual keys → Edit → Inspect and assign route authentication profiles**.
+Each profile-enabled route has its own selection and **Save route assignment**
+button. These saves are independent of **Save changes** in the key editor;
+closing the key editor does not undo an assignment already saved here.
+**Unassigned · deny access** removes that key's assignment for the selected route.
+Inherited/legacy routes are listed without a profile selection.
+
+[![Route authentication bindings inspector with independent profile selectors and Save route assignment buttons for each opted-in route](../assets/screenshots/authentication-profiles/09-key-route-assignments.jpg)](../assets/screenshots/authentication-profiles/09-key-route-assignments.jpg)
+
+*This view edits one key's assignments across routes. It never displays or
+requires the raw key and does not grant additional route permissions.*
+
+## Profiles and direct LiteLLM passthrough
+
+**Yes: a profile-enabled direct LiteLLM route still requires a Relayna key.**
+An enabled key-only profile means an assigned Relayna key is sufficient for the
+profile authentication step; an Entra profile additionally requires verified
+identity. Other applicable policies still apply. Native LiteLLM credentials
+alone cannot authenticate either profile type.
+
+[![Routes Configure drawer showing direct_litellm_passthrough and proxy limits, separately from the route identity editor](../assets/screenshots/authentication-profiles/10-forwarding-mode.jpg)](../assets/screenshots/authentication-profiles/10-forwarding-mode.jpg)
+
+*Routes → Configure controls forwarding and proxy limits. Routes → Edit identity
+controls authentication. Changing forwarding mode does not disable profiles.*
+
+After authentication, Gateway strips client credentials and resolves the upstream
+LiteLLM credential through its existing key/project/provider mapping. Direct
+forwarding retains its status-only usage behavior and does not add managed
+body rewriting or token accounting. Native LiteLLM bearer delegation remains
+available only on appropriate direct routes **without** authentication profiles.
+See [LiteLLM passthrough](../litellm-passthrough.md).
+
+## Change, disable or remove a profile
+
+| Task | Steps and effect |
+| --- | --- |
+| Change Entra to key-only (or back) | Edit **Profile authentication** inside the profile. For Entra, fill the audience and review claims; for key-only, Entra fields disappear. Save identity. Inactive field values survive switching within the open draft, but are omitted from a key-only save. |
+| Rename a profile | Change **Profile name**, keep the stable ID, and save. Key assignments stay attached. |
+| Temporarily deny callers | Uncheck **Enabled** and save. All assigned keys are denied; there is no fallback. Re-enable and save to restore the profile's access. |
+| Remove a profile with keys | Move or remove its assignments first. If it is the last saved profile, add a replacement. Select **Remove profile**, then Save identity. |
+| Undo an unsaved removal | **Undo removal** restores the most recently removed profile and its draft values. **Cancel** discards all identity edits. |
+| Stop using the last saved profile | Keep at least one profile. Disable it to deny access, or add a replacement and migrate assignments. Switching the route back to legacy authentication is unsupported. |
+
+[![Saved profile editor showing fixed profile mode, editable Profile authentication and guidance preventing removal of the last saved profile](../assets/screenshots/authentication-profiles/07-saved-profile-maintenance.jpg)](../assets/screenshots/authentication-profiles/07-saved-profile-maintenance.jpg)
+
+*The illustrated saved profile is disabled and unassigned, so it accepts no
+callers. The route mode restriction does not prevent changing Profile authentication.*
+
+Registered services use the same editor under **Endpoint identity and Accessa**.
+Keys assigned to project-owned services must belong to that project. Accessa
+profiles must use **Entra + Relayna key**, even when disabled. Service presets
+retain saved profiles. Profile editing requires administrator access; service
+ownership alone does not grant admin API access.
+
+## Troubleshoot a failed save or request
+
+[![Validation error identifies Employee applications, the invalid Profile audience and the corrective action without losing the draft](../assets/screenshots/authentication-profiles/06-validation-recovery.jpg)](../assets/screenshots/authentication-profiles/06-validation-recovery.jpg)
+
+*This example contains a space in `api://employees wrong`. Correct that field;
+the error identifies the affected profile and the draft remains open.*
+
+| Symptom or message | Cause | What to do |
+| --- | --- | --- |
+| No authentication profiles / at least one needed | The route is in profile mode with an empty draft. | Select Add profile, enter its settings and assign callers before Save identity. |
+| Missing/duplicate name or invalid audience | A named profile field failed validation. | Correct the field identified in the message. Use unique names and an exact, nonblank Entra audience without whitespace. |
+| Key missing from search results | Search is blank, the key is selected/assigned elsewhere, or it is ineligible for the service's project. | Enter a query, check Selected keys and other profiles, and check project ownership. Use Retry loading keys after a lookup failure. |
+| Selection was not applied | A selected key became ineligible or is assigned elsewhere. | Resolve the named key conflict, or cancel and reopen the selector to refresh it. |
+| Authentication settings changed after opening | Another write changed the saved revision. | Copy changes you want to keep, close without saving, reopen the latest configuration and reapply. Do not blindly retry a stale revision. |
+| Gateway cannot access saved settings | The backing settings store is unavailable. | Keep the draft open and retry when available. If a save result is uncertain, reopen to check the saved state before retrying. |
+| Legacy route mode options unavailable | This route already has saved profiles. | Edit Profile authentication instead. Reloading does not remove the restriction. |
+| Remove profile unavailable | Keys remain assigned or this is the last saved profile. | Move/remove assignments and add a replacement if needed; disable the profile to deny callers. |
+| 401 on a request | The required credential is missing, malformed, invalid, expired or disabled. | Check key lifecycle and the headers for the chosen profile type; Entra profiles also require a valid verified identity. |
+| 403 `authentication_profile_denied` | No valid enabled profile assignment was selected. | Confirm the key UUID is assigned to an enabled profile on this exact canonical route. |
+| 403 after Entra verification | Required claims or another policy deny access. | Inspect the recorded reason; correct token scopes/roles/groups or the relevant route/key policy. |
+
+Check **Traffic → Inspect** or **Usage & cost → Debug** for the selected profile,
+revision, binding source and outcome. Do not infer successful authentication from
+an upstream error alone. A successful save should be followed by checks with an
+assigned key, an unassigned key, and an invalid credential. For Entra, also check
+wrong-audience and missing-required-claim tokens. See
+[Traffic diagnostics](#diagnostics-and-socket-lifecycle).
 
 ## API and revisions
 
@@ -168,16 +373,19 @@ identity mid-session. Already admitted work is not retroactively cancelled.
 
 ## Rollout, compatibility and rollback
 
-Apply migration `20260919000100_authentication_profile_revisions.sql` before
+Gateway 0.1.38 startup applies migration
+`20260919000100_authentication_profile_revisions.sql`. Apply it before
 using profiles. It adds write guards to the existing route/service access JSON;
 no legacy rows are rewritten. Existing inherited Entra, explicit single-policy,
 No Entra and native direct LiteLLM routes retain released v0.1.37 behavior until
 explicitly opted in. Inherited routes still follow later gateway-setting edits.
 
-Upgrade every replica before opting in. Effective policy is read from PostgreSQL
+Upgrade every replica to 0.1.38 or newer before opting in. Effective policy is read from PostgreSQL
 for every new request and Accessa turn, with no profile cache. Committed edits
 therefore affect the next policy read; requests already past that read may finish
-under their recorded snapshot. Store failures fail closed.
+under their recorded snapshot. Store failures fail closed. Gateway-wide Entra
+settings use a separate five-second refresh loop; see [saved settings and
+multiple replicas](../entra-id-auth.md#saved-settings-and-multiple-replicas).
 
 v0.1.37's strict access deserializer rejects the new profile field. The database
 write guards also reject old writers attempting to erase an opted-in policy.
