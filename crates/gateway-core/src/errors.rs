@@ -76,6 +76,8 @@ pub enum GatewayError {
     UpstreamTimeout,
     #[error("upstream connection failed")]
     UpstreamConnection,
+    #[error("LiteLLM caller-key mode conflicts with mandatory Gateway authentication")]
+    LiteLlmAuthenticationConflict,
     #[error("request denied by policy")]
     PolicyDenied,
     #[error("request rate limit exceeded")]
@@ -197,6 +199,7 @@ impl GatewayError {
             Self::DisabledRoute => StatusCode::FORBIDDEN,
             Self::RequestBodyTooLarge | Self::ResponseBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::GatewayOverloaded => StatusCode::SERVICE_UNAVAILABLE,
+            Self::LiteLlmAuthenticationConflict => StatusCode::SERVICE_UNAVAILABLE,
             Self::PolicyDenied => StatusCode::FORBIDDEN,
             Self::RateLimitExceeded { .. } | Self::TokenRateLimitExceeded { .. } => {
                 StatusCode::TOO_MANY_REQUESTS
@@ -274,6 +277,7 @@ impl GatewayError {
             Self::GatewayOverloaded => "gateway_overloaded",
             Self::UpstreamTimeout => "upstream_timeout",
             Self::UpstreamConnection => "upstream_connection",
+            Self::LiteLlmAuthenticationConflict => "litellm_authentication_conflict",
             Self::PolicyDenied => "policy_denied",
             Self::RateLimitExceeded { .. } => "rate_limit_exceeded",
             Self::TokenRateLimitExceeded { .. } => "token_rate_limit_exceeded",
@@ -353,6 +357,7 @@ impl GatewayError {
             Self::GatewayOverloaded => {
                 "Gateway body processing capacity is temporarily exhausted."
             }
+            Self::LiteLlmAuthenticationConflict => "LiteLLM caller-key mode conflicts with mandatory Gateway authentication. Review route profiles and inherited identity settings.",
             Self::PolicyDenied => "Request is denied by key policy.",
             Self::RateLimitExceeded { .. } => "Rate limit exceeded.",
             Self::TokenRateLimitExceeded { .. } => "Token rate limit exceeded.",

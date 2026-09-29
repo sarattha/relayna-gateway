@@ -1668,7 +1668,14 @@ function litellmPassthroughForm(settings) {
     ${formSection("Ingress allowlist", "Restrict wildcard forwarding by path, method, timeout, and payload size.", `
       <label class="check"><input name="enabled" type="checkbox" ${current.enabled ? "checked" : ""}> Enable wildcard passthrough</label>
       <label>Allowed paths<input name="allowed_paths" value="${attr(listValue(current.allowed_paths, "/v1/*"))}"></label>
+      <label>Blocked paths<input name="blocked_paths" aria-describedby="litellm-blocked-help" value="${attr(listValue(current.blocked_paths, ""))}"></label>
+      <p id="litellm-blocked-help" class="field-hint wide-field">Comma-separated paths. Deny overrides allow, including /*, and covers direct LiteLLM routes. Use /config and /config/* to block a subtree and its root. Blank means no explicit denies.</p>
       <label>Allowed methods<input name="allowed_methods" value="${attr(listValue(current.allowed_methods, "GET,POST"))}"></label>
+      <label>API authentication<select name="authentication_mode" aria-describedby="litellm-auth-help">
+        <option value="gateway" ${current.authentication_mode !== "litellm_bearer" ? "selected" : ""}>Gateway</option>
+        <option value="litellm_bearer" ${current.authentication_mode === "litellm_bearer" ? "selected" : ""}>Caller LiteLLM key</option>
+      </select></label>
+      <p id="litellm-auth-help" class="field-hint wide-field">Caller-key mode forwards only the supplied LiteLLM key, without a Relayna key or stored-key fallback. UI exposure is independent. Mandatory route profiles or inherited identity requirements conflict and reject requests; operator-only paths remain closed.</p>
       <label>Timeout ms<input name="timeout_ms" type="number" min="1" max="600000" value="${attr(current.timeout_ms ?? 120000)}"></label>
       <label>Max request bytes<input name="max_request_body_bytes" type="number" min="1" max="104857600" value="${attr(current.max_request_body_bytes ?? 1048576)}"></label>
       <label>Max response bytes<input name="max_response_body_bytes" type="number" min="1" max="104857600" value="${attr(current.max_response_body_bytes ?? 1048576)}"></label>
@@ -1823,6 +1830,8 @@ async function saveLiteLlmPassthroughSettings(event) {
     method: "PATCH",
     body: JSON.stringify({
       enabled: form.has("enabled"),
+      authentication_mode: form.get("authentication_mode"),
+      blocked_paths: csv(form.get("blocked_paths")),
       allowed_paths: csv(form.get("allowed_paths")),
       allowed_methods: csv(form.get("allowed_methods")).map((method) => method.toUpperCase()),
       ui_exposure: form.get("ui_exposure"),
@@ -2534,7 +2543,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.39")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.40")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>

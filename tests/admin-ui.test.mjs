@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./admin-ui-litellm-policy.test.mjs";
 import "./admin-ui-dialog.test.mjs";
 import "./admin-ui-auth-profiles.test.mjs";
 import "./admin-ui-reliability-cost.test.mjs";
@@ -54,8 +55,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.39/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.39/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.40/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.40/);
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {

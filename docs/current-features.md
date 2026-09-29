@@ -2,9 +2,13 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.39` feature set.
+This page summarizes the `v0.1.40` feature set.
 
-New in 0.1.39: **Admin UI 4.0**, route authentication profiles, optional key
+New in 0.1.40: opt-in LiteLLM caller-key API authentication independent of UI
+exposure, and explicit path denies that override wildcard allows. See
+[LiteLLM passthrough](litellm-passthrough.md) for scope, precedence and rollout.
+
+Introduced in 0.1.39: **Admin UI 4.0**, route authentication profiles, optional key
 names and searchable key selection, corrected live/history Traffic filters, and
 automatic refresh of saved gateway Entra settings across replicas. Profiles
 require an assigned Relayna key even with direct LiteLLM forwarding. See the

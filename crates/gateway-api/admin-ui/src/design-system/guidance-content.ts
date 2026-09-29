@@ -70,6 +70,8 @@ const shared: Record<string, string> = {
   key_target_id: "Gateway virtual key that will use this LiteLLM credential.",
   project_target_id: "Project whose requests will use this LiteLLM credential mapping.",
   allowed_paths: "Comma-separated path patterns eligible for wildcard forwarding, such as /v1/*. Administrative exposure is controlled separately.",
+  blocked_paths: "Exact paths or trailing * prefixes. Denies override allows; exact denies also cover a terminal slash. Query strings do not affect matching.",
+  authentication_mode: "Choose who validates the API caller credential independently of dashboard exposure. LiteLLM caller-key mode never substitutes a Gateway credential.",
   allowed_methods: "HTTP methods the service or passthrough route accepts. Review them before enabling access.",
   timeout_ms: "Upstream timeout in milliseconds. 1,000 ms equals 1 second; 0 is not a valid timeout.",
   max_request_body_bytes: "Maximum forwarded request size in bytes. 1,048,576 bytes equals 1 MiB. Must be greater than 0.",

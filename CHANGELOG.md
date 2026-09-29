@@ -2,6 +2,19 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.40 - 2026-09-29
+
+### Added
+
+- Explicit `litellm_bearer` wildcard API authentication forwards caller-owned LiteLLM keys without a Relayna key or stored-credential fallback, independently of dashboard exposure (#123).
+- Persisted `blocked_paths` with deny precedence across wildcard/trusted-ingress passthrough and canonical direct LiteLLM routes; ambiguous path forms fail closed.
+- Admin UI authentication and deny controls, documented profile/Entra conflicts, rollout/rollback guidance, and real proxy regression tests for credential isolation, local denies and hot settings reload.
+
+### Compatibility
+
+- Additive migration defaults to existing `gateway` authentication and no explicit denies. Upgrade every replica before opting in; old binaries cannot enforce the new settings.
+- Caller mode rejects mandatory Gateway identity conflicts with `503 litellm_authentication_conflict`; disabled/denied paths return `403 policy_denied`. The authenticated operator UI proxy retains its existing contract.
+
 ## Unreleased
 
 ## 0.1.39 - 2026-09-20

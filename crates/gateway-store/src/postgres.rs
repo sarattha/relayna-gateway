@@ -2963,6 +2963,10 @@ impl AdminOpenAiRouteStore for PostgresStore {
     ) -> GatewayResult<LiteLlmPassthroughSettings> {
         patch.validate()?;
         let current = self.litellm_passthrough_settings().await?;
+        let authentication_mode = patch
+            .authentication_mode
+            .unwrap_or(current.authentication_mode);
+        let blocked_paths = patch.blocked_paths.unwrap_or(current.blocked_paths);
         let enabled = patch.enabled.unwrap_or(current.enabled);
         let allowed_paths = patch.allowed_paths.unwrap_or(current.allowed_paths);
         let allowed_methods = patch
@@ -2998,9 +3002,11 @@ impl AdminOpenAiRouteStore for PostgresStore {
                 timeout_ms,
                 max_request_body_bytes,
                 max_response_body_bytes,
+                authentication_mode,
+                blocked_paths,
                 updated_at
             )
-            VALUES (true, $1, $2, $3, $4, $5, $6, $7, $8, now())
+            VALUES (true, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
             ON CONFLICT (id) DO UPDATE SET
                 enabled = EXCLUDED.enabled,
                 allowed_paths = EXCLUDED.allowed_paths,
@@ -3010,8 +3016,10 @@ impl AdminOpenAiRouteStore for PostgresStore {
                 timeout_ms = EXCLUDED.timeout_ms,
                 max_request_body_bytes = EXCLUDED.max_request_body_bytes,
                 max_response_body_bytes = EXCLUDED.max_response_body_bytes,
+                authentication_mode = EXCLUDED.authentication_mode,
+                blocked_paths = EXCLUDED.blocked_paths,
                 updated_at = now()
-            RETURNING enabled, allowed_paths, allowed_methods, ui_exposure, admin_api_exposure,
+            RETURNING authentication_mode, blocked_paths, enabled, allowed_paths, allowed_methods, ui_exposure, admin_api_exposure,
                       timeout_ms, max_request_body_bytes, max_response_body_bytes, updated_at
             "#,
         )
@@ -3023,6 +3031,8 @@ impl AdminOpenAiRouteStore for PostgresStore {
         .bind(timeout_ms)
         .bind(max_request_body_bytes)
         .bind(max_response_body_bytes)
+        .bind(authentication_mode.as_str())
+        .bind(&blocked_paths)
         .fetch_one(&self.pool)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
@@ -3172,7 +3182,7 @@ impl OpenAiRouteSettingsLookup for PostgresStore {
     async fn litellm_passthrough_settings(&self) -> GatewayResult<LiteLlmPassthroughSettings> {
         let row = sqlx::query(
             r#"
-            SELECT enabled, allowed_paths, allowed_methods, ui_exposure, admin_api_exposure,
+            SELECT authentication_mode, blocked_paths, enabled, allowed_paths, allowed_methods, ui_exposure, admin_api_exposure,
                    timeout_ms, max_request_body_bytes, max_response_body_bytes, updated_at
             FROM litellm_passthrough_settings
             WHERE id = true
@@ -5903,6 +5913,17 @@ fn litellm_passthrough_settings_from_row(
         .try_get("admin_api_exposure")
         .map_err(|_| GatewayError::StoreUnavailable)?;
     Ok(LiteLlmPassthroughSettings {
+        authentication_mode: match row
+            .try_get::<&str, _>("authentication_mode")
+            .map_err(|_| GatewayError::StoreUnavailable)?
+        {
+            "gateway" => gateway_core::LiteLlmAuthenticationMode::Gateway,
+            "litellm_bearer" => gateway_core::LiteLlmAuthenticationMode::LitellmBearer,
+            _ => return Err(GatewayError::InvalidConfiguration),
+        },
+        blocked_paths: row
+            .try_get("blocked_paths")
+            .map_err(|_| GatewayError::StoreUnavailable)?,
         enabled: row
             .try_get("enabled")
             .map_err(|_| GatewayError::StoreUnavailable)?,

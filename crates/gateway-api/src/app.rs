@@ -8595,6 +8595,12 @@ mod tests {
                 .litellm_passthrough_settings
                 .lock()
                 .expect("lock poisoned");
+            if let Some(mode) = patch.authentication_mode {
+                settings.authentication_mode = mode;
+            }
+            if let Some(paths) = patch.blocked_paths {
+                settings.blocked_paths = paths;
+            }
             if let Some(enabled) = patch.enabled {
                 settings.enabled = enabled;
             }
@@ -14911,6 +14917,8 @@ mod tests {
             .expect("body");
         let value: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(value["enabled"], false);
+        assert_eq!(value["authentication_mode"], "gateway");
+        assert_eq!(value["blocked_paths"], serde_json::json!([]));
         assert_eq!(value["allowed_paths"][0], "/v1/*");
 
         let response = admin_patch(
@@ -14919,6 +14927,8 @@ mod tests {
             Some(TEST_OPERATOR_TOKEN),
             r#"{
                 "enabled": true,
+                "authentication_mode": "litellm_bearer",
+                "blocked_paths": ["/key/delete", "/config/*"],
                 "allowed_paths": ["/v1/*", "/ui"],
                 "allowed_methods": ["GET", "POST"],
                 "ui_exposure": "operator_only",
@@ -14939,6 +14949,11 @@ mod tests {
         assert_eq!(value["timeout_ms"], 240000);
         assert_eq!(value["max_request_body_bytes"], 8388608);
         assert_eq!(value["max_response_body_bytes"], 4194304);
+        assert_eq!(value["authentication_mode"], "litellm_bearer");
+        assert_eq!(
+            value["blocked_paths"],
+            serde_json::json!(["/key/delete", "/config/*"])
+        );
         assert!(value.get("credential").is_none());
 
         let events = audit_events.lock().expect("audit events lock");

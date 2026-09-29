@@ -36,20 +36,28 @@ Core Architecture Principles
 
 1. Gateway owns identity
 
-All external requests must use Relayna virtual keys.
+Governed external requests use Relayna virtual keys. Explicit LiteLLM passthrough
+is a scoped exception: canonical direct routes and wildcard `litellm_bearer` mode
+may forward caller-owned LiteLLM bearer credentials for LiteLLM to validate.
+Gateway never substitutes a stored credential in that caller mode. UI exposure,
+admin API exposure and allow/deny path policy remain independent controls.
+Mandatory Gateway identity profiles cannot be bypassed by caller mode.
 
-Do not expose:
+Do not expose Gateway-owned credentials:
 
 * LiteLLM master key
 * LiteLLM virtual keys
 * provider API keys
 * internal service tokens
 
-The client should only know:
+For governed traffic, the client only needs its Relayna credential:
 
 Authorization: Bearer rk_live_xxx
 
-Gateway translates this into internal credentials.
+Gateway translates this into internal credentials. Caller-key passthrough instead
+uses the caller-owned LiteLLM key and delegates endpoint authorization and
+metering to LiteLLM. Gateway retains path/method/exposure restrictions; it does
+not apply Relayna per-key budgets or invent a Relayna identity.
 
 ⸻
 
@@ -70,7 +78,9 @@ Gateway must decide:
 
 3. Gateway owns usage tracking
 
-Every request must produce a usage event.
+Every governed request must produce a usage event. Keyless LiteLLM passthrough
+records correlated Traffic status/timing diagnostics without inventing a Relayna
+key identity or producing per-key usage/token/cost accounting.
 
 Minimum fields:
 
