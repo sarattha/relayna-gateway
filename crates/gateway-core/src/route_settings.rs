@@ -68,8 +68,27 @@ pub enum LiteLlmSensitiveRouteExposure {
     TrustedIngress,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LiteLlmAuthenticationMode {
+    #[default]
+    Gateway,
+    LitellmBearer,
+}
+
+impl LiteLlmAuthenticationMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Gateway => "gateway",
+            Self::LitellmBearer => "litellm_bearer",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct LiteLlmPassthroughSettingsPatchRequest {
+    pub authentication_mode: Option<LiteLlmAuthenticationMode>,
+    pub blocked_paths: Option<Vec<String>>,
     pub enabled: Option<bool>,
     pub allowed_paths: Option<Vec<String>>,
     pub allowed_methods: Option<Vec<String>>,
@@ -82,6 +101,8 @@ pub struct LiteLlmPassthroughSettingsPatchRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LiteLlmPassthroughSettings {
+    pub authentication_mode: LiteLlmAuthenticationMode,
+    pub blocked_paths: Vec<String>,
     pub enabled: bool,
     pub allowed_paths: Vec<String>,
     pub allowed_methods: Vec<String>,
@@ -349,6 +370,11 @@ impl LiteLlmPassthroughSettingsPatchRequest {
         if let Some(paths) = &self.allowed_paths {
             validate_allowed_paths(paths)?;
         }
+        if let Some(paths) = &self.blocked_paths {
+            if !paths.is_empty() {
+                validate_allowed_paths(paths)?;
+            }
+        }
         if let Some(methods) = &self.allowed_methods {
             validate_allowed_methods(methods)?;
         }
@@ -382,6 +408,8 @@ impl Default for LiteLlmRouteLimits {
 impl LiteLlmPassthroughSettings {
     pub fn default_with_updated_at(updated_at: DateTime<Utc>) -> Self {
         Self {
+            authentication_mode: LiteLlmAuthenticationMode::Gateway,
+            blocked_paths: Vec::new(),
             enabled: false,
             allowed_paths: vec!["/v1/*".to_owned()],
             allowed_methods: vec!["GET".to_owned(), "POST".to_owned()],
@@ -394,8 +422,22 @@ impl LiteLlmPassthroughSettings {
         }
     }
 
+    /// Denies apply even when canonical direct routes do not use the wildcard allowlist.
+    pub fn denies_path(&self, path: &str) -> bool {
+        let path = path.split('?').next().unwrap_or(path);
+        !unambiguous_litellm_path(path)
+            || self.blocked_paths.iter().any(|pattern| {
+                path_matches_allowed_pattern(path, pattern)
+                    || path_matches_allowed_pattern(
+                        path.trim_end_matches('/'),
+                        pattern.trim().trim_end_matches('/'),
+                    )
+            })
+    }
+
     pub fn allows(&self, method: &Method, path: &str) -> bool {
-        if !self.enabled {
+        let path = path.split('?').next().unwrap_or(path);
+        if !self.enabled || self.denies_path(path) {
             return false;
         }
         let method = method.as_str();
@@ -425,6 +467,10 @@ impl LiteLlmPassthroughSettings {
     }
 
     pub fn trusted_ingress_ui_path_allowed(&self, method: &Method, path: &str) -> bool {
+        let path = path.split('?').next().unwrap_or(path);
+        if self.denies_path(path) {
+            return false;
+        }
         if self.ui_exposure != LiteLlmSensitiveRouteExposure::TrustedIngress || !self.enabled {
             return false;
         }
@@ -445,6 +491,10 @@ impl LiteLlmPassthroughSettings {
     }
 
     pub fn trusted_ingress_passthrough_path_allowed(&self, method: &Method, path: &str) -> bool {
+        let path = path.split('?').next().unwrap_or(path);
+        if self.denies_path(path) {
+            return false;
+        }
         if self.trusted_ingress_ui_path_allowed(method, path) {
             return true;
         }
@@ -511,7 +561,11 @@ fn validate_allowed_paths(paths: &[String]) -> GatewayResult<()> {
     }
     for path in paths {
         let path = path.trim();
-        if !path.starts_with('/') || path.contains("..") || path.contains(char::is_whitespace) {
+        if !unambiguous_litellm_path(path)
+            || path.contains('?')
+            || path.contains('#')
+            || path.strip_suffix('*').unwrap_or(path).contains('*')
+        {
             return Err(GatewayError::InvalidProviderConfigPayload);
         }
     }
@@ -545,6 +599,16 @@ fn validate_optional_runtime_limit(
         }
     }
     Ok(())
+}
+
+fn unambiguous_litellm_path(path: &str) -> bool {
+    path.starts_with('/')
+        && !path.contains(['%', '\\', ';'])
+        && !path.contains("//")
+        && !path.contains(char::is_whitespace)
+        && !path
+            .split('/')
+            .any(|segment| segment == "." || segment == "..")
 }
 
 fn path_matches_allowed_pattern(path: &str, pattern: &str) -> bool {
@@ -860,6 +924,8 @@ mod tests {
     #[test]
     fn trusted_ingress_is_rejected_for_admin_api_exposure() {
         let patch = LiteLlmPassthroughSettingsPatchRequest {
+            authentication_mode: None,
+            blocked_paths: None,
             enabled: None,
             allowed_paths: None,
             allowed_methods: None,
@@ -939,6 +1005,8 @@ mod tests {
         assert!(parse_openai_route_mode("unknown").is_err());
 
         let patch = |allowed_paths, allowed_methods| LiteLlmPassthroughSettingsPatchRequest {
+            authentication_mode: None,
+            blocked_paths: None,
             enabled: None,
             allowed_paths,
             allowed_methods,
@@ -961,5 +1029,110 @@ mod tests {
         assert!(!settings.allows(&Method::DELETE, "/v1/models"));
         settings.ui_exposure = LiteLlmSensitiveRouteExposure::TrustedIngress;
         assert!(!settings.trusted_ingress_ui_path_allowed(&Method::GET, "/not-ui"));
+    }
+    #[test]
+    fn passthrough_denies_win_and_reject_ambiguous_paths() {
+        let mut settings = LiteLlmPassthroughSettings::default_with_updated_at(Utc::now());
+        settings.enabled = true;
+        settings.allowed_paths = vec!["/*".into()];
+        settings.ui_exposure = LiteLlmSensitiveRouteExposure::TrustedIngress;
+        settings.admin_api_exposure = LiteLlmSensitiveRouteExposure::ExplicitlyExposed;
+        settings.blocked_paths = vec!["/ui".into(), "/ui/*".into(), "/key/delete".into()];
+        for path in [
+            "/ui",
+            "/ui/",
+            "/ui/nested",
+            "/ui?x=1",
+            "/key/delete",
+            "/key/delete/",
+            "/key/delete?key=123",
+            "/%75i",
+            "/ui%2fpage",
+            "/a/../ui",
+            "/./ui",
+            "//ui",
+            "/ui//page",
+            "/ui\\page",
+            "/ui;param",
+            "/%2575i",
+        ] {
+            assert!(settings.denies_path(path), "{path}");
+            assert!(!settings.allows(&Method::GET, path), "{path}");
+            assert!(
+                !settings.trusted_ingress_passthrough_path_allowed(&Method::GET, path),
+                "{path}"
+            );
+        }
+        for path in [
+            "/uinfo",
+            "/key/list",
+            "/key/delete-other",
+            "/login",
+            "/models",
+            "/key/list?next=/ui",
+        ] {
+            assert!(!settings.denies_path(path), "{path}");
+            assert!(settings.allows(&Method::GET, path), "{path}");
+        }
+        settings.blocked_paths = vec!["/ui/*".into()];
+        assert!(
+            !settings.denies_path("/ui"),
+            "subtree pattern does not match root"
+        );
+        assert!(settings.denies_path("/ui/"));
+        assert!(!settings.denies_path("/uinfo"));
+        settings.blocked_paths.clear();
+        settings.authentication_mode = LiteLlmAuthenticationMode::LitellmBearer;
+        for exposure in [
+            LiteLlmSensitiveRouteExposure::Disabled,
+            LiteLlmSensitiveRouteExposure::TrustedIngress,
+        ] {
+            settings.ui_exposure = exposure;
+            assert!(settings.allows(&Method::GET, "/key/list"));
+            assert!(!settings.allows(&Method::DELETE, "/key/list"));
+        }
+        settings.admin_api_exposure = LiteLlmSensitiveRouteExposure::Disabled;
+        assert!(!settings.allows(&Method::GET, "/key/list"));
+    }
+
+    #[test]
+    fn caller_policy_patch_defaults_and_validation() {
+        let patch: LiteLlmPassthroughSettingsPatchRequest = serde_json::from_str("{}").unwrap();
+        assert_eq!(patch.authentication_mode, None);
+        assert_eq!(patch.blocked_paths, None);
+        let settings = LiteLlmPassthroughSettings::default_with_updated_at(Utc::now());
+        assert_eq!(
+            settings.authentication_mode,
+            LiteLlmAuthenticationMode::Gateway
+        );
+        assert!(settings.blocked_paths.is_empty());
+        for paths in [vec![], vec!["/config", "/config/*"], vec!["/*"]] {
+            let patch: LiteLlmPassthroughSettingsPatchRequest =
+                serde_json::from_value(serde_json::json!({
+                    "authentication_mode":"litellm_bearer", "blocked_paths":paths
+                }))
+                .unwrap();
+            assert!(patch.validate().is_ok());
+        }
+        for path in [
+            "relative",
+            "/a/*/b",
+            "/ui?x=1",
+            "/%75i",
+            "/a/../ui",
+            "//ui",
+            "/ui#fragment",
+            "/ui;param",
+        ] {
+            let patch: LiteLlmPassthroughSettingsPatchRequest =
+                serde_json::from_value(serde_json::json!({"blocked_paths":[path]})).unwrap();
+            assert!(patch.validate().is_err(), "{path}");
+        }
+        assert!(
+            serde_json::from_value::<LiteLlmPassthroughSettingsPatchRequest>(
+                serde_json::json!({"authentication_mode":"anonymous"})
+            )
+            .is_err()
+        );
     }
 }

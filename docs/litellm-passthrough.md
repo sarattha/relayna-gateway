@@ -6,7 +6,91 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.39` behavior.
+This page covers the `0.1.40` behavior.
+
+## Caller-key APIs with the dashboard disabled (0.1.40)
+
+In **Providers → LiteLLM passthrough**, select **Caller LiteLLM key**, disable UI exposure, and explicitly expose the admin API paths you need.
+Applications send their existing `Authorization: Bearer <LiteLLM key>`; no Relayna
+virtual key is required. LiteLLM alone decides whether that key may call the API.
+Gateway never substitutes a mapped key, provider credential or service key, and
+never retries an auth failure using a more privileged credential. Header
+translation still uses the configured LiteLLM provider header mode. Requests go
+only to the configured LiteLLM upstream; Gateway does not follow redirects.
+
+GET/PATCH `/admin-ui/admin/providers/litellm-passthrough` exposes the same fields:
+
+```json
+{
+  "enabled": true,
+  "authentication_mode": "litellm_bearer",
+  "ui_exposure": "disabled",
+  "admin_api_exposure": "explicitly_exposed",
+  "allowed_paths": ["/*"],
+  "allowed_methods": ["GET", "POST"],
+  "blocked_paths": ["/ui", "/ui/*", "/key/delete", "/config", "/config/*"]
+}
+```
+
+Use narrower allows where possible. `authentication_mode` defaults to `gateway`,
+which preserves the released Relayna authentication and trusted-ingress behavior.
+Changing exposure alone never opts a deployment into caller-key authentication.
+
+Policy precedence is:
+
+1. Control-plane and registered-service routing retains precedence and is outside
+   this setting. The separately authenticated `/admin-ui/litellm-ui/...` operator
+   proxy retains its own contract; Gateway's Admin UI and health APIs stay usable.
+2. Explicit `blocked_paths` deny before all wildcard passthrough shortcuts,
+   including trusted ingress. Canonical routes in `direct_litellm_passthrough`
+   mode share these denies, even when wildcard forwarding is disabled. Managed
+   canonical routes retain their existing policy. Match each requested alias
+   explicitly (for example `/responses` and `/v1/responses`).
+3. Wildcard requests must pass enabled, method and path allows, then UI/admin
+   exposure gates. `/ui` and `/ui/*` are blocked by disabled UI exposure.
+   `/login` and `/models` are support APIs, not UI-only paths: block them
+   explicitly if required. Admin exposure disabled still blocks admin APIs;
+   `operator_only` cannot be satisfied by a LiteLLM key. Canonical direct routes
+   retain their own enabled/mode/method/limit settings.
+4. In `litellm_bearer` mode, mandatory route profiles or endpoint Entra policy
+   conflict and fail closed with **503 `litellm_authentication_conflict`**.
+   Inherited gateway Entra, Apigee and unverified-bearer requirements also conflict
+   unless the wildcard route explicitly skips inherited identity. This override
+   does not bypass saved profiles. Use a separate route/deployment when both
+   identity contracts are needed. Supplying the configured Relayna-key header or
+   Apigee proof headers is rejected as malformed rather than selecting an alternate identity.
+5. A missing or malformed bearer yields the existing **401** authentication
+   error. Duplicate Authorization headers and whitespace inside credentials are
+   malformed. A syntactically valid key reaches LiteLLM, whose **401/403** status
+   and body pass through unchanged. UI exposure does not select the API credential.
+
+Path policy matches the URL path without its query. Patterns are exact paths or
+prefixes with a single trailing `*`; they are not regular expressions or arbitrary
+globs. `/ui/*` covers `/ui/` and descendants, not `/ui` or `/uinfo`. Include `/ui`
+and `/ui/*` to cover the root and subtree. Exact denies conservatively cover a
+terminal slash too: `/key/delete` also denies `/key/delete/`, preventing a slash
+redirect from bypassing the restriction. Percent escapes (including double
+encoding), repeated slashes, backslashes, semicolons and `.`/`..` segments are
+rejected in passthrough scope, rather than interpreted differently by upstream
+routers. Clean paths and query strings are forwarded unchanged. A denial returns
+**403 `policy_denied`** without an upstream request. An empty deny list removes
+explicit denies, while exposure/authentication and unambiguous-path rules remain.
+
+Settings persist in PostgreSQL and are read for subsequent requests on all
+upgraded pods without restarting. Saving settings does not cancel in-flight
+requests. Audit records contain configuration only. Caller-key traffic is recorded
+in Traffic with request correlation, upstream status and timings, no fabricated
+Relayna key identity and no Gateway token/cost accounting or per-key usage row.
+Gateway authentication/policy errors are distinct from LiteLLM upstream status in
+request diagnostics. Credentials are excluded from header diagnostics and logs.
+Existing timeout, body-limit, streaming and cancellation handling applies.
+
+Migration `20260929000100_litellm_caller_policy.sql` adds `authentication_mode`
+(default `gateway`) and `blocked_paths` (default empty) to the singleton settings
+row. Upgrade every replica before enabling either feature: old binaries ignore
+these fields and cannot enforce denies. Before rollback, disable caller mode and
+clear denies only after equivalent ingress restrictions are in place; retain the
+additive columns. Existing settings need no data rewrite.
 
 ## Request Model
 
@@ -23,7 +107,7 @@ Client request contracts:
 | Trusted Apigee mode | Signed Apigee identity headers plus the configured Relayna key header. |
 
 Canonical routes set to `direct_litellm_passthrough` **without authentication
-profiles** have one intentional exception: a non-Relayna `Authorization: Bearer ...` credential is treated as a
+profiles** support a caller-credential exception: a non-Relayna `Authorization: Bearer ...` credential is treated as a
 LiteLLM credential and translated to the configured upstream LiteLLM header.
 Relayna `rk_live_...` bearer keys are not consumed as LiteLLM credentials; they
 continue through the Relayna-authenticated direct passthrough path.
@@ -80,7 +164,7 @@ custom header such as `x-litellm-key: Bearer <key>`.
 
 ## Credential Resolution
 
-Gateway resolves LiteLLM credentials in this order:
+For Gateway-authenticated traffic, Gateway resolves LiteLLM credentials in this order:
 
 1. Enabled LiteLLM mapping for the authenticated Relayna key.
 2. Enabled LiteLLM mapping for the authenticated key's project.
@@ -180,6 +264,8 @@ In **Providers → LiteLLM passthrough**, set these foundational fields first:
   canonical OpenAI routes are not matched.
 - `Allowed paths`: array patterns. `/v1/*` and `GET,POST` keep canonical LiteLLM
   discovery/query patterns covered while staying narrow.
+- `API authentication`: `gateway` (default) or explicit `litellm_bearer`.
+- `Blocked paths`: deny list overriding allows, including canonical direct routes.
 - `Allowed methods`: list of HTTP methods that may route to LiteLLM fallback.
 - `Timeout ms`: wildcard passthrough upstream timeout. Default `120000`, maximum
   `600000`.
@@ -187,7 +273,8 @@ In **Providers → LiteLLM passthrough**, set these foundational fields first:
   `1048576`, maximum `104857600`.
 - `Max response bytes`: wildcard passthrough response payload cap. Default
   `1048576`, maximum `104857600`.
-- `LiteLLM UI exposure`: controls `/ui` and `/ui` support paths.
+- `LiteLLM UI exposure`: controls `/ui` and `/ui/*`. In legacy trusted-ingress
+  mode it also enables support endpoints; caller-key API mode is independent.
 - `LiteLLM admin API exposure`: controls admin-like paths (e.g. `/key`, `/user`,
   `/team`, `/config`, `/provider`, `/guardrails`, `/mcp-rest`, `/prompts`,
   `/utils`, `/spend`, `/global`, `/budget`, `/customer`, `/organization`).

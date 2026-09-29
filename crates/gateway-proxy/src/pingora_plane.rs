@@ -562,6 +562,10 @@ where
             match Route::resolve_match(&req.method, req.uri.path()) {
                 Ok(matched) => matched,
                 Err(error) => match self.store.litellm_passthrough_settings().await {
+                    Ok(settings) if settings.denies_path(req.uri.path()) => {
+                        respond_error(session, GatewayError::PolicyDenied, ctx).await?;
+                        return Ok(true);
+                    }
                     Ok(settings)
                         if settings.allows(&req.method, req.uri.path())
                             || settings.trusted_ingress_passthrough_path_allowed(
@@ -581,7 +585,14 @@ where
                             estimated_cost_usd: None,
                         }
                     }
-                    Ok(_) => {
+                    Ok(settings) => {
+                        let error = if settings.authentication_mode
+                            == gateway_core::LiteLlmAuthenticationMode::LitellmBearer
+                        {
+                            GatewayError::PolicyDenied
+                        } else {
+                            error
+                        };
                         respond_error(session, error, ctx).await?;
                         return Ok(true);
                     }
@@ -621,6 +632,26 @@ where
             }
         }
         if gateway_core::is_litellm_canonical_route(matched.route) {
+            match self.route_mode(matched.route).await {
+                Ok(OpenAiRouteMode::DirectLiteLlmPassthrough) => {
+                    match self.store.litellm_passthrough_settings().await {
+                        Ok(settings) if !settings.denies_path(req.uri.path()) => {}
+                        Ok(_) => {
+                            respond_error(session, GatewayError::PolicyDenied, ctx).await?;
+                            return Ok(true);
+                        }
+                        Err(error) => {
+                            respond_error(session, error, ctx).await?;
+                            return Ok(true);
+                        }
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(true);
+                }
+            }
             match self.apply_litellm_route_limits(&mut matched).await {
                 Ok(()) => {}
                 Err(error) => {
@@ -709,6 +740,64 @@ where
         ctx.relayna_key_header = auth.config.relayna_key_header.clone();
         let now = Utc::now();
         let authorization = header_value(req, "authorization");
+        if matched.route == Route::LiteLlmPassthrough && ctx.litellm_passthrough {
+            let settings = match self.store.litellm_passthrough_settings().await {
+                Ok(settings) => settings,
+                Err(error) => {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(true);
+                }
+            };
+            if settings.authentication_mode
+                == gateway_core::LiteLlmAuthenticationMode::LitellmBearer
+            {
+                if !settings.allows(&req.method, req.uri.path())
+                    || matches!(
+                        settings.sensitive_exposure_for_path(req.uri.path()),
+                        Some(gateway_core::LiteLlmSensitiveRouteExposure::OperatorOnly)
+                    )
+                {
+                    respond_error(session, GatewayError::PolicyDenied, ctx).await?;
+                    return Ok(true);
+                }
+                if ctx.access.authentication_profiles.is_some()
+                    || ctx.access.entra.is_some()
+                    || (!ctx.access.skip_entra
+                        && (auth.entra_enabled() || auth.config.unverified_bearer_enabled))
+                {
+                    respond_error(session, GatewayError::LiteLlmAuthenticationConflict, ctx)
+                        .await?;
+                    return Ok(true);
+                }
+                let credential = if req.headers.get_all("authorization").iter().count() > 1
+                    || req.headers.contains_key(&auth.config.relayna_key_header)
+                    || req.headers.contains_key("x-apigee-entra-identity")
+                    || req.headers.contains_key("x-apigee-entra-signature")
+                {
+                    Err(GatewayError::MalformedAuthorization)
+                } else {
+                    litellm_bearer_credential(authorization)
+                };
+                let credential = match credential {
+                    Ok(credential) => credential,
+                    Err(error) => {
+                        gateway_telemetry::record_auth_failure(error.code());
+                        respond_error(session, error, ctx).await?;
+                        return Ok(true);
+                    }
+                };
+                if let Err(error) = self
+                    .configure_litellm_upstream_with_credential(ctx, credential)
+                    .await
+                {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(true);
+                }
+                ctx.direct_litellm_passthrough = true;
+                ctx.route_match = Some(matched);
+                return Ok(false);
+            }
+        }
         let mut profile_key = None;
         let mut endpoint_policy = ctx.access.entra.clone();
         if let Some(profiles) = &ctx.access.authentication_profiles {
@@ -1463,11 +1552,15 @@ where
             gateway_telemetry::record_provider_selection();
             return Ok(true);
         }
-        if ctx.direct_litellm_passthrough {
+        if ctx.direct_litellm_passthrough && gateway_core::is_litellm_canonical_route(route) {
             if let Err(error) = self.ensure_litellm_canonical_route_enabled(route).await {
                 respond_error(session, error, ctx).await?;
                 return Ok(false);
             }
+            gateway_telemetry::record_provider_selection();
+            return Ok(true);
+        }
+        if ctx.direct_litellm_passthrough {
             gateway_telemetry::record_provider_selection();
             return Ok(true);
         }
@@ -2778,7 +2871,7 @@ fn litellm_bearer_credential(authorization: Option<&str>) -> GatewayResult<Strin
         return Err(GatewayError::MalformedAuthorization);
     };
     let token = token.trim();
-    if token.is_empty() {
+    if token.is_empty() || token.contains(char::is_whitespace) || !token.is_ascii() {
         return Err(GatewayError::MalformedAuthorization);
     }
     Ok(token.to_owned())

@@ -1,9 +1,13 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.39` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.40` is the
 current release target.
 
-Version `0.1.39` adds Admin UI 4.0, explicit authentication profiles, editable key
+Version `0.1.40` adds independent LiteLLM caller-key authentication and path
+deny rules, with additive defaults and Admin UI controls. Upgrade all replicas
+before opting in; see [LiteLLM passthrough](litellm-passthrough.md).
+
+Version `0.1.39` added Admin UI 4.0, explicit authentication profiles, editable key
 names, corrected Traffic filters and automatic refresh of persisted gateway Entra
 settings across replicas. The [illustrated profile guide](operations/authentication-profiles.md)
 explains both authentication types and key assignment. Upgrade every replica
@@ -77,7 +81,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.39
+   python3 scripts/validate-release-metadata.py v0.1.40
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -95,15 +99,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.39 .
+   docker build -t relayna-gateway:0.1.40 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.39 -m "Release v0.1.39"
-   git push origin v0.1.39
+   git tag -a v0.1.40 -m "Release v0.1.40"
+   git push origin v0.1.40
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -113,10 +117,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.39`, the workflow publishes:
+For `v0.1.40`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.39
+ghcr.io/sarattha/relayna-gateway:0.1.40
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

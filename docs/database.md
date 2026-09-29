@@ -273,6 +273,12 @@ wildcard passthrough.
 | Auditability | Admin API updates write audit events with before/after settings. No LiteLLM credential secret is stored in this table. |
 | Runtime role | Wildcard passthrough preserves the original path and query, strips client credentials, injects the resolved LiteLLM credential, and records reduced status-only usage for non-canonical paths. |
 
+Migration `20260929000100_litellm_caller_policy.sql` adds `authentication_mode`
+(`gateway` by default, or opt-in `litellm_bearer`) and `blocked_paths text[]`
+(empty by default). Denies precede allows, including canonical direct routes.
+Upgrade all replicas before opting in; older binaries cannot enforce these fields.
+See [LiteLLM policy and rollback](litellm-passthrough.md).
+
 ### `openai_route_settings`
 
 `openai_route_settings` stores global enablement and mode selection for

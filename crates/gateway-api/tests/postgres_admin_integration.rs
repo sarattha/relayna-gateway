@@ -635,7 +635,7 @@ async fn postgres_admin_api_workflow_covers_registered_control_plane() {
             Method::PATCH,
             "/admin-ui/admin/providers/litellm-passthrough",
             Some(
-                json!({"enabled": true, "allowed_paths": ["/models"], "allowed_methods": ["GET"], "ui_exposure": "operator_only"}),
+                json!({"enabled": true, "authentication_mode": "litellm_bearer", "blocked_paths": ["/key/delete", "/config/*"], "allowed_paths": ["/models"], "allowed_methods": ["GET"], "ui_exposure": "operator_only"}),
             ),
         ),
         (
@@ -654,6 +654,30 @@ async fn postgres_admin_api_workflow_covers_registered_control_plane() {
         let (status, value) = call(app.clone(), method, path, Some(&token), body).await;
         expect_success(status, &value, path);
     }
+
+    let (status, settings) = call(
+        app.clone(),
+        Method::GET,
+        "/admin-ui/admin/providers/litellm-passthrough",
+        Some(&token),
+        None,
+    )
+    .await;
+    expect_success(status, &settings, "reload caller policy");
+    assert_eq!(settings["authentication_mode"], "litellm_bearer");
+    assert_eq!(
+        settings["blocked_paths"],
+        json!(["/key/delete", "/config/*"])
+    );
+    let (status, _) = call(
+        app.clone(),
+        Method::PATCH,
+        "/admin-ui/admin/providers/litellm-passthrough",
+        Some(&token),
+        Some(json!({"authentication_mode":"gateway", "blocked_paths":[]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 
     let guardrail_name = format!("api-guardrail-{suffix}");
     let (status, value) = call(

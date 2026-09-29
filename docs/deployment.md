@@ -7,7 +7,17 @@ virtual keys, Azure Foundry connections and registered agents, and replica
 synchronization of saved gateway Entra settings.
 The UI remains embedded in the Rust binary; no separate frontend service is needed.
 
-## Upgrade to 0.1.39
+## Upgrade to 0.1.40
+
+Startup applies `20260929000100_litellm_caller_policy.sql`. Defaults preserve
+existing authentication and add no explicit denies. Upgrade **every replica**
+before selecting `litellm_bearer` or saving blocked paths; older binaries cannot
+enforce either. These settings apply to subsequent requests without restarting.
+Before rolling back, establish equivalent ingress restrictions, switch back to
+`gateway` authentication and clear blocked paths. Keep the additive columns.
+See [caller-key policy](litellm-passthrough.md#caller-key-apis-with-the-dashboard-disabled-0140).
+
+## Earlier 0.1.39 migrations
 
 1. Back up PostgreSQL and deploy the updated binary/image to **every replica**.
    Startup applies `20260919000100_authentication_profile_revisions.sql`,
@@ -54,7 +64,7 @@ channel bindings are enabled; see [Accessa channels](accessa-channels.md).
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.39 .
+docker build -t relayna-gateway:0.1.40 .
 ```
 
 Run it with required dependencies:
@@ -74,7 +84,7 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.39
+  relayna-gateway:0.1.40
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -134,13 +144,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.39
+   ghcr.io/sarattha/relayna-gateway:0.1.40
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.39"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.40"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -148,7 +158,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.39
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.40
    ```
 
 3. Store secrets through your cluster secret manager:

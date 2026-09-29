@@ -260,6 +260,8 @@ Fields:
 | Field | Meaning |
 | --- | --- |
 | Enable wildcard passthrough | Turns on fallback routing for unmatched LiteLLM-bound paths. Relayna-owned service/control routes and canonical OpenAI route matching still take precedence. |
+| API authentication | `gateway` preserves existing authentication. `litellm_bearer` forwards only the caller’s LiteLLM bearer key for LiteLLM to validate, independent of UI exposure. Mandatory Gateway identity requirements conflict and fail closed. |
+| Blocked paths | Comma-separated exact paths or trailing `*` prefixes. Denies override allows, including canonical direct LiteLLM routes. Blank means no explicit denies. |
 | Allowed paths | Comma-separated allowlist such as `/v1/*`. Add sensitive paths like `/ui` and `/ui/*` only when you have chosen an exposure mode and ingress auth pattern intentionally. |
 | Allowed methods | Comma-separated methods, usually `GET,POST`. |
 | Timeout ms | Upstream timeout for wildcard LiteLLM passthrough. Default `120000`, maximum `600000`. |
@@ -274,7 +276,8 @@ Exposure values:
 - `operator_only`: sensitive paths require the Gateway Entra or trusted Apigee
   identity layer plus Relayna virtual-key auth on the proxy request.
 - `explicitly_exposed`: sensitive paths can be reached by authenticated
-  Relayna virtual-key clients when path and method allowlists also match.
+  Relayna virtual-key clients when path and method allowlists also match. In
+  explicit `litellm_bearer` mode, LiteLLM validates the caller key instead.
 - `trusted_ingress`: browser-safe LiteLLM UI access is allowed for trusted
   identity-aware ingress when accessing `/ui` and support endpoints such as
   `/user/info`, `/models`, `/login`, `/logout`, `/litellm/.well-known/litellm-ui-config`,
