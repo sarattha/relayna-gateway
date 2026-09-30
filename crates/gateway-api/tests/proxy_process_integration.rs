@@ -258,6 +258,8 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
                 expires_at: None,
                 rotation_due_at: None,
                 policy: KeyPolicyPatch {
+                    allow_streaming: Some(true),
+                    allow_tools: Some(true),
                     allowed_routes: Some(vec!["/services/*".to_owned()]),
                     allowed_providers: Some(vec!["internal-service".to_owned()]),
                     allowed_services: Some(vec![stream_service_name.clone()]),
@@ -1087,4 +1089,412 @@ async fn unverified_bearer_regressions(
         .await
         .unwrap();
     oidc_task.abort();
+}
+
+#[tokio::test]
+async fn complete_body_governance_blocks_restricted_features_before_upstream() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let (Ok(database), Ok(redis)) = (std::env::var("DATABASE_URL"), std::env::var("REDIS_URL"))
+    else {
+        eprintln!("skipping complete-body governance: DATABASE_URL and REDIS_URL required");
+        return;
+    };
+    let store = PostgresStore::connect(&database).await.unwrap();
+    let mut lock = store.pool().acquire().await.unwrap();
+    sqlx::query("SELECT pg_advisory_lock(82120260808)")
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream_address = listener.local_addr().unwrap();
+    let received = Arc::new(AtomicUsize::new(0));
+    let upstream_count = received.clone();
+    let upstream = Router::new().fallback(any(move |_body: Bytes| {
+        let count = upstream_count.clone();
+        async move {
+            count.fetch_add(1, Ordering::SeqCst);
+            Json(json!({"choices": [], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}))
+        }
+    }));
+    let upstream_task = tokio::spawn(async move {
+        axum::serve(listener, upstream).await.unwrap();
+    });
+    let upstream_url = format!("http://{upstream_address}");
+    sqlx::query("UPDATE provider_configs SET base_url = $1, credential_secret = 'test-upstream-key' WHERE provider = 'litellm' AND enabled = true").bind(&upstream_url).execute(store.pool()).await.unwrap();
+    sqlx::query("UPDATE openai_route_settings SET mode = 'managed_by_gateway', enabled = true WHERE route_id IN ('chat-completions','responses')").execute(store.pool()).await.unwrap();
+    sqlx::query("DELETE FROM route_identity_settings WHERE route IN ('/v1/chat/completions','/v1/responses')").execute(store.pool()).await.unwrap();
+    sqlx::query("UPDATE anthropic_route_settings SET mode = 'managed_by_gateway', enabled = true WHERE route_id = 'message-batches'").execute(store.pool()).await.unwrap();
+    sqlx::query("DELETE FROM route_identity_settings WHERE route = '/v1/messages/batches'")
+        .execute(store.pool())
+        .await
+        .unwrap();
+    let project = store
+        .create_project(ProjectCreateRequest {
+            name: format!("security-body-{}", Uuid::new_v4()),
+        })
+        .await
+        .unwrap();
+    store
+        .upsert_policy_layer(AdminPolicyLayerUpsert {
+            kind: PolicyLayerKind::Project,
+            scope_id: Some(project.id.to_string()),
+            policy: Default::default(),
+            guardrail_policy: Default::default(),
+        })
+        .await
+        .unwrap();
+    let material = VirtualKeyMaterial::generate().unwrap();
+    store
+        .create_admin_key(
+            AdminKeyCreate {
+                name: None,
+                owner_type: AdminKeyOwnerType::Project,
+                project_id: Some(project.id),
+                service_names: Vec::new(),
+                preset: None,
+                expires_at: None,
+                rotation_due_at: None,
+                policy: KeyPolicyPatch {
+                    allowed_models: Some(vec!["allowed".into()]),
+                    allowed_routes: Some(vec![
+                        "/v1/chat/completions".into(),
+                        "/v1/responses".into(),
+                        "/v1/messages/batches".into(),
+                    ]),
+                    allow_streaming: Some(false),
+                    allow_tools: Some(false),
+                    ..Default::default()
+                },
+                guardrail_policy: GuardrailPolicy::default(),
+            },
+            &material,
+        )
+        .await
+        .unwrap();
+    let failed_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let failed_url = format!("http://{}", failed_listener.local_addr().unwrap());
+    let failed_task = tokio::spawn(async move {
+        axum::serve(
+            failed_listener,
+            Router::new().fallback(any(|| async { StatusCode::SERVICE_UNAVAILABLE })),
+        )
+        .await
+        .unwrap();
+    });
+    let config = PingoraLiteLlmConfig::from_base_url(&upstream_url, "test-upstream-key")
+        .unwrap()
+        .with_direct_openai(Some(
+            PingoraUpstreamConfig::from_base_url(&failed_url, "direct-secret").unwrap(),
+        ))
+        .with_body_admission_limits(2, 1024 * 1024)
+        .unwrap();
+    let proxy = RelaynaPingoraProxy::new(
+        Arc::new(store.clone()),
+        Arc::new(RedisControlState::new(&redis).unwrap()),
+        config,
+    );
+    let port = unused_port();
+    std::thread::spawn(move || {
+        let mut server = Server::new(None).unwrap();
+        server.bootstrap();
+        let mut service = pingora_proxy::http_proxy_service(&server.configuration, proxy);
+        service.add_tcp(&format!("127.0.0.1:{port}"));
+        server.add_service(service);
+        server.run_forever();
+    });
+    for attempt in 0..100 {
+        if tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .is_ok()
+        {
+            break;
+        }
+        assert!(attempt < 99);
+        time::sleep(Duration::from_millis(100)).await;
+    }
+    let client = reqwest::Client::new();
+    let proxy_url = format!("http://127.0.0.1:{port}");
+    for route in ["/v1/chat/completions", "/v1/responses"] {
+        for mut body in [
+            json!({"model":"forbidden"}),
+            json!({"model":"allowed","stream":true}),
+            json!({"model":"allowed","tools":[{"type":"function"}]}),
+            json!({"model":"allowed","functions":[{"name":"legacy"}]}),
+            json!({"model":"allowed","function_call":{"name":"legacy"}}),
+            json!({"stream":false}),
+            json!({"model":7}),
+        ] {
+            body["a_padding"] = json!("x".repeat(70_000));
+            let response =
+                send_json(&client, &proxy_url, route, Some(&material.raw_key), body).await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{route}");
+            assert_eq!(
+                response.json::<Value>().await.unwrap()["error"]["code"],
+                "policy_denied"
+            );
+        }
+        assert_eq!(
+            received.load(Ordering::SeqCst),
+            if route == "/v1/responses" { 1 } else { 0 },
+            "denied bodies never reach upstream"
+        );
+        let response = send_json(
+            &client,
+            &proxy_url,
+            route,
+            Some(&material.raw_key),
+            json!({"a_padding":"x".repeat(70_000),"model":"allowed","stream":false}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        response.bytes().await.unwrap();
+    }
+    assert_eq!(
+        received.load(Ordering::SeqCst),
+        2,
+        "ordinary allowed large requests still forward"
+    );
+    // Batch models and tool requests live inside each requests[].params.
+    for params in [
+        json!({"model":"forbidden", "messages":[]}),
+        json!({"model":"allowed", "messages":[], "tools":[{"name":"nested"}]}),
+        json!({"messages":[]}),
+    ] {
+        let response = send_json(
+            &client,
+            &proxy_url,
+            "/v1/messages/batches",
+            Some(&material.raw_key),
+            json!({"requests":[{"custom_id":"denied", "params":params}]}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+    assert_eq!(received.load(Ordering::SeqCst), 2);
+    let response = send_json(&client, &proxy_url, "/v1/messages/batches", Some(&material.raw_key),
+        json!({"requests":[{"custom_id":"allowed", "params":{"model":"allowed","messages":[],"max_tokens":1}}]})).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    response.bytes().await.unwrap();
+    assert_eq!(received.load(Ordering::SeqCst), 3);
+
+    let model_layer = store
+        .upsert_policy_layer(AdminPolicyLayerUpsert {
+            kind: PolicyLayerKind::Model,
+            scope_id: Some("allowed".into()),
+            policy: KeyPolicyPatch {
+                rpm_limit: Some(Some(0)),
+                ..Default::default()
+            },
+            guardrail_policy: Default::default(),
+        })
+        .await
+        .unwrap();
+    for (route, body) in [
+        ("/v1/responses", json!({"model":"allowed","input":"hello"})),
+        (
+            "/v1/messages/batches",
+            json!({"requests":[{"custom_id":"limited", "params":{"model":"allowed","messages":[],"max_tokens":1}}]}),
+        ),
+    ] {
+        let response = send_json(&client, &proxy_url, route, Some(&material.raw_key), body).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "body-selected model rate limit"
+        );
+    }
+    assert_eq!(received.load(Ordering::SeqCst), 3);
+    store.delete_policy_layer(model_layer.id).await.unwrap();
+
+    let service_name = format!("security-service-{}", Uuid::new_v4());
+    store
+        .create_service(
+            serde_json::from_value::<ServiceCreateRequest>(json!({
+                "name":service_name, "project_id":project.id,
+                "route_pattern":format!("/services/{service_name}/*"),
+                "upstream_base_url":upstream_url, "credential":"service-secret",
+                "allowed_methods":["GET","POST"], "cost_mode":"fixed", "estimated_cost_usd":0.01,
+        "pricing_rules":[{"name":"premium","json_pointer":"/engine","equals":"premium","cost_mode":"fixed","estimated_cost_usd":0.5}]
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let service_material = VirtualKeyMaterial::generate().unwrap();
+    let service_key = store
+        .create_admin_key(
+            AdminKeyCreate {
+                name: None,
+                owner_type: AdminKeyOwnerType::Project,
+                project_id: Some(project.id),
+                service_names: vec![service_name.clone()],
+                preset: None,
+                expires_at: None,
+                rotation_due_at: None,
+                policy: KeyPolicyPatch {
+                    allowed_routes: Some(vec!["/services/*".into()]),
+                    allowed_providers: Some(vec!["internal-service".into()]),
+                    allowed_services: Some(vec![service_name.clone()]),
+                    allow_streaming: Some(true),
+                    allow_tools: Some(true),
+                    daily_budget_usd: Some(Some(0.0)),
+                    ..Default::default()
+                },
+                guardrail_policy: GuardrailPolicy::default(),
+            },
+            &service_material,
+        )
+        .await
+        .unwrap();
+    let service_url = format!("{proxy_url}/services/{service_name}/run");
+    for method in [reqwest::Method::GET, reqwest::Method::POST] {
+        let response = client
+            .request(method, &service_url)
+            .bearer_auth(&service_material.raw_key)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::PAYMENT_REQUIRED,
+            "bodyless services must reserve before upstream"
+        );
+    }
+    assert_eq!(received.load(Ordering::SeqCst), 3);
+    sqlx::query("UPDATE key_policies SET daily_budget_usd=1, max_input_tokens_per_request=1 WHERE key_id=$1")
+        .bind(service_key.id).execute(store.pool()).await.unwrap();
+    let response = client
+        .post(&service_url)
+        .bearer_auth(&service_material.raw_key)
+        .header("content-type", "text/plain")
+        .body("x".repeat(70_000))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "non-JSON upload cannot bypass token constraints"
+    );
+    assert_eq!(received.load(Ordering::SeqCst), 3);
+    let response = client
+        .get(&service_url)
+        .bearer_auth(&service_material.raw_key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "fitting bodyless service still forwards"
+    );
+    response.bytes().await.unwrap();
+    assert_eq!(received.load(Ordering::SeqCst), 4);
+    sqlx::query("UPDATE key_policies SET max_input_tokens_per_request=NULL, max_cost_per_request=0.1, allow_tools=false WHERE key_id=$1")
+        .bind(service_key.id).execute(store.pool()).await.unwrap();
+    for body in [
+        json!({"engine":"premium"}),
+        json!({"model":7,"tools":[{"name":"hidden"}]}),
+    ] {
+        let response = client
+            .post(&service_url)
+            .bearer_auth(&service_material.raw_key)
+            .header("content-type", "text/plain")
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+    assert_eq!(received.load(Ordering::SeqCst), 4);
+    let response = client
+        .post(&service_url)
+        .bearer_auth(&service_material.raw_key)
+        .json(&json!({"engine":"standard"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "full selector admits fitting service cost rather than the header ceiling"
+    );
+    response.bytes().await.unwrap();
+
+    // External correlation IDs must never identify accounting reservations.
+    let same_id = || {
+        client
+            .get(&service_url)
+            .bearer_auth(&service_material.raw_key)
+            .header("x-relayna-request-id", "caller-shared-id")
+            .send()
+    };
+    let (left, right) = tokio::join!(same_id(), same_id());
+    assert_eq!(left.unwrap().status(), StatusCode::OK);
+    assert_eq!(right.unwrap().status(), StatusCode::OK);
+    let state = RedisControlState::new(&redis).unwrap();
+    for attempt in 0..100 {
+        let spend = gateway_core::BudgetStore::check_budget(
+            &state,
+            service_key.id,
+            Some(1.0),
+            None,
+            chrono::Utc::now(),
+        )
+        .await
+        .unwrap();
+        if let gateway_core::BudgetDecision::Allowed(spend) = spend {
+            if (spend.daily_spend_usd - 0.04).abs() < 1e-8 {
+                break;
+            }
+        }
+        assert!(
+            attempt < 99,
+            "both colliding correlation IDs must finalize once"
+        );
+        time::sleep(Duration::from_millis(20)).await;
+    }
+
+    // A retry replays a governed body while keeping the original reservation.
+    let direct_material = VirtualKeyMaterial::generate().unwrap();
+    store
+        .create_admin_key(
+            AdminKeyCreate {
+                name: None,
+                owner_type: AdminKeyOwnerType::Project,
+                project_id: Some(project.id),
+                service_names: vec![],
+                preset: None,
+                expires_at: None,
+                rotation_due_at: None,
+                policy: KeyPolicyPatch {
+                    allowed_routes: Some(vec!["/providers/openai/*".into()]),
+                    allowed_providers: Some(vec!["openai-compatible".into(), "litellm".into()]),
+                    allowed_models: Some(vec!["allowed".into()]),
+                    daily_budget_usd: Some(Some(1.0)),
+                    tpm_limit: Some(Some(100)),
+                    ..Default::default()
+                },
+                guardrail_policy: GuardrailPolicy::default(),
+            },
+            &direct_material,
+        )
+        .await
+        .unwrap();
+    let response = send_json(
+        &client,
+        &proxy_url,
+        "/providers/openai/v1/chat/completions",
+        Some(&direct_material.raw_key),
+        json!({"model":"allowed","messages":[{"role":"user","content":"hello"}]}),
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "fallback must reuse rather than overwrite its reservation"
+    );
+    response.bytes().await.unwrap();
+    failed_task.abort();
+    upstream_task.abort();
 }

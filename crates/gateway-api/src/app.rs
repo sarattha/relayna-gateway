@@ -6490,7 +6490,7 @@ fn litellm_ui_operator_cookie(headers: &HeaderMap) -> Option<&str> {
 
 fn litellm_ui_operator_set_cookie(raw_token: &str) -> String {
     format!(
-        "{LITELLM_UI_OPERATOR_COOKIE}={raw_token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={LITELLM_UI_OPERATOR_COOKIE_MAX_AGE_SECONDS}"
+        "{LITELLM_UI_OPERATOR_COOKIE}={raw_token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age={LITELLM_UI_OPERATOR_COOKIE_MAX_AGE_SECONDS}"
     )
 }
 
@@ -6943,7 +6943,7 @@ fn litellm_ui_skips_request_header(
 }
 
 async fn litellm_ui_response(
-    response: reqwest::Response,
+    mut response: reqwest::Response,
     upstream_base_url: &str,
     operator_cookie: Option<String>,
 ) -> Response {
@@ -6964,19 +6964,50 @@ async fn litellm_ui_response(
     let is_json = content_type
         .split(';')
         .any(|part| part.trim().eq_ignore_ascii_case("application/json"));
-    let body = match response.bytes().await {
-        Ok(body) => body,
-        Err(_) => return error_response(&HeaderMap::new(), GatewayError::UpstreamConnection),
-    };
-    let body = if (is_html || is_javascript) && body.len() <= LITELLM_UI_HTML_REWRITE_LIMIT {
-        Bytes::from(rewrite_litellm_ui_text(
-            &String::from_utf8_lossy(&body),
-            upstream_base_url,
-        ))
-    } else if is_json && body.len() <= LITELLM_UI_HTML_REWRITE_LIMIT {
-        rewrite_litellm_ui_json_body(&body, upstream_base_url).unwrap_or(body)
+    // Only rewrite bounded text. Other resources and oversized text stream.
+    static COLLECTIONS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
+    let body = if !(is_html || is_javascript || is_json)
+        || response
+            .content_length()
+            .is_some_and(|size| size > LITELLM_UI_HTML_REWRITE_LIMIT as u64)
+    {
+        stream_litellm_ui_body(response, Vec::new(), None)
     } else {
-        body
+        let permit = match COLLECTIONS.try_acquire() {
+            Ok(permit) => permit,
+            Err(_) => return error_response(&HeaderMap::new(), GatewayError::GatewayOverloaded),
+        };
+        let mut collected = Vec::with_capacity(LITELLM_UI_HTML_REWRITE_LIMIT);
+        let mut overflow = None;
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => {
+                    if chunk.len() > LITELLM_UI_HTML_REWRITE_LIMIT.saturating_sub(collected.len()) {
+                        overflow = Some(chunk);
+                        break;
+                    }
+                    collected.extend_from_slice(&chunk);
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    return error_response(&HeaderMap::new(), GatewayError::UpstreamConnection)
+                }
+            }
+        }
+        if let Some(chunk) = overflow {
+            stream_litellm_ui_body(response, vec![Bytes::from(collected), chunk], Some(permit))
+        } else {
+            let body = Bytes::from(collected);
+            let body = if is_html || is_javascript {
+                Bytes::from(rewrite_litellm_ui_text(
+                    &String::from_utf8_lossy(&body),
+                    upstream_base_url,
+                ))
+            } else {
+                rewrite_litellm_ui_json_body(&body, upstream_base_url).unwrap_or(body)
+            };
+            stream_litellm_ui_body(response, vec![body], Some(permit))
+        }
     };
 
     let mut builder = Response::builder().status(status);
@@ -6998,8 +7029,30 @@ async fn litellm_ui_response(
         }
     }
     builder
-        .body(Body::from(body))
+        .body(body)
         .unwrap_or_else(|_| error_response(&HeaderMap::new(), GatewayError::UpstreamConnection))
+}
+
+fn stream_litellm_ui_body(
+    response: reqwest::Response,
+    prefix: Vec<Bytes>,
+    permit: Option<tokio::sync::SemaphorePermit<'static>>,
+) -> Body {
+    Body::from_stream(futures_util::stream::try_unfold(
+        (response, prefix.into_iter(), permit),
+        |(mut response, mut prefix, permit)| async move {
+            if let Some(chunk) = prefix.next() {
+                return Ok(Some((chunk, (response, prefix, permit))));
+            }
+            // Keep admission until retained collection/rewrite bytes drain or
+            // the downstream drops the body; slow consumers cannot bypass it.
+            drop(permit);
+            response
+                .chunk()
+                .await
+                .map(|chunk| chunk.map(|chunk| (chunk, (response, prefix, None))))
+        },
+    ))
 }
 
 fn litellm_ui_skips_response_header(name: &HeaderName) -> bool {
@@ -12202,6 +12255,7 @@ mod tests {
             "{LITELLM_UI_OPERATOR_COOKIE}={TEST_OPERATOR_TOKEN};"
         )));
         assert!(set_cookie.contains("HttpOnly"));
+        assert!(set_cookie.contains("; Secure;"));
         assert!(set_cookie.contains("SameSite=Lax"));
         assert!(set_cookie.contains("Path=/"));
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -12390,6 +12444,68 @@ mod tests {
             .recv_timeout(std::time::Duration::from_secs(2))
             .expect("captured upstream request");
         assert_eq!(captured.request_line, "GET /ui HTTP/1.1");
+    }
+
+    #[tokio::test]
+    async fn litellm_ui_chunked_oversized_text_streams_before_completion() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (release, wait) = tokio::sync::oneshot::channel::<()>();
+        let wait = Arc::new(tokio::sync::Mutex::new(Some(wait)));
+        let app = Router::new().route(
+            "/",
+            get(move || {
+                let wait = wait.clone();
+                async move {
+                    let stream = futures_util::stream::unfold(0, move |stage| {
+                        let wait = wait.clone();
+                        async move {
+                            match stage {
+                                0 => Some((
+                                    Ok::<_, std::io::Error>(Bytes::from(vec![
+                                        b'x';
+                                        LITELLM_UI_HTML_REWRITE_LIMIT
+                                            + 1
+                                    ])),
+                                    1,
+                                )),
+                                1 => {
+                                    wait.lock().await.take().unwrap().await.unwrap();
+                                    Some((Ok(Bytes::from_static(b"tail")), 2))
+                                }
+                                _ => None,
+                            }
+                        }
+                    });
+                    (
+                        [(header::CONTENT_TYPE, "text/html")],
+                        Body::from_stream(stream),
+                    )
+                }
+            }),
+        );
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let upstream = reqwest::Client::new()
+            .get(format!("http://{address}/"))
+            .send()
+            .await
+            .unwrap();
+        assert!(upstream.content_length().is_none());
+        let response = tokio::time::timeout(
+            Duration::from_secs(2),
+            litellm_ui_response(upstream, "http://litellm", None),
+        )
+        .await
+        .expect("returns before upstream EOF");
+        release.send(()).unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), LITELLM_UI_HTML_REWRITE_LIMIT + 5)
+            .await
+            .unwrap();
+        assert_eq!(bytes.len(), LITELLM_UI_HTML_REWRITE_LIMIT + 5);
+        assert!(bytes.ends_with(b"tail"));
+        server.abort();
     }
 
     #[test]

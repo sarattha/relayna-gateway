@@ -14,6 +14,7 @@ use std::{
 
 type HmacSha256 = Hmac<Sha256>;
 pub const ENTRA_DEFAULT_RELAYNA_KEY_HEADER: &str = "X-Relayna-Key";
+const JWKS_REFRESH_COOLDOWN: Duration = Duration::from_secs(30);
 const ENTRA_OIDC_HTTP_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,6 +131,7 @@ pub struct EntraJwtVerifier {
     config: EntraAuthConfig,
     client: reqwest::Client,
     cache: Mutex<Option<CachedJwks>>,
+    refresh_attempt: tokio::sync::Mutex<Option<Instant>>,
 }
 
 #[derive(Debug, Clone)]
@@ -145,6 +147,7 @@ impl EntraJwtVerifier {
             config,
             client: entra_http_client()?,
             cache: Mutex::new(None),
+            refresh_attempt: tokio::sync::Mutex::new(None),
         })
     }
 
@@ -420,6 +423,13 @@ impl EntraJwtVerifier {
         context: EntraAuthDebugContext<'_>,
         token: &str,
     ) -> GatewayResult<()> {
+        // Serialize refreshes and throttle unknown IDs, including failed fetches.
+        // No attacker-controlled negative-key map can grow without bound.
+        let mut last_attempt = self.refresh_attempt.lock().await;
+        if last_attempt.is_some_and(|last| last.elapsed() < JWKS_REFRESH_COOLDOWN) {
+            return Ok(());
+        }
+        *last_attempt = Some(Instant::now());
         let metadata_response = self
             .client
             .get(&self.config.oidc_discovery_url)
@@ -511,7 +521,8 @@ impl EntraJwtVerifier {
             )
         })?;
         let key_count = jwks.keys.len();
-        let expires_at = Instant::now() + Duration::from_secs(self.config.jwks_cache_ttl_seconds);
+        let expires_at = Instant::now()
+            + Duration::from_secs(self.config.jwks_cache_ttl_seconds).max(JWKS_REFRESH_COOLDOWN);
         *self.cache.lock().map_err(|_| {
             self.reject(
                 context,
@@ -749,6 +760,7 @@ impl EntraJwtVerifier {
         Self {
             config,
             client: entra_http_client().expect("valid Entra test HTTP client"),
+            refresh_attempt: tokio::sync::Mutex::new(None),
             cache: Mutex::new(Some(CachedJwks {
                 keys,
                 expires_at: Instant::now() + Duration::from_secs(3600),
@@ -1805,6 +1817,123 @@ mod tests {
         let error = verifier.verify_token(&token, Utc::now()).await.unwrap_err();
 
         assert_eq!(error, GatewayError::InvalidEntraToken);
+    }
+
+    #[tokio::test]
+    async fn unknown_kids_share_refresh_cooldown_and_allow_rotation() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let key = signing_key("known");
+        let rotated = signing_key("rotated");
+        let document = Arc::new(Mutex::new(jwks_json(&key.jwk)));
+        let count = Arc::new(AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server_document = document.clone();
+        let server_count = count.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = [0; 2048];
+                let size = socket.read(&mut request).await.unwrap();
+                server_count.fetch_add(1, Ordering::SeqCst);
+                let body = if request[..size].starts_with(b"GET /discovery ") {
+                    format!(
+                        r#"{{"issuer":"https://login.microsoftonline.com/tenant-1/v2.0","jwks_uri":"http://{address}/keys"}}"#
+                    )
+                } else {
+                    server_document.lock().unwrap().clone()
+                };
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+            }
+        });
+        let mut config = config();
+        config.jwks_cache_ttl_seconds = 0; // The cooldown also floors cache expiry.
+        config.oidc_discovery_url = format!("http://{address}/discovery");
+        let verifier = Arc::new(EntraJwtVerifier::new(config).unwrap());
+        let mut attempts = tokio::task::JoinSet::new();
+        for i in 0..32 {
+            let verifier = verifier.clone();
+            let header =
+                URL_SAFE_NO_PAD.encode(format!(r#"{{"alg":"RS256","kid":"unknown-{i}"}}"#));
+            attempts.spawn(async move {
+                assert_eq!(
+                    verifier
+                        .verify_token(&format!("{header}.e30.invalid"), Utc::now())
+                        .await
+                        .unwrap_err(),
+                    GatewayError::InvalidEntraToken
+                );
+            });
+        }
+        while let Some(result) = attempts.join_next().await {
+            result.unwrap();
+        }
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            2,
+            "one discovery/JWKS fetch for distinct concurrent unknown IDs"
+        );
+        verifier
+            .verify_token(&token(&key, valid_claims()), Utc::now())
+            .await
+            .unwrap();
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            2,
+            "cached valid key survives unknown-ID traffic"
+        );
+        *document.lock().unwrap() = jwks_json(&rotated.jwk);
+        *verifier.refresh_attempt.lock().await = Some(Instant::now() - JWKS_REFRESH_COOLDOWN);
+        verifier
+            .verify_token(&token(&rotated, valid_claims()), Utc::now())
+            .await
+            .unwrap();
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            4,
+            "rotation refresh resumes after cooldown"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn failed_jwks_refresh_is_throttled() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let count = Arc::new(AtomicUsize::new(0));
+        let server_count = count.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = [0; 2048];
+                let size = socket.read(&mut request).await.unwrap();
+                assert!(size > 0);
+                server_count.fetch_add(1, Ordering::SeqCst);
+                socket.write_all(b"HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+            }
+        });
+        let mut config = config();
+        config.oidc_discovery_url = format!("http://{address}/discovery");
+        let verifier = EntraJwtVerifier::new(config).unwrap();
+        for i in 0..8 {
+            let header =
+                URL_SAFE_NO_PAD.encode(format!(r#"{{"alg":"RS256","kid":"missing-{i}"}}"#));
+            assert!(verifier
+                .verify_token(&format!("{header}.e30.invalid"), Utc::now())
+                .await
+                .is_err());
+        }
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        server.abort();
     }
 
     #[test]

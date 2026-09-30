@@ -1,9 +1,13 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.40` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.41` is the
 current release target.
 
-Version `0.1.40` adds independent LiteLLM caller-key authentication and path
+Version `0.1.41` strengthens request governance, accounting and resource bounds.
+Drain old replicas before changing the Redis accounting writer; recovery after
+state loss also requires draining and restarting. See [operations](operations.md#budgets-and-rate-limits).
+
+Version `0.1.40` added independent LiteLLM caller-key authentication and path
 deny rules, with additive defaults and Admin UI controls. Upgrade all replicas
 before opting in; see [LiteLLM passthrough](litellm-passthrough.md).
 
@@ -81,7 +85,7 @@ See
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.40
+   python3 scripts/validate-release-metadata.py v0.1.41
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -99,15 +103,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.40 .
+   docker build -t relayna-gateway:0.1.41 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.40 -m "Release v0.1.40"
-   git push origin v0.1.40
+   git tag -a v0.1.41 -m "Release v0.1.41"
+   git push origin v0.1.41
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -117,10 +121,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.40`, the workflow publishes:
+For `v0.1.41`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.40
+ghcr.io/sarattha/relayna-gateway:0.1.41
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

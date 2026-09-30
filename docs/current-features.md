@@ -2,9 +2,13 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.40` feature set.
+This page summarizes the `v0.1.41` feature set.
 
-New in 0.1.40: opt-in LiteLLM caller-key API authentication independent of UI
+New in 0.1.41: complete-body and model governance, atomic budget reservations,
+reservation-preserving reconciliation, secure operator cookies, and bounded JWT
+refresh/UI collection. See [operations](operations.md) for rollout and recovery.
+
+Introduced in 0.1.40: opt-in LiteLLM caller-key API authentication independent of UI
 exposure, and explicit path denies that override wildcard allows. See
 [LiteLLM passthrough](litellm-passthrough.md) for scope, precedence and rollout.
 

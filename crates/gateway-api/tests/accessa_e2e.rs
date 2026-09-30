@@ -614,8 +614,11 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
     assert_eq!(next_json(&mut socket).await["status"], 402);
     assert_eq!(state.dispatches.load(Ordering::SeqCst), 5);
     assert_eq!(agent_history.lock().unwrap()[&conversation], messages[..5]);
-    control
-        .seed_budget_counters(key_ids[0], 0.0, 0.0, Utc::now())
+    // Reconciliation cannot erase spend. Raising the budget legitimately
+    // restores capacity for the remaining reconnect/replay controls.
+    sqlx::query("UPDATE key_policies SET monthly_budget_usd=10 WHERE key_id=$1")
+        .bind(key_ids[0])
+        .execute(store.pool())
         .await
         .unwrap();
     socket.close(None).await.unwrap();

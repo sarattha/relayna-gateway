@@ -120,6 +120,9 @@ struct GenerationRequestProbe {
     #[serde(default)]
     stream: bool,
     tools: Option<Vec<IgnoredAny>>,
+    functions: Option<Vec<IgnoredAny>>,
+    function_call: Option<Value>,
+    tool_choice: Option<Value>,
     service: Option<String>,
     service_name: Option<String>,
     guardrails: Option<Value>,
@@ -572,11 +575,29 @@ pub fn analyze_generation_request(body: &[u8]) -> Option<GenerationRequestAnalys
         features: GenerationFeatures {
             model,
             stream: probe.stream,
-            tools: probe.tools.is_some_and(|tools| !tools.is_empty()),
+            tools: probe.tools.is_some_and(|tools| !tools.is_empty())
+                || probe
+                    .functions
+                    .is_some_and(|functions| !functions.is_empty())
+                || probe
+                    .function_call
+                    .as_ref()
+                    .is_some_and(explicit_tool_selection)
+                || probe
+                    .tool_choice
+                    .as_ref()
+                    .is_some_and(explicit_tool_selection),
             service_name,
         },
         client_guardrails: probe.guardrails,
     })
+}
+
+fn explicit_tool_selection(value: &Value) -> bool {
+    value.is_object()
+        || value
+            .as_str()
+            .is_some_and(|value| value != "none" && value != "auto")
 }
 
 #[cfg(test)]

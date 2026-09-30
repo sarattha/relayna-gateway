@@ -46,6 +46,14 @@ pub struct UsageEvent {
 #[async_trait]
 pub trait UsageRecorder: Send + Sync {
     async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()>;
+
+    async fn committed_budget_spend(
+        &self,
+        _key_id: Uuid,
+        _now: DateTime<Utc>,
+    ) -> GatewayResult<crate::BudgetState> {
+        Err(crate::GatewayError::StoreUnavailable)
+    }
 }
 
 impl UsageEvent {

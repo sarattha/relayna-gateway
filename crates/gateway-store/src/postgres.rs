@@ -137,7 +137,7 @@ impl PostgresStore {
         let rows = sqlx::query(
             r#"
             SELECT
-                p.key_id,
+                k.id AS key_id,
                 COALESCE(
                     SUM(u.estimated_cost) FILTER (
                         WHERE u.created_at >= $2
@@ -145,18 +145,16 @@ impl PostgresStore {
                     0
                 )::double precision AS daily_spend_usd,
                 COALESCE(SUM(u.estimated_cost), 0)::double precision AS monthly_spend_usd
-            FROM key_policies p
-            INNER JOIN api_keys k ON k.id = p.key_id
+            FROM api_keys k
             LEFT JOIN usage_events u
-                ON u.key_id = p.key_id
+                ON u.key_id = k.id
                AND u.created_at >= $3
                AND u.estimated_cost IS NOT NULL
                AND u.estimated_cost > 0
-            WHERE (p.daily_budget_usd IS NOT NULL OR p.monthly_budget_usd IS NOT NULL)
-              AND k.disabled = false
+            WHERE k.disabled = false
               AND k.revoked_at IS NULL
               AND (k.expires_at IS NULL OR k.expires_at > $1)
-            GROUP BY p.key_id
+            GROUP BY k.id
             "#,
         )
         .bind(now)
@@ -988,6 +986,28 @@ fn budget_counter_windows(
 
 #[async_trait]
 impl UsageRecorder for PostgresStore {
+    async fn committed_budget_spend(
+        &self,
+        key_id: Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> GatewayResult<gateway_core::BudgetState> {
+        let (day_start, month_start) = budget_counter_windows(now)?;
+        let row = sqlx::query(r#"
+            SELECT COALESCE(SUM(estimated_cost) FILTER (WHERE created_at >= $2), 0)::double precision AS daily,
+                COALESCE(SUM(estimated_cost), 0)::double precision AS monthly
+            FROM usage_events WHERE key_id = $1 AND created_at >= $3 AND estimated_cost > 0
+        "#).bind(key_id).bind(day_start).bind(month_start).fetch_one(&self.pool).await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(gateway_core::BudgetState {
+            daily_spend_usd: row
+                .try_get("daily")
+                .map_err(|_| GatewayError::StoreUnavailable)?,
+            monthly_spend_usd: row
+                .try_get("monthly")
+                .map_err(|_| GatewayError::StoreUnavailable)?,
+        })
+    }
+
     async fn insert_usage_event(&self, event: &UsageEvent) -> GatewayResult<()> {
         PostgresStore::insert_usage_event(self, event).await
     }
@@ -1107,10 +1127,7 @@ impl gateway_core::PolicyLookup for PostgresStore {
             kind: PolicyLayerKind::Key,
             scope_id: Some(key_id.to_string()),
             policy: KeyPolicy::neutral_layer(policy.policy_version),
-            guardrail_policy: self
-                .guardrail_policy_for_key(key_id)
-                .await
-                .unwrap_or_default(),
+            guardrail_policy: self.guardrail_policy_for_key(key_id).await?,
             policy_version: policy.policy_version,
         });
         let effective_guardrails = resolve_effective_policy(guardrail_layers)?;
@@ -1302,10 +1319,7 @@ impl gateway_core::PolicyLookup for PostgresStore {
             kind: PolicyLayerKind::Key,
             scope_id: Some(key_id.to_string()),
             policy: key_policy,
-            guardrail_policy: self
-                .guardrail_policy_for_key(key_id)
-                .await
-                .unwrap_or_default(),
+            guardrail_policy: self.guardrail_policy_for_key(key_id).await?,
             policy_version,
         });
         let mut effective_policy = resolve_effective_policy(layers)?.policy;

@@ -329,6 +329,9 @@ pub struct PingoraContext {
     is_streaming: bool,
     first_chunk_recorded: bool,
     budget_reserved: bool,
+    request_rate_count: Option<i64>,
+    budget_reserved_at: Option<chrono::DateTime<Utc>>,
+    reservation_id: String,
     task_id: Option<String>,
     run_id: Option<String>,
     traceparent: Option<String>,
@@ -422,6 +425,9 @@ where
             is_streaming: false,
             first_chunk_recorded: false,
             budget_reserved: false,
+            request_rate_count: None,
+            budget_reserved_at: None,
+            reservation_id: uuid::Uuid::new_v4().to_string(),
             task_id: None,
             run_id: None,
             traceparent: None,
@@ -1231,7 +1237,11 @@ where
                 }
             }
         }
-        if ctx.litellm_passthrough || managed_service_request_can_stream(ctx) {
+        if (ctx.litellm_passthrough
+            && (ctx.access.authentication_profiles.is_none() || ctx.direct_litellm_passthrough))
+            || managed_service_request_can_stream(ctx)
+            || (ctx.budget_reserved && ctx.body_bytes_seen == 0 && end_of_stream)
+        {
             return Ok(());
         }
         let Some(rewriter) = ctx.request_rewriter.as_mut() else {
@@ -1304,76 +1314,37 @@ where
             )
             .await;
         }
+        // Apply the complete original selector before policy cost checks.
+        resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
         let analysis = analyze_generation_request(&raw_body);
         let mut features = analysis
             .as_ref()
             .map(|analysis| analysis.features.clone())
             .unwrap_or_default();
         if let Some(key) = key.as_ref() {
+            let mut matched = ctx.route_match.clone().expect("route resolved");
+            if ctx.fallback_count > 0 {
+                matched.provider = Provider::LiteLlm;
+            }
             match self
-                .store
-                .effective_policy_for_context(
-                    key.key_id,
-                    key.project_id,
-                    None,
-                    route,
-                    features.model.clone(),
-                )
+                .effective_complete_policy(key, &matched, &raw_body)
                 .await
             {
                 Ok(effective) => {
-                    if ctx.foundry.is_some() {
-                        let matched = ctx.route_match.as_ref().expect("Foundry route resolved");
-                        features.service_name = matched.service_name.clone();
-                        ctx.is_streaming = features.stream;
-                        let checked = evaluate_policy(
-                            &effective.policy,
-                            matched.route,
-                            matched.provider,
-                            &features,
-                        )
-                        .and_then(|_| {
-                            evaluate_policy_limits(
-                                &effective.policy,
-                                Utc::now(),
-                                Some(ctx.body_bytes_seen as i64),
-                                None,
-                                i32::try_from(estimate_generation_tokens(&raw_body)).ok(),
-                                None,
-                                matched.estimated_cost_usd,
-                            )
-                        });
-                        if let Err(error) = checked {
-                            ctx.guardrail_error = Some(error);
-                            return Err(PingoraError::new(ErrorType::InternalError));
-                        }
-                        match self
-                            .control_state
-                            .check_token_rate_limit(
-                                key.key_id,
-                                effective.policy.tpm_limit,
-                                estimate_generation_tokens(&raw_body),
-                                Utc::now(),
-                            )
-                            .await
-                        {
-                            Ok(RateLimitDecision::Allowed { .. }) => {}
-                            Ok(RateLimitDecision::Exceeded {
-                                retry_after_seconds,
-                                ..
-                            }) => {
-                                ctx.guardrail_error = Some(GatewayError::TokenRateLimitExceeded {
-                                    retry_after_seconds,
-                                });
-                                return Err(PingoraError::new(ErrorType::InternalError));
-                            }
-                            Err(error) => {
-                                ctx.guardrail_error = Some(error);
-                                return Err(PingoraError::new(ErrorType::InternalError));
-                            }
-                        }
-                        ctx.policy = Some(effective.policy);
+                    features.service_name = features
+                        .service_name
+                        .or_else(|| matched.service_name.clone());
+                    if let Err(error) = check_complete_request_policy(
+                        &effective.policy,
+                        &matched,
+                        &raw_body,
+                        &features,
+                    ) {
+                        ctx.guardrail_error = Some(error.clone());
+                        respond_error(session, error, ctx).await?;
+                        return Err(PingoraError::new(ErrorType::InternalError));
                     }
+                    ctx.policy = Some(effective.policy);
                     policy = effective.guardrail_policy;
                     ctx.guardrail_policy = policy.clone();
                 }
@@ -1382,6 +1353,18 @@ where
                     return Err(PingoraError::new(ErrorType::InternalError));
                 }
             }
+        }
+        // Profile-governed passthrough still enforces body-selected policy,
+        // rate limits and budgets, while retaining its released no-rewrite mode.
+        if ctx.litellm_passthrough {
+            *body = Some(Bytes::from(raw_body));
+            if let Some(body) = body.as_ref() {
+                ctx.body_prefix.clear();
+                ctx.body_prefix
+                    .extend_from_slice(&body[..body.len().min(65_536)]);
+            }
+            self.admit_complete_body(session, body, ctx).await?;
+            return Ok(());
         }
         let client_requested = match extract_client_guardrails_value(
             analysis
@@ -1461,6 +1444,7 @@ where
                     .extend_from_slice(&body[..body.len().min(65_536)]);
             }
             resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
+            self.admit_complete_body(session, body, ctx).await?;
             return Ok(());
         }
 
@@ -1469,6 +1453,7 @@ where
             Err(_) => {
                 *body = Some(Bytes::from(raw_body));
                 resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
+                self.admit_complete_body(session, body, ctx).await?;
                 return Ok(());
             }
         };
@@ -1528,6 +1513,7 @@ where
                 .extend_from_slice(&body[..body.len().min(65_536)]);
         }
         resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
+        self.admit_complete_body(session, body, ctx).await?;
         Ok(())
     }
 
@@ -1583,14 +1569,21 @@ where
                 }
             }
         }
-        // Body selectors are unavailable at this lifecycle stage. Reserve a
-        // conservative fixed-cost ceiling and reconcile after body parsing.
+        // Body selectors are unavailable at this stage. Prepare the fixed-cost
+        // ceiling; buffered requests admit only after their final body is known.
         prepare_service_cost_for_ctx(ctx);
         if let Some(updated) = ctx.route_match.clone() {
             matched = updated;
         }
 
         let now = Utc::now();
+        let body_empty = session.as_mut().is_body_empty();
+        if body_empty {
+            resolve_service_cost_for_ctx(ctx, None);
+            if let Some(updated) = ctx.route_match.clone() {
+                matched = updated;
+            }
+        }
         if let Err(error) = self.ensure_litellm_canonical_route_enabled(route).await {
             self.record_terminal_usage(ctx, &key, route, &error, now)
                 .await;
@@ -1647,7 +1640,9 @@ where
             None,
             i32::try_from(estimated_tokens).ok(),
             None,
-            matched.estimated_cost_usd,
+            (body_empty || managed_service_request_can_stream(ctx))
+                .then_some(matched.estimated_cost_usd)
+                .flatten(),
         ) {
             gateway_telemetry::record_policy_denial(route.as_str(), error.code());
             self.record_terminal_usage(ctx, &key, route, &error, now)
@@ -1655,39 +1650,54 @@ where
             respond_error(session, error, ctx).await?;
             return Ok(false);
         }
-        ctx.policy = Some(policy.clone());
-
-        traffic_step(ctx, "rate_limit");
-        match self
-            .control_state
-            .check_request_rate_limit(key.key_id, policy.rpm_limit, now)
-            .await
-        {
-            Ok(RateLimitDecision::Allowed { .. }) => {}
-            Ok(RateLimitDecision::Exceeded {
-                retry_after_seconds,
-                ..
-            }) => {
-                gateway_telemetry::record_rate_limit_rejection(route.as_str(), "request");
-                let error = GatewayError::RateLimitExceeded {
-                    retry_after_seconds,
-                };
-                self.record_terminal_usage(ctx, &key, route, &error, now)
-                    .await;
-                respond_error(session, error, ctx).await?;
-                return Ok(false);
-            }
-            Err(error) => {
+        if body_empty {
+            if let Err(error) = check_complete_request_policy(&policy, &matched, b"", &features) {
                 self.record_terminal_usage(ctx, &key, route, &error, now)
                     .await;
                 respond_error(session, error, ctx).await?;
                 return Ok(false);
             }
         }
+        ctx.policy = Some(policy.clone());
 
-        // Foundry reserves TPM once from the complete rewritten body in the
-        // body filter. This header-stage estimate must not charge it again.
-        if ctx.foundry.is_none() {
+        if ctx.request_rate_count.is_none() {
+            traffic_step(ctx, "rate_limit");
+            // Count once before forwarding. Unresolved model policies need a
+            // real bucket count even when the base policy has no RPM limit.
+            let rpm_limit = policy.rpm_limit.or_else(|| {
+                (!body_empty && !managed_service_request_can_stream(ctx)).then_some(i32::MAX)
+            });
+            match self
+                .control_state
+                .check_request_rate_limit(key.key_id, rpm_limit, now)
+                .await
+            {
+                Ok(RateLimitDecision::Allowed { count }) => ctx.request_rate_count = Some(count),
+                Ok(RateLimitDecision::Exceeded {
+                    retry_after_seconds,
+                    ..
+                }) => {
+                    gateway_telemetry::record_rate_limit_rejection(route.as_str(), "request");
+                    let error = GatewayError::RateLimitExceeded {
+                        retry_after_seconds,
+                    };
+                    self.record_terminal_usage(ctx, &key, route, &error, now)
+                        .await;
+                    respond_error(session, error, ctx).await?;
+                    return Ok(false);
+                }
+                Err(error) => {
+                    self.record_terminal_usage(ctx, &key, route, &error, now)
+                        .await;
+                    respond_error(session, error, ctx).await?;
+                    return Ok(false);
+                }
+            }
+        }
+
+        // Buffered requests reserve TPM once from their complete rewritten
+        // body. Only non-JSON services admitted for streaming use this stage.
+        if body_empty || managed_service_request_can_stream(ctx) {
             match self
                 .control_state
                 .check_token_rate_limit(key.key_id, policy.tpm_limit, estimated_tokens, now)
@@ -1717,33 +1727,26 @@ where
         }
 
         traffic_step(ctx, "budget");
-        match self
-            .control_state
-            .check_budget(
+        let budget = if body_empty || managed_service_request_can_stream(ctx) {
+            self.admit_request_budget(
                 key.key_id,
-                policy.daily_budget_usd,
-                policy.monthly_budget_usd,
+                &ctx.reservation_id,
+                matched.estimated_cost_usd.unwrap_or(0.0),
+                &policy,
                 now,
             )
             .await
-        {
+        } else {
+            // Final model-specific policy and cost are available at body emission.
+            Ok(BudgetDecision::Allowed(gateway_core::BudgetState {
+                daily_spend_usd: 0.0,
+                monthly_spend_usd: 0.0,
+            }))
+        };
+        match budget {
             Ok(BudgetDecision::Allowed(_)) => {
-                if let Some(estimated_cost_usd) = matched.estimated_cost_usd {
-                    if let Err(error) = self
-                        .control_state
-                        .reserve_budget(key.key_id, &ctx.request_id, estimated_cost_usd, now)
-                        .await
-                    {
-                        self.record_terminal_usage(ctx, &key, route, &error, now)
-                            .await;
-                        respond_error(session, error, ctx).await?;
-                        return Ok(false);
-                    }
-                    ctx.budget_reserved = true;
-                    if ctx.is_streaming {
-                        gateway_telemetry::stream_started();
-                    }
-                }
+                ctx.budget_reserved = body_empty || managed_service_request_can_stream(ctx);
+                ctx.budget_reserved_at = ctx.budget_reserved.then_some(now);
                 if let Some((_, config)) = &ctx.foundry {
                     let result = tokio::time::timeout(
                         Duration::from_millis(matched.timeout_ms),
@@ -2309,7 +2312,11 @@ where
                 .or(ctx.terminal_status_code)
                 .unwrap_or_else(|| if error.is_some() { 502 } else { 500 });
             let usage_cost = resolved_usage_cost(ctx);
-            let estimated_cost_usd = usage_cost.estimated_cost_usd;
+            let estimated_cost_usd = if !ctx.budget_reserved && ctx.guardrail_error.is_some() {
+                None
+            } else {
+                usage_cost.estimated_cost_usd
+            };
             let (input_tokens, output_tokens, total_tokens) = if ctx.litellm_passthrough {
                 (None, None, None)
             } else {
@@ -2324,7 +2331,7 @@ where
                 extract_model(&ctx.body_prefix),
                 status_code,
                 latency_ms,
-                Utc::now(),
+                ctx.budget_reserved_at.unwrap_or_else(Utc::now),
             )
             .with_provider(provider)
             .with_usage_tokens(input_tokens, output_tokens, total_tokens)
@@ -2352,6 +2359,36 @@ where
             ctx.traffic.usage = Some(TrafficUsage::from(&event));
             ctx.traffic.debug_bundle = Some(debug_bundle_for_ctx(ctx, status_code));
             ctx.terminal_usage_recorded = true;
+            if let Some(estimated_cost_usd) = estimated_cost_usd {
+                if ctx.budget_reserved {
+                    let result = self
+                        .control_state
+                        .reconcile_budget_reservation(
+                            key.key_id,
+                            &ctx.reservation_id,
+                            estimated_cost_usd,
+                            Utc::now(),
+                        )
+                        .await;
+                    if result.is_err() {
+                        ctx.traffic.recording_failed("budget");
+                    }
+                } else {
+                    let result = self
+                        .control_state
+                        .add_budget_spend(key.key_id, estimated_cost_usd, Utc::now())
+                        .await;
+                    if result.is_err() {
+                        ctx.traffic.recording_failed("budget");
+                    }
+                }
+            } else if ctx.budget_reserved {
+                let _ = self
+                    .control_state
+                    .release_budget_reservation(key.key_id, &ctx.reservation_id)
+                    .await;
+            }
+
             if !matches!(
                 tokio::time::timeout(
                     Duration::from_secs(2),
@@ -2391,29 +2428,6 @@ where
             }
             if let Some(estimated_cost_usd) = estimated_cost_usd {
                 gateway_telemetry::record_estimated_cost_usd(estimated_cost_usd);
-            }
-            if let Some(estimated_cost_usd) = estimated_cost_usd {
-                if ctx.budget_reserved {
-                    let _ = self
-                        .control_state
-                        .reconcile_budget_reservation(
-                            key.key_id,
-                            &ctx.request_id,
-                            estimated_cost_usd,
-                            Utc::now(),
-                        )
-                        .await;
-                } else {
-                    let _ = self
-                        .control_state
-                        .add_budget_spend(key.key_id, estimated_cost_usd, Utc::now())
-                        .await;
-                }
-            } else if ctx.budget_reserved {
-                let _ = self
-                    .control_state
-                    .release_budget_reservation(key.key_id, &ctx.request_id)
-                    .await;
             }
             for event in &ctx.guardrail_events {
                 gateway_telemetry::record_guardrail_execution(
@@ -2769,6 +2783,207 @@ where
     S: UsageRecorder + ProviderIntelligenceStore,
     R: BudgetStore,
 {
+    async fn effective_complete_policy(
+        &self,
+        key: &AuthenticatedKey,
+        matched: &RouteMatch,
+        body: &[u8],
+    ) -> GatewayResult<gateway_core::EffectivePolicy>
+    where
+        S: PolicyLookup,
+    {
+        let features = extract_generation_features(body);
+        let base = self
+            .store
+            .effective_policy_for_context(
+                key.key_id,
+                key.project_id,
+                None,
+                Some(matched.route),
+                features.model.clone(),
+            )
+            .await?;
+        if matched.route != Route::AnthropicMessageBatches || body.is_empty() {
+            return Ok(base);
+        }
+        let mut layers = vec![gateway_core::PolicyLayer {
+            kind: gateway_core::PolicyLayerKind::Key,
+            scope_id: Some(key.key_id.to_string()),
+            policy_version: base.policy.policy_version,
+            policy: base.policy,
+            guardrail_policy: base.guardrail_policy,
+        }];
+        let mut models = std::collections::BTreeSet::new();
+        for feature in batch_request_features(body)? {
+            let effective = self
+                .store
+                .effective_policy_for_context(
+                    key.key_id,
+                    key.project_id,
+                    None,
+                    Some(matched.route),
+                    feature.model.clone(),
+                )
+                .await?;
+            evaluate_policy(&effective.policy, matched.route, matched.provider, &feature)?;
+            evaluate_policy_limits(
+                &effective.policy,
+                Utc::now(),
+                i64::try_from(body.len()).ok(),
+                None,
+                i32::try_from(estimate_generation_tokens(body)).ok(),
+                None,
+                matched.estimated_cost_usd,
+            )?;
+            if models.insert(feature.model.clone()) {
+                let mut policy = effective.policy;
+                // Per-entry model allowlists were checked above. Intersecting
+                // distinct models' allowlists would reject valid mixed batches.
+                policy.allowed_models.clear();
+                layers.push(gateway_core::PolicyLayer {
+                    kind: gateway_core::PolicyLayerKind::Model,
+                    scope_id: feature.model,
+                    policy_version: policy.policy_version,
+                    policy,
+                    guardrail_policy: effective.guardrail_policy,
+                });
+            }
+        }
+        gateway_core::resolve_effective_policy(layers)
+    }
+
+    async fn admit_request_budget(
+        &self,
+        key_id: uuid::Uuid,
+        reservation_id: &str,
+        amount: f64,
+        policy: &KeyPolicy,
+        now: chrono::DateTime<Utc>,
+    ) -> GatewayResult<BudgetDecision> {
+        let decision = self
+            .control_state
+            .admit_budget(
+                key_id,
+                reservation_id,
+                amount,
+                policy.daily_budget_usd,
+                policy.monthly_budget_usd,
+                now,
+            )
+            .await;
+        if matches!(decision, Err(GatewayError::ControlStateUnavailable)) {
+            // New keys/periods hydrate from the durable ledger. An epoch mismatch
+            // after Redis loss still rejects seeding, so this cannot rearm a live replica.
+            let committed = self.store.committed_budget_spend(key_id, now).await?;
+            self.control_state
+                .seed_committed_budget(key_id, committed, now)
+                .await?;
+            return self
+                .control_state
+                .admit_budget(
+                    key_id,
+                    reservation_id,
+                    amount,
+                    policy.daily_budget_usd,
+                    policy.monthly_budget_usd,
+                    now,
+                )
+                .await;
+        }
+        decision
+    }
+
+    async fn admit_complete_body(
+        &self,
+        session: &mut Session,
+        body: &mut Option<Bytes>,
+        ctx: &mut PingoraContext,
+    ) -> PingoraResult<()>
+    where
+        S: PolicyLookup,
+        R: RateLimitStore,
+    {
+        let result: GatewayResult<()> = async {
+            let key = ctx.key.as_ref().ok_or(GatewayError::MissingAuthorization)?;
+            let mut matched = ctx
+                .route_match
+                .clone()
+                .ok_or(GatewayError::UnsupportedRoute)?;
+            if ctx.fallback_count > 0 {
+                matched.provider = Provider::LiteLlm;
+            }
+            let raw = body.as_deref().unwrap_or_default();
+            let mut features = extract_generation_features(raw);
+            features.service_name = features
+                .service_name
+                .or_else(|| matched.service_name.clone());
+            let effective = self.effective_complete_policy(key, &matched, raw).await?;
+            check_complete_request_policy(&effective.policy, &matched, raw, &features)?;
+            if ctx.budget_reserved {
+                ctx.policy = Some(effective.policy);
+                return Ok(());
+            }
+            if effective.policy.rpm_limit.is_some_and(|limit| {
+                limit <= 0 || ctx.request_rate_count.unwrap_or(0) > i64::from(limit)
+            }) {
+                gateway_telemetry::record_rate_limit_rejection(matched.route.as_str(), "request");
+                return Err(GatewayError::RateLimitExceeded {
+                    retry_after_seconds: None,
+                });
+            }
+            let tokens = estimate_generation_tokens(raw);
+            match self
+                .control_state
+                .check_token_rate_limit(key.key_id, effective.policy.tpm_limit, tokens, Utc::now())
+                .await?
+            {
+                RateLimitDecision::Allowed { .. } => {}
+                RateLimitDecision::Exceeded {
+                    retry_after_seconds,
+                    ..
+                } => {
+                    gateway_telemetry::record_rate_limit_rejection(matched.route.as_str(), "token");
+                    return Err(GatewayError::TokenRateLimitExceeded {
+                        retry_after_seconds,
+                    });
+                }
+            }
+            let reserved_at = Utc::now();
+            match self
+                .admit_request_budget(
+                    key.key_id,
+                    &ctx.reservation_id,
+                    matched.estimated_cost_usd.unwrap_or(0.0),
+                    &effective.policy,
+                    reserved_at,
+                )
+                .await?
+            {
+                BudgetDecision::Allowed(_) => {}
+                BudgetDecision::Exceeded(_) => {
+                    gateway_telemetry::record_budget_rejection(matched.route.as_str(), "spend");
+                    return Err(GatewayError::BudgetExceeded);
+                }
+            }
+            ctx.budget_reserved = true;
+            ctx.budget_reserved_at = Some(reserved_at);
+            ctx.is_streaming = features.stream;
+            if ctx.is_streaming {
+                gateway_telemetry::stream_started();
+            }
+            ctx.policy = Some(effective.policy);
+            Ok(())
+        }
+        .await;
+        if let Err(error) = result {
+            ctx.guardrail_error = Some(error.clone());
+            *body = Some(Bytes::new());
+            respond_error(session, error, ctx).await?;
+            return Err(PingoraError::new(ErrorType::InternalError));
+        }
+        Ok(())
+    }
+
     async fn record_terminal_usage(
         &self,
         ctx: &mut PingoraContext,
@@ -2786,7 +3001,7 @@ where
         let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
         let provider = provider_for_usage(ctx);
         let usage_cost = resolved_usage_cost(ctx);
-        let estimated_cost_usd = usage_cost.estimated_cost_usd;
+        let estimated_cost_usd = None;
         let event = UsageEvent::new(
             &ctx.request_id,
             key,
@@ -2851,7 +3066,7 @@ where
         if ctx.budget_reserved {
             let _ = self
                 .control_state
-                .release_budget_reservation(key.key_id, &ctx.request_id)
+                .release_budget_reservation(key.key_id, &ctx.reservation_id)
                 .await;
         }
         if ctx.is_streaming && !ctx.socket {
@@ -3327,7 +3542,89 @@ fn provider_for_usage(ctx: &PingoraContext) -> Provider {
         .unwrap_or(Provider::LiteLlm)
 }
 
+fn check_complete_request_policy(
+    policy: &KeyPolicy,
+    matched: &RouteMatch,
+    body: &[u8],
+    features: &gateway_core::GenerationFeatures,
+) -> GatewayResult<()> {
+    if body.len() > matched.max_body_bytes {
+        return Err(GatewayError::RequestBodyTooLarge);
+    }
+    let generation = matches!(
+        matched.route,
+        Route::ChatCompletions
+            | Route::Responses
+            | Route::AnthropicMessages
+            | Route::LiteLlmEmbeddings
+            | Route::LiteLlmRerank
+    );
+    let malformed_metadata = analyze_generation_request(body).is_none()
+        && serde_json::from_slice::<serde_json::Value>(body).is_ok_and(|value| value.is_object());
+    if malformed_metadata
+        || (generation && analyze_generation_request(body).is_none())
+        || ((generation || (!body.is_empty() && matched.route != Route::AnthropicMessageBatches))
+            && !policy.allowed_models.is_empty()
+            && features.model.is_none())
+    {
+        return Err(GatewayError::PolicyDenied);
+    }
+    if matched.route == Route::AnthropicMessageBatches && !body.is_empty() {
+        for feature in batch_request_features(body)? {
+            if !policy.allowed_models.is_empty() && feature.model.is_none() {
+                return Err(GatewayError::PolicyDenied);
+            }
+            evaluate_policy(policy, matched.route, matched.provider, &feature)?;
+        }
+    } else {
+        evaluate_policy(policy, matched.route, matched.provider, features)?;
+    }
+
+    evaluate_policy_limits(
+        policy,
+        Utc::now(),
+        i64::try_from(body.len()).ok(),
+        None,
+        i32::try_from(estimate_generation_tokens(body)).ok(),
+        None,
+        matched.estimated_cost_usd,
+    )
+}
+
+fn batch_request_features(body: &[u8]) -> GatewayResult<Vec<gateway_core::GenerationFeatures>> {
+    let value: serde_json::Value =
+        serde_json::from_slice(body).map_err(|_| GatewayError::PolicyDenied)?;
+    let entries = value
+        .get("requests")
+        .and_then(serde_json::Value::as_array)
+        .filter(|entries| !entries.is_empty())
+        .ok_or(GatewayError::PolicyDenied)?;
+    entries
+        .iter()
+        .map(|entry| {
+            let params = entry.get("params").ok_or(GatewayError::PolicyDenied)?;
+            let bytes = serde_json::to_vec(params).map_err(|_| GatewayError::PolicyDenied)?;
+            let analysis = analyze_generation_request(&bytes).ok_or(GatewayError::PolicyDenied)?;
+            if analysis.features.model.is_none() {
+                return Err(GatewayError::PolicyDenied);
+            }
+            Ok(analysis.features)
+        })
+        .collect()
+}
+
 fn managed_service_request_can_stream(ctx: &PingoraContext) -> bool {
+    let Some(policy) = ctx.policy.as_ref() else {
+        return false;
+    };
+    if !policy.allowed_models.is_empty()
+        || !policy.allow_streaming
+        || !policy.allow_tools
+        || policy.tpm_limit.is_some()
+        || policy.max_input_tokens_per_request.is_some()
+    {
+        return false;
+    }
     let is_service = ctx
         .route_match
         .as_ref()
@@ -3838,6 +4135,9 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         is_streaming: false,
         first_chunk_recorded: false,
         budget_reserved: false,
+        request_rate_count: None,
+        budget_reserved_at: None,
+        reservation_id: uuid::Uuid::new_v4().to_string(),
         task_id: None,
         run_id: None,
         traceparent: None,
@@ -5054,7 +5354,7 @@ mod tests {
     fn managed_service_streams_only_when_body_work_is_not_required() {
         let mut ctx = new_pingora_context_for_tests();
         ctx.route_match = Some(RouteMatch::service(Route::ServiceWildcard, "documents"));
-        ctx.policy = Some(KeyPolicy::default());
+        ctx.policy = Some(KeyPolicy::neutral_layer(1));
         ctx.request_content_type = Some("multipart/form-data; boundary=documents".to_owned());
         ctx.guardrail_definitions
             .push(gateway_core::pii_redact_definition());
@@ -6156,6 +6456,19 @@ mod tests {
             Ok(())
         }
 
+        async fn admit_budget(
+            &self,
+            key_id: Uuid,
+            _reservation_id: &str,
+            _estimated_cost_usd: f64,
+            daily_budget_usd: Option<f64>,
+            monthly_budget_usd: Option<f64>,
+            now: DateTime<Utc>,
+        ) -> GatewayResult<BudgetDecision> {
+            self.check_budget(key_id, daily_budget_usd, monthly_budget_usd, now)
+                .await
+        }
+
         async fn reserve_budget(
             &self,
             _key_id: Uuid,
@@ -6375,7 +6688,7 @@ mod tests {
                 .lock()
                 .expect("released lock")
                 .as_slice(),
-            &[(key.key_id, "req_disconnect".to_owned())]
+            &[(key.key_id, ctx.reservation_id.clone())]
         );
     }
 

@@ -6,14 +6,9 @@ use gateway_core::{
     RateLimitStore,
 };
 use redis::{aio::MultiplexedConnection, AsyncCommands};
+use std::sync::Arc;
 use uuid::Uuid;
-
-#[derive(Debug, Clone, PartialEq)]
-struct StoredBudgetReservation {
-    amount_usd: f64,
-    daily_key: String,
-    monthly_key: String,
-}
+const BUDGET_EPOCH_KEY: &str = "budget:accounting-epoch:v2";
 
 #[derive(Clone)]
 pub struct RedisReadiness {
@@ -40,12 +35,14 @@ impl RedisReadiness {
 #[derive(Clone)]
 pub struct RedisControlState {
     client: redis::Client,
+    budget_epoch: Arc<std::sync::OnceLock<String>>,
 }
 
 impl RedisControlState {
     pub fn new(redis_url: &str) -> redis::RedisResult<Self> {
         Ok(Self {
             client: redis::Client::open(redis_url)?,
+            budget_epoch: Arc::new(std::sync::OnceLock::new()),
         })
     }
 
@@ -56,15 +53,28 @@ impl RedisControlState {
             .map_err(|_| GatewayError::ControlStateUnavailable)
     }
 
-    async fn get_f64(connection: &mut MultiplexedConnection, key: &str) -> GatewayResult<f64> {
-        let value: Option<String> = connection
-            .get(key)
-            .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
-        Ok(value
-            .as_deref()
-            .and_then(|value| value.parse::<f64>().ok())
-            .unwrap_or(0.0))
+    async fn budget_epoch(&self) -> GatewayResult<&str> {
+        // Once armed, a running replica cannot silently restart accounting after
+        // Redis loss. Recovery requires draining requests and restarting replicas.
+        if let Some(epoch) = self.budget_epoch.get() {
+            return Ok(epoch);
+        }
+        let epoch: String = redis::Script::new(
+            r#"
+            redis.call('SET', KEYS[1], ARGV[1], 'NX')
+            return redis.call('GET', KEYS[1])
+        "#,
+        )
+        .key(BUDGET_EPOCH_KEY)
+        .arg(Uuid::new_v4().to_string())
+        .invoke_async(&mut self.connection().await?)
+        .await
+        .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        let _ = self.budget_epoch.set(epoch);
+        self.budget_epoch
+            .get()
+            .map(String::as_str)
+            .ok_or(GatewayError::ControlStateUnavailable)
     }
 
     pub async fn seed_budget_counters(
@@ -74,30 +84,70 @@ impl RedisControlState {
         monthly_spend_usd: f64,
         now: DateTime<Utc>,
     ) -> GatewayResult<()> {
-        let daily_key = daily_budget_key(key_id, now);
-        let monthly_key = monthly_budget_key(key_id, now);
-        let mut connection = self.connection().await?;
-        let _: () = redis::pipe()
-            .atomic()
-            .cmd("SET")
-            .arg(&daily_key)
-            .arg(daily_spend_usd.max(0.0))
-            .ignore()
-            .cmd("EXPIRE")
-            .arg(&daily_key)
-            .arg(172_800)
-            .ignore()
-            .cmd("SET")
-            .arg(&monthly_key)
-            .arg(monthly_spend_usd.max(0.0))
-            .ignore()
-            .cmd("EXPIRE")
-            .arg(&monthly_key)
-            .arg(5_356_800)
-            .ignore()
-            .query_async(&mut connection)
-            .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        if !daily_spend_usd.is_finite() || !monthly_spend_usd.is_finite() {
+            return Err(GatewayError::ControlStateUnavailable);
+        }
+        let _: () = redis::Script::new(r#"
+            if redis.call('GET', KEYS[3]) ~= ARGV[5] then return redis.error_reply('budget recovery required') end
+            for i = 1, 2 do
+                local current = tonumber(redis.call('GET', KEYS[i]) or '0')
+                if not current or current < 0 then return redis.error_reply('invalid budget state') end
+            end
+            for i = 1, 2 do
+                local current = tonumber(redis.call('GET', KEYS[i]) or '0')
+                redis.call('SET', KEYS[i], math.max(current, tonumber(ARGV[i])), 'EX', ARGV[i + 2])
+            end
+            return nil
+        "#)
+        .key(daily_budget_key(key_id, now))
+        .key(monthly_budget_key(key_id, now))
+        .key(BUDGET_EPOCH_KEY)
+        .arg(daily_spend_usd.max(0.0)).arg(monthly_spend_usd.max(0.0))
+        .arg(172_800).arg(5_356_800).arg(self.budget_epoch().await?)
+        .invoke_async(&mut self.connection().await?).await
+        .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        Ok(())
+    }
+
+    async fn finalize_reservation(
+        &self,
+        key_id: Uuid,
+        reservation_id: &str,
+        actual: f64,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        if !actual.is_finite() || actual < 0.0 {
+            return Err(GatewayError::ControlStateUnavailable);
+        }
+        let _: i64 = redis::Script::new(r#"
+            if redis.call('GET', KEYS[4]) ~= ARGV[2] then return redis.error_reply('budget recovery required') end
+            local value = redis.call('GET', KEYS[1])
+            if not value then return 0 end
+            local amount, daily, monthly, version = string.match(value, '^([^|]+)|([^|]+)|([^|]+)|([^|]+)$')
+            amount = tonumber(amount)
+            if not amount or amount < 0 or version ~= 'v2' then
+                return redis.error_reply('invalid or legacy reservation; drain before upgrade')
+            end
+            local actual = tonumber(ARGV[1])
+            local d = tonumber(redis.call('GET', daily) or '')
+            local m = tonumber(redis.call('GET', monthly) or '')
+            if not d or not m or d < 0 or m < 0 then return redis.error_reply('missing budget state') end
+            local dr = tonumber(redis.call('GET', daily .. ':reserved') or '')
+            local mr = tonumber(redis.call('GET', monthly .. ':reserved') or '')
+            if not dr or not mr or dr + 0.000000001 < amount or mr + 0.000000001 < amount then
+                return redis.error_reply('missing reservation state')
+            end
+            redis.call('SET', daily .. ':reserved', math.max(0, dr - amount), 'EX', 172800)
+            redis.call('SET', monthly .. ':reserved', math.max(0, mr - amount), 'EX', 5356800)
+            redis.call('INCRBYFLOAT', daily, actual)
+            redis.call('INCRBYFLOAT', monthly, actual)
+            redis.call('DEL', KEYS[1])
+            return 1
+        "#)
+        .key(budget_reservation_key(key_id, reservation_id))
+        .key(daily_budget_key(key_id, now)).key(monthly_budget_key(key_id, now)).key(BUDGET_EPOCH_KEY)
+        .arg(actual).arg(self.budget_epoch().await?).invoke_async(&mut self.connection().await?).await
+        .map_err(|_| GatewayError::ControlStateUnavailable)?;
         Ok(())
     }
 }
@@ -203,12 +253,23 @@ impl BudgetStore for RedisControlState {
             }));
         }
 
-        let daily_key = daily_budget_key(key_id, now);
-        let monthly_key = monthly_budget_key(key_id, now);
-        let mut connection = self.connection().await?;
+        let (daily, monthly): (f64, f64) = redis::Script::new(r#"
+            if redis.call('GET', KEYS[3]) ~= ARGV[1] then return redis.error_reply('budget recovery required') end
+            local d = tonumber(redis.call('GET', KEYS[1]) or '')
+            local m = tonumber(redis.call('GET', KEYS[2]) or '')
+            local dr = tonumber(redis.call('GET', KEYS[1] .. ':reserved') or '0')
+            local mr = tonumber(redis.call('GET', KEYS[2] .. ':reserved') or '0')
+            if not d or not m or not dr or not mr or d < 0 or m < 0 or dr < 0 or mr < 0 then
+                return redis.error_reply('budget requires rehydration')
+            end
+            return {tostring(d + dr), tostring(m + mr)}
+        "#).key(daily_budget_key(key_id, now)).key(monthly_budget_key(key_id, now))
+        .key(BUDGET_EPOCH_KEY).arg(self.budget_epoch().await?)
+        .invoke_async(&mut self.connection().await?).await
+        .map_err(|_| GatewayError::ControlStateUnavailable)?;
         let state = BudgetState {
-            daily_spend_usd: Self::get_f64(&mut connection, &daily_key).await?,
-            monthly_spend_usd: Self::get_f64(&mut connection, &monthly_key).await?,
+            daily_spend_usd: daily,
+            monthly_spend_usd: monthly,
         };
 
         Ok(evaluate_budget(state, daily_budget_usd, monthly_budget_usd))
@@ -224,31 +285,100 @@ impl BudgetStore for RedisControlState {
             return Ok(());
         }
 
-        let daily_key = daily_budget_key(key_id, now);
-        let monthly_key = monthly_budget_key(key_id, now);
-        let mut connection = self.connection().await?;
-        let _: f64 = redis::cmd("INCRBYFLOAT")
-            .arg(&daily_key)
-            .arg(estimated_cost_usd)
-            .query_async(&mut connection)
-            .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
-        let _: bool = connection
-            .expire(&daily_key, 172_800)
-            .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
-        let _: f64 = redis::cmd("INCRBYFLOAT")
-            .arg(&monthly_key)
-            .arg(estimated_cost_usd)
-            .query_async(&mut connection)
-            .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
-        let _: bool = connection
-            .expire(&monthly_key, 5_356_800)
-            .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        if !estimated_cost_usd.is_finite() {
+            return Err(GatewayError::ControlStateUnavailable);
+        }
+        let _: () = redis::Script::new(r#"
+            if redis.call('GET', KEYS[3]) ~= ARGV[2] then return redis.error_reply('budget recovery required') end
+            for i = 1, 2 do
+                local current = tonumber(redis.call('GET', KEYS[i]) or '0')
+                if not current or current < 0 then return redis.error_reply('invalid budget state') end
+            end
+            redis.call('INCRBYFLOAT', KEYS[1], ARGV[1])
+            redis.call('EXPIRE', KEYS[1], 172800)
+            redis.call('INCRBYFLOAT', KEYS[2], ARGV[1])
+            redis.call('EXPIRE', KEYS[2], 5356800)
+            return nil
+        "#).key(daily_budget_key(key_id, now)).key(monthly_budget_key(key_id, now))
+        .key(BUDGET_EPOCH_KEY).arg(estimated_cost_usd).arg(self.budget_epoch().await?)
+        .invoke_async(&mut self.connection().await?).await
+        .map_err(|_| GatewayError::ControlStateUnavailable)?;
 
         Ok(())
+    }
+
+    async fn seed_committed_budget(
+        &self,
+        key_id: Uuid,
+        state: BudgetState,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        self.seed_budget_counters(key_id, state.daily_spend_usd, state.monthly_spend_usd, now)
+            .await
+    }
+
+    async fn admit_budget(
+        &self,
+        key_id: Uuid,
+        reservation_id: &str,
+        estimated_cost_usd: f64,
+        daily_budget_usd: Option<f64>,
+        monthly_budget_usd: Option<f64>,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<BudgetDecision> {
+        if !estimated_cost_usd.is_finite()
+            || estimated_cost_usd < 0.0
+            || [daily_budget_usd, monthly_budget_usd]
+                .into_iter()
+                .flatten()
+                .any(|v| !v.is_finite() || v < 0.0)
+        {
+            return Err(GatewayError::ControlStateUnavailable);
+        }
+        let daily = daily_budget_key(key_id, now);
+        let monthly = monthly_budget_key(key_id, now);
+        let (allowed, daily_spend, monthly_spend): (i64, f64, f64) = redis::Script::new(r#"
+            if redis.call('GET', KEYS[4]) ~= ARGV[4] then return redis.error_reply('budget recovery required') end
+            if redis.call('EXISTS', KEYS[1]) == 1 then return redis.error_reply('duplicate reservation') end
+            local d = redis.call('GET', KEYS[2]); local m = redis.call('GET', KEYS[3])
+            if (ARGV[2] ~= '' or ARGV[3] ~= '') and (not d or not m) then
+                return redis.error_reply('budget requires rehydration')
+            end
+            d = tonumber(d or '0'); m = tonumber(m or '0')
+            local dr = tonumber(redis.call('GET', KEYS[2] .. ':reserved') or '0')
+            local mr = tonumber(redis.call('GET', KEYS[3] .. ':reserved') or '0')
+            if not d or not m or not dr or not mr or d < 0 or m < 0 or dr < 0 or mr < 0 then
+                return redis.error_reply('invalid budget state')
+            end
+            local amount = tonumber(ARGV[1]); local dl = tonumber(ARGV[2]); local ml = tonumber(ARGV[3])
+            if (dl and (d + dr >= dl or d + dr + amount > dl))
+                or (ml and (m + mr >= ml or m + mr + amount > ml)) then
+                return {0, tostring(d + dr), tostring(m + mr)}
+            end
+            redis.call('SET', KEYS[1], ARGV[1] .. '|' .. KEYS[2] .. '|' .. KEYS[3] .. '|v2', 'EX', 5356800)
+            redis.call('SET', KEYS[2], d, 'EX', 172800)
+            redis.call('SET', KEYS[3], m, 'EX', 5356800)
+            redis.call('INCRBYFLOAT', KEYS[2] .. ':reserved', amount)
+            redis.call('EXPIRE', KEYS[2] .. ':reserved', 172800)
+            redis.call('INCRBYFLOAT', KEYS[3] .. ':reserved', amount)
+            redis.call('EXPIRE', KEYS[3] .. ':reserved', 5356800)
+            return {1, tostring(d + dr + amount), tostring(m + mr + amount)}
+        "#)
+        .key(budget_reservation_key(key_id, reservation_id)).key(&daily).key(&monthly).key(BUDGET_EPOCH_KEY)
+        .arg(estimated_cost_usd).arg(daily_budget_usd.map(|v| v.to_string()).unwrap_or_default())
+        .arg(monthly_budget_usd.map(|v| v.to_string()).unwrap_or_default())
+        .arg(self.budget_epoch().await?)
+        .invoke_async(&mut self.connection().await?).await
+        .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        let state = BudgetState {
+            daily_spend_usd: daily_spend,
+            monthly_spend_usd: monthly_spend,
+        };
+        Ok(if allowed == 1 {
+            BudgetDecision::Allowed(state)
+        } else {
+            BudgetDecision::Exceeded(state)
+        })
     }
 
     async fn reserve_budget(
@@ -258,44 +388,8 @@ impl BudgetStore for RedisControlState {
         estimated_cost_usd: f64,
         now: DateTime<Utc>,
     ) -> GatewayResult<()> {
-        if estimated_cost_usd <= 0.0 {
-            return Ok(());
-        }
-
-        let reservation_key = budget_reservation_key(key_id, request_id);
-        let daily_key = daily_budget_key(key_id, now);
-        let monthly_key = monthly_budget_key(key_id, now);
-        let mut connection = self.connection().await?;
-        let _: () = redis::pipe()
-            .atomic()
-            .cmd("SET")
-            .arg(&reservation_key)
-            .arg(encode_budget_reservation(
-                estimated_cost_usd,
-                &daily_key,
-                &monthly_key,
-            ))
-            .arg("EX")
-            .arg(3600)
-            .cmd("INCRBYFLOAT")
-            .arg(&daily_key)
-            .arg(estimated_cost_usd)
-            .ignore()
-            .cmd("EXPIRE")
-            .arg(&daily_key)
-            .arg(172_800)
-            .ignore()
-            .cmd("INCRBYFLOAT")
-            .arg(&monthly_key)
-            .arg(estimated_cost_usd)
-            .ignore()
-            .cmd("EXPIRE")
-            .arg(&monthly_key)
-            .arg(5_356_800)
-            .ignore()
-            .query_async(&mut connection)
-            .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
+        self.admit_budget(key_id, request_id, estimated_cost_usd, None, None, now)
+            .await?;
         Ok(())
     }
 
@@ -306,28 +400,8 @@ impl BudgetStore for RedisControlState {
         actual_cost_usd: f64,
         now: DateTime<Utc>,
     ) -> GatewayResult<()> {
-        let reservation_key = budget_reservation_key(key_id, request_id);
-        let mut connection = self.connection().await?;
-        let reservation =
-            read_budget_reservation(&mut connection, &reservation_key, key_id, now).await?;
-        let delta = actual_cost_usd.max(0.0) - reservation.amount_usd;
-        let _: () = redis::pipe()
-            .atomic()
-            .cmd("INCRBYFLOAT")
-            .arg(&reservation.daily_key)
-            .arg(delta)
-            .ignore()
-            .cmd("INCRBYFLOAT")
-            .arg(&reservation.monthly_key)
-            .arg(delta)
-            .ignore()
-            .cmd("DEL")
-            .arg(&reservation_key)
-            .ignore()
-            .query_async(&mut connection)
+        self.finalize_reservation(key_id, request_id, actual_cost_usd, now)
             .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
-        Ok(())
     }
 
     async fn release_budget_reservation(
@@ -335,80 +409,9 @@ impl BudgetStore for RedisControlState {
         key_id: Uuid,
         request_id: &str,
     ) -> GatewayResult<()> {
-        let reservation_key = budget_reservation_key(key_id, request_id);
-        let mut connection = self.connection().await?;
-        let reservation =
-            read_budget_reservation(&mut connection, &reservation_key, key_id, Utc::now()).await?;
-        let _: () = redis::pipe()
-            .atomic()
-            .cmd("INCRBYFLOAT")
-            .arg(&reservation.daily_key)
-            .arg(-reservation.amount_usd)
-            .ignore()
-            .cmd("INCRBYFLOAT")
-            .arg(&reservation.monthly_key)
-            .arg(-reservation.amount_usd)
-            .ignore()
-            .cmd("DEL")
-            .arg(&reservation_key)
-            .ignore()
-            .query_async(&mut connection)
+        self.finalize_reservation(key_id, request_id, 0.0, Utc::now())
             .await
-            .map_err(|_| GatewayError::ControlStateUnavailable)?;
-        Ok(())
     }
-}
-
-fn encode_budget_reservation(amount_usd: f64, daily_key: &str, monthly_key: &str) -> String {
-    format!("{amount_usd}|{daily_key}|{monthly_key}")
-}
-
-fn parse_budget_reservation(
-    value: &str,
-    key_id: Uuid,
-    fallback_now: DateTime<Utc>,
-) -> Option<StoredBudgetReservation> {
-    let parts: Vec<&str> = value.split('|').collect();
-    if parts.len() == 3 {
-        let amount_usd = parts[0].parse::<f64>().ok()?;
-        if amount_usd.is_finite() && amount_usd >= 0.0 {
-            return Some(StoredBudgetReservation {
-                amount_usd,
-                daily_key: parts[1].to_owned(),
-                monthly_key: parts[2].to_owned(),
-            });
-        }
-    }
-
-    let amount_usd = value.parse::<f64>().ok()?;
-    if !amount_usd.is_finite() || amount_usd < 0.0 {
-        return None;
-    }
-    Some(StoredBudgetReservation {
-        amount_usd,
-        daily_key: daily_budget_key(key_id, fallback_now),
-        monthly_key: monthly_budget_key(key_id, fallback_now),
-    })
-}
-
-async fn read_budget_reservation(
-    connection: &mut MultiplexedConnection,
-    reservation_key: &str,
-    key_id: Uuid,
-    fallback_now: DateTime<Utc>,
-) -> GatewayResult<StoredBudgetReservation> {
-    let value: Option<String> = connection
-        .get(reservation_key)
-        .await
-        .map_err(|_| GatewayError::ControlStateUnavailable)?;
-    Ok(value
-        .as_deref()
-        .and_then(|value| parse_budget_reservation(value, key_id, fallback_now))
-        .unwrap_or_else(|| StoredBudgetReservation {
-            amount_usd: 0.0,
-            daily_key: daily_budget_key(key_id, fallback_now),
-            monthly_key: monthly_budget_key(key_id, fallback_now),
-        }))
 }
 
 #[async_trait::async_trait]
@@ -446,30 +449,5 @@ impl gateway_core::accessa::AccessaStore for RedisControlState {
             .await
             .map_err(|_| GatewayError::ControlStateUnavailable)?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reservation_value_preserves_original_budget_keys() {
-        let key_id = Uuid::parse_str("018f8d31-86a7-7c48-8f36-4d1fa4d99101").expect("uuid");
-        let now = DateTime::parse_from_rfc3339("2026-05-09T23:59:59Z")
-            .expect("time")
-            .with_timezone(&Utc);
-        let daily_key = daily_budget_key(key_id, now);
-        let monthly_key = monthly_budget_key(key_id, now);
-        let encoded = encode_budget_reservation(0.25, &daily_key, &monthly_key);
-        let later = DateTime::parse_from_rfc3339("2026-05-10T00:00:01Z")
-            .expect("time")
-            .with_timezone(&Utc);
-
-        let parsed = parse_budget_reservation(&encoded, key_id, later).expect("reservation");
-
-        assert_eq!(parsed.amount_usd, 0.25);
-        assert_eq!(parsed.daily_key, daily_key);
-        assert_eq!(parsed.monthly_key, monthly_key);
     }
 }
