@@ -2,6 +2,20 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.41 - 2026-09-30
+
+### Fixed
+
+- Enforce complete request and model policy before forwarding governed bodies, including nested batches, registered-service pricing, model rate limits, and retry admission.
+- Admit projected daily/monthly spend atomically, preserve outstanding reservations during reconciliation, and finalize private request reservations once.
+- Require secure LiteLLM operator cookies, coordinate and throttle JWT signing-key refreshes, bound UI response collection, and propagate guardrail-policy storage failures.
+- Add live proxy, Redis/PostgreSQL, key-rotation, response-streaming and legitimate-request regression coverage.
+
+### Compatibility
+
+- Drain old gateway replicas and in-flight requests before upgrading the Redis accounting writer; do not mix writer versions. After Redis state loss or rollback, use drained recovery and restart all replicas. See [budget operation and recovery](docs/operations.md#budgets-and-rate-limits).
+- Operator UI cookies require HTTPS. JWT refreshes have a 30-second minimum interval. Oversized UI resources stream unchanged; public error shapes and caller correlation IDs remain stable.
+
 ## 0.1.40 - 2026-09-29
 
 ### Added

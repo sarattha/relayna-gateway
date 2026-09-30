@@ -257,15 +257,52 @@ and token rate limits are Redis minute counters. Budget checks use Redis daily
 and monthly counters for fast enforcement, while PostgreSQL usage events remain
 the durable accounting ledger.
 
-On startup, Gateway waits for Redis readiness before rehydrating current daily
-and monthly budget counters for keys with configured budgets. It also runs
-periodic reconciliation so a Redis restart or flush can recover budget spend
-from PostgreSQL usage events without manual counter repair. In-flight
-reservation keys are short-lived control state and are not reconstructed.
+Gateway admits estimated cost and reserves it in one Redis operation against
+committed spend plus outstanding reservations. Actual provider cost can exceed
+the estimate; these limits do not guarantee an absolute actual-cost ceiling.
+Reservations use private server IDs, independently of caller correlation IDs.
+Completion and cancellation consume each reservation once, using its original
+UTC period even if the request crosses midnight.
+
+Startup and periodic reconciliation seed committed daily/monthly spend from
+PostgreSQL for active keys, including inherited budgets. Seeding never lowers
+committed counters or overwrites outstanding reservations. New budgeted keys and
+periods hydrate on first admission. Configure Redis with `maxmemory-policy
+noeviction` and enough capacity for counters and reservations. Missing or invalid
+limited-key counters fail closed until durable spend can be hydrated.
+
+The accounting epoch prevents a running replica from silently rearming after
+Redis state loss. PostgreSQL cannot reconstruct in-flight reservations. After a
+Redis restart without retained state, flush, or snapshot rollback, drain all
+requests and restart every gateway replica before recovering from the durable
+ledger. Reconciliation alone cannot recover outstanding requests.
+
+**Upgrade requirement:** drain old replicas and in-flight requests before
+introducing this accounting writer. Do not run old and new writers together.
+Existing committed counter key names are retained; new outstanding keys append
+`:reserved` and reservation values carry a `v2` suffix. Legacy reservation
+values fail closed; resolve them through a drained recovery before resuming.
 
 Requests that exceed `tpm_limit` return the stable
 `token_rate_limit_exceeded` error. When Redis exposes the active bucket TTL,
 Gateway includes retry timing in the response.
+
+## Authentication and UI Resource Bounds
+
+JWKS refreshes share one in-flight operation and a minimum 30-second interval,
+including failed attempts. Unknown key IDs cannot trigger additional refreshes
+inside that interval. Signing-key rotation is picked up after the interval;
+configured cache lifetimes below 30 seconds use a 30-second floor.
+
+The LiteLLM operator cookie always uses `Secure`, `HttpOnly`, and `SameSite=Lax`.
+Serve the operator UI over HTTPS. Its existing bearer-token value and one-hour
+browser lifetime are retained; the browser lifetime does not revoke the token.
+
+LiteLLM UI text rewriting collects at most 2 MiB of upstream bytes per response, with eight buffers
+admitted concurrently. The admission permit remains held while buffered bytes
+await downstream consumption. Larger resources stream unchanged, including
+chunked responses without a declared length. Other resource types stream
+without collection. Exhausted rewrite capacity returns `gateway_overloaded`.
 
 ## Secret Handling
 
@@ -293,7 +330,7 @@ Gateway includes retry timing in the response.
 
 ## Backup and Retention
 
-Back up PostgreSQL because it contains virtual key metadata, policies, usage events, service registry state, and operator token hashes. Redis can be treated as volatile for rate-limit and budget counters unless your operating model requires counter persistence across restarts. Budget counters for configured budgets are rehydrated from PostgreSQL, but request-per-minute, token-per-minute, and in-flight reservation keys remain transient.
+Back up PostgreSQL because it contains virtual key metadata, policies, usage events, service registry state, and operator token hashes. Preserve Redis state while requests are active. PostgreSQL can rehydrate completed spend, but cannot recover request-per-minute, token-per-minute, or in-flight reservation state. Use the drained recovery procedure above after Redis loss.
 
 ## Upgrade Notes
 

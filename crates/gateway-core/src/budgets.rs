@@ -32,6 +32,27 @@ pub trait BudgetStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> GatewayResult<()>;
 
+    async fn seed_committed_budget(
+        &self,
+        _key_id: Uuid,
+        _state: BudgetState,
+        _now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        Err(crate::GatewayError::ControlStateUnavailable)
+    }
+
+    /// Atomically admit projected spend and reserve it. Never emulate with a
+    /// separate check followed by an unconditional reservation.
+    async fn admit_budget(
+        &self,
+        key_id: Uuid,
+        reservation_id: &str,
+        estimated_cost_usd: f64,
+        daily_budget_usd: Option<f64>,
+        monthly_budget_usd: Option<f64>,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<BudgetDecision>;
+
     async fn reserve_budget(
         &self,
         key_id: Uuid,
@@ -77,6 +98,36 @@ where
     ) -> GatewayResult<()> {
         (**self)
             .add_budget_spend(key_id, estimated_cost_usd, now)
+            .await
+    }
+
+    async fn seed_committed_budget(
+        &self,
+        key_id: Uuid,
+        state: BudgetState,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<()> {
+        (**self).seed_committed_budget(key_id, state, now).await
+    }
+
+    async fn admit_budget(
+        &self,
+        key_id: Uuid,
+        reservation_id: &str,
+        estimated_cost_usd: f64,
+        daily_budget_usd: Option<f64>,
+        monthly_budget_usd: Option<f64>,
+        now: DateTime<Utc>,
+    ) -> GatewayResult<BudgetDecision> {
+        (**self)
+            .admit_budget(
+                key_id,
+                reservation_id,
+                estimated_cost_usd,
+                daily_budget_usd,
+                monthly_budget_usd,
+                now,
+            )
             .await
     }
 

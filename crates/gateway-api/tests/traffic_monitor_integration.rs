@@ -3,7 +3,8 @@
 use axum::{body::Body, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use gateway_core::{
     traffic::{TrafficQuery, TrafficStore},
-    AdminKeyStore, OperatorTokenMaterial, OperatorTokenStore,
+    AdminKeyStore, AdminPolicyLayerStore, AdminPolicyLayerUpsert, OperatorTokenMaterial,
+    OperatorTokenStore, PolicyLayerKind,
 };
 use gateway_store::PostgresStore;
 use serde_json::{json, Value};
@@ -124,6 +125,15 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
     let mut database_url = url::Url::parse(&database).unwrap();
     database_url.set_path(&format!("/{schema}"));
     let store = PostgresStore::connect(database_url.as_str()).await.unwrap();
+    store
+        .upsert_policy_layer(AdminPolicyLayerUpsert {
+            kind: PolicyLayerKind::Global,
+            scope_id: None,
+            policy: Default::default(),
+            guardrail_policy: Default::default(),
+        })
+        .await
+        .unwrap();
     let operator = OperatorTokenMaterial::generate().unwrap();
     store.bootstrap_operator_token(&operator).await.unwrap();
     let key = gateway_core::VirtualKeyMaterial::generate().unwrap();

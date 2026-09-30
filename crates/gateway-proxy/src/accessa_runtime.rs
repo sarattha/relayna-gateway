@@ -59,7 +59,7 @@ impl<S, R> RelaynaPingoraProxy<S, R> {
 
 impl<S, R> RelaynaPingoraProxy<S, R>
 where
-    S: VirtualKeyLookup + PolicyLookup + ServiceRegistryLookup,
+    S: VirtualKeyLookup + PolicyLookup + ServiceRegistryLookup + UsageRecorder,
     R: AccessaStore + RateLimitStore + BudgetStore,
 {
     async fn accessa_policy(
@@ -102,16 +102,32 @@ where
         key: &AuthenticatedKey,
         policy: &KeyPolicy,
     ) -> GatewayResult<()> {
-        match self
+        let now = Utc::now();
+        let mut decision = self
             .control_state
             .check_budget(
                 key.key_id,
                 policy.daily_budget_usd,
                 policy.monthly_budget_usd,
-                Utc::now(),
+                now,
             )
-            .await?
-        {
+            .await;
+        if matches!(decision, Err(GatewayError::ControlStateUnavailable)) {
+            let committed = self.store.committed_budget_spend(key.key_id, now).await?;
+            self.control_state
+                .seed_committed_budget(key.key_id, committed, now)
+                .await?;
+            decision = self
+                .control_state
+                .check_budget(
+                    key.key_id,
+                    policy.daily_budget_usd,
+                    policy.monthly_budget_usd,
+                    now,
+                )
+                .await;
+        }
+        match decision? {
             BudgetDecision::Allowed(_) => Ok(()),
             BudgetDecision::Exceeded(_) => Err(GatewayError::BudgetExceeded),
         }
@@ -385,6 +401,12 @@ mod tests {
         }
     }
     #[async_trait]
+    impl UsageRecorder for Store {
+        async fn insert_usage_event(&self, _event: &UsageEvent) -> GatewayResult<()> {
+            Ok(())
+        }
+    }
+    #[async_trait]
     impl PolicyLookup for Store {
         async fn policy_for_key(&self, _: Uuid) -> GatewayResult<KeyPolicy> {
             Ok(self.policy.lock().unwrap().clone())
@@ -485,6 +507,19 @@ mod tests {
         ) -> GatewayResult<()> {
             panic!("admission must never charge")
         }
+        async fn admit_budget(
+            &self,
+            key_id: Uuid,
+            _reservation_id: &str,
+            _estimated_cost_usd: f64,
+            daily_budget_usd: Option<f64>,
+            monthly_budget_usd: Option<f64>,
+            now: chrono::DateTime<Utc>,
+        ) -> GatewayResult<BudgetDecision> {
+            self.check_budget(key_id, daily_budget_usd, monthly_budget_usd, now)
+                .await
+        }
+
         async fn reserve_budget(
             &self,
             _: Uuid,

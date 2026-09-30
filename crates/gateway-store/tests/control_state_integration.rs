@@ -865,7 +865,7 @@ async fn empty_redis_rehydrates_budget_spend_and_denies_over_budget_key() {
 }
 
 #[tokio::test]
-async fn rehydration_ignores_bad_costs_and_skips_unbudgeted_keys() {
+async fn rehydration_ignores_bad_costs_and_includes_inherited_budget_keys() {
     let Some(env) = integration_env().await else {
         return;
     };
@@ -914,7 +914,7 @@ async fn rehydration_ignores_bad_costs_and_skips_unbudgeted_keys() {
     }
 
     let seeds = env.store.budget_counter_seeds(now).await.expect("seeds");
-    assert!(!seeds.iter().any(|seed| seed.key_id == unbudgeted_key_id));
+    assert!(seeds.iter().any(|seed| seed.key_id == unbudgeted_key_id));
 }
 
 #[tokio::test]
@@ -950,7 +950,7 @@ async fn rehydration_preserves_existing_budget_reservations() {
         .await
         .expect("check budget");
     if let BudgetDecision::Allowed(state) = decision {
-        assert!((state.daily_spend_usd - 1.25).abs() < 0.000_001);
+        assert!((state.daily_spend_usd - 1.75).abs() < 0.000_001);
     } else {
         panic!("expected budget to remain allowed");
     }
@@ -1066,4 +1066,333 @@ async fn redis_control_state_covers_request_limits_and_budget_lifecycle() {
         .await
         .expect("check accumulated budget");
     assert!(matches!(decision, BudgetDecision::Allowed(_)));
+}
+
+#[tokio::test]
+async fn atomic_budget_admission_and_idempotent_finalization() {
+    let Some(env) = integration_env().await else {
+        return;
+    };
+    let now = Utc::now();
+    let key = Uuid::new_v4();
+    env.redis
+        .seed_budget_counters(key, 0.0, 0.0, now)
+        .await
+        .unwrap();
+    let mut attempts = tokio::task::JoinSet::new();
+    for _ in 0..40 {
+        let state = RedisControlState::new(&std::env::var("REDIS_URL").unwrap()).unwrap();
+        attempts.spawn(async move {
+            let id = Uuid::new_v4().to_string();
+            (
+                id.clone(),
+                state
+                    .admit_budget(key, &id, 0.25, Some(1.0), Some(1.0), now)
+                    .await
+                    .unwrap(),
+            )
+        });
+    }
+    let mut admitted = Vec::new();
+    while let Some(result) = attempts.join_next().await {
+        let (id, decision) = result.unwrap();
+        if matches!(decision, BudgetDecision::Allowed(_)) {
+            admitted.push(id);
+        }
+    }
+    assert_eq!(
+        admitted.len(),
+        4,
+        "independent clients share projected spend limits"
+    );
+    assert!(
+        env.redis
+            .admit_budget(key, &admitted[0], 0.5, None, None, now)
+            .await
+            .is_err(),
+        "duplicate creation must not overwrite"
+    );
+    let (a, b) = tokio::join!(
+        env.redis
+            .reconcile_budget_reservation(key, &admitted[0], 0.1, now),
+        env.redis
+            .reconcile_budget_reservation(key, &admitted[0], 0.1, now),
+    );
+    a.unwrap();
+    b.unwrap();
+    env.redis
+        .release_budget_reservation(key, &admitted[0])
+        .await
+        .unwrap();
+    env.redis
+        .reconcile_budget_reservation(key, "missing", 99.0, now)
+        .await
+        .unwrap();
+    match env
+        .redis
+        .check_budget(key, Some(1.0), Some(1.0), now)
+        .await
+        .unwrap()
+    {
+        BudgetDecision::Allowed(state) => assert!((state.daily_spend_usd - 0.85).abs() < 1e-8),
+        other => panic!("unexpected state: {other:?}"),
+    }
+    for id in admitted.iter().skip(1) {
+        env.redis.release_budget_reservation(key, id).await.unwrap();
+    }
+    assert!(matches!(
+        env.redis
+            .admit_budget(key, "too-big", 1.0, Some(1.0), None, now)
+            .await
+            .unwrap(),
+        BudgetDecision::Exceeded(_)
+    ));
+    assert!(matches!(
+        env.redis
+            .admit_budget(key, "monthly", 0.2, None, Some(0.2), now)
+            .await
+            .unwrap(),
+        BudgetDecision::Exceeded(_)
+    ));
+    assert!(matches!(
+        env.redis
+            .admit_budget(key, "fits", 0.9, Some(1.0), Some(1.0), now)
+            .await
+            .unwrap(),
+        BudgetDecision::Allowed(_)
+    ));
+}
+
+#[tokio::test]
+async fn rehydration_and_release_keep_reservations_and_original_periods() {
+    let Some(env) = integration_env().await else {
+        return;
+    };
+    let now = DateTime::parse_from_rfc3339("2026-09-30T23:59:59Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let later = now + Duration::seconds(2);
+    let key = Uuid::new_v4();
+    env.redis
+        .seed_budget_counters(key, 1.0, 1.0, now)
+        .await
+        .unwrap();
+    env.redis
+        .admit_budget(key, "active", 0.8, Some(2.0), Some(2.0), now)
+        .await
+        .unwrap();
+    env.redis
+        .seed_budget_counters(key, 1.0, 1.0, now)
+        .await
+        .unwrap();
+    match env
+        .redis
+        .check_budget(key, Some(2.0), None, now)
+        .await
+        .unwrap()
+    {
+        BudgetDecision::Allowed(state) => assert!((state.daily_spend_usd - 1.8).abs() < 1e-8),
+        other => panic!("unexpected state: {other:?}"),
+    }
+    let (seed, finish) = tokio::join!(
+        env.redis.seed_budget_counters(key, 1.0, 1.0, now),
+        env.redis
+            .reconcile_budget_reservation(key, "active", 0.1, later),
+    );
+    seed.unwrap();
+    finish.unwrap();
+    env.redis
+        .seed_budget_counters(key, 1.1, 1.1, now)
+        .await
+        .unwrap();
+    match env
+        .redis
+        .check_budget(key, Some(2.0), Some(2.0), now)
+        .await
+        .unwrap()
+    {
+        BudgetDecision::Allowed(state) => assert!((state.daily_spend_usd - 1.1).abs() < 1e-8),
+        other => panic!("unexpected state: {other:?}"),
+    }
+    env.redis
+        .reserve_budget(key, "cancel", 0.5, now)
+        .await
+        .unwrap();
+    env.redis
+        .seed_budget_counters(key, 1.1, 1.1, now)
+        .await
+        .unwrap();
+    let (a, b) = tokio::join!(
+        env.redis.release_budget_reservation(key, "cancel"),
+        env.redis.release_budget_reservation(key, "cancel")
+    );
+    a.unwrap();
+    b.unwrap();
+    match env
+        .redis
+        .check_budget(key, Some(2.0), Some(2.0), now)
+        .await
+        .unwrap()
+    {
+        BudgetDecision::Allowed(state) => assert!((state.daily_spend_usd - 1.1).abs() < 1e-8),
+        other => panic!("unexpected state: {other:?}"),
+    }
+    let mut connection = env
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap();
+    let next_day: Option<String> = connection
+        .get(gateway_core::budgets::daily_budget_key(key, later))
+        .await
+        .unwrap();
+    assert!(
+        next_day.is_none(),
+        "finalization must not charge the later day"
+    );
+}
+
+#[tokio::test]
+async fn budget_recovery_and_invalid_state_fail_closed() {
+    let Some(env) = integration_env().await else {
+        return;
+    };
+    // A separate Redis logical DB isolates the accounting-loss simulation.
+    let url = format!(
+        "{}/15",
+        std::env::var("REDIS_URL").unwrap().trim_end_matches('/')
+    );
+    let state = RedisControlState::new(&url).unwrap();
+    let client = redis::Client::open(url).unwrap();
+    let mut connection = client.get_multiplexed_async_connection().await.unwrap();
+    let key = Uuid::new_v4();
+    let now = Utc::now();
+    assert!(state
+        .admit_budget(key, "missing", 0.1, Some(1.0), None, now)
+        .await
+        .is_err());
+    state
+        .seed_budget_counters(key, 0.0, 0.0, now)
+        .await
+        .unwrap();
+    state
+        .admit_budget(key, "active", 0.8, Some(1.0), None, now)
+        .await
+        .unwrap();
+    let daily = gateway_core::budgets::daily_budget_key(key, now);
+    let _: () = connection.set(&daily, "invalid").await.unwrap();
+    assert!(state
+        .admit_budget(key, "invalid", 0.1, Some(1.0), None, now)
+        .await
+        .is_err());
+    assert!(state
+        .reconcile_budget_reservation(key, "active", 0.1, now)
+        .await
+        .is_err());
+    let _: () = connection.set(&daily, "0").await.unwrap();
+    let legacy = gateway_core::budgets::budget_reservation_key(key, "legacy");
+    let monthly = gateway_core::budgets::monthly_budget_key(key, now);
+    let _: () = connection
+        .set(&legacy, format!("0.8|{daily}|{monthly}"))
+        .await
+        .unwrap();
+    assert!(
+        state
+            .release_budget_reservation(key, "legacy")
+            .await
+            .is_err(),
+        "legacy mixed counters require a drained upgrade rather than unsafe subtraction"
+    );
+    let daily_after: String = connection.get(&daily).await.unwrap();
+    assert_eq!(daily_after, "0");
+    let _: usize = connection.del("budget:accounting-epoch:v2").await.unwrap();
+    assert!(
+        state
+            .seed_budget_counters(key, 0.0, 0.0, now)
+            .await
+            .is_err(),
+        "periodic seeding cannot rearm after loss"
+    );
+    assert!(state
+        .admit_budget(key, "lost", 0.1, Some(1.0), None, now)
+        .await
+        .is_err());
+    assert!(state
+        .reconcile_budget_reservation(key, "active", 0.1, now)
+        .await
+        .is_err());
+    drop(env);
+}
+
+#[tokio::test]
+async fn guardrail_lookup_failure_cannot_remove_required_policy() {
+    use gateway_core::GuardrailStore;
+    let Some(env) = integration_env().await else {
+        return;
+    };
+    let (project, key) = insert_budgeted_key(&env.store, None, None).await;
+    let absent = env
+        .store
+        .effective_policy_for_context(key, Some(project), None, None, None)
+        .await
+        .unwrap();
+    assert!(absent.guardrail_policy.mandatory_guardrails.is_empty());
+    env.store
+        .upsert_guardrail_policy_for_key(
+            key,
+            &GuardrailPolicy {
+                mandatory_guardrails: vec!["pii-redact".into()],
+                ..GuardrailPolicy::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(env
+        .store
+        .effective_policy_for_context(key, Some(project), None, None, None)
+        .await
+        .unwrap()
+        .guardrail_policy
+        .mandatory_guardrails
+        .contains(&"pii-redact".into()));
+    let schema = format!("guardrail_fault_{}", Uuid::new_v4().simple());
+    sqlx::query(&format!("CREATE SCHEMA {schema}"))
+        .execute(env.store.pool())
+        .await
+        .unwrap();
+    // Only this pool sees the shadow view. Other queries/tables remain healthy.
+    sqlx::query(&format!("CREATE VIEW {schema}.key_guardrail_policies AS SELECT key_id, mandatory_guardrails, optional_guardrails, forbidden_guardrails, guardrail_config_overrides FROM public.key_guardrail_policies WHERE 1 / (length(key_id::text) - 36) > 0")).execute(env.store.pool()).await.unwrap();
+    let search_path = format!("SET search_path TO {schema}, public");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .after_connect(move |connection, _| {
+            let sql = search_path.clone();
+            Box::pin(async move {
+                sqlx::query(&sql).execute(connection).await?;
+                Ok(())
+            })
+        })
+        .connect(&std::env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let failing = PostgresStore::new(pool);
+    assert!(
+        sqlx::query("SELECT allowed_models FROM key_policies WHERE key_id = $1")
+            .bind(key)
+            .fetch_one(failing.pool())
+            .await
+            .is_ok(),
+        "surrounding ordinary policy reads succeed"
+    );
+    assert_eq!(
+        failing
+            .effective_policy_for_context(key, Some(project), None, None, None)
+            .await
+            .unwrap_err(),
+        GatewayError::StoreUnavailable
+    );
+    failing.pool().close().await;
+    sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+        .execute(env.store.pool())
+        .await
+        .unwrap();
 }
