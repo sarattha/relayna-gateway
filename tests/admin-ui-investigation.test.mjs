@@ -18,6 +18,8 @@ assert.equal(matchTrafficRecord(rows,{...usage,diagnostics:{}}),null);
 assert.equal(matchTrafficRecord(rows,{...usage,key_id:"another-key"}),null);
 const esc=v=>String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 const helpers={esc,time:String,table:(headers,rows)=>JSON.stringify({headers,rows})};
+const repriced = requestInvestigationView({traffic:{usage:{estimated_cost_usd:0.1}},usage:{estimated_cost_usd:0.0002}},helpers);
+assert.ok(repriced.includes("$0.000200"), "canonical Usage reporting cost takes precedence over an older live Traffic snapshot");
 for (const [cost, expected] of [[0.0002, "$0.000200"], [0.00000025, "$0.00000025"], [0, "$0.000000"]]) {
   assert.ok(requestInvestigationView({usage:{estimated_cost_usd:cost}},helpers).includes(expected), "tiny positive investigation costs must remain visible");
 }

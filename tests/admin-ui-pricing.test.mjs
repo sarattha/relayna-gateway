@@ -24,13 +24,14 @@ const service = {
 };
 const state = { services: [], projects: [], editingServiceName: service.name, usageFilters: {} };
 const writes = [];
+const confirmation = { accept: true, calls: 0 };
 const api = async (path, options) => {
   if (options) { writes.push({ path, ...options, body: JSON.parse(options.body) }); return {}; }
   return path.endsWith("/services") ? [service] : [];
 };
 // Keep the real renderers, event bindings and serializers. Stub unrelated
 // identity/navigation infrastructure so native form validity is exercised.
-const ui = new Function("document", "FormData", "Event", "state", "api", `
+const ui = new Function("document", "FormData", "Event", "state", "api", "confirmation", `
   let renderGeneration = 0;
   const content = document.querySelector("#content");
   const noop = () => {};
@@ -52,10 +53,11 @@ const ui = new Function("document", "FormData", "Event", "state", "api", `
   const bindServiceTypePresets = noop, organizeView = noop, prepareProfileKeys = noop;
   const serviceAction = noop, openFoundryEditor = noop, previewServiceOpenApi = noop;
   const setNotice = noop, applyUsageFilters = noop, loadTaskUsage = noop;
+  const confirmAction = async () => { confirmation.calls++; return confirmation.accept; };
   const usageExportAction = noop, syncUsageExportControls = noop, loadUsage = noop;
   ${functions}
   return {services, serviceEditForm, bindPricingRuleEditors, bindEndpointPricingEditors, serviceBody, submitService, patchService, policyFields, usage, money};
-`)(document, FormData, Event, state, api);
+`)(document, FormData, Event, state, api, confirmation);
 
 function checkAmount(input) {
   assert.ok(input);
@@ -98,11 +100,23 @@ for (const input of edit.querySelectorAll('input[type="number"][step]')) {
 assert.equal(edit.checkValidity(), true);
 await ui.patchService({ target: edit, preventDefault() {} });
 assert.equal(writes.at(-1).method, "PATCH");
+assert.equal(writes.at(-1).body.reprice_existing_usage, false, "new requests only is the default");
 for (const amount of [writes.at(-1).body.estimated_cost_usd, writes.at(-1).body.pricing_rules[0].estimated_cost_usd, writes.at(-1).body.endpoint_pricing_rules[0].estimated_cost_usd]) assert.equal(amount, 0.000123456);
 
-document.body.innerHTML = ui.serviceEditForm({ ...service, foundry: { mode: "endpoint_passthrough" } });
+contentHost.innerHTML = ui.serviceEditForm({ ...service, foundry: { mode: "endpoint_passthrough" } });
 ui.bindPricingRuleEditors();
 const foundry = document.querySelector("form");
+const scope = foundry.elements.namedItem("pricing_update_scope");
+assert.equal(scope.value, "new_requests", "Foundry shares the safe default");
+scope.value = "historical";
+confirmation.accept = false;
+const beforeCancel = writes.length;
+await ui.patchService({target: foundry, preventDefault() {}});
+assert.equal(writes.length, beforeCancel, "cancelled historical repricing sends no write");
+confirmation.accept = true;
+await ui.patchService({target: foundry, preventDefault() {}});
+assert.equal(writes.at(-1).body.reprice_existing_usage, true);
+assert.equal(confirmation.calls, 2);
 for (const input of foundry.querySelectorAll('[name="estimated_cost_usd"], [data-pricing-rule-field="estimated_cost_usd"]')) checkAmount(input);
 assert.equal(foundry.checkValidity(), true, "Foundry uses the same valid pricing editor");
 const estimate = foundry.elements.namedItem("estimated_cost_usd");

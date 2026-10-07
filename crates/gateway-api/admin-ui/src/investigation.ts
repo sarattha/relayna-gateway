@@ -63,7 +63,7 @@ export function refreshWebSocketMetrics(root, now = Date.now()) {
 }
 
 export function requestInvestigationView({ traffic = null, usage = null, bundle = null, notice = "" }, { esc, table, time, projects = [] }) {
-  usage = investigationUsageSnapshot(traffic?.usage || usage);
+  usage = investigationUsageSnapshot(usage || traffic?.usage);
   bundle = traffic?.debug_bundle || bundle;
   const d = traffic?.diagnostics || usage?.diagnostics || {};
   const socket = d.websocket;

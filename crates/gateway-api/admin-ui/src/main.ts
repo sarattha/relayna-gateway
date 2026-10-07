@@ -2405,6 +2405,8 @@ function serviceEditForm(service) {
       `)}
       ${service.foundry ? formSection("Caller authentication", "Require a Relayna key and optionally an Entra identity for this service.", endpointIdentityFields(service.access || {}, service.project_id || "")) : endpointAccessFields(service.access || {}, service.project_id || "")}
       ${formSection("Usage pricing", "Update cost source and request-matching rules.", `
+        <label>Apply pricing changes to<select name="pricing_update_scope" aria-describedby="pricing-update-help-${attr(service.name)}"><option value="new_requests">New requests only</option><option value="historical">Recorded costs and new requests</option></select></label>
+        <p id="pricing-update-help-${attr(service.name)}" class="field-hint wide-field">Historical recalculation updates this service's reporting costs using saved endpoint and rule attribution. Budget enforcement keeps original charges. Upstream-reported costs and records without a safe pricing match stay unchanged; request bodies are not replayed.</p>
         <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
         <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="any" value="${attr(service.estimated_cost_usd ?? "")}"></label>
         <div class="help wide-field">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
@@ -2823,12 +2825,15 @@ async function patchService(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const serviceName = event.target.dataset.serviceName;
-  await api(`/admin-ui/admin/services/${serviceName}`, {
+  const body = serviceBody(form, true);
+  if (body.reprice_existing_usage && !(await confirmAction("Recalculate recorded service costs", `Save the new pricing for ${serviceName} and recalculate its recorded reporting costs? Budget enforcement keeps original charges. Upstream-reported costs and records without a safe pricing match stay unchanged.`))) return;
+  const service = await api(`/admin-ui/admin/services/${serviceName}`, {
     method: "PATCH",
-    body: JSON.stringify(serviceBody(form, true)),
+    body: JSON.stringify(body),
   });
   state.editingServiceName = null;
-  setNotice("Service updated.", "success");
+  const repricing = service.historical_usage_repricing;
+  setNotice(repricing ? `Service updated. Recalculated ${repricing.updated_requests} recorded costs; ${repricing.unchanged_requests} unchanged. Budget charges are unchanged.` : "Service updated.", "success");
   await services();
 }
 
@@ -4241,6 +4246,7 @@ function endpointAccessFromForm(form) {
 
 function serviceBody(form, patch) {
   const body = {
+    ...(patch ? { reprice_existing_usage: form.get("pricing_update_scope") === "historical" } : {}),
     access: endpointAccessFromForm(form),
     project_id: form.has("project_id") ? nullableString(form.get("project_id")) : undefined,
     studio_service_id: patch ? nullableString(form.get("studio_service_id")) : blankToUndefined(form.get("studio_service_id")),

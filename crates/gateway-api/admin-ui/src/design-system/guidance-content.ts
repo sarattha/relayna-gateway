@@ -87,6 +87,7 @@ const shared: Record<string, string> = {
   fallback_services: "Comma-separated registered service names, in fallback order, used for eligible upstream failures.",
   cost_mode: "none records no charge; fixed uses the configured USD estimate; passthrough uses upstream-reported cost when available.",
   estimated_cost_usd: "Estimated USD charge per request in fixed mode. 0 means no estimated charge. Review the selected cost mode.",
+  pricing_update_scope: "New requests only preserves recorded costs. Recorded costs and new requests recalculates matching historical reporting costs after confirmation; original budget charges stay unchanged.",
   json_pointer: "JSON Pointer into the request, such as /model or /payload/page_count, used to match this pricing rule.",
   equals: "Text value the selected request field must match for this pricing rule to apply.",
   openapi_source_path: "Relative path of the service's OpenAPI document, usually /openapi.json. Preview before syncing endpoint prices.",
