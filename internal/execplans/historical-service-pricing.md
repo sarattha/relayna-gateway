@@ -17,7 +17,7 @@ Redis recovery or a gateway restart.
 - [x] (2026-10-07) Add backward-compatible API option, historical attribution resolver, transactional store update and original budget-cost preservation.
 - [x] (2026-10-07) Add shared service-edit choice/confirmation and result counts; document semantics and rollout.
 - [x] (2026-10-07) Verify core/API/store/UI behavior, apply migration against disposable PostgreSQL/Redis, rebuild assets and run required checks; record the pre-existing Trivy failure below.
-- [ ] Update the existing draft PR and handoff.
+- [x] (2026-10-07) Push the verified feature and update existing draft PR #126 with the final title, scope, migration notes and verification limitations; prepare the handoff.
 
 ## Surprises & Discoveries
 
@@ -77,6 +77,12 @@ and root npm lockfiles have zero HIGH/CRITICAL findings. Gitleaks history and
 staged-change scans and Semgrep passed separately. This leaves the repository's
 full verification gate failing for the documented pre-existing dependency
 findings, while this feature's checks pass.
+
+Published the feature in draft PR
+https://github.com/sarattha/relayna-gateway/pull/126 on
+`fix/service-price-precision`. Unrelated local security documents were retained
+and excluded from both commits and PR scope. Disposable gateway and dependency
+fixtures are stopped after verification.
 
 ## Context and Orientation
 
