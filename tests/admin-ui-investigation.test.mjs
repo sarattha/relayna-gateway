@@ -18,6 +18,9 @@ assert.equal(matchTrafficRecord(rows,{...usage,diagnostics:{}}),null);
 assert.equal(matchTrafficRecord(rows,{...usage,key_id:"another-key"}),null);
 const esc=v=>String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 const helpers={esc,time:String,table:(headers,rows)=>JSON.stringify({headers,rows})};
+for (const [cost, expected] of [[0.0002, "$0.000200"], [0.00000025, "$0.00000025"], [0, "$0.000000"]]) {
+  assert.ok(requestInvestigationView({usage:{estimated_cost_usd:cost}},helpers).includes(expected), "tiny positive investigation costs must remain visible");
+}
 const partial=requestInvestigationView({usage:{request_id:'<img src=x onerror=alert(1)>',status_code:200,total_tokens:0},notice:'<script>oops</script>'},helpers);
 assert.ok(!partial.includes('<img'));
 assert.ok(!partial.includes('<script>'));

@@ -5,6 +5,7 @@ import "./admin-ui-auth-profiles.test.mjs";
 import "./admin-ui-reliability-cost.test.mjs";
 import "./admin-ui-investigation.test.mjs";
 import "./admin-ui-guidance.test.mjs";
+import "./admin-ui-pricing.test.mjs";
 import { reliability } from "./admin-ui-monitoring.test.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
