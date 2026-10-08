@@ -2,6 +2,36 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.43 - 2026-10-08
+
+### Fixed
+
+- Require per-event pricing-rule selector fingerprints for historical body and
+  endpoint recalculation, preventing earlier new-request-only selector changes
+  from corrupting old reporting costs (#127). Legacy/unproven rule records stay
+  unchanged; original budget charges remain preserved. Eligible endpoint edits
+  refresh selector proof even when the reporting charge stays the same.
+- Limit service default, body-rule and endpoint amounts to eight decimal places
+  and below USD 1 trillion, matching the usage ledger. USD 0.00000001 remains
+  valid; positive sub-ledger charges are rejected in API saves and Admin UI
+  controls instead of disappearing in reporting and budget recovery (#128).
+  Preserve accepted decimal values across JSON reloads and numeric ledger writes.
+  Reject submitted decimal values that would round during numeric conversion,
+  including large fractional amounts, before API or Admin UI saves.
+- Validate Foundry providers using the existing service-edit transaction,
+  avoiding connection-pool exhaustion and supporting one-connection pools (#129).
+
+### Compatibility
+
+- Additive `20261008000100_usage_pricing_fingerprint.sql` migration adds a
+  nullable selector-proof column without backfilling historical rows. Upgrade
+  every replica before historical saves and keep the column on rollback.
+  Public usage responses, credentials and Redis formats are unchanged.
+- Named-rule usage without proof counts as unchanged. New validation rejects
+  service amounts outside durable precision; review older configurations before
+  saving edits. See [pricing](docs/openapi-service-pricing.md#price-precision)
+  and [deployment](docs/deployment.md#upgrade-to-0143).
+
 ## 0.1.42 - 2026-10-08
 
 ### Added

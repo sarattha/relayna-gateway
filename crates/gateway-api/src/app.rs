@@ -9892,6 +9892,7 @@ mod tests {
             cost_source: Some("fixed".to_owned()),
             cost_mode: Some(ServiceCostMode::Fixed),
             pricing_rule_name: None,
+            pricing_rule_fingerprint: None,
             service_name: Some("shared".to_owned()),
             service_version: Some("2026.08.18".to_owned()),
             http_method: Some("GET".to_owned()),
@@ -11378,6 +11379,7 @@ mod tests {
                 cost_source: Some("fixed".to_owned()),
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
+                pricing_rule_fingerprint: None,
                 service_name: Some("orders".to_owned()),
                 service_version: Some("2026.08.09".to_owned()),
                 http_method: Some("GET".to_owned()),
@@ -11407,6 +11409,7 @@ mod tests {
                 cost_source: None,
                 cost_mode: None,
                 pricing_rule_name: None,
+                pricing_rule_fingerprint: None,
                 service_name: Some("orders".to_owned()),
                 service_version: Some("2026.08.10".to_owned()),
                 http_method: Some("POST".to_owned()),
@@ -11436,6 +11439,7 @@ mod tests {
                 cost_source: None,
                 cost_mode: None,
                 pricing_rule_name: None,
+                pricing_rule_fingerprint: None,
                 service_name: Some("payments".to_owned()),
                 service_version: Some("payments-1".to_owned()),
                 http_method: Some("POST".to_owned()),
@@ -13875,6 +13879,7 @@ mod tests {
                 cost_source: Some("upstream_passthrough".to_owned()),
                 cost_mode: Some(gateway_core::ServiceCostMode::Passthrough),
                 pricing_rule_name: None,
+                pricing_rule_fingerprint: None,
                 service_name: None,
                 service_version: None,
                 http_method: None,
@@ -13904,6 +13909,7 @@ mod tests {
                 cost_source: None,
                 cost_mode: None,
                 pricing_rule_name: None,
+                pricing_rule_fingerprint: None,
                 service_name: Some("jobs-service".to_owned()),
                 service_version: Some("jobs-2026.08.09".to_owned()),
                 http_method: Some("POST".to_owned()),
@@ -14034,6 +14040,7 @@ mod tests {
                 cost_source: Some("service_default".to_owned()),
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
+                pricing_rule_fingerprint: None,
                 service_name: Some("summarizer".to_owned()),
                 service_version: None,
                 http_method: Some("POST".to_owned()),
@@ -14063,6 +14070,7 @@ mod tests {
                 cost_source: Some("pricing_rule".to_owned()),
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: Some("legal-es".to_owned()),
+                pricing_rule_fingerprint: None,
                 service_name: Some("translation".to_owned()),
                 service_version: None,
                 http_method: Some("POST".to_owned()),
@@ -14141,6 +14149,7 @@ mod tests {
             cost_source: Some("service_default".to_owned()),
             cost_mode: Some(ServiceCostMode::Fixed),
             pricing_rule_name: None,
+            pricing_rule_fingerprint: None,
             service_name: Some("summarizer".to_owned()),
             service_version: None,
             http_method: Some("POST".to_owned()),
@@ -14286,6 +14295,7 @@ mod tests {
                 cost_source: Some("service_default".to_owned()),
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
+                pricing_rule_fingerprint: None,
                 service_name: Some("summarizer".to_owned()),
                 service_version: None,
                 http_method: Some("POST".to_owned()),
@@ -14315,6 +14325,7 @@ mod tests {
                 cost_source: Some("pricing_rule".to_owned()),
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: Some("legal-es".to_owned()),
+                pricing_rule_fingerprint: None,
                 service_name: Some("translation".to_owned()),
                 service_version: None,
                 http_method: Some("POST".to_owned()),
@@ -14344,6 +14355,7 @@ mod tests {
                 cost_source: Some("service_default".to_owned()),
                 cost_mode: Some(ServiceCostMode::Fixed),
                 pricing_rule_name: None,
+                pricing_rule_fingerprint: None,
                 service_name: Some("summarizer".to_owned()),
                 service_version: None,
                 http_method: Some("POST".to_owned()),
@@ -15088,6 +15100,65 @@ mod tests {
         assert!(events
             .iter()
             .any(|event| event.action == "providers:litellm_passthrough_update"));
+    }
+
+    #[tokio::test]
+    async fn service_price_api_rejects_raw_decimals_that_would_round_before_validation() {
+        let store = default_store();
+        let app = router_with_state(test_state(store.clone()));
+        let invalid = admin_post(
+            app.clone(),
+            "/admin-ui/admin/services",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"name":"precise","cost_mode":"fixed","estimated_cost_usd":100000000000.00000001}"#,
+        )
+        .await;
+        assert_eq!(invalid.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(store.services.lock().unwrap().is_empty());
+        let created = admin_post(
+            app.clone(),
+            "/admin-ui/admin/services",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"name":"precise","cost_mode":"fixed","estimated_cost_usd":100000000000}"#,
+        )
+        .await;
+        assert_eq!(created.status(), StatusCode::OK);
+        for body in [
+            r#"{"estimated_cost_usd":100000000000.00000001}"#,
+            r#"{"pricing_rules":[{"name":"tier","json_pointer":"/tier","equals":"premium","cost_mode":"fixed","estimated_cost_usd":100000000000.00000001}]}"#,
+            r#"{"endpoint_pricing_rules":[{"method":"POST","path_template":"/run","cost_mode":"fixed","estimated_cost_usd":100000000000.00000001}]}"#,
+        ] {
+            let rejected = admin_patch(
+                app.clone(),
+                "/admin-ui/admin/services/precise",
+                Some(TEST_OPERATOR_TOKEN),
+                body,
+            )
+            .await;
+            assert_eq!(rejected.status(), StatusCode::UNPROCESSABLE_ENTITY);
+            assert_eq!(
+                store.services.lock().unwrap()[0].estimated_cost_usd,
+                Some(100_000_000_000.0)
+            );
+        }
+        let imported = admin_post(
+            app.clone(), "/admin-ui/admin/services/import", Some(TEST_OPERATOR_TOKEN),
+            r#"{"studio_service_id":"precise","name":"imported","default_pricing":{"cost_mode":"fixed","estimated_cost_usd":100000000000.00000001}}"#,
+        ).await;
+        assert_eq!(imported.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(store.services.lock().unwrap().len(), 1);
+        let saved = admin_patch(
+            app,
+            "/admin-ui/admin/services/precise",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"estimated_cost_usd":1e-8}"#,
+        )
+        .await;
+        assert_eq!(saved.status(), StatusCode::OK);
+        assert_eq!(
+            store.services.lock().unwrap()[0].estimated_cost_usd,
+            Some(1e-8)
+        );
     }
 
     #[tokio::test]

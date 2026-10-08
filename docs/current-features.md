@@ -2,9 +2,15 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.42` feature set.
+This page summarizes the `v0.1.43` feature set.
 
-New in 0.1.42: service defaults, body rules and OpenAPI endpoint prices accept
+New in 0.1.43: historical named body/endpoint rules require recorded selector
+fingerprints. Legacy rule records without proof stay unchanged, even after
+new-request-only selector edits. Service prices support at most eight decimal
+places (minimum positive USD 0.00000001). Foundry service edits validate their
+provider using the same database transaction.
+
+Introduced in 0.1.42: service defaults, body rules and OpenAPI endpoint prices accept
 amounts below USD 0.001. Shared ordinary, Studio-imported and Foundry service
 editors offer new requests only or explicit historical report-cost recalculation,
 with confirmation and changed/unchanged counts. Original budget charges survive

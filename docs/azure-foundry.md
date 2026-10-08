@@ -393,3 +393,12 @@ Example JSON body (use your normal authenticated admin API client):
   "credential": "REPLACEMENT_SERVICE_SECRET"
 }
 ```
+
+## Service Edit Transactions
+
+From 0.1.43, service edits validate the bound Azure Foundry provider using the
+same PostgreSQL transaction as the service update and optional historical
+repricing. A one-connection pool is sufficient; concurrent edits do not reserve
+a second connection for this lookup. Invalid or non-Foundry bindings fail
+without committing the service change. Service estimates follow the
+[eight-decimal pricing contract](openapi-service-pricing.md#price-precision).

@@ -7,6 +7,27 @@ virtual keys, Azure Foundry connections and registered agents, and replica
 synchronization of saved gateway Entra settings.
 The UI remains embedded in the Rust binary; no separate frontend service is needed.
 
+## Upgrade to 0.1.43
+
+Startup applies `20261008000100_usage_pricing_fingerprint.sql`, adding nullable
+`usage_events.pricing_rule_fingerprint` without a backfill. Keep the column on
+rollback. Upgrade every replica before historical recalculation: older writers
+cannot record selector proof and older repricers cannot verify it. Named body
+and endpoint records written without proof, including records from 0.1.42, stay
+unchanged and count toward `unchanged_requests`. Service default attribution
+retains the existing safety checks. Do not infer fingerprints for old rows from
+current configuration. Original budget charges and Redis formats are unchanged.
+
+Service charges now accept at most eight decimal places, with values below
+USD 1 trillion. Review existing prices with greater precision before editing
+those services; requests that try to save such amounts fail validation. Foundry
+provider validation uses the existing edit transaction and works with a
+one-connection pool. See [service pricing](openapi-service-pricing.md).
+
+Rolling back to 0.1.42 reintroduces unsafe historical selector matching. Disable
+historical recalculation during a rollback; retain all budget-preservation
+requirements described below.
+
 ## Upgrade to 0.1.42
 
 Startup applies `20261007000100_historical_service_pricing.sql`, adding nullable
@@ -89,7 +110,7 @@ channel bindings are enabled; see [Accessa channels](accessa-channels.md).
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.42 .
+docker build -t relayna-gateway:0.1.43 .
 ```
 
 Run it with required dependencies:
@@ -109,7 +130,7 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.42
+  relayna-gateway:0.1.43
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -169,13 +190,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.42
+   ghcr.io/sarattha/relayna-gateway:0.1.43
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.42"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.43"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -183,7 +204,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.42
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.43
    ```
 
 3. Store secrets through your cluster secret manager:

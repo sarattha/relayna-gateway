@@ -20119,7 +20119,7 @@ function ConsoleShell() {
 										/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("span", {
 											className: "version-indicator",
 											"aria-label": "Current Relayna Gateway version",
-											children: "v0.1.42"
+											children: "v0.1.43"
 										})
 									]
 								})]
@@ -23001,7 +23001,7 @@ var init_guidance_content = __esmMin((() => {
 		health_check_method: "HTTP method used to check the upstream health endpoint.",
 		fallback_services: "Comma-separated registered service names, in fallback order, used for eligible upstream failures.",
 		cost_mode: "none records no charge; fixed uses the configured USD estimate; passthrough uses upstream-reported cost when available.",
-		estimated_cost_usd: "Estimated USD charge per request in fixed mode. 0 means no estimated charge. Review the selected cost mode.",
+		estimated_cost_usd: "Estimated USD charge per request in fixed mode. Use at most 8 decimal places and an amount below USD 1 trillion; the smallest positive charge is USD 0.00000001. Amounts that require rounding are rejected. 0 means no estimated charge.",
 		pricing_update_scope: "New requests only preserves recorded costs. Recorded costs and new requests recalculates matching historical reporting costs after confirmation; original budget charges stay unchanged.",
 		json_pointer: "JSON Pointer into the request, such as /model or /payload/page_count, used to match this pricing rule.",
 		equals: "Text value the selected request field must match for this pricing rule to apply.",
@@ -38767,7 +38767,7 @@ async function services() {
           ${endpointAccessFields({})}
           ${formSection("Usage pricing", "Choose the cost source and optional request-matching rules.", `
             <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
-            <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="any"></label>
+            <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" max="999999999999.9999" step="0.00000001"></label>
             <div class="help wide-field">Fixed records the configured estimate per request. Passthrough records provider-reported response cost when the upstream returns one.</div>
             ${pricingRulesEditor([])}
           `)}
@@ -38790,6 +38790,8 @@ async function services() {
 	document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
 	bindServiceTypePresets(document.querySelector("#service-form"));
 	document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
+	bindServicePriceValidation(document.querySelector("#service-form"));
+	bindServicePriceValidation(document.querySelector("#service-edit-form"));
 	bindPricingRuleEditors();
 	bindEndpointPricingEditors();
 	document.querySelectorAll("[data-foundry-service]").forEach((button) => button.addEventListener("click", handleAsync(() => openFoundryEditor("service", state.services.find((p) => p.name === button.dataset.foundryService), button))));
@@ -38814,6 +38816,34 @@ async function services() {
 	});
 	prepareProfileKeys(content);
 	organizeView("services");
+}
+function normalizedPriceDecimal(value) {
+	const [mantissa, exponent = "0"] = String(value).toLowerCase().split("e");
+	const fraction = mantissa.split(".")[1]?.length || 0;
+	const digits = mantissa.replace("-", "").replace(".", "").replace(/^0+/, "");
+	const significant = digits.replace(/0+$/, "");
+	if (!significant) return "0";
+	return `${mantissa.startsWith("-") ? "-" : ""}${significant}e${Number(exponent) - fraction + digits.length - significant.length}`;
+}
+function validateServicePriceInput(input) {
+	const raw = input.value.trim();
+	const cost = Number(raw);
+	const rounded = raw && (!Number.isFinite(cost) || normalizedPriceDecimal(raw) !== normalizedPriceDecimal(String(cost)));
+	input.setCustomValidity(rounded ? "Use an amount that can be stored without rounding." : "");
+}
+function servicePriceInputs(form) {
+	return form.querySelectorAll("[name=\"estimated_cost_usd\"], [data-pricing-rule-field=\"estimated_cost_usd\"], [data-endpoint-field=\"estimated_cost_usd\"]");
+}
+function bindServicePriceValidation(form) {
+	if (!form) return;
+	servicePriceInputs(form).forEach(validateServicePriceInput);
+	form.addEventListener("input", (event) => {
+		if (event.target.matches("[name=\"estimated_cost_usd\"], [data-pricing-rule-field=\"estimated_cost_usd\"], [data-endpoint-field=\"estimated_cost_usd\"]")) validateServicePriceInput(event.target);
+	});
+}
+function validateServicePriceForm(form) {
+	servicePriceInputs(form).forEach(validateServicePriceInput);
+	return form.reportValidity();
 }
 function pricingRulesEditor(rules) {
 	return `
@@ -38841,7 +38871,7 @@ function pricingRuleRow(rule = {}) {
       <label>JSON pointer<input data-pricing-rule-field="json_pointer" value="${attr(rule.json_pointer ?? rule.path ?? "")}" placeholder="/model"></label>
       <label>Equals<input data-pricing-rule-field="equals" value="${attr(rule.equals ?? "")}" placeholder="doct-int"></label>
       <label>Cost mode<select data-pricing-rule-field="cost_mode">${option("fixed", costMode)}${option("passthrough", costMode)}${option("none", costMode)}</select></label>
-      <label>Estimated cost<input data-pricing-rule-field="estimated_cost_usd" type="number" min="0" step="any" value="${attr(rule.estimated_cost_usd ?? "")}" placeholder="0.08"></label>
+      <label>Estimated cost<input data-pricing-rule-field="estimated_cost_usd" type="number" min="0" max="999999999999.9999" step="0.00000001" value="${attr(rule.estimated_cost_usd ?? "")}" placeholder="0.08"></label>
       <button type="button" class="danger" data-pricing-rule-action="remove">Remove</button>
     </div>
   `;
@@ -38896,7 +38926,7 @@ function openApiEndpointPricingEditor(service) {
         <td><code data-endpoint-field="path_template">${esc(rule.path_template)}</code><div class="subtle">${esc(operationId)}</div></td>
         <td>${endpoint?.relayna_default ? "<span class=\"badge good\">Relayna default</span>" : stale ? "<span class=\"badge warn\">stale</span>" : "<span class=\"badge\">service</span>"}</td>
         <td><select data-endpoint-field="cost_mode" aria-describedby="${attr(pricingHelpId)}" aria-label="Cost mode for ${attr(rule.method)} ${attr(rule.path_template)}">${option("none", rule.cost_mode)}${option("fixed", rule.cost_mode)}${option("passthrough", rule.cost_mode)}</select></td>
-        <td><input data-endpoint-field="estimated_cost_usd" aria-describedby="${attr(pricingHelpId)}" type="number" min="0" step="any" value="${attr(rule.estimated_cost_usd ?? "")}" aria-label="Estimated cost for ${attr(rule.method)} ${attr(rule.path_template)}"></td>
+        <td><input data-endpoint-field="estimated_cost_usd" aria-describedby="${attr(pricingHelpId)}" type="number" min="0" max="999999999999.9999" step="0.00000001" value="${attr(rule.estimated_cost_usd ?? "")}" aria-label="Estimated cost for ${attr(rule.method)} ${attr(rule.path_template)}"></td>
       </tr>
     `;
 	}).join("");
@@ -39028,7 +39058,7 @@ function serviceEditForm(service) {
         <label>Apply pricing changes to<select name="pricing_update_scope" aria-describedby="pricing-update-help-${attr(service.name)}"><option value="new_requests">New requests only</option><option value="historical">Recorded costs and new requests</option></select></label>
         <p id="pricing-update-help-${attr(service.name)}" class="field-hint wide-field">Historical recalculation updates this service's reporting costs using saved endpoint and rule attribution. Budget enforcement keeps original charges. Upstream-reported costs and records without a safe pricing match stay unchanged; request bodies are not replayed.</p>
         <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
-        <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="any" value="${attr(service.estimated_cost_usd ?? "")}"></label>
+        <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" max="999999999999.9999" step="0.00000001" value="${attr(service.estimated_cost_usd ?? "")}"></label>
         <div class="help wide-field">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
         ${pricingRulesEditor(service.pricing_rules || [])}
         ${service.foundry ? "" : openApiEndpointPricingEditor(service)}
@@ -39042,6 +39072,7 @@ function serviceEditForm(service) {
 }
 async function submitService(event) {
 	event.preventDefault();
+	if (!validateServicePriceForm(event.target)) return;
 	const form = new FormData(event.target);
 	if (event.submitter.value === "import") await api("/admin-ui/admin/services/import", {
 		method: "POST",
@@ -39156,7 +39187,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.42")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.43")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -39411,6 +39442,7 @@ async function syncSelectedStudioServices(event) {
 }
 async function patchService(event) {
 	event.preventDefault();
+	if (!validateServicePriceForm(event.target)) return;
 	const form = new FormData(event.target);
 	const serviceName = event.target.dataset.serviceName;
 	const body = serviceBody(form, true);
