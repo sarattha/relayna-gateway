@@ -928,9 +928,10 @@ impl PostgresStore {
                 trace_id,
                 fallback_count,
                 created_at,
-                diagnostics
+                diagnostics,
+                pricing_rule_fingerprint
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::text::numeric, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
             "#,
         )
         .bind(&event.request_id)
@@ -945,7 +946,9 @@ impl PostgresStore {
         .bind(event.input_tokens)
         .bind(event.output_tokens)
         .bind(event.total_tokens)
-        .bind(event.estimated_cost_usd)
+        // Preserve the accepted decimal representation: PostgreSQL's float8
+        // -> numeric cast otherwise rounds to 15 significant digits.
+        .bind(event.estimated_cost_usd.map(|cost| cost.to_string()))
         .bind(&event.cost_source)
         .bind(event.cost_mode.map(service_cost_mode_str))
         .bind(&event.pricing_rule_name)
@@ -960,6 +963,7 @@ impl PostgresStore {
         .bind(event.fallback_count)
         .bind(event.created_at)
         .bind(sqlx::types::Json(&event.diagnostics))
+        .bind(&event.pricing_rule_fingerprint)
         .execute(&self.pool)
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
@@ -978,7 +982,7 @@ async fn reprice_service_usage_in_tx(
     loop {
         let rows = sqlx::query(
             r#"SELECT id, estimated_cost::double precision AS cost, cost_mode,
-                cost_source, pricing_rule_name, http_method, endpoint_path, diagnostics
+                cost_source, pricing_rule_name, pricing_rule_fingerprint, http_method, endpoint_path, diagnostics
             FROM usage_events WHERE service_name = $1 AND ($2::uuid IS NULL OR id > $2)
             ORDER BY id LIMIT 1000 FOR UPDATE"#,
         )
@@ -1001,6 +1005,9 @@ async fn reprice_service_usage_in_tx(
                 .map_err(|_| GatewayError::StoreUnavailable)?;
             let rule: Option<String> = row
                 .try_get("pricing_rule_name")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            let fingerprint: Option<String> = row
+                .try_get("pricing_rule_fingerprint")
                 .map_err(|_| GatewayError::StoreUnavailable)?;
             let mode: Option<String> = row
                 .try_get("cost_mode")
@@ -1026,6 +1033,7 @@ async fn reprice_service_usage_in_tx(
                         rule.as_deref(),
                         method.as_deref(),
                         path.as_deref(),
+                        fingerprint.as_deref(),
                     )
                 })
                 .flatten()
@@ -1060,6 +1068,7 @@ async fn reprice_service_usage_in_tx(
                 "id": id, "cost": resolved.estimated_cost_usd,
                 "mode": service_cost_mode_str(resolved.cost_mode),
                 "source": new_source, "rule_name": resolved.pricing_rule_name,
+                "fingerprint": resolved.pricing_rule_fingerprint,
                 "traffic_id": traffic_id,
             }));
         }
@@ -1067,13 +1076,14 @@ async fn reprice_service_usage_in_tx(
             sqlx::query(r#"
                 WITH changes AS (
                     SELECT * FROM jsonb_to_recordset($1::jsonb) AS c(
-                        id uuid, cost double precision, mode text, source text,
-                        rule_name text, traffic_id uuid)
+                        id uuid, cost numeric, mode text, source text,
+                        rule_name text, fingerprint text, traffic_id uuid)
                 ), updated AS (
                     UPDATE usage_events u SET
                         budget_estimated_cost = COALESCE(u.budget_estimated_cost, u.estimated_cost, 0),
                         estimated_cost = c.cost, cost_mode = c.mode,
-                        cost_source = c.source, pricing_rule_name = c.rule_name
+                        cost_source = c.source, pricing_rule_name = c.rule_name,
+                        pricing_rule_fingerprint = c.fingerprint
                     FROM changes c WHERE u.id = c.id
                     RETURNING u.request_id, u.key_id, u.estimated_cost, u.cost_source,
                         u.pricing_rule_name, c.traffic_id
@@ -4361,14 +4371,14 @@ impl AdminServiceStore for PostgresStore {
         }
         registration.validate_foundry()?;
         if let Some(binding) = &registration.foundry {
-            if !self
-                .get_provider_config(binding.provider_id())
-                .await?
-                .is_some_and(|provider| {
-                    provider.provider
-                        == gateway_core::provider_configs::ProviderConfigKind::AzureFoundry
-                })
-            {
+            let provider = sqlx::query_scalar::<_, String>(
+                "SELECT provider FROM provider_configs WHERE id = $1",
+            )
+            .bind(binding.provider_id())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+            if provider.as_deref() != Some("azure-foundry") {
                 return Err(GatewayError::InvalidFoundryConfiguration);
             }
         }
@@ -9422,6 +9432,7 @@ mod tests {
             cost_source: Some("service_fixed".to_owned()),
             cost_mode: Some(ServiceCostMode::Fixed),
             pricing_rule_name: Some("premium".to_owned()),
+            pricing_rule_fingerprint: None,
             service_name: Some(service_name.clone()),
             service_version: Some("2026.08.09".to_owned()),
             http_method: Some("POST".to_owned()),

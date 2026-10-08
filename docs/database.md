@@ -365,7 +365,7 @@ operator visibility.
 | Foreign keys | `key_id` references `api_keys(id)` with `ON DELETE RESTRICT`. `project_id` is nullable after project-first key support and is not currently constrained by a foreign key. |
 | Request fields | `request_id`, `trace_id`, `route`, `model`, `provider`, `service_name`, nullable validated `service_version`, nullable `http_method`, nullable query-free `endpoint_path`, nullable `endpoint_template`, `task_id`, `run_id`, and `fallback_count`. |
 | Accounting fields | `status`, `status_code`, `latency_ms`, `input_tokens`, `output_tokens`, `total_tokens`, and `estimated_cost`. |
-| Historical pricing | Nullable `budget_estimated_cost` preserves the original committed charge when reporting cost is explicitly recalculated. Budget readers use it when present; otherwise they use `estimated_cost`. A preserved zero remains zero even if the new report cost is positive. |
+| Historical pricing | Nullable `pricing_rule_fingerprint` proves the original named selector for recalculation; legacy rows without proof stay unchanged. Nullable `budget_estimated_cost` preserves the original committed charge when reporting cost is explicitly recalculated. Budget readers use it when present; otherwise they use `estimated_cost`. A preserved zero remains zero even if the new report cost is positive. |
 | Indexes | Lookup indexes cover key, project, request ID, trace ID, provider, service, model, task, run, status, and expensive-request time-series queries. A partial service-endpoint index combines service, method, a bounded MD5 digest of `COALESCE(endpoint_template, endpoint_path)`, status code, and time; exact queries also compare the full effective endpoint. |
 | Required data | Written for successful and failed request paths. Preserve this table for billing, diagnostics, budget counter rehydration, usage exports, and Relayna Studio usage views. |
 
@@ -450,3 +450,19 @@ Current runtime and admin paths use `key_policies.allowed_routes` instead.
   operationally sensitive.
 - Prefer the admin API or Admin portal for changes. Manual SQL updates should
   be reserved for recovery operations with a reviewed rollback plan.
+
+## Historical Pricing Attribution (0.1.43)
+
+Startup migration `20261008000100_usage_pricing_fingerprint.sql` adds nullable
+`usage_events.pricing_rule_fingerprint` without backfilling rows. New request
+writers save a versioned SHA-256 fingerprint of the selected body or endpoint
+rule's selector and name, excluding the price. Request bodies and raw selector
+values are not added to the ledger. This internal column is not returned by
+public usage APIs.
+
+Historical named-rule recalculation requires proof matching the original
+configuration; legacy rows without proof stay unchanged. Do not derive a
+backfill from current service configuration. Preserve this column and
+`budget_estimated_cost` during rollback. Service charges are validated against
+the ledger's eight-decimal precision before configuration is saved; see
+[service pricing](openapi-service-pricing.md#price-precision).

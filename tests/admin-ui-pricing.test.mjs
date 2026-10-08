@@ -17,7 +17,7 @@ const contentHost = document.querySelector("#content");
 const service = {
   name: "tiny-price", route_pattern: "/services/tiny-price/*", enabled: true,
   allowed_methods: ["POST"], timeout_ms: 60000, max_body_bytes: 1024,
-  cost_mode: "fixed", estimated_cost_usd: 0.000123456,
+  cost_mode: "fixed", estimated_cost_usd: 0.00012345,
   pricing_rules: [{ name: "tiny-rule", json_pointer: "/model", equals: "tiny", cost_mode: "fixed", estimated_cost_usd: 0.00000025 }],
   openapi_endpoints: [{ method: "POST", path_template: "/run" }],
   endpoint_pricing_rules: [{ method: "POST", path_template: "/run", cost_mode: "fixed", estimated_cost_usd: 0.0000025 }],
@@ -61,14 +61,18 @@ const ui = new Function("document", "FormData", "Event", "state", "api", "confir
 
 function checkAmount(input) {
   assert.ok(input);
-  for (const amount of ["0.0002", "0.000123456", "0.00000025", "0", "0.001", "0.01", "1.25", ""]) {
+  for (const amount of ["0.0002", "0.00012345", "0.00000025", "0.00000001", "0", "0.001", "0.01", "1.25", ""]) {
     input.value = amount;
     assert.equal(input.checkValidity(), true, `${input.outerHTML}: ${amount} should be valid`);
     assert.equal(input.validity.stepMismatch, false);
   }
+  for (const amount of ["0.000000001", "0.000123456"]) {
+    input.value = amount;
+    assert.equal(input.checkValidity(), input.step === "any", `${amount}: service charges require eight-decimal precision`);
+  }
   input.value = "-0.0002";
   assert.equal(input.validity.rangeUnderflow, true, "negative cost must remain invalid");
-  input.value = "0.000123456";
+  input.value = "0.00012345";
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
@@ -86,11 +90,11 @@ checkAmount(rule.querySelector('[data-pricing-rule-field="estimated_cost_usd"]')
 assert.equal(create.checkValidity(), true, "small prices must not block native submission");
 await ui.submitService({ target: create, submitter: { value: "create" }, preventDefault() {} });
 assert.equal(writes.at(-1).method, "POST");
-assert.equal(writes.at(-1).body.estimated_cost_usd, 0.000123456);
-assert.equal(writes.at(-1).body.pricing_rules[0].estimated_cost_usd, 0.000123456);
+assert.equal(writes.at(-1).body.estimated_cost_usd, 0.00012345);
+assert.equal(writes.at(-1).body.pricing_rules[0].estimated_cost_usd, 0.00012345);
 
 const edit = document.querySelector("#service-edit-form");
-assert.equal(edit.elements.namedItem("estimated_cost_usd").value, "0.000123456", "saved default reloads exactly");
+assert.equal(edit.elements.namedItem("estimated_cost_usd").value, "0.00012345", "saved default reloads exactly");
 assert.equal(edit.querySelector('[data-pricing-rule-field="estimated_cost_usd"]').value, "2.5e-7", "saved rule reloads exactly");
 assert.equal(edit.querySelector('[data-endpoint-field="estimated_cost_usd"]').value, "0.0000025", "saved endpoint reloads exactly");
 for (const input of edit.querySelectorAll('input[type="number"][step]')) {
@@ -101,7 +105,7 @@ assert.equal(edit.checkValidity(), true);
 await ui.patchService({ target: edit, preventDefault() {} });
 assert.equal(writes.at(-1).method, "PATCH");
 assert.equal(writes.at(-1).body.reprice_existing_usage, false, "new requests only is the default");
-for (const amount of [writes.at(-1).body.estimated_cost_usd, writes.at(-1).body.pricing_rules[0].estimated_cost_usd, writes.at(-1).body.endpoint_pricing_rules[0].estimated_cost_usd]) assert.equal(amount, 0.000123456);
+for (const amount of [writes.at(-1).body.estimated_cost_usd, writes.at(-1).body.pricing_rules[0].estimated_cost_usd, writes.at(-1).body.endpoint_pricing_rules[0].estimated_cost_usd]) assert.equal(amount, 0.00012345);
 
 contentHost.innerHTML = ui.serviceEditForm({ ...service, foundry: { mode: "endpoint_passthrough" } });
 ui.bindPricingRuleEditors();
@@ -131,5 +135,5 @@ document.body.replaceChildren(contentHost);
 await ui.usage();
 checkAmount(contentHost.querySelector('[name="min_cost_usd"]'));
 
-for (const [amount, expected] of [[0.0002, "$0.0002"], [0.000123456, "$0.000123456"], [0.00000025, "$0.00000025"], [0, "$0.00"], [1.25, "$1.25"], [null, "n/a"]]) assert.equal(ui.money(amount), expected);
-console.log("ok - tiny service, request-rule, endpoint and Foundry prices pass native validity and POST/PATCH without rounding; policy and Usage inputs agree");
+for (const [amount, expected] of [[0.0002, "$0.0002"], [0.00012345, "$0.00012345"], [0.00000025, "$0.00000025"], [0, "$0.00"], [1.25, "$1.25"], [null, "n/a"]]) assert.equal(ui.money(amount), expected);
+console.log("ok - tiny service, request-rule, endpoint and Foundry prices pass native validity and POST/PATCH without rounding; service ledger precision is enforced while policy and Usage filters retain arbitrary precision");

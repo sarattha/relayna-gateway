@@ -174,6 +174,18 @@ extraction is bounded to 128 fields, 256 bytes per field name, 16 KiB per field
 value, and 64 KiB total. Oversized, non-UTF-8, or file fields do not match body
 rules and therefore fall back to the endpoint or service base.
 
+## Price Precision
+
+Service defaults, body-rule estimates and endpoint estimates accept nonnegative
+USD amounts with at most eight decimal places and values below USD 1 trillion,
+matching PostgreSQL `numeric(20, 8)`. USD `0.00000001` is the smallest positive
+configured charge; USD `0.000000001` is rejected instead of becoming zero in
+reports or budget recovery. The Admin UI and direct API saves share this limit.
+Blank estimates retain their existing semantics; explicit zero remains valid.
+Policy limits and Usage filters do not configure ledger charges and retain
+their existing input precision. Upstream-reported costs are not changed by this
+service-configuration validation.
+
 ## Budgets and Usage
 
 Gateway must reserve cost before it knows which JSON or multipart body rule
@@ -206,8 +218,15 @@ Recalculation uses recorded attribution rather than replaying request bodies:
 
 - Service defaults and method/path endpoint prices use the new fixed or `none`
   price. Newly introduced body selectors are not applied to historical requests.
-- A recorded named body rule uses its new price only when the name remains
-  unique and its JSON pointer and matching value are unchanged.
+- Named body and endpoint rules require a versioned fingerprint saved with the
+  usage event when the request was priced. The fingerprint identifies the rule
+  and selector, excluding the price. A body rule's name must remain unique and
+  its JSON pointer and matching value must match the recorded proof. Comparing
+  only the configurations before and after the current save is insufficient:
+  an earlier new-requests-only save may already have changed the selector.
+- Named-rule records without proof, including legacy body and endpoint records,
+  stay unchanged. Gateway never backfills proof from current configuration.
+  Request bodies and raw selector values are not added to usage records.
 - Upstream-reported prices, missing attribution, ambiguous or unnamed body
   rules, removed/changed body selectors and changes to `passthrough` retain
   their recorded costs. Accessa and caller-key passthrough are not repriced.
@@ -235,7 +254,9 @@ budget charge. The option applies to all existing records for that service;
 records from other services remain unchanged.
 
 Upgrade all Gateway replicas to the new budget readers before enabling
-historical recalculation. The migration adds nullable
+historical recalculation. Version 0.1.43 also adds nullable
+`usage_events.pricing_rule_fingerprint` without a backfill; keep it on rollback.
+The original historical-pricing migration adds nullable
 `usage_events.budget_estimated_cost` without a backfill and a service/ID index
 for batched historical updates. Index creation takes a write lock; apply it in
 a maintenance window for large usage tables. Do not downgrade budget

@@ -31,6 +31,7 @@ pub struct UsageEvent {
     pub cost_source: Option<String>,
     pub cost_mode: Option<ServiceCostMode>,
     pub pricing_rule_name: Option<String>,
+    pub pricing_rule_fingerprint: Option<String>,
     pub service_name: Option<String>,
     pub service_version: Option<String>,
     pub http_method: Option<String>,
@@ -98,6 +99,7 @@ impl UsageEvent {
             cost_source: None,
             cost_mode: None,
             pricing_rule_name: None,
+            pricing_rule_fingerprint: None,
             service_name: None,
             service_version: None,
             http_method: None,
@@ -125,6 +127,11 @@ impl UsageEvent {
         self.cost_source = cost_source;
         self.cost_mode = cost_mode;
         self.pricing_rule_name = pricing_rule_name;
+        self
+    }
+
+    pub fn with_pricing_rule_fingerprint(mut self, fingerprint: Option<String>) -> Self {
+        self.pricing_rule_fingerprint = fingerprint;
         self
     }
 

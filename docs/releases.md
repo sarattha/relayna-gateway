@@ -1,7 +1,14 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.42` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.43` is the
 current release target.
+
+Version `0.1.43` fixes historical selector attribution, service-price precision
+and Foundry connection-pool exhaustion from PR #126. The additive fingerprint
+migration has no backfill; unproven historical rule costs stay unchanged.
+Service amounts support eight decimal places without changing the ledger.
+See [deployment](deployment.md#upgrade-to-0143) and
+[service pricing](openapi-service-pricing.md#changing-prices-for-recorded-requests).
 
 Version `0.1.42` fixes small service prices and adds optional historical reporting
 cost updates while preserving original budget charges. Startup applies the
@@ -96,7 +103,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.42
+   python3 scripts/validate-release-metadata.py v0.1.43
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -114,15 +121,15 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.42 .
+   docker build -t relayna-gateway:0.1.43 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.42 -m "Release v0.1.42"
-   git push origin v0.1.42
+   git tag -a v0.1.43 -m "Release v0.1.43"
+   git push origin v0.1.43
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -132,10 +139,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.42`, the workflow publishes:
+For `v0.1.43`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.42
+ghcr.io/sarattha/relayna-gateway:0.1.43
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```
