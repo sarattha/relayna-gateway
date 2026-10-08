@@ -21,8 +21,8 @@ open a review PR and monitor CI and Codex feedback without merging it.
 - [x] (2026-10-08) Run focused tests, UI/browser checks and mandatory stack.
   Rust fmt/Clippy/workspace tests/build, audit/deny/machete and nextest pass;
   414 tests pass, zero skipped. Full script stops on seven pre-existing Trivy
-  HIGH findings in an unchanged ignored prototype lockfile. Semgrep passes;
-  Gitleaks history scan is finishing.
+  HIGH findings in an unchanged ignored prototype lockfile. Semgrep and
+  Gitleaks history (399 commits) and staged scans pass.
 - [ ] Commit, push, open/link PR, monitor checks and address review feedback.
 
 ## Surprises & Discoveries
@@ -68,8 +68,9 @@ NULL and costs intact. Native controls and the real API accept 1e-8 and reject
 
 The local full verification script stops at seven pre-existing HIGH prototype
 findings; Cargo.lock and the root package-lock have zero HIGH/CRITICAL findings.
-The ignored prototype is excluded from commits. Semgrep passes; Gitleaks and PR
-publication/review monitoring are still in progress.
+The ignored prototype is excluded from commits. Semgrep and Gitleaks history
+(399 commits) and staged scans pass. The branch is committed and pushed;
+PR publication and review monitoring are in progress.
 
 ## Context and Orientation
 
