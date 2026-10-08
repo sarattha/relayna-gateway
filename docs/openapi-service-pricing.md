@@ -227,6 +227,8 @@ Recalculation uses recorded attribution rather than replaying request bodies:
 - Named-rule records without proof, including legacy body and endpoint records,
   stay unchanged. Gateway never backfills proof from current configuration.
   Request bodies and raw selector values are not added to usage records.
+- Eligible endpoint edits refresh the recorded selector proof even when the
+  price is unchanged, so later historical price edits can still reprice the row.
 - Upstream-reported prices, missing attribution, ambiguous or unnamed body
   rules, removed/changed body selectors and changes to `passthrough` retain
   their recorded costs. Accessa and caller-key passthrough are not repriced.

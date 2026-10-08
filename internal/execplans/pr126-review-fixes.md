@@ -20,12 +20,16 @@ open a review PR and monitor CI and Codex feedback without merging it.
 - [x] (2026-10-08) Update version, changelog and operator/release documentation to 0.1.43.
 - [x] (2026-10-08) Run focused tests, UI/browser checks and mandatory stack.
   Rust fmt/Clippy/workspace tests/build, audit/deny/machete and nextest pass;
-  414 tests pass, zero skipped. Full script stops on seven pre-existing Trivy
+  415 tests pass, zero skipped. Full script stops on seven pre-existing Trivy
   HIGH findings in an unchanged ignored prototype lockfile. Semgrep and
   Gitleaks history (399 commits) and staged scans pass.
 - [x] (2026-10-08) Commit and push the branch; open/link review-ready PR #130.
   Initial Codex review of 8a940b9 completed with no findings and a thumbs-up.
   Continue monitoring CI and review feedback on the published PR.
+- [x] (2026-10-08) Address the second Codex review's endpoint proof no-op finding.
+  Regression fails before the fix and passes afterward. Repeated mandatory
+  verification passes through nextest (415 passed, zero skipped), then stops
+  at the unchanged seven prototype Trivy findings. Staged Gitleaks and Semgrep pass.
 
 ## Surprises & Discoveries
 
@@ -42,6 +46,10 @@ open a review PR and monitor CI and Codex feedback without merging it.
   Enable serde_json float_roundtrip so saved JSON pricing reads do not round a
   near-limit accepted price up to the unsupported boundary.
 - Three unrelated untracked security documents belong to the user; exclude them.
+- A same-price endpoint template edit still changes selector proof. The no-op
+  comparison must include the fingerprint, or a later price edit skips the row.
+  Codex's second review caught this; a regression covers parameter renaming,
+  subsequent repricing, original budget retention and repeated-save idempotence.
 
 ## Decision Log
 
@@ -61,8 +69,8 @@ open a review PR and monitor CI and Codex feedback without merging it.
 ## Outcomes & Retrospective
 
 All three fixes and 0.1.43 release/documentation updates are implemented.
-The seven focused PostgreSQL/Redis tests pass, including large-price round-trips.
-Workspace and nextest validation pass (414 tests, zero skipped). UI build/tests,
+The eight focused PostgreSQL/Redis tests pass, including large-price round-trips.
+Workspace and nextest validation pass (415 tests, zero skipped). UI build/tests,
 50 React tests, TypeScript, release metadata and strict documentation build pass.
 Fresh migration and prior-schema upgrade/idempotence checks leave legacy proof
 NULL and costs intact. Native controls and the real API accept 1e-8 and reject
@@ -72,10 +80,11 @@ The local full verification script stops at seven pre-existing HIGH prototype
 findings; Cargo.lock and the root package-lock have zero HIGH/CRITICAL findings.
 The ignored prototype is excluded from commits. Semgrep and Gitleaks history
 (399 commits) and staged scans pass. Review-ready PR #130 is published and
-linked to the thread. Codex reviewed 8a940b9 with no findings; its completed
-review and thumbs-up are recorded on the PR. Documentation, repository metadata
-and Admin UI CI passed at publication; Rust and security CI are being monitored.
-The PR remains open for human review, and final CI status is reported on the PR.
+linked to the thread. Initial Codex review of 8a940b9 reported no findings;
+the second review of bf84da5 found the same-price endpoint selector-proof edge
+case, now fixed with regression coverage. All CI checks, including production
+Trivy, passed on bf84da5. The follow-up fix requires fresh CI and Codex review.
+The PR remains open for human review, and final head status is reported on the PR.
 
 ## Context and Orientation
 

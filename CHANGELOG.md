@@ -9,7 +9,8 @@ All notable changes to Relayna Gateway are documented in this file.
 - Require per-event pricing-rule selector fingerprints for historical body and
   endpoint recalculation, preventing earlier new-request-only selector changes
   from corrupting old reporting costs (#127). Legacy/unproven rule records stay
-  unchanged; original budget charges remain preserved.
+  unchanged; original budget charges remain preserved. Eligible endpoint edits
+  refresh selector proof even when the reporting charge stays the same.
 - Limit service default, body-rule and endpoint amounts to eight decimal places
   and below USD 1 trillion, matching the usage ledger. USD 0.00000001 remains
   valid; positive sub-ledger charges are rejected in API saves and Admin UI

@@ -1056,6 +1056,7 @@ async fn reprice_service_usage_in_tx(
                 && mode.as_deref() == Some(service_cost_mode_str(resolved.cost_mode))
                 && source.as_deref() == Some(new_source)
                 && rule == resolved.pricing_rule_name
+                && fingerprint == resolved.pricing_rule_fingerprint
             {
                 summary.unchanged_requests += 1;
                 continue;

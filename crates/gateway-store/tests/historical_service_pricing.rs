@@ -570,6 +570,114 @@ async fn named_rule_repricing_requires_per_event_selector_proof_across_new_only_
 }
 
 #[tokio::test]
+async fn endpoint_selector_proof_updates_even_when_the_charge_is_unchanged() {
+    let Some((store, _lock)) = store().await else {
+        return;
+    };
+    let key = create_key(&store).await;
+    let name = format!("endpoint-proof-{}", Uuid::new_v4().simple());
+    create_service(&store, &name).await;
+    let rules = |template: &str, cost: f64| {
+        json!([{"method":"GET", "path_template":template, "operation_id":"getJob",
+        "cost_mode":"fixed", "estimated_cost_usd":cost}])
+    };
+    let initial = store
+        .patch_service(
+            &name,
+            request(json!({"endpoint_pricing_rules":rules("/jobs/{id}", 0.2)})),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let resolved = gateway_core::resolve_endpoint_pricing_rule(
+        &"GET".parse().unwrap(),
+        "/jobs/123",
+        &initial.endpoint_pricing_rules,
+    )
+    .unwrap();
+    let original_proof = resolved.pricing_rule_fingerprint.clone();
+    let request_id = Uuid::new_v4().to_string();
+    let event = gateway_core::UsageEvent::new(
+        &request_id,
+        &gateway_core::AuthenticatedKey {
+            key_id: key,
+            project_id: None,
+            key_prefix: "test".into(),
+        },
+        gateway_core::Route::ServiceWildcard,
+        None,
+        200,
+        1,
+        Utc::now(),
+    )
+    .with_provider(gateway_core::Provider::InternalService)
+    .with_estimated_cost_usd(resolved.estimated_cost_usd)
+    .with_cost_metadata(
+        Some("service_pricing_rule_fixed".into()),
+        Some(resolved.cost_mode),
+        resolved.pricing_rule_name,
+    )
+    .with_pricing_rule_fingerprint(resolved.pricing_rule_fingerprint)
+    .with_service_name(Some(name.clone()))
+    .with_endpoint_context(Some("GET".into()), Some("/jobs/123".into()), None);
+    store.insert_usage_event(&event).await.unwrap();
+
+    // Renaming a template parameter preserves matching, rule name and price,
+    // but changes the proof that the next historical edit must recognize.
+    let renamed = store
+        .patch_service(
+            &name,
+            request(
+                json!({"endpoint_pricing_rules":rules("/jobs/{job_id}", 0.2),
+                "reprice_existing_usage":true}),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        renamed.historical_usage_repricing.unwrap().updated_requests,
+        1
+    );
+    let expected_proof = gateway_core::resolve_endpoint_pricing_rule(
+        &"GET".parse().unwrap(),
+        "/jobs/123",
+        &renamed.endpoint_pricing_rules,
+    )
+    .unwrap()
+    .pricing_rule_fingerprint;
+    assert_ne!(expected_proof, original_proof);
+    for (cost, updated_requests) in [(0.2, 0), (0.0002, 1), (0.0002, 0)] {
+        let repriced = store
+            .patch_service(
+                &name,
+                request(
+                    json!({"endpoint_pricing_rules":rules("/jobs/{job_id}", cost),
+                    "reprice_existing_usage":true}),
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            repriced
+                .historical_usage_repricing
+                .unwrap()
+                .updated_requests,
+            updated_requests
+        );
+        let row: (f64, f64, Option<String>) = sqlx::query_as(
+            "SELECT estimated_cost::double precision, budget_estimated_cost::double precision, pricing_rule_fingerprint FROM usage_events WHERE request_id = $1",
+        )
+        .bind(&request_id)
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+        assert_eq!(row, (cost, 0.2, expected_proof.clone()));
+    }
+}
+
+#[tokio::test]
 async fn minimum_service_price_survives_recording_repricing_and_budget_recovery() {
     let Some((store, _lock)) = store().await else {
         return;
