@@ -2,9 +2,16 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.41` feature set.
+This page summarizes the `v0.1.42` feature set.
 
-New in 0.1.41: complete-body and model governance, atomic budget reservations,
+New in 0.1.42: service defaults, body rules and OpenAPI endpoint prices accept
+amounts below USD 0.001. Shared ordinary, Studio-imported and Foundry service
+editors offer new requests only or explicit historical report-cost recalculation,
+with confirmation and changed/unchanged counts. Original budget charges survive
+repricing and Redis recovery. See [service pricing](openapi-service-pricing.md#changing-prices-for-recorded-requests)
+for safe attribution and [deployment](deployment.md#upgrade-to-0142) for rollout.
+
+Introduced in 0.1.41: complete-body and model governance, atomic budget reservations,
 reservation-preserving reconciliation, secure operator cookies, and bounded JWT
 refresh/UI collection. See [operations](operations.md) for rollout and recovery.
 

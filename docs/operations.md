@@ -271,6 +271,15 @@ periods hydrate on first admission. Configure Redis with `maxmemory-policy
 noeviction` and enough capacity for counters and reservations. Missing or invalid
 limited-key counters fail closed until durable spend can be hydrated.
 
+Optional historical service repricing updates reporting costs without changing
+committed budget spend. Budget reconstruction uses the preserved original
+`budget_estimated_cost` when present, otherwise the recorded `estimated_cost`.
+A preserved zero remains zero even if the report price becomes positive. This
+also applies to startup/reconciliation and Accessa durable spend reads; existing
+Redis counters are not rewritten. Upgrade all budget readers before enabling
+historical updates. See [service pricing](openapi-service-pricing.md#changing-prices-for-recorded-requests)
+and [deployment](deployment.md#upgrade-to-0142).
+
 The accounting epoch prevents a running replica from silently rearming after
 Redis state loss. PostgreSQL cannot reconstruct in-flight reservations. After a
 Redis restart without retained state, flush, or snapshot rollback, drain all

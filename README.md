@@ -4,6 +4,13 @@ Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It v
 
 Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
 
+Version `0.1.42` accepts service prices below USD 0.001 and adds an explicit
+choice to update recorded reporting costs when editing service pricing. New
+requests only remains the default; historical updates preserve original budget
+charges. Apply the migration and upgrade every replica before using historical
+recalculation; see [service pricing](docs/openapi-service-pricing.md#changing-prices-for-recorded-requests)
+and [deployment](docs/deployment.md#upgrade-to-0142).
+
 Version `0.1.41` strengthens complete-request governance, atomic budget accounting,
 operator-cookie security, JWT refresh bounds and UI resource handling. Drain old
 replicas before upgrading the accounting writer; see [operations](docs/operations.md#budgets-and-rate-limits).
@@ -206,7 +213,7 @@ of 400 or greater remains a failure, whether returned by Gateway or upstream.
 Build the single image that runs both the gateway proxy and embedded admin portal:
 
 ```bash
-docker build -t relayna-gateway:0.1.41 .
+docker build -t relayna-gateway:0.1.42 .
 ```
 
 Run it:
@@ -220,7 +227,7 @@ docker run --rm \
   -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
   -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
   -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.1.41
+  relayna-gateway:0.1.42
 ```
 
 `GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
@@ -236,7 +243,7 @@ managed-identity example, ports, and cleanup commands.
 
 ## Kubernetes
 
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.41`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
+Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.42`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
 
 ## Budgets, TPM, and Usage Exports
 

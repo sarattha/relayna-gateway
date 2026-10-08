@@ -18,6 +18,9 @@ Redis recovery or a gateway restart.
 - [x] (2026-10-07) Add shared service-edit choice/confirmation and result counts; document semantics and rollout.
 - [x] (2026-10-07) Verify core/API/store/UI behavior, apply migration against disposable PostgreSQL/Redis, rebuild assets and run required checks; record the pre-existing Trivy failure below.
 - [x] (2026-10-07) Push the verified feature and update existing draft PR #126 with the final title, scope, migration notes and verification limitations; prepare the handoff.
+- [x] (2026-10-08) Prepare 0.1.42 workspace/lockfile metadata, changelog, current release references, operator/deployment docs and regenerated UI assets.
+- [x] (2026-10-08) Verify 0.1.42 on pinned Rust 1.98.0, including workspace formatting/Clippy/tests/build, 407 Nextest tests with real dependencies, UI/coverage/type checks, strict docs, metadata and secret/static scans. Record the unchanged local Trivy limitation.
+- [x] (2026-10-08) Prepare the final PR update and authorized landing workflow, guarded by the current head commit. GitHub PR #126 tracks the final automated-check and merge state; the user explicitly waived waiting for unavailable Codex review.
 
 ## Surprises & Discoveries
 
@@ -38,6 +41,18 @@ both text-only and screenshot snapshots fail in the preview client. Browser
 verification used real UI interactions and DOM inspection against an isolated
 gateway and a separate disposable `pricing_ui` database; no live data was used.
 
+On release preparation, the Rust CI check was failing before tests: the moving
+stable toolchain installed Rust 1.99.0 and Clippy flagged `double_must_use` in
+external `async-trait` expansions throughout existing core traits. Local Rust
+1.98.0 workspace Clippy passes with warnings denied. Pin local and CI/release
+verification together rather than suppressing the lint or rewriting traits.
+
+During the release pass, native preview metadata was available but browser
+automation reported no connected host. HTTP checks against the disposable
+gateway confirmed that its embedded HTML and JavaScript serve 0.1.42, and
+automated UI tests verify both version labels. The prior feature's desktop and
+mobile interaction verification remains documented above.
+
 ## Decision Log
 
 - Decision: Add `reprice_existing_usage: bool` to service PATCH, default false.
@@ -55,6 +70,12 @@ gateway and a separate disposable `pricing_ui` database; no live data was used.
 - Decision: Index historical pagination by service and UUID.
   Rationale: Existing indexes sort service history by time; UUID batching otherwise repeatedly sorts the remaining history. The migration creates the matching index, with its write-lock rollout documented.
   Date/Author: 2026-10-07, Codex.
+- Decision: Prepare patch release 0.1.42, update current image references and operator guidance, and pin verification to tested Rust 1.98.0.
+  Rationale: Follow existing pre-1.0 release numbering and prevent compiler-channel drift from blocking this otherwise verified release. No additional public behavior changes are introduced by the release metadata.
+  Date/Author: 2026-10-08, user/Codex.
+- Decision: Merge after automated checks, bypassing only the unavailable review requirement if needed.
+  Rationale: The user explicitly authorized landing and said not to wait for Codex review. Do not change repository protection rules or publish a release tag without a request.
+  Date/Author: 2026-10-08, user/Codex.
 
 ## Outcomes & Retrospective
 
@@ -83,6 +104,15 @@ https://github.com/sarattha/relayna-gateway/pull/126 on
 `fix/service-price-precision`. Unrelated local security documents were retained
 and excluded from both commits and PR scope. Disposable gateway and dependency
 fixtures are stopped after verification.
+
+Prepared release 0.1.42 with synchronized workspace/lockfile versions, changelog,
+current documentation and deployment image examples, and regenerated UI labels.
+All local code, UI, documentation and metadata checks pass on Rust 1.98.0;
+407 Nextest tests pass with zero skipped and real PostgreSQL/Redis dependencies.
+The full script still exits at the same seven unrelated, unfixed prototype
+Trivy HIGH findings. Production lockfiles have no HIGH/CRITICAL findings.
+Gitleaks history/staged-change scans and Semgrep pass separately. Final GitHub
+CI results and the explicitly authorized merge are recorded on linked PR #126.
 
 ## Context and Orientation
 
