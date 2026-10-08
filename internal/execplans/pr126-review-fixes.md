@@ -23,7 +23,9 @@ open a review PR and monitor CI and Codex feedback without merging it.
   414 tests pass, zero skipped. Full script stops on seven pre-existing Trivy
   HIGH findings in an unchanged ignored prototype lockfile. Semgrep and
   Gitleaks history (399 commits) and staged scans pass.
-- [ ] Commit, push, open/link PR, monitor checks and address review feedback.
+- [x] (2026-10-08) Commit and push the branch; open/link review-ready PR #130.
+  Initial Codex review of 8a940b9 completed with no findings and a thumbs-up.
+  Continue monitoring CI and review feedback on the published PR.
 
 ## Surprises & Discoveries
 
@@ -69,8 +71,11 @@ NULL and costs intact. Native controls and the real API accept 1e-8 and reject
 The local full verification script stops at seven pre-existing HIGH prototype
 findings; Cargo.lock and the root package-lock have zero HIGH/CRITICAL findings.
 The ignored prototype is excluded from commits. Semgrep and Gitleaks history
-(399 commits) and staged scans pass. The branch is committed and pushed;
-PR publication and review monitoring are in progress.
+(399 commits) and staged scans pass. Review-ready PR #130 is published and
+linked to the thread. Codex reviewed 8a940b9 with no findings; its completed
+review and thumbs-up are recorded on the PR. Documentation, repository metadata
+and Admin UI CI passed at publication; Rust and security CI are being monitored.
+The PR remains open for human review, and final CI status is reported on the PR.
 
 ## Context and Orientation
 
@@ -133,6 +138,7 @@ remove only containers created for this task. Preserve unrelated user files.
 
 Source review: https://github.com/sarattha/relayna-gateway/pull/126
 Issues: #127 (P1), #128 (P2), #129 (P2).
+Fix PR: https://github.com/sarattha/relayna-gateway/pull/130
 
 ## Interfaces and Dependencies
 
