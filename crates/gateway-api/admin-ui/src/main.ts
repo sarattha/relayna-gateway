@@ -2179,6 +2179,8 @@ async function services() {
   document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
   bindServiceTypePresets(document.querySelector("#service-form"));
   document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
+  bindServicePriceValidation(document.querySelector("#service-form"));
+  bindServicePriceValidation(document.querySelector("#service-edit-form"));
   bindPricingRuleEditors();
   bindEndpointPricingEditors();
   document.querySelectorAll("[data-foundry-service]").forEach(button => button.addEventListener("click", handleAsync(() => openFoundryEditor("service", state.services.find(p => p.name === button.dataset.foundryService), button))));
@@ -2192,6 +2194,39 @@ async function services() {
   });
   prepareProfileKeys(content);
   organizeView("services");
+}
+
+function normalizedPriceDecimal(value) {
+  const [mantissa, exponent = "0"] = String(value).toLowerCase().split("e");
+  const fraction = mantissa.split(".")[1]?.length || 0;
+  const digits = mantissa.replace("-", "").replace(".", "").replace(/^0+/, "");
+  const significant = digits.replace(/0+$/, "");
+  if (!significant) return "0";
+  return `${mantissa.startsWith("-") ? "-" : ""}${significant}e${Number(exponent) - fraction + digits.length - significant.length}`;
+}
+
+function validateServicePriceInput(input) {
+  const raw = input.value.trim();
+  const cost = Number(raw);
+  const rounded = raw && (!Number.isFinite(cost) || normalizedPriceDecimal(raw) !== normalizedPriceDecimal(String(cost)));
+  input.setCustomValidity(rounded ? "Use an amount that can be stored without rounding." : "");
+}
+
+function servicePriceInputs(form) {
+  return form.querySelectorAll('[name="estimated_cost_usd"], [data-pricing-rule-field="estimated_cost_usd"], [data-endpoint-field="estimated_cost_usd"]');
+}
+
+function bindServicePriceValidation(form) {
+  if (!form) return;
+  servicePriceInputs(form).forEach(validateServicePriceInput);
+  form.addEventListener("input", (event) => {
+    if (event.target.matches('[name="estimated_cost_usd"], [data-pricing-rule-field="estimated_cost_usd"], [data-endpoint-field="estimated_cost_usd"]')) validateServicePriceInput(event.target);
+  });
+}
+
+function validateServicePriceForm(form) {
+  servicePriceInputs(form).forEach(validateServicePriceInput);
+  return form.reportValidity();
 }
 
 function pricingRulesEditor(rules) {
@@ -2423,6 +2458,7 @@ function serviceEditForm(service) {
 
 async function submitService(event) {
   event.preventDefault();
+  if (!validateServicePriceForm(event.target)) return;
   const form = new FormData(event.target);
   const action = event.submitter.value;
   if (action === "import") {
@@ -2823,6 +2859,7 @@ async function syncSelectedStudioServices(event) {
 
 async function patchService(event) {
   event.preventDefault();
+  if (!validateServicePriceForm(event.target)) return;
   const form = new FormData(event.target);
   const serviceName = event.target.dataset.serviceName;
   const body = serviceBody(form, true);

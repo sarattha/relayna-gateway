@@ -23001,7 +23001,7 @@ var init_guidance_content = __esmMin((() => {
 		health_check_method: "HTTP method used to check the upstream health endpoint.",
 		fallback_services: "Comma-separated registered service names, in fallback order, used for eligible upstream failures.",
 		cost_mode: "none records no charge; fixed uses the configured USD estimate; passthrough uses upstream-reported cost when available.",
-		estimated_cost_usd: "Estimated USD charge per request in fixed mode. Use at most 8 decimal places and an amount below USD 1 trillion; the smallest positive charge is USD 0.00000001. 0 means no estimated charge.",
+		estimated_cost_usd: "Estimated USD charge per request in fixed mode. Use at most 8 decimal places and an amount below USD 1 trillion; the smallest positive charge is USD 0.00000001. Amounts that require rounding are rejected. 0 means no estimated charge.",
 		pricing_update_scope: "New requests only preserves recorded costs. Recorded costs and new requests recalculates matching historical reporting costs after confirmation; original budget charges stay unchanged.",
 		json_pointer: "JSON Pointer into the request, such as /model or /payload/page_count, used to match this pricing rule.",
 		equals: "Text value the selected request field must match for this pricing rule to apply.",
@@ -38790,6 +38790,8 @@ async function services() {
 	document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
 	bindServiceTypePresets(document.querySelector("#service-form"));
 	document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
+	bindServicePriceValidation(document.querySelector("#service-form"));
+	bindServicePriceValidation(document.querySelector("#service-edit-form"));
 	bindPricingRuleEditors();
 	bindEndpointPricingEditors();
 	document.querySelectorAll("[data-foundry-service]").forEach((button) => button.addEventListener("click", handleAsync(() => openFoundryEditor("service", state.services.find((p) => p.name === button.dataset.foundryService), button))));
@@ -38814,6 +38816,34 @@ async function services() {
 	});
 	prepareProfileKeys(content);
 	organizeView("services");
+}
+function normalizedPriceDecimal(value) {
+	const [mantissa, exponent = "0"] = String(value).toLowerCase().split("e");
+	const fraction = mantissa.split(".")[1]?.length || 0;
+	const digits = mantissa.replace("-", "").replace(".", "").replace(/^0+/, "");
+	const significant = digits.replace(/0+$/, "");
+	if (!significant) return "0";
+	return `${mantissa.startsWith("-") ? "-" : ""}${significant}e${Number(exponent) - fraction + digits.length - significant.length}`;
+}
+function validateServicePriceInput(input) {
+	const raw = input.value.trim();
+	const cost = Number(raw);
+	const rounded = raw && (!Number.isFinite(cost) || normalizedPriceDecimal(raw) !== normalizedPriceDecimal(String(cost)));
+	input.setCustomValidity(rounded ? "Use an amount that can be stored without rounding." : "");
+}
+function servicePriceInputs(form) {
+	return form.querySelectorAll("[name=\"estimated_cost_usd\"], [data-pricing-rule-field=\"estimated_cost_usd\"], [data-endpoint-field=\"estimated_cost_usd\"]");
+}
+function bindServicePriceValidation(form) {
+	if (!form) return;
+	servicePriceInputs(form).forEach(validateServicePriceInput);
+	form.addEventListener("input", (event) => {
+		if (event.target.matches("[name=\"estimated_cost_usd\"], [data-pricing-rule-field=\"estimated_cost_usd\"], [data-endpoint-field=\"estimated_cost_usd\"]")) validateServicePriceInput(event.target);
+	});
+}
+function validateServicePriceForm(form) {
+	servicePriceInputs(form).forEach(validateServicePriceInput);
+	return form.reportValidity();
 }
 function pricingRulesEditor(rules) {
 	return `
@@ -39042,6 +39072,7 @@ function serviceEditForm(service) {
 }
 async function submitService(event) {
 	event.preventDefault();
+	if (!validateServicePriceForm(event.target)) return;
 	const form = new FormData(event.target);
 	if (event.submitter.value === "import") await api("/admin-ui/admin/services/import", {
 		method: "POST",
@@ -39411,6 +39442,7 @@ async function syncSelectedStudioServices(event) {
 }
 async function patchService(event) {
 	event.preventDefault();
+	if (!validateServicePriceForm(event.target)) return;
 	const form = new FormData(event.target);
 	const serviceName = event.target.dataset.serviceName;
 	const body = serviceBody(form, true);

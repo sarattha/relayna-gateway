@@ -8,7 +8,9 @@ Discoveries, Decision Log and Outcomes & Retrospective throughout the work.
 Resolve issues #127, #128 and #129. Operators can reprice only provably matched
 historical rules, cannot configure service charges that disappear in the ledger,
 and can edit Foundry services with a single database connection. Prepare 0.1.43,
-open a review PR and monitor CI and Codex feedback without merging it.
+open a review PR and monitor CI and Codex feedback. After the final precision
+fix, the user authorized merging the PR and creating v0.1.43 without further
+Codex review requests.
 
 ## Progress
 
@@ -20,7 +22,7 @@ open a review PR and monitor CI and Codex feedback without merging it.
 - [x] (2026-10-08) Update version, changelog and operator/release documentation to 0.1.43.
 - [x] (2026-10-08) Run focused tests, UI/browser checks and mandatory stack.
   Rust fmt/Clippy/workspace tests/build, audit/deny/machete and nextest pass;
-  415 tests pass, zero skipped. Full script stops on seven pre-existing Trivy
+  417 tests pass, zero skipped. Full script stops on seven pre-existing Trivy
   HIGH findings in an unchanged ignored prototype lockfile. Semgrep and
   Gitleaks history (399 commits) and staged scans pass.
 - [x] (2026-10-08) Commit and push the branch; open/link review-ready PR #130.
@@ -30,6 +32,14 @@ open a review PR and monitor CI and Codex feedback without merging it.
   Regression fails before the fix and passes afterward. Repeated mandatory
   verification passes through nextest (415 passed, zero skipped), then stops
   at the unchanged seven prototype Trivy findings. Staged Gitleaks and Semgrep pass.
+- [x] (2026-10-08) Reject decimal inputs that would round before f64 validation;
+  API, Admin UI and saved-value read regressions pass. Final stack passes fmt,
+  Clippy, workspace tests, audit/deny/machete and nextest (417 passed, zero
+  skipped), then encounters the same seven ignored-prototype Trivy findings.
+  UI build/tests/TypeScript/50 React tests, strict docs, release metadata,
+  staged Gitleaks and Semgrep pass. Local 0.1.43 release image builds.
+- [ ] Wait for final-head CI, merge PR #130, create v0.1.43 and monitor release.
+  User explicitly authorized landing/release and ending Codex review requests.
 
 ## Surprises & Discoveries
 
@@ -50,6 +60,12 @@ open a review PR and monitor CI and Codex feedback without merging it.
   comparison must include the fingerprint, or a later price edit skips the row.
   Codex's second review caught this; a regression covers parameter renaming,
   subsequent repricing, original budget retention and repeated-save idempotence.
+- Eight decimal places alone cannot prove a large submitted JSON amount survived
+  conversion to f64. Preserve its raw numeric token during deserialization and
+  compare normalized decimals before accepting it. Do not round a price silently.
+- A timing-sensitive Foundry SSE test failed during a simultaneous local Docker
+  release build. Finish the competing build and rerun the full stack without
+  that load; do not weaken the streaming assertion. The release image built.
 
 ## Decision Log
 
@@ -65,12 +81,20 @@ open a review PR and monitor CI and Codex feedback without merging it.
   ledger precision and Redis formats unchanged. Date/Author: 2026-10-08 / Codex.
 - Decision: Execute Foundry provider validation on the already-held transaction
   connection, preserving existence/type checks. Date/Author: 2026-10-08 / Codex.
+- Decision: Reject lossy decimal service-price submissions using serde RawValue
+  before f64 conversion, rather than replacing all runtime/Redis money types.
+  Normalized decimal comparison accepts equivalent exponent/trailing-zero forms.
+  Read existing persisted f64 representations unchanged; keep original missing/
+  null PATCH semantics. Native UI validity blocks lossy JS serialization.
+  This tightens the price-save boundary within the requested precision fix and
+  does not rewrite durable storage or change budget accounting formats.
+  Date/Author: 2026-10-08 / Codex.
 
 ## Outcomes & Retrospective
 
 All three fixes and 0.1.43 release/documentation updates are implemented.
 The eight focused PostgreSQL/Redis tests pass, including large-price round-trips.
-Workspace and nextest validation pass (415 tests, zero skipped). UI build/tests,
+Workspace and nextest validation pass (417 tests, zero skipped). UI build/tests,
 50 React tests, TypeScript, release metadata and strict documentation build pass.
 Fresh migration and prior-schema upgrade/idempotence checks leave legacy proof
 NULL and costs intact. Native controls and the real API accept 1e-8 and reject
@@ -84,7 +108,11 @@ linked to the thread. Initial Codex review of 8a940b9 reported no findings;
 the second review of bf84da5 found the same-price endpoint selector-proof edge
 case, now fixed with regression coverage. All CI checks, including production
 Trivy, passed on bf84da5. The follow-up fix requires fresh CI and Codex review.
-The PR remains open for human review, and final head status is reported on the PR.
+The final raw-decimal precision fix passes all local code/UI/docs checks and
+417 tests, including the streaming assertion on the isolated rerun. The local
+release image builds. The user authorized merging after CI and creating the
+release; final PR and release status are reported on GitHub without requesting
+another Codex review.
 
 ## Context and Orientation
 

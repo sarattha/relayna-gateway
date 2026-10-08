@@ -86,7 +86,7 @@ const shared: Record<string, string> = {
   health_check_method: "HTTP method used to check the upstream health endpoint.",
   fallback_services: "Comma-separated registered service names, in fallback order, used for eligible upstream failures.",
   cost_mode: "none records no charge; fixed uses the configured USD estimate; passthrough uses upstream-reported cost when available.",
-  estimated_cost_usd: "Estimated USD charge per request in fixed mode. Use at most 8 decimal places and an amount below USD 1 trillion; the smallest positive charge is USD 0.00000001. 0 means no estimated charge.",
+  estimated_cost_usd: "Estimated USD charge per request in fixed mode. Use at most 8 decimal places and an amount below USD 1 trillion; the smallest positive charge is USD 0.00000001. Amounts that require rounding are rejected. 0 means no estimated charge.",
   pricing_update_scope: "New requests only preserves recorded costs. Recorded costs and new requests recalculates matching historical reporting costs after confirmation; original budget charges stay unchanged.",
   json_pointer: "JSON Pointer into the request, such as /model or /payload/page_count, used to match this pricing rule.",
   equals: "Text value the selected request field must match for this pricing rule to apply.",

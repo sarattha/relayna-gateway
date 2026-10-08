@@ -5,7 +5,7 @@ import ts from "typescript";
 
 const source = readFileSync(new URL("../crates/gateway-api/admin-ui/src/main.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
-const names = ["services", "serviceEditForm", "pricingRulesEditor", "pricingRuleRow", "bindPricingRuleEditors", "syncPricingRuleEditor", "pricingRuleFromRow", "openApiEndpointPricingEditor", "bindEndpointPricingEditors", "syncEndpointPricingEditor", "serviceBody", "pricingRulesFromForm", "endpointPricingRulesFromForm", "submitService", "patchService", "policyFields", "usage", "formSection", "option", "attr", "esc", "listValue", "csv", "blankToUndefined", "nullableString", "nullableNumber", "money"];
+const names = ["services", "serviceEditForm", "normalizedPriceDecimal", "validateServicePriceInput", "servicePriceInputs", "bindServicePriceValidation", "validateServicePriceForm", "pricingRulesEditor", "pricingRuleRow", "bindPricingRuleEditors", "syncPricingRuleEditor", "pricingRuleFromRow", "openApiEndpointPricingEditor", "bindEndpointPricingEditors", "syncEndpointPricingEditor", "serviceBody", "pricingRulesFromForm", "endpointPricingRulesFromForm", "submitService", "patchService", "policyFields", "usage", "formSection", "option", "attr", "esc", "listValue", "csv", "blankToUndefined", "nullableString", "nullableNumber", "money"];
 const functions = names.map(name => {
   const node = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name);
   assert.ok(node, `missing function ${name}`);
@@ -106,6 +106,22 @@ await ui.patchService({ target: edit, preventDefault() {} });
 assert.equal(writes.at(-1).method, "PATCH");
 assert.equal(writes.at(-1).body.reprice_existing_usage, false, "new requests only is the default");
 for (const amount of [writes.at(-1).body.estimated_cost_usd, writes.at(-1).body.pricing_rules[0].estimated_cost_usd, writes.at(-1).body.endpoint_pricing_rules[0].estimated_cost_usd]) assert.equal(amount, 0.00012345);
+
+state.editingServiceName = service.name;
+await ui.services();
+const preciseEdit = document.querySelector("#service-edit-form");
+for (const input of preciseEdit.querySelectorAll('[name="estimated_cost_usd"], [data-pricing-rule-field="estimated_cost_usd"], [data-endpoint-field="estimated_cost_usd"]')) {
+  const original = input.value;
+  input.value = "100000000000.00000001";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  assert.equal(input.validity.customError, true, "lossy decimal must not become a rounded JSON charge");
+  const before = writes.length;
+  await ui.patchService({target: preciseEdit, preventDefault() {}});
+  assert.equal(writes.length, before, "lossy default/body/endpoint price blocks the API write");
+  input.value = original;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  assert.equal(input.validity.customError, false);
+}
 
 contentHost.innerHTML = ui.serviceEditForm({ ...service, foundry: { mode: "endpoint_passthrough" } });
 ui.bindPricingRuleEditors();

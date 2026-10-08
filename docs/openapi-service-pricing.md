@@ -181,6 +181,11 @@ USD amounts with at most eight decimal places and values below USD 1 trillion,
 matching PostgreSQL `numeric(20, 8)`. USD `0.00000001` is the smallest positive
 configured charge; USD `0.000000001` is rejected instead of becoming zero in
 reports or budget recovery. The Admin UI and direct API saves share this limit.
+The submitted decimal must also survive numeric conversion without changing its
+value. For example, `100000000000.00000001` is rejected rather than silently
+becoming `100000000000`; a large whole amount such as `100000000000` remains
+valid. Use a representable amount or reduce its precision. Equivalent decimal
+and exponent notation, such as `0.00000001` and `1e-8`, are accepted.
 Blank estimates retain their existing semantics; explicit zero remains valid.
 Policy limits and Usage filters do not configure ledger charges and retain
 their existing input precision. Upstream-reported costs are not changed by this

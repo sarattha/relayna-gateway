@@ -99,7 +99,7 @@ pub struct ServiceCreateRequest {
     pub max_body_bytes: i64,
     #[serde(default)]
     pub cost_mode: ServiceCostMode,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_service_price")]
     pub estimated_cost_usd: Option<f64>,
     #[serde(default)]
     pub pricing_rules: Vec<ServicePricingRule>,
@@ -130,6 +130,7 @@ pub struct ServicePatchRequest {
     pub timeout_ms: Option<i64>,
     pub max_body_bytes: Option<i64>,
     pub cost_mode: Option<ServiceCostMode>,
+    #[serde(default, deserialize_with = "deserialize_service_price_patch")]
     pub estimated_cost_usd: Option<Option<f64>>,
     pub pricing_rules: Option<Vec<ServicePricingRule>>,
     pub openapi_source_path: Option<Option<String>>,
@@ -178,7 +179,7 @@ pub struct StudioServiceImportRequest {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct StudioServicePricing {
     pub cost_mode: ServiceCostMode,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_service_price")]
     pub estimated_cost_usd: Option<f64>,
     #[serde(default)]
     pub pricing_rules: Vec<ServicePricingRule>,
@@ -193,7 +194,7 @@ pub struct ServicePricingRule {
     #[serde(deserialize_with = "deserialize_pricing_rule_equals")]
     pub equals: String,
     pub cost_mode: ServiceCostMode,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_service_price")]
     pub estimated_cost_usd: Option<f64>,
 }
 
@@ -216,7 +217,7 @@ pub struct ServiceEndpointPricingRule {
     #[serde(default)]
     pub operation_id: Option<String>,
     pub cost_mode: ServiceCostMode,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_service_price")]
     pub estimated_cost_usd: Option<f64>,
 }
 
@@ -1219,6 +1220,54 @@ fn pricing_fingerprint(kind: &str, selector: &Value) -> String {
         "v1:{kind}:{:x}",
         Sha256::digest(selector.to_string().as_bytes())
     )
+}
+
+fn deserialize_service_price<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let raw = Option::<Box<serde_json::value::RawValue>>::deserialize(deserializer)?;
+    raw.map(|raw| {
+        let cost: f64 = serde_json::from_str(raw.get()).map_err(D::Error::custom)?;
+        // Preserve existing saved f64 configurations while rejecting submitted
+        // decimal values that would change before validate_cost can see them.
+        if !cost.is_finite()
+            || normalized_decimal(raw.get()) != normalized_decimal(&cost.to_string())
+        {
+            return Err(D::Error::custom(
+                "service price cannot be stored without rounding",
+            ));
+        }
+        Ok(cost)
+    })
+    .transpose()
+}
+
+fn deserialize_service_price_patch<'de, D>(deserializer: D) -> Result<Option<Option<f64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // Preserve the existing missing/null patch semantics.
+    deserialize_service_price(deserializer).map(|cost| cost.map(Some))
+}
+
+fn normalized_decimal(value: &str) -> Option<(bool, String, i64)> {
+    let (mantissa, exponent) = value.split_once(['e', 'E']).unwrap_or((value, "0"));
+    let exponent: i64 = exponent.parse().ok()?;
+    let fraction = mantissa
+        .split_once('.')
+        .map_or(0, |(_, digits)| digits.len());
+    let digits = mantissa.trim_start_matches('-').replace('.', "");
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        return Some((false, "0".into(), 0));
+    }
+    let significant = digits.trim_end_matches('0');
+    let scale = exponent
+        .checked_sub(i64::try_from(fraction).ok()?)?
+        .checked_add(i64::try_from(digits.len() - significant.len()).ok()?)?;
+    Some((mantissa.starts_with('-'), significant.into(), scale))
 }
 
 fn validate_cost(cost_mode: ServiceCostMode, estimated_cost_usd: Option<f64>) -> GatewayResult<()> {
@@ -2411,6 +2460,57 @@ mod tests {
                 estimated_cost_usd: Some(cost),
             }];
             assert!(request.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn service_price_deserialization_preserves_the_submitted_decimal() {
+        fn check<T: serde::de::DeserializeOwned>(template: &str) {
+            for price in ["100000000000.00000001", "0.12345678000000000001", "1e-400"] {
+                assert!(
+                    serde_json::from_str::<T>(&template.replace("PRICE", price)).is_err(),
+                    "lossy price {price}"
+                );
+            }
+            for price in [
+                "0",
+                "-0.0",
+                "0.00000001",
+                "1e-8",
+                "0.00020000",
+                "100000000000",
+                "999999999999.9999",
+            ] {
+                assert!(
+                    serde_json::from_str::<T>(&template.replace("PRICE", price)).is_ok(),
+                    "exact price {price}"
+                );
+            }
+        }
+        check::<ServiceCreateRequest>(r#"{"name":"exact-price","estimated_cost_usd":PRICE}"#);
+        check::<ServicePatchRequest>(r#"{"estimated_cost_usd":PRICE}"#);
+        check::<ServicePricingRule>(
+            r#"{"json_pointer":"/tier","equals":"premium","cost_mode":"fixed","estimated_cost_usd":PRICE}"#,
+        );
+        check::<ServiceEndpointPricingRule>(
+            r#"{"method":"POST","path_template":"/run","cost_mode":"fixed","estimated_cost_usd":PRICE}"#,
+        );
+        check::<StudioServicePricing>(r#"{"cost_mode":"fixed","estimated_cost_usd":PRICE}"#);
+        // Existing stored, representable values retain their read semantics,
+        // even when a new save would fail the tighter ledger-scale validation.
+        let saved: ServicePricingRule = serde_json::from_str(r#"{"json_pointer":"/tier","equals":"premium","cost_mode":"fixed","estimated_cost_usd":1e-9}"#).unwrap();
+        assert_eq!(saved.estimated_cost_usd, Some(1e-9));
+        assert!(
+            serde_json::from_value::<ServicePricingRule>(serde_json::to_value(saved).unwrap())
+                .is_ok()
+        );
+        for json in ["{}", r#"{"estimated_cost_usd":null}"#] {
+            assert_eq!(
+                serde_json::from_str::<ServicePatchRequest>(json)
+                    .unwrap()
+                    .estimated_cost_usd,
+                None
+            );
         }
     }
 

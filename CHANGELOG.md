@@ -16,6 +16,8 @@ All notable changes to Relayna Gateway are documented in this file.
   valid; positive sub-ledger charges are rejected in API saves and Admin UI
   controls instead of disappearing in reporting and budget recovery (#128).
   Preserve accepted decimal values across JSON reloads and numeric ledger writes.
+  Reject submitted decimal values that would round during numeric conversion,
+  including large fractional amounts, before API or Admin UI saves.
 - Validate Foundry providers using the existing service-edit transaction,
   avoiding connection-pool exhaustion and supporting one-connection pools (#129).
 
