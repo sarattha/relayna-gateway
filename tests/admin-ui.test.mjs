@@ -5,6 +5,7 @@ import "./admin-ui-auth-profiles.test.mjs";
 import "./admin-ui-reliability-cost.test.mjs";
 import "./admin-ui-investigation.test.mjs";
 import "./admin-ui-guidance.test.mjs";
+import "./admin-ui-pricing.test.mjs";
 import { reliability } from "./admin-ui-monitoring.test.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -55,8 +56,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.41/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.41/);
+  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.42/);
+  assert.match(js, /Release target[\s\S]*v0\.1\.42/);
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {

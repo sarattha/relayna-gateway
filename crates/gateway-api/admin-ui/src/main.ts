@@ -1149,11 +1149,11 @@ function policyFields(key = null, neutral = false) {
     <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers, neutral)}<small class="field-hint">Allowed provider adapters. No selection adds no restriction at this layer; inherited policies still apply.</small></div>
     <label>RPM limit<input name="rpm_limit" type="number" min="0" value="${attr(policy.rpm_limit ?? "")}"></label>
     <label>TPM limit<input name="tpm_limit" type="number" min="0" value="${attr(policy.tpm_limit ?? "")}"></label>
-    <label>Daily budget<input name="daily_budget_usd" type="number" min="0" step="0.01" value="${attr(policy.daily_budget_usd ?? "")}"></label>
-    <label>Monthly budget<input name="monthly_budget_usd" type="number" min="0" step="0.01" value="${attr(policy.monthly_budget_usd ?? "")}"></label>
+    <label>Daily budget<input name="daily_budget_usd" type="number" min="0" step="any" value="${attr(policy.daily_budget_usd ?? "")}"></label>
+    <label>Monthly budget<input name="monthly_budget_usd" type="number" min="0" step="any" value="${attr(policy.monthly_budget_usd ?? "")}"></label>
     <label>Max daily requests<input name="max_requests_per_day" type="number" min="0" value="${attr(policy.max_requests_per_day ?? "")}"></label>
     <label>Max daily tokens<input name="max_tokens_per_day" type="number" min="0" value="${attr(policy.max_tokens_per_day ?? "")}"></label>
-    <label>Max cost/request<input name="max_cost_per_request" type="number" min="0" step="0.01" value="${attr(policy.max_cost_per_request ?? "")}"></label>
+    <label>Max cost/request<input name="max_cost_per_request" type="number" min="0" step="any" value="${attr(policy.max_cost_per_request ?? "")}"></label>
     <label>Max input tokens<input name="max_input_tokens_per_request" type="number" min="0" value="${attr(policy.max_input_tokens_per_request ?? "")}"></label>
     <label>Max output tokens<input name="max_output_tokens_per_request" type="number" min="0" value="${attr(policy.max_output_tokens_per_request ?? "")}"></label>
     <label>Allowed UTC hours<input name="allowed_hours_utc" value="${attr(listValue(policy.allowed_hours_utc, ""))}" placeholder="0,8,17"></label>
@@ -2156,7 +2156,7 @@ async function services() {
           ${endpointAccessFields({})}
           ${formSection("Usage pricing", "Choose the cost source and optional request-matching rules.", `
             <label>Cost mode<select name="cost_mode"><option value="none">None</option><option value="fixed">Fixed</option><option value="passthrough">Passthrough</option></select></label>
-            <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01"></label>
+            <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="any"></label>
             <div class="help wide-field">Fixed records the configured estimate per request. Passthrough records provider-reported response cost when the upstream returns one.</div>
             ${pricingRulesEditor([])}
           `)}
@@ -2221,7 +2221,7 @@ function pricingRuleRow(rule = {}) {
       <label>JSON pointer<input data-pricing-rule-field="json_pointer" value="${attr(rule.json_pointer ?? rule.path ?? "")}" placeholder="/model"></label>
       <label>Equals<input data-pricing-rule-field="equals" value="${attr(rule.equals ?? "")}" placeholder="doct-int"></label>
       <label>Cost mode<select data-pricing-rule-field="cost_mode">${option("fixed", costMode)}${option("passthrough", costMode)}${option("none", costMode)}</select></label>
-      <label>Estimated cost<input data-pricing-rule-field="estimated_cost_usd" type="number" min="0" step="0.001" value="${attr(rule.estimated_cost_usd ?? "")}" placeholder="0.08"></label>
+      <label>Estimated cost<input data-pricing-rule-field="estimated_cost_usd" type="number" min="0" step="any" value="${attr(rule.estimated_cost_usd ?? "")}" placeholder="0.08"></label>
       <button type="button" class="danger" data-pricing-rule-action="remove">Remove</button>
     </div>
   `;
@@ -2283,7 +2283,7 @@ function openApiEndpointPricingEditor(service) {
         <td><code data-endpoint-field="path_template">${esc(rule.path_template)}</code><div class="subtle">${esc(operationId)}</div></td>
         <td>${endpoint?.relayna_default ? '<span class="badge good">Relayna default</span>' : stale ? '<span class="badge warn">stale</span>' : '<span class="badge">service</span>'}</td>
         <td><select data-endpoint-field="cost_mode" aria-describedby="${attr(pricingHelpId)}" aria-label="Cost mode for ${attr(rule.method)} ${attr(rule.path_template)}">${option("none", rule.cost_mode)}${option("fixed", rule.cost_mode)}${option("passthrough", rule.cost_mode)}</select></td>
-        <td><input data-endpoint-field="estimated_cost_usd" aria-describedby="${attr(pricingHelpId)}" type="number" min="0" step="0.001" value="${attr(rule.estimated_cost_usd ?? "")}" aria-label="Estimated cost for ${attr(rule.method)} ${attr(rule.path_template)}"></td>
+        <td><input data-endpoint-field="estimated_cost_usd" aria-describedby="${attr(pricingHelpId)}" type="number" min="0" step="any" value="${attr(rule.estimated_cost_usd ?? "")}" aria-label="Estimated cost for ${attr(rule.method)} ${attr(rule.path_template)}"></td>
       </tr>
     `;
   }).join("");
@@ -2405,8 +2405,10 @@ function serviceEditForm(service) {
       `)}
       ${service.foundry ? formSection("Caller authentication", "Require a Relayna key and optionally an Entra identity for this service.", endpointIdentityFields(service.access || {}, service.project_id || "")) : endpointAccessFields(service.access || {}, service.project_id || "")}
       ${formSection("Usage pricing", "Update cost source and request-matching rules.", `
+        <label>Apply pricing changes to<select name="pricing_update_scope" aria-describedby="pricing-update-help-${attr(service.name)}"><option value="new_requests">New requests only</option><option value="historical">Recorded costs and new requests</option></select></label>
+        <p id="pricing-update-help-${attr(service.name)}" class="field-hint wide-field">Historical recalculation updates this service's reporting costs using saved endpoint and rule attribution. Budget enforcement keeps original charges. Upstream-reported costs and records without a safe pricing match stay unchanged; request bodies are not replayed.</p>
         <label>Cost mode<select name="cost_mode">${option("none", service.cost_mode)}${option("fixed", service.cost_mode)}${option("passthrough", service.cost_mode)}</select></label>
-        <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="0.01" value="${attr(service.estimated_cost_usd ?? "")}"></label>
+        <label>Estimated cost<input name="estimated_cost_usd" type="number" min="0" step="any" value="${attr(service.estimated_cost_usd ?? "")}"></label>
         <div class="help wide-field">Fixed uses the estimate configured here. Passthrough uses provider response cost fields such as usage.total_cost.</div>
         ${pricingRulesEditor(service.pricing_rules || [])}
         ${service.foundry ? "" : openApiEndpointPricingEditor(service)}
@@ -2543,7 +2545,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.41")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.42")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -2823,12 +2825,15 @@ async function patchService(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const serviceName = event.target.dataset.serviceName;
-  await api(`/admin-ui/admin/services/${serviceName}`, {
+  const body = serviceBody(form, true);
+  if (body.reprice_existing_usage && !(await confirmAction("Recalculate recorded service costs", `Save the new pricing for ${serviceName} and recalculate its recorded reporting costs? Budget enforcement keeps original charges. Upstream-reported costs and records without a safe pricing match stay unchanged.`))) return;
+  const service = await api(`/admin-ui/admin/services/${serviceName}`, {
     method: "PATCH",
-    body: JSON.stringify(serviceBody(form, true)),
+    body: JSON.stringify(body),
   });
   state.editingServiceName = null;
-  setNotice("Service updated.", "success");
+  const repricing = service.historical_usage_repricing;
+  setNotice(repricing ? `Service updated. Recalculated ${repricing.updated_requests} recorded costs; ${repricing.unchanged_requests} unchanged. Budget charges are unchanged.` : "Service updated.", "success");
   await services();
 }
 
@@ -2958,7 +2963,7 @@ async function usage() {
         <label>Run<input name="run_id" placeholder="exact run ID"></label>
         <label>Trace<input name="trace_id"></label>
         <label>Interval<select name="interval"><option value="hour">Hour</option><option value="day">Day</option></select></label>
-        <label>Min cost<input name="min_cost_usd" type="number" min="0" step="0.0001"></label>
+        <label>Min cost<input name="min_cost_usd" type="number" min="0" step="any"></label>
         <label>Show top<select name="breakdown_limit"><option value="20">20</option><option value="10">10</option><option value="50">50</option><option value="100">100</option></select></label>
         <label>Sort by<select name="sort_by"><option value="requests">Requests</option><option value="cost">Cost</option><option value="failures">Failures</option><option value="latency">Latency</option><option value="tokens">Tokens</option><option value="fallbacks">Fallbacks</option></select></label>
         <label>Rows per page<select name="limit"><option value="50">50</option><option value="20">20</option><option value="100">100</option></select></label>
@@ -4241,6 +4246,7 @@ function endpointAccessFromForm(form) {
 
 function serviceBody(form, patch) {
   const body = {
+    ...(patch ? { reprice_existing_usage: form.get("pricing_update_scope") === "historical" } : {}),
     access: endpointAccessFromForm(form),
     project_id: form.has("project_id") ? nullableString(form.get("project_id")) : undefined,
     studio_service_id: patch ? nullableString(form.get("studio_service_id")) : blankToUndefined(form.get("studio_service_id")),
@@ -5326,7 +5332,7 @@ function time(value) {
 }
 
 function money(value) {
-  return value == null ? "n/a" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: Number(value) > 0 && Number(value) < 0.01 ? 4 : 2 }).format(Number(value));
+  return value == null ? "n/a" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: Number(value) > 0 && Number(value) < 0.01 ? 20 : 2 }).format(Number(value));
 }
 
 function percent(value) {

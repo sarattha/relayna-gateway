@@ -138,6 +138,9 @@ pub struct ServicePatchRequest {
     pub endpoint_pricing_rules: Option<Vec<ServiceEndpointPricingRule>>,
     pub fallback_services: Option<Vec<String>>,
     pub sync_status: Option<ServiceSyncStatus>,
+    /// Recalculate reporting costs only; originally committed budget charges stay unchanged.
+    #[serde(default)]
+    pub reprice_existing_usage: bool,
 }
 
 fn deserialize_foundry_binding_patch<'de, D>(
@@ -300,6 +303,8 @@ pub struct StudioServiceImportPreview {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ServiceResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub historical_usage_repricing: Option<HistoricalUsageRepricing>,
     pub foundry: Option<crate::foundry::FoundryBinding>,
     pub access: crate::EndpointAccess,
     pub name: String,
@@ -330,6 +335,12 @@ pub struct ServiceResponse {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub missing_runtime_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+pub struct HistoricalUsageRepricing {
+    pub updated_requests: u64,
+    pub unchanged_requests: u64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -512,6 +523,14 @@ impl ServiceCreateRequest {
 
 impl ServicePatchRequest {
     pub fn validate(&self) -> GatewayResult<()> {
+        if self.reprice_existing_usage
+            && self.cost_mode.is_none()
+            && self.estimated_cost_usd.is_none()
+            && self.pricing_rules.is_none()
+            && self.endpoint_pricing_rules.is_none()
+        {
+            return Err(GatewayError::InvalidServicePayload);
+        }
         if let Some(route_pattern) = self.route_pattern.as_deref() {
             validate_route_pattern(route_pattern)?;
         }
@@ -711,6 +730,7 @@ impl ServiceRegistration {
 
     pub fn to_response(&self) -> ServiceResponse {
         ServiceResponse {
+            historical_usage_repricing: None,
             foundry: self.foundry.clone(),
             access: self.access.clone(),
             name: self.name.clone(),
@@ -1261,6 +1281,107 @@ pub fn service_preflight_estimated_cost(
         .fold(default, |highest, cost| {
             Some(highest.map_or(cost, |current| current.max(cost)))
         })
+}
+
+/// Reprice the recorded attribution, without attempting to replay request bodies.
+/// Unknown, ambiguous and upstream-reported charges must remain unchanged.
+pub fn reprice_recorded_service_cost(
+    before: &ServiceRegistration,
+    after: &ServiceRegistration,
+    cost_source: Option<&str>,
+    pricing_rule_name: Option<&str>,
+    method: Option<&str>,
+    endpoint_path: Option<&str>,
+) -> Option<ResolvedServiceCost> {
+    if before.access.accessa.is_some()
+        || !matches!(
+            cost_source,
+            Some("service_default_fixed" | "service_pricing_rule_fixed" | "none")
+        )
+    {
+        return None;
+    }
+    let endpoint_context = method.zip(endpoint_path).and_then(|(method, path)| {
+        Method::from_bytes(method.as_bytes())
+            .ok()
+            .map(|m| (m, path))
+    });
+    if endpoint_context.is_none()
+        && (!before.endpoint_pricing_rules.is_empty() || !after.endpoint_pricing_rules.is_empty())
+    {
+        return None;
+    }
+    let old_endpoint = endpoint_context.as_ref().and_then(|(method, path)| {
+        resolve_endpoint_pricing_rule(method, path, &before.endpoint_pricing_rules)
+    });
+    let base = endpoint_context
+        .as_ref()
+        .and_then(|(method, path)| {
+            resolve_endpoint_pricing_rule(method, path, &after.endpoint_pricing_rules)
+        })
+        .unwrap_or_else(|| default_service_cost(after.cost_mode, after.estimated_cost_usd));
+    let resolved = if let Some(name) = pricing_rule_name {
+        let mut body_rules = before
+            .pricing_rules
+            .iter()
+            .filter(|rule| rule.name.as_deref() == Some(name));
+        let old_body = body_rules.next();
+        let from_endpoint = old_endpoint
+            .as_ref()
+            .is_some_and(|rule| rule.pricing_rule_name.as_deref() == Some(name));
+        if body_rules.next().is_some() || (old_body.is_some() && from_endpoint) {
+            return None;
+        }
+        if let Some(old_body) = old_body {
+            let mut new_rules = after
+                .pricing_rules
+                .iter()
+                .filter(|rule| rule.name.as_deref() == Some(name));
+            let new_body = new_rules.next()?;
+            if new_rules.next().is_some()
+                || old_body.json_pointer != new_body.json_pointer
+                || old_body.equals != new_body.equals
+            {
+                return None;
+            }
+            if base.cost_mode == ServiceCostMode::None
+                && endpoint_context.as_ref().is_some_and(|(method, path)| {
+                    resolve_endpoint_pricing_rule(method, path, &after.endpoint_pricing_rules)
+                        .is_some()
+                })
+            {
+                base
+            } else {
+                ResolvedServiceCost {
+                    cost_mode: new_body.cost_mode,
+                    estimated_cost_usd: new_body.estimated_cost_usd,
+                    pricing_rule_name: new_body.name.clone(),
+                }
+            }
+        } else if from_endpoint {
+            base
+        } else {
+            return None;
+        }
+    } else {
+        // Unnamed body rules are recorded as defaults, so their original
+        // attribution cannot be distinguished from a genuine service default.
+        if before.pricing_rules.iter().any(|rule| rule.name.is_none()) || old_endpoint.is_some() {
+            return None;
+        }
+        base
+    };
+    match resolved.cost_mode {
+        ServiceCostMode::Passthrough => None,
+        ServiceCostMode::Fixed => resolved
+            .estimated_cost_usd
+            .filter(|cost| cost.is_finite() && *cost >= 0.0)
+            .map(|_| resolved),
+        ServiceCostMode::None => Some(ResolvedServiceCost {
+            estimated_cost_usd: None,
+            ..resolved
+        }),
+    }
 }
 
 fn default_service_cost(
@@ -1947,6 +2068,159 @@ mod tests {
             endpoint_pricing_rules: Vec::new(),
             fallback_services: Vec::new(),
         }
+    }
+
+    #[test]
+    fn historical_pricing_is_explicit_and_preserves_legacy_responses() {
+        let patch: ServicePatchRequest = serde_json::from_value(serde_json::json!({
+            "estimated_cost_usd": 0.0002
+        }))
+        .unwrap();
+        assert!(!patch.reprice_existing_usage);
+        patch.validate().unwrap();
+        let invalid = ServicePatchRequest {
+            reprice_existing_usage: true,
+            ..Default::default()
+        };
+        assert_eq!(invalid.validate(), Err(GatewayError::InvalidServicePayload));
+        let response = service_registration(ServiceCostMode::Fixed, Some(0.1)).to_response();
+        assert!(serde_json::to_value(response)
+            .unwrap()
+            .get("historical_usage_repricing")
+            .is_none());
+    }
+
+    #[test]
+    fn historical_defaults_skip_upstream_and_unattributed_body_rules() {
+        let mut before = service_registration(ServiceCostMode::Fixed, Some(0.1));
+        let mut after = before.clone();
+        after.estimated_cost_usd = Some(0.0002);
+        let resolve = |before: &ServiceRegistration, after: &ServiceRegistration, source| {
+            reprice_recorded_service_cost(before, after, source, None, None, None)
+        };
+        assert_eq!(
+            resolve(&before, &after, Some("service_default_fixed"))
+                .unwrap()
+                .estimated_cost_usd,
+            Some(0.0002)
+        );
+        assert!(resolve(&before, &after, Some("service_default_passthrough")).is_none());
+        assert!(resolve(&before, &after, None).is_none());
+        after.cost_mode = ServiceCostMode::Passthrough;
+        assert!(resolve(&before, &after, Some("service_default_fixed")).is_none());
+        after.cost_mode = ServiceCostMode::None;
+        assert_eq!(
+            resolve(&before, &after, Some("service_default_fixed"))
+                .unwrap()
+                .estimated_cost_usd,
+            None
+        );
+        before.pricing_rules = vec![ServicePricingRule {
+            name: None,
+            json_pointer: "/tier".into(),
+            equals: "premium".into(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.3),
+        }];
+        assert!(resolve(&before, &after, Some("service_default_fixed")).is_none());
+    }
+
+    #[test]
+    fn historical_named_rules_require_unique_unchanged_selectors() {
+        let mut before = service_registration(ServiceCostMode::Fixed, Some(0.1));
+        before.pricing_rules = vec![ServicePricingRule {
+            name: Some("premium".into()),
+            json_pointer: "/tier".into(),
+            equals: "premium".into(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.3),
+        }];
+        let mut after = before.clone();
+        after.pricing_rules[0].estimated_cost_usd = Some(0.0005);
+        let resolve = |after: &ServiceRegistration| {
+            reprice_recorded_service_cost(
+                &before,
+                after,
+                Some("service_pricing_rule_fixed"),
+                Some("premium"),
+                Some("POST"),
+                Some("/run"),
+            )
+        };
+        assert_eq!(resolve(&after).unwrap().estimated_cost_usd, Some(0.0005));
+        after.pricing_rules[0].equals = "another-tier".into();
+        assert!(resolve(&after).is_none());
+        after.pricing_rules = before.pricing_rules.clone();
+        after.pricing_rules.push(after.pricing_rules[0].clone());
+        assert!(resolve(&after).is_none());
+        after.pricing_rules.clear();
+        assert!(resolve(&after).is_none());
+    }
+
+    #[test]
+    fn historical_endpoints_keep_method_and_free_endpoint_precedence() {
+        let mut before = service_registration(ServiceCostMode::Fixed, Some(0.1));
+        before.endpoint_pricing_rules = vec![ServiceEndpointPricingRule {
+            method: "POST".into(),
+            path_template: "/jobs/{id}".into(),
+            operation_id: Some("run".into()),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.2),
+        }];
+        let mut after = before.clone();
+        after.endpoint_pricing_rules[0].estimated_cost_usd = Some(0.0003);
+        assert_eq!(
+            reprice_recorded_service_cost(
+                &before,
+                &after,
+                Some("service_pricing_rule_fixed"),
+                Some("run"),
+                Some("POST"),
+                Some("/jobs/123")
+            )
+            .unwrap()
+            .estimated_cost_usd,
+            Some(0.0003)
+        );
+        assert!(reprice_recorded_service_cost(
+            &before,
+            &after,
+            Some("service_pricing_rule_fixed"),
+            Some("run"),
+            Some("GET"),
+            Some("/jobs/123")
+        )
+        .is_none());
+        before.pricing_rules = vec![ServicePricingRule {
+            name: Some("premium".into()),
+            json_pointer: "/tier".into(),
+            equals: "premium".into(),
+            cost_mode: ServiceCostMode::Fixed,
+            estimated_cost_usd: Some(0.3),
+        }];
+        after.pricing_rules = before.pricing_rules.clone();
+        after.endpoint_pricing_rules[0].cost_mode = ServiceCostMode::None;
+        let resolved = reprice_recorded_service_cost(
+            &before,
+            &after,
+            Some("service_pricing_rule_fixed"),
+            Some("premium"),
+            Some("POST"),
+            Some("/jobs/123"),
+        )
+        .unwrap();
+        assert_eq!(resolved.cost_mode, ServiceCostMode::None);
+        assert_eq!(resolved.estimated_cost_usd, None);
+        before.endpoint_pricing_rules[0].operation_id = Some("premium".into());
+        assert!(reprice_recorded_service_cost(
+            &before,
+            &after,
+            Some("service_pricing_rule_fixed"),
+            Some("premium"),
+            Some("POST"),
+            Some("/jobs/123")
+        )
+        .is_none());
     }
 
     fn service_registration(

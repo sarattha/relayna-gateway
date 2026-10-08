@@ -2,6 +2,43 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.42 - 2026-10-08
+
+### Added
+
+- Choose new requests only (default) or historical reporting-cost recalculation
+  when editing ordinary, Studio-imported and Foundry service pricing, with
+  confirmation, changed/unchanged counts and a `services:reprice` audit event.
+- Recalculate safely attributed service defaults, endpoint prices and retained
+  named body rules in one transaction. Update Usage reports, owner dashboards,
+  exports and correlated persisted Traffic snapshots while retaining original
+  budget charges, including after Redis recovery.
+
+### Fixed
+
+- Accept nonnegative prices below USD 0.001 throughout service defaults, body
+  rules, OpenAPI endpoint prices and shared Foundry edits. Policy monetary limits
+  and Usage filters accept the same precision; tiny positive costs stay visible.
+- Pin local and CI/release verification to Rust 1.98.0, avoiding a new Clippy
+  false positive on `async-trait` generated code without disabling lint checks.
+
+### Compatibility
+
+- Additive `reprice_existing_usage` PATCH option defaults to false. Historical
+  saves return an optional `historical_usage_repricing` summary; existing clients
+  retain new-request-only behavior.
+- Startup applies `20261007000100_historical_service_pricing.sql` without a
+  backfill. Index creation takes a write lock; plan a maintenance window for
+  large usage tables. Upgrade all budget readers before opting in and preserve
+  the original-charge column during rollback. Older readers cannot safely be
+  restored after repricing unless report costs are first restored to original
+  charges. Redis accounting formats and counters are unchanged from 0.1.41.
+- Upstream, Accessa, unnamed/ambiguous and unresolved rule charges stay unchanged;
+  request bodies are not replayed. Requests recorded after the transaction
+  snapshot retain their resolved price. Live Traffic caches may retain original
+  snapshots. See [historical pricing](docs/openapi-service-pricing.md#changing-prices-for-recorded-requests)
+  and [deployment](docs/deployment.md#upgrade-to-0142).
+
 ## 0.1.41 - 2026-09-30
 
 ### Fixed

@@ -139,18 +139,17 @@ impl PostgresStore {
             SELECT
                 k.id AS key_id,
                 COALESCE(
-                    SUM(u.estimated_cost) FILTER (
+                    SUM(COALESCE(u.budget_estimated_cost, u.estimated_cost)) FILTER (
                         WHERE u.created_at >= $2
                     ),
                     0
                 )::double precision AS daily_spend_usd,
-                COALESCE(SUM(u.estimated_cost), 0)::double precision AS monthly_spend_usd
+                COALESCE(SUM(COALESCE(u.budget_estimated_cost, u.estimated_cost)), 0)::double precision AS monthly_spend_usd
             FROM api_keys k
             LEFT JOIN usage_events u
                 ON u.key_id = k.id
                AND u.created_at >= $3
-               AND u.estimated_cost IS NOT NULL
-               AND u.estimated_cost > 0
+               AND COALESCE(u.budget_estimated_cost, u.estimated_cost) > 0
             WHERE k.disabled = false
               AND k.revoked_at IS NULL
               AND (k.expires_at IS NULL OR k.expires_at > $1)
@@ -969,6 +968,131 @@ impl PostgresStore {
     }
 }
 
+async fn reprice_service_usage_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    before: &ServiceRegistration,
+    after: &ServiceRegistration,
+) -> GatewayResult<gateway_core::services::HistoricalUsageRepricing> {
+    let mut summary = gateway_core::services::HistoricalUsageRepricing::default();
+    let mut cursor: Option<Uuid> = None;
+    loop {
+        let rows = sqlx::query(
+            r#"SELECT id, estimated_cost::double precision AS cost, cost_mode,
+                cost_source, pricing_rule_name, http_method, endpoint_path, diagnostics
+            FROM usage_events WHERE service_name = $1 AND ($2::uuid IS NULL OR id > $2)
+            ORDER BY id LIMIT 1000 FOR UPDATE"#,
+        )
+        .bind(&after.name)
+        .bind(cursor)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        if rows.is_empty() {
+            break;
+        }
+        let mut changes = Vec::new();
+        for row in &rows {
+            let id: Uuid = row
+                .try_get("id")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            cursor = Some(id);
+            let source: Option<String> = row
+                .try_get("cost_source")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            let rule: Option<String> = row
+                .try_get("pricing_rule_name")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            let mode: Option<String> = row
+                .try_get("cost_mode")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            let method: Option<String> = row
+                .try_get("http_method")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            let path: Option<String> = row
+                .try_get("endpoint_path")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            let cost: Option<f64> = row
+                .try_get("cost")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            let Json(diagnostics): Json<serde_json::Value> = row
+                .try_get("diagnostics")
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            let resolved = matches!(mode.as_deref(), Some("fixed" | "none"))
+                .then(|| {
+                    gateway_core::services::reprice_recorded_service_cost(
+                        before,
+                        after,
+                        source.as_deref(),
+                        rule.as_deref(),
+                        method.as_deref(),
+                        path.as_deref(),
+                    )
+                })
+                .flatten()
+                .filter(|_| {
+                    diagnostics
+                        .get("routing_mode")
+                        .and_then(serde_json::Value::as_str)
+                        != Some("litellm_passthrough")
+                });
+            let Some(resolved) = resolved else {
+                summary.unchanged_requests += 1;
+                continue;
+            };
+            let new_source = match resolved.cost_mode {
+                ServiceCostMode::None => "none",
+                _ if resolved.pricing_rule_name.is_some() => "service_pricing_rule_fixed",
+                _ => "service_default_fixed",
+            };
+            if cost == resolved.estimated_cost_usd
+                && mode.as_deref() == Some(service_cost_mode_str(resolved.cost_mode))
+                && source.as_deref() == Some(new_source)
+                && rule == resolved.pricing_rule_name
+            {
+                summary.unchanged_requests += 1;
+                continue;
+            }
+            let traffic_id = diagnostics
+                .get("traffic_id")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|value| Uuid::parse_str(value).ok());
+            changes.push(serde_json::json!({
+                "id": id, "cost": resolved.estimated_cost_usd,
+                "mode": service_cost_mode_str(resolved.cost_mode),
+                "source": new_source, "rule_name": resolved.pricing_rule_name,
+                "traffic_id": traffic_id,
+            }));
+        }
+        if !changes.is_empty() {
+            sqlx::query(r#"
+                WITH changes AS (
+                    SELECT * FROM jsonb_to_recordset($1::jsonb) AS c(
+                        id uuid, cost double precision, mode text, source text,
+                        rule_name text, traffic_id uuid)
+                ), updated AS (
+                    UPDATE usage_events u SET
+                        budget_estimated_cost = COALESCE(u.budget_estimated_cost, u.estimated_cost, 0),
+                        estimated_cost = c.cost, cost_mode = c.mode,
+                        cost_source = c.source, pricing_rule_name = c.rule_name
+                    FROM changes c WHERE u.id = c.id
+                    RETURNING u.request_id, u.key_id, u.estimated_cost, u.cost_source,
+                        u.pricing_rule_name, c.traffic_id
+                )
+                UPDATE request_traffic t SET record = jsonb_set(t.record, '{usage}',
+                    (t.record->'usage') || jsonb_build_object(
+                        'estimated_cost_usd', u.estimated_cost, 'cost_source', u.cost_source,
+                        'pricing_rule_name', u.pricing_rule_name))
+                FROM updated u WHERE t.id = u.traffic_id AND t.key_id = u.key_id
+                    AND t.request_id = u.request_id AND t.service = $2
+                    AND jsonb_typeof(t.record->'usage') = 'object'
+            "#).bind(Json(&changes)).bind(&after.name).execute(&mut **tx).await
+                .map_err(|_| GatewayError::StoreUnavailable)?;
+            summary.updated_requests += changes.len() as u64;
+        }
+    }
+    Ok(summary)
+}
+
 fn budget_counter_windows(
     now: chrono::DateTime<chrono::Utc>,
 ) -> GatewayResult<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> {
@@ -993,9 +1117,10 @@ impl UsageRecorder for PostgresStore {
     ) -> GatewayResult<gateway_core::BudgetState> {
         let (day_start, month_start) = budget_counter_windows(now)?;
         let row = sqlx::query(r#"
-            SELECT COALESCE(SUM(estimated_cost) FILTER (WHERE created_at >= $2), 0)::double precision AS daily,
-                COALESCE(SUM(estimated_cost), 0)::double precision AS monthly
-            FROM usage_events WHERE key_id = $1 AND created_at >= $3 AND estimated_cost > 0
+            SELECT COALESCE(SUM(COALESCE(budget_estimated_cost, estimated_cost)) FILTER (WHERE created_at >= $2), 0)::double precision AS daily,
+                COALESCE(SUM(COALESCE(budget_estimated_cost, estimated_cost)), 0)::double precision AS monthly
+            FROM usage_events WHERE key_id = $1 AND created_at >= $3
+                AND COALESCE(budget_estimated_cost, estimated_cost) > 0
         "#).bind(key_id).bind(day_start).bind(month_start).fetch_one(&self.pool).await
             .map_err(|_| GatewayError::StoreUnavailable)?;
         Ok(gateway_core::BudgetState {
@@ -4135,9 +4260,28 @@ impl AdminServiceStore for PostgresStore {
     ) -> GatewayResult<Option<ServiceResponse>> {
         gateway_core::validate_service_name(name)?;
         patch.validate()?;
-        let Some(mut registration) = self.service_registration(name).await? else {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        let Some(row) =
+            sqlx::query("SELECT * FROM service_registrations WHERE name = $1 FOR UPDATE")
+                .bind(name)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|_| GatewayError::StoreUnavailable)?
+        else {
             return Ok(None);
         };
+        let mut registration =
+            service_registration_from_row(&row).map_err(|_| GatewayError::StoreUnavailable)?;
+        let before = registration.clone();
+        let reprice_existing_usage = patch.reprice_existing_usage;
 
         if let Some(studio_service_id) = patch.studio_service_id {
             registration.studio_service_id = studio_service_id;
@@ -4240,7 +4384,7 @@ impl AdminServiceStore for PostgresStore {
             }
         });
 
-        sqlx::query(
+        let saved = sqlx::query(
             r#"
             UPDATE service_registrations
             SET
@@ -4271,6 +4415,7 @@ impl AdminServiceStore for PostgresStore {
                 disabled_at = CASE WHEN $8 THEN NULL ELSE COALESCE(disabled_at, now()) END,
                 updated_at = now()
             WHERE name = $1
+            RETURNING *
             "#,
         )
         .bind(name)
@@ -4298,7 +4443,7 @@ impl AdminServiceStore for PostgresStore {
         .bind(service_sync_status_str(registration.sync_status))
         .bind(Json(&registration.access))
         .bind(registration.foundry.as_ref().map(Json))
-        .execute(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|error| {
             if matches!(
@@ -4315,7 +4460,17 @@ impl AdminServiceStore for PostgresStore {
             }
         })?;
 
-        self.get_service(name).await
+        let mut response = service_registration_from_row(&saved)
+            .map_err(|_| GatewayError::StoreUnavailable)?
+            .to_response();
+        if reprice_existing_usage {
+            response.historical_usage_repricing =
+                Some(reprice_service_usage_in_tx(&mut tx, &before, &registration).await?);
+        }
+        tx.commit()
+            .await
+            .map_err(|_| GatewayError::StoreUnavailable)?;
+        Ok(Some(response))
     }
 
     async fn delete_service(&self, name: &str) -> GatewayResult<bool> {

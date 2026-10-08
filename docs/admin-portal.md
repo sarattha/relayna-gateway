@@ -310,6 +310,19 @@ local service by entering:
   request field such as `"model"`, use `"/model"`. For nested fields, separate
   object levels with `/`, such as `"/payload/page_count"`.
 
+Service monetary inputs accept nonnegative prices below USD 0.001, such as
+`0.0002`. Fixed mode requires an estimate; zero is a valid no-charge estimate.
+
+When editing an existing ordinary, Studio-imported or Foundry service, open
+**Usage pricing → Apply pricing changes to**. **New requests only** is the
+default. **Recorded costs and new requests** requires confirmation and updates
+eligible historical reporting costs, with changed/unchanged counts after saving.
+Budget enforcement keeps the original charges, including after Redis recovery.
+Upstream-reported costs and records without safe endpoint or named-rule
+attribution stay unchanged. Request bodies are not replayed. Upgrade every
+replica before enabling this option; see [deployment](deployment.md#upgrade-to-0142)
+and [historical pricing](openapi-service-pricing.md#changing-prices-for-recorded-requests).
+
 Example pricing rules:
 
 ```json

@@ -1,7 +1,13 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.41` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.42` is the
 current release target.
+
+Version `0.1.42` fixes small service prices and adds optional historical reporting
+cost updates while preserving original budget charges. Startup applies the
+additive historical-pricing migration and index. Upgrade all budget readers
+before opting in; see [deployment](deployment.md#upgrade-to-0142) and
+[service pricing](openapi-service-pricing.md#changing-prices-for-recorded-requests).
 
 Version `0.1.41` strengthens request governance, accounting and resource bounds.
 Drain old replicas before changing the Redis accounting writer; recovery after
@@ -80,12 +86,17 @@ See
 
 ## Release Checklist
 
+Local verification and CI/release checks use Rust `1.98.0`, pinned in
+`rust-toolchain.toml` and the workflow toolchain actions. Update these pins
+together and run the verification stack when upgrading the compiler. This
+avoids changing the required lint baseline whenever the stable channel moves.
+
 1. Update workspace crate versions.
 2. Update `CHANGELOG.md` with release notes.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.41
+   python3 scripts/validate-release-metadata.py v0.1.42
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -103,15 +114,15 @@ See
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.41 .
+   docker build -t relayna-gateway:0.1.42 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.41 -m "Release v0.1.41"
-   git push origin v0.1.41
+   git tag -a v0.1.42 -m "Release v0.1.42"
+   git push origin v0.1.42
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -121,10 +132,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.41`, the workflow publishes:
+For `v0.1.42`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.41
+ghcr.io/sarattha/relayna-gateway:0.1.42
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

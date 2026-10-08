@@ -4561,6 +4561,7 @@ async fn patch_service(
     Path(service_name): Path<String>,
     Json(patch): Json<ServicePatchRequest>,
 ) -> Response {
+    let reprice_existing_usage = patch.reprice_existing_usage;
     let actor = match require_admin_scope(&state, &headers, SCOPE_SERVICES_UPDATE).await {
         Ok(actor) => actor,
         Err(response) => return response,
@@ -4576,7 +4577,11 @@ async fn patch_service(
                 &state,
                 &headers,
                 &actor,
-                "services:update",
+                if reprice_existing_usage {
+                    "services:reprice"
+                } else {
+                    "services:update"
+                },
                 "service",
                 Some(service.name.clone()),
                 before.as_ref().and_then(audit_json),
@@ -8831,6 +8836,7 @@ mod tests {
             }
             let now = Utc::now();
             let response = ServiceResponse {
+                historical_usage_repricing: None,
                 foundry: None,
                 access: Default::default(),
                 name: request.name.clone(),
@@ -8904,6 +8910,7 @@ mod tests {
             patch: ServicePatchRequest,
         ) -> GatewayResult<Option<ServiceResponse>> {
             patch.validate()?;
+            let reprice_existing_usage = patch.reprice_existing_usage;
             let mut services = self.services.lock().expect("lock poisoned");
             let Some(service) = services.iter_mut().find(|service| service.name == name) else {
                 return Ok(None);
@@ -8962,7 +8969,10 @@ mod tests {
             } else {
                 missing_runtime_fields(service.upstream_base_url.as_deref(), None)
             };
-            Ok(Some(service.clone()))
+            let mut response = service.clone();
+            response.historical_usage_repricing = reprice_existing_usage
+                .then(gateway_core::services::HistoricalUsageRepricing::default);
+            Ok(Some(response))
         }
 
         async fn delete_service(&self, name: &str) -> GatewayResult<bool> {
@@ -9020,6 +9030,7 @@ mod tests {
             }
 
             let response = ServiceResponse {
+                historical_usage_repricing: None,
                 foundry: None,
                 access: Default::default(),
                 name: request.name.clone(),
@@ -10794,6 +10805,7 @@ mod tests {
     fn openapi_test_service(upstream_base_url: String) -> ServiceResponse {
         let now = Utc::now();
         ServiceResponse {
+            historical_usage_repricing: None,
             foundry: None,
             access: Default::default(),
             name: "ocr".to_owned(),
@@ -15367,6 +15379,68 @@ mod tests {
             .as_array()
             .unwrap()
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn admin_historical_pricing_requires_explicit_authorized_pricing_patch() {
+        let store = default_store();
+        let app = router_with_state(test_state(store.clone()));
+        let created = admin_post(app.clone(), "/admin-ui/admin/services", Some(TEST_OPERATOR_TOKEN),
+            r#"{"name":"history","upstream_base_url":"http://history.internal","cost_mode":"fixed","estimated_cost_usd":0.1}"#).await;
+        assert_eq!(created.status(), StatusCode::OK);
+        let unauthorized = admin_patch(
+            app.clone(),
+            "/admin-ui/admin/services/history",
+            None,
+            r#"{"estimated_cost_usd":0.0002,"reprice_existing_usage":true}"#,
+        )
+        .await;
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+        let invalid = admin_patch(
+            app.clone(),
+            "/admin-ui/admin/services/history",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"reprice_existing_usage":true}"#,
+        )
+        .await;
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+        let ordinary = admin_patch(
+            app.clone(),
+            "/admin-ui/admin/services/history",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"estimated_cost_usd":0.0002}"#,
+        )
+        .await;
+        assert_eq!(ordinary.status(), StatusCode::OK);
+        let ordinary: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(ordinary.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(ordinary.get("historical_usage_repricing").is_none());
+        let historical = admin_patch(
+            app,
+            "/admin-ui/admin/services/history",
+            Some(TEST_OPERATOR_TOKEN),
+            r#"{"estimated_cost_usd":0.00025,"reprice_existing_usage":true}"#,
+        )
+        .await;
+        assert_eq!(historical.status(), StatusCode::OK);
+        let historical: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(historical.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            historical["historical_usage_repricing"]["updated_requests"],
+            0
+        );
+        assert_eq!(
+            store.audit_events.lock().unwrap().last().unwrap().action,
+            "services:reprice"
+        );
     }
 
     #[tokio::test]

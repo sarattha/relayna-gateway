@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.41` behavior. Governed forwarding validates complete request policy and admission before body forwarding; see [operations](operations.md) for budget rollout and recovery.
+This page covers the `0.1.42` behavior. Governed forwarding validates complete request policy and admission before body forwarding; see [operations](operations.md) for budget rollout and recovery.
 
 ## Caller-key APIs with the dashboard disabled (0.1.40)
 

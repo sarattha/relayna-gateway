@@ -189,6 +189,59 @@ event with cost mode/source `none`. Fixed and passthrough endpoint usage uses
 the operation ID, when present, as `pricing_rule_name`; a named body selector
 replaces it when that selector matches.
 
+## Changing Prices for Recorded Requests
+
+In **Discover → Services → Edit → Usage pricing**, **Apply pricing changes to**
+defaults to **New requests only**. Existing costs stay unchanged unless you
+select **Recorded costs and new requests** and confirm the save. This option is
+shared by ordinary, Studio-imported and Foundry service edits.
+
+Historical recalculation updates Usage reports, owner dashboards, exports and
+correlated persisted Traffic cost snapshots. It retains **original budget
+charges**: daily/monthly enforcement and budget recovery do not increase or
+decrease when report costs change. The save reports how many records changed
+and how many stayed unchanged, and writes a `services:reprice` audit event.
+
+Recalculation uses recorded attribution rather than replaying request bodies:
+
+- Service defaults and method/path endpoint prices use the new fixed or `none`
+  price. Newly introduced body selectors are not applied to historical requests.
+- A recorded named body rule uses its new price only when the name remains
+  unique and its JSON pointer and matching value are unchanged.
+- Upstream-reported prices, missing attribution, ambiguous or unnamed body
+  rules, removed/changed body selectors and changes to `passthrough` retain
+  their recorded costs. Accessa and caller-key passthrough are not repriced.
+
+The service change and historical updates commit together. Only requests already
+recorded when the save begins are considered; in-flight requests keep their
+originally resolved pricing. Live Traffic caches may retain original snapshots;
+Usage and persisted Traffic history show recalculated reporting costs.
+
+The existing service PATCH endpoint accepts the additive option:
+
+```json
+{
+  "cost_mode": "fixed",
+  "estimated_cost_usd": 0.0002,
+  "reprice_existing_usage": true
+}
+```
+
+Omitting the option, or setting it to `false`, preserves existing behavior.
+Explicit historical saves include `historical_usage_repricing` in the service
+response with `updated_requests` and `unchanged_requests`. Include at least one
+pricing field when enabling the option. Repeated saves retain the first original
+budget charge. The option applies to all existing records for that service;
+records from other services remain unchanged.
+
+Upgrade all Gateway replicas to the new budget readers before enabling
+historical recalculation. The migration adds nullable
+`usage_events.budget_estimated_cost` without a backfill and a service/ID index
+for batched historical updates. Index creation takes a write lock; apply it in
+a maintenance window for large usage tables. Do not downgrade budget
+readers after recalculation unless report costs have first been restored to
+original budget charges. Retain the column when rolling back application code.
+
 ## Security Requirements
 
 OpenAPI discovery deliberately is not a general URL fetcher:

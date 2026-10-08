@@ -65,9 +65,11 @@ of that schema.
 - Guardrail use depends on `guardrail_definitions` plus per-key
   `key_guardrail_policies`. Migrations seed the built-in `pii-redact`
   definition as enabled but not default-on.
-- `usage_events` and `guardrail_execution_events` are append-only operational
-  records used by admin usage, exports, budget rehydration, observability, and
-  audit workflows.
+- Request metadata in `usage_events` and `guardrail_execution_events` is
+  append-only. Explicit service historical repricing may update usage reporting
+  costs while preserving original budget charges in `budget_estimated_cost`.
+  These records support admin usage, exports, budget rehydration, observability,
+  and audit workflows.
 - Provider health state, request debug bundles, service registry snapshots,
   operator scopes, audit events, policy layers, and usage trace indexes are
   `v0.1.0` additions. See
@@ -363,6 +365,7 @@ operator visibility.
 | Foreign keys | `key_id` references `api_keys(id)` with `ON DELETE RESTRICT`. `project_id` is nullable after project-first key support and is not currently constrained by a foreign key. |
 | Request fields | `request_id`, `trace_id`, `route`, `model`, `provider`, `service_name`, nullable validated `service_version`, nullable `http_method`, nullable query-free `endpoint_path`, nullable `endpoint_template`, `task_id`, `run_id`, and `fallback_count`. |
 | Accounting fields | `status`, `status_code`, `latency_ms`, `input_tokens`, `output_tokens`, `total_tokens`, and `estimated_cost`. |
+| Historical pricing | Nullable `budget_estimated_cost` preserves the original committed charge when reporting cost is explicitly recalculated. Budget readers use it when present; otherwise they use `estimated_cost`. A preserved zero remains zero even if the new report cost is positive. |
 | Indexes | Lookup indexes cover key, project, request ID, trace ID, provider, service, model, task, run, status, and expensive-request time-series queries. A partial service-endpoint index combines service, method, a bounded MD5 digest of `COALESCE(endpoint_template, endpoint_path)`, status code, and time; exact queries also compare the full effective endpoint. |
 | Required data | Written for successful and failed request paths. Preserve this table for billing, diagnostics, budget counter rehydration, usage exports, and Relayna Studio usage views. |
 
