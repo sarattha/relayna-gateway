@@ -169,6 +169,15 @@ The test starts independent mock BFF, adapters, Router, agent and OIDC servers,
 plus the real Pingora gateway. It does not use production Entra or providers.
 See `internal/test-reports/accessa/` for UI and coverage evidence.
 
+For a Cortex browser/BFF stack on the existing Keystone Kind cluster, use the
+development gateway slice in `deploy/kind/README.md`. It keeps Gateway real,
+uses Keystone's signed development OIDC tokens, explicitly assigns the Cortex
+channel key to its authentication profile and isolates Gateway database/cache
+state from Keystone. Accessa adapter/router/broker and the normal-chat agent are
+identified Cortex-owned development fixtures; Keystone MCP uses its real user
+authorization. The gateway manifest and admin bootstrap do not change this
+released transport or authentication contract.
+
 ## Entra verification for every request-plane endpoint
 
 Services → Edit → Endpoint identity and Accessa has a **Route authentication mode**
