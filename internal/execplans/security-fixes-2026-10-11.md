@@ -40,6 +40,12 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
 - Initial integration setup used wrong store API argument types and omitted the
   service credential; these fixture errors were corrected. The first mandatory
   stack run stopped on Clippy's range-pattern warning; it was corrected.
+- Under heavy host load the original replica-sync request timeout (3 seconds)
+  and Foundry streaming assertion (650 ms including authentication) failed.
+  A diagnostic replica run returned every expected response. Retain its
+  12-second convergence deadline, allow 10 seconds for an individual request,
+  and replace the Foundry timing assertion with a stronger upstream completion
+  barrier. Temporary diagnostic logging was removed.
 
 ## Decision Log
 

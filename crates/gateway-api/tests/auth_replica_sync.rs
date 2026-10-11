@@ -159,7 +159,9 @@ async fn admin_changes_reach_other_gateway_processes_without_rollout() {
     ))
     .await;
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
+        // Authentication/database latency is separate from the 12-second
+        // replica convergence deadline enforced by eventually().
+        .timeout(Duration::from_secs(10))
         .build()
         .unwrap();
     let mut processes = Vec::new();

@@ -29,6 +29,7 @@ struct Mock {
     reads: AtomicUsize,
     read_status: AtomicUsize,
     calls: Mutex<Vec<(HeaderMap, Value)>>,
+    finish_stream: tokio::sync::Notify,
 }
 async fn serve(app: Router) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -100,10 +101,10 @@ async fn responses(
             .into_response();
     }
     if body["stream"] == true {
-        let stream = futures_util::stream::unfold(0, |step| async move {
+        let stream = futures_util::stream::unfold((0, state), |(step, state)| async move {
             match step {
-                0 => Some((Ok::<_, std::io::Error>("event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"Grounded answer\"}\n\n"), 1)),
-                1 => { tokio::time::sleep(Duration::from_millis(700)).await; Some((Ok("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"output\":[{\"content\":[{\"annotations\":[{\"type\":\"url_citation\",\"url\":\"https://example.com/source\"}]}]}],\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"total_tokens\":5}}}\n\n"), 2)) },
+                0 => Some((Ok::<_, std::io::Error>("event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"Grounded answer\"}\n\n"), (1, state))),
+                1 => { state.finish_stream.notified().await; Some((Ok("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"output\":[{\"content\":[{\"annotations\":[{\"type\":\"url_citation\",\"url\":\"https://example.com/source\"}]}]}],\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"total_tokens\":5}}}\n\n"), (2, state))) },
                 _ => None,
             }
         });
@@ -650,7 +651,6 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
         1,
         "token reused across services"
     );
-    let start = Instant::now();
     let mut response = client
         .post(&endpoint)
         .bearer_auth(&key.raw_key)
@@ -659,9 +659,15 @@ async fn foundry_registered_agents_and_passthrough_are_governed_and_stream_witho
         .await
         .unwrap();
     assert_eq!(response.status(), 200);
-    let first = response.chunk().await.unwrap().unwrap();
-    assert!(start.elapsed() < Duration::from_millis(650), "SSE buffered");
+    // The upstream cannot finish until the client sees a chunk. This proves
+    // streaming independently of authentication and machine scheduling time.
+    let first = tokio::time::timeout(Duration::from_secs(5), response.chunk())
+        .await
+        .expect("SSE buffered")
+        .unwrap()
+        .unwrap();
     assert!(String::from_utf8_lossy(&first).contains("Grounded answer"));
+    mock.finish_stream.notify_one();
     let rest = response.text().await.unwrap();
     assert!(rest.contains("url_citation"));
     for body in [
