@@ -46,6 +46,13 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
   12-second convergence deadline, allow 10 seconds for an individual request,
   and replace the Foundry timing assertion with a stronger upstream completion
   barrier. Temporary diagnostic logging was removed.
+- The complete workspace and all 424 nextest tests passed, but Trivy blocked the
+  mandatory sequence on seven high-severity transitive dependency findings in
+  the ignored local service-owner-monitoring prototype. The root frontend
+  lockfile and Rust dependencies were clean at Trivy's configured severity.
+  Refresh only the four named transitive packages within their existing semver
+  ranges, build/test the local prototype, and rerun the complete stack without
+  adding suppressions. Its ignored lockfile remains excluded from the PR.
 
 ## Decision Log
 
@@ -63,6 +70,11 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
   Wildcard body buffering selects model caps without changing its other delegated
   policy/accounting semantics. Priced services negotiate identity encoding,
   including routes whose selectors can switch to passthrough pricing.
+- 2026-10-11, Codex: the mandatory Trivy failure is concrete evidence for a
+  narrowly scoped local prototype lockfile refresh. Preserve its manifest,
+  application source, Sites packaging and gateway assets; do not turn this into
+  a dependency redesign or weaken the configured security checks. Keep ignored
+  prototype files outside the PR.
 
 ## Outcomes & Retrospective
 
