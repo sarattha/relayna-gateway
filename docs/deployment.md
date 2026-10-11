@@ -7,6 +7,34 @@ virtual keys, Azure Foundry connections and registered agents, and replica
 synchronization of saved gateway Entra settings.
 The UI remains embedded in the Rust binary; no separate frontend service is needed.
 
+## Upgrade to 0.1.44
+
+There is no new PostgreSQL migration or Redis format relative to 0.1.43. Upgrade
+**every replica** to enforce the security fixes consistently; older replicas
+retain the policy and accounting gaps. Verify permitted and denied requests on
+each replica before restoring normal traffic.
+
+Relayna-authenticated canonical direct routes now enforce body-selected model,
+streaming/tool, token-rate and budget policy before forwarding. They retain
+status-only usage and no guardrail rewriting. Generation with an output cap
+requires a positive supported provider maximum; chat multiplicity and batch
+entries count toward the total. Unsupported or ambiguous capped formats fail
+with `403 policy_denied`. Nested `extra_body.model` is rejected even without a
+model allowlist or output cap. Review client payloads before rollout; see
+[output-token admission](litellm-passthrough.md#output-token-admission).
+
+Relayna-key Anthropic batch listing, retrieval, results and cancellation return
+`403 policy_denied`, including project/key credential mappings. Creation remains
+governed, and caller-owned LiteLLM credentials retain delegated access. Use
+caller-owned credentials for lifecycle operations when ownership cannot be
+established by Gateway. Passthrough-priced JSON service responses negotiate
+identity encoding and record supported cost fields beyond the response prefix
+without buffering the entire response. See [service pricing](openapi-service-pricing.md).
+
+Rollback reopens these gaps. Restrict affected routes at ingress before serving
+traffic through an older binary, and retain the existing database and Redis
+state. There is no security exemption for mixed-version traffic.
+
 ## Upgrade to 0.1.43
 
 Startup applies `20261008000100_usage_pricing_fingerprint.sql`, adding nullable
@@ -110,7 +138,7 @@ channel bindings are enabled; see [Accessa channels](accessa-channels.md).
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.43 .
+docker build -t relayna-gateway:0.1.44 .
 ```
 
 Run it with required dependencies:
@@ -130,7 +158,7 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.43
+  relayna-gateway:0.1.44
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -190,13 +218,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.43
+   ghcr.io/sarattha/relayna-gateway:0.1.44
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.43"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.44"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -204,7 +232,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.43
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.44
    ```
 
 3. Store secrets through your cluster secret manager:

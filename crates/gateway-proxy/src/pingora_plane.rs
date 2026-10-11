@@ -2889,46 +2889,39 @@ where
             policy: base.policy,
             guardrail_policy: base.guardrail_policy,
         }];
-        let mut models = std::collections::BTreeSet::new();
+        let mut models = std::collections::BTreeMap::new();
         for feature in batch_request_features(body)? {
-            let effective = self
-                .store
-                .effective_policy_for_context(
-                    key.key_id,
-                    key.project_id,
-                    None,
-                    Some(matched.route),
-                    feature.model.clone(),
-                )
-                .await?;
+            let effective = match models.entry(feature.model.clone()) {
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(
+                    self.store
+                        .effective_policy_for_context(
+                            key.key_id,
+                            key.project_id,
+                            None,
+                            Some(matched.route),
+                            feature.model.clone(),
+                        )
+                        .await?,
+                ),
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            };
             evaluate_policy(&effective.policy, matched.route, matched.provider, &feature)?;
-            gateway_core::policies::enforce_output_token_limit(
-                &effective.policy,
-                matched.route,
-                body,
-            )?;
-            evaluate_policy_limits(
-                &effective.policy,
-                Utc::now(),
-                i64::try_from(body.len()).ok(),
-                None,
-                i32::try_from(estimate_generation_tokens(body)).ok(),
-                None,
-                matched.estimated_cost_usd,
-            )?;
-            if models.insert(feature.model.clone()) {
-                let mut policy = effective.policy;
-                // Per-entry model allowlists were checked above. Intersecting
-                // distinct models' allowlists would reject valid mixed batches.
-                policy.allowed_models.clear();
-                layers.push(gateway_core::PolicyLayer {
-                    kind: gateway_core::PolicyLayerKind::Model,
-                    scope_id: feature.model,
-                    policy_version: policy.policy_version,
-                    policy,
-                    guardrail_policy: effective.guardrail_policy,
-                });
-            }
+        }
+        // Complete-body admission checks aggregate maxima and limits once
+        // against the merged policy. Reparsing the full batch per entry makes
+        // admission quadratic, including for repeated models without a cap.
+        for (model, effective) in models {
+            let mut policy = effective.policy;
+            // Per-entry model allowlists were checked above. Intersecting
+            // distinct models' allowlists would reject valid mixed batches.
+            policy.allowed_models.clear();
+            layers.push(gateway_core::PolicyLayer {
+                kind: gateway_core::PolicyLayerKind::Model,
+                scope_id: model,
+                policy_version: policy.policy_version,
+                policy,
+                guardrail_policy: effective.guardrail_policy,
+            });
         }
         gateway_core::resolve_effective_policy(layers)
     }
@@ -6297,6 +6290,7 @@ mod tests {
         litellm_passthrough_settings: Mutex<LiteLlmPassthroughSettings>,
         active_litellm_config: Mutex<Option<gateway_core::ProviderRuntimeConfig>>,
         litellm_credential_mapping: Mutex<Option<gateway_core::LiteLlmCredentialMappingRuntime>>,
+        policy_models: Mutex<Vec<Option<String>>>,
     }
 
     #[async_trait]
@@ -6326,6 +6320,25 @@ mod tests {
     impl PolicyLookup for MemoryUsageStore {
         async fn policy_for_key(&self, _: Uuid) -> GatewayResult<KeyPolicy> {
             Ok(KeyPolicy::default())
+        }
+
+        async fn policy_for_context(
+            &self,
+            _: Uuid,
+            _: Option<Uuid>,
+            _: Option<String>,
+            route: Option<Route>,
+            model: Option<String>,
+        ) -> GatewayResult<KeyPolicy> {
+            self.policy_models
+                .lock()
+                .expect("policy models lock")
+                .push(model);
+            let mut policy = KeyPolicy::default();
+            if route == Some(Route::AnthropicMessageBatches) {
+                policy.allowed_routes.push(Route::AnthropicMessageBatches);
+            }
+            Ok(policy)
         }
     }
 
@@ -6363,8 +6376,48 @@ mod tests {
                 ),
                 active_litellm_config: Mutex::new(None),
                 litellm_credential_mapping: Mutex::new(None),
+                policy_models: Mutex::new(Vec::new()),
             }
         }
+    }
+
+    #[tokio::test]
+    async fn batch_admission_loads_each_distinct_model_policy_once() {
+        let store = Arc::new(MemoryUsageStore::default());
+        let proxy = RelaynaPingoraProxy::new(
+            store.clone(),
+            Arc::new(MemoryControlState::default()),
+            PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "service-key").unwrap(),
+        );
+        let key = AuthenticatedKey {
+            key_id: Uuid::new_v4(),
+            project_id: Some(Uuid::new_v4()),
+            key_prefix: "rk_live_test_key".into(),
+        };
+        let matched = Route::resolve_match(&http::Method::POST, "/v1/messages/batches").unwrap();
+        let entries: Vec<_> = (0..3_000)
+            .map(|index| {
+                serde_json::json!({"params":{
+                    "model":if index % 2 == 0 {"first"} else {"second"}, "max_tokens":1
+                }})
+            })
+            .collect();
+        let body = serde_json::to_vec(&serde_json::json!({"requests":entries})).unwrap();
+        let effective = proxy
+            .effective_complete_policy(&key, &matched, &body)
+            .await
+            .unwrap();
+        check_complete_request_policy(
+            &effective.policy,
+            &matched,
+            &body,
+            &extract_generation_features(&body),
+        )
+        .unwrap();
+        assert_eq!(
+            *store.policy_models.lock().unwrap(),
+            vec![None, Some("first".into()), Some("second".into())]
+        );
     }
 
     #[tokio::test]

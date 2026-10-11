@@ -387,7 +387,11 @@ fn reject_provider_parameter_overrides(
     }
     if !matches!(
         route,
-        Route::ChatCompletions | Route::Responses | Route::AnthropicMessages
+        Route::ChatCompletions
+            | Route::Responses
+            | Route::AnthropicMessages
+            | Route::LiteLlmEmbeddings
+            | Route::LiteLlmRerank
     ) {
         return Ok(());
     }
@@ -402,13 +406,20 @@ fn reject_provider_parameter_overrides(
     // LiteLLM may merge provider-specific extra_body after validated top-level
     // parameters. Unknown extensions cannot prove an output bound; feature
     // selectors must not override a denial after gateway validation either.
-    if (policy.max_output_tokens_per_request.is_some() && !extra.is_empty())
+    // A model override also bypasses selecting that model's policy layers,
+    // even when the validated top-level model has no restrictions.
+    if (policy.max_output_tokens_per_request.is_some()
+        && matches!(
+            route,
+            Route::ChatCompletions | Route::Responses | Route::AnthropicMessages
+        )
+        && !extra.is_empty())
         || (!policy.allow_streaming && extra.contains_key("stream"))
         || (!policy.allow_tools
             && ["tools", "functions", "tool_choice", "function_call"]
                 .iter()
                 .any(|field| extra.contains_key(*field)))
-        || (!policy.allowed_models.is_empty() && extra.contains_key("model"))
+        || extra.contains_key("model")
     {
         return Err(GatewayError::PolicyDenied);
     }
@@ -972,6 +983,34 @@ mod tests {
             br#"{"extra_body":{"top_k":10}}"#
         )
         .is_ok());
+    }
+
+    #[test]
+    fn provider_extensions_cannot_change_the_policy_selected_model() {
+        let policy = KeyPolicy {
+            allow_streaming: true,
+            allow_tools: true,
+            ..KeyPolicy::default()
+        };
+        for route in [
+            Route::ChatCompletions,
+            Route::Responses,
+            Route::AnthropicMessages,
+            Route::LiteLlmEmbeddings,
+            Route::LiteLlmRerank,
+        ] {
+            assert_eq!(
+                enforce_output_token_limit(
+                    &policy,
+                    route,
+                    br#"{"model":"uncapped-model","extra_body":{"model":"capped-model"}}"#
+                ),
+                Err(GatewayError::PolicyDenied)
+            );
+        }
+        assert_eq!(enforce_output_token_limit(&policy, Route::AnthropicMessageBatches,
+            br#"{"requests":[{"params":{"model":"uncapped-model","extra_body":{"model":"capped-model"}}}]}"#),
+            Err(GatewayError::PolicyDenied));
     }
 
     #[test]

@@ -273,6 +273,13 @@ async fn security_controls_deny_before_forwarding_and_account_large_streamed_res
                 (reqwest::Method::GET, "/v1/messages/batches/other/results"),
                 (reqwest::Method::POST, "/v1/messages/batches/other/cancel"),
                 (reqwest::Method::POST, "/v1/messages/batches/"),
+                (reqwest::Method::GET, "/v1/messages/batches%2Fother/results"),
+                (reqwest::Method::GET, "/v1/messages/batches%2fother/results"),
+                (reqwest::Method::GET, "/v1/messages/%62atches/other/results"),
+                (
+                    reqwest::Method::GET,
+                    "/v1/messages/batches%252Fother/results",
+                ),
             ] {
                 let response = client
                     .request(method, format!("{url}{path}"))
@@ -285,6 +292,27 @@ async fn security_controls_deny_before_forwarding_and_account_large_streamed_res
             assert_eq!(received.load(Ordering::SeqCst), before);
         }
     }
+    // A large valid batch with one model must remain practical to admit.
+    let entries: Vec<_> = (0..3_000)
+        .map(|index| {
+            json!({"custom_id":index.to_string(),
+        "params":{"model":"allowed","max_tokens":1}})
+        })
+        .collect();
+    let before = received.load(Ordering::SeqCst);
+    assert_eq!(
+        post(
+            &client,
+            &url,
+            "/v1/messages/batches",
+            &batch_a,
+            json!({"requests":entries})
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    assert_eq!(received.load(Ordering::SeqCst), before + 1);
     store
         .set_anthropic_route_mode(
             "message-batch-results",
@@ -381,7 +409,7 @@ async fn security_controls_deny_before_forwarding_and_account_large_streamed_res
     );
     assert_eq!(received.load(Ordering::SeqCst), before);
 
-    let (model_capped, _) = key(&store, project_id, json!({"allowed_routes":["/litellm/*"],"allowed_providers":["litellm"],"allow_streaming":true})).await;
+    let (model_capped, _) = key(&store, project_id, json!({"allowed_routes":["/litellm/*","/v1/chat/completions","/v1/responses","/v1/messages/batches"],"allowed_providers":["litellm"],"allow_streaming":true,"allow_tools":true})).await;
     store
         .upsert_policy_layer(AdminPolicyLayerUpsert {
             kind: PolicyLayerKind::Model,
@@ -391,6 +419,72 @@ async fn security_controls_deny_before_forwarding_and_account_large_streamed_res
         })
         .await
         .unwrap();
+    for mode in [
+        OpenAiRouteMode::ManagedByGateway,
+        OpenAiRouteMode::DirectLiteLlmPassthrough,
+    ] {
+        for route in ["chat-completions", "responses"] {
+            store.set_openai_route_mode(route, mode).await.unwrap();
+        }
+        let before = received.load(Ordering::SeqCst);
+        for path in ["/v1/chat/completions", "/responses"] {
+            assert_eq!(
+                post(
+                    &client,
+                    &url,
+                    path,
+                    &model_capped,
+                    json!({"model":"uncapped-model","extra_body":{"model":"capped-model"}})
+                )
+                .await
+                .status(),
+                StatusCode::FORBIDDEN,
+                "{mode:?} {path}"
+            );
+        }
+        assert_eq!(received.load(Ordering::SeqCst), before);
+        assert_eq!(
+            post(
+                &client,
+                &url,
+                "/responses",
+                &model_capped,
+                json!({"model":"uncapped-model"})
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+    // The strictest model cap still bounds the whole mixed-model batch.
+    let before = received.load(Ordering::SeqCst);
+    assert_eq!(
+        post(
+            &client,
+            &url,
+            "/v1/messages/batches",
+            &model_capped,
+            json!({"requests":[{"params":{"model":"uncapped-model","max_tokens":2}},
+        {"params":{"model":"capped-model","max_tokens":1}}]})
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(received.load(Ordering::SeqCst), before);
+    assert_eq!(
+        post(
+            &client,
+            &url,
+            "/v1/messages/batches",
+            &model_capped,
+            json!({"requests":[{"params":{"model":"uncapped-model","max_tokens":1}},
+        {"params":{"model":"capped-model","max_tokens":1}}]})
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
     let before = received.load(Ordering::SeqCst);
     assert_eq!(
         post(

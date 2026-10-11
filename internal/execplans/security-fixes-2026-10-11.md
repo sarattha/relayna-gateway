@@ -27,9 +27,26 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
   and the complete mandatory verification stack with live PostgreSQL/Redis.
 - [x] (2026-10-11) Commit, push and open review PR #132, then attach it to this
   chat: https://github.com/sarattha/relayna-gateway/pull/132.
+- [x] (2026-10-11) Address the existing GitHub review: reject nested model
+  overrides regardless of the top-level model policy; make batch admission
+  linear in body size and reuse policies for repeated models; regress encoded
+  batch paths against the existing ambiguous-path denial.
+- [ ] (2026-10-11) Prepare version 0.1.44, changelog, current examples and upgrade
+  documentation; rerun release metadata, build, docs and mandatory verification.
+- [ ] (2026-10-11) Request exactly one additional Codex review on the final patch,
+  address actionable feedback, confirm CI and land PR #132 as authorized.
 
 ## Surprises & Discoveries
 
+- The initial GitHub review found an uncapped-model override and quadratic batch
+  parsing. Both are addressed. Its encoded-path bypass hypothesis is prevented
+  by existing `LiteLlmPassthroughSettings::denies_path`; real Pingora regressions
+  deny `%2F`, `%2f`, encoded letters and double encoding before upstream receipt.
+  A 3,000-entry batch succeeds, mixed-model total caps still deny/allow correctly,
+  and a counted unit test proves one base lookup plus one per distinct model.
+- The focused live regression, distinct-model lookup regression, release metadata
+  validator, all-feature workspace build, Admin UI tests and strict MkDocs build
+  pass for 0.1.44. MkDocs is provided by the existing `.tmp-mkdocs-venv`.
 - Direct-mode routes intentionally retain status-only usage/no guardrail rewrite;
   the fix must restore admission without silently changing that metering contract.
 - A per-key credential mapping does not prove batch isolation: duplicate secrets
@@ -58,6 +75,14 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
 
 ## Decision Log
 
+- 2026-10-11, Codex: the user authorizes preparing 0.1.44 and landing PR #132.
+  The existing bot review confirms an uncapped top-level model can select a
+  stricter model through `extra_body.model`; reject that selector unconditionally.
+  All complete-body callers validate the merged policy, so validate aggregate
+  batch maxima/limits there once and cache effective policy per distinct model.
+  Percent-encoded paths already fail `denies_path` before wildcard routing;
+  add real forwarding regressions rather than introduce a second decoder.
+  Preserve the v0.1.43 schema, Redis formats and direct-mode accounting contract.
 - 2026-10-11, Codex: user explicitly authorizes security behavior tightening at
   the latest release boundary. Preserve route/error shapes and intentional
   caller-owned LiteLLM delegation. Do not add unsafe compatibility exemptions.

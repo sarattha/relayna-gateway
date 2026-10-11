@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.43` behavior. Governed forwarding validates complete request policy and admission before body forwarding; see [operations](operations.md) for budget rollout and recovery.
+This page covers the `0.1.44` behavior. Governed forwarding validates complete request policy and admission before body forwarding; see [operations](operations.md) for budget rollout and recovery.
 
 ## Caller-key APIs with the dashboard disabled (0.1.40)
 
@@ -146,7 +146,8 @@ closed when this cap is set; leave it unset for those formats. Response usage
 checks remain an additional check when usage is available.
 Nonempty provider `extra_body` extensions are rejected for capped generation
 because backend merges can override a validated maximum. For uncapped canonical
-requests, extensions cannot override denied streaming, tools or model access;
+requests, extensions cannot override denied streaming or tools. `extra_body.model`
+is always rejected because it would change the model after selecting its policy;
 ordinary vendor parameters remain available.
 Capped requests accept the supported protocol fields only; unknown top-level
 vendor parameters are rejected too, since LiteLLM can promote them into

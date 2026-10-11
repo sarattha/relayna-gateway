@@ -2,9 +2,19 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.43` feature set.
+This page summarizes the `v0.1.44` feature set.
 
-New in 0.1.43: historical named body/endpoint rules require recorded selector
+New in 0.1.44: Relayna-authenticated canonical direct requests enforce complete
+model, feature, token-rate and budget admission. Output caps require explicit
+provider maxima before generation, including streams and batch totals. Shared
+Anthropic batch lifecycle access is denied; caller-owned credentials retain their
+existing delegation. Large passthrough-priced service responses record cost with
+bounded memory while preserving chunk delivery. Nested model overrides are
+rejected, and batch policy checks reuse each distinct model. See
+[LiteLLM admission](litellm-passthrough.md#output-token-admission) and
+[upgrade guidance](deployment.md#upgrade-to-0144).
+
+Introduced in 0.1.43: historical named body/endpoint rules require recorded selector
 fingerprints. Legacy rule records without proof stay unchanged, even after
 new-request-only selector edits. Service prices support at most eight decimal
 places (minimum positive USD 0.00000001). Foundry service edits validate their
