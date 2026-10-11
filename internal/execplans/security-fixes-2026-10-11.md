@@ -23,7 +23,8 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
   batch sums; reject ambiguous fields and unsafe provider extensions.
 - [x] (2026-10-11) Complete the one independent candidate review; confirm and close
   model-only wildcard caps, nested provider overrides and compression negotiation.
-- [ ] Run focused regressions, one independent candidate review and the mandatory stack.
+- [x] (2026-10-11) Run focused regressions, the one independent candidate review
+  and the complete mandatory verification stack with live PostgreSQL/Redis.
 - [ ] Commit, push and open a review PR, then attach it to this chat.
 
 ## Surprises & Discoveries
@@ -78,11 +79,35 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
 
 ## Outcomes & Retrospective
 
-Implementation and verification in progress.
-Focused core tests and the real Pingora integration have passed on the candidate.
-The final version adds a notification barrier to prove first-chunk delivery before
-the upstream completes, avoiding a machine-speed-dependent timing assertion.
-The mandatory stack is being rerun after the review-driven changes.
+All four fixes are implemented and verified. The real Pingora regression denies
+the original unsafe requests before upstream receipt, preserves legitimate
+managed/direct/caller-owned traffic, observes cost beyond a 100 KB payload, and
+proves first-chunk delivery before upstream completion. The original scan remains
+sealed; a separate fix report records remediation evidence.
+
+The complete fail-fast script passed on 2026-10-11 with disposable PostgreSQL and
+Redis. `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2` and `NEXTEST_TEST_THREADS=2`
+limited contention without disabling checks or tests. Results, in script order:
+
+1. `cargo fmt --all --check`: passed.
+2. `cargo clippy --workspace --all-targets --all-features -- -D warnings`: passed.
+3. `cargo test --workspace --all-features`: passed, including 170 core unit
+   tests, 96 proxy unit tests and the live security regression.
+4. `cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437 --ignore RUSTSEC-2026-0173`:
+   passed with five allowed warnings under existing repository configuration.
+5. `cargo deny check`: passed with existing configuration warnings.
+6. `cargo machete`: passed.
+7. `cargo nextest run --workspace --all-features`: 424 passed, zero skipped.
+8. `trivy fs --severity HIGH,CRITICAL --exit-code 1 --skip-dirs target --skip-dirs site .`:
+   passed, zero reported vulnerabilities at the configured severity.
+9. `gitleaks detect --source . --redact`: passed, no leaks found.
+10. `semgrep scan --config .semgrep.yml`: passed, zero findings; two configured
+    rules on 81 targets, with normal ignore patterns and size exclusions.
+
+The ignored local prototype dependency refresh also passed `npm ci --no-audit
+--no-fund`, `npm run build` and all four `npm run test:sites` tests; its local
+preview loaded. Its source and manifest were retained and its lockfile is not
+part of the PR. No new scanner suppressions were introduced.
 
 ## Context and Orientation
 
