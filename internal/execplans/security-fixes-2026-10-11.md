@@ -31,7 +31,7 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
   overrides regardless of the top-level model policy; make batch admission
   linear in body size and reuse policies for repeated models; regress encoded
   batch paths against the existing ambiguous-path denial.
-- [ ] (2026-10-11) Prepare version 0.1.44, changelog, current examples and upgrade
+- [x] (2026-10-11) Prepare version 0.1.44, changelog, current examples and upgrade
   documentation; rerun release metadata, build, docs and mandatory verification.
 - [ ] (2026-10-11) Request exactly one additional Codex review on the final patch,
   address actionable feedback, confirm CI and land PR #132 as authorized.
@@ -115,7 +115,17 @@ managed/direct/caller-owned traffic, observes cost beyond a 100 KB payload, and
 proves first-chunk delivery before upstream completion. The original scan remains
 sealed; a separate fix report records remediation evidence.
 
-The complete fail-fast script passed on 2026-10-11 with disposable PostgreSQL and
+The 0.1.44 follow-up passed the complete fail-fast stack on runtime revision
+`03e6a629f1b32c19bd8073f1b778a57781459e75`: formatting, Clippy, all workspace
+tests (171 core and 97 proxy unit tests plus live integration), audit, deny,
+machete, all 426 Nextest tests (zero skipped), Trivy (zero HIGH/CRITICAL findings),
+Gitleaks (no leaks), and Semgrep (two rules, 81 targets, zero findings).
+The all-feature workspace build, release metadata validator, Admin UI tests and
+strict MkDocs build also passed. Source and tests remain identical after this
+verification-note update. One additional GitHub Codex review is pending before
+the authorized merge of PR #132.
+
+The initial four-finding fail-fast script passed with disposable PostgreSQL and
 Redis. `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2` and `NEXTEST_TEST_THREADS=2`
 limited contention without disabling checks or tests. Results, in script order:
 
