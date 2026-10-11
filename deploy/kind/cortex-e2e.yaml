@@ -1,0 +1,189 @@
+# Development-only gateway slice for the shared kind-keystone cluster.
+# Create relayna-gateway-secrets first; no credentials belong in this manifest.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cortex-e2e
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: relayna-gateway-config
+  namespace: cortex-e2e
+data:
+  GATEWAY_BIND_ADDR: "0.0.0.0:8080"
+  GATEWAY_CONTROL_BIND_ADDR: "0.0.0.0:8081"
+  LOG_LEVEL: "gateway_api=info,gateway_proxy=info"
+  ENTRA_AUTH_ENABLED: "true"
+  ENTRA_APPLICATION_ID: "api://keystone-mcp"
+  ENTRA_TENANT_ID: "11111111-1111-4111-8111-111111111111"
+  ENTRA_ISSUER: "http://localhost:5556"
+  ENTRA_OIDC_DISCOVERY_URL: "http://keystone-development-oidc.keystone.svc.cluster.local:5556/.well-known/openid-configuration"
+  ENTRA_ACCEPTED_ALGORITHMS: "RS256"
+  ENTRA_RELAYNA_KEY_HEADER: "X-Relayna-Key"
+  ENTRA_CLOCK_SKEW_SECONDS: "0"
+  ENTRA_AUTH_DEBUG: "false"
+  GATEWAY_UNVERIFIED_BEARER_ENABLED: "false"
+  APIGEE_TRUSTED_HEADER_ENABLED: "false"
+  PORTAL_OIDC_ENABLED: "false"
+  OWNER_ENTRA_AUTH_ENABLED: "false"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relayna-postgres
+  namespace: cortex-e2e
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: relayna-postgres
+  template:
+    metadata:
+      labels:
+        app: relayna-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_DB
+              value: relayna
+            - name: POSTGRES_USER
+              value: relayna
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: relayna-gateway-secrets
+                  key: POSTGRES_PASSWORD
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "relayna", "-d", "relayna"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: relayna-postgres
+  namespace: cortex-e2e
+spec:
+  selector:
+    app: relayna-postgres
+  ports:
+    - port: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relayna-redis
+  namespace: cortex-e2e
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: relayna-redis
+  template:
+    metadata:
+      labels:
+        app: relayna-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: relayna-redis
+  namespace: cortex-e2e
+spec:
+  selector:
+    app: relayna-redis
+  ports:
+    - port: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relayna-gateway
+  namespace: cortex-e2e
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: relayna-gateway
+  template:
+    metadata:
+      labels:
+        app: relayna-gateway
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: gateway
+          # Build from the current checkout and load into Kind; override by kubectl set image.
+          image: relayna-gateway:cortex-e2e-e1bf6d2
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: relayna-gateway-config
+            - secretRef:
+                name: relayna-gateway-secrets
+          ports:
+            - name: proxy
+              containerPort: 8080
+            - name: control
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /admin-ui/readyz
+              port: control
+          livenessProbe:
+            httpGet:
+              path: /admin-ui/healthz
+              port: control
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: relayna-gateway
+  namespace: cortex-e2e
+spec:
+  selector:
+    app: relayna-gateway
+  ports:
+    - name: proxy
+      port: 8080
+      targetPort: proxy
+    - name: control
+      port: 8081
+      targetPort: control
+---
+# Existing Keystone discovery may advertise its short in-namespace JWKS hostname.
+apiVersion: v1
+kind: Service
+metadata:
+  name: keystone-development-oidc
+  namespace: cortex-e2e
+spec:
+  type: ExternalName
+  externalName: keystone-development-oidc.keystone.svc.cluster.local
