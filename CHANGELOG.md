@@ -2,6 +2,43 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.44 - 2026-10-11
+
+### Fixed
+
+- Restore complete-body model, streaming/tool, token-rate and budget admission
+  before Relayna-authenticated canonical direct forwarding (#132).
+- Enforce positive provider-recognized output maxima before generation, including
+  streaming, chat multiplicity, batch totals and model-specific caps. Reject
+  conflicting/duplicate maxima and unsafe provider extensions; nested model
+  overrides cannot change the model after its policy has been selected.
+- Deny Relayna-key Anthropic batch listing, retrieval, results and cancellation
+  through shared or mapped upstream credentials. Preserve governed creation and
+  caller-owned LiteLLM delegation.
+- Record supported passthrough service cost fields beyond the response prefix
+  with bounded incremental JSON observation and identity encoding, preserving
+  chunk delivery and durable budget reconciliation.
+- Reuse effective policy per distinct batch model and validate aggregate limits
+  once, avoiding quadratic full-body parsing during batch admission.
+- Preserve standard Responses `max_tool_calls` and `top_logprobs` under output
+  caps while retaining the required generation maximum.
+
+### Added
+
+- Regression coverage for direct/managed admission, explicit streaming maxima,
+  mixed-model batch caps, nested model overrides, encoded batch paths, a
+  3,000-entry batch and large streamed service-cost accounting.
+
+### Compatibility
+
+- No new database migration, Redis format or credential format. Canonical direct
+  mode retains status-only usage and no guardrail rewriting. New denials use
+  `403 policy_denied`; token-rate and budget denials retain their existing codes.
+- Upgrade every replica and review capped client payloads and batch lifecycle
+  callers. Older binaries reopen these gaps. See
+  [deployment](docs/deployment.md#upgrade-to-0144) and
+  [LiteLLM admission](docs/litellm-passthrough.md#output-token-admission).
+
 ## 0.1.43 - 2026-10-08
 
 ### Fixed

@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.43` behavior. Governed forwarding validates complete request policy and admission before body forwarding; see [operations](operations.md) for budget rollout and recovery.
+This page covers the `0.1.44` behavior. Governed forwarding validates complete request policy and admission before body forwarding; see [operations](operations.md) for budget rollout and recovery.
 
 ## Caller-key APIs with the dashboard disabled (0.1.40)
 
@@ -111,6 +111,54 @@ profiles** support a caller-credential exception: a non-Relayna `Authorization: 
 LiteLLM credential and translated to the configured upstream LiteLLM header.
 Relayna `rk_live_...` bearer keys are not consumed as LiteLLM credentials; they
 continue through the Relayna-authenticated direct passthrough path.
+
+Relayna-authenticated canonical direct requests undergo complete-body model,
+streaming/tool, token-rate and budget admission before upstream forwarding.
+Direct mode retains its no-guardrail-rewrite and status-only usage contract.
+
+### Anthropic batch isolation
+
+Gateway cannot establish ownership of batches in a shared upstream namespace.
+For Relayna-authenticated requests, batch listing, retrieval, results and
+cancellation return **403 `policy_denied`**, including direct mode, wildcard
+descendants and mapped credentials. Project/key mappings alone do not prove
+isolation because their secrets can be shared. Exact `POST /v1/messages/batches`
+creation remains subject to complete batch policy and admission.
+
+Caller-owned LiteLLM credential delegation remains available on direct routes
+without authentication profiles and in opted-in `litellm_bearer` wildcard mode;
+LiteLLM must enforce the caller's batch ownership there. Deploy every replica
+with this restriction before relying on it; old replicas permit shared-credential
+batch access. There is no database migration for this change.
+
+### Output-token admission
+
+When `max_output_tokens_per_request` is set, a generative request must specify a
+positive integer provider-recognized maximum within that cap: `max_tokens` or
+`max_completion_tokens` for chat completions, `max_output_tokens` for Responses,
+and `max_tokens` for Anthropic messages. Chat `n` multiplies the maximum; batch
+creation sums the entries' maxima and applies effective model policy. Missing,
+duplicate, conflicting, null or invalid maxima fail with **403 `policy_denied`**
+before generation, including streaming requests. A zero cap denies generation.
+Embeddings, rerank, token counting and model discovery do not generate output
+tokens. Other service/provider formats with no proven maximum contract fail
+closed when this cap is set; leave it unset for those formats. Response usage
+checks remain an additional check when usage is available.
+Nonempty provider `extra_body` extensions are rejected for capped generation
+because backend merges can override a validated maximum. For uncapped canonical
+requests, extensions cannot override denied streaming or tools. `extra_body.model`
+is rejected in canonical and JSON wildcard requests because it would change the
+model after selecting its policy;
+ordinary vendor parameters remain available.
+Capped requests accept the supported protocol fields only; unknown top-level
+vendor parameters are rejected too, since LiteLLM can promote them into
+provider extensions. Standard Responses `max_tool_calls` and `top_logprobs` remain
+accepted and do not replace the required `max_output_tokens` bound. Put required
+extensions on an uncapped policy or use a
+provider contract with a separately enforced generation maximum.
+Relayna-authenticated wildcard bodies are buffered within the configured request
+limit to select model policy before delegation; uncapped wildcard requests retain
+their existing upstream policy and status-only accounting contract.
 
 ### Authentication profiles with direct forwarding
 

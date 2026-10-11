@@ -129,6 +129,19 @@ service; these PATCH fields replace their respective stored lists.
 | `fixed` | Uses `estimated_cost_usd`; the estimate is required and must be non-negative. |
 | `passthrough` | Reads a supported cost field from the upstream response. If none is present, usage records `missing_upstream_cost`. |
 
+Passthrough accounting observes all upstream JSON response chunks separately
+from the bounded diagnostic prefix. Large payload strings are streamed without
+retention, so a cost field after 64 KiB still reconciles PostgreSQL usage and
+Redis spending. Supported positive finite numeric fields, in priority order,
+are `estimated_cost`, `response_cost`, `usage.estimated_cost`, `usage.total_cost`,
+`usage.cost` and `_hidden_params.response_cost`. Duplicate fields use their last
+value. The observer accepts one complete JSON object with nesting up to 128
+levels; malformed, incomplete or unsupported responses retain
+`missing_upstream_cost`. SSE cost attribution is not supported.
+Gateway requests `Accept-Encoding: identity` for endpoints that can use
+passthrough pricing, including selector rules, so caller-selected compression
+cannot hide the cost metadata. These upstreams must honor identity encoding.
+
 Newly discovered endpoints under `/events`, `/status`, `/dlq`, `/broker/dlq`,
 `/failed-tasks`, `/relayna`, and `/executions`, plus exact `/health` and
 `/history`, default to `none`. This classification is only a billing default.

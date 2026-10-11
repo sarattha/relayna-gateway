@@ -1,7 +1,16 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.43` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.44` is the
 current release target.
+
+Version `0.1.44` restores complete-request admission in Relayna-authenticated
+direct mode, requires provider-enforced output maxima, blocks shared batch
+lifecycle access and records passthrough service costs beyond the response
+prefix. Nested model overrides cannot bypass model policy, and batch policy
+checks reuse each distinct model without repeatedly parsing the full body.
+There is no new migration or Redis format. Upgrade every replica and review
+new request restrictions; see [deployment](deployment.md#upgrade-to-0144) and
+[LiteLLM admission](litellm-passthrough.md#output-token-admission).
 
 Version `0.1.43` fixes historical selector attribution, service-price precision
 and Foundry connection-pool exhaustion from PR #126. The additive fingerprint
@@ -103,7 +112,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.43
+   python3 scripts/validate-release-metadata.py v0.1.44
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -121,15 +130,15 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.43 .
+   docker build -t relayna-gateway:0.1.44 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.43 -m "Release v0.1.43"
-   git push origin v0.1.43
+   git tag -a v0.1.44 -m "Release v0.1.44"
+   git push origin v0.1.44
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -139,10 +148,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.43`, the workflow publishes:
+For `v0.1.44`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.43
+ghcr.io/sarattha/relayna-gateway:0.1.44
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```
