@@ -25,7 +25,8 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
   model-only wildcard caps, nested provider overrides and compression negotiation.
 - [x] (2026-10-11) Run focused regressions, the one independent candidate review
   and the complete mandatory verification stack with live PostgreSQL/Redis.
-- [ ] Commit, push and open a review PR, then attach it to this chat.
+- [x] (2026-10-11) Commit, push and open review PR #132, then attach it to this
+  chat: https://github.com/sarattha/relayna-gateway/pull/132.
 
 ## Surprises & Discoveries
 
