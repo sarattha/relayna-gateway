@@ -490,11 +490,13 @@ fn provider_output_maximum(route: Route, body: &[u8]) -> GatewayResult<u64> {
             "stream",
             "stream_options",
             "max_output_tokens",
+            "max_tool_calls",
             "max_tokens",
             "max_completion_tokens",
             "n",
             "temperature",
             "top_p",
+            "top_logprobs",
             "tools",
             "tool_choice",
             "parallel_tool_calls",
@@ -978,6 +980,32 @@ mod tests {
             enforce_output_token_limit(&zero, Route::ChatCompletions, br#"{"max_tokens":1}"#)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn capped_responses_allow_standard_tool_and_logprob_controls() {
+        let policy = KeyPolicy {
+            max_output_tokens_per_request: Some(2),
+            ..KeyPolicy::default()
+        };
+        for field in ["max_tool_calls", "top_logprobs"] {
+            for (maximum, allowed) in [(2, true), (3, false)] {
+                let body = serde_json::to_vec(
+                    &serde_json::json!({"model":"allowed", "max_output_tokens":maximum, field:1}),
+                )
+                .unwrap();
+                assert_eq!(
+                    enforce_output_token_limit(&policy, Route::Responses, &body).is_ok(),
+                    allowed
+                );
+            }
+            let body =
+                serde_json::to_vec(&serde_json::json!({"model":"allowed", field:1})).unwrap();
+            assert_eq!(
+                enforce_output_token_limit(&policy, Route::Responses, &body),
+                Err(GatewayError::PolicyDenied)
+            );
+        }
     }
 
     #[test]

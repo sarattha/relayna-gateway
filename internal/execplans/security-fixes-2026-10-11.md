@@ -33,8 +33,10 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
   batch paths against the existing ambiguous-path denial.
 - [x] (2026-10-11) Prepare version 0.1.44, changelog, current examples and upgrade
   documentation; rerun release metadata, build, docs and mandatory verification.
-- [ ] (2026-10-11) Request exactly one additional Codex review on the final patch,
-  address actionable feedback, confirm CI and land PR #132 as authorized.
+- [x] (2026-10-11) Request exactly one additional Codex review on head `7c8c276`:
+  https://github.com/sarattha/relayna-gateway/pull/132#issuecomment-6108392575.
+- [ ] (2026-10-11) Address its one P2 compatibility finding, rerun verification
+  and prepare PR #132 for the authorized merge. No additional review request.
 
 ## Surprises & Discoveries
 
@@ -75,6 +77,13 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
 
 ## Decision Log
 
+- 2026-10-11, Codex: the single additional review completed on `7c8c276` and
+  identified standard Responses `max_tool_calls` and `top_logprobs` omitted from
+  the capped-field allowlist. Confirmed against OpenAI's Responses Create API
+  [reference](https://developers.openai.com/api/reference/python/resources/responses/methods/create):
+  neither replaces `max_output_tokens`. Add both with positive and
+  over-cap/missing-maximum regressions, then rerun the required stack. The one
+  additional review allowance is exhausted; do not send another request.
 - 2026-10-11, Codex: the user authorizes preparing 0.1.44 and landing PR #132.
   The existing bot review confirms an uncapped top-level model can select a
   stricter model through `extra_body.model`; reject that selector unconditionally.
@@ -122,8 +131,9 @@ machete, all 426 Nextest tests (zero skipped), Trivy (zero HIGH/CRITICAL finding
 Gitleaks (no leaks), and Semgrep (two rules, 81 targets, zero findings).
 The all-feature workspace build, release metadata validator, Admin UI tests and
 strict MkDocs build also passed. Source and tests remain identical after this
-verification-note update. One additional GitHub Codex review is pending before
-the authorized merge of PR #132.
+verification-note update. The one additional GitHub review subsequently found
+two standard Responses fields omitted from capped admission. They are added;
+final verification of that follow-up is pending before the authorized merge.
 
 The initial four-finding fail-fast script passed with disposable PostgreSQL and
 Redis. `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2` and `NEXTEST_TEST_THREADS=2`

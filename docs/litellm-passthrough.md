@@ -152,7 +152,9 @@ model after selecting its policy;
 ordinary vendor parameters remain available.
 Capped requests accept the supported protocol fields only; unknown top-level
 vendor parameters are rejected too, since LiteLLM can promote them into
-provider extensions. Put required extensions on an uncapped policy or use a
+provider extensions. Standard Responses `max_tool_calls` and `top_logprobs` remain
+accepted and do not replace the required `max_output_tokens` bound. Put required
+extensions on an uncapped policy or use a
 provider contract with a separately enforced generation maximum.
 Relayna-authenticated wildcard bodies are buffered within the configured request
 limit to select model policy before delegation; uncapped wildcard requests retain

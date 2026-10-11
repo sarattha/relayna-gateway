@@ -20,6 +20,8 @@ All notable changes to Relayna Gateway are documented in this file.
   chunk delivery and durable budget reconciliation.
 - Reuse effective policy per distinct batch model and validate aggregate limits
   once, avoiding quadratic full-body parsing during batch admission.
+- Preserve standard Responses `max_tool_calls` and `top_logprobs` under output
+  caps while retaining the required generation maximum.
 
 ### Added
 

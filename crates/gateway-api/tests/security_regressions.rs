@@ -347,6 +347,7 @@ async fn security_controls_deny_before_forwarding_and_account_large_streamed_res
             json!({"model":"allowed","stream":true,"max_output_tokens":3}),
             json!({"model":"allowed","stream":true,"max_output_tokens":2,"max_tokens":100}),
             json!({"model":"allowed","stream":true,"max_output_tokens":2,"extra_body":{"max_output_tokens":100}}),
+            json!({"model":"allowed","stream":true,"max_output_tokens":3,"max_tool_calls":1,"top_logprobs":1}),
         ] {
             assert_eq!(
                 post(&client, &url, "/responses", &capped, body)
@@ -361,7 +362,7 @@ async fn security_controls_deny_before_forwarding_and_account_large_streamed_res
             &url,
             "/responses",
             &capped,
-            json!({"model":"allowed","stream":true,"max_output_tokens":2}),
+            json!({"model":"allowed","stream":true,"max_output_tokens":2,"max_tool_calls":1,"top_logprobs":1}),
         )
         .await;
         assert_eq!(response.status(), StatusCode::OK);
