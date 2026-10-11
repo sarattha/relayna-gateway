@@ -462,6 +462,18 @@ async fn security_controls_deny_before_forwarding_and_account_large_streamed_res
         post(
             &client,
             &url,
+            "/v1/unknown-generation",
+            &model_capped,
+            json!({"model":"uncapped-model","extra_body":{"model":"capped-model"}})
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        post(
+            &client,
+            &url,
             "/v1/messages/batches",
             &model_capped,
             json!({"requests":[{"params":{"model":"uncapped-model","max_tokens":2}},

@@ -385,14 +385,20 @@ fn reject_provider_parameter_overrides(
         }
         return Ok(());
     }
-    if !matches!(
-        route,
-        Route::ChatCompletions
-            | Route::Responses
-            | Route::AnthropicMessages
-            | Route::LiteLlmEmbeddings
-            | Route::LiteLlmRerank
-    ) {
+    let wildcard = route == Route::LiteLlmPassthrough;
+    if wildcard && !serde_json::from_slice::<Value>(body).is_ok_and(|value| value.is_object()) {
+        return Ok(());
+    }
+    if !wildcard
+        && !matches!(
+            route,
+            Route::ChatCompletions
+                | Route::Responses
+                | Route::AnthropicMessages
+                | Route::LiteLlmEmbeddings
+                | Route::LiteLlmRerank
+        )
+    {
         return Ok(());
     }
     #[derive(Deserialize)]
@@ -403,11 +409,19 @@ fn reject_provider_parameter_overrides(
     let Some(extra) = probe.extra_body else {
         return Ok(());
     };
+    // A model override bypasses selecting that model's policy layers, even
+    // when the validated top-level model has no restrictions.
+    if extra.contains_key("model") {
+        return Err(GatewayError::PolicyDenied);
+    }
+    if wildcard {
+        // Other wildcard request semantics remain delegated. The model must
+        // still agree with the selector used to load model-specific caps.
+        return Ok(());
+    }
     // LiteLLM may merge provider-specific extra_body after validated top-level
     // parameters. Unknown extensions cannot prove an output bound; feature
     // selectors must not override a denial after gateway validation either.
-    // A model override also bypasses selecting that model's policy layers,
-    // even when the validated top-level model has no restrictions.
     if (policy.max_output_tokens_per_request.is_some()
         && matches!(
             route,
@@ -419,7 +433,6 @@ fn reject_provider_parameter_overrides(
             && ["tools", "functions", "tool_choice", "function_call"]
                 .iter()
                 .any(|field| extra.contains_key(*field)))
-        || extra.contains_key("model")
     {
         return Err(GatewayError::PolicyDenied);
     }
@@ -998,6 +1011,7 @@ mod tests {
             Route::AnthropicMessages,
             Route::LiteLlmEmbeddings,
             Route::LiteLlmRerank,
+            Route::LiteLlmPassthrough,
         ] {
             assert_eq!(
                 enforce_output_token_limit(
@@ -1011,6 +1025,12 @@ mod tests {
         assert_eq!(enforce_output_token_limit(&policy, Route::AnthropicMessageBatches,
             br#"{"requests":[{"params":{"model":"uncapped-model","extra_body":{"model":"capped-model"}}}]}"#),
             Err(GatewayError::PolicyDenied));
+        assert!(enforce_output_token_limit(
+            &policy,
+            Route::LiteLlmPassthrough,
+            b"opaque delegated request"
+        )
+        .is_ok());
     }
 
     #[test]

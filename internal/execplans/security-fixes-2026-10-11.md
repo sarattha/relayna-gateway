@@ -83,6 +83,10 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
   Percent-encoded paths already fail `denies_path` before wildcard routing;
   add real forwarding regressions rather than introduce a second decoder.
   Preserve the v0.1.43 schema, Redis formats and direct-mode accounting contract.
+- 2026-10-11, Codex: source tracing confirms wildcard JSON bodies can use the
+  same nested model override to evade a model-specific cap. Reject that selector
+  there too, preserve opaque non-JSON delegation, and rerun the full stack on the
+  completed patch. The interrupted run is not counted as final verification.
 - 2026-10-11, Codex: user explicitly authorizes security behavior tightening at
   the latest release boundary. Preserve route/error shapes and intentional
   caller-owned LiteLLM delegation. Do not add unsafe compatibility exemptions.

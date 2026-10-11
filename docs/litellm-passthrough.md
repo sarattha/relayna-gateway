@@ -147,7 +147,8 @@ checks remain an additional check when usage is available.
 Nonempty provider `extra_body` extensions are rejected for capped generation
 because backend merges can override a validated maximum. For uncapped canonical
 requests, extensions cannot override denied streaming or tools. `extra_body.model`
-is always rejected because it would change the model after selecting its policy;
+is rejected in canonical and JSON wildcard requests because it would change the
+model after selecting its policy;
 ordinary vendor parameters remain available.
 Capped requests accept the supported protocol fields only; unknown top-level
 vendor parameters are rejected too, since LiteLLM can promote them into
