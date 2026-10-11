@@ -336,6 +336,12 @@ Claude and Claude Code clients:
 - `POST /v1/messages/batches/*/cancel`
 - `GET /v1/models`
 
+Relayna keys may create batches but cannot list, retrieve, read results or cancel
+them while upstream ownership is unknown. This restriction also applies to
+direct mode and shared project/key credential mappings. See
+[batch isolation and output-token admission](litellm-passthrough.md#anthropic-batch-isolation)
+for caller-owned delegation and explicit generation maxima required by output caps.
+
 Each canonical route has a mode in the Routes page under its OpenAI or
 Anthropic section, plus timeout, request payload, and response payload limits:
 

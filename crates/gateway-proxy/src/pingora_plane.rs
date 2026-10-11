@@ -319,6 +319,7 @@ pub struct PingoraContext {
     body_prefix: Vec<u8>,
     body_bytes_seen: usize,
     response_body_prefix: Vec<u8>,
+    response_cost_observer: gateway_core::response_cost::ResponseCostObserver,
     foundry_usage: crate::foundry::FoundryUsage,
     response_bytes_seen: usize,
     policy: Option<KeyPolicy>,
@@ -415,6 +416,7 @@ where
             body_prefix: Vec::new(),
             body_bytes_seen: 0,
             response_body_prefix: Vec::new(),
+            response_cost_observer: Default::default(),
             foundry_usage: Default::default(),
             response_bytes_seen: 0,
             policy: None,
@@ -1037,6 +1039,11 @@ where
         };
         match key_result {
             Ok(key) => {
+                if governed_batch_lifecycle_denied(&req.method, req.uri.path()) {
+                    ctx.key = Some(key);
+                    respond_error(session, GatewayError::PolicyDenied, ctx).await?;
+                    return Ok(true);
+                }
                 if ctx.entra_identity.is_some() {
                     gateway_telemetry::authorization_debug(
                         "request_plane",
@@ -1237,8 +1244,7 @@ where
                 }
             }
         }
-        if (ctx.litellm_passthrough
-            && (ctx.access.authentication_profiles.is_none() || ctx.direct_litellm_passthrough))
+        if (ctx.litellm_passthrough && ctx.direct_litellm_passthrough)
             || managed_service_request_can_stream(ctx)
             || (ctx.budget_reserved && ctx.body_bytes_seen == 0 && end_of_stream)
         {
@@ -1317,6 +1323,20 @@ where
         // Apply the complete original selector before policy cost checks.
         resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
         let analysis = analyze_generation_request(&raw_body);
+        let wildcard_delegation = ctx.litellm_passthrough
+            && ctx.route == Some(Route::LiteLlmPassthrough)
+            && ctx.access.authentication_profiles.is_none();
+        if wildcard_delegation
+            && analysis.is_none()
+            && serde_json::from_slice::<serde_json::Value>(&raw_body)
+                .is_ok_and(|value| value.is_object())
+        {
+            // Duplicate or malformed selectors must not become model=None and
+            // escape a model-scoped cap while upstream uses their last value.
+            ctx.guardrail_error = Some(GatewayError::PolicyDenied);
+            respond_error(session, GatewayError::PolicyDenied, ctx).await?;
+            return Err(PingoraError::new(ErrorType::InternalError));
+        }
         let mut features = analysis
             .as_ref()
             .map(|analysis| analysis.features.clone())
@@ -1334,12 +1354,23 @@ where
                     features.service_name = features
                         .service_name
                         .or_else(|| matched.service_name.clone());
-                    if let Err(error) = check_complete_request_policy(
-                        &effective.policy,
-                        &matched,
-                        &raw_body,
-                        &features,
-                    ) {
+                    let admission = if wildcard_delegation {
+                        // Select body-specified model layers even on delegated
+                        // formats, then fail closed if their cap cannot be enforced.
+                        gateway_core::policies::enforce_output_token_limit(
+                            &effective.policy,
+                            matched.route,
+                            &raw_body,
+                        )
+                    } else {
+                        check_complete_request_policy(
+                            &effective.policy,
+                            &matched,
+                            &raw_body,
+                            &features,
+                        )
+                    };
+                    if let Err(error) = admission {
                         ctx.guardrail_error = Some(error.clone());
                         respond_error(session, error, ctx).await?;
                         return Err(PingoraError::new(ErrorType::InternalError));
@@ -1354,7 +1385,7 @@ where
                 }
             }
         }
-        // Profile-governed passthrough still enforces body-selected policy,
+        // Relayna-key canonical passthrough still enforces body-selected policy,
         // rate limits and budgets, while retaining its released no-rewrite mode.
         if ctx.litellm_passthrough {
             *body = Some(Bytes::from(raw_body));
@@ -1363,7 +1394,9 @@ where
                 ctx.body_prefix
                     .extend_from_slice(&body[..body.len().min(65_536)]);
             }
-            self.admit_complete_body(session, body, ctx).await?;
+            if !wildcard_delegation {
+                self.admit_complete_body(session, body, ctx).await?;
+            }
             return Ok(());
         }
         let client_requested = match extract_client_guardrails_value(
@@ -1593,6 +1626,25 @@ where
         if ctx.access.authentication_profiles.is_none()
             && bypass_gateway_governance_for_passthrough(route, ctx.litellm_passthrough)
         {
+            // Wildcard formats have no enforceable generation-limit contract.
+            // Preserve delegation only when no effective output cap is set.
+            let admission = self
+                .store
+                .effective_policy_for_context(key.key_id, key.project_id, None, Some(route), None)
+                .await
+                .and_then(|effective| {
+                    gateway_core::policies::enforce_output_token_limit(
+                        &effective.policy,
+                        route,
+                        b"",
+                    )
+                });
+            if let Err(error) = admission {
+                self.record_terminal_usage(ctx, &key, route, &error, now)
+                    .await;
+                respond_error(session, error, ctx).await?;
+                return Ok(false);
+            }
             gateway_telemetry::record_provider_selection();
             return Ok(true);
         }
@@ -1913,6 +1965,20 @@ where
             upstream,
             Some(ctx.relayna_key_header.as_str()),
         )?;
+        // Cost metadata must remain readable even when a caller requests gzip
+        // or Brotli. Selectors can still switch the final price mode after these
+        // upstream headers are prepared, so include possible passthrough rules.
+        if ctx
+            .resolved_service_cost
+            .as_ref()
+            .is_some_and(|cost| cost.cost_mode == ServiceCostMode::Passthrough)
+            || ctx
+                .service_pricing_rules
+                .iter()
+                .any(|rule| rule.cost_mode == ServiceCostMode::Passthrough)
+        {
+            upstream_request.insert_header("accept-encoding", "identity")?;
+        }
         if let Some(binding) = &ctx.access.accessa {
             for name in [
                 "x-caller-oid",
@@ -2044,6 +2110,7 @@ where
         // released before any post-call response buffering begins.
         ctx.request_body_lease.take();
         let status_code = upstream_response.status.as_u16();
+        ctx.response_cost_observer = Default::default();
         ctx.socket_upgraded = ctx.socket && status_code == 101;
         if let Some(socket) = &mut ctx.traffic.diagnostics.websocket {
             socket.state = if ctx.socket_upgraded {
@@ -2093,15 +2160,19 @@ where
         &self,
         _session: &mut Session,
         body: &mut Option<Bytes>,
-        _end_of_stream: bool,
+        end_of_stream: bool,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<Option<Duration>> {
         if ctx.socket {
             return Ok(None);
         }
         if let Some(bytes) = body.as_ref() {
+            ctx.response_cost_observer.feed(bytes);
             let elapsed = elapsed_ms(ctx);
             ctx.timing_probe.body(&mut ctx.traffic, bytes, elapsed);
+        }
+        if end_of_stream {
+            ctx.response_cost_observer.finish();
         }
         Ok(None)
     }
@@ -2831,6 +2902,11 @@ where
                 )
                 .await?;
             evaluate_policy(&effective.policy, matched.route, matched.provider, &feature)?;
+            gateway_core::policies::enforce_output_token_limit(
+                &effective.policy,
+                matched.route,
+                body,
+            )?;
             evaluate_policy_limits(
                 &effective.policy,
                 Utc::now(),
@@ -3278,6 +3354,15 @@ fn bypass_gateway_governance_for_passthrough(route: Route, litellm_passthrough: 
     litellm_passthrough && route == Route::LiteLlmPassthrough
 }
 
+// Credential mappings are not an ownership registry. Until batch objects are
+// bound to Relayna callers, only caller-owned upstream credentials may manage
+// them. Check the namespace, including wildcard fallback/trailing-slash paths.
+fn governed_batch_lifecycle_denied(method: &http::Method, path: &str) -> bool {
+    let collection = "/v1/messages/batches";
+    (path == collection && method != http::Method::POST)
+        || path.starts_with("/v1/messages/batches/")
+}
+
 fn sensitive_litellm_passthrough_authorized(
     exposure: Option<LiteLlmSensitiveRouteExposure>,
     entra_identity: Option<&EntraIdentityContext>,
@@ -3598,7 +3683,8 @@ fn check_complete_request_policy(
         i32::try_from(estimate_generation_tokens(body)).ok(),
         None,
         matched.estimated_cost_usd,
-    )
+    )?;
+    gateway_core::policies::enforce_output_token_limit(policy, matched.route, body)
 }
 
 fn batch_request_features(body: &[u8]) -> GatewayResult<Vec<gateway_core::GenerationFeatures>> {
@@ -3632,6 +3718,7 @@ fn managed_service_request_can_stream(ctx: &PingoraContext) -> bool {
         || !policy.allow_tools
         || policy.tpm_limit.is_some()
         || policy.max_input_tokens_per_request.is_some()
+        || policy.max_output_tokens_per_request.is_some()
     {
         return false;
     }
@@ -3930,7 +4017,11 @@ fn resolved_usage_cost(ctx: &PingoraContext) -> ResolvedUsageCost {
                 pricing_rule_name: service_cost.pricing_rule_name.clone(),
             },
             ServiceCostMode::Passthrough => {
-                let upstream_cost = extract_estimated_cost_usd(&ctx.response_body_prefix);
+                let upstream_cost = if ctx.response_cost_observer.has_input() {
+                    ctx.response_cost_observer.cost()
+                } else {
+                    extract_estimated_cost_usd(&ctx.response_body_prefix)
+                };
                 ResolvedUsageCost {
                     estimated_cost_usd: upstream_cost,
                     cost_source: Some(
@@ -4140,6 +4231,7 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         body_prefix: Vec::new(),
         body_bytes_seen: 0,
         response_body_prefix: Vec::new(),
+        response_cost_observer: Default::default(),
         foundry_usage: Default::default(),
         response_bytes_seen: 0,
         policy: None,
@@ -5439,6 +5531,10 @@ mod tests {
             .push(gateway_core::pii_redact_definition());
 
         assert!(managed_service_request_can_stream(&ctx));
+
+        ctx.policy.as_mut().unwrap().max_output_tokens_per_request = Some(10);
+        assert!(!managed_service_request_can_stream(&ctx));
+        ctx.policy.as_mut().unwrap().max_output_tokens_per_request = None;
 
         ctx.service_pricing_rules.push(ServicePricingRule {
             name: Some("priced".to_owned()),

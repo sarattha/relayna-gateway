@@ -149,6 +149,7 @@ pub use usage::{
     UsageEvent, UsageRecorder, UsageStatus,
 };
 
+pub mod response_cost;
 pub mod traffic;
 
 pub mod auth_profiles;

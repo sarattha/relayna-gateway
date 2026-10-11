@@ -285,6 +285,293 @@ pub fn evaluate_policy_limits(
     Ok(())
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+enum OutputMaximum {
+    #[default]
+    Missing,
+    Tokens(u64),
+}
+
+impl<'de> Deserialize<'de> for OutputMaximum {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        u64::deserialize(deserializer).map(Self::Tokens)
+    }
+}
+
+#[derive(Deserialize)]
+struct OutputMaximumProbe {
+    #[serde(default)]
+    max_tokens: OutputMaximum,
+    #[serde(default)]
+    max_completion_tokens: OutputMaximum,
+    #[serde(default)]
+    max_output_tokens: OutputMaximum,
+    #[serde(default)]
+    n: OutputMaximum,
+}
+
+/// Enforce a provider-recognized generation bound before any paid work. A
+/// response-time usage check cannot undo generation or delivered stream chunks.
+pub fn enforce_output_token_limit(
+    policy: &KeyPolicy,
+    route: Route,
+    body: &[u8],
+) -> GatewayResult<()> {
+    reject_provider_parameter_overrides(policy, route, body)?;
+    let Some(limit) = policy.max_output_tokens_per_request else {
+        return Ok(());
+    };
+    if matches!(
+        route,
+        Route::LiteLlmEmbeddings
+            | Route::LiteLlmRerank
+            | Route::AnthropicMessagesCountTokens
+            | Route::AnthropicModels
+    ) {
+        return Ok(());
+    }
+    let limit = u64::try_from(limit).map_err(|_| GatewayError::PolicyDenied)?;
+    let maximum = if route == Route::AnthropicMessageBatches {
+        #[derive(Deserialize)]
+        struct Batch {
+            requests: Vec<Entry>,
+        }
+        #[derive(Deserialize)]
+        struct Entry {
+            params: Box<serde_json::value::RawValue>,
+        }
+        let batch: Batch = serde_json::from_slice(body).map_err(|_| GatewayError::PolicyDenied)?;
+        if batch.requests.is_empty() {
+            return Err(GatewayError::PolicyDenied);
+        }
+        batch.requests.iter().try_fold(0u64, |total, entry| {
+            total
+                .checked_add(provider_output_maximum(
+                    Route::AnthropicMessages,
+                    entry.params.get().as_bytes(),
+                )?)
+                .ok_or(GatewayError::PolicyDenied)
+        })?
+    } else {
+        provider_output_maximum(route, body)?
+    };
+    if maximum > limit {
+        return Err(GatewayError::PolicyDenied);
+    }
+    Ok(())
+}
+
+fn reject_provider_parameter_overrides(
+    policy: &KeyPolicy,
+    route: Route,
+    body: &[u8],
+) -> GatewayResult<()> {
+    if route == Route::AnthropicMessageBatches {
+        #[derive(Deserialize)]
+        struct Batch {
+            requests: Vec<Entry>,
+        }
+        #[derive(Deserialize)]
+        struct Entry {
+            params: Box<serde_json::value::RawValue>,
+        }
+        let batch: Batch = serde_json::from_slice(body).map_err(|_| GatewayError::PolicyDenied)?;
+        for entry in batch.requests {
+            reject_provider_parameter_overrides(
+                policy,
+                Route::AnthropicMessages,
+                entry.params.get().as_bytes(),
+            )?;
+        }
+        return Ok(());
+    }
+    if !matches!(
+        route,
+        Route::ChatCompletions | Route::Responses | Route::AnthropicMessages
+    ) {
+        return Ok(());
+    }
+    #[derive(Deserialize)]
+    struct Probe {
+        extra_body: Option<serde_json::Map<String, Value>>,
+    }
+    let probe: Probe = serde_json::from_slice(body).map_err(|_| GatewayError::PolicyDenied)?;
+    let Some(extra) = probe.extra_body else {
+        return Ok(());
+    };
+    // LiteLLM may merge provider-specific extra_body after validated top-level
+    // parameters. Unknown extensions cannot prove an output bound; feature
+    // selectors must not override a denial after gateway validation either.
+    if (policy.max_output_tokens_per_request.is_some() && !extra.is_empty())
+        || (!policy.allow_streaming && extra.contains_key("stream"))
+        || (!policy.allow_tools
+            && ["tools", "functions", "tool_choice", "function_call"]
+                .iter()
+                .any(|field| extra.contains_key(*field)))
+        || (!policy.allowed_models.is_empty() && extra.contains_key("model"))
+    {
+        return Err(GatewayError::PolicyDenied);
+    }
+    Ok(())
+}
+
+fn provider_output_maximum(route: Route, body: &[u8]) -> GatewayResult<u64> {
+    // LiteLLM also promotes unknown top-level provider parameters into
+    // extra_body. Under a cap, permit only the supported protocol fields so
+    // aliases such as max_new_tokens cannot override a recognized maximum.
+    let allowed: &[&str] = match route {
+        Route::ChatCompletions => &[
+            "model",
+            "messages",
+            "stream",
+            "stream_options",
+            "max_tokens",
+            "max_completion_tokens",
+            "max_output_tokens",
+            "n",
+            "temperature",
+            "top_p",
+            "stop",
+            "frequency_penalty",
+            "presence_penalty",
+            "logit_bias",
+            "logprobs",
+            "top_logprobs",
+            "seed",
+            "user",
+            "tools",
+            "tool_choice",
+            "functions",
+            "function_call",
+            "parallel_tool_calls",
+            "response_format",
+            "metadata",
+            "store",
+            "reasoning_effort",
+            "service_tier",
+            "modalities",
+            "audio",
+            "prediction",
+            "web_search_options",
+            "verbosity",
+            "prompt_cache_key",
+            "safety_identifier",
+            "guardrails",
+            "extra_body",
+        ],
+        Route::Responses => &[
+            "model",
+            "input",
+            "instructions",
+            "stream",
+            "stream_options",
+            "max_output_tokens",
+            "max_tokens",
+            "max_completion_tokens",
+            "n",
+            "temperature",
+            "top_p",
+            "tools",
+            "tool_choice",
+            "parallel_tool_calls",
+            "metadata",
+            "store",
+            "reasoning",
+            "service_tier",
+            "truncation",
+            "include",
+            "text",
+            "previous_response_id",
+            "conversation",
+            "background",
+            "prompt",
+            "user",
+            "prompt_cache_key",
+            "safety_identifier",
+            "guardrails",
+            "extra_body",
+        ],
+        Route::AnthropicMessages => &[
+            "model",
+            "messages",
+            "system",
+            "stream",
+            "max_tokens",
+            "max_completion_tokens",
+            "max_output_tokens",
+            "n",
+            "temperature",
+            "top_p",
+            "top_k",
+            "stop_sequences",
+            "metadata",
+            "tools",
+            "tool_choice",
+            "thinking",
+            "output_config",
+            "service_tier",
+            "cache_control",
+            "container",
+            "context_management",
+            "guardrails",
+            "extra_body",
+        ],
+        _ => return Err(GatewayError::PolicyDenied),
+    };
+    let value: Value = serde_json::from_slice(body).map_err(|_| GatewayError::PolicyDenied)?;
+    if value.as_object().is_none_or(|object| {
+        object
+            .keys()
+            .any(|field| !allowed.contains(&field.as_str()))
+    }) {
+        return Err(GatewayError::PolicyDenied);
+    }
+    // Deriving this probe rejects duplicate limit/multiplicity fields; parsing
+    // into Value first would silently collapse them before validation.
+    let probe: OutputMaximumProbe =
+        serde_json::from_slice(body).map_err(|_| GatewayError::PolicyDenied)?;
+    let required = match route {
+        Route::ChatCompletions => match (&probe.max_completion_tokens, &probe.max_tokens) {
+            (OutputMaximum::Tokens(value), _) | (_, OutputMaximum::Tokens(value)) => *value,
+            _ => return Err(GatewayError::PolicyDenied),
+        },
+        Route::Responses => match probe.max_output_tokens {
+            OutputMaximum::Tokens(value) => value,
+            _ => return Err(GatewayError::PolicyDenied),
+        },
+        Route::AnthropicMessages => match probe.max_tokens {
+            OutputMaximum::Tokens(value) => value,
+            _ => return Err(GatewayError::PolicyDenied),
+        },
+        // Generic services/wildcards have no proven output-limit wire contract.
+        _ => return Err(GatewayError::PolicyDenied),
+    };
+    if required == 0 {
+        return Err(GatewayError::PolicyDenied);
+    }
+    for field in [
+        probe.max_tokens,
+        probe.max_completion_tokens,
+        probe.max_output_tokens,
+    ] {
+        if let OutputMaximum::Tokens(value) = field {
+            if value != required {
+                return Err(GatewayError::PolicyDenied);
+            }
+        }
+    }
+    let count = match probe.n {
+        OutputMaximum::Missing => 1,
+        OutputMaximum::Tokens(value) => value,
+    };
+    if count == 0 || (route != Route::ChatCompletions && count != 1) {
+        return Err(GatewayError::PolicyDenied);
+    }
+    required
+        .checked_mul(count)
+        .ok_or(GatewayError::PolicyDenied)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyLayerKind {
@@ -603,6 +890,123 @@ fn explicit_tool_selection(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_caps_reject_ambiguous_or_unbounded_requests_before_generation() {
+        let policy = KeyPolicy {
+            max_output_tokens_per_request: Some(4),
+            ..KeyPolicy::default()
+        };
+        for body in [
+            r#"{}"#,
+            r#"{"max_tokens":null}"#,
+            r#"{"max_tokens":"1"}"#,
+            r#"{"max_tokens":-1}"#,
+            r#"{"max_tokens":0}"#,
+            r#"{"max_tokens":5}"#,
+            r#"{"max_tokens":1,"max_completion_tokens":100}"#,
+            r#"{"max_tokens":1,"max_tokens":2}"#,
+            r#"{"max_tokens":3,"n":2}"#,
+            r#"{"max_tokens":1,"n":0}"#,
+            r#"{"max_tokens":1,"n":null}"#,
+            r#"{"max_tokens":18446744073709551615,"n":2}"#,
+            r#"{"max_tokens":1,"extra_body":{"max_tokens":100}}"#,
+            r#"{"max_tokens":1,"max_new_tokens":100}"#,
+            r#"{"max_tokens":1,"extra_body":{"top_k":10}}"#,
+            r#"{"max_tokens":1,"extra_body":{},"extra_body":{}}"#,
+        ] {
+            assert_eq!(
+                enforce_output_token_limit(&policy, Route::ChatCompletions, body.as_bytes()),
+                Err(GatewayError::PolicyDenied),
+                "{body}"
+            );
+        }
+        for (route, body) in [
+            (
+                Route::ChatCompletions,
+                r#"{"max_tokens":2,"n":2,"stream":true}"#,
+            ),
+            (Route::ChatCompletions, r#"{"max_completion_tokens":4}"#),
+            (
+                Route::ChatCompletions,
+                r#"{"max_tokens":1,"extra_body":{}}"#,
+            ),
+            (Route::Responses, r#"{"max_output_tokens":4,"stream":true}"#),
+            (Route::AnthropicMessages, r#"{"max_tokens":4}"#),
+        ] {
+            assert!(enforce_output_token_limit(&policy, route, body.as_bytes()).is_ok());
+        }
+        assert!(
+            enforce_output_token_limit(&policy, Route::Responses, br#"{"max_tokens":4}"#).is_err()
+        );
+        assert!(enforce_output_token_limit(
+            &policy,
+            Route::ServiceWildcard,
+            br#"{"max_tokens":1}"#
+        )
+        .is_err());
+        assert!(enforce_output_token_limit(&policy, Route::LiteLlmEmbeddings, br#"{}"#).is_ok());
+        let zero = KeyPolicy {
+            max_output_tokens_per_request: Some(0),
+            ..policy
+        };
+        assert!(
+            enforce_output_token_limit(&zero, Route::ChatCompletions, br#"{"max_tokens":1}"#)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn uncapped_provider_extensions_cannot_override_denied_features() {
+        let policy = KeyPolicy::default();
+        for body in [
+            br#"{"extra_body":{"stream":true}}"#.as_slice(),
+            br#"{"extra_body":{"tools":[{}]}}"#.as_slice(),
+            br#"{"extra_body":{"functions":[{}]}}"#.as_slice(),
+        ] {
+            assert!(enforce_output_token_limit(&policy, Route::ChatCompletions, body).is_err());
+        }
+        assert!(enforce_output_token_limit(
+            &policy,
+            Route::ChatCompletions,
+            br#"{"extra_body":{"top_k":10}}"#
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn batch_output_cap_bounds_the_sum_and_preserves_nested_duplicate_detection() {
+        let policy = KeyPolicy {
+            max_output_tokens_per_request: Some(4),
+            ..KeyPolicy::default()
+        };
+        for (body, allowed) in [
+            (
+                r#"{"requests":[{"params":{"max_tokens":2}},{"params":{"max_tokens":2}}]}"#,
+                true,
+            ),
+            (
+                r#"{"requests":[{"params":{"max_tokens":3}},{"params":{"max_tokens":2}}]}"#,
+                false,
+            ),
+            (
+                r#"{"requests":[{"params":{"max_tokens":1,"max_tokens":2}}]}"#,
+                false,
+            ),
+            (r#"{"requests":[{"params":{}}]}"#, false),
+        ] {
+            assert_eq!(
+                enforce_output_token_limit(
+                    &policy,
+                    Route::AnthropicMessageBatches,
+                    body.as_bytes()
+                )
+                .is_ok(),
+                allowed,
+                "{body}"
+            );
+        }
+    }
 
     #[test]
     fn allows_default_phase_2_generation_policy() {
