@@ -28,18 +28,28 @@ regressions that prove denial before forwarding and preserve legitimate traffic.
 - [x] (2026-10-11) Commit, push and open review PR #132, then attach it to this
   chat: https://github.com/sarattha/relayna-gateway/pull/132.
 - [x] (2026-10-11) Address the existing GitHub review: reject nested model
-  overrides regardless of the top-level model policy; make batch admission
-  linear in body size and reuse policies for repeated models; regress encoded
+  overrides regardless of the top-level model policy; avoid full-batch parsing
+  per entry and reuse policies for repeated models; regress encoded
   batch paths against the existing ambiguous-path denial.
 - [x] (2026-10-11) Prepare version 0.1.44, changelog, current examples and upgrade
   documentation; rerun release metadata, build, docs and mandatory verification.
 - [x] (2026-10-11) Request exactly one additional Codex review on head `7c8c276`:
   https://github.com/sarattha/relayna-gateway/pull/132#issuecomment-6108392575.
-- [ ] (2026-10-11) Address its one P2 compatibility finding, rerun verification
+- [x] (2026-10-11) Address its one P2 compatibility finding, rerun verification
   and prepare PR #132 for the authorized merge. No additional review request.
 
 ## Surprises & Discoveries
 
+- After pushing the Responses follow-up, GitHub reported repository Actions
+  `enabled: false`, with no check suites or workflow runs for `aa109a3`.
+  CI on the reviewed `7c8c276` commit passed all Rust, security, metadata,
+  Admin UI and docs checks. Preserve the repository setting; finish the full
+  local mandatory stack and use the user-authorized maintainer merge path.
+- The final Responses compatibility rerun hit the existing 15-second entrypoint
+  startup deadline under host load 37. A direct all-feature rerun of the same
+  startup test passed in 2.63 seconds with healthy PostgreSQL/Redis. Treat the
+  interrupted sequence as incomplete; rerun the entire stack with one thread
+  per cargo test binary and two Nextest workers to reduce local contention.
 - The initial GitHub review found an uncapped-model override and quadratic batch
   parsing. Both are addressed. Its encoded-path bypass hypothesis is prevented
   by existing `LiteLlmPassthroughSettings::denies_path`; real Pingora regressions
@@ -124,16 +134,21 @@ managed/direct/caller-owned traffic, observes cost beyond a 100 KB payload, and
 proves first-chunk delivery before upstream completion. The original scan remains
 sealed; a separate fix report records remediation evidence.
 
-The 0.1.44 follow-up passed the complete fail-fast stack on runtime revision
-`03e6a629f1b32c19bd8073f1b778a57781459e75`: formatting, Clippy, all workspace
-tests (171 core and 97 proxy unit tests plus live integration), audit, deny,
-machete, all 426 Nextest tests (zero skipped), Trivy (zero HIGH/CRITICAL findings),
+The final 0.1.44 follow-up passed the complete fail-fast stack on runtime revision
+`aa109a30d481d8f560461e40e2e786ee0f2bb5dc`: formatting, Clippy, all workspace
+tests (172 core and 97 proxy unit tests plus live integration), audit, deny,
+machete, all 427 Nextest tests (zero skipped), Trivy (zero HIGH/CRITICAL findings),
 Gitleaks (no leaks), and Semgrep (two rules, 81 targets, zero findings).
 The all-feature workspace build, release metadata validator, Admin UI tests and
 strict MkDocs build also passed. Source and tests remain identical after this
-verification-note update. The one additional GitHub review subsequently found
-two standard Responses fields omitted from capped admission. They are added;
-final verification of that follow-up is pending before the authorized merge.
+verification-note update. The one additional GitHub review found two standard
+Responses fields omitted from capped admission. Both are added and covered by
+positive, over-cap and missing-maximum tests; all review threads are resolved.
+The final sequence used `RUST_TEST_THREADS=1` and `NEXTEST_TEST_THREADS=2` and
+exited zero. Repository Actions were disabled after the reviewed commit's CI
+passed, so no fresh CI ran for the follow-up. PR #132 is prepared for the
+user-authorized maintainer merge; its external merge result is recorded in the
+derived remediation report.
 
 The initial four-finding fail-fast script passed with disposable PostgreSQL and
 Redis. `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2` and `NEXTEST_TEST_THREADS=2`
