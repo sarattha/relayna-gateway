@@ -63,6 +63,7 @@ def main():
     # Register the dedicated project's service boundary, without changing global policy.
     project_policy = {"allowed_routes": ["/services/*"], "allowed_providers": ["internal-service"],
                       "allowed_services": [name], "allow_streaming": True}
+    key_policy = {**project_policy, "rpm_limit": 300, "monthly_budget_usd": 10}
     layer = next((item for item in request("GET", "policy-layers")
                   if item["kind"] == "project" and item["scope_id"] == project["id"]), None)
     if layer is None or any(layer["policy"].get(field) != value for field, value in project_policy.items()):
@@ -95,15 +96,16 @@ def main():
             raise SystemExit("Existing Cortex key is inactive; restore or rotate explicitly")
         if key["expires_at"] and datetime.fromisoformat(key["expires_at"].replace("Z", "+00:00")) <= datetime.now(timezone.utc):
             raise SystemExit("Existing Cortex key has expired; rotate explicitly")
+        if (key.get("service_names") != [name] or key.get("policy", {}).get("deny") is not False
+                or any(key.get("policy", {}).get(field) != value for field, value in key_policy.items())):
+            raise SystemExit("Existing Cortex key service or policy has drifted; restore explicitly through admin APIs")
         if not args.key_output.read_text().strip().startswith(key["key_prefix"]):
             raise SystemExit("Private key file does not match the saved Cortex key")
     else:
         created = request("POST", "keys", {
             "name": "Cortex BFF Kind E2E", "owner_type": "project", "project_id": project["id"],
             "service_names": [name],
-            "policy": {"allowed_routes": ["/services/*"], "allowed_providers": ["internal-service"],
-                       "allowed_services": [name], "allow_streaming": True, "rpm_limit": 300,
-                       "monthly_budget_usd": 10},
+            "policy": key_policy,
         })
         save_private(args.key_output, created["raw_key"])
         key = created["key"]

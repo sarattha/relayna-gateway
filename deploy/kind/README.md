@@ -44,8 +44,15 @@ authentication profile. It saves
 the raw virtual key once to excluded `target/kind-cortex-e2e/relayna-channel.key`
 with mode0600, prints only metadata and reuses the key on subsequent calls.
 Unchanged reruns preserve the authentication profile revision and live admissions.
+Reused keys must retain the exact Cortex service assignment and configured channel
+policy, including streaming permission and limits. A drifted key fails bootstrap;
+restore its intended configuration explicitly through admin APIs. Bootstrap does
+not silently widen a reused key's permissions or change its limits.
 If that file is lost, rotate explicitly; raw keys cannot be recovered from the
 database. Provision the BFF's Kubernetes Secret from the private file.
+
+For the bootstrap regression checks, run
+`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/kind -p 'test_bootstrap_cortex.py'`.
 
 Keystone's default-deny namespace policy must allow the `cortex-e2e`
 `app=relayna-gateway` pod to reach its development OIDC service on TCP5556.

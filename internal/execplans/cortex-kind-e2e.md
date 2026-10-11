@@ -19,6 +19,8 @@ these requirements; this change supplies reproducible deployment and bootstrap.
 - [x] 2026-10-11: Real analyst RS256 JWT and BFF key upgraded WebSocket with HTTP 101; malformed JWT, missing key and wrong key each returned HTTP 401.
 - [x] 2026-10-11: Repeated bootstrap preserved the key and authentication profile revision 1.
 - [x] 2026-10-11: Recorded runtime commit/image identity; final verified delivery commit is recorded in the draft PR.
+- [x] 2026-10-11: Addressed the existing review's reused-key policy drift finding; four isolated bootstrap regression checks passed with Python 3.14.8, plus syntax, local links and diff whitespace checks.
+- [ ] 2026-10-11: Await required independent approval and coordinating task's integration clearance before landing; hosted Actions are disabled at repository level.
 
 ## Surprises & Discoveries
 
@@ -40,7 +42,16 @@ now sets the dedicated project's service-only policy without modifying global
 policy. An unchanged authentication-profile PATCH advances its revision and
 invalidates live admissions; bootstrap omits that PATCH section when unchanged.
 
+The existing review identified that a reused key's service links or explicit
+policy could drift while bootstrap still reported success. Reuse must validate
+the same service assignment and policy used at creation before binding a profile.
+
 ## Decision Log
+
+2026-10-11: Fail clearly when a reused channel key has drifted instead of patching
+operator-owned restrictions. Share creation/reuse policy fields and cover this
+unreleased bootstrap behavior with isolated Python tests; no runtime, deployment,
+key, profile or released v0.1.43 contract changes are required.
 
 2026-10-10: Compatibility boundary is released v0.1.43; preserve every runtime
 route, frame format, authentication rule and database schema. Add only local
@@ -81,6 +92,14 @@ Supplemental `cargo test -p gateway-api --test accessa_e2e -- --nocapture` passe
 Kind PostgreSQL and REDIS_URL using isolated DB 15. It covers HTTP/WS trusted
 identity isolation, per-turn admission, heartbeat, limits, revocation, budget,
 replay and authentication profile changes.
+
+Review follow-up: `python3 -m unittest discover -s deploy/kind -p
+'test_bootstrap_cortex.py' -v` passed four tests in 0.057s with Python 3.14.8. The
+tests cover matching-key reuse without profile revision changes, denied policy
+and service drift without a service PATCH or private-file rewrite, missing policy
+fields, and creation using the same policy with mode0600 output. No live cluster
+bootstrap or E2E run was repeated. Runtime, Rust tests, build configuration and
+deployment manifests are unchanged, so existing Rust verification is reused.
 
 ## Outcomes & Retrospective
 
