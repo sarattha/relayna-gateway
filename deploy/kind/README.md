@@ -68,7 +68,20 @@ empty-body POST to `http://relayna-gateway:8080/internal/accessa/admissions/{tur
 with that context before dispatching each turn. See the released
 [Accessa contract](../../docs/accessa-channels.md).
 
-For this prototype only, BFF also places the same server-owned delegated user
+From Gateway 0.1.45, new bootstrap registrations permit GET, POST, PUT, PATCH
+and DELETE. A reused registration missing any required method fails bootstrap
+rather than silently widening its policy. After reviewing its current methods,
+explicitly PATCH `/admin-ui/admin/services/{name}` with the complete intended
+`allowed_methods` array, preserving existing methods; adding PUT does not require
+changing credentials or the access object.
+
+Prefer Gateway's opt-in
+[verified-token forwarding](../../docs/accessa-channels.md#verified-user-token-forwarding)
+after all replicas are upgraded. Configure the agreed Broker header on the
+registration and remove the BFF's redundant private header after coordinating
+the upstream. Bootstrap does not enable token forwarding automatically.
+
+For the older prototype only, BFF also places the same server-owned delegated user
 token in private `x-cortex-delegated-token`. Existing generic header forwarding
 preserves it; Gateway does not independently authenticate this header. The mock
 broker must verify the JWT signature, issuer, audience, expiry and tenant and

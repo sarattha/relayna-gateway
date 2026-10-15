@@ -18,8 +18,10 @@ registrations. Verify create/edit/save/readback in Admin UI with Computer Use.
 - [x] (2026-10-15) Implemented configurable opt-in, reserved/dynamic-header validation, verified-JWT-only forwarding, sensitive HeaderValue and response-header stripping.
 - [x] (2026-10-15) Added React controls, Accessa PUT/PATCH/DELETE defaults, fail-closed bootstrap method validation, six provisioning tests and HTTP/WS/auth/leakage regression coverage.
 - [x] (2026-10-15) Full verification helper passed with live disposable PostgreSQL/Redis: fmt, workspace Clippy/tests, audit, deny, machete, Nextest 430/430 with zero skips, Trivy, Gitleaks and Semgrep. Latest strengthened Accessa E2E and Clippy passed. UI build/npm tests/typecheck, 54 React tests, six bootstrap tests, strict docs and release metadata passed. Computer Use desktop/390px create/edit/save/readback, default-off/custom header/disable/reserved-name rejection, Traffic and Virtual keys checks passed.
-- [ ] Open PR, link it to this thread, monitor automatic Codex review and address findings without requesting another review.
-- [ ] After review fixes, bump patch version, update CHANGELOG/release metadata/docs, rerun required checks and merge after required review/checks pass.
+- [x] (2026-10-15) PR #135 opened and linked; automatic Codex review completed on a429b2e with three findings. Added public configuration/rollout docs, reverse key-header collision validation (enabled/disabled, case/whitespace and environment-default-reset regressions), and immediate edit-conversion visibility with a UI regression. No additional review requested.
+- [x] (2026-10-15) Bumped workspace/lockfile, image examples, Admin UI and release metadata to 0.1.45; updated CHANGELOG and operator docs. UI build/npm tests, 54 React tests/typecheck, six provisioning tests, strict docs and metadata validation passed. Computer Use desktop/mobile conversion, save/readback and toggle visibility passed on 0.1.45.
+- [x] (2026-10-15) Explicit PUT-only admin PATCH applied to kind-keystone/cortex-e2e cortex-web, preserving all prior methods, access, upstream, credential configuration, route and enabled state; binary/token opt-in unchanged.
+- [x] (2026-10-15) After review fixes, final mandatory helper passed in sequence: fmt, workspace Clippy/tests, audit, deny, machete, Nextest 431/431 (zero skips), Trivy, whole-history Gitleaks and Semgrep (zero findings). Final workspace build passed. Release metadata/docs/UI checks also passed. PR is ready for the authorized merge; its GitHub state records the merge result.
 
 ## Surprises & Discoveries
 
@@ -52,6 +54,10 @@ with the authorized patch-version bump after review.
 - (2026-10-15, Codex) Reject reserved/trusted/framing/credential header names and
   dynamic Relayna-key-header collisions. Require verified JWT source, never
   infer verification from an arbitrary incoming header or Apigee assertion.
+- (2026-10-15, Codex) Reverse auth-setting validation uses the same trim/default
+  normalization as persisted settings; reject before persistence for enabled
+  and disabled forwarding destinations. Keep existing invalid_configuration
+  error semantics.
 - (2026-10-15, Codex) Required audit/deny findings necessitate patched Rustls and
   Quinn lock versions plus a documented, dated maintenance-only unsafe-libyaml
   exception. Do not suppress the nine vulnerability advisories.
@@ -62,9 +68,15 @@ with the authorized patch-version bump after review.
 ## Outcomes & Retrospective
 
 Implementation, Computer Use and the full verification stack are complete.
-Automatic PR review and release metadata follow-up remain pending. Preserve the four pre-existing untracked user documents.
+Regression tests proved the review fixes, including normalized header collisions
+and edit conversion. Four pre-existing user documents remain untouched.
+PR https://github.com/sarattha/relayna-gateway/pull/135 completed automatic
+Codex review; all three findings are implemented and release metadata is 0.1.45.
+Final verification passed; the PR is ready for the authorized merge. GitHub PR
+state is the authoritative merge record. Preserve the four pre-existing untracked user documents.
 Desktop and mobile screenshots are in the local T3 browser artifacts directory;
-no live Accessa deployment has been changed.
+The development cortex-web method policy now additionally allows PUT; no binary
+rollout or token-forwarding activation was performed.
 
 ## Context and Orientation
 
@@ -116,7 +128,8 @@ widths. All mandatory checks pass and review findings are resolved before merge.
 ## Idempotence and Recovery
 
 Keep user files untouched and commits limited to this plan and task changes.
-Use temporary disposable services and avoid shared database mutations. Observe
+Use temporary disposable services for tests. The only shared development change
+is the explicitly scoped cortex-web PUT method addition through admin PATCH. Observe
 remote issue/PR state before retrying writes. Do not bypass failed required
 checks/reviews or change intentionally disabled Actions. Remove the new
 forwarding configuration with the new binary before an older-binary rollback.

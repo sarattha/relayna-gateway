@@ -2,9 +2,16 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.44` feature set.
+This page summarizes the `v0.1.45` feature set.
 
-New in 0.1.44: Relayna-authenticated canonical direct requests enforce complete
+New in 0.1.45: Accessa registrations can opt into forwarding the verified user
+JWT under a configurable header, with spoofed copies and reflected response
+headers stripped. New channel presets and bootstrap registrations include PUT,
+PATCH and DELETE; existing method policies require an explicit update. See
+[Accessa channels](accessa-channels.md#verified-user-token-forwarding) for the
+verification boundary and rollout requirements.
+
+Introduced in 0.1.44: Relayna-authenticated canonical direct requests enforce complete
 model, feature, token-rate and budget admission. Output caps require explicit
 provider maxima before generation, including streams and batch totals. Shared
 Anthropic batch lifecycle access is denied; caller-owned credentials retain their

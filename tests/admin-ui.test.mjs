@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const workspaceVersion = readFileSync(join(root, "Cargo.toml"), "utf8").match(/^version = "([^"]+)"/m)[1];
+const releaseVersionPattern = `v${workspaceVersion.replaceAll(".", "\\.")}`;
 const uiDir = join(root, "crates/gateway-api/src/static/admin-ui");
 const sourceDir = join(root, "crates/gateway-api/admin-ui/src");
 const html = readFileSync(join(uiDir, "index.html"), "utf8");
@@ -56,8 +58,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.43/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.43/);
+  assert.match(html, new RegExp(`aria-label="Current Relayna Gateway version"[\\s\\S]*${releaseVersionPattern}`));
+  assert.match(js, new RegExp(`Release target[\\s\\S]*${releaseVersionPattern}`));
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
@@ -1090,7 +1092,7 @@ test("endpoint identity controls select explicit modes without retaining hidden 
 });
 
 test("service presets produce supported access contracts and preserve operator-owned values", () => {
-  const names = ["serviceTypePresets", "suggestedServiceRoute", "applyServiceTypePreset", "updateServiceRouteSuggestion", "updateServiceTransportFields", "bindServiceTypePresets", "endpointAccessFromForm", "csv", "nullableString"];
+  const names = ["serviceTypePresets", "suggestedServiceRoute", "applyServiceTypePreset", "updateServiceRouteSuggestion", "updateServiceTransportFields", "bindServiceTypePresets", "bindServiceTransportFields", "endpointAccessFromForm", "csv", "nullableString"];
   const api = new Function(`${names.map(sourceFunction).join("\n")}\nreturn {serviceTypePresets, applyServiceTypePreset, updateServiceRouteSuggestion, bindServiceTypePresets, endpointAccessFromForm};`)();
   const fields = {};
   const identity = { open: false };
@@ -1192,4 +1194,28 @@ test("Foundry verification uses the protected admin API namespace", () => {
 test("provider creation has one shared entry point for every provider", () => {
   assert.match(sourceJs, /mountProviderCreate\(\{ restoreFocus: createButton, onSave: createProvider \}\)/);
   assert.doesNotMatch(sourceJs, /Add Azure Foundry|id="provider-form"/);
+});
+
+
+test("editing an ordinary service reveals and enables forwarding controls immediately", () => {
+  const bind = new Function(`${sourceFunction("updateServiceTransportFields")}\n${sourceFunction("bindServiceTransportFields")}\nreturn bindServiceTransportFields;`)();
+  const fields = new Map();
+  const forwarding = {hidden:true,disabled:true};
+  for (const name of ["accessa_app","accessa_channel","socket_idle_ms","socket_connections","socket_key_connections","socket_frame_bytes"]) {
+    const label = {hidden:true}; fields.set(name,{closest:()=>label});
+  }
+  let change;
+  const checkbox = {checked:false,addEventListener:(name,fn)=>{assert.equal(name,"change");change=fn;}};
+  fields.set("accessa_enabled",checkbox);
+  const form = {elements:{namedItem:name=>fields.get(name)},querySelector:()=>forwarding};
+  bind(form);
+  assert.equal(forwarding.hidden,true);
+  checkbox.checked=true; change();
+  assert.equal(forwarding.hidden,false);
+  assert.equal(forwarding.disabled,false);
+  for(const name of ["accessa_app","accessa_channel"]) assert.equal(fields.get(name).closest().hidden,false);
+  checkbox.checked=false; change();
+  assert.equal(forwarding.hidden,true);
+  assert.equal(forwarding.disabled,true);
+  assert.match(sourceFunction("services"),/bindServiceTransportFields\(document.querySelector\("#service-edit-form"\)\)/);
 });

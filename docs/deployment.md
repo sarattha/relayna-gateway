@@ -7,6 +7,33 @@ virtual keys, Azure Foundry connections and registered agents, and replica
 synchronization of saved gateway Entra settings.
 The UI remains embedded in the Rust binary; no separate frontend service is needed.
 
+## Upgrade to 0.1.45
+
+There is no PostgreSQL migration or Redis format change relative to 0.1.44.
+Existing registrations keep token forwarding off when the new configuration is
+absent. Upgrade **every replica** before saving `access.user_token_forwarding`:
+older binaries use strict configuration readers and reject the new field.
+
+After upgrading, enable forwarding only for the intended Accessa registration
+and trusted adapter/Broker. Select the header agreed with that upstream, keep the
+existing access policy and binding when patching, and verify HTTP and WebSocket
+flows. Gateway accepts only its verified JWT identity for this feature; Apigee
+assertions cannot supply the forwarded token. See
+[configuration and constraints](accessa-channels.md#verified-user-token-forwarding).
+
+New Accessa channel presets and development bootstrap registrations permit
+GET, POST, PUT, PATCH and DELETE. Existing registrations are never widened
+silently: explicitly update their method policy to allow PUT where feedback and
+settings require it. Identity-discovery registrations remain GET-only.
+
+To roll back, first drain/disable affected Accessa registrations and coordinate
+with the adapter. Using the new binary, remove `user_token_forwarding` from each
+saved access object while retaining all other fields, then roll back replicas.
+Setting `enabled: false` alone retains the field and does not make it readable
+by older binaries. Older binaries also lack custom-header stripping; do not
+re-enable a route that relies on that protection until its upstream contract is
+safe. This release also updates Rustls and Quinn Proto security patches.
+
 ## Upgrade to 0.1.44
 
 There is no new PostgreSQL migration or Redis format relative to 0.1.43. Upgrade
@@ -138,7 +165,7 @@ channel bindings are enabled; see [Accessa channels](accessa-channels.md).
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.44 .
+docker build -t relayna-gateway:0.1.45 .
 ```
 
 Run it with required dependencies:
@@ -158,7 +185,7 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.44
+  relayna-gateway:0.1.45
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -218,13 +245,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.44
+   ghcr.io/sarattha/relayna-gateway:0.1.45
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.44"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.45"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -232,7 +259,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.44
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.45
    ```
 
 3. Store secrets through your cluster secret manager:

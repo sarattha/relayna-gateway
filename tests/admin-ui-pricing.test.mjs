@@ -50,7 +50,7 @@ const ui = new Function("document", "FormData", "Event", "state", "api", "confir
   const projectOptions = () => '';
   const keyOptions = () => '';
   const serviceOptions = () => '';
-  const bindServiceTypePresets = noop, organizeView = noop, prepareProfileKeys = noop;
+  const bindServiceTypePresets = noop, bindServiceTransportFields = noop, organizeView = noop, prepareProfileKeys = noop;
   const serviceAction = noop, openFoundryEditor = noop, previewServiceOpenApi = noop;
   const setNotice = noop, applyUsageFilters = noop, loadTaskUsage = noop;
   const confirmAction = async () => { confirmation.calls++; return confirmation.accept; };

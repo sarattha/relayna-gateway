@@ -4765,6 +4765,31 @@ async fn patch_gateway_auth_settings(
         Ok(actor) => actor,
         Err(response) => return response,
     };
+    if let Some(key_header) = &patch.relayna_key_header {
+        // Match stored-setting normalization, including an empty value resetting
+        // the key header to its environment fallback.
+        let key_header = key_header.trim();
+        let key_header = if key_header.is_empty() {
+            state.auth_env.relayna_key_header.as_str()
+        } else {
+            key_header
+        };
+        let services = match state.store.list_services().await {
+            Ok(services) => services,
+            Err(error) => return error_response(&headers, error),
+        };
+        // Disabled forwarding retains its header to strip caller copies; it
+        // therefore also must not overlap the credential used to select a key.
+        if services.iter().any(|service| {
+            service
+                .access
+                .user_token_forwarding
+                .as_ref()
+                .is_some_and(|forwarding| forwarding.header.eq_ignore_ascii_case(key_header))
+        }) {
+            return error_response(&headers, GatewayError::InvalidConfiguration);
+        }
+    }
     let before = match effective_gateway_auth_settings(&state).await {
         Ok(settings) => Some(settings.response()),
         Err(error) => return error_response(&headers, error),
@@ -8863,7 +8888,7 @@ mod tests {
             let response = ServiceResponse {
                 historical_usage_repricing: None,
                 foundry: None,
-                access: Default::default(),
+                access: request.access.clone(),
                 name: request.name.clone(),
                 project_id: request.project_id,
                 studio_service_id: request.studio_service_id.clone(),
@@ -14789,6 +14814,87 @@ mod tests {
         assert!(snapshot.entra_enabled());
         assert_eq!(snapshot.config.relayna_key_header, "X-Relayna-Key");
         assert!(snapshot.entra_verifier.is_some());
+    }
+
+    #[tokio::test]
+    async fn gateway_key_header_updates_preserve_existing_forwarding_registrations() {
+        for enabled in [true, false] {
+            let store = default_store();
+            let persisted = store.gateway_auth_settings.clone();
+            let mut state = test_state(store);
+            state.auth_env.relayna_key_header = "x-employee-identity".into();
+            let runtime = state.auth_runtime.clone();
+            let app = router_with_state(state);
+            let body = serde_json::json!({
+                "name":"accessa-header-guard","route_pattern":"/app/tara/channel/web/v1/*",
+                "upstream_base_url":"http://adapter.internal:8080","credential":"fixture-only",
+                "allowed_methods":["GET","PUT"],
+                "access":{"entra":{"audience":"api://accessa"},
+                    "accessa":{"app":"tara","channel":"web","idle_timeout_ms":30000,"max_connections":10,"max_connections_per_key":2,"max_frame_bytes":1024},
+                    "user_token_forwarding":{"enabled":enabled,"header":"x-employee-identity"}}
+            });
+            let created = admin_post(
+                app.clone(),
+                "/admin-ui/admin/services",
+                Some(TEST_OPERATOR_TOKEN),
+                &body.to_string(),
+            )
+            .await;
+            assert_eq!(created.status(), StatusCode::OK);
+            for header in ["X-Employee-Identity", "  X-Employee-Identity  "] {
+                let rejected = admin_patch(
+                    app.clone(),
+                    "/admin-ui/admin/auth/front-door",
+                    Some(TEST_OPERATOR_TOKEN),
+                    &serde_json::json!({"relayna_key_header":header}).to_string(),
+                )
+                .await;
+                assert_eq!(rejected.status(), StatusCode::INTERNAL_SERVER_ERROR);
+                assert_eq!(
+                    response_json(rejected).await["error"]["code"],
+                    "invalid_configuration"
+                );
+                assert!(persisted.lock().unwrap().is_none());
+                assert_eq!(
+                    runtime.snapshot().unwrap().config.relayna_key_header,
+                    "X-Relayna-Key"
+                );
+            }
+            let accepted = admin_patch(
+                app.clone(),
+                "/admin-ui/admin/auth/front-door",
+                Some(TEST_OPERATOR_TOKEN),
+                r#"{"relayna_key_header":"x-channel-key"}"#,
+            )
+            .await;
+            assert_eq!(accepted.status(), StatusCode::OK);
+            assert_eq!(
+                runtime.snapshot().unwrap().config.relayna_key_header,
+                "x-channel-key"
+            );
+            let rejected_reset = admin_patch(
+                app,
+                "/admin-ui/admin/auth/front-door",
+                Some(TEST_OPERATOR_TOKEN),
+                r#"{"relayna_key_header":"  "}"#,
+            )
+            .await;
+            assert_eq!(rejected_reset.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(
+                runtime.snapshot().unwrap().config.relayna_key_header,
+                "x-channel-key"
+            );
+            assert_eq!(
+                persisted
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .relayna_key_header
+                    .as_deref(),
+                Some("x-channel-key")
+            );
+        }
     }
 
     #[tokio::test]
