@@ -11,6 +11,97 @@ pub struct EndpointAccess {
     pub skip_entra: bool,
     pub entra: Option<EndpointEntraPolicy>,
     pub accessa: Option<AccessaBinding>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_token_forwarding: Option<UserTokenForwarding>,
+}
+
+/// Registration metadata only; the user token itself never belongs in this type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UserTokenForwarding {
+    pub enabled: bool,
+    pub header: String,
+}
+
+impl Default for UserTokenForwarding {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            header: "x-access-token".into(),
+        }
+    }
+}
+
+impl UserTokenForwarding {
+    pub fn validate(&self) -> GatewayResult<()> {
+        let name = self.header.to_ascii_lowercase();
+        // A delegated token must not change HTTP semantics, upstream credentials,
+        // trusted identity, correlation or proxy routing metadata.
+        if name.len() > 128
+            || http::header::HeaderName::from_bytes(name.as_bytes()).is_err()
+            || [
+                "accept",
+                "accept-encoding",
+                "accept-language",
+                "authorization",
+                "proxy-authorization",
+                "host",
+                "connection",
+                "keep-alive",
+                "upgrade",
+                "te",
+                "trailer",
+                "transfer-encoding",
+                "cookie",
+                "set-cookie",
+                "origin",
+                "referer",
+                "forwarded",
+                "via",
+                "range",
+                "expect",
+                "cache-control",
+                "pragma",
+                "date",
+                "location",
+                "server",
+                "vary",
+                "allow",
+                "etag",
+                "last-modified",
+                "traceparent",
+                "tracestate",
+                "baggage",
+                "x-api-key",
+                "api-key",
+                "x-request-id",
+                "x-correlation-id",
+                "x-amzn-trace-id",
+            ]
+            .contains(&name.as_str())
+            || [
+                "content-",
+                "accept-",
+                "if-",
+                "sec-",
+                "access-control-",
+                "proxy-",
+                "x-caller-",
+                "x-route-",
+                "x-relayna-",
+                "x-apigee-",
+                "x-forwarded-",
+                "x-original-",
+                "x-envoy-",
+                "x-ms-",
+            ]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+        {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,6 +143,12 @@ impl EndpointAccess {
     }
 
     pub fn validate(&self, route_pattern: &str) -> GatewayResult<()> {
+        if let Some(forwarding) = &self.user_token_forwarding {
+            if self.accessa.is_none() {
+                return Err(GatewayError::InvalidServicePayload);
+            }
+            forwarding.validate()?;
+        }
         if let Some(profiles) = &self.authentication_profiles {
             profiles.validate(self.accessa.is_some())?;
             if self.skip_entra || self.entra.is_some() {
@@ -162,6 +259,56 @@ mod tests {
         serde_json::from_value(json!({"tenant_id":"tenant","subject":null,"object_id":"user","app_id":null,"authorized_party":null,
             "email":null,"display_name":null,"nonce":null,"scopes":["run"],"roles":["invoke"],"groups":["staff"],"token_version":"2.0","source":"jwt",
             "audiences":["api://accessa"],"expires_at":200})).unwrap()
+    }
+    #[test]
+    fn forwarding_is_opt_in_and_rejects_reserved_or_invalid_headers() {
+        let mut value = access();
+        assert!(!serde_json::to_value(&value)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .contains_key("user_token_forwarding"));
+        let default: UserTokenForwarding = serde_json::from_value(json!({})).unwrap();
+        assert!(!default.enabled);
+        assert_eq!(default.header, "x-access-token");
+        value.user_token_forwarding = Some(default);
+        for name in [
+            "x-access-token",
+            "X-Delegated-Identity",
+            "delegated-user-jwt",
+        ] {
+            value.user_token_forwarding.as_mut().unwrap().header = name.into();
+            assert!(value.validate("/app/tara/channel/web/v1/*").is_ok());
+        }
+        for name in [
+            "",
+            "bad header",
+            "bad\r\nheader",
+            "Authorization",
+            "X-Api-Key",
+            "X-Relayna-Key",
+            "X-Caller-oid",
+            "x-route-app",
+            "x-apigee-entra-identity",
+            "content-type",
+            "transfer-encoding",
+            "host",
+            "cookie",
+            "connection",
+            "upgrade",
+            "sec-websocket-key",
+            "traceparent",
+            "x-forwarded-host",
+        ] {
+            value.user_token_forwarding.as_mut().unwrap().header = name.into();
+            assert!(
+                value.validate("/app/tara/channel/web/v1/*").is_err(),
+                "{name}"
+            );
+        }
+        value.user_token_forwarding = Some(UserTokenForwarding::default());
+        value.accessa = None;
+        assert!(value.validate("/legacy/*").is_err());
     }
     #[test]
     fn validate_bindings_and_claims() {

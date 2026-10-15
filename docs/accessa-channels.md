@@ -33,7 +33,7 @@ Example fragment (alongside the existing name, upstream, credential and methods)
 ```json
 {
   "route_pattern": "/app/tara/channel/web/v1/*",
-  "allowed_methods": ["GET", "POST", "DELETE"],
+  "allowed_methods": ["GET", "POST", "PUT", "PATCH", "DELETE"],
   "access": {
     "entra": {
       "audience": "api://accessa",
@@ -93,6 +93,69 @@ JWT verification also supports array-valued `aud`. Token expiry bounds the
 session; a new token requires reconnecting. Existing services with empty
 `access` retain their authentication and path-rewrite behavior.
 
+## Verified user token forwarding
+
+From 0.1.45, an Accessa registration can opt into sending the original,
+Gateway-verified user JWT to its trusted adapter/Broker for an on-behalf-of
+exchange. In Services → Edit → Endpoint identity and Accessa, enable
+**Forward verified user token** and set **User token header**. The default is
+`x-access-token`; a custom name such as `x-employee-identity` is supported.
+The corresponding fragment inside the saved `access` object is:
+
+```json
+{
+  "user_token_forwarding": {
+    "enabled": true,
+    "header": "x-employee-identity"
+  }
+}
+```
+
+This fragment is not a complete access policy. Service PATCH replaces the whole
+`access` object: first read the registration, merge this field into its existing
+access object, and preserve its Entra policy, authentication profiles/revisions
+and Accessa binding. Omit the field for existing default-off behavior. Within
+the field, `enabled` defaults to false and `header` defaults to `x-access-token`.
+Turning forwarding off retains the chosen header for stripping client copies.
+
+Forwarding requires an Accessa binding and a JWT verified by Gateway on this
+request, including its endpoint audience/claims and global issuer/signature
+checks. A trusted Apigee assertion cannot authorize forwarding. Clients still
+send the JWT in `Authorization: Bearer ...` and the assigned Relayna key in the
+configured key header. Gateway overwrites any client-supplied destination
+header with the verified **raw JWT, without the Bearer prefix**. Upstream
+`Authorization` remains the service credential. HTTP and WebSocket upgrades use
+the same rule; streamed frames do not carry new tokens.
+
+Header names are case-insensitive HTTP token names of at most 128 bytes.
+Authentication, cookies, HTTP framing/hop-by-hop, correlation, trusted caller,
+route, admission and proxy/forwarding header names are reserved. The current
+Relayna key header is also forbidden. Service saves reject collisions, and auth
+settings updates reject a key-header name already used by a registration,
+including disabled forwarding configurations. Admin UI and API validate names.
+
+Gateway strips the configured destination when forwarding is disabled and
+strips the default `x-access-token` unless it is the enabled destination. It
+removes both names from response headers, including WebSocket 101 responses.
+Raw forwarded tokens are request-local and are not stored in admission sessions,
+Traffic, Usage or logs. The adapter/Broker must not reflect them in response
+bodies, frames or logs, and must verify the token and trusted caller binding
+before exchanging it. Gateway cannot remove secrets that an upstream embeds in
+arbitrary response bodies.
+
+Upgrade every Gateway replica before configuring this field. For rollback,
+drain/disable affected routes, remove the field using the new binary and
+coordinate the upstream contract before running an older binary; merely
+switching `enabled` off retains the new field. See
+[upgrade and rollback](deployment.md#upgrade-to-0145).
+
+New app/channel presets and bootstrap registrations include GET, POST, PUT,
+PATCH and DELETE so feedback and user settings can use PUT. Existing saved
+method lists are preserved; explicitly PATCH `allowed_methods` to add required
+methods. Bootstrap fails with an actionable error when a reused registration
+lacks one. Identity-discovery presets stay GET-only, and authentication and
+key policy checks still apply to every allowed method.
+
 ## Transport contract
 
 Accessa forwarding preserves the full public path, including HTTP conversations,
@@ -104,8 +167,8 @@ connection. Router remains responsible for command validation, ownership,
 conversation state, cancellation, durable deduplication, event ordering and replay.
 
 Gateway overwrites caller and route headers using verified identity and the
-registered binding, strips client credentials, and applies the existing upstream
-service credential. Adapters receive trusted caller OID, tenant, UPN/groups when
+registered binding, strips client credentials except explicitly enabled verified
+user-token forwarding, and applies the existing upstream service credential. Adapters receive trusted caller OID, tenant, UPN/groups when
 present, app/channel metadata, request correlation and an opaque admission token.
 They must never expose the admission token to clients or logs.
 

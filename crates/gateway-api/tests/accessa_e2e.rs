@@ -75,7 +75,34 @@ async fn bridge(mut downstream: WebSocket, request: http::Request<()>) {
 type AgentHistory = Arc<Mutex<HashMap<String, Vec<String>>>>;
 
 #[derive(Clone)]
+struct Broker {
+    key: jsonwebtoken::DecodingKey,
+    exchanges: Arc<AtomicUsize>,
+}
+async fn broker_exchange(State(state): State<Broker>, headers: HeaderMap) -> http::StatusCode {
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+    validation.set_audience(&["api://accessa"]);
+    validation.set_issuer(&["https://issuer.test"]);
+    let token = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or_default();
+    let Ok(claims) = jsonwebtoken::decode::<Value>(token, &state.key, &validation) else {
+        return http::StatusCode::UNAUTHORIZED;
+    };
+    if claims.claims["oid"].as_str() != headers.get("x-caller-oid").and_then(|v| v.to_str().ok())
+        || claims.claims["tid"] != "tenant"
+    {
+        return http::StatusCode::FORBIDDEN;
+    }
+    state.exchanges.fetch_add(1, Ordering::SeqCst);
+    http::StatusCode::NO_CONTENT
+}
+
+#[derive(Clone)]
 struct MockRouter {
+    broker: String,
     gateway: Arc<Mutex<String>>,
     agent: String,
     dispatches: Arc<AtomicUsize>,
@@ -86,6 +113,19 @@ async fn router_socket(
     headers: HeaderMap,
     upgrade: WebSocketUpgrade,
 ) -> impl IntoResponse {
+    if let Some(token) = headers.get("x-verified-user") {
+        assert_eq!(
+            reqwest::Client::new()
+                .post(format!("{}/exchange", state.broker))
+                .bearer_auth(token.to_str().unwrap())
+                .header("x-caller-oid", headers["x-caller-oid"].clone())
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            204
+        );
+    }
     let context = headers["x-relayna-admission-context"]
         .to_str()
         .unwrap()
@@ -122,18 +162,27 @@ async fn router_socket(
 #[derive(Clone)]
 struct Adapter {
     router: String,
+    broker: String,
     observed: Arc<Mutex<Vec<Value>>>,
 }
 async fn adapter(
     State(state): State<Adapter>,
     OriginalUri(uri): OriginalUri,
+    method: http::Method,
     headers: HeaderMap,
     upgrade: Result<WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
+    body: axum::body::Bytes,
 ) -> axum::response::Response {
     state.observed.lock().unwrap().push(json!({"path":uri.path(),"oid":headers.get("x-caller-oid").and_then(|v|v.to_str().ok()),
         "channel":headers.get("x-route-channel").and_then(|v|v.to_str().ok()),"app":headers.get("x-route-app").and_then(|v|v.to_str().ok()),
-        "admission_present":headers.contains_key("x-relayna-admission-context"),"key_leaked":headers.contains_key("x-relayna-key"),"user_token_leaked":headers.contains_key("x-access-token")}));
-    if let Ok(upgrade) = upgrade {
+        "admission_present":headers.contains_key("x-relayna-admission-context"),
+        "admission_context":headers.get("x-relayna-admission-context").and_then(|v|v.to_str().ok()),
+        "key_leaked":headers.contains_key("x-relayna-key"),"user_token_leaked":headers.contains_key("x-access-token"),
+        "default_token":headers.get("x-access-token").and_then(|v|v.to_str().ok()),
+        "custom_token":headers.get("x-verified-user").and_then(|v|v.to_str().ok()),
+        "authorization":headers.get("authorization").and_then(|v|v.to_str().ok()),
+        "method":method.as_str(),"query":uri.query(),"body":serde_json::from_slice::<Value>(&body).ok()}));
+    let mut response = if let Ok(upgrade) = upgrade {
         let mut request = format!("{}/run", ws(&state.router))
             .into_client_request()
             .unwrap();
@@ -141,12 +190,50 @@ async fn adapter(
             "x-relayna-admission-context",
             headers["x-relayna-admission-context"].clone(),
         );
+        if let Some(token) = headers
+            .get("x-access-token")
+            .or_else(|| headers.get("x-verified-user"))
+        {
+            request
+                .headers_mut()
+                .insert("x-verified-user", token.clone());
+            request
+                .headers_mut()
+                .insert("x-caller-oid", headers["x-caller-oid"].clone());
+        }
         upgrade
             .on_upgrade(move |socket| bridge(socket, request))
             .into_response()
     } else {
-        Json(json!({"ok":true,"path":uri.path()})).into_response()
+        if let Some(token) = headers
+            .get("x-access-token")
+            .or_else(|| headers.get("x-verified-user"))
+        {
+            assert_eq!(
+                reqwest::Client::new()
+                    .post(format!("{}/exchange", state.broker))
+                    .bearer_auth(token.to_str().unwrap())
+                    .header("x-caller-oid", headers["x-caller-oid"].clone())
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                204
+            );
+        }
+        let mut response = Json(json!({"ok":true,"path":uri.path(),"query":uri.query(),"body":serde_json::from_slice::<Value>(&body).ok()})).into_response();
+        if method == http::Method::PUT {
+            *response.status_mut() = http::StatusCode::ACCEPTED;
+        }
+        response
+    };
+    // Check response stripping on HTTP and the 101 WebSocket handshake.
+    for name in ["x-access-token", "x-verified-user"] {
+        if let Some(value) = headers.get(name) {
+            response.headers_mut().insert(name, value.clone());
+        }
     }
+    response
 }
 #[derive(Clone)]
 struct Bff {
@@ -287,6 +374,17 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
     };
     let expiry = Utc::now().timestamp() + 3600;
     let token = sign("api://accessa", "run", expiry);
+    let exchanges = Arc::new(AtomicUsize::new(0));
+    let broker = serve(
+        Router::new()
+            .route("/exchange", axum::routing::post(broker_exchange))
+            .with_state(Broker {
+                key: jsonwebtoken::DecodingKey::from_rsa_pem(&rsa.public_key_to_pem().unwrap())
+                    .unwrap(),
+                exchanges: exchanges.clone(),
+            }),
+    )
+    .await;
     // Conversation memory belongs to the agent fixture, not the gateway. Every
     // dispatch opens a new Router -> agent socket, so state must survive sockets.
     let agent_history = Arc::new(Mutex::new(HashMap::<String, Vec<String>>::new()));
@@ -328,6 +426,7 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
     )
     .await;
     let state = MockRouter {
+        broker: broker.clone(),
         gateway: Arc::new(Mutex::new(String::new())),
         agent,
         dispatches: Arc::new(AtomicUsize::new(0)),
@@ -342,11 +441,13 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
     let observed = Arc::new(Mutex::new(vec![]));
     let adapters = [
         serve(Router::new().fallback(any(adapter)).with_state(Adapter {
+            broker: broker.clone(),
             router: router.clone(),
             observed: observed.clone(),
         }))
         .await,
         serve(Router::new().fallback(any(adapter)).with_state(Adapter {
+            broker: broker.clone(),
             router,
             observed: observed.clone(),
         }))
@@ -844,6 +945,194 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
             .status(),
         401
     );
+    // PUT is an explicit registration permission; exercise default-off, custom
+    // and default token headers through the actual HTTP and WS proxy hooks.
+    let saved = store.get_service(&service_names[1]).await.unwrap().unwrap();
+    let mut access = serde_json::to_value(&saved.access).unwrap();
+    let url = format!(
+        "{gateway}/app/tara/channel/{}/v1/user_setting?source=regression",
+        channels[1]
+    );
+    assert!(client
+        .put(&url)
+        .bearer_auth(&token)
+        .header("x-relayna-key", &keys[1])
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .is_client_error());
+    for (enabled, header) in [
+        (true, "x-verified-user"),
+        (false, "x-verified-user"),
+        (true, "x-access-token"),
+    ] {
+        access["user_token_forwarding"] = json!({"enabled":enabled,"header":header});
+        store
+            .patch_service(
+                &service_names[1],
+                serde_json::from_value(json!({
+                    "allowed_methods":["GET","POST","PUT","PATCH","DELETE"],"access":access
+                }))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let result = client
+            .put(&url)
+            .bearer_auth(&token)
+            .header("x-relayna-key", &keys[1])
+            .header("X-Verified-User", "spoofed-custom")
+            .header("X-Access-Token", "spoofed-default")
+            .json(&json!({"settings":{"theme":"dark"}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(result.status(), 202);
+        assert!(!result.headers().contains_key(header));
+        assert!(!result.headers().contains_key("x-access-token"));
+        let result_body: Value = result.json().await.unwrap();
+        assert_eq!(result_body["query"], "source=regression");
+        assert_eq!(result_body["body"], json!({"settings":{"theme":"dark"}}));
+        let last = observed.lock().unwrap().last().unwrap().clone();
+        assert_eq!(last["authorization"], "Bearer mock-adapter-only");
+        assert_eq!(
+            last[if header == "x-access-token" {
+                "default_token"
+            } else {
+                "custom_token"
+            }],
+            if enabled { json!(token) } else { Value::Null }
+        );
+        if header != "x-access-token" {
+            assert_eq!(last["default_token"], Value::Null);
+        }
+        if enabled {
+            // A signed ingress identity is not proof that the supplied bearer
+            // JWT was verified by Gateway, even if endpoint Apigee is enabled.
+            access["entra"]["allow_apigee"] = json!(true);
+            store
+                .patch_service(
+                    &service_names[1],
+                    serde_json::from_value(json!({"access":access})).unwrap(),
+                )
+                .await
+                .unwrap();
+            let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({
+                "audiences":["api://accessa"],"expires_at":expiry,"tenant_id":"tenant","object_id":"employee-1",
+                "scopes":["run"],"roles":["invoke"],"groups":["staff"],"token_version":"2.0","source":"jwt"
+            })).unwrap());
+            let signature = sign_apigee_trusted_identity(&payload, &apigee).unwrap();
+            let rejected = client
+                .put(&url)
+                .bearer_auth(&token)
+                .header("x-relayna-key", &keys[1])
+                .header("x-apigee-entra-identity", payload)
+                .header("x-apigee-entra-signature", signature)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(rejected.status(), 401);
+            access["entra"]["allow_apigee"] = json!(false);
+            store
+                .patch_service(
+                    &service_names[1],
+                    serde_json::from_value(json!({"access":access})).unwrap(),
+                )
+                .await
+                .unwrap();
+            let path = format!("/app/tara/channel/{}/v1/run", channels[1]);
+            let mut request = direct_request(&token, &keys[1], &path);
+            request
+                .headers_mut()
+                .insert(header, "forged-socket-token".parse().unwrap());
+            let (mut socket, response) = connect_async(request).await.unwrap();
+            assert!(!response.headers().contains_key(header));
+            assert!(!response.headers().contains_key("x-access-token"));
+            let opaque = observed.lock().unwrap().last().unwrap()["admission_context"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            let snapshot = gateway_core::accessa::AccessaStore::accessa_get(
+                &RedisControlState::new(&redis).unwrap(),
+                &gateway_core::accessa::session_store_key(&opaque).unwrap(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(!snapshot.contains(&token));
+            assert!(!snapshot.contains(&keys[1]));
+            assert_eq!(
+                observed.lock().unwrap().last().unwrap()[if header == "x-access-token" {
+                    "default_token"
+                } else {
+                    "custom_token"
+                }],
+                token
+            );
+            socket.close(None).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        for jwt in [
+            "invalid".to_owned(),
+            String::new(),
+            sign("api://accessa", "run", Utc::now().timestamp() - 1),
+        ] {
+            let rejected = client
+                .put(&url)
+                .bearer_auth(jwt)
+                .header("x-relayna-key", &keys[1])
+                .header(header, &token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(rejected.status(), 401);
+        }
+        assert!(client
+            .put(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .is_client_error());
+        assert!(client
+            .request(reqwest::Method::OPTIONS, &url)
+            .bearer_auth(&token)
+            .header("x-relayna-key", &keys[1])
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .is_client_error());
+        let diagnostics =
+            serde_json::to_string(&gateway_core::traffic::monitor().batch(None)).unwrap();
+        assert!(!diagnostics.contains(&token));
+        let persisted: Vec<Value> =
+            sqlx::query_scalar("SELECT diagnostics FROM usage_events WHERE key_id=$1")
+                .bind(key_ids[1])
+                .fetch_all(store.pool())
+                .await
+                .unwrap();
+        assert!(!serde_json::to_string(&persisted).unwrap().contains(&token));
+    }
+    assert_eq!(
+        exchanges.load(Ordering::SeqCst),
+        4,
+        "two HTTP and two Router/Broker socket exchanges"
+    );
+    // Keep the released default for the remaining profile/revocation tests.
+    access
+        .as_object_mut()
+        .unwrap()
+        .remove("user_token_forwarding");
+    store
+        .patch_service(
+            &service_names[1],
+            serde_json::from_value(json!({"access":access})).unwrap(),
+        )
+        .await
+        .unwrap();
     // Opt-in profiles on the second channel preserve multiple admitted turns;
     // a new revision blocks subsequent admissions on the already-open socket.
     let service = store.get_service(&service_names[1]).await.unwrap().unwrap();

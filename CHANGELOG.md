@@ -2,6 +2,39 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.45 - 2026-10-15
+
+### Added
+
+- Opt-in Accessa forwarding of the Gateway-verified user JWT under an adjustable
+  header, defaulting to `x-access-token`, with create/edit Admin UI controls (#133).
+- Regression tests for HTTP PUT, WebSocket handshakes, Broker token verification,
+  spoofing, invalid/Apigee identities, header collisions, response reflection,
+  diagnostics/session leakage, provisioning and UI save/readback/conversion.
+
+### Fixed
+
+- Include PUT, PATCH and DELETE in new Accessa app/channel presets and bootstrap
+  registrations; reused registrations fail clearly when required methods are
+  missing and require an explicit operator update (#134).
+- Reject changes to the Relayna key header that collide with saved forwarding
+  destinations, including disabled configurations. Reveal Accessa controls
+  immediately when converting an existing service in the editor.
+- Patch Rustls to 0.23.46 and Quinn Proto to 0.11.18. Document the dated,
+  maintenance-only unsafe-libyaml exception inherited through Pingora.
+- Align the Admin UI version display with release metadata.
+
+### Compatibility
+
+- No new PostgreSQL migration or Redis format. Token forwarding remains off
+  unless explicitly enabled; service Authorization and trusted identity headers
+  retain their existing contracts. Only verified JWT identities can forward.
+- Upgrade every replica before saving the new strict access field. Drain affected
+  routes and remove the field with the new binary before rolling back; disabled
+  configuration still contains the field. See
+  [Accessa](docs/accessa-channels.md#verified-user-token-forwarding) and
+  [deployment](docs/deployment.md#upgrade-to-0145).
+
 ## 0.1.44 - 2026-10-11
 
 ### Fixed

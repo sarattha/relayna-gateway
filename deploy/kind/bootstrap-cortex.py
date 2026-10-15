@@ -75,13 +75,16 @@ def main():
              "required_scopes": ["keystone.documents.read", "keystone.retrieval.search"],
              "required_roles": [], "allowed_groups": [], "allow_apigee": False}
     service = next((item for item in request("GET", "services") if item["name"] == name), None)
+    required_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
     if service is not None and service["project_id"] != project["id"]:
         raise SystemExit("Existing Cortex service belongs to another project; refusing to replace it")
+    if service is not None and not set(required_methods).issubset(service.get("allowed_methods", [])):
+        raise SystemExit("Existing Cortex service is missing required methods (GET, POST, PUT, PATCH, DELETE); update allowed_methods explicitly through the admin service PATCH API before rerunning bootstrap")
     if service is None:
         service = request("POST", "services", {
             "name": name, "project_id": project["id"], "route_pattern": "/app/cortex/channel/web/v1/*",
             "upstream_base_url": args.adapter_url, "credential": adapter,
-            "allowed_methods": ["GET", "POST", "DELETE"], "timeout_ms": 120000,
+            "allowed_methods": required_methods, "timeout_ms": 120000,
             "max_body_bytes": 1048576, "cost_mode": "none",
             "access": {"entra": entra, "accessa": accessa},
         })

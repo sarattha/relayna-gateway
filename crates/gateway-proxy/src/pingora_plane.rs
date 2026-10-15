@@ -905,6 +905,15 @@ where
                 }
             }
         }
+        if let Err(error) = accessa_runtime::forwarded_user_token(
+            req,
+            &ctx.access,
+            ctx.entra_identity.as_ref(),
+            &ctx.relayna_key_header,
+        ) {
+            respond_error(session, error, ctx).await?;
+            return Ok(true);
+        }
         if ctx.access.authentication_profiles.is_none()
             && ctx.litellm_passthrough
             && matched.route == Route::LiteLlmPassthrough
@@ -1952,7 +1961,7 @@ where
 
     async fn upstream_request_filter(
         &self,
-        _session: &mut Session,
+        session: &mut Session,
         upstream_request: &mut RequestHeader,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<()>
@@ -1980,6 +1989,23 @@ where
             upstream_request.insert_header("accept-encoding", "identity")?;
         }
         if let Some(binding) = &ctx.access.accessa {
+            if let Some(config) = &ctx.access.user_token_forwarding {
+                upstream_request.remove_header(&config.header);
+                if let Some(token) = accessa_runtime::forwarded_user_token(
+                    session.req_header(),
+                    &ctx.access,
+                    ctx.entra_identity.as_ref(),
+                    &ctx.relayna_key_header,
+                )
+                .map_err(|_| PingoraError::new(ErrorType::InternalError))?
+                {
+                    let mut value = http::HeaderValue::from_str(token)
+                        .map_err(|_| PingoraError::new(ErrorType::InternalError))?;
+                    // Debug formatting honors this flag for arbitrary configured names.
+                    value.set_sensitive(true);
+                    upstream_request.insert_header(config.header.clone(), value)?;
+                }
+            }
             for name in [
                 "x-caller-oid",
                 "x-caller-upn",
@@ -1987,10 +2013,18 @@ where
                 "x-caller-tenant",
                 "x-route-app",
                 "x-route-channel",
-                "x-access-token",
                 ADMISSION_CONTEXT_HEADER,
             ] {
                 upstream_request.remove_header(name);
+            }
+            // The default credential name is stripped even with a custom name.
+            if ctx
+                .access
+                .user_token_forwarding
+                .as_ref()
+                .is_none_or(|c| !c.enabled || !c.header.eq_ignore_ascii_case("x-access-token"))
+            {
+                upstream_request.remove_header("x-access-token");
             }
             let identity = ctx.entra_identity.as_ref().expect("Accessa authenticated");
             upstream_request.insert_header(
@@ -2190,6 +2224,12 @@ where
         upstream_response.insert_header("x-relayna-request-id", &ctx.request_id)?;
         upstream_response.remove_header("alt-svc");
         upstream_response.remove_header(ADMISSION_CONTEXT_HEADER);
+        if ctx.access.accessa.is_some() {
+            upstream_response.remove_header("x-access-token");
+            if let Some(config) = &ctx.access.user_token_forwarding {
+                upstream_response.remove_header(&config.header);
+            }
+        }
         if ctx.trusted_ingress_passthrough {
             rewrite_trusted_ingress_location(upstream_response, ctx)?;
         }

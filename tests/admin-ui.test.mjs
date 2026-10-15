@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const workspaceVersion = readFileSync(join(root, "Cargo.toml"), "utf8").match(/^version = "([^"]+)"/m)[1];
+const releaseVersionPattern = `v${workspaceVersion.replaceAll(".", "\\.")}`;
 const uiDir = join(root, "crates/gateway-api/src/static/admin-ui");
 const sourceDir = join(root, "crates/gateway-api/admin-ui/src");
 const html = readFileSync(join(uiDir, "index.html"), "utf8");
@@ -56,8 +58,8 @@ test("admin portal shell exposes all release-critical views", () => {
   );
   assert.match(html, /id="operator-token"/);
   assert.match(html, /id="rotate-token"/);
-  assert.match(html, /aria-label="Current Relayna Gateway version"[\s\S]*v0\.1\.43/);
-  assert.match(js, /Release target[\s\S]*v0\.1\.43/);
+  assert.match(html, new RegExp(`aria-label="Current Relayna Gateway version"[\\s\\S]*${releaseVersionPattern}`));
+  assert.match(js, new RegExp(`Release target[\\s\\S]*${releaseVersionPattern}`));
 });
 
 test("portal uses Entra BFF sessions and preserves explicit break-glass access", () => {
@@ -1021,7 +1023,14 @@ test("endpoint access form preserves isolated audiences and channel limits", () 
     entra: { audience: "api://accessa", required_scopes: ["run", "read"], required_roles: ["invoke"], allowed_groups: ["staff"], allow_apigee: false },
     accessa: { app: "tara", channel: "web", idle_timeout_ms: 30000, max_connections: 10, max_connections_per_key: 2, max_frame_bytes: 4096 },
   });
+  form.set("forward_user_token", "on");
+  form.set("user_token_header", "X-Employee-JWT");
+  assert.deepEqual(parse(form).user_token_forwarding, {enabled:true,header:"x-employee-jwt"});
+  form.delete("forward_user_token");
+  form.set("user_token_configured", "true");
+  assert.deepEqual(parse(form).user_token_forwarding, {enabled:false,header:"x-employee-jwt"});
   form.delete("accessa_enabled");
+  assert.equal(parse(form).user_token_forwarding, undefined);
   form.set("endpoint_audience", "api://internal-service");
   form.set("endpoint_apigee", "on");
   assert.equal(parse(form).accessa, null);
@@ -1083,7 +1092,7 @@ test("endpoint identity controls select explicit modes without retaining hidden 
 });
 
 test("service presets produce supported access contracts and preserve operator-owned values", () => {
-  const names = ["serviceTypePresets", "suggestedServiceRoute", "applyServiceTypePreset", "updateServiceRouteSuggestion", "updateServiceTransportFields", "bindServiceTypePresets", "endpointAccessFromForm", "csv", "nullableString"];
+  const names = ["serviceTypePresets", "suggestedServiceRoute", "applyServiceTypePreset", "updateServiceRouteSuggestion", "updateServiceTransportFields", "bindServiceTypePresets", "bindServiceTransportFields", "endpointAccessFromForm", "csv", "nullableString"];
   const api = new Function(`${names.map(sourceFunction).join("\n")}\nreturn {serviceTypePresets, applyServiceTypePreset, updateServiceRouteSuggestion, bindServiceTypePresets, endpointAccessFromForm};`)();
   const fields = {};
   const identity = { open: false };
@@ -1131,7 +1140,7 @@ test("service presets produce supported access contracts and preserve operator-o
     }
     if(type==="accessa_channel") {
       assert.equal(fields.route_pattern.value,"/app/tara/channel/web/v1/*");
-      assert.deepEqual(methods.filter(m=>m.checked).map(m=>m.value),["GET","POST"]);
+      assert.deepEqual(methods.filter(m=>m.checked).map(m=>m.value),["GET","POST","PUT","PATCH","DELETE"]);
       assert.equal(access().accessa.app,"tara");
       assert.equal(access().accessa.max_frame_bytes,1048576);
     }
@@ -1185,4 +1194,28 @@ test("Foundry verification uses the protected admin API namespace", () => {
 test("provider creation has one shared entry point for every provider", () => {
   assert.match(sourceJs, /mountProviderCreate\(\{ restoreFocus: createButton, onSave: createProvider \}\)/);
   assert.doesNotMatch(sourceJs, /Add Azure Foundry|id="provider-form"/);
+});
+
+
+test("editing an ordinary service reveals and enables forwarding controls immediately", () => {
+  const bind = new Function(`${sourceFunction("updateServiceTransportFields")}\n${sourceFunction("bindServiceTransportFields")}\nreturn bindServiceTransportFields;`)();
+  const fields = new Map();
+  const forwarding = {hidden:true,disabled:true};
+  for (const name of ["accessa_app","accessa_channel","socket_idle_ms","socket_connections","socket_key_connections","socket_frame_bytes"]) {
+    const label = {hidden:true}; fields.set(name,{closest:()=>label});
+  }
+  let change;
+  const checkbox = {checked:false,addEventListener:(name,fn)=>{assert.equal(name,"change");change=fn;}};
+  fields.set("accessa_enabled",checkbox);
+  const form = {elements:{namedItem:name=>fields.get(name)},querySelector:()=>forwarding};
+  bind(form);
+  assert.equal(forwarding.hidden,true);
+  checkbox.checked=true; change();
+  assert.equal(forwarding.hidden,false);
+  assert.equal(forwarding.disabled,false);
+  for(const name of ["accessa_app","accessa_channel"]) assert.equal(fields.get(name).closest().hidden,false);
+  checkbox.checked=false; change();
+  assert.equal(forwarding.hidden,true);
+  assert.equal(forwarding.disabled,true);
+  assert.match(sourceFunction("services"),/bindServiceTransportFields\(document.querySelector\("#service-edit-form"\)\)/);
 });

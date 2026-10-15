@@ -4,6 +4,7 @@ import { mountFoundryEditor } from "./react/foundry-editor";
 import { mountRouteConfiguration } from "./react/route-configuration";
 import { mountKeyRouteBindings } from "./react/key-route-bindings";
 import { mountIdentityEditor } from "./react/mount-identity-editor";
+import { mountUserTokenForwarding } from "./react/user-token-forwarding";
 import { profileFields, profilesFromForm, showProfileError, profileKeyOptions } from "./auth-profiles";
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic } from "./traffic";
@@ -2050,7 +2051,7 @@ function serviceTypePresets() {
     { id: "relayna_http", label: "Relayna HTTP service", description: "Relayna runtime exposed through its HTTP API. Point Upstream URL at the runtime; requests use /services/{name}/*. The runtime owns tasks and agent execution. Import from Studio if the service already exists there.", methods: ["GET", "POST"], mode: "inherit", timeout: 120000, health: "/health" },
     { id: "entra_http", label: "Entra-protected HTTP service", description: "HTTP API requiring its own Entra audience. Enter the audience and any required scopes, roles or groups below.", methods: ["GET", "POST"], mode: "required", timeout: 60000 },
     { id: "apigee_http", label: "Apigee-backed HTTP service", description: "HTTP API requiring Entra identity, also accepting signed Apigee claims. Enter this endpoint’s audience. Trusted Apigee verification must be configured in gateway settings.", methods: ["GET", "POST"], mode: "required", apigee: true, timeout: 60000 },
-    { id: "accessa_channel", label: "Accessa app/channel (HTTP + WebSocket)", description: "BFF connects through the gateway to the channel adapter. App and channel generate the route; only GET /run supports WebSocket. Enter the Accessa Entra audience and bind a virtual key to this service.", methods: ["GET", "POST"], mode: "required", accessa: true, app: "tara", channel: "web", timeout: 60000 },
+    { id: "accessa_channel", label: "Accessa app/channel (HTTP + WebSocket)", description: "BFF connects through the gateway to the channel adapter. App and channel generate the route; only GET /run supports WebSocket. PUT supports feedback and settings; PATCH supports metadata edits. Enter the Accessa Entra audience and bind a virtual key to this service.", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], mode: "required", accessa: true, app: "tara", channel: "web", timeout: 60000 },
     { id: "accessa_discovery", label: "Accessa channel discovery (HTTP)", description: "Channel identity discovery at /channel/{channel}/v1/me. App stays blank; enter the channel and its Entra audience. This endpoint does not open WebSockets.", methods: ["GET"], mode: "required", accessa: true, app: "", channel: "web", timeout: 60000 },
     { id: "custom", label: "Custom configuration", description: "Configure the supported HTTP or Accessa route directly. Keeps current values so you can customize a preset. Generic WebSockets and arbitrary protocol adapters are not enabled by this choice." },
   ];
@@ -2104,6 +2105,8 @@ function updateServiceRouteSuggestion(form) {
 
 function updateServiceTransportFields(form) {
   const enabled = form.elements.namedItem("accessa_enabled").checked;
+  const forwarding = form.querySelector("[data-user-token-forwarding]");
+  if (forwarding) { forwarding.hidden = !enabled; forwarding.disabled = !enabled; }
   for (const name of ["accessa_app", "accessa_channel", "socket_idle_ms", "socket_connections", "socket_key_connections", "socket_frame_bytes"]) {
     form.elements.namedItem(name).closest("label").hidden = !enabled;
   }
@@ -2114,7 +2117,13 @@ function bindServiceTypePresets(form) {
   for (const name of ["name", "accessa_app", "accessa_channel"]) {
     form.elements.namedItem(name).addEventListener("input", () => updateServiceRouteSuggestion(form));
   }
-  form.elements.namedItem("accessa_enabled").addEventListener("change", () => updateServiceTransportFields(form));
+  bindServiceTransportFields(form);
+}
+
+function bindServiceTransportFields(form) {
+  const binding = form?.elements.namedItem("accessa_enabled");
+  if (!binding) return;
+  binding.addEventListener("change", () => updateServiceTransportFields(form));
   updateServiceTransportFields(form);
 }
 
@@ -2179,6 +2188,7 @@ async function services() {
   document.querySelector("#service-form").addEventListener("submit", handleAsync(submitService));
   bindServiceTypePresets(document.querySelector("#service-form"));
   document.querySelector("#service-edit-form")?.addEventListener("submit", handleAsync(patchService));
+  bindServiceTransportFields(document.querySelector("#service-edit-form"));
   bindServicePriceValidation(document.querySelector("#service-form"));
   bindServicePriceValidation(document.querySelector("#service-edit-form"));
   bindPricingRuleEditors();
@@ -2581,7 +2591,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.43")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.45")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -4254,6 +4264,7 @@ function endpointAccessFields(access, projectId = "") {
     <label>Connections per route per instance<input name="socket_connections" type="number" min="1" max="10000" value="${attr(binding.max_connections ?? 100)}"></label>
     <label>Connections per key per instance<input name="socket_key_connections" type="number" min="1" max="10000" value="${attr(binding.max_connections_per_key ?? 10)}"></label>
     <label>Maximum socket message bytes<input name="socket_frame_bytes" type="number" min="125" max="16777216" value="${attr(binding.max_frame_bytes ?? 1048576)}"></label>
+    <fieldset class="wide-field" style="border:0;margin:0;padding:0;min-width:0" data-user-token-forwarding="${attr(JSON.stringify(access.user_token_forwarding || null))}" ${access.accessa ? "" : "disabled hidden"}></fieldset>
     <div class="help wide-field">With Require Entra, all listed scopes and roles are required; any listed group may match. Apigee must sign audience and expiry claims. Accessa requires Require Entra and an audience; a blank app is only for /channel/{channel}/v1/me. Socket limits apply per gateway instance; the instance ceiling is 4,096. Accessa transport and admission carry no charge; downstream service calls remain metered.</div>
   `);
 }
@@ -4267,6 +4278,9 @@ function endpointAccessFromForm(form) {
   if (mode === "required" && !audience) throw new Error("Require Entra needs an endpoint audience.");
   if (!["inherit", "required", "disabled", "profiles"].includes(mode)) throw new Error("Choose a Route authentication mode.");
   return {
+    ...(accessa && (form.has("forward_user_token") || form.get("user_token_configured") === "true" || (form.get("user_token_header") && form.get("user_token_header") !== "x-access-token")) ? {
+      user_token_forwarding: { enabled: form.has("forward_user_token"), header: String(form.get("user_token_header") || "x-access-token").trim().toLowerCase() },
+    } : {}),
     ...(mode === "profiles" ? { authentication_profiles: profilesFromForm(form, accessa) } : {}),
     skip_entra: mode === "disabled",
     entra: audience ? {
@@ -5709,6 +5723,7 @@ async function profileKeyCatalog() {
   return {keys,projects};
 }
 function prepareProfileKeys(root) {
+  root.querySelectorAll('[data-user-token-forwarding]').forEach(host => mountUserTokenForwarding(host));
   root.querySelectorAll('[data-endpoint-identity]').forEach(host => {
     const project = host.dataset.keyProject || '';
     mountIdentityEditor(host, async () => {
