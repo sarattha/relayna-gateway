@@ -182,7 +182,7 @@ async fn adapter(
         "custom_token":headers.get("x-verified-user").and_then(|v|v.to_str().ok()),
         "authorization":headers.get("authorization").and_then(|v|v.to_str().ok()),
         "method":method.as_str(),"query":uri.query(),"body":serde_json::from_slice::<Value>(&body).ok()}));
-    if let Ok(upgrade) = upgrade {
+    let mut response = if let Ok(upgrade) = upgrade {
         let mut request = format!("{}/run", ws(&state.router))
             .into_client_request()
             .unwrap();
@@ -225,14 +225,15 @@ async fn adapter(
         if method == http::Method::PUT {
             *response.status_mut() = http::StatusCode::ACCEPTED;
         }
-        // A misconfigured adapter must not reflect credential headers to clients.
-        for name in ["x-access-token", "x-verified-user"] {
-            if let Some(value) = headers.get(name) {
-                response.headers_mut().insert(name, value.clone());
-            }
-        }
         response
+    };
+    // Check response stripping on HTTP and the 101 WebSocket handshake.
+    for name in ["x-access-token", "x-verified-user"] {
+        if let Some(value) = headers.get(name) {
+            response.headers_mut().insert(name, value.clone());
+        }
     }
+    response
 }
 #[derive(Clone)]
 struct Bff {
@@ -1045,7 +1046,9 @@ async fn accessa_mock_chain_and_endpoint_regressions() {
             request
                 .headers_mut()
                 .insert(header, "forged-socket-token".parse().unwrap());
-            let (mut socket, _) = connect_async(request).await.unwrap();
+            let (mut socket, response) = connect_async(request).await.unwrap();
+            assert!(!response.headers().contains_key(header));
+            assert!(!response.headers().contains_key("x-access-token"));
             let opaque = observed.lock().unwrap().last().unwrap()["admission_context"]
                 .as_str()
                 .unwrap()
