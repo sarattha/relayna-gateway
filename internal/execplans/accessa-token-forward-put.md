@@ -17,7 +17,7 @@ registrations. Verify create/edit/save/readback in Admin UI with Computer Use.
 - [x] (2026-10-15) Confirmed latest released boundary v0.1.44, current credential stripping, strict JSON access readers, existing PUT runtime support and missing provisioning methods.
 - [x] (2026-10-15) Implemented configurable opt-in, reserved/dynamic-header validation, verified-JWT-only forwarding, sensitive HeaderValue and response-header stripping.
 - [x] (2026-10-15) Added React controls, Accessa PUT/PATCH/DELETE defaults, fail-closed bootstrap method validation, six provisioning tests and HTTP/WS/auth/leakage regression coverage.
-- [ ] Full verification in progress. Computer Use desktop/390px create/edit/save/readback, default-off/custom header/disable/reserved-name rejection, Traffic and Virtual keys checks passed. UI suite, typecheck and 54 React tests passed.
+- [x] (2026-10-15) Full verification helper passed with live disposable PostgreSQL/Redis: fmt, workspace Clippy/tests, audit, deny, machete, Nextest 430/430 with zero skips, Trivy, Gitleaks and Semgrep. Latest strengthened Accessa E2E and Clippy passed. UI build/npm tests/typecheck, 54 React tests, six bootstrap tests, strict docs and release metadata passed. Computer Use desktop/390px create/edit/save/readback, default-off/custom header/disable/reserved-name rejection, Traffic and Virtual keys checks passed.
 - [ ] Open PR, link it to this thread, monitor automatic Codex review and address findings without requesting another review.
 - [ ] After review fixes, bump patch version, update CHANGELOG/release metadata/docs, rerun required checks and merge after required review/checks pass.
 
@@ -61,8 +61,8 @@ with the authorized patch-version bump after review.
 
 ## Outcomes & Retrospective
 
-Implementation and first Computer Use checks are complete. Full stack and automatic
-PR review remain pending. Preserve the four pre-existing untracked user documents.
+Implementation, Computer Use and the full verification stack are complete.
+Automatic PR review and release metadata follow-up remain pending. Preserve the four pre-existing untracked user documents.
 Desktop and mobile screenshots are in the local T3 browser artifacts directory;
 no live Accessa deployment has been changed.
 
