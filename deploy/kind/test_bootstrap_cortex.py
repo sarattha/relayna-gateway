@@ -55,6 +55,7 @@ class BootstrapKeyPolicyTests(unittest.TestCase):
         self.service = {
             "name": "cortex-web",
             "project_id": "fixture-project-id",
+            "allowed_methods": ["GET", "POST", "PUT", "PATCH", "DELETE"],
             "access": {
                 "accessa": {
                     "app": "cortex", "channel": "web", "idle_timeout_ms": 120000,
@@ -73,6 +74,7 @@ class BootstrapKeyPolicyTests(unittest.TestCase):
         }
         self.calls = []
         self.new_key = False
+        self.new_service = False
 
     def admin_api(self, request, timeout):
         self.assertEqual(timeout, 30)
@@ -88,10 +90,12 @@ class BootstrapKeyPolicyTests(unittest.TestCase):
                     "policy": {k: v for k, v in self.policy.items()
                                if k not in {"rpm_limit", "monthly_budget_usd"}},
                 }],
-                "services": [self.service],
+                "services": [] if self.new_service else [self.service],
                 "keys": [] if self.new_key else [self.key],
             }
             response = responses[path]
+        elif method == "POST" and path == "services" and self.new_service:
+            response = self.service
         elif method == "POST" and path == "keys" and self.new_key:
             response = {"raw_key": "fixture-new-private-key", "key": self.key}
         elif method == "PATCH" and path == "services/cortex-web":
@@ -119,6 +123,21 @@ class BootstrapKeyPolicyTests(unittest.TestCase):
         self.assertFalse(any(method == "POST" for method, _, _ in self.calls))
         patch_body = next(body for method, _, body in self.calls if method == "PATCH")
         self.assertNotIn("access", patch_body)
+
+    def test_new_service_includes_put_for_feedback_and_settings(self):
+        self.new_service = True
+        self.run_bootstrap()
+        creation = next(body for method, path, body in self.calls
+                        if method == "POST" and path == "services")
+        self.assertEqual(creation["allowed_methods"], ["GET", "POST", "PUT", "PATCH", "DELETE"])
+
+    def test_missing_put_requires_explicit_operator_update(self):
+        self.service["allowed_methods"].remove("PUT")
+        before = self.key_output.read_bytes()
+        with self.assertRaisesRegex(SystemExit, "missing required methods"):
+            self.run_bootstrap()
+        self.assertFalse(any(method != "GET" for method, _, _ in self.calls))
+        self.assertEqual(self.key_output.read_bytes(), before)
 
     def test_drifted_key_fails_before_profile_patch_or_private_key_changes(self):
         cases = [

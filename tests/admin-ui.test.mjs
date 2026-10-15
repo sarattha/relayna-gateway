@@ -1021,7 +1021,14 @@ test("endpoint access form preserves isolated audiences and channel limits", () 
     entra: { audience: "api://accessa", required_scopes: ["run", "read"], required_roles: ["invoke"], allowed_groups: ["staff"], allow_apigee: false },
     accessa: { app: "tara", channel: "web", idle_timeout_ms: 30000, max_connections: 10, max_connections_per_key: 2, max_frame_bytes: 4096 },
   });
+  form.set("forward_user_token", "on");
+  form.set("user_token_header", "X-Employee-JWT");
+  assert.deepEqual(parse(form).user_token_forwarding, {enabled:true,header:"x-employee-jwt"});
+  form.delete("forward_user_token");
+  form.set("user_token_configured", "true");
+  assert.deepEqual(parse(form).user_token_forwarding, {enabled:false,header:"x-employee-jwt"});
   form.delete("accessa_enabled");
+  assert.equal(parse(form).user_token_forwarding, undefined);
   form.set("endpoint_audience", "api://internal-service");
   form.set("endpoint_apigee", "on");
   assert.equal(parse(form).accessa, null);
@@ -1131,7 +1138,7 @@ test("service presets produce supported access contracts and preserve operator-o
     }
     if(type==="accessa_channel") {
       assert.equal(fields.route_pattern.value,"/app/tara/channel/web/v1/*");
-      assert.deepEqual(methods.filter(m=>m.checked).map(m=>m.value),["GET","POST"]);
+      assert.deepEqual(methods.filter(m=>m.checked).map(m=>m.value),["GET","POST","PUT","PATCH","DELETE"]);
       assert.equal(access().accessa.app,"tara");
       assert.equal(access().accessa.max_frame_bytes,1048576);
     }

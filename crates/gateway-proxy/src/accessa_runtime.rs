@@ -2,6 +2,37 @@ use super::*;
 use gateway_core::{EndpointEntraPolicy, GenerationFeatures};
 use uuid::Uuid;
 
+/// Borrow the exact JWT verified on this request, never a caller's forwarding
+/// header. Keeping it in the request avoids Debug/Redis/diagnostic persistence.
+pub(super) fn forwarded_user_token<'a>(
+    req: &'a RequestHeader,
+    access: &gateway_core::EndpointAccess,
+    identity: Option<&EntraIdentityContext>,
+    relayna_key_header: &str,
+) -> GatewayResult<Option<&'a str>> {
+    let Some(config) = &access.user_token_forwarding else {
+        return Ok(None);
+    };
+    config.validate()?;
+    if access.accessa.is_none() || config.header.eq_ignore_ascii_case(relayna_key_header) {
+        return Err(GatewayError::InvalidConfiguration);
+    }
+    if !config.enabled {
+        return Ok(None);
+    }
+    if identity.is_none_or(|identity| identity.source != gateway_core::EntraIdentitySource::Jwt)
+        || req.headers.get_all("authorization").iter().count() != 1
+    {
+        return Err(GatewayError::InvalidEntraToken);
+    }
+    header_value(req, "authorization")
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(Some)
+        .ok_or(GatewayError::MissingEntraAuthorization)
+}
+
 impl<S, R> RelaynaPingoraProxy<S, R> {
     pub(super) async fn verify_endpoint_identity(
         &self,
@@ -544,6 +575,34 @@ mod tests {
     }
     fn identity() -> EntraIdentityContext {
         serde_json::from_value(serde_json::json!({"tenant_id":"tenant","object_id":"user","scopes":["run"],"roles":[],"groups":[],"token_version":"2.0","source":"jwt","audiences":["accessa"],"expires_at":Utc::now().timestamp()+3600})).unwrap()
+    }
+
+    #[test]
+    fn forwarding_requires_verified_jwt_and_ignores_spoofed_header() {
+        let mut access: gateway_core::EndpointAccess = serde_json::from_value(serde_json::json!({
+            "entra":{"audience":"accessa"},
+            "accessa":{"app":"tara","channel":"web","idle_timeout_ms":1000,"max_connections":2,"max_connections_per_key":1,"max_frame_bytes":1024},
+            "user_token_forwarding":{"enabled":true,"header":"X-Verified-User"}
+        })).unwrap();
+        let mut req = RequestHeader::build("GET", b"/app/tara/channel/web/v1/run", None).unwrap();
+        req.insert_header("authorization", "Bearer verified-token")
+            .unwrap();
+        req.insert_header("x-verified-user", "forged-token")
+            .unwrap();
+        let mut identity = identity();
+        assert_eq!(
+            forwarded_user_token(&req, &access, Some(&identity), "x-relayna-key"),
+            Ok(Some("verified-token"))
+        );
+        assert!(forwarded_user_token(&req, &access, Some(&identity), "x-VERIFIED-user").is_err());
+        assert!(forwarded_user_token(&req, &access, None, "x-relayna-key").is_err());
+        identity.source = gateway_core::EntraIdentitySource::ApigeeTrustedHeader;
+        assert!(forwarded_user_token(&req, &access, Some(&identity), "x-relayna-key").is_err());
+        access.user_token_forwarding.as_mut().unwrap().enabled = false;
+        assert_eq!(
+            forwarded_user_token(&req, &access, None, "x-relayna-key"),
+            Ok(None)
+        );
     }
     fn setup() -> (
         RelaynaPingoraProxy<Store, Control>,

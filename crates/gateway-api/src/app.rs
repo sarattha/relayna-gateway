@@ -4286,6 +4286,7 @@ async fn create_service(
     headers: HeaderMap,
     Json(request): Json<ServiceCreateRequest>,
 ) -> Response {
+    let auth_runtime = state.auth_runtime.clone();
     admin_mutation(
         headers,
         &state,
@@ -4293,9 +4294,28 @@ async fn create_service(
         "services:create",
         "service",
         |service: &ServiceResponse| Some(service.name.clone()),
-        |store| async move { store.create_service(request).await },
+        |store| async move {
+            validate_forwarding_key_header(&request.access, &auth_runtime)?;
+            store.create_service(request).await
+        },
     )
     .await
+}
+
+fn validate_forwarding_key_header(
+    access: &gateway_core::EndpointAccess,
+    auth: &SharedGatewayAuthRuntime,
+) -> GatewayResult<()> {
+    if let Some(forwarding) = &access.user_token_forwarding {
+        let snapshot = auth.snapshot()?;
+        if forwarding
+            .header
+            .eq_ignore_ascii_case(&snapshot.config.relayna_key_header)
+        {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+    }
+    Ok(())
 }
 
 async fn list_services(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -4566,6 +4586,11 @@ async fn patch_service(
         Ok(actor) => actor,
         Err(response) => return response,
     };
+    if let Some(access) = &patch.access {
+        if let Err(error) = validate_forwarding_key_header(access, &state.auth_runtime) {
+            return error_response(&headers, error);
+        }
+    }
     let before = match state.store.get_service(&service_name).await {
         Ok(before) => before,
         Err(error) => return error_response(&headers, error),
@@ -15222,6 +15247,28 @@ mod tests {
         assert_eq!(value["health_check_method"], "HEAD");
         assert_eq!(value["credential_configured"], true);
         assert!(value.get("credential").is_none());
+    }
+
+    #[test]
+    fn user_token_header_cannot_collide_with_configured_relayna_key_header() {
+        let runtime = SharedGatewayAuthRuntime::new(gateway_core::GatewayAuthRuntimeConfig {
+            relayna_key_header: "x-channel-key".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        let mut access = gateway_core::EndpointAccess {
+            user_token_forwarding: Some(gateway_core::UserTokenForwarding {
+                enabled: true,
+                header: "X-Channel-Key".into(),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_forwarding_key_header(&access, &runtime),
+            Err(GatewayError::InvalidServicePayload)
+        );
+        access.user_token_forwarding.as_mut().unwrap().header = "x-employee-identity".into();
+        assert!(validate_forwarding_key_header(&access, &runtime).is_ok());
     }
 
     #[test]

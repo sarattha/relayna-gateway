@@ -13,6 +13,10 @@ ignore = [
     # Maintenance-only advisory: Pingora 0.8 Rustls requires this PEM wrapper
     # around rustls-pki-types; no patched release. Revisit by 2026-10-05.
     "RUSTSEC-2025-0134",
+    # Maintenance-only: Pingora 0.8 depends on deprecated serde_yaml and its
+    # archived backend; no patched upstream version. Gateway uses programmatic
+    # Pingora configuration, not caller-supplied YAML. Revisit by 2026-11-15.
+    "RUSTSEC-2024-0449",
 ]
 
 [licenses]

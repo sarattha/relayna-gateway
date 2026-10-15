@@ -1,7 +1,9 @@
 pub mod accessa;
 pub mod endpoint_access;
 pub mod foundry;
-pub use endpoint_access::{AccessaBinding, EndpointAccess, EndpointEntraPolicy};
+pub use endpoint_access::{
+    AccessaBinding, EndpointAccess, EndpointEntraPolicy, UserTokenForwarding,
+};
 pub mod access;
 pub mod admin;
 pub mod auth;

@@ -23,6 +23,7 @@ import {
   readIdentityDraft,
 } from "../crates/gateway-api/admin-ui/src/react/mount-identity-editor";
 import { ConsoleShell } from "../crates/gateway-api/admin-ui/src/react/shell";
+import { UserTokenForwarding } from "../crates/gateway-api/admin-ui/src/react/user-token-forwarding";
 import {
   Button,
   Dialog,
@@ -981,5 +982,52 @@ describe("unified provider creation", () => {
   it("mounts and closes the shared create dialog",async()=>{
     await act(async()=>{mountProviderCreate({onSave:vi.fn()});});
     await userEvent.setup().click(screen.getByRole("button",{name:"Cancel"}));expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+
+describe("Accessa user token forwarding", () => {
+  it("starts disabled, exposes the default header, and keeps a custom name when disabled", async () => {
+    const user = userEvent.setup();
+    const {container} = render(<form><UserTokenForwarding initial={null} /></form>);
+    const checkbox = screen.getByRole("checkbox", {name:"Forward verified user token"});
+    const header = screen.getByRole("textbox", {name:"User token header"});
+    expect((checkbox as HTMLInputElement).checked).toBe(false);
+    expect((header as HTMLInputElement).value).toBe("x-access-token");
+    await user.clear(header);
+    await user.type(header,"x-delegated-identity");
+    await user.click(checkbox);
+    expect(new FormData(container.querySelector("form")!).has("forward_user_token")).toBe(true);
+    await user.click(checkbox);
+    const data = new FormData(container.querySelector("form")!);
+    expect(data.has("forward_user_token")).toBe(false);
+    expect(data.get("user_token_header")).toBe("x-delegated-identity");
+  });
+  it("identifies a reserved header and clears the error for a custom name", async () => {
+    const user = userEvent.setup();
+    render(<UserTokenForwarding initial={null} />);
+    const header = screen.getByRole("textbox", {name:"User token header"}) as HTMLInputElement;
+    await user.clear(header);
+    await user.type(header,"Authorization");
+    expect(header.checkValidity()).toBe(false);
+    expect(screen.getByRole("alert").textContent).toContain("cannot replace authentication");
+    await user.clear(header);
+    await user.type(header,"x-employee-identity");
+    expect(header.checkValidity()).toBe(true);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("does not let hidden Accessa fields block an ordinary service submission", () => {
+    const {container} = render(<form><fieldset disabled><UserTokenForwarding initial={{enabled:true,header:""}} /></fieldset></form>);
+    const form = container.querySelector("form")!;
+    expect(form.checkValidity()).toBe(true);
+    expect(new FormData(form).has("user_token_header")).toBe(false);
+  });
+  it("restores saved forwarding configuration without a token input", () => {
+    const {container} = render(<form><UserTokenForwarding initial={{enabled:true,header:"x-employee-identity"}} /></form>);
+    expect((screen.getByRole("checkbox", {name:"Forward verified user token"}) as HTMLInputElement).checked).toBe(true);
+    const data = new FormData(container.querySelector("form")!);
+    expect(data.get("user_token_header")).toBe("x-employee-identity");
+    expect(data.get("user_token_configured")).toBe("true");
+    expect(container.querySelector('input[type="password"]')).toBeNull();
   });
 });
