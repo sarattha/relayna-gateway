@@ -6,7 +6,7 @@ ownership for governed traffic. Clients normally authenticate to Gateway with
 Relayna credentials. Gateway then strips client credentials and injects the
 internal LiteLLM credential selected by operator configuration.
 
-This page covers the `0.1.45` behavior. Governed forwarding validates complete request policy and admission before body forwarding; see [operations](operations.md) for budget rollout and recovery.
+This page covers the `0.1.46` behavior. Governed forwarding validates complete request policy and admission before body forwarding; see [operations](operations.md) for budget rollout and recovery.
 
 ## Caller-key APIs with the dashboard disabled (0.1.40)
 
@@ -93,6 +93,10 @@ clear denies only after equivalent ingress restrictions are in place; retain the
 additive columns. Existing settings need no data rewrite.
 
 ## Request Model
+
+For opt-in caller-owned WebSocket sessions, see [WebSocket transport](websocket-transport.md).
+Relayna-governed LiteLLM WebSocket sessions are deferred; existing HTTP and SSE
+contracts continue to apply.
 
 Gateway-managed traffic never treats a LiteLLM master key or LiteLLM virtual key
 as a Relayna client credential. Those keys are upstream credentials managed by

@@ -211,6 +211,12 @@ measurements. Upstream idle remaining is an estimate, and session expiry is
 checked on frame activity. Bytes include frame headers but exclude HTTP/TLS
 overhead. These counters do not represent billed tokens.
 
+From v0.1.46, registered service and caller-owned LiteLLM sockets expose the
+same transport measurements. Service Usage rows contain connection metadata
+without tokens or cost. Caller-owned LiteLLM sessions appear in Traffic without
+a Relayna key identity or per-key Usage row; LiteLLM owns their accounting. See
+[WebSocket transport](../websocket-transport.md) for configuration and limits.
+
 Entra details compare the endpoint requirements with successfully verified
 audience, scopes, roles, groups, identifiers and expiry. Failed verification shows
 the requirements and failure without unverified claims. Tokens and payloads are

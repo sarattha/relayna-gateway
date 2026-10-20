@@ -1,5 +1,7 @@
 #[path = "accessa_runtime.rs"]
 mod accessa_runtime;
+#[path = "websocket.rs"]
+mod websocket;
 use crate::accessa_transport::{ConnectionLease, ConnectionLimits, FrameLimit};
 use crate::body_rewrite::{
     prepare_rewritten_request_headers, prepare_rewritten_response_headers, BoundedBodyRewriter,
@@ -519,6 +521,7 @@ where
             return self.handle_accessa_admission(session, ctx).await;
         }
         let req = session.req_header();
+        let upgrade = websocket::upgrade_requested(req);
         ctx.request_content_type =
             header_value(req, header::CONTENT_TYPE.as_str()).map(ToOwned::to_owned);
 
@@ -567,7 +570,17 @@ where
             ctx.service_upstream = Some(upstream);
             matched
         } else {
-            match Route::resolve_match(&req.method, req.uri.path()) {
+            // Socket Responses requests share the canonical POST route's mode,
+            // enablement and identity. They must never escape via the wildcard.
+            let route_method = if upgrade
+                && req.method == http::Method::GET
+                && matches!(req.uri.path(), "/responses" | "/v1/responses")
+            {
+                &http::Method::POST
+            } else {
+                &req.method
+            };
+            match Route::resolve_match(route_method, req.uri.path()) {
                 Ok(matched) => matched,
                 Err(error) => match self.store.litellm_passthrough_settings().await {
                     Ok(settings) if settings.denies_path(req.uri.path()) => {
@@ -677,24 +690,23 @@ where
             }
         }
         ctx.route = Some(matched.route);
-        let upgrade =
-            req.headers.contains_key("upgrade") || req.headers.contains_key("sec-websocket-key");
         if upgrade {
-            let allowed = ctx
+            let accessa = ctx
                 .access
                 .accessa
                 .as_ref()
-                .is_some_and(|binding| binding.run_path().as_deref() == Some(req.uri.path()))
-                && req.method == http::Method::GET
-                && header_value(req, "upgrade")
-                    .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
-                && header_value(req, "connection").is_some_and(|v| {
-                    v.split(',')
-                        .any(|v| v.trim().eq_ignore_ascii_case("upgrade"))
-                })
-                && header_value(req, "sec-websocket-version") == Some("13")
-                && !req.headers.contains_key("sec-websocket-extensions");
-            if !allowed {
+                .is_some_and(|binding| binding.run_path().as_deref() == Some(req.uri.path()));
+            let general = ctx.access.websocket.is_some()
+                && ctx.access.accessa.is_none()
+                && ctx.foundry.is_none()
+                && ((matched.provider == Provider::InternalService
+                    && matched.service_name.is_some())
+                    || matched.route == Route::LiteLlmPassthrough
+                    || matched.route == Route::Responses);
+            if (!accessa && !general)
+                || !websocket::valid_handshake(req)
+                || (accessa && req.headers.contains_key("sec-websocket-extensions"))
+            {
                 respond_error(session, GatewayError::UnsupportedRoute, ctx).await?;
                 return Ok(true);
             }
@@ -707,6 +719,14 @@ where
                         channel: binding.channel.clone(),
                         idle_timeout_ms: binding.idle_timeout_ms,
                         max_frame_bytes: binding.max_frame_bytes as u64,
+                        ..Default::default()
+                    });
+            } else if let Some(settings) = &ctx.access.websocket {
+                ctx.traffic.diagnostics.websocket =
+                    Some(gateway_core::traffic::WebSocketDiagnostics {
+                        state: "connecting".into(),
+                        idle_timeout_ms: settings.idle_timeout_ms,
+                        max_frame_bytes: settings.max_frame_bytes as u64,
                         ..Default::default()
                     });
             }
@@ -915,6 +935,7 @@ where
             return Ok(true);
         }
         if ctx.access.authentication_profiles.is_none()
+            && !ctx.socket
             && ctx.litellm_passthrough
             && matched.route == Route::LiteLlmPassthrough
         {
@@ -954,7 +975,16 @@ where
                         respond_error(session, error, ctx).await?;
                         return Ok(true);
                     }
-                    let credential = match litellm_bearer_credential(authorization) {
+                    let credential = match if ctx.socket
+                        && (req.headers.get_all("authorization").iter().count() > 1
+                            || req.headers.contains_key(&auth.config.relayna_key_header)
+                            || req.headers.contains_key("x-apigee-entra-identity")
+                            || req.headers.contains_key("x-apigee-entra-signature"))
+                    {
+                        Err(GatewayError::MalformedAuthorization)
+                    } else {
+                        litellm_bearer_credential(authorization)
+                    } {
                         Ok(credential) => credential,
                         Err(error) => {
                             gateway_telemetry::record_auth_failure(error.code());
@@ -981,6 +1011,12 @@ where
                     return Ok(true);
                 }
             }
+        }
+        // Only caller-owned LiteLLM sessions are supported. Never translate a
+        // Relayna key to a stored provider credential for a socket session.
+        if ctx.socket && matched.provider == Provider::LiteLlm {
+            respond_error(session, GatewayError::UnsupportedRoute, ctx).await?;
+            return Ok(true);
         }
         let key_result = if let Some(key) = profile_key {
             Ok(key)
@@ -1576,6 +1612,15 @@ where
             respond_error(session, GatewayError::InvalidConfiguration, ctx).await?;
             return Ok(false);
         }
+        if ctx.socket && ctx.access.accessa.is_none() {
+            match self.admit_websocket(session, ctx).await {
+                Ok(()) => return Ok(true),
+                Err(error) => {
+                    respond_error(session, error, ctx).await?;
+                    return Ok(false);
+                }
+            }
+        }
         if ctx.trusted_ingress_passthrough {
             gateway_telemetry::record_provider_selection();
             return Ok(true);
@@ -1932,10 +1977,16 @@ where
             if ctx.socket {
                 let idle = Duration::from_millis(
                     ctx.access
-                        .accessa
+                        .websocket
                         .as_ref()
-                        .expect("binding")
-                        .idle_timeout_ms,
+                        .map(|settings| settings.idle_timeout_ms)
+                        .or_else(|| {
+                            ctx.access
+                                .accessa
+                                .as_ref()
+                                .map(|binding| binding.idle_timeout_ms)
+                        })
+                        .expect("socket transport settings"),
                 );
                 peer.options.read_timeout = Some(idle);
                 peer.options.write_timeout = Some(idle);
@@ -1974,6 +2025,11 @@ where
             upstream,
             Some(ctx.relayna_key_header.as_str()),
         )?;
+        if ctx.socket {
+            // Negotiate an uncompressed relay so frame/message limits remain
+            // meaningful, including for browser clients offering compression.
+            upstream_request.remove_header("sec-websocket-extensions");
+        }
         // Cost metadata must remain readable even when a caller requests gzip
         // or Brotli. Selectors can still switch the final price mode after these
         // upstream headers are prepared, so include possible passthrough rules.
@@ -2144,6 +2200,15 @@ where
         // released before any post-call response buffering begins.
         ctx.request_body_lease.take();
         let status_code = upstream_response.status.as_u16();
+        if status_code == 101
+            && (!ctx.socket
+                || upstream_response
+                    .headers
+                    .contains_key("sec-websocket-extensions"))
+        {
+            ctx.traffic.fail("upstream", "unexpected_websocket_upgrade");
+            return Err(PingoraError::new_up(ErrorType::InvalidHTTPHeader));
+        }
         ctx.response_cost_observer = Default::default();
         ctx.socket_upgraded = ctx.socket && status_code == 101;
         if let Some(socket) = &mut ctx.traffic.diagnostics.websocket {
@@ -2601,6 +2666,10 @@ where
         client_reused: bool,
     ) -> Box<PingoraError> {
         traffic_attempt_error(ctx, &error);
+        if ctx.socket {
+            error.set_retry(false);
+            return error;
+        }
         error
             .retry
             .decide_reuse(client_reused && !session.as_ref().retry_buffer_truncated());
@@ -2703,7 +2772,7 @@ where
     }
 
     fn activate_provider_fallback(&self, ctx: &mut PingoraContext) -> bool {
-        if ctx.access.accessa.is_some() {
+        if ctx.socket || ctx.access.accessa.is_some() {
             return false;
         }
         let Some(matched) = &ctx.route_match else {
@@ -4018,7 +4087,7 @@ fn configure_service_pricing_context(
 }
 
 fn resolved_usage_cost(ctx: &PingoraContext) -> ResolvedUsageCost {
-    if ctx.litellm_passthrough || ctx.access.accessa.is_some() {
+    if ctx.socket || ctx.litellm_passthrough || ctx.access.accessa.is_some() {
         return ResolvedUsageCost {
             estimated_cost_usd: None,
             cost_source: Some("none".to_owned()),
@@ -5825,6 +5894,35 @@ mod tests {
             .is_err());
         assert!(proxy
             .request_body_filter(&mut session, &mut None, false, &mut ctx)
+            .await
+            .is_err());
+        let peer = HttpPeer::new("127.0.0.1:4000", false, String::new());
+        for retry in [pingora_core::RetryType::ReusedOnly, true.into()] {
+            let mut error = PingoraError::new_up(ErrorType::ConnectionClosed);
+            error.retry = retry;
+            assert!(!proxy
+                .error_while_proxy(&peer, &mut session, error, &mut ctx, true)
+                .retry());
+        }
+        // Each transport failure keeps the first diagnostic cause; start fresh
+        // when checking a separate upstream handshake failure.
+        ctx.traffic = TrafficRequest::default();
+        let mut compressed = ResponseHeader::build(101, None).unwrap();
+        compressed
+            .insert_header("sec-websocket-extensions", "permessage-deflate")
+            .unwrap();
+        assert!(proxy
+            .upstream_response_filter(&mut session, &mut compressed, &mut ctx)
+            .await
+            .is_err());
+        assert_eq!(
+            ctx.traffic.diagnostics.failure_code.as_deref(),
+            Some("unexpected_websocket_upgrade")
+        );
+        ctx.socket = false;
+        let mut unsolicited = ResponseHeader::build(101, None).unwrap();
+        assert!(proxy
+            .upstream_response_filter(&mut session, &mut unsolicited, &mut ctx)
             .await
             .is_err());
     }

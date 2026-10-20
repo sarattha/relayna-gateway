@@ -1866,7 +1866,7 @@ async function routes() {
   content.innerHTML = `
     <section class="panel"><div class="panel-heading"><h3>Additional endpoint identity</h3></div>
       <p class="field-hint">Choose authentication requirements for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
-      ${table(["Route", "Protocol", "Identity", "Actions"], state.routeIdentities.filter((row) => ![...state.openaiRoutes, ...state.anthropicRoutes].some((item) => item.route === row.route)).map((row) => [`<code>${esc(row.route)}</code>`, '<span class="badge">HTTP</span>', endpointIdentityBadge(row.access), routeIdentityButton(row.route)]))}
+      ${table(["Route", "Protocol", "Identity", "Actions"], state.routeIdentities.filter((row) => ![...state.openaiRoutes, ...state.anthropicRoutes].some((item) => item.route === row.route)).map((row) => [`<code>${esc(row.route)}</code>`, row.access?.websocket ? '<span class="badge">HTTP + WS</span><div class="subtle">Caller-owned LiteLLM keys only</div>' : '<span class="badge">HTTP</span>', endpointIdentityBadge(row.access), routeIdentityButton(row.route)]))}
     </section>
     <section class="panel">
       <div class="panel-heading">
@@ -1919,7 +1919,7 @@ function providerRouteTable(rows, family) {
     ["Route", "Protocol", "Identity", "State", "Configuration", "Updated", "Actions"],
     rows.map((row) => [
       `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
-      '<span class="badge">HTTP</span>',
+      row.route === "/v1/responses" && row.mode === "direct_litellm_passthrough" && state.routeIdentities.some((setting) => setting.route === row.route && setting.access?.websocket) ? '<span class="badge">HTTP + WS</span><div class="subtle">Caller-owned LiteLLM keys only</div>' : '<span class="badge">HTTP</span>',
       routeIdentityControl(row.route),
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
       modeForm(row),
@@ -2053,7 +2053,7 @@ function serviceTypePresets() {
     { id: "apigee_http", label: "Apigee-backed HTTP service", description: "HTTP API requiring Entra identity, also accepting signed Apigee claims. Enter this endpoint’s audience. Trusted Apigee verification must be configured in gateway settings.", methods: ["GET", "POST"], mode: "required", apigee: true, timeout: 60000 },
     { id: "accessa_channel", label: "Accessa app/channel (HTTP + WebSocket)", description: "BFF connects through the gateway to the channel adapter. App and channel generate the route; only GET /run supports WebSocket. PUT supports feedback and settings; PATCH supports metadata edits. Enter the Accessa Entra audience and bind a virtual key to this service.", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], mode: "required", accessa: true, app: "tara", channel: "web", timeout: 60000 },
     { id: "accessa_discovery", label: "Accessa channel discovery (HTTP)", description: "Channel identity discovery at /channel/{channel}/v1/me. App stays blank; enter the channel and its Entra audience. This endpoint does not open WebSockets.", methods: ["GET"], mode: "required", accessa: true, app: "", channel: "web", timeout: 60000 },
-    { id: "custom", label: "Custom configuration", description: "Configure the supported HTTP or Accessa route directly. Keeps current values so you can customize a preset. Generic WebSockets and arbitrary protocol adapters are not enabled by this choice." },
+    { id: "custom", label: "Custom configuration", description: "Configure HTTP, opt-in WebSocket transport, or an Accessa route directly. Keeps current values so you can customize a preset." },
   ];
 }
 
@@ -2078,6 +2078,7 @@ function applyServiceTypePreset(form, type) {
   for (const field of ["endpoint_audience", "endpoint_scopes", "endpoint_roles", "endpoint_groups"]) set(field, "");
   check("endpoint_apigee", !!preset.apigee);
   check("accessa_enabled", !!preset.accessa);
+  check("websocket_enabled", false);
   set("accessa_app", preset.app || "");
   set("accessa_channel", preset.channel || "");
   set("socket_idle_ms", 60000);
@@ -2180,7 +2181,7 @@ async function services() {
     </div>
     <section class="panel">
       <div class="panel-heading"><h3>Registered services</h3><span class="subtle">${state.services.length} total</span></div>
-      <p class="field-hint">Register each Accessa app/channel once. HTTP endpoints share its route prefix; WS (WebSocket) is limited to the displayed GET run path. SSE uses HTTP.</p>
+      <p class="field-hint">Enable WebSocket transport for services that accept upgrades. Accessa bindings restrict WS to their GET run path. SSE uses HTTP.</p>
       ${serviceTable(state.services)}
     </section>
     <datalist id="service-routes">${serviceRouteOptions()}</datalist>
@@ -2429,7 +2430,7 @@ function serviceEditForm(service) {
   return `
     <div class="panel-heading"><h3>Edit service</h3><span class="subtle">${esc(service.name)}</span></div>
     <form id="service-edit-form" class="form-grid" data-service-name="${attr(service.name)}">
-      <div class="field wide-field"><span>Saved endpoint protocols</span><div>${serviceProtocolSummary(service)}</div><small class="field-hint">WS means WebSocket and applies only to the displayed run path. Other endpoints use HTTP; SSE also uses HTTP. Labels describe saved configuration, not current availability.</small></div>
+      <div class="field wide-field"><span>Saved endpoint protocols</span><div>${serviceProtocolSummary(service)}</div><small class="field-hint">WS means WebSocket on the displayed GET route. SSE uses HTTP. Labels describe saved configuration, not current availability.</small></div>
       ${service.foundry ? `<div class="wide-field"><span class="subtle">Azure Foundry · ${service.foundry.mode === "registered_agent" ? esc(service.foundry.agent_name) : "Endpoint passthrough"}</span> <button type="button" data-foundry-service="${attr(service.name)}">Configure Foundry</button></div>` : ""}
       ${formSection("Identity and routing", "Update registry identity, route, upstream, and methods.", `
         <label>Studio service ID<input name="studio_service_id" value="${attr(service.studio_service_id ?? "")}"></label>
@@ -2591,7 +2592,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.45")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v0.1.46")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -2924,6 +2925,9 @@ async function serviceAction(event) {
 }
 
 function serviceProtocolSummary(service) {
+  if (service.access?.websocket && !service.access?.accessa && !service.foundry && (service.allowed_methods || []).includes("GET")) {
+    return `<span class="badge">HTTP + WS</span><div class="subtle"><span class="badge">WS</span> GET <code>${esc(service.route_pattern)}</code></div>`;
+  }
   const binding = service.access?.accessa;
   const prefix = binding?.app ? `/app/${binding.app}/channel/${binding.channel}/v1/` : null;
   const hasRunSocket = prefix && service.route_pattern === `${prefix}*` && (service.allowed_methods || []).includes("GET");
@@ -4230,7 +4234,7 @@ function editRouteIdentity(event) {
   const titleId = `dialog-title-${++dialogCounter}`;
   backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
     <h3 id="${titleId}">Endpoint identity · ${esc(route)}</h3>
-    <form class="modal-form"><div class="modal-scroll form-grid">${endpointIdentityFields(setting.access)}</div>
+    <form class="modal-form"><div class="modal-scroll form-grid">${endpointIdentityFields(setting.access)}${["/litellm/*", "/v1/responses"].includes(route) ? websocketTransportFields(setting.access, true) : ""}</div>
       <div class="form-actions"><button class="primary">Save identity</button><button type="button" data-close-modal>Cancel</button></div>
     </form></div>`;
   document.body.appendChild(backdrop);
@@ -4255,7 +4259,7 @@ function editRouteIdentity(event) {
 
 function endpointAccessFields(access, projectId = "") {
   const binding = access.accessa || {};
-  return formSection("Endpoint identity and Accessa", "Apply identity requirements to this registered route. Accessa preserves the public path and requires an explicit key service binding.", `
+  return formSection("Endpoint identity and transport", "Apply identity requirements and choose WebSocket or Accessa transport for this service.", `
     ${endpointIdentityFields(access, projectId)}
     <label class="check"><input name="accessa_enabled" type="checkbox" ${access.accessa ? "checked" : ""}> Accessa channel binding</label>
     <label>Accessa app<input name="accessa_app" value="${attr(binding.app || "")}" placeholder="tara"></label>
@@ -4266,7 +4270,22 @@ function endpointAccessFields(access, projectId = "") {
     <label>Maximum socket message bytes<input name="socket_frame_bytes" type="number" min="125" max="16777216" value="${attr(binding.max_frame_bytes ?? 1048576)}"></label>
     <fieldset class="wide-field" style="border:0;margin:0;padding:0;min-width:0" data-user-token-forwarding="${attr(JSON.stringify(access.user_token_forwarding || null))}" ${access.accessa ? "" : "disabled hidden"}></fieldset>
     <div class="help wide-field">With Require Entra, all listed scopes and roles are required; any listed group may match. Apigee must sign audience and expiry claims. Accessa requires Require Entra and an audience; a blank app is only for /channel/{channel}/v1/me. Socket limits apply per gateway instance; the instance ceiling is 4,096. Accessa transport and admission carry no charge; downstream service calls remain metered.</div>
+    ${websocketTransportFields(access)}
   `);
+}
+
+function websocketTransportFields(access = {}, litellm = false) {
+  const socket = access.websocket || {};
+  return `<details class="wide-field" ${access.websocket ? "open" : ""}><summary>WebSocket transport</summary><div class="form-grid">
+    <label class="check wide-field"><input name="websocket_enabled" type="checkbox" ${access.websocket ? "checked" : ""}> Allow WebSocket alongside HTTP</label>
+    <p class="field-hint wide-field">${litellm ? "Caller-owned LiteLLM keys only. Set the route to direct LiteLLM passthrough (or wildcard authentication to litellm_bearer). Path, method and exposure restrictions still apply. LiteLLM owns model policy and spend; Relayna-governed sessions are not supported." : "Requires GET in allowed methods and a WebSocket-capable upstream. Do not combine with Accessa. Relayna checks identity, streaming permission, request rate and budget eligibility when connecting. Socket messages have no HTTP pricing or content inspection; the service owns per-message authorization and charging."}</p>
+    <label>WebSocket idle timeout ms<input name="websocket_idle_ms" type="number" min="100" max="600000" value="${attr(socket.idle_timeout_ms ?? 60000)}"></label>
+    <label>WebSocket connections per route per instance<input name="websocket_connections" type="number" min="1" max="10000" value="${attr(socket.max_connections ?? 100)}"></label>
+    <label>WebSocket connections per key per instance<input name="websocket_key_connections" type="number" min="1" max="10000" value="${attr(socket.max_connections_per_key ?? 10)}"></label>
+    <label>WebSocket maximum message bytes<input name="websocket_frame_bytes" type="number" min="125" max="16777216" value="${attr(socket.max_frame_bytes ?? 1048576)}"></label>
+    <label>WebSocket session duration seconds<input name="websocket_duration_seconds" type="number" min="1" max="86400" value="${attr(socket.max_session_duration_seconds ?? 3600)}"></label>
+    <p class="field-hint wide-field">Limits apply per gateway instance; the shared connection ceiling is 4,096. Frames and fragmented messages share the size limit. Compression is not negotiated. Session expiry is checked on traffic; idle reads and writes use the idle timeout.</p>
+  </div></details>`;
 }
 
 function endpointAccessFromForm(form) {
@@ -4274,10 +4293,16 @@ function endpointAccessFromForm(form) {
   if (form.get("profiles_saved") === "true" && mode !== "profiles") throw new Error("This route has saved authentication profiles. Edit the profiles instead; switching identity modes would remove them and is not supported.");
   const audience = mode === "required" ? String(form.get("endpoint_audience") || "").trim() : "";
   const accessa = form.has("accessa_enabled");
+  if (accessa && form.has("websocket_enabled")) throw new Error("Choose Accessa or general WebSocket transport, not both.");
   if (accessa && mode !== "profiles" && !audience) throw new Error("Accessa requires an endpoint Entra audience and Require Entra mode.");
   if (mode === "required" && !audience) throw new Error("Require Entra needs an endpoint audience.");
   if (!["inherit", "required", "disabled", "profiles"].includes(mode)) throw new Error("Choose a Route authentication mode.");
   return {
+    ...(form.has("websocket_enabled") ? { websocket: {
+      idle_timeout_ms: Number(form.get("websocket_idle_ms")), max_connections: Number(form.get("websocket_connections")),
+      max_connections_per_key: Number(form.get("websocket_key_connections")), max_frame_bytes: Number(form.get("websocket_frame_bytes")),
+      max_session_duration_seconds: Number(form.get("websocket_duration_seconds")),
+    } } : {}),
     ...(accessa && (form.has("forward_user_token") || form.get("user_token_configured") === "true" || (form.get("user_token_header") && form.get("user_token_header") !== "x-access-token")) ? {
       user_token_forwarding: { enabled: form.has("forward_user_token"), header: String(form.get("user_token_header") || "x-access-token").trim().toLowerCase() },
     } : {}),

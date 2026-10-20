@@ -1,7 +1,16 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.45` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.46` is the
 current release target.
+
+Version `0.1.46` adds opt-in HTTP/WebSocket transport for registered services
+and caller-owned LiteLLM passthrough, including Realtime and direct Responses
+routes. Transport has frame/message, connection, idle and session limits;
+LiteLLM retains session governance and accounting. Existing HTTP and Accessa
+contracts remain covered. No new SQL migration or Redis format is introduced.
+Upgrade all replicas before enabling `access.websocket`; see
+[WebSocket transport](websocket-transport.md) and
+[deployment](deployment.md#upgrade-to-0146).
 
 Version `0.1.45` adds configurable, opt-in forwarding of verified Accessa user
 JWTs and PUT-capable channel provisioning. It fixes header-setting collisions
@@ -119,7 +128,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.45
+   python3 scripts/validate-release-metadata.py v0.1.46
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -137,15 +146,15 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.45 .
+   docker build -t relayna-gateway:0.1.46 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.45 -m "Release v0.1.45"
-   git push origin v0.1.45
+   git tag -a v0.1.46 -m "Release v0.1.46"
+   git push origin v0.1.46
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -155,10 +164,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.45`, the workflow publishes:
+For `v0.1.46`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.45
+ghcr.io/sarattha/relayna-gateway:0.1.46
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```
