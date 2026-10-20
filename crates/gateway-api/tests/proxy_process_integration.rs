@@ -634,6 +634,47 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     assert_eq!(error["error"]["code"], "gateway_overloaded");
     assert_eq!(error["error"]["retry_after_seconds"], 1);
 
+    // Expansion beyond the aggregate byte budget must fail before reserving
+    // a fixed service charge, even though the original input fits the budget.
+    let expanded_request_id = Uuid::new_v4().to_string();
+    let expanding_body = json!({
+        "model": "coverage-model",
+        "engine": "docint",
+        "payload": "a@b.co ".repeat(60)
+    });
+    assert!(serde_json::to_vec(&expanding_body).unwrap().len() <= 512);
+    let response = client
+        .post(format!("{proxy_url}/services/{service_name}/delayed"))
+        .bearer_auth(&material.raw_key)
+        .header("x-request-id", &expanded_request_id)
+        .json(&expanding_body)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .expect("expanded-body rejection");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let error: Value = response.json().await.expect("expanded-body overload");
+    assert_eq!(error["error"]["code"], "gateway_overloaded");
+    assert_eq!(delayed.received.load(Ordering::SeqCst), 0);
+    let rejected_cost = time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(cost) = sqlx::query_scalar::<_, Option<f64>>(
+                "SELECT estimated_cost::double precision FROM usage_events WHERE request_id = $1",
+            )
+            .bind(&expanded_request_id)
+            .fetch_optional(store.pool())
+            .await
+            .expect("read rejected usage")
+            {
+                break cost;
+            }
+            time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("rejected usage recorded");
+    assert_eq!(rejected_cost, None, "do not charge a rejected upload");
+
     // Both admitted uploads have reached the upstream, but it has not sent
     // response headers. They must no longer occupy the two body-buffer slots.
     let delayed_body = json!({"payload": "release-after-upload"}).to_string();

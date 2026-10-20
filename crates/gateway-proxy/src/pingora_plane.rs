@@ -3083,6 +3083,15 @@ where
         R: RateLimitStore,
     {
         let result: GatewayResult<()> = async {
+            // Rewritten output must fit before reserving a service charge.
+            // The lease is transferred to the forwarded bytes after admission.
+            if let Some(lease) = ctx.request_body_lease.as_mut() {
+                let additional_bytes = body
+                    .as_ref()
+                    .map_or(0, Bytes::len)
+                    .saturating_sub(lease.reserved_bytes());
+                lease.try_reserve(additional_bytes)?;
+            }
             let key = ctx.key.as_ref().ok_or(GatewayError::MissingAuthorization)?;
             let mut matched = ctx
                 .route_match

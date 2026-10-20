@@ -49,6 +49,13 @@ containing reproducible tooling and measured results.
 - Request admission currently lasts until upstream response headers, even
   after the body is handed to Pingora. The benchmark must determine whether
   this ties small concurrency limits to upstream processing latency.
+- The first full verification run passed proxy/API coverage but a store test
+  rejected `REDIS_URL=.../1` because it appends its own `/15` suffix. Use a
+  dedicated verification Redis instance with a base URL instead. No production
+  code change is needed for this test-environment assumption.
+- A new expansion regression caught fixed-service charging when rewritten
+  output exceeded the byte budget after budget reservation. Reserve expanded
+  body bytes before budget admission, then transfer the lease to the buffer.
 
 ## Decision Log
 
