@@ -32,10 +32,20 @@ Optional variables:
 Body admission limits are process-wide and complement per-route request limits.
 When a valid request cannot acquire process body capacity, Gateway returns
 `503 gateway_overloaded` with a short retry hint. Route-size violations remain
-`413 request_body_too_large`. Fixed or unpriced registered-service requests
-with no active body guardrails stream without consuming the buffered-body
-budget. Size the byte limit well below the pod memory limit because JSON object
-trees and guardrails require additional working memory.
+`413 request_body_too_large`. Eligible fixed or unpriced registered-service
+requests with non-JSON bodies and no active body guardrails stream without
+consuming the buffered-body budget. Size the byte limit well below the pod
+memory limit because JSON object trees and guardrails require additional
+working memory.
+
+Buffered request slots and byte reservations follow the forwarded buffer until
+its last reference is released. An upload queued behind a slow upstream writer
+still consumes admission; upstream processing time after the upload is consumed
+does not. Complete-body policy, pricing, and guardrail checks still finish
+before buffered request bytes are forwarded. Guardrail expansion must fit the
+aggregate byte budget as well. These limits bound managed buffers, not total
+pod RSS or all in-flight connections. See the [two-pod 5 MiB benchmark](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/README.md)
+for measured memory and timing at different concurrency limits.
 
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are fallback settings.
 Operators can set, replace, test, or clear the Studio connection in Admin portal

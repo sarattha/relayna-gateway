@@ -16,8 +16,15 @@ use gateway_proxy::{PingoraLiteLlmConfig, PingoraUpstreamConfig, RelaynaPingoraP
 use gateway_store::{PostgresStore, RedisControlState, RedisReadiness};
 use pingora_core::server::Server;
 use serde_json::{json, Value};
-use std::{net::TcpListener as StdTcpListener, sync::Arc, time::Duration};
-use tokio::{net::TcpListener, task::JoinHandle, time};
+use std::{
+    net::TcpListener as StdTcpListener,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
+use tokio::{net::TcpListener, sync::Semaphore, task::JoinHandle, time};
 use uuid::Uuid;
 
 fn unused_port() -> u16 {
@@ -25,13 +32,34 @@ fn unused_port() -> u16 {
     listener.local_addr().expect("local address").port()
 }
 
-async fn mock_upstream() -> (String, JoinHandle<()>) {
+struct DelayedRequestGate {
+    received: AtomicUsize,
+    release: Semaphore,
+}
+
+async fn mock_upstream() -> (String, JoinHandle<()>, Arc<DelayedRequestGate>) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind mock upstream");
     let address = listener.local_addr().expect("mock upstream address");
+    let delayed = Arc::new(DelayedRequestGate {
+        received: AtomicUsize::new(0),
+        release: Semaphore::new(0),
+    });
+    let delayed_handler = Arc::clone(&delayed);
     let app = Router::new()
         .route("/stream", post(|body: Bytes| async move { body }))
+        .route(
+            "/delayed",
+            post(move |body: Bytes| {
+                let gate = Arc::clone(&delayed_handler);
+                async move {
+                    gate.received.fetch_add(1, Ordering::SeqCst);
+                    let _permit = gate.release.acquire().await.expect("release mock response");
+                    body
+                }
+            }),
+        )
         .route(
             "/large-response",
             post(|| async { Json(json!({"payload": "x".repeat(2048)})) }),
@@ -58,7 +86,7 @@ async fn mock_upstream() -> (String, JoinHandle<()>) {
             .await
             .expect("serve mock upstream");
     });
-    (format!("http://{address}"), task)
+    (format!("http://{address}"), task, delayed)
 }
 
 async fn wait_until_ready(client: &reqwest::Client, control_url: &str) {
@@ -119,7 +147,7 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
         .execute(&mut *database_lock)
         .await
         .expect("serialize shared control-plane integration state");
-    let (upstream_url, upstream_task) = mock_upstream().await;
+    let (upstream_url, upstream_task, delayed) = mock_upstream().await;
     sqlx::query(
         r#"
         UPDATE provider_configs
@@ -605,6 +633,60 @@ async fn gateway_process_proxies_generation_direct_and_registered_service_routes
     let error: Value = response.json().await.expect("response overload body");
     assert_eq!(error["error"]["code"], "gateway_overloaded");
     assert_eq!(error["error"]["retry_after_seconds"], 1);
+
+    // Both admitted uploads have reached the upstream, but it has not sent
+    // response headers. They must no longer occupy the two body-buffer slots.
+    let delayed_body = json!({"payload": "release-after-upload"}).to_string();
+    let spawn_delayed_request = || {
+        let client = client.clone();
+        let url = format!("{proxy_url}/services/{stream_service_name}/delayed");
+        let key = stream_material.raw_key.clone();
+        let body = delayed_body.clone();
+        tokio::spawn(async move {
+            client
+                .post(url)
+                .bearer_auth(key)
+                .header("content-type", "application/json")
+                .body(body)
+                .send()
+                .await
+        })
+    };
+    let mut requests = vec![spawn_delayed_request(), spawn_delayed_request()];
+    time::timeout(Duration::from_secs(10), async {
+        while delayed.received.load(Ordering::SeqCst) < 2 {
+            time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("first two request bodies reached upstream");
+    let third = spawn_delayed_request();
+    let third_uploaded = time::timeout(Duration::from_secs(5), async {
+        while delayed.received.load(Ordering::SeqCst) < 3 {
+            time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .is_ok();
+    delayed.release.add_permits(3);
+    requests.push(third);
+    let mut responses = Vec::new();
+    for request in requests {
+        let response = request
+            .await
+            .expect("delayed task")
+            .expect("delayed response");
+        let status = response.status();
+        responses.push((status, response.bytes().await.expect("delayed body")));
+    }
+    assert!(
+        third_uploaded,
+        "completed uploads kept body admission occupied while waiting for upstream headers"
+    );
+    for (status, body) in responses {
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.as_ref(), delayed_body.as_bytes());
+    }
 
     unverified_bearer_regressions(&client, &proxy_url, &material, &store, &auth_runtime).await;
 

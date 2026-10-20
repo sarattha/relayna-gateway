@@ -441,6 +441,12 @@ limits with `GATEWAY_MAX_BUFFERED_REQUESTS` and
 retryable `503 gateway_overloaded` response before forwarding begins or
 downstream response headers are committed.
 
+Request admission now follows the final forwarded buffer reference, including
+clones queued behind upstream writes. Once Pingora consumes the upload, waiting
+for upstream response headers no longer holds a body slot. Complete-body policy
+and guardrail checks remain in place, and expanded request bodies must fit the
+aggregate byte budget.
+
 Managed JSON analysis now reads only the top-level routing, policy, and usage
 metadata it needs instead of repeatedly materializing ignored payload fields.
 When guardrails require a JSON document, Gateway reuses the existing parsed

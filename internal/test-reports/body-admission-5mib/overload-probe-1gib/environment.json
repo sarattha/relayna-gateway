@@ -1,0 +1,27 @@
+{
+  "label": "pilot",
+  "image": "relayna-gateway:body-baseline-a089b57",
+  "source_commit": "a089b57",
+  "created_at": "2026-10-20T16:28:15.857232+00:00",
+  "limits": [
+    8,
+    64
+  ],
+  "repetitions": 1,
+  "rps": 64,
+  "duration_seconds": 5.0,
+  "delay_ms": 2000,
+  "gateway_resources": {
+    "cpu_limit": 2,
+    "memory_limit_bytes": 1073741824
+  },
+  "docker": {
+    "NCPU": 10,
+    "MemTotal": 20940111872,
+    "Architecture": "aarch64",
+    "KernelVersion": "7.0.14-linuxkit",
+    "ServerVersion": "29.8.2",
+    "OperatingSystem": "Docker Desktop"
+  },
+  "image_id": "sha256:12039f950d4b95a7dc97e74ac008262c5376be1f0ac2b827820ec558f7d0a092"
+}
