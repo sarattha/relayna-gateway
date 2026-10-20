@@ -2,9 +2,16 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.45` feature set.
+This page summarizes the `v0.1.46` feature set.
 
-New in 0.1.45: Accessa registrations can opt into forwarding the verified user
+New in 0.1.46: opt-in WebSockets share the HTTP listener for registered services
+and caller-owned LiteLLM Realtime/Responses routes. Admin controls configure
+connection, frame/message, idle and session limits. Services retain admission
+policy and record transport-only usage; LiteLLM owns caller-key session policy
+and spend. Relayna-governed LiteLLM sessions remain deferred. See
+[WebSocket transport](websocket-transport.md) for setup and measurement limits.
+
+Introduced in 0.1.45: Accessa registrations can opt into forwarding the verified user
 JWT under a configurable header, with spoofed copies and reflected response
 headers stripped. New channel presets and bootstrap registrations include PUT,
 PATCH and DELETE; existing method policies require an explicit update. See

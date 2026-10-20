@@ -7,6 +7,38 @@ virtual keys, Azure Foundry connections and registered agents, and replica
 synchronization of saved gateway Entra settings.
 The UI remains embedded in the Rust binary; no separate frontend service is needed.
 
+## Upgrade to 0.1.46
+
+There is no PostgreSQL migration or Redis format change relative to 0.1.45.
+The optional `access.websocket` object enables WebSockets alongside HTTP for a
+registered service or the supported LiteLLM route identities. Existing services
+stay HTTP-only when the field is absent; Accessa retains its separate binding.
+Upgrade **every replica** before saving this field: older binaries reject it,
+including when its value is `null`.
+
+For service sockets, allow GET, retain the intended authentication contract and
+enable streaming in the key policy. Admission enforces policy, request rate and
+budget eligibility; mandatory HTTP content guardrails reject opaque sockets.
+Socket usage is metadata-only, without tokens or cost. For LiteLLM sockets,
+select caller-key passthrough and configure path/method allows. Responses must
+also use the enabled canonical direct route. LiteLLM owns session/model policy,
+usage and spend; Relayna-governed sessions remain deferred. See
+[configuration, limits and identity](websocket-transport.md).
+
+Configure ingress to forward HTTP/1.1 upgrades and choose idle timeouts suitable
+for persistent connections. Limits are per gateway process. Verify ordinary HTTP,
+socket upgrade, streaming, close, key rejection and recorded Traffic diagnostics
+after rollout. LiteLLM v1.106.0 interoperability was verified with the actual
+container and local provider fixtures; deployment-specific provider behavior
+still needs its own validation.
+
+To roll back, stop new socket connections at ingress and drain existing sessions.
+Using the new binary, remove `websocket` from every affected service and route
+access object while retaining all other fields. Confirm the saved objects omit
+the field entirely: older strict readers also reject `"websocket": null`. Roll
+back only after those settings are readable by the older binary. Saving configuration alone does not close
+existing sockets.
+
 ## Upgrade to 0.1.45
 
 There is no PostgreSQL migration or Redis format change relative to 0.1.44.
@@ -165,7 +197,7 @@ channel bindings are enabled; see [Accessa channels](accessa-channels.md).
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.45 .
+docker build -t relayna-gateway:0.1.46 .
 ```
 
 Run it with required dependencies:
@@ -185,7 +217,7 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.45
+  relayna-gateway:0.1.46
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -245,13 +277,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.45
+   ghcr.io/sarattha/relayna-gateway:0.1.46
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.45"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.46"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -259,7 +291,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.45
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.46
    ```
 
 3. Store secrets through your cluster secret manager:

@@ -1566,6 +1566,7 @@ fn validate_foundry_service(
             || credential.is_some()
             || !fallbacks.is_empty()
             || access.accessa.is_some()
+            || access.websocket.is_some()
         {
             return Err(GatewayError::InvalidFoundryConfiguration);
         }

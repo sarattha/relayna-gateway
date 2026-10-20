@@ -10,6 +10,7 @@ tokio.workspace = true
 gateway-core = { path = "../gateway-core" }
 gateway-telemetry = { path = "../gateway-telemetry" }
 async-trait.workspace = true
+base64.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 http.workspace = true
@@ -20,11 +21,11 @@ pingora-proxy.workspace = true
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 reqwest.workspace = true
 tracing.workspace = true
 url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-base64.workspace = true
 openssl.workspace = true

@@ -2,6 +2,31 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## 0.1.46 - 2026-10-20
+
+### Added
+
+- Opt-in WebSockets alongside HTTP for registered services and caller-owned
+  LiteLLM passthrough, including Realtime and canonical direct Responses routes.
+- Admin controls for connection, frame/message, idle and session limits, with
+  bidirectional transport diagnostics and preserved upstream subprotocols.
+- Regression coverage for credentials, policy, limits, streaming, cancellation
+  and HTTP coexistence. Live interoperability checks pass against the official
+  LiteLLM v1.106.0 image with local provider fixtures.
+
+### Compatibility
+
+- HTTP-only defaults and existing Accessa bindings remain unchanged. LiteLLM owns
+  caller-key session policy, usage and spend. Relayna-governed LiteLLM WebSocket
+  sessions remain deferred; service sockets record metadata-only usage without
+  token or HTTP pricing charges.
+- No new PostgreSQL migration or Redis format. Upgrade every replica before
+  enabling `access.websocket`. Before rollback, drain sockets and remove the
+  field from saved service/route access objects using the new binary; `null`
+  still contains the unknown field. See
+  [WebSocket transport](docs/websocket-transport.md) and
+  [deployment](docs/deployment.md#upgrade-to-0146).
+
 ## 0.1.45 - 2026-10-15
 
 ### Added

@@ -1,4 +1,4 @@
-//! Route-selected identity requirements and Accessa transport contracts.
+//! Route-selected identity requirements and opt-in transport contracts.
 use crate::{EntraIdentityContext, GatewayError, GatewayResult};
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +11,49 @@ pub struct EndpointAccess {
     pub skip_entra: bool,
     pub entra: Option<EndpointEntraPolicy>,
     pub accessa: Option<AccessaBinding>,
+    /// Absent keeps ordinary endpoints HTTP-only. Accessa retains its own limits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub websocket: Option<WebSocketSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_token_forwarding: Option<UserTokenForwarding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WebSocketSettings {
+    pub idle_timeout_ms: u64,
+    /// Per gateway process, shared with Accessa under the instance ceiling.
+    pub max_connections: usize,
+    pub max_connections_per_key: usize,
+    /// Bounds individual frames and the combined size of fragmented messages.
+    pub max_frame_bytes: usize,
+    pub max_session_duration_seconds: u64,
+}
+
+impl Default for WebSocketSettings {
+    fn default() -> Self {
+        Self {
+            idle_timeout_ms: 60_000,
+            max_connections: 100,
+            max_connections_per_key: 10,
+            max_frame_bytes: 1_048_576,
+            max_session_duration_seconds: 3600,
+        }
+    }
+}
+
+impl WebSocketSettings {
+    pub fn validate(&self) -> GatewayResult<()> {
+        if !(100..=600_000).contains(&self.idle_timeout_ms)
+            || !(1..=10_000).contains(&self.max_connections)
+            || !(1..=self.max_connections).contains(&self.max_connections_per_key)
+            || !(125..=16_777_216).contains(&self.max_frame_bytes)
+            || !(1..=86_400).contains(&self.max_session_duration_seconds)
+        {
+            return Err(GatewayError::InvalidServicePayload);
+        }
+        Ok(())
+    }
 }
 
 /// Registration metadata only; the user token itself never belongs in this type.
@@ -143,6 +184,12 @@ impl EndpointAccess {
     }
 
     pub fn validate(&self, route_pattern: &str) -> GatewayResult<()> {
+        if let Some(socket) = &self.websocket {
+            socket.validate()?;
+            if self.accessa.is_some() {
+                return Err(GatewayError::InvalidServicePayload);
+            }
+        }
         if let Some(forwarding) = &self.user_token_forwarding {
             if self.accessa.is_none() {
                 return Err(GatewayError::InvalidServicePayload);
@@ -250,6 +297,62 @@ fn valid_segment(value: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn websocket_settings_are_opt_in_bounded_and_route_scoped() {
+        let legacy: EndpointAccess = serde_json::from_value(json!({})).unwrap();
+        assert!(legacy.websocket.is_none());
+        assert!(serde_json::to_value(legacy)
+            .unwrap()
+            .get("websocket")
+            .is_none());
+        let settings = WebSocketSettings::default();
+        settings.validate().unwrap();
+        for route in ["/litellm/*", "/v1/responses"] {
+            let setting: RouteIdentitySetting =
+                serde_json::from_value(json!({"route":route,"access":{"websocket":{}}})).unwrap();
+            setting.validate().unwrap();
+            assert_eq!(setting.access.websocket, Some(settings.clone()));
+            let read: RouteIdentitySetting =
+                serde_json::from_value(serde_json::to_value(setting).unwrap()).unwrap();
+            read.validate().unwrap();
+        }
+        let invalid: Vec<serde_json::Value> = vec![
+            json!({"idle_timeout_ms":0}),
+            json!({"idle_timeout_ms":600001}),
+            json!({"max_connections":0}),
+            json!({"max_connections":10001}),
+            json!({"max_connections":1,"max_connections_per_key":2}),
+            json!({"max_connections_per_key":0}),
+            json!({"max_frame_bytes":124}),
+            json!({"max_frame_bytes":16777217}),
+            json!({"max_session_duration_seconds":0}),
+            json!({"max_session_duration_seconds":86401}),
+        ];
+        for value in invalid {
+            assert!(serde_json::from_value::<WebSocketSettings>(value)
+                .unwrap()
+                .validate()
+                .is_err());
+        }
+        for route in IDENTITY_ROUTES.iter().filter(|route| {
+            !matches!(
+                route,
+                crate::Route::Responses | crate::Route::LiteLlmPassthrough
+            )
+        }) {
+            let setting: RouteIdentitySetting =
+                serde_json::from_value(json!({"route":route.as_str(),"access":{"websocket":{}}}))
+                    .unwrap();
+            assert!(setting.validate().is_err());
+        }
+        let mut service = access();
+        service.websocket = Some(settings);
+        assert!(service.validate("/app/tara/channel/web/v1/*").is_err());
+        service.accessa = None;
+        assert!(service.validate("/services/example/*").is_ok());
+        assert!(serde_json::from_value::<WebSocketSettings>(json!({"unknown":true})).is_err());
+    }
 
     fn access() -> EndpointAccess {
         serde_json::from_value(json!({"entra":{"audience":"api://accessa","required_scopes":["run"],"required_roles":["invoke"],"allowed_groups":["staff"]},
@@ -424,6 +527,8 @@ impl RouteIdentitySetting {
             .iter()
             .any(|route| route.as_str() == self.route)
             || self.access.accessa.is_some()
+            || (self.access.websocket.is_some()
+                && !matches!(self.route.as_str(), "/litellm/*" | "/v1/responses"))
         {
             return Err(GatewayError::InvalidServicePayload);
         }

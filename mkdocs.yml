@@ -34,6 +34,7 @@ nav:
   - Entra Integration Requirements: operations/entra-integration-requirements.md
   - Azure Foundry: azure-foundry.md
   - Accessa Channels: accessa-channels.md
+  - WebSocket Transport: websocket-transport.md
   - OpenAPI Service Pricing: openapi-service-pricing.md
   - Current Feature Highlights: current-features.md
   - LiteLLM Passthrough: litellm-passthrough.md

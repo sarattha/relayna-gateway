@@ -1044,6 +1044,11 @@ test("protocol labels distinguish Accessa run sockets from ordinary HTTP endpoin
   const http = '<span class="badge">HTTP</span>';
   assert.equal(render({}), http);
   assert.equal(render({ route_pattern: "/services/internal/*", allowed_methods: ["GET"], access: { entra: { audience: "internal" } } }), http);
+  const general = { route_pattern: "/services/events/*", allowed_methods: ["GET", "POST"], access: { websocket: {} } };
+  assert.match(render(general), />HTTP \+ WS</);
+  assert.match(render(general), /GET <code>\/services\/events\/\*<\/code>/);
+  assert.equal(render({ ...general, allowed_methods: ["POST"] }), http);
+  assert.equal(render({ ...general, foundry: {} }), http);
   assert.equal(render({ route_pattern: "/channel/web/v1/me", allowed_methods: ["GET"], access: { accessa: { app: null, channel: "web" } } }), http);
   const service = { route_pattern: "/app/tara/channel/web/v1/*", allowed_methods: ["GET", "POST"], access: { accessa: { app: "tara", channel: "web" } } };
   assert.match(render(service), />HTTP \+ WS</);
@@ -1057,6 +1062,26 @@ test("protocol labels distinguish Accessa run sockets from ordinary HTTP endpoin
   assert.doesNotMatch(render(hostile), /<img>/);
   for (const name of ["serviceTable", "serviceRouteTable", "serviceEditForm"]) assert.match(sourceFunction(name), /serviceProtocolSummary\(/);
   assert.match(sourceFunction("providerRouteTable"), />HTTP</);
+});
+
+test("general WebSocket forms preserve limits without altering Accessa or identity", () => {
+  const parse = new Function(`${sourceFunction("csv")}\n${sourceFunction("nullableString")}\n${sourceFunction("endpointAccessFromForm")}\nreturn endpointAccessFromForm;`)();
+  const form = new FormData();
+  form.set("websocket_enabled", "on");
+  for (const [name, value] of Object.entries({ websocket_idle_ms: "15000", websocket_connections: "20", websocket_key_connections: "2", websocket_frame_bytes: "4096", websocket_duration_seconds: "300" })) form.set(name, value);
+  assert.deepEqual(parse(form), { skip_entra: false, entra: null, accessa: null, websocket: {
+    idle_timeout_ms: 15000, max_connections: 20, max_connections_per_key: 2, max_frame_bytes: 4096, max_session_duration_seconds: 300,
+  } });
+  form.set("accessa_enabled", "on");
+  assert.throws(() => parse(form), /Choose Accessa or general WebSocket/);
+  form.delete("accessa_enabled"); form.delete("websocket_enabled");
+  assert.equal(parse(form).websocket, undefined);
+  const render = new Function(`${sourceFunction("esc")}\n${sourceFunction("attr")}\n${sourceFunction("websocketTransportFields")}\nreturn websocketTransportFields;`)();
+  const markup = render({ websocket: { idle_timeout_ms: 15000 } }, true);
+  assert.match(markup, /Caller-owned LiteLLM keys only/);
+  assert.match(markup, /Relayna-governed sessions are not supported/);
+  assert.match(markup, /name="websocket_idle_ms"[^>]*value="15000"/);
+  assert.match(markup, /name="websocket_enabled"[^>]*checked/);
 });
 
 
@@ -1096,7 +1121,7 @@ test("service presets produce supported access contracts and preserve operator-o
   const api = new Function(`${names.map(sourceFunction).join("\n")}\nreturn {serviceTypePresets, applyServiceTypePreset, updateServiceRouteSuggestion, bindServiceTypePresets, endpointAccessFromForm};`)();
   const fields = {};
   const identity = { open: false };
-  const fieldNames = ["service_type", "name", "route_pattern", "upstream_base_url", "credential", "cost_mode", "timeout_ms", "health_check_path", "endpoint_entra_mode", "endpoint_audience", "endpoint_scopes", "endpoint_roles", "endpoint_groups", "endpoint_apigee", "accessa_enabled", "accessa_app", "accessa_channel", "socket_idle_ms", "socket_connections", "socket_key_connections", "socket_frame_bytes"];
+  const fieldNames = ["service_type", "name", "route_pattern", "upstream_base_url", "credential", "cost_mode", "timeout_ms", "health_check_path", "endpoint_entra_mode", "endpoint_audience", "endpoint_scopes", "endpoint_roles", "endpoint_groups", "endpoint_apigee", "accessa_enabled", "accessa_app", "accessa_channel", "socket_idle_ms", "socket_connections", "socket_key_connections", "socket_frame_bytes", "websocket_enabled"];
   for (const name of fieldNames) {
     const label = { hidden: false };
     fields[name] = { value: "", checked: false, events: {}, dispatchEvent(event) { this.lastEvent = event; }, closest: (tag) => tag === "details" ? identity : label, addEventListener(event, fn) { this.events[event] = fn; } };
@@ -1111,7 +1136,7 @@ test("service presets produce supported access contracts and preserve operator-o
   const access = () => {
     const data = new FormData();
     for (const [name, field] of Object.entries(fields)) {
-      if (["accessa_enabled", "endpoint_apigee"].includes(name)) { if(field.checked) data.set(name,"on"); }
+      if (["accessa_enabled", "endpoint_apigee", "websocket_enabled"].includes(name)) { if(field.checked) data.set(name,"on"); }
       else data.set(name,String(field.value));
     }
     return api.endpointAccessFromForm(data);
