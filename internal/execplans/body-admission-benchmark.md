@@ -31,7 +31,16 @@ containing reproducible tooling and measured results.
 - [x] (2026-10-20 17:11Z) Passed the complete mandatory verification script,
   including 437/437 Nextest tests with live PostgreSQL/Redis, and the additional
   workspace build. Added regression coverage for no-charge expansion failures.
-- [ ] Repeat the identical benchmark matrix and publish measured comparisons.
+- [x] (2026-10-20 17:21Z) Completed the identical fifteen-run candidate matrix:
+  all 2700 requests succeeded, worst per-pod RSS was 65.3–66.1 MiB across the
+  five limits, and successful p95 stayed approximately 12.1 seconds.
+- [x] (2026-10-20 17:29Z) Finished the ten-condition 1 GiB burst sweep at all
+  five limits. Every baseline setting had an observed OOM. The final image
+  had no OOMs or transport failures, with 33/58/68/89/151 successes out of 320
+  as limits increased. Remaining 503s are explicitly reported.
+- [x] (2026-10-20) Published validated summaries, raw observations, source/image
+  provenance, Markdown/SVG/interactive reports, and reproducible baseline
+  instructions. Desktop/mobile visual and interaction checks passed.
 - [ ] Commit, push, open a draft PR, and register it with this T3 thread.
 
 ## Surprises & Discoveries
@@ -112,10 +121,34 @@ containing reproducible tooling and measured results.
   mappings return to the OS. The environment default remains overridable and
   does not change public HTTP, schema, policy, or Gateway configuration names.
   Date/Author: 2026-10-20 / Codex.
+- Decision: add a separately labeled, one-repetition burst sweep at 64 RPS,
+  five seconds of arrivals, two-second upstream delay, and 1 GiB per pod for
+  both images and all five slot limits.
+  Rationale: the repeated eight-slot burst stopped OOM-killing the improved
+  pods but still returned many valid overload 503s. The higher offered rate
+  needs its own measured capacity tradeoff; it must not be confused with the
+  three-repetition controlled body-lifetime matrix.
+  Date/Author: 2026-10-20 / Codex.
 
 ## Outcomes & Retrospective
 
-Pending baseline, implementation, repeated benchmarks, verification, and draft PR.
+The controlled experiment is complete: thirty measured conditions, three
+repetitions per setting/version, and 5400 total scheduled requests. At eight
+slots, successes rose from 96/540 to 540/540 and worst individual-pod RSS fell
+from 304.7 to 66.1 MiB. All improved settings succeeded without restarts or
+transport failures. Service-delayed successful p95 remained about 12.1 seconds.
+
+The additional ten-condition burst experiment demonstrates the boundary of the
+improvement. Original 1 GiB pods OOMed at every limit; the improved pods stayed
+alive and delivered valid overload responses. At 64 slots they still rejected
+169/320 requests at 64 RPS, so this patch is not a maximum-throughput solution.
+Defaults stay at eight slots and 512 MiB. Extra capacity or further scheduling
+work remains a separate operating/engineering decision for higher arrival rates.
+
+The implementation preserves complete-body governance and leased-buffer
+backpressure, accounts for rewritten output before budgeting, and ships a
+measured glibc allocation default without unsafe FFI or new Rust dependencies.
+Full verification passed. Final delivery is the authorized draft PR.
 
 ## Context and Orientation
 

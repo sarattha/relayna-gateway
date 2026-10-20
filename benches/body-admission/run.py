@@ -169,7 +169,9 @@ class Benchmark:
                         stream.close()
                 self.kube("get", "pods", "-l", "app=gateway", "-o", "json", stdout=(self.output / f"{name}.pods.json").open("w"))
                 result = json.loads((self.output / f"{name}.json").read_text())
-                print(f"{name}: statuses={result['status_counts']}, success p95={result['success_latency_ms']['p95'] if result['success_latency_ms'] else None:.1f} ms", flush=True)
+                latency = result["success_latency_ms"]
+                timing = f"{latency['p95']:.1f} ms" if latency else "n/a"
+                print(f"{name}: statuses={result['status_counts']}, success p95={timing}", flush=True)
                 if result["completed_requests"] != result["scheduled_requests"] or result["verified_requests"] != result["successful_requests"]:
                     raise RuntimeError(f"incomplete or corrupted run: {name}")
 

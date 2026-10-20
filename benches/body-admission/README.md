@@ -7,6 +7,8 @@ service. It is a local Kubernetes experiment, not a production capacity claim.
 Requirements: Docker, kind, kubectl, Python 3. Use a local kind cluster; all
 benchmark resources live in namespace `gateway-body-bench`. The runner uses an
 explicit kubeconfig and never changes the current Kubernetes context.
+Optional figure export uses `uv` and Matplotlib; measurement and summaries use
+Python's standard library and the Node container.
 
 ## Method
 
@@ -72,17 +74,31 @@ docker pull node:22-alpine
 docker pull postgres:16-alpine
 docker pull redis:7-alpine
 kind load docker-image node:22-alpine postgres:16-alpine redis:7-alpine --name body-bench
-docker build -f benches/body-admission/Dockerfile.gateway -t relayna-gateway:body-baseline .
+BODY_BENCH_BASELINE_TREE="$(mktemp -d)/source"
+git worktree add --detach "$BODY_BENCH_BASELINE_TREE" v0.1.46
+docker build -f "$(pwd)/benches/body-admission/Dockerfile.baseline" \
+  -t relayna-gateway:body-baseline "$BODY_BENCH_BASELINE_TREE"
+git worktree remove "$BODY_BENCH_BASELINE_TREE"
 kind load docker-image relayna-gateway:body-baseline --name body-bench
 python3 benches/body-admission/run.py \
   --kubeconfig /tmp/relayna-body-bench.kubeconfig \
-  --image relayna-gateway:body-baseline --source-commit "$(git rev-parse HEAD)" \
+  --image relayna-gateway:body-baseline --source-commit "$(git rev-parse v0.1.46)" \
   --label baseline --host-metadata --output target/body-benchmark/baseline
 ```
 
-Keep the unchanged baseline image and results. After implementing the change,
-build a separately tagged image, load it into the same cluster, and run the
-same command with its image, source reference, label, and new output directory.
+Keep the unchanged baseline image and results. Build the improved image from
+the current source using `Dockerfile.gateway`, load it into the same cluster,
+and use its image, source reference, label, and new output directory:
+
+```sh
+docker build -f benches/body-admission/Dockerfile.gateway -t relayna-gateway:body-improved .
+kind load docker-image relayna-gateway:body-improved --name body-bench
+python3 benches/body-admission/run.py \
+  --kubeconfig /tmp/relayna-body-bench.kubeconfig \
+  --image relayna-gateway:body-improved --source-commit "$(git rev-parse HEAD)" \
+  --label improved --host-metadata --output target/body-benchmark/improved
+```
+
 Record any uncommitted source patch with the candidate's source reference.
 Do not build images or run other heavy jobs concurrently with measurement.
 
@@ -105,7 +121,17 @@ traffic, verified bodies, and agreement between 503s and admission counters:
 python3 benches/body-admission/summarize.py \
   target/body-benchmark/baseline target/body-benchmark/improved \
   --output target/body-benchmark/summary.json
+uv run --with matplotlib==3.11.2 python benches/body-admission/plot.py \
+  target/body-benchmark/summary.json --output target/body-benchmark/comparison.svg
+python3 benches/body-admission/html_report.py \
+  target/body-benchmark/summary.json --output target/body-benchmark/comparison.html
 ```
+
+For a separately labeled overload sweep, add `--rps 64 --duration 5
+--delay-ms 2000 --memory-limit-mib 1024 --repetitions 1` to both runs. Keep
+these outputs separate from the main matrix. `summarize_probes.py` accepts
+those directories and explicitly reports transport failures, restarts/OOMs,
+and censored timing instead of treating crashed runs as valid latency data.
 
 ## Cleanup
 

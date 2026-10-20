@@ -94,11 +94,20 @@ def summarize(directory):
             "max_pod_throttled_ms": max(sample["cpu_throttled_usec"] for run in runs for sample in run["memory"]) / 1000,
             "successes_per_repetition": [run["successful_requests"] for run in runs],
             "verified_successes": sum(run["verified_requests"] for run in runs),
+            "per_repetition": [{
+                "repetition": run["repetition"], "elapsed_ms_including_drain": run["elapsed_ms"],
+                "successes": run["successful_requests"],
+                "success_p95_ms": run["success_latency_ms"]["p95"] if run["success_latency_ms"] else None,
+                "memory": run["memory"],
+            } for run in runs],
         }
         if condition["verified_successes"] != condition["successes"]:
             raise ValueError(f"unverified response: {limit}")
         conditions.append(condition)
-    return {"environment": environment, "conditions": conditions}
+    digests = {run["body_sha256"] for runs in groups.values() for run in runs}
+    if len(digests) != 1:
+        raise ValueError("request bodies differ between runs")
+    return {"environment": environment, "body_sha256": digests.pop(), "conditions": conditions}
 
 
 def main():
@@ -108,6 +117,8 @@ def main():
     args = parser.parse_args()
     summaries = [summarize(directory) for directory in args.directories]
     if len(summaries) > 1:
+        if len({summary["body_sha256"] for summary in summaries}) != 1:
+            raise ValueError("request bodies differ between versions")
         for key in ["limits", "repetitions", "rps", "duration_seconds", "delay_ms", "gateway_resources", "malloc_mmap_threshold_override"]:
             if any(summary["environment"].get(key) != summaries[0]["environment"].get(key) for summary in summaries):
                 raise ValueError(f"comparison settings differ: {key}")

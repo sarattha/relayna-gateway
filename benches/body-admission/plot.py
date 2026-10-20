@@ -22,7 +22,11 @@ def main():
     if len(summaries) != 2:
         parser.error("expected baseline and improved summaries")
     colors = ["#2563eb", "#0d9488"]
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), layout="constrained")
+    fig = plt.figure(figsize=(12, 4.8), layout="constrained")
+    grid = fig.add_gridspec(2, 2, height_ratios=[0.12, 1])
+    legend = fig.add_subplot(grid[0, :])
+    legend.axis("off")
+    axes = [fig.add_subplot(grid[1, 0]), fig.add_subplot(grid[1, 1])]
     for index, summary in enumerate(summaries):
         rows = summary["conditions"]
         positions = [i + (index - 0.5) * 0.38 for i in range(len(rows))]
@@ -39,7 +43,8 @@ def main():
     axes[0].set_title("Accepted requests")
     axes[0].set_ylabel("Percent of offered requests")
     axes[0].set_ylim(0, 114)
-    axes[0].legend(frameon=False, loc="upper left")
+    handles, labels = axes[0].get_legend_handles_labels()
+    legend.legend(handles, labels, frameon=False, loc="center", ncol=2)
     axes[1].set_title("Worst observed Gateway RSS")
     axes[1].set_ylabel("MiB per individual pod")
     axes[1].set_ylim(0, max(row["rss_peak_mib"] for summary in summaries for row in summary["conditions"]) * 1.15)

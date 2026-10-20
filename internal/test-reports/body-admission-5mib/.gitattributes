@@ -4,3 +4,4 @@ improved/** linguist-generated=true
 owner-only-pilot/** linguist-generated=true
 *.json linguist-generated=true
 *.svg linguist-generated=true
+comparison.html linguist-generated=true

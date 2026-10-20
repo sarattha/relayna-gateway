@@ -27,10 +27,14 @@ table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:ta
 <section class="panel"><h3>Peak Gateway RSS · MiB per pod</h3><svg id="memory" class="chart" role="img" aria-label="Worst sampled resident memory of an individual gateway pod"></svg></section></div>
 <div class="controls" id="controls" aria-label="Choose buffered body slots per pod"><span>Inspect slots per pod</span></div>
 <table aria-live="polite"><thead><tr><th id="detail-title">Measurement</th><th>Baseline</th><th>Improved</th></tr></thead><tbody id="details"></tbody></table>
-<p class="note">RSS is the worst sampled individual pod across three repetitions. Success timings exclude rejected requests and include the fixed mock delay. Buffered-slot peaks are sampled; kernel cgroup peaks are also retained.</p>
+<section id="burst" hidden style="margin-top:22px"><h2 style="font-size:16px">Higher-rate burst · 1 GiB per pod</h2><p class="muted" id="burst-method"></p>
+<p class="note">The original image OOMed at every limit. The improved image had no OOMs or transport failures, but this burst remained overloaded.</p>
+<table><thead><tr><th>Slots</th><th>Improved 200s</th><th>503s</th><th>RSS MiB/pod</th><th>p95 seconds</th></tr></thead><tbody id="burst-details"></tbody></table></section>
+<p class="note">In the controlled matrix, RSS is the worst sampled individual pod across three repetitions. Success timings exclude rejected requests and include the fixed mock delay. Buffered-slot peaks are sampled; kernel cgroup peaks are also retained.</p>
 <p class="note">Local ARM64 kind cluster; direct pod traffic without ingress or TLS. The main matrix uses a 2 GiB limit per pod. Separate 1 GiB overload probes and full raw results are included in the repository report.</p>
 <script>
 const summaries = __DATA__;
+const burst = __BURST_DATA__;
 const before=summaries[0].conditions,after=summaries[1].conditions;
 const env=summaries[0].environment;
 const limits=before.map(row=>row.limit);
@@ -65,7 +69,7 @@ function inspect(limit){
   ['Rejection latency p95, ms',row=>fmt(row.rejection_p95_ms)],
   ['Peak RSS / cgroup, MiB per pod',row=>`${fmt(row.rss_peak_mib)} / ${fmt(row.cgroup_peak_mib)}`],
   ['Observed peak body slots',row=>fmt(row.buffered_requests_peak,0)],
-  ['Restarts / client errors',row=>`${row.restarts} / ${row.unexpected_results}`]
+  ['Restarts / other errors',row=>`${row.restarts} / ${row.unexpected_results}`]
  ];
  const tbody=document.getElementById('details');tbody.replaceChildren();
  for(const [label,read] of fields){const tr=document.createElement('tr');for(const value of [label,...rows.map(read)]){const td=document.createElement('td');td.textContent=value;tr.append(td);}tbody.append(tr);}
@@ -73,6 +77,16 @@ function inspect(limit){
 for(const limit of limits){const button=document.createElement('button');button.type='button';button.textContent=limit;button.dataset.limit=limit;button.addEventListener('click',()=>inspect(limit));document.getElementById('controls').append(button);}
 const redraw=()=>{chart('success','success_percent',true);chart('memory','rss_peak_mib');};
 new ResizeObserver(redraw).observe(document.body);redraw();inspect(limits[0]);
+if(burst.length){
+ document.getElementById('burst').hidden=false;
+ const e=burst[0].environment;
+ document.getElementById('burst-method').textContent=`${e.rps} requests/s for ${e.duration_seconds}s · ${e.delay_ms/1000}s mock delay · one trial per limit · 320 requests per trial`;
+ const body=document.getElementById('burst-details');
+ for(const row of burst[1].conditions){const tr=document.createElement('tr');for(const value of [row.limit,`${row.successes} / ${row.requests}`,row.overload_503s,fmt(row.rss_observed_peak_mib),fmt(row.success_p95_ms/1000)]){const td=document.createElement('td');td.textContent=value;tr.append(td);}body.append(tr);}
+}
+document.querySelector('#controls button:last-child').click();
+console.assert(document.getElementById('detail-title').textContent===`${limits.at(-1)} slots per pod`,'Selection updates the detail table');
+document.querySelector('#controls button').click();
 console.assert(before.length===after.length,'Comparison limit counts match');
 console.assert(before.every((row,i)=>row.limit===after[i].limit),'Comparison limit values match');
 console.log(JSON.stringify({comparisonRows:before.length+after.length,limits,requests:summaries.map(summary=>summary.conditions.reduce((sum,row)=>sum+row.requests,0))}));
@@ -83,12 +97,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("summary")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--burst-summary")
     args = parser.parse_args()
     summaries = json.loads(Path(args.summary).read_text())
     if len(summaries) != 2:
         parser.error("expected baseline and improved summaries")
     encoded = json.dumps(summaries).replace("<", "\\u003c")
-    Path(args.output).write_text(TEMPLATE.replace("__DATA__", encoded))
+    burst = json.loads(Path(args.burst_summary).read_text()) if args.burst_summary else []
+    encoded_burst = json.dumps(burst).replace("<", "\\u003c")
+    Path(args.output).write_text(TEMPLATE.replace("__DATA__", encoded).replace("__BURST_DATA__", encoded_burst))
 
 
 if __name__ == "__main__":
