@@ -17,6 +17,9 @@ ignore = [
     # archived backend; no patched upstream version. Gateway uses programmatic
     # Pingora configuration, not caller-supplied YAML. Revisit by 2026-11-15.
     "RUSTSEC-2024-0449",
+    # 0.26.11 only reexports the patched 1.x root set; bans below reject all
+    # unpatched root data. Keep SQLx 0.8 compatibility. Revisit by 2026-11-15.
+    "RUSTSEC-2026-0381",
 ]
 
 [licenses]
@@ -40,7 +43,10 @@ allow = [
 multiple-versions = "warn"
 wildcards = "allow"
 highlight = "all"
-deny = []
+deny = [
+    { name = "webpki-roots", version = "<0.26.11", reason = "Reject legacy embedded root data affected by RUSTSEC-2026-0381" },
+    { name = "webpki-roots", version = ">0.26.11, <1.0.10", reason = "Only the 0.26.11 reexport wrapper or patched 1.x root data is allowed" },
+]
 
 [sources]
 unknown-registry = "deny"
