@@ -48,6 +48,17 @@ def summarize(directory):
         run["buffered_bytes_peak"] = max(sample["buffered_bytes"] for sample in samples)
         run["concurrency_denials"] = sum(max(sample["concurrency_denials"] for sample in samples if sample["pod"] == pod["name"]) - min(sample["concurrency_denials"] for sample in samples if sample["pod"] == pod["name"]) for pod in run["pods"])
         run["byte_denials"] = sum(max(sample["byte_denials"] for sample in samples if sample["pod"] == pod["name"]) - min(sample["byte_denials"] for sample in samples if sample["pod"] == pod["name"]) for pod in run["pods"])
+        if run["body_bytes"] != 5 * MIB:
+            raise ValueError(f"unexpected request size: {path}")
+        if run["buffered_requests_peak"] > run["limit"] or run["buffered_bytes_peak"] > 512 * MIB:
+            raise ValueError(f"admission bound exceeded: {path}")
+        if run["status_counts"].get("503", 0) != run["concurrency_denials"] + run["byte_denials"]:
+            raise ValueError(f"HTTP rejections do not match admission counters: {path}")
+        for pod in run["pods"]:
+            if sum(result["pod"] == pod["name"] for result in run["results"]) != run["scheduled_requests"] / 2:
+                raise ValueError(f"uneven offered pod traffic: {path}")
+        if any(result["status"] == 503 and result.get("error_code") != "gateway_overloaded" for result in run["results"]):
+            raise ValueError(f"unexpected 503 source: {path}")
         groups.setdefault(run["limit"], []).append(run)
     if sorted(groups) != sorted(environment["limits"]):
         raise ValueError("incomplete limit matrix")

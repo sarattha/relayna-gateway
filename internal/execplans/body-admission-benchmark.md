@@ -56,6 +56,11 @@ containing reproducible tooling and measured results.
 - A new expansion regression caught fixed-service charging when rewritten
   output exceeded the byte budget after budget reservation. Reserve expanded
   body bytes before budget admission, then transfer the lease to the buffer.
+- The owner-only candidate accepted 180/180 requests at eight slots but peaked
+  at 1122.4 MiB RSS. An otherwise identical allocator diagnostic with
+  `MALLOC_MMAP_THRESHOLD_=131072` accepted 180/180 at 65.7 MiB RSS. This
+  establishes allocator retention as a material separate issue; releasing
+  admission alone is insufficient for the shipped 1 GiB deployment example.
 
 ## Decision Log
 
@@ -95,6 +100,15 @@ containing reproducible tooling and measured results.
   bounds. Any lifetime optimization must keep admission attached to retained
   memory until its last owner releases it. The user explicitly authorized
   improving Gateway after collecting the baseline; no migration is planned.
+  Date/Author: 2026-10-20 / Codex.
+- Decision: pin glibc's mmap threshold to 128 KiB in the official and benchmark
+  container images, and document the matching startup setting for native GNU
+  libc deployments. Do not add an allocator dependency or unsafe runtime FFI.
+  Rationale: the controlled diagnostic reduced worst per-pod RSS from 1122.4
+  to 65.7 MiB without changing requests or success counts. GNU libc documents
+  that an explicit threshold disables its dynamic growth and lets large freed
+  mappings return to the OS. The environment default remains overridable and
+  does not change public HTTP, schema, policy, or Gateway configuration names.
   Date/Author: 2026-10-20 / Codex.
 
 ## Outcomes & Retrospective

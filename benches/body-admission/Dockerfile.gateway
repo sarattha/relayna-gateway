@@ -14,5 +14,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* && groupadd --system --gid 10001 relayna && useradd --system --uid 10001 --gid 10001 relayna
 COPY --from=builder /gateway-api /usr/local/bin/relayna-gateway
+ENV MALLOC_MMAP_THRESHOLD_=131072
 USER relayna
 ENTRYPOINT ["/usr/local/bin/relayna-gateway"]

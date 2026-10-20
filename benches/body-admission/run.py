@@ -102,6 +102,8 @@ class Benchmark:
             "GATEWAY_MAX_BUFFERED_REQUESTS": limit, "GATEWAY_MAX_INFLIGHT_BUFFER_BYTES": 512 * 1024 * 1024,
             "LOG_LEVEL": "error",
         }
+        if self.args.malloc_mmap_threshold is not None:
+            env["MALLOC_MMAP_THRESHOLD_"] = self.args.malloc_mmap_threshold
         self.apply([deployment("gateway", self.args.image, env=env, replicas=2, resources={
             "requests": {"cpu": "500m", "memory": "256Mi"}, "limits": {"cpu": "2", "memory": "2Gi"},
         })])
@@ -122,12 +124,15 @@ class Benchmark:
             "limits": self.args.limits, "repetitions": self.args.repetitions,
             "rps": self.args.rps, "duration_seconds": self.args.duration, "delay_ms": self.args.delay_ms,
             "gateway_resources": {"cpu_limit": 2, "memory_limit_bytes": 2 * 1024 ** 3},
+            "malloc_mmap_threshold_override": self.args.malloc_mmap_threshold,
             "docker": None,
         }
         if self.args.host_metadata:
             info = json.loads(command(["docker", "info", "--format", "{{json .}}"], capture_output=True).stdout)
             metadata["docker"] = {key: info[key] for key in ["NCPU", "MemTotal", "Architecture", "KernelVersion", "ServerVersion", "OperatingSystem"]}
         metadata["image_id"] = command(["docker", "image", "inspect", self.args.image, "--format", "{{.Id}}"], capture_output=True).stdout.strip()
+        image_env = json.loads(command(["docker", "image", "inspect", self.args.image, "--format", "{{json .Config.Env}}"], capture_output=True).stdout)
+        metadata["image_allocator_environment"] = dict(item.split("=", 1) for item in image_env if item.split("=", 1)[0] in {"MALLOC_MMAP_THRESHOLD_", "MALLOC_ARENA_MAX"})
         (self.output / "environment.json").write_text(json.dumps(metadata, indent=2))
         seeded = False
         for limit in self.args.limits:
@@ -182,6 +187,7 @@ def main():
     parser.add_argument("--duration", type=float, default=15)
     parser.add_argument("--delay-ms", type=int, default=12000)
     parser.add_argument("--host-metadata", action="store_true")
+    parser.add_argument("--malloc-mmap-threshold", type=int, help="diagnostic glibc allocator override; omitted for the comparison matrix")
     args = parser.parse_args()
     if args.rps <= 0 or args.duration <= 0 or args.delay_ms < 0 or args.repetitions < 1 or any(limit < 1 for limit in args.limits):
         parser.error("rate, duration, repetitions, and limits must be positive; delay must be nonnegative")

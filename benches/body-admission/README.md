@@ -32,6 +32,13 @@ waiting requests per pod without overwhelming the authentication/CPU path.
 A separate 64 requests/second, two-second-delay overload probe is retained
 with the report; it must not be silently mixed into this matrix.
 
+The candidate image includes the production Dockerfile's explicit glibc
+`MALLOC_MMAP_THRESHOLD_=131072` default. The unmodified release baseline does
+not. This is part of the implementation being compared, not a workload change.
+Image allocator settings are recorded in `environment.json`. Use
+`--malloc-mmap-threshold 131072` only for a separately labeled allocator
+diagnostic; omit the flag for the baseline/candidate matrix.
+
 Each pod gets one successful warmup request on a zero-delay mock endpoint,
 followed by 500 ms idle time.
 Client latency measures request dispatch through complete response receipt;
@@ -88,6 +95,15 @@ Credentials never appear in artifacts. Do not run in a production namespace.
 Setup is repeatable; reusing the namespace retains only synthetic benchmark
 data. Output directories cannot overwrite completed conditions. Incomplete
 runs must be marked/discarded and rerun into a new output directory.
+
+Summarize results and validate the measured limits, evenly distributed offered
+traffic, verified bodies, and agreement between 503s and admission counters:
+
+```sh
+python3 benches/body-admission/summarize.py \
+  target/body-benchmark/baseline target/body-benchmark/improved \
+  --output target/body-benchmark/summary.json
+```
 
 ## Cleanup
 

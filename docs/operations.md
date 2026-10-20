@@ -27,6 +27,7 @@ Optional variables:
 | `RELAYNA_STUDIO_TOKEN` | Optional bearer token used when Gateway fetches the Studio service catalog. |
 | `GATEWAY_MAX_BUFFERED_REQUESTS` | Maximum concurrent managed requests or post-call responses that may retain complete bodies in memory. Defaults to `8`. |
 | `GATEWAY_MAX_INFLIGHT_BUFFER_BYTES` | Maximum aggregate serialized body bytes retained by buffered proxy requests and responses. Defaults to `536870912` (512 MiB). |
+| `MALLOC_MMAP_THRESHOLD_` | glibc allocator setting; the official Debian image pins `131072` (128 KiB). Set before starting native glibc deployments to match the image's large-allocation reclamation behavior. Other allocators/platforms may ignore it. |
 | `ENTRA_AUTH_DEBUG` | Enables the temporary structured Entra, trusted-Apigee, portal-login, and cookie-session decision trail. Defaults to `false`; see [Entra Authorization Debug Mode](operations/entra-authorization-debug.md). |
 
 Body admission limits are process-wide and complement per-route request limits.
@@ -46,6 +47,15 @@ before buffered request bytes are forwarded. Guardrail expansion must fit the
 aggregate byte budget as well. These limits bound managed buffers, not total
 pod RSS or all in-flight connections. See the [two-pod 5 MiB benchmark](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/README.md)
 for measured memory and timing at different concurrency limits.
+
+The Debian image also fixes glibc's mmap threshold at 128 KiB. Without an
+explicit threshold, glibc can raise it dynamically after large allocations,
+and freed bodies or authentication workspaces can leave high resident memory
+in fragmented arenas. A fixed threshold keeps large allocations eligible for
+return to the operating system when freed. This does not change live-buffer
+limits or bound total RSS. Set the variable before process startup when using
+a native glibc build; allocator-specific overrides remain operator controlled.
+See the [glibc allocator documentation](https://sourceware.org/glibc/manual/latest/html_node/Memory-Allocation-Tunables.html).
 
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are fallback settings.
 Operators can set, replace, test, or clear the Studio connection in Admin portal
