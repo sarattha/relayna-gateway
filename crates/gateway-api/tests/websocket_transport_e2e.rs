@@ -184,7 +184,8 @@ async fn general_service_and_caller_litellm_websocket_transport() {
         })
         .await
         .unwrap();
-    let socket_settings = json!({"idle_timeout_ms":1000,"max_connections":2,"max_connections_per_key":1,"max_frame_bytes":125,"max_session_duration_seconds":60});
+    // Keep sockets alive while sequential authenticated admissions exercise caps.
+    let socket_settings = json!({"idle_timeout_ms":30000,"max_connections":2,"max_connections_per_key":1,"max_frame_bytes":125,"max_session_duration_seconds":60});
     store.create_service(serde_json::from_value(json!({"name":name,"project_id":project.id,"upstream_base_url":upstream_url,"credential":"service-only","allowed_methods":["GET","POST"],"cost_mode":"fixed","estimated_cost_usd":0.01,"access":{"websocket":socket_settings}})).unwrap()).await.unwrap();
     let mut keys = Vec::new();
     for _ in 0..3 {
@@ -278,6 +279,18 @@ async fn general_service_and_caller_litellm_websocket_transport() {
         .await
         .unwrap();
     denied(request(&base, &path, Some(&keys[2].1), "ws-route-cap"), 429).await;
+    for connection in [&mut socket, &mut second] {
+        let message = Message::Text("after cap checks".into());
+        connection.send(message.clone()).await.unwrap();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), connection.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap(),
+            message
+        );
+    }
     second.close(None).await.unwrap();
     drop(second);
     socket.close(None).await.unwrap();
@@ -336,6 +349,16 @@ async fn general_service_and_caller_litellm_websocket_transport() {
             failure
         );
     }
+    // Use a short idle deadline only when testing idle closure.
+    let mut short_idle = socket_settings.clone();
+    short_idle["idle_timeout_ms"] = json!(1000);
+    store
+        .patch_service(
+            &name,
+            serde_json::from_value(json!({"access":{"websocket":short_idle}})).unwrap(),
+        )
+        .await
+        .unwrap();
     let id = Uuid::new_v4().to_string();
     let (mut idle, _) = connect_async(request(&base, &path, Some(&keys[0].1), &id))
         .await
