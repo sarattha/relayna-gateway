@@ -41,7 +41,10 @@ containing reproducible tooling and measured results.
 - [x] (2026-10-20) Published validated summaries, raw observations, source/image
   provenance, Markdown/SVG/interactive reports, and reproducible baseline
   instructions. Desktop/mobile visual and interaction checks passed.
-- [ ] Commit, push, open a draft PR, and register it with this T3 thread.
+- [x] (2026-10-20) Committed and pushed the implementation and evidence; opened
+  draft PR [#137](https://github.com/sarattha/relayna-gateway/pull/137) against
+  `main` and registered it with this T3 thread. Removed the isolated benchmark
+  namespace and task-created verification Redis instance.
 
 ## Surprises & Discoveries
 
@@ -148,7 +151,10 @@ work remains a separate operating/engineering decision for higher arrival rates.
 The implementation preserves complete-body governance and leased-buffer
 backpressure, accounts for rewritten output before budgeting, and ships a
 measured glibc allocation default without unsafe FFI or new Rust dependencies.
-Full verification passed. Final delivery is the authorized draft PR.
+Full verification passed. Delivered as draft PR
+[#137](https://github.com/sarattha/relayna-gateway/pull/137) on
+`t3/investigate-gateway-overload`. The working branch includes the complete
+reproducible evidence; temporary benchmark resources have been removed.
 
 ## Context and Orientation
 
