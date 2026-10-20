@@ -2,6 +2,18 @@
 
 All notable changes to Relayna Gateway are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Release buffered request admission when the last forwarded buffer reference
+  is consumed, retaining bounds for queued writes and enforcing rewritten-body
+  capacity before budget reservation.
+- Pin the Debian container's glibc mmap threshold to 128 KiB so freed large
+  allocations can return to the operating system under concurrent traffic.
+- Add a repeatable two-pod, 5 MiB JSON benchmark with per-pod memory, timing,
+  throughput, rejection, and before/after evidence at five admission limits.
+
 ## 0.1.46 - 2026-10-20
 
 ### Added

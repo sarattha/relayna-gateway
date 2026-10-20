@@ -108,8 +108,8 @@ def main():
     args = parser.parse_args()
     summaries = [summarize(directory) for directory in args.directories]
     if len(summaries) > 1:
-        for key in ["limits", "repetitions", "rps", "duration_seconds", "delay_ms", "gateway_resources"]:
-            if any(summary["environment"][key] != summaries[0]["environment"][key] for summary in summaries):
+        for key in ["limits", "repetitions", "rps", "duration_seconds", "delay_ms", "gateway_resources", "malloc_mmap_threshold_override"]:
+            if any(summary["environment"].get(key) != summaries[0]["environment"].get(key) for summary in summaries):
                 raise ValueError(f"comparison settings differ: {key}")
     output = Path(args.output)
     output.write_text(json.dumps(summaries, indent=2) + "\n")

@@ -1,0 +1,6 @@
+baseline/** linguist-generated=true
+improved/** linguist-generated=true
+*probe*/** linguist-generated=true
+owner-only-pilot/** linguist-generated=true
+*.json linguist-generated=true
+*.svg linguist-generated=true

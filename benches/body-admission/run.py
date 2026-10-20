@@ -105,7 +105,7 @@ class Benchmark:
         if self.args.malloc_mmap_threshold is not None:
             env["MALLOC_MMAP_THRESHOLD_"] = self.args.malloc_mmap_threshold
         self.apply([deployment("gateway", self.args.image, env=env, replicas=2, resources={
-            "requests": {"cpu": "500m", "memory": "256Mi"}, "limits": {"cpu": "2", "memory": "2Gi"},
+            "requests": {"cpu": "500m", "memory": "256Mi"}, "limits": {"cpu": "2", "memory": f"{self.args.memory_limit_mib}Mi"},
         })])
         self.kube("rollout", "restart", "deployment/gateway", stdout=subprocess.DEVNULL)
         self.kube("rollout", "status", "deployment/gateway", "--timeout=180s", stdout=subprocess.DEVNULL)
@@ -123,7 +123,7 @@ class Benchmark:
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "limits": self.args.limits, "repetitions": self.args.repetitions,
             "rps": self.args.rps, "duration_seconds": self.args.duration, "delay_ms": self.args.delay_ms,
-            "gateway_resources": {"cpu_limit": 2, "memory_limit_bytes": 2 * 1024 ** 3},
+            "gateway_resources": {"cpu_limit": 2, "memory_limit_bytes": self.args.memory_limit_mib * 1024 * 1024},
             "malloc_mmap_threshold_override": self.args.malloc_mmap_threshold,
             "docker": None,
         }
@@ -188,8 +188,9 @@ def main():
     parser.add_argument("--delay-ms", type=int, default=12000)
     parser.add_argument("--host-metadata", action="store_true")
     parser.add_argument("--malloc-mmap-threshold", type=int, help="diagnostic glibc allocator override; omitted for the comparison matrix")
+    parser.add_argument("--memory-limit-mib", type=int, default=2048)
     args = parser.parse_args()
-    if args.rps <= 0 or args.duration <= 0 or args.delay_ms < 0 or args.repetitions < 1 or any(limit < 1 for limit in args.limits):
+    if args.rps <= 0 or args.duration <= 0 or args.delay_ms < 0 or args.repetitions < 1 or args.memory_limit_mib <= 0 or any(limit < 1 for limit in args.limits) or (args.malloc_mmap_threshold is not None and args.malloc_mmap_threshold <= 0):
         parser.error("rate, duration, repetitions, and limits must be positive; delay must be nonnegative")
     Benchmark(args).run()
 

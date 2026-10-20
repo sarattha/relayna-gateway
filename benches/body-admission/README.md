@@ -38,6 +38,8 @@ not. This is part of the implementation being compared, not a workload change.
 Image allocator settings are recorded in `environment.json`. Use
 `--malloc-mmap-threshold 131072` only for a separately labeled allocator
 diagnostic; omit the flag for the baseline/candidate matrix.
+Use `--memory-limit-mib 1024` only for a separately labeled 1 GiB probe; the
+main comparison defaults to 2048 MiB for both versions.
 
 Each pod gets one successful warmup request on a zero-delay mock endpoint,
 followed by 500 ms idle time.

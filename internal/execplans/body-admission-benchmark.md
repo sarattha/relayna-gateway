@@ -28,7 +28,9 @@ containing reproducible tooling and measured results.
 - [x] (2026-10-20 16:46Z) Implemented buffer-owned admission. The dependency-
   backed regression fails on baseline and passes after the change; ownership,
   byte-growth, clone/slice, and cancellation tests pass.
-- [ ] Add behavioral regression coverage and pass the mandatory checks.
+- [x] (2026-10-20 17:11Z) Passed the complete mandatory verification script,
+  including 437/437 Nextest tests with live PostgreSQL/Redis, and the additional
+  workspace build. Added regression coverage for no-charge expansion failures.
 - [ ] Repeat the identical benchmark matrix and publish measured comparisons.
 - [ ] Commit, push, open a draft PR, and register it with this T3 thread.
 
