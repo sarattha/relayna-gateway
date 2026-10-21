@@ -1442,7 +1442,7 @@ where
             if !wildcard_delegation {
                 self.admit_complete_body(session, body, ctx).await?;
             }
-            return Ok(());
+            return bind_request_body_admission(body, ctx);
         }
         let client_requested = match extract_client_guardrails_value(
             analysis
@@ -1523,7 +1523,7 @@ where
             }
             resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
             self.admit_complete_body(session, body, ctx).await?;
-            return Ok(());
+            return bind_request_body_admission(body, ctx);
         }
 
         let mut request_json = match serde_json::from_slice::<serde_json::Value>(&raw_body) {
@@ -1532,7 +1532,7 @@ where
                 *body = Some(Bytes::from(raw_body));
                 resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
                 self.admit_complete_body(session, body, ctx).await?;
-                return Ok(());
+                return bind_request_body_admission(body, ctx);
             }
         };
         strip_client_guardrails(&mut request_json);
@@ -1592,7 +1592,7 @@ where
         }
         resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
         self.admit_complete_body(session, body, ctx).await?;
-        Ok(())
+        bind_request_body_admission(body, ctx)
     }
 
     async fn proxy_upstream_filter(
@@ -2195,10 +2195,6 @@ where
     where
         Self::CTX: Send + Sync,
     {
-        // Receipt of upstream response headers proves the complete request body
-        // has left the request-side buffer, so its process admission can be
-        // released before any post-call response buffering begins.
-        ctx.request_body_lease.take();
         let status_code = upstream_response.status.as_u16();
         if status_code == 101
             && (!ctx.socket
@@ -3087,6 +3083,15 @@ where
         R: RateLimitStore,
     {
         let result: GatewayResult<()> = async {
+            // Rewritten output must fit before reserving a service charge.
+            // The lease is transferred to the forwarded bytes after admission.
+            if let Some(lease) = ctx.request_body_lease.as_mut() {
+                let additional_bytes = body
+                    .as_ref()
+                    .map_or(0, Bytes::len)
+                    .saturating_sub(lease.reserved_bytes());
+                lease.try_reserve(additional_bytes)?;
+            }
             let key = ctx.key.as_ref().ok_or(GatewayError::MissingAuthorization)?;
             let mut matched = ctx
                 .route_match
@@ -3809,6 +3814,27 @@ fn batch_request_features(body: &[u8]) -> GatewayResult<Vec<gateway_core::Genera
             Ok(analysis.features)
         })
         .collect()
+}
+
+fn bind_request_body_admission(
+    body: &mut Option<Bytes>,
+    ctx: &mut PingoraContext,
+) -> PingoraResult<()> {
+    let Some(lease) = ctx.request_body_lease.take() else {
+        return Ok(());
+    };
+    let Some(buffer) = body.take() else {
+        return Ok(());
+    };
+    match lease.into_bytes(buffer) {
+        Ok(buffer) => *body = Some(buffer),
+        Err(error) => {
+            ctx.guardrail_error = Some(error);
+            *body = Some(Bytes::new());
+            return Err(PingoraError::new(ErrorType::InternalError));
+        }
+    }
+    Ok(())
 }
 
 fn managed_service_request_can_stream(ctx: &PingoraContext) -> bool {

@@ -27,15 +27,43 @@ Optional variables:
 | `RELAYNA_STUDIO_TOKEN` | Optional bearer token used when Gateway fetches the Studio service catalog. |
 | `GATEWAY_MAX_BUFFERED_REQUESTS` | Maximum concurrent managed requests or post-call responses that may retain complete bodies in memory. Defaults to `8`. |
 | `GATEWAY_MAX_INFLIGHT_BUFFER_BYTES` | Maximum aggregate serialized body bytes retained by buffered proxy requests and responses. Defaults to `536870912` (512 MiB). |
+| `MALLOC_MMAP_THRESHOLD_` | glibc allocator setting; the official Debian image pins `131072` (128 KiB). Set before starting native glibc deployments to match the image's large-allocation reclamation behavior. Other allocators/platforms may ignore it. |
 | `ENTRA_AUTH_DEBUG` | Enables the temporary structured Entra, trusted-Apigee, portal-login, and cookie-session decision trail. Defaults to `false`; see [Entra Authorization Debug Mode](operations/entra-authorization-debug.md). |
 
 Body admission limits are process-wide and complement per-route request limits.
 When a valid request cannot acquire process body capacity, Gateway returns
 `503 gateway_overloaded` with a short retry hint. Route-size violations remain
-`413 request_body_too_large`. Fixed or unpriced registered-service requests
-with no active body guardrails stream without consuming the buffered-body
-budget. Size the byte limit well below the pod memory limit because JSON object
-trees and guardrails require additional working memory.
+`413 request_body_too_large`. Eligible fixed or unpriced registered-service
+requests with non-JSON bodies and no active body guardrails stream without
+consuming the buffered-body budget. Size the byte limit well below the pod
+memory limit because JSON object trees and guardrails require additional
+working memory.
+
+Buffered request slots and byte reservations follow the forwarded buffer until
+its last reference is released. An upload queued behind a slow upstream writer
+still consumes admission; upstream processing time after the upload is consumed
+does not. Complete-body policy, pricing, and guardrail checks still finish
+before buffered request bytes are forwarded. Guardrail expansion must fit the
+aggregate byte budget as well. These limits bound managed buffers, not total
+pod RSS or all in-flight connections. See the [native amd64 two-pod 5 MiB benchmark](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/amd64/README.md)
+for measured memory and timing at different concurrency limits.
+
+`gateway_buffered_requests` is a gauge of retained managed bodies, not a count
+of requests per second or all requests waiting for a service response. A low
+value can coexist with many upstream requests in flight after their uploads
+have been consumed. Evaluate admission rejections together with CPU, total pod
+memory, service latency, and request rate when sizing replicas. Increasing the
+slot limit permits more simultaneous body retention; it does not add CPU or
+establish that the higher offered load is sustainable.
+
+The Debian image also fixes glibc's mmap threshold at 128 KiB. Without an
+explicit threshold, glibc can raise it dynamically after large allocations,
+and freed bodies or authentication workspaces can leave high resident memory
+in fragmented arenas. A fixed threshold keeps large allocations eligible for
+return to the operating system when freed. This does not change live-buffer
+limits or bound total RSS. Set the variable before process startup when using
+a native glibc build; allocator-specific overrides remain operator controlled.
+See the [glibc allocator documentation](https://sourceware.org/glibc/manual/latest/html_node/Memory-Allocation-Tunables.html).
 
 `RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are fallback settings.
 Operators can set, replace, test, or clear the Studio connection in Admin portal

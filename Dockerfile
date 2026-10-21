@@ -24,7 +24,10 @@ RUN apt-get update \
 
 COPY --from=builder /app/target/release/gateway-api /usr/local/bin/relayna-gateway
 
-ENV GATEWAY_BIND_ADDR=0.0.0.0:8080 \
+# Keep large request/KDF allocations independently reclaimable instead of
+# allowing glibc's dynamic threshold to retain them in fragmented heap arenas.
+ENV MALLOC_MMAP_THRESHOLD_=131072 \
+    GATEWAY_BIND_ADDR=0.0.0.0:8080 \
     GATEWAY_CONTROL_BIND_ADDR=0.0.0.0:8081 \
     LOG_LEVEL=gateway_api=info,gateway_proxy=info
 

@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use gateway_core::{GatewayError, GatewayResult};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -24,6 +25,18 @@ pub struct BodyAdmissionController {
 pub struct BodyAdmissionLease {
     state: Arc<BodyAdmissionState>,
     reserved_bytes: usize,
+}
+
+struct AdmittedBody {
+    // Drop the buffer before returning its capacity to concurrent requests.
+    body: Bytes,
+    _lease: BodyAdmissionLease,
+}
+
+impl AsRef<[u8]> for AdmittedBody {
+    fn as_ref(&self) -> &[u8] {
+        self.body.as_ref()
+    }
 }
 
 impl BodyAdmissionController {
@@ -104,6 +117,14 @@ impl BodyAdmissionLease {
     pub fn reserved_bytes(&self) -> usize {
         self.reserved_bytes
     }
+
+    /// Keep admission with the forwarded allocation until its last reference
+    /// is dropped, including slices or clones queued behind upstream writes.
+    pub(crate) fn into_bytes(mut self, body: Bytes) -> GatewayResult<Bytes> {
+        // Guardrails may expand a body after its original chunks were admitted.
+        self.try_reserve(body.len().saturating_sub(self.reserved_bytes))?;
+        Ok(Bytes::from_owner(AdmittedBody { body, _lease: self }))
+    }
 }
 
 impl Drop for BodyAdmissionLease {
@@ -180,6 +201,82 @@ mod tests {
         drop(first);
         assert_eq!(controller.active_bytes(), 4);
         drop(second);
+        assert_eq!(controller.active_bytes(), 0);
+    }
+
+    #[test]
+    fn forwarded_clones_and_slices_keep_admission_until_the_last_reference() {
+        let controller = BodyAdmissionController::new(1, 8).expect("controller");
+        let body = Bytes::from(vec![1, 2, 3, 4]);
+        let original_ptr = body.as_ptr();
+        let forwarded = controller
+            .try_acquire()
+            .unwrap()
+            .into_bytes(body)
+            .expect("admitted body");
+        assert_eq!(
+            forwarded.as_ptr(),
+            original_ptr,
+            "do not copy the allocation"
+        );
+        let queued = forwarded.clone();
+        let slice = forwarded.slice(1..3);
+        drop(forwarded);
+        drop(queued);
+
+        assert_eq!(slice.as_ref(), &[2, 3]);
+        assert_eq!(controller.active_requests(), 1);
+        assert_eq!(controller.active_bytes(), 4);
+        assert_eq!(
+            controller.try_acquire().unwrap_err(),
+            GatewayError::GatewayOverloaded
+        );
+
+        drop(slice);
+        assert_eq!(controller.active_requests(), 0);
+        assert_eq!(controller.active_bytes(), 0);
+        assert!(controller.try_acquire().is_ok());
+    }
+
+    #[test]
+    fn accounts_for_rewritten_body_growth_and_releases_failed_admission() {
+        let controller = BodyAdmissionController::new(1, 8).expect("controller");
+        let mut lease = controller.try_acquire().unwrap();
+        lease.try_reserve(4).unwrap();
+        let forwarded = lease.into_bytes(Bytes::from(vec![0; 8])).unwrap();
+        assert_eq!(controller.active_bytes(), 8);
+        drop(forwarded);
+        assert_eq!(controller.active_bytes(), 0);
+
+        let mut lease = controller.try_acquire().unwrap();
+        lease.try_reserve(4).unwrap();
+        assert_eq!(
+            lease.into_bytes(Bytes::from(vec![0; 9])).unwrap_err(),
+            GatewayError::GatewayOverloaded
+        );
+        assert_eq!(controller.active_requests(), 0);
+        assert_eq!(controller.active_bytes(), 0);
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_queued_write_releases_its_body_admission() {
+        let controller = BodyAdmissionController::new(1, 8).expect("controller");
+        let body = controller
+            .try_acquire()
+            .unwrap()
+            .into_bytes(Bytes::from(vec![0; 8]))
+            .unwrap();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let _queued_body = body;
+            started.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+        ready.await.unwrap();
+        assert_eq!(controller.active_requests(), 1);
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert_eq!(controller.active_requests(), 0);
         assert_eq!(controller.active_bytes(), 0);
     }
 }

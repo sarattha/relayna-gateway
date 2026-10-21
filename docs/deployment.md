@@ -7,6 +7,39 @@ virtual keys, Azure Foundry connections and registered agents, and replica
 synchronization of saved gateway Entra settings.
 The UI remains embedded in the Rust binary; no separate frontend service is needed.
 
+## Upgrade to 0.1.47
+
+There is no PostgreSQL migration, Redis format change, or new request/response
+schema relative to 0.1.46. Roll out `ghcr.io/sarattha/relayna-gateway:0.1.47`
+through the existing deployment process. Body-admission defaults remain eight
+slots and 512 MiB of serialized retained bodies per process.
+
+The improvement releases request admission with the last forwarded body-buffer
+reference. Queued or backpressured writes retain their capacity; completed
+uploads can wait for service response headers without occupying body slots.
+Complete-body policy and guardrails still finish before forwarding, and expanded
+bodies must fit before budget reservation. `gateway_buffered_requests` therefore
+counts retained bodies rather than every outstanding service call.
+
+The official Debian image sets `MALLOC_MMAP_THRESHOLD_=131072` before process
+startup so large freed allocations remain eligible for OS reclamation. Set the
+same environment variable before launching a native glibc binary for matching
+behavior. Other allocators may ignore it; operator overrides remain supported.
+
+Native amd64 validation used two pods, exact 5 MiB JSON bodies, all five slot
+limits, three controlled repetitions and a separate burst sweep. All 2,700
+controlled requests succeeded at 62.0–63.3 MiB peak RSS per pod. In the 64 RPS
+burst, 64 slots completed 320/320 at 314.5 MiB peak RSS per pod; lower settings
+returned valid overload responses. These finite cohorts do not establish
+sustained capacity. Keep the defaults until representative measurements justify
+a change, and leave memory headroom beyond serialized body reservations.
+See [operations](operations.md#configuration) and the
+[full native amd64 report](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/amd64/README.md).
+
+During rollout, check pod RSS/cgroup memory, admission rejections, request timing,
+and upstream behavior. Rollback uses the previous image without data conversion;
+it restores the older admission lifetime and allocator default unless overridden.
+
 ## Upgrade to 0.1.46
 
 There is no PostgreSQL migration or Redis format change relative to 0.1.45.
@@ -197,7 +230,7 @@ channel bindings are enabled; see [Accessa channels](accessa-channels.md).
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.46 .
+docker build -t relayna-gateway:0.1.47 .
 ```
 
 Run it with required dependencies:
@@ -217,7 +250,7 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.46
+  relayna-gateway:0.1.47
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -277,13 +310,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.46
+   ghcr.io/sarattha/relayna-gateway:0.1.47
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.46"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.47"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -291,7 +324,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.46
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.47
    ```
 
 3. Store secrets through your cluster secret manager:

@@ -2,9 +2,17 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.46` feature set.
+This page summarizes the `v0.1.47` feature set.
 
-New in 0.1.46: opt-in WebSockets share the HTTP listener for registered services
+New in 0.1.47: request body admission follows the last retained buffer reference,
+so completed uploads release slots without waiting for service response headers.
+The Debian image fixes glibc's large-allocation threshold to reduce retained
+resident memory. Rewritten bodies must fit before budget reservation. Native
+amd64 two-pod, 5 MiB validation covers all five limits and a separate burst sweep;
+see [buffering guidance](operations.md#configuration) and
+[upgrade instructions](deployment.md#upgrade-to-0147).
+
+Introduced in 0.1.46: opt-in WebSockets share the HTTP listener for registered services
 and caller-owned LiteLLM Realtime/Responses routes. Admin controls configure
 connection, frame/message, idle and session limits. Services retain admission
 policy and record transport-only usage; LiteLLM owns caller-key session policy
@@ -440,6 +448,12 @@ limits with `GATEWAY_MAX_BUFFERED_REQUESTS` and
 `GATEWAY_MAX_INFLIGHT_BUFFER_BYTES`; admission exhaustion returns the stable,
 retryable `503 gateway_overloaded` response before forwarding begins or
 downstream response headers are committed.
+
+From release `0.1.47`, request admission follows the final forwarded buffer reference, including
+clones queued behind upstream writes. Once Pingora consumes the upload, waiting
+for upstream response headers no longer holds a body slot. Complete-body policy
+and guardrail checks remain in place, and expanded request bodies must fit the
+aggregate byte budget.
 
 Managed JSON analysis now reads only the top-level routing, policy, and usage
 metadata it needs instead of repeatedly materializing ignored payload fields.

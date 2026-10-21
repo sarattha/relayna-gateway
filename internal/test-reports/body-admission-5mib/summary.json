@@ -1,0 +1,1156 @@
+[
+  {
+    "environment": {
+      "label": "baseline",
+      "image": "relayna-gateway:body-baseline-a089b57",
+      "source_commit": "a089b57",
+      "created_at": "2026-10-20T16:32:57.872340+00:00",
+      "limits": [
+        8,
+        16,
+        24,
+        32,
+        64
+      ],
+      "repetitions": 3,
+      "rps": 12,
+      "duration_seconds": 15,
+      "delay_ms": 12000,
+      "gateway_resources": {
+        "cpu_limit": 2,
+        "memory_limit_bytes": 2147483648
+      },
+      "docker": {
+        "NCPU": 10,
+        "MemTotal": 20940111872,
+        "Architecture": "aarch64",
+        "KernelVersion": "7.0.14-linuxkit",
+        "ServerVersion": "29.8.2",
+        "OperatingSystem": "Docker Desktop"
+      },
+      "image_id": "sha256:12039f950d4b95a7dc97e74ac008262c5376be1f0ac2b827820ec558f7d0a092"
+    },
+    "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4",
+    "conditions": [
+      {
+        "label": "baseline",
+        "limit": 8,
+        "repetitions": 3,
+        "requests": 540,
+        "successes": 96,
+        "rejections": 444,
+        "unexpected_results": 0,
+        "success_percent": 17.77777777777778,
+        "success_rps_offered_window": 2.1333333333333333,
+        "success_rps_including_drain": 1.254801931451698,
+        "success_p50_ms": 12085.442297,
+        "success_p95_ms": 12103.973088,
+        "success_p99_ms": 12117.886631,
+        "success_ttfb_p95_ms": 12103.877005,
+        "rejection_p95_ms": 62.02508300000045,
+        "dispatch_lag_p99_ms": 1.4023776666663252,
+        "rss_peak_mib": 304.69921875,
+        "cgroup_peak_mib": 293.5703125,
+        "cgroup_sampled_peak_mib": 292.56640625,
+        "buffered_requests_peak": 8,
+        "buffered_bytes_peak_mib": 40.0,
+        "concurrency_denials": 444,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          32,
+          32,
+          32
+        ],
+        "verified_successes": 96,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 25499.299429,
+            "successes": 32,
+            "success_p95_ms": 12110.529422999998,
+            "memory": [
+              {
+                "pod": "gateway-66fd6445fd-hkz9h",
+                "sample_count": 107,
+                "rss_peak_bytes": 300044288.0,
+                "cgroup_sampled_peak_bytes": 287006720.0,
+                "cgroup_kernel_peak_bytes": 287342592.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-66fd6445fd-kj7s7",
+                "sample_count": 107,
+                "rss_peak_bytes": 259801088.0,
+                "cgroup_sampled_peak_bytes": 247566336.0,
+                "cgroup_kernel_peak_bytes": 266924032.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 25504.861386,
+            "successes": 32,
+            "success_p95_ms": 12099.532797,
+            "memory": [
+              {
+                "pod": "gateway-6d758d74fc-lbwnd",
+                "sample_count": 107,
+                "rss_peak_bytes": 220000256.0,
+                "cgroup_sampled_peak_bytes": 207265792.0,
+                "cgroup_kernel_peak_bytes": 207740928.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-6d758d74fc-x86tc",
+                "sample_count": 107,
+                "rss_peak_bytes": 319500288.0,
+                "cgroup_sampled_peak_bytes": 306778112.0,
+                "cgroup_kernel_peak_bytes": 307830784.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 25501.937553,
+            "successes": 32,
+            "success_p95_ms": 12102.198089,
+            "memory": [
+              {
+                "pod": "gateway-887b677cb-9vn2g",
+                "sample_count": 107,
+                "rss_peak_bytes": 219836416.0,
+                "cgroup_sampled_peak_bytes": 206704640.0,
+                "cgroup_kernel_peak_bytes": 207753216.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-887b677cb-x89m5",
+                "sample_count": 107,
+                "rss_peak_bytes": 219914240.0,
+                "cgroup_sampled_peak_bytes": 207593472.0,
+                "cgroup_kernel_peak_bytes": 207904768.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "baseline",
+        "limit": 16,
+        "repetitions": 3,
+        "requests": 540,
+        "successes": 192,
+        "rejections": 348,
+        "unexpected_results": 0,
+        "success_percent": 35.55555555555556,
+        "success_rps_offered_window": 4.266666666666667,
+        "success_rps_including_drain": 2.3848615425128266,
+        "success_p50_ms": 12082.397505,
+        "success_p95_ms": 12094.398796,
+        "success_p99_ms": 12105.972421999999,
+        "success_ttfb_p95_ms": 12094.335713,
+        "rejection_p95_ms": 59.05524999999943,
+        "dispatch_lag_p99_ms": 1.623088333333726,
+        "rss_peak_mib": 418.6796875,
+        "cgroup_peak_mib": 407.796875,
+        "cgroup_sampled_peak_mib": 407.1640625,
+        "buffered_requests_peak": 16,
+        "buffered_bytes_peak_mib": 80.0,
+        "concurrency_denials": 348,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          64,
+          64,
+          64
+        ],
+        "verified_successes": 192,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 26833.041595,
+            "successes": 64,
+            "success_p95_ms": 12094.714923000001,
+            "memory": [
+              {
+                "pod": "gateway-865f88bdb-r7bp9",
+                "sample_count": 112,
+                "rss_peak_bytes": 419139584.0,
+                "cgroup_sampled_peak_bytes": 406827008.0,
+                "cgroup_kernel_peak_bytes": 407928832.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-865f88bdb-mtsdk",
+                "sample_count": 112,
+                "rss_peak_bytes": 419651584.0,
+                "cgroup_sampled_peak_bytes": 407576576.0,
+                "cgroup_kernel_peak_bytes": 407920640.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 26842.429179,
+            "successes": 64,
+            "success_p95_ms": 12093.701213,
+            "memory": [
+              {
+                "pod": "gateway-86f55948c8-jbp82",
+                "sample_count": 112,
+                "rss_peak_bytes": 279633920.0,
+                "cgroup_sampled_peak_bytes": 267448320.0,
+                "cgroup_kernel_peak_bytes": 271474688.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-86f55948c8-mhw2z",
+                "sample_count": 111,
+                "rss_peak_bytes": 419557376.0,
+                "cgroup_sampled_peak_bytes": 407437312.0,
+                "cgroup_kernel_peak_bytes": 407805952.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 26832.347637000003,
+            "successes": 64,
+            "success_p95_ms": 12092.751172,
+            "memory": [
+              {
+                "pod": "gateway-f64845966-8t4kp",
+                "sample_count": 111,
+                "rss_peak_bytes": 379695104.0,
+                "cgroup_sampled_peak_bytes": 368001024.0,
+                "cgroup_kernel_peak_bytes": 368537600.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-f64845966-dtmqt",
+                "sample_count": 111,
+                "rss_peak_bytes": 439017472.0,
+                "cgroup_sampled_peak_bytes": 426942464.0,
+                "cgroup_kernel_peak_bytes": 427606016.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "baseline",
+        "limit": 24,
+        "repetitions": 3,
+        "requests": 540,
+        "successes": 246,
+        "rejections": 294,
+        "unexpected_results": 0,
+        "success_percent": 45.55555555555556,
+        "success_rps_offered_window": 5.466666666666667,
+        "success_rps_including_drain": 3.0375552044291942,
+        "success_p50_ms": 12082.856256,
+        "success_p95_ms": 12097.474505999999,
+        "success_p99_ms": 12110.517214,
+        "success_ttfb_p95_ms": 12097.399546999999,
+        "rejection_p95_ms": 59.89550000000054,
+        "dispatch_lag_p99_ms": 1.4360829999999396,
+        "rss_peak_mib": 456.75390625,
+        "cgroup_peak_mib": 448.93359375,
+        "cgroup_sampled_peak_mib": 445.5859375,
+        "buffered_requests_peak": 24,
+        "buffered_bytes_peak_mib": 120.0,
+        "concurrency_denials": 294,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          82,
+          82,
+          82
+        ],
+        "verified_successes": 246,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 26994.168263,
+            "successes": 82,
+            "success_p95_ms": 12094.874881,
+            "memory": [
+              {
+                "pod": "gateway-b7d468b95-vtf59",
+                "sample_count": 113,
+                "rss_peak_bytes": 459022336.0,
+                "cgroup_sampled_peak_bytes": 447528960.0,
+                "cgroup_kernel_peak_bytes": 450633728.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-b7d468b95-rq96j",
+                "sample_count": 113,
+                "rss_peak_bytes": 419086336.0,
+                "cgroup_sampled_peak_bytes": 407236608.0,
+                "cgroup_kernel_peak_bytes": 410906624.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 26996.095094999997,
+            "successes": 82,
+            "success_p95_ms": 12105.227756,
+            "memory": [
+              {
+                "pod": "gateway-56dfcd8fb-8bzk6",
+                "sample_count": 113,
+                "rss_peak_bytes": 459415552.0,
+                "cgroup_sampled_peak_bytes": 447467520.0,
+                "cgroup_kernel_peak_bytes": 451153920.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-56dfcd8fb-9mf69",
+                "sample_count": 113,
+                "rss_peak_bytes": 478941184.0,
+                "cgroup_sampled_peak_bytes": 467230720.0,
+                "cgroup_kernel_peak_bytes": 470740992.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 26995.919096,
+            "successes": 82,
+            "success_p95_ms": 12090.853048,
+            "memory": [
+              {
+                "pod": "gateway-6f68fbf759-bzrrc",
+                "sample_count": 112,
+                "rss_peak_bytes": 399245312.0,
+                "cgroup_sampled_peak_bytes": 387457024.0,
+                "cgroup_kernel_peak_bytes": 391249920.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-6f68fbf759-dshgd",
+                "sample_count": 112,
+                "rss_peak_bytes": 458960896.0,
+                "cgroup_sampled_peak_bytes": 447082496.0,
+                "cgroup_kernel_peak_bytes": 450641920.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "baseline",
+        "limit": 32,
+        "repetitions": 3,
+        "requests": 540,
+        "successes": 294,
+        "rejections": 246,
+        "unexpected_results": 0,
+        "success_percent": 54.44444444444444,
+        "success_rps_offered_window": 6.533333333333333,
+        "success_rps_including_drain": 3.6301512269675262,
+        "success_p50_ms": 12083.207047,
+        "success_p95_ms": 12102.873713,
+        "success_p99_ms": 12111.184338,
+        "success_ttfb_p95_ms": 12102.73463,
+        "rejection_p95_ms": 60.09200000000055,
+        "dispatch_lag_p99_ms": 1.6227913333334527,
+        "rss_peak_mib": 646.7265625,
+        "cgroup_peak_mib": 639.5,
+        "cgroup_sampled_peak_mib": 635.796875,
+        "buffered_requests_peak": 32,
+        "buffered_bytes_peak_mib": 160.0,
+        "concurrency_denials": 246,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          98,
+          98,
+          98
+        ],
+        "verified_successes": 294,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 26995.602262,
+            "successes": 98,
+            "success_p95_ms": 12105.647963,
+            "memory": [
+              {
+                "pod": "gateway-7c869cdd4f-vghqq",
+                "sample_count": 113,
+                "rss_peak_bytes": 578445312.0,
+                "cgroup_sampled_peak_bytes": 566685696.0,
+                "cgroup_kernel_peak_bytes": 570720256.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-7c869cdd4f-sk8k2",
+                "sample_count": 113,
+                "rss_peak_bytes": 518762496.0,
+                "cgroup_sampled_peak_bytes": 507015168.0,
+                "cgroup_kernel_peak_bytes": 509837312.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 26997.614428999997,
+            "successes": 98,
+            "success_p95_ms": 12101.004047,
+            "memory": [
+              {
+                "pod": "gateway-7d7668795f-4x5x5",
+                "sample_count": 113,
+                "rss_peak_bytes": 458895360.0,
+                "cgroup_sampled_peak_bytes": 446701568.0,
+                "cgroup_kernel_peak_bytes": 447467520.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-7d7668795f-psbt7",
+                "sample_count": 113,
+                "rss_peak_bytes": 558604288.0,
+                "cgroup_sampled_peak_bytes": 547024896.0,
+                "cgroup_kernel_peak_bytes": 549531648.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 26995.144845,
+            "successes": 98,
+            "success_p95_ms": 12104.614048,
+            "memory": [
+              {
+                "pod": "gateway-799f7fb96b-cjb2h",
+                "sample_count": 112,
+                "rss_peak_bytes": 678141952.0,
+                "cgroup_sampled_peak_bytes": 666681344.0,
+                "cgroup_kernel_peak_bytes": 670564352.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-799f7fb96b-pq6kx",
+                "sample_count": 112,
+                "rss_peak_bytes": 439013376.0,
+                "cgroup_sampled_peak_bytes": 428621824.0,
+                "cgroup_kernel_peak_bytes": 431222784.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "baseline",
+        "limit": 64,
+        "repetitions": 3,
+        "requests": 540,
+        "successes": 486,
+        "rejections": 54,
+        "unexpected_results": 0,
+        "success_percent": 90.0,
+        "success_rps_offered_window": 10.8,
+        "success_rps_including_drain": 6.000147522515949,
+        "success_p50_ms": 12083.975589000001,
+        "success_p95_ms": 12101.002088,
+        "success_p99_ms": 12122.210756,
+        "success_ttfb_p95_ms": 12100.90113,
+        "rejection_p95_ms": 60.940582999999606,
+        "dispatch_lag_p99_ms": 2.3151266666664014,
+        "rss_peak_mib": 988.68359375,
+        "cgroup_peak_mib": 982.75,
+        "cgroup_sampled_peak_mib": 978.7734375,
+        "buffered_requests_peak": 64,
+        "buffered_bytes_peak_mib": 320.0,
+        "concurrency_denials": 54,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          162,
+          162,
+          162
+        ],
+        "verified_successes": 486,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 26997.604262,
+            "successes": 162,
+            "success_p95_ms": 12094.888171999999,
+            "memory": [
+              {
+                "pod": "gateway-68494687fd-kpzrj",
+                "sample_count": 113,
+                "rss_peak_bytes": 919547904.0,
+                "cgroup_sampled_peak_bytes": 909107200.0,
+                "cgroup_kernel_peak_bytes": 911683584.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-68494687fd-nrnbr",
+                "sample_count": 113,
+                "rss_peak_bytes": 837550080.0,
+                "cgroup_sampled_peak_bytes": 827846656.0,
+                "cgroup_kernel_peak_bytes": 831152128.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 26991.072971,
+            "successes": 162,
+            "success_p95_ms": 12099.274214000001,
+            "memory": [
+              {
+                "pod": "gateway-656df9897b-9vp4f",
+                "sample_count": 113,
+                "rss_peak_bytes": 1036709888.0,
+                "cgroup_sampled_peak_bytes": 1026318336.0,
+                "cgroup_kernel_peak_bytes": 1030488064.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-656df9897b-mkgd5",
+                "sample_count": 113,
+                "rss_peak_bytes": 937152512.0,
+                "cgroup_sampled_peak_bytes": 926744576.0,
+                "cgroup_kernel_peak_bytes": 931246080.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 27009.331262,
+            "successes": 162,
+            "success_p95_ms": 12108.403713,
+            "memory": [
+              {
+                "pod": "gateway-7ff856fbf8-n7tfv",
+                "sample_count": 113,
+                "rss_peak_bytes": 819015680.0,
+                "cgroup_sampled_peak_bytes": 808361984.0,
+                "cgroup_kernel_peak_bytes": 811892736.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-7ff856fbf8-jjbll",
+                "sample_count": 113,
+                "rss_peak_bytes": 838115328.0,
+                "cgroup_sampled_peak_bytes": 827207680.0,
+                "cgroup_kernel_peak_bytes": 830685184.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "environment": {
+      "label": "improved",
+      "image": "relayna-gateway:body-improved-final",
+      "source_commit": "bcf92ad",
+      "created_at": "2026-10-20T17:11:53.779769+00:00",
+      "limits": [
+        8,
+        16,
+        24,
+        32,
+        64
+      ],
+      "repetitions": 3,
+      "rps": 12,
+      "duration_seconds": 15,
+      "delay_ms": 12000,
+      "gateway_resources": {
+        "cpu_limit": 2,
+        "memory_limit_bytes": 2147483648
+      },
+      "malloc_mmap_threshold_override": null,
+      "docker": {
+        "NCPU": 10,
+        "MemTotal": 20940111872,
+        "Architecture": "aarch64",
+        "KernelVersion": "7.0.14-linuxkit",
+        "ServerVersion": "29.8.2",
+        "OperatingSystem": "Docker Desktop"
+      },
+      "image_id": "sha256:03090ac3f6e18efded289896914ce9330afb12416a7c71d088b174cd077a9459",
+      "image_allocator_environment": {
+        "MALLOC_MMAP_THRESHOLD_": "131072"
+      }
+    },
+    "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4",
+    "conditions": [
+      {
+        "label": "improved",
+        "limit": 8,
+        "repetitions": 3,
+        "requests": 540,
+        "successes": 540,
+        "rejections": 0,
+        "unexpected_results": 0,
+        "success_percent": 100.0,
+        "success_rps_offered_window": 12.0,
+        "success_rps_including_drain": 6.665243325513685,
+        "success_p50_ms": 12090.932922,
+        "success_p95_ms": 12099.007839,
+        "success_p99_ms": 12107.463089,
+        "success_ttfb_p95_ms": 12098.943089000002,
+        "rejection_p95_ms": null,
+        "dispatch_lag_p99_ms": 1.3988379999991594,
+        "rss_peak_mib": 66.109375,
+        "cgroup_peak_mib": 54.3046875,
+        "cgroup_sampled_peak_mib": 53.58984375,
+        "buffered_requests_peak": 1,
+        "buffered_bytes_peak_mib": 5.0,
+        "concurrency_denials": 0,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          180,
+          180,
+          180
+        ],
+        "verified_successes": 540,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 27007.673971,
+            "successes": 180,
+            "success_p95_ms": 12098.276089,
+            "memory": [
+              {
+                "pod": "gateway-5694d4759b-8h6gg",
+                "sample_count": 112,
+                "rss_peak_bytes": 69320704.0,
+                "cgroup_sampled_peak_bytes": 55767040.0,
+                "cgroup_kernel_peak_bytes": 56410112.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-5694d4759b-f25bt",
+                "sample_count": 112,
+                "rss_peak_bytes": 68407296.0,
+                "cgroup_sampled_peak_bytes": 56119296.0,
+                "cgroup_kernel_peak_bytes": 56672256.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 27004.044554,
+            "successes": 180,
+            "success_p95_ms": 12100.855881000001,
+            "memory": [
+              {
+                "pod": "gateway-7496bb998c-7n8x2",
+                "sample_count": 112,
+                "rss_peak_bytes": 68497408.0,
+                "cgroup_sampled_peak_bytes": 55791616.0,
+                "cgroup_kernel_peak_bytes": 56205312.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-7496bb998c-zv4v2",
+                "sample_count": 112,
+                "rss_peak_bytes": 68911104.0,
+                "cgroup_sampled_peak_bytes": 56193024.0,
+                "cgroup_kernel_peak_bytes": 56848384.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 27005.578763,
+            "successes": 180,
+            "success_p95_ms": 12098.969922,
+            "memory": [
+              {
+                "pod": "gateway-b48b88cb8-kt2xz",
+                "sample_count": 113,
+                "rss_peak_bytes": 68571136.0,
+                "cgroup_sampled_peak_bytes": 55930880.0,
+                "cgroup_kernel_peak_bytes": 56709120.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-b48b88cb8-v5547",
+                "sample_count": 113,
+                "rss_peak_bytes": 68505600.0,
+                "cgroup_sampled_peak_bytes": 55787520.0,
+                "cgroup_kernel_peak_bytes": 56942592.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "improved",
+        "limit": 16,
+        "repetitions": 3,
+        "requests": 540,
+        "successes": 540,
+        "rejections": 0,
+        "unexpected_results": 0,
+        "success_percent": 100.0,
+        "success_rps_offered_window": 12.0,
+        "success_rps_including_drain": 6.66500349156946,
+        "success_p50_ms": 12091.649089,
+        "success_p95_ms": 12098.377256000002,
+        "success_p99_ms": 12104.784922,
+        "success_ttfb_p95_ms": 12098.305089,
+        "rejection_p95_ms": null,
+        "dispatch_lag_p99_ms": 1.156125666666867,
+        "rss_peak_mib": 65.38671875,
+        "cgroup_peak_mib": 54.37890625,
+        "cgroup_sampled_peak_mib": 53.390625,
+        "buffered_requests_peak": 1,
+        "buffered_bytes_peak_mib": 5.0,
+        "concurrency_denials": 0,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          180,
+          180,
+          180
+        ],
+        "verified_successes": 540,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 27007.305636999998,
+            "successes": 180,
+            "success_p95_ms": 12098.316338999999,
+            "memory": [
+              {
+                "pod": "gateway-66b7758c7b-tlplw",
+                "sample_count": 112,
+                "rss_peak_bytes": 68325376.0,
+                "cgroup_sampled_peak_bytes": 55910400.0,
+                "cgroup_kernel_peak_bytes": 56639488.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-66b7758c7b-lrqbz",
+                "sample_count": 112,
+                "rss_peak_bytes": 68153344.0,
+                "cgroup_sampled_peak_bytes": 55177216.0,
+                "cgroup_kernel_peak_bytes": 56328192.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 27007.879512,
+            "successes": 180,
+            "success_p95_ms": 12098.901755,
+            "memory": [
+              {
+                "pod": "gateway-6f5457965d-lbjj4",
+                "sample_count": 112,
+                "rss_peak_bytes": 68456448.0,
+                "cgroup_sampled_peak_bytes": 55779328.0,
+                "cgroup_kernel_peak_bytes": 56332288.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-6f5457965d-8865f",
+                "sample_count": 112,
+                "rss_peak_bytes": 68468736.0,
+                "cgroup_sampled_peak_bytes": 55484416.0,
+                "cgroup_kernel_peak_bytes": 56348672.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 27005.027471,
+            "successes": 180,
+            "success_p95_ms": 12096.175755999999,
+            "memory": [
+              {
+                "pod": "gateway-d7989c896-sh799",
+                "sample_count": 112,
+                "rss_peak_bytes": 68362240.0,
+                "cgroup_sampled_peak_bytes": 55451648.0,
+                "cgroup_kernel_peak_bytes": 56418304.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-d7989c896-6wv7q",
+                "sample_count": 112,
+                "rss_peak_bytes": 68562944.0,
+                "cgroup_sampled_peak_bytes": 55984128.0,
+                "cgroup_kernel_peak_bytes": 57020416.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "improved",
+        "limit": 24,
+        "repetitions": 3,
+        "requests": 540,
+        "successes": 540,
+        "rejections": 0,
+        "unexpected_results": 0,
+        "success_percent": 100.0,
+        "success_rps_offered_window": 12.0,
+        "success_rps_including_drain": 6.665519621670631,
+        "success_p50_ms": 12091.672422000001,
+        "success_p95_ms": 12099.936631,
+        "success_p99_ms": 12108.233130999999,
+        "success_ttfb_p95_ms": 12099.858798000001,
+        "rejection_p95_ms": null,
+        "dispatch_lag_p99_ms": 1.2129223333340633,
+        "rss_peak_mib": 65.3828125,
+        "cgroup_peak_mib": 54.0390625,
+        "cgroup_sampled_peak_mib": 53.60546875,
+        "buffered_requests_peak": 1,
+        "buffered_bytes_peak_mib": 5.0,
+        "concurrency_denials": 0,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          180,
+          180,
+          180
+        ],
+        "verified_successes": 540,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 27004.89772,
+            "successes": 180,
+            "success_p95_ms": 12099.39663,
+            "memory": [
+              {
+                "pod": "gateway-679c8646f7-4hql7",
+                "sample_count": 112,
+                "rss_peak_bytes": 65589248.0,
+                "cgroup_sampled_peak_bytes": 52731904.0,
+                "cgroup_kernel_peak_bytes": 56410112.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-679c8646f7-ngbkx",
+                "sample_count": 112,
+                "rss_peak_bytes": 64860160.0,
+                "cgroup_sampled_peak_bytes": 51441664.0,
+                "cgroup_kernel_peak_bytes": 56025088.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 27006.113262,
+            "successes": 180,
+            "success_p95_ms": 12098.513213999999,
+            "memory": [
+              {
+                "pod": "gateway-74f6c4474f-r2vm2",
+                "sample_count": 112,
+                "rss_peak_bytes": 68341760.0,
+                "cgroup_sampled_peak_bytes": 55644160.0,
+                "cgroup_kernel_peak_bytes": 56496128.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-74f6c4474f-xf5c8",
+                "sample_count": 112,
+                "rss_peak_bytes": 68308992.0,
+                "cgroup_sampled_peak_bytes": 55865344.0,
+                "cgroup_kernel_peak_bytes": 56434688.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 27002.928013,
+            "successes": 180,
+            "success_p95_ms": 12102.046422,
+            "memory": [
+              {
+                "pod": "gateway-7bfdbf658d-lxhn7",
+                "sample_count": 112,
+                "rss_peak_bytes": 68399104.0,
+                "cgroup_sampled_peak_bytes": 55459840.0,
+                "cgroup_kernel_peak_bytes": 56045568.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-7bfdbf658d-qcxf4",
+                "sample_count": 112,
+                "rss_peak_bytes": 68558848.0,
+                "cgroup_sampled_peak_bytes": 56209408.0,
+                "cgroup_kernel_peak_bytes": 56664064.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "improved",
+        "limit": 32,
+        "repetitions": 3,
+        "requests": 540,
+        "successes": 540,
+        "rejections": 0,
+        "unexpected_results": 0,
+        "success_percent": 100.0,
+        "success_rps_offered_window": 12.0,
+        "success_rps_including_drain": 6.665010507992372,
+        "success_p50_ms": 12092.648672,
+        "success_p95_ms": 12103.447463999999,
+        "success_p99_ms": 12121.42738,
+        "success_ttfb_p95_ms": 12103.368172,
+        "rejection_p95_ms": null,
+        "dispatch_lag_p99_ms": 1.3529213333331427,
+        "rss_peak_mib": 65.37890625,
+        "cgroup_peak_mib": 54.03515625,
+        "cgroup_sampled_peak_mib": 53.234375,
+        "buffered_requests_peak": 1,
+        "buffered_bytes_peak_mib": 5.0,
+        "concurrency_denials": 0,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          180,
+          180,
+          180
+        ],
+        "verified_successes": 540,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 27004.68922,
+            "successes": 180,
+            "success_p95_ms": 12112.019047,
+            "memory": [
+              {
+                "pod": "gateway-7775cfcfdb-9rp8z",
+                "sample_count": 113,
+                "rss_peak_bytes": 67141632.0,
+                "cgroup_sampled_peak_bytes": 54181888.0,
+                "cgroup_kernel_peak_bytes": 56360960.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-7775cfcfdb-k8sf9",
+                "sample_count": 113,
+                "rss_peak_bytes": 67362816.0,
+                "cgroup_sampled_peak_bytes": 54542336.0,
+                "cgroup_kernel_peak_bytes": 55578624.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 27005.312929,
+            "successes": 180,
+            "success_p95_ms": 12099.313546000001,
+            "memory": [
+              {
+                "pod": "gateway-58bccd7596-j2x8x",
+                "sample_count": 113,
+                "rss_peak_bytes": 68554752.0,
+                "cgroup_sampled_peak_bytes": 54030336.0,
+                "cgroup_kernel_peak_bytes": 56659968.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-58bccd7596-c9lcq",
+                "sample_count": 113,
+                "rss_peak_bytes": 65482752.0,
+                "cgroup_sampled_peak_bytes": 52486144.0,
+                "cgroup_kernel_peak_bytes": 56492032.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 27010.125179,
+            "successes": 180,
+            "success_p95_ms": 12105.162463999999,
+            "memory": [
+              {
+                "pod": "gateway-77bdc58dff-z6knb",
+                "sample_count": 112,
+                "rss_peak_bytes": 68530176.0,
+                "cgroup_sampled_peak_bytes": 55820288.0,
+                "cgroup_kernel_peak_bytes": 56340480.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-77bdc58dff-whrcd",
+                "sample_count": 112,
+                "rss_peak_bytes": 68362240.0,
+                "cgroup_sampled_peak_bytes": 55676928.0,
+                "cgroup_kernel_peak_bytes": 56586240.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "improved",
+        "limit": 64,
+        "repetitions": 3,
+        "requests": 540,
+        "successes": 540,
+        "rejections": 0,
+        "unexpected_results": 0,
+        "success_percent": 100.0,
+        "success_rps_offered_window": 12.0,
+        "success_rps_including_drain": 6.665640868069466,
+        "success_p50_ms": 12091.342047,
+        "success_p95_ms": 12098.957298,
+        "success_p99_ms": 12112.623005999998,
+        "success_ttfb_p95_ms": 12098.856297999999,
+        "rejection_p95_ms": null,
+        "dispatch_lag_p99_ms": 1.3446666666668534,
+        "rss_peak_mib": 65.34765625,
+        "cgroup_peak_mib": 54.08984375,
+        "cgroup_sampled_peak_mib": 53.73828125,
+        "buffered_requests_peak": 1,
+        "buffered_bytes_peak_mib": 5.0,
+        "concurrency_denials": 0,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          180,
+          180,
+          180
+        ],
+        "verified_successes": 540,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 27004.971179,
+            "successes": 180,
+            "success_p95_ms": 12099.339963999999,
+            "memory": [
+              {
+                "pod": "gateway-76849b7f9c-jw9mz",
+                "sample_count": 112,
+                "rss_peak_bytes": 68317184.0,
+                "cgroup_sampled_peak_bytes": 55562240.0,
+                "cgroup_kernel_peak_bytes": 56164352.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-76849b7f9c-sf8ps",
+                "sample_count": 112,
+                "rss_peak_bytes": 68521984.0,
+                "cgroup_sampled_peak_bytes": 56348672.0,
+                "cgroup_kernel_peak_bytes": 56532992.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 27000.648013,
+            "successes": 180,
+            "success_p95_ms": 12098.214881,
+            "memory": [
+              {
+                "pod": "gateway-9fbb5f56c-np8k6",
+                "sample_count": 112,
+                "rss_peak_bytes": 65888256.0,
+                "cgroup_sampled_peak_bytes": 52789248.0,
+                "cgroup_kernel_peak_bytes": 56672256.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-9fbb5f56c-2bcck",
+                "sample_count": 112,
+                "rss_peak_bytes": 65486848.0,
+                "cgroup_sampled_peak_bytes": 53096448.0,
+                "cgroup_kernel_peak_bytes": 56717312.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 27006.846179,
+            "successes": 180,
+            "success_p95_ms": 12098.957298,
+            "memory": [
+              {
+                "pod": "gateway-f57948654-6pmnb",
+                "sample_count": 112,
+                "rss_peak_bytes": 68456448.0,
+                "cgroup_sampled_peak_bytes": 55775232.0,
+                "cgroup_kernel_peak_bytes": 56606720.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-f57948654-94jls",
+                "sample_count": 112,
+                "rss_peak_bytes": 68399104.0,
+                "cgroup_sampled_peak_bytes": 55988224.0,
+                "cgroup_kernel_peak_bytes": 56623104.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
