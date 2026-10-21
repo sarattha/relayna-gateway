@@ -93,6 +93,24 @@ jobs:
             target/body-benchmark-amd64/burst \
             --output target/body-benchmark-amd64/burst-summary.json
 
+      - name: Validate candidate acceptance criteria
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("target/body-benchmark-amd64")
+          for matrix, expected_requests in [("controlled", 540), ("burst", 320)]:
+              summary = json.loads((root / f"{matrix}-summary.json").read_text())[0]
+              assert summary["environment"]["image_architecture"] == "amd64"
+              assert all(node["architecture"] == "amd64" for node in summary["environment"]["kubernetes_nodes"])
+              for row in summary["conditions"]:
+                  assert row["requests"] == expected_requests, (matrix, row)
+                  assert row["unexpected_results"] == 0 and row["restarts"] == 0 and not row["oom"], (matrix, row)
+                  if matrix == "controlled":
+                      assert row["successes"] == expected_requests, row
+          PY
+
       - name: Upload measurements
         if: always()
         uses: actions/upload-artifact@v4
