@@ -131,6 +131,10 @@ class Benchmark:
             info = json.loads(command(["docker", "info", "--format", "{{json .}}"], capture_output=True).stdout)
             metadata["docker"] = {key: info[key] for key in ["NCPU", "MemTotal", "Architecture", "KernelVersion", "ServerVersion", "OperatingSystem"]}
         metadata["image_id"] = command(["docker", "image", "inspect", self.args.image, "--format", "{{.Id}}"], capture_output=True).stdout.strip()
+        metadata["image_architecture"] = command(["docker", "image", "inspect", self.args.image, "--format", "{{.Architecture}}"], capture_output=True).stdout.strip()
+        nodes = json.loads(self.kube("get", "nodes", "-o", "json", capture_output=True).stdout)["items"]
+        metadata["kubernetes_nodes"] = [node["status"]["nodeInfo"] for node in nodes]
+        metadata["scripts_sha256"] = {name: hashlib.sha256((HERE / name).read_bytes()).hexdigest() for name in ["mock.mjs", "workload.mjs"]}
         image_env = json.loads(command(["docker", "image", "inspect", self.args.image, "--format", "{{json .Config.Env}}"], capture_output=True).stdout)
         metadata["image_allocator_environment"] = dict(item.split("=", 1) for item in image_env if item.split("=", 1)[0] in {"MALLOC_MMAP_THRESHOLD_", "MALLOC_ARENA_MAX"})
         (self.output / "environment.json").write_text(json.dumps(metadata, indent=2))

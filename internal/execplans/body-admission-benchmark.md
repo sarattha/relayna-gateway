@@ -45,9 +45,26 @@ containing reproducible tooling and measured results.
   draft PR [#137](https://github.com/sarattha/relayna-gateway/pull/137) against
   `main` and registered it with this T3 thread. Removed the isolated benchmark
   namespace and task-created verification Redis instance.
+- [x] (2026-10-21 follow-up) Rebased cleanly onto `origin/main` at `c8c0f6a`,
+  preserving the TLS dependency and WebSocket test fixes.
+- [x] Prepared a native amd64 GitHub Actions workflow covering all fifteen
+  improved controlled conditions and all five improved burst conditions, with
+  host/image/node architecture assertions and retained raw evidence.
+- [x] The user approved enabling GitHub Actions; repository Actions is now
+  enabled for the native amd64 benchmark and existing CI/release workflows.
+- [ ] Run and validate all native amd64 controlled and burst conditions.
+- [ ] Assess amd64 measurements, bump the patch version, and update changelog,
+  deployment guidance, and release documentation with the improvement.
+- [ ] Pass required checks on the rebased release candidate, merge PR #137,
+  and publish the release with verified assets/image.
 
 ## Surprises & Discoveries
 
+- The follow-up workstation remains ARM64, and the repository Actions API
+  returns `enabled: false`. A native amd64 hosted runner is prepared; enabling
+  Actions changes a repository setting, so explicit permission was requested.
+- `origin/main` contains unreleased TLS patching and an isolated WebSocket
+  idle-timeout regression fix after v0.1.46. The rebase kept those changes.
 - The task branch initially pointed at v0.1.45 while v0.1.46 was already
   released. `origin/main` was a clean fast-forward, so the baseline now uses
   v0.1.46 (a089b57) rather than accidentally reverting the WebSocket release.
@@ -78,6 +95,12 @@ containing reproducible tooling and measured results.
 
 ## Decision Log
 
+- Follow-up decision (2026-10-21): rerun the improved controlled and burst
+  matrices on native amd64 with unchanged payload, workload, two-pod resources,
+  limits, and allocator setting. Keep the ARM64 baseline separate. Use patch
+  release 0.1.47 if measurements and verification pass; released public
+  contracts, default admission limits, and durable formats remain unchanged.
+  The user explicitly authorized merge and release after validation.
 - Decision: benchmark real release-built Gateway binaries in two Kubernetes
   pods with shared PostgreSQL/Redis and a streaming mock upstream.
   Rationale: in-process simulations do not establish per-pod memory or the

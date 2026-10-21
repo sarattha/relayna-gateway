@@ -10,6 +10,21 @@ explicit kubeconfig and never changes the current Kubernetes context.
 Optional figure export uses `uv` and Matplotlib; measurement and summaries use
 Python's standard library and the Node container.
 
+## Native amd64 rerun
+
+The `Body admission benchmark (amd64)` GitHub Actions workflow runs the
+improved image on a native `ubuntu-24.04` x86_64 host, with an explicitly
+`linux/amd64` image and an amd64 kind node. It asserts the host, image, and node
+architectures before measuring. It runs all five limits with three controlled
+repetitions and the separate five-limit burst sweep described below. Builds
+finish before measurement starts; raw observations, image/binary hashes,
+workload hashes, and host metadata are uploaded as an artifact.
+
+The workflow runs when its own file or this benchmark's files are pushed, and
+supports manual dispatch once present on the default branch. Existing ARM64
+results remain a separate experiment; native amd64 results must not be
+presented as a direct before/after comparison against an ARM64 baseline.
+
 ## Method
 
 Each condition has exactly two Gateway pods, each limited to two CPUs and
