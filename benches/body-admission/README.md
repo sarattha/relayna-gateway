@@ -20,10 +20,11 @@ repetitions and the separate five-limit burst sweep described below. Builds
 finish before measurement starts; raw observations, image/binary hashes,
 workload hashes, and host metadata are uploaded as an artifact.
 
-The workflow runs when its own file or this benchmark's files are pushed, and
-supports manual dispatch once present on the default branch. Existing ARM64
-results remain a separate experiment; native amd64 results must not be
-presented as a direct before/after comparison against an ARM64 baseline.
+Run it manually with `gh workflow run body-admission-benchmark.yml --ref main`
+(or use a release tag as the ref). This expensive experiment uses explicit
+dispatch rather than rerunning on documentation pushes. Existing ARM64 results
+remain a separate experiment. See the [native amd64 confirmation](../../internal/test-reports/body-admission-5mib/amd64/README.md)
+for the measured candidate, raw evidence, and scope of the comparison.
 
 ## Method
 

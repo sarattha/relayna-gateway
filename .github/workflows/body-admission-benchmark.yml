@@ -1,10 +1,6 @@
 name: Body admission benchmark (amd64)
 
 on:
-  push:
-    paths:
-      - "benches/body-admission/**"
-      - ".github/workflows/body-admission-benchmark.yml"
   workflow_dispatch:
 
 permissions:

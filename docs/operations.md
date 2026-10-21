@@ -45,8 +45,16 @@ still consumes admission; upstream processing time after the upload is consumed
 does not. Complete-body policy, pricing, and guardrail checks still finish
 before buffered request bytes are forwarded. Guardrail expansion must fit the
 aggregate byte budget as well. These limits bound managed buffers, not total
-pod RSS or all in-flight connections. See the [two-pod 5 MiB benchmark](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/README.md)
+pod RSS or all in-flight connections. See the [native amd64 two-pod 5 MiB benchmark](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/amd64/README.md)
 for measured memory and timing at different concurrency limits.
+
+`gateway_buffered_requests` is a gauge of retained managed bodies, not a count
+of requests per second or all requests waiting for a service response. A low
+value can coexist with many upstream requests in flight after their uploads
+have been consumed. Evaluate admission rejections together with CPU, total pod
+memory, service latency, and request rate when sizing replicas. Increasing the
+slot limit permits more simultaneous body retention; it does not add CPU or
+establish that the higher offered load is sustainable.
 
 The Debian image also fixes glibc's mmap threshold at 128 KiB. Without an
 explicit threshold, glibc can raise it dynamically after large allocations,

@@ -1,7 +1,19 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.46` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.47` is the
 current release target.
+
+Version `0.1.47` improves body admission and large-request memory reclamation.
+Slots follow retained upload buffers rather than upstream response-header
+latency, and the Debian image pins glibc's mmap threshold at 128 KiB. Complete
+policy/guardrail checks and byte bounds remain enforced before forwarding;
+rewritten-body capacity is checked before budget reservation. Native amd64
+validation passed the two-pod controlled matrix and separate burst sweep at
+8/16/24/32/64 slots. Defaults stay at eight slots and 512 MiB. See
+[operations](operations.md#configuration), [upgrade guidance](deployment.md#upgrade-to-0147),
+and the [native amd64 report](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/amd64/README.md).
+This patch also includes the WebPKI/root-data updates and WebSocket test timing
+fix merged after 0.1.46. No migration or new Redis format is introduced.
 
 Version `0.1.46` adds opt-in HTTP/WebSocket transport for registered services
 and caller-owned LiteLLM passthrough, including Realtime and direct Responses
@@ -128,11 +140,11 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.46
+   python3 scripts/validate-release-metadata.py v0.1.47
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
-   cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437 --ignore RUSTSEC-2026-0173
+   cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437 --ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0381
    cargo deny check
    cargo machete
    cargo nextest run --workspace --all-features
@@ -146,15 +158,15 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.46 .
+   docker build -t relayna-gateway:0.1.47 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.46 -m "Release v0.1.46"
-   git push origin v0.1.46
+   git tag -a v0.1.47 -m "Release v0.1.47"
+   git push origin v0.1.47
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -164,10 +176,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.46`, the workflow publishes:
+For `v0.1.47`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.46
+ghcr.io/sarattha/relayna-gateway:0.1.47
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

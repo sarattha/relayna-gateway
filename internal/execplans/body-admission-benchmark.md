@@ -52,9 +52,21 @@ containing reproducible tooling and measured results.
   host/image/node architecture assertions and retained raw evidence.
 - [x] The user approved enabling GitHub Actions; repository Actions is now
   enabled for the native amd64 benchmark and existing CI/release workflows.
-- [ ] Run and validate all native amd64 controlled and burst conditions.
-- [ ] Assess amd64 measurements, bump the patch version, and update changelog,
-  deployment guidance, and release documentation with the improvement.
+- [x] Rebased-source full verification passed, including 437/437 Nextest tests
+  with live PostgreSQL/Redis and zero skips, all mandatory scanners, and the
+  additional workspace build. The force-with-lease push preserved the expected
+  remote head. Native amd64 run
+  [39523901020](https://github.com/sarattha/relayna-gateway/actions/runs/39523901020)
+  passed its native-host assertion and image build.
+- [x] Native amd64 run 39523901020 passed all twenty conditions: controlled
+  2700/2700 successes at 62.0–63.3 MiB RSS/pod; burst 1095 successes and 505 valid
+  overload responses, with 320/320 successes at 64 slots and 314.5 MiB RSS/pod.
+  No OOMs, restarts, transport failures, failed scrapes, or quota throttling.
+  Downloaded raw artifacts and independently regenerated equivalent summaries.
+- [x] Prepared 0.1.47 workspace/lockfile versions, UI badges/generated assets,
+  changelog, image examples, upgrade guidance, and release/feature documentation.
+  UI tests/typecheck/React coverage and the strict documentation build passed.
+- [ ] Pass final mandatory verification after version/embedded-asset updates.
 - [ ] Pass required checks on the rebased release candidate, merge PR #137,
   and publish the release with verified assets/image.
 
@@ -65,6 +77,11 @@ containing reproducible tooling and measured results.
   Actions changes a repository setting, so explicit permission was requested.
 - `origin/main` contains unreleased TLS patching and an isolated WebSocket
   idle-timeout regression fix after v0.1.46. The rebase kept those changes.
+- Independently regenerated summaries differ only in filesystem-dependent
+  per-pod list order. Canonicalizing those lists proves identical metrics.
+- Native amd64 burst results differ from ARM64: 64 slots completed 320/320
+  at 314.5 MiB RSS/pod. This is a finite improved-candidate confirmation on a
+  different host, not an amd64 before/after ratio or sustained-capacity claim.
 - The task branch initially pointed at v0.1.45 while v0.1.46 was already
   released. `origin/main` was a clean fast-forward, so the baseline now uses
   v0.1.46 (a089b57) rather than accidentally reverting the WebSocket release.
@@ -101,6 +118,11 @@ containing reproducible tooling and measured results.
   release 0.1.47 if measurements and verification pass; released public
   contracts, default admission limits, and durable formats remain unchanged.
   The user explicitly authorized merge and release after validation.
+- Keep the expensive native workflow manually dispatched after its initial
+  branch-push bootstrap. This avoids duplicate measurements on documentation
+  pushes while retaining exact release-tag reproduction. Preserve native raw
+  evidence under `internal/test-reports/body-admission-5mib/amd64/` and keep
+  the original ARM64 comparison separate. Date/Author: 2026-10-21 / Codex.
 - Decision: benchmark real release-built Gateway binaries in two Kubernetes
   pods with shared PostgreSQL/Redis and a streaming mock upstream.
   Rationale: in-process simulations do not establish per-pod memory or the
@@ -157,6 +179,15 @@ containing reproducible tooling and measured results.
   Date/Author: 2026-10-20 / Codex.
 
 ## Outcomes & Retrospective
+
+The follow-up native amd64 confirmation passed all twenty improved conditions
+on an x86_64 host/image/node after rebasing onto c8c0f6a. All 2700 controlled
+requests succeeded at 62.0–63.3 MiB RSS/pod and approximately 12.05-second p95
+including the twelve-second mock delay. The five-second 64 RPS burst had no
+OOMs or transport failures; 64 slots completed 320/320 at 314.5 MiB RSS/pod,
+while smaller limits returned valid overload responses. Defaults remain eight
+slots and 512 MiB. Version 0.1.47 metadata/documentation is prepared; final
+verification, authorized merge and release publication remain to be completed.
 
 The controlled experiment is complete: thirty measured conditions, three
 repetitions per setting/version, and 5400 total scheduled requests. At eight

@@ -1,5 +1,10 @@
 # Two-pod 5 MiB body admission benchmark
 
+This page retains the original **ARM64 before/after experiment**. The follow-up
+[native amd64 confirmation](amd64/README.md) reruns every improved controlled and
+burst condition after rebasing onto `origin/main`, and is the validation used
+to prepare release 0.1.47.
+
 At **eight slots per pod**, the improved Gateway completed **540/540** requests,
 compared with **96/540** before. Worst sampled individual-pod RSS fell from
 **304.7 MiB to 66.1 MiB**

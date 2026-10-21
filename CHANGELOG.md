@@ -4,6 +4,8 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+## 0.1.47 - 2026-10-21
+
 ### Changed
 
 - Release buffered request admission when the last forwarded buffer reference
@@ -13,6 +15,32 @@ All notable changes to Relayna Gateway are documented in this file.
   allocations can return to the operating system under concurrent traffic.
 - Add a repeatable two-pod, 5 MiB JSON benchmark with per-pod memory, timing,
   throughput, rejection, and before/after evidence at five admission limits.
+
+### Verified
+
+- Repeat all improved controlled and burst conditions on native Linux amd64
+  after rebasing onto current main. All 2,700 controlled requests succeeded
+  at limits 8/16/24/32/64 with 62.0–63.3 MiB peak RSS per pod and approximately
+  12.05-second p95 including a 12-second mock delay. The separate 64 RPS burst
+  had no OOMs or transport failures; 64 slots completed 320/320 requests at
+  314.5 MiB peak RSS per pod. Lower limits returned valid overload responses.
+- Keep native amd64 confirmation separate from the original ARM64 before/after
+  experiment. Preserve raw data, architecture/image provenance, and reproduction
+  commands; these finite workloads do not establish maximum sustained RPS.
+
+### Fixed
+
+- Patch Rustls WebPKI and trusted root data while preserving SQLx's compatible
+  root bridge. Isolate the WebSocket E2E idle-timeout check from unrelated
+  assertions so CI timing does not cause spurious failures.
+
+### Compatibility
+
+- No new PostgreSQL migration, Redis format, or public response shape. Defaults
+  remain eight body slots and 512 MiB serialized bytes. Native glibc deployments
+  should set `MALLOC_MMAP_THRESHOLD_=131072` before startup to match the Debian
+  image; other allocators may ignore it. See [upgrade guidance](docs/deployment.md#upgrade-to-0147)
+  and [native amd64 measurements](internal/test-reports/body-admission-5mib/amd64/README.md).
 
 ## 0.1.46 - 2026-10-20
 
