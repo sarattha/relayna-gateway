@@ -543,10 +543,12 @@ mod tests {
     #[test]
     fn validates_litellm_custom_header_names() {
         validate_litellm_credential_header_name("x-litellm-api-key").expect("valid");
-        assert_eq!(
-            validate_litellm_credential_header_name("authorization").unwrap_err(),
-            GatewayError::InvalidProviderConfigPayload
-        );
+        for header in ["authorization", "Authorization", "AUTHORIZATION"] {
+            assert_eq!(
+                validate_litellm_credential_header_name(header).unwrap_err(),
+                GatewayError::InvalidProviderConfigPayload
+            );
+        }
         assert_eq!(
             validate_litellm_credential_header_name("x-relayna-key").unwrap_err(),
             GatewayError::InvalidProviderConfigPayload

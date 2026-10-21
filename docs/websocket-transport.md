@@ -82,8 +82,23 @@ identity fields when replacing `access`. LiteLLM endpoint availability depends o
 the deployed LiteLLM version and configured upstream models.
 
 Path denies, method allows and UI/admin exposure gates remain in force. Caller
-keys use the configured LiteLLM credential header translation. Gateway never
-retries using a stored service/provider key. Relayna virtual keys, trusted-ingress
+keys use the configured LiteLLM credential header translation. For WebSocket
+upgrades, Gateway also sends `Authorization: Bearer <same caller-owned LiteLLM key>`.
+This supports LiteLLM versions such as 1.100.1 whose initial WebSocket auth reads
+Authorization before general auth enforces `litellm_key_header_name`. Keep the
+provider's custom header and its raw/bearer value format configured as required
+by LiteLLM. For example, a bearer-formatted `x-litellm-key` deployment receives:
+
+```http
+x-litellm-key: Bearer <caller-owned LiteLLM key>
+Authorization: Bearer <same caller-owned LiteLLM key>
+```
+
+Both headers come from the selected caller key, replacing inbound credential
+headers. Standard Authorization mode sends one Authorization value. HTTP
+translation and registered-service socket credentials retain their existing
+behavior. This compatibility header does not widen the key's model permissions.
+Gateway never retries using a stored service/provider key. Relayna virtual keys, trusted-ingress
 stored-key access and Relayna-governed LiteLLM WebSocket sessions are unsupported
 in this feature; those requests are rejected before opening an upstream socket.
 
@@ -126,6 +141,15 @@ connections; it does not cancel existing sockets.
 
 
 ## Verified LiteLLM interoperability
+
+On 2026-10-21, custom-header interoperability passed 16 checks each against
+real LiteLLM 1.100.1 (PyPI) and the pinned 1.106.0 image. Both required
+`x-litellm-key` and used real Sol-only LiteLLM virtual keys with a deterministic
+local HTTPS/WSS provider. Responses sockets exchanged delta/completed events,
+including two turns, aliases and model selection in the first frame. Luna stayed
+denied in both query and first-frame checks without contacting the provider.
+HTTP controls, spoofed alternate credentials and metadata-only Traffic accounting
+also passed. See the [sanitized report](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/litellm-websocket-custom-header/README.md).
 
 On 2026-10-20, the official `docker.litellm.ai/berriai/litellm:latest` image
 contained LiteLLM v1.106.0. Seventeen local checks passed against the actual

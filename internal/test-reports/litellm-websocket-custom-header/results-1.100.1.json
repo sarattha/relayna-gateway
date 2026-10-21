@@ -1,0 +1,158 @@
+{
+  "litellm": "1.100.1",
+  "results": [
+    {
+      "name": "direct custom-only HTTP succeeds",
+      "passed": true,
+      "http": 200
+    },
+    {
+      "name": "direct Authorization-only HTTP denied",
+      "passed": true,
+      "http": 401
+    },
+    {
+      "name": "direct custom-only WS reproduces 403",
+      "passed": true,
+      "http": 403
+    },
+    {
+      "name": "direct Authorization-only WS denied",
+      "passed": true,
+      "http": 403
+    },
+    {
+      "name": "direct both headers exchange WS frames",
+      "passed": true,
+      "http": 101,
+      "events": [
+        "response.created",
+        "response.output_text.delta",
+        "response.completed"
+      ],
+      "delta_seconds": 0.156,
+      "complete_seconds": 0.307
+    },
+    {
+      "name": "gateway HTTP custom credential unchanged",
+      "passed": true,
+      "http": 200
+    },
+    {
+      "name": "gateway custom header WS two turns",
+      "passed": true,
+      "http": 101,
+      "events": [
+        "response.created",
+        "response.output_text.delta",
+        "response.completed"
+      ],
+      "delta_seconds": 0.155,
+      "complete_seconds": 0.307,
+      "second_turn": {
+        "events": [
+          "response.created",
+          "response.output_text.delta",
+          "response.completed"
+        ],
+        "delta_seconds": 0.153,
+        "complete_seconds": 0.304
+      }
+    },
+    {
+      "name": "gateway Responses alias",
+      "passed": true,
+      "http": 101,
+      "events": [
+        "response.created",
+        "response.output_text.delta",
+        "response.completed"
+      ],
+      "delta_seconds": 0.157,
+      "complete_seconds": 0.308
+    },
+    {
+      "name": "gateway model in first frame",
+      "passed": true,
+      "http": 101,
+      "events": [
+        "response.created",
+        "response.output_text.delta",
+        "response.completed"
+      ],
+      "delta_seconds": 0.157,
+      "complete_seconds": 0.308
+    },
+    {
+      "name": "gateway spoofed alternate credentials",
+      "passed": true,
+      "http": 101,
+      "events": [
+        "response.created",
+        "response.output_text.delta",
+        "response.completed"
+      ],
+      "delta_seconds": 0.156,
+      "complete_seconds": 0.307
+    },
+    {
+      "name": "gateway denied Luna query",
+      "passed": true,
+      "http": 403
+    },
+    {
+      "name": "gateway denied Luna first frame",
+      "passed": true,
+      "http": 101,
+      "error_frame": true,
+      "provider_contacted": false
+    },
+    {
+      "name": "gateway invalid caller with valid spoofed custom key",
+      "passed": true,
+      "http": 403
+    },
+    {
+      "name": "gateway no bearer cannot use spoofed custom key",
+      "passed": true,
+      "http": 401
+    },
+    {
+      "name": "gateway socket diagnostics and no governed usage",
+      "passed": true,
+      "record": {
+        "status": 101,
+        "key_id": null,
+        "socket": {
+          "app": null,
+          "state": "closed",
+          "channel": "",
+          "closed_at": "2026-10-21T14:40:43.828540Z",
+          "opened_at": "2026-10-21T14:40:43.215719Z",
+          "close_cause": "close_frame_observed",
+          "duration_ms": 612,
+          "observed_at": "2026-10-21T14:40:43.828540Z",
+          "client_bytes": 267,
+          "client_frames": 3,
+          "upstream_bytes": 3286,
+          "idle_timeout_ms": 30000,
+          "max_frame_bytes": 1048576,
+          "upstream_frames": 7,
+          "client_close_frame": true,
+          "session_expires_at": "2026-10-21T15:40:43Z",
+          "upstream_close_frame": true,
+          "last_client_activity_at": "2026-10-21T14:40:43.827651Z",
+          "last_upstream_activity_at": "2026-10-21T14:40:43.828130Z"
+        }
+      },
+      "usage_rows": 0,
+      "upstream_attempts": 1
+    },
+    {
+      "name": "local provider sees only provider fixture credentials",
+      "passed": true,
+      "cumulative_provider_requests": 7,
+      "cumulative_provider_websocket_response_create_frames": 6
+    }
+  ]
+}

@@ -214,6 +214,13 @@ credential value or a bearer-prefixed value. The default is `raw` to preserve
 existing deployments. Set it to `bearer` for LiteLLM deployments that require a
 custom header such as `x-litellm-key: Bearer <key>`.
 
+Caller-owned LiteLLM WebSocket upgrades additionally send
+`Authorization: Bearer <same caller key>` alongside the configured custom header.
+LiteLLM 1.100.1 needs Authorization for its initial socket authentication even
+when general auth requires `litellm_key_header_name: x-litellm-key`. The custom
+header keeps its configured raw/bearer format. HTTP translation is unchanged;
+see [WebSocket credentials](websocket-transport.md#caller-owned-litellm-passthrough).
+
 ## Credential Resolution
 
 For Gateway-authenticated traffic, Gateway resolves LiteLLM credentials in this order:
@@ -302,7 +309,8 @@ mode is `custom_header`, Gateway removes downstream `Authorization` and forwards
 the credential in the configured header name. Custom header values default to
 the raw credential, such as `x-litellm-api-key: <credential>`. Set
 `credential_header_value_format` to `bearer` when the upstream expects
-`x-litellm-key: Bearer <credential>`.
+`x-litellm-key: Bearer <credential>`. Caller-owned WebSocket upgrades also include
+Authorization with that same credential, as described above.
 
 ## LiteLLM Passthrough Setup (All Options)
 

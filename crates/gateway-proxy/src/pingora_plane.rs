@@ -2020,11 +2020,23 @@ where
         Self::CTX: Send + Sync,
     {
         let upstream = self.upstream_for(ctx).unwrap_or(&self.config.litellm);
+        if ctx.socket && ctx.direct_litellm_passthrough {
+            // Strip LiteLLM's alternate socket credential before injecting any
+            // configured header (which may itself be named api-key).
+            upstream_request.remove_header("api-key");
+        }
         prepare_upstream_authority_and_credentials(
             upstream_request,
             upstream,
             Some(ctx.relayna_key_header.as_str()),
         )?;
+        if ctx.socket && ctx.direct_litellm_passthrough {
+            // LiteLLM's initial WebSocket auth reads Authorization even when
+            // its HTTP auth requires a custom header. Supply the same selected
+            // caller key to both stages, retaining the custom header's format.
+            upstream_request
+                .insert_header("authorization", format!("Bearer {}", upstream.service_key))?;
+        }
         if ctx.socket {
             // Negotiate an uncompressed relay so frame/message limits remain
             // meaningful, including for browser clients offering compression.
