@@ -27,7 +27,10 @@ caller key and configured raw/bearer custom-header format, while supplying
   (zero skipped), Trivy, Gitleaks and Semgrep all pass. Workspace all-features
   build, strict MkDocs and release-metadata validation pass. Docs and Unreleased
   changelog updated. Task-owned containers, processes and private material removed.
-- [ ] Open/link focused PR, monitor checks/review and merge when ready.
+- [x] (2026-10-21) Commit 3d67438, push the focused branch and open/link
+  [PR #139](https://github.com/sarattha/relayna-gateway/pull/139). The committed
+  patch also passes a scoped Gitleaks history scan.
+- [ ] Monitor hosted CI and required review through the T3 watcher; merge when ready.
 
 ## Surprises & Discoveries
 
@@ -72,6 +75,11 @@ build, strict MkDocs and v0.1.47 release-metadata checks also pass. Task-owned
 gateway/LiteLLM/provider processes and PostgreSQL/Redis containers are stopped
 and removed; generated TLS private keys, container environment files and raw
 server logs are removed. The original parent worktree remains clean.
+
+PR #139 is mergeable, with hosted CI running and GitHub's review decision
+`REVIEW_REQUIRED` at handoff to monitoring. No additional explicit Codex review
+request was sent, respecting the two-request budget already used on #136/#138.
+Actions remains enabled exactly as it was on task entry; no setting was changed.
 
 ## Context and Orientation
 
