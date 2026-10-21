@@ -33,15 +33,24 @@ async fn upstream(
     headers: HeaderMap,
     upgrade: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
 ) -> axum::response::Response {
-    let credential = headers
-        .get("authorization")
-        .or_else(|| headers.get("x-upstream-key"))
+    let custom = headers
+        .get("x-litellm-key")
+        .or_else(|| headers.get("api-key"));
+    let credential = custom
+        .or_else(|| headers.get("authorization"))
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let permitted = matches!(
+    let mut permitted = matches!(
         credential,
         "Bearer service-only" | "Bearer sk-caller" | "Bearer sk-other" | "sk-caller"
     );
+    // Reproduce LiteLLM's two auth stages: socket extraction needs Bearer
+    // Authorization even when general auth requires the configured custom key.
+    if upgrade.is_ok() && custom.is_some() {
+        permitted &= headers
+            .get("authorization")
+            .is_some_and(|value| value == "Bearer sk-caller");
+    }
     captured.lock().unwrap().push((uri.to_string(), headers));
     if !permitted {
         return http::StatusCode::UNAUTHORIZED.into_response();
@@ -480,6 +489,18 @@ async fn general_service_and_caller_litellm_websocket_transport() {
         captured.lock().unwrap().last().unwrap().1["authorization"],
         "Bearer sk-caller"
     );
+    assert_eq!(
+        captured
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .1
+            .get_all("authorization")
+            .iter()
+            .count(),
+        1
+    );
     denied(
         request(&base, litepath, Some("sk-caller"), "ws-lite-cap"),
         429,
@@ -597,18 +618,106 @@ async fn general_service_and_caller_litellm_websocket_transport() {
         drop(socket);
         traffic(&store, &id).await;
     }
-    // Header translation preserves caller credentials and removes spoofed header values.
-    sqlx::query("UPDATE provider_configs SET credential_header_mode='custom_header',credential_header_name='x-upstream-key' WHERE id=$1").bind(provider_id).execute(store.pool()).await.unwrap();
-    let mut req = request(&base, litepath, Some("sk-caller"), "ws-custom-header");
-    req.headers_mut()
-        .insert("x-upstream-key", "spoofed".parse().unwrap());
-    let (mut socket, _) = connect_async(req).await.unwrap();
-    let headers = captured.lock().unwrap().last().unwrap().1.clone();
-    assert_eq!(headers["x-upstream-key"], "sk-caller");
-    assert!(!headers.contains_key("authorization"));
-    socket.close(None).await.unwrap();
-    drop(socket);
-    traffic(&store, "ws-custom-header").await;
+    // Preserve raw/bearer custom values, including case folding and LiteLLM's
+    // alternate api-key name, while using the same caller key for socket auth.
+    for header in ["X-LiteLLM-Key", "api-key"] {
+        for (format, expected) in [("raw", "sk-caller"), ("bearer", "Bearer sk-caller")] {
+            sqlx::query("UPDATE provider_configs SET credential_header_mode='custom_header',credential_header_name=$2,credential_header_value_format=$3 WHERE id=$1")
+                .bind(provider_id).bind(header).bind(format).execute(store.pool()).await.unwrap();
+            let header = header.to_ascii_lowercase();
+            // HTTP still sends only the configured custom credential.
+            let response = reqwest::Client::new()
+                .post(format!("{base}/v1/responses"))
+                .bearer_auth("sk-caller")
+                .header(&header, "spoofed")
+                .json(&json!({"model":"mock","input":"HTTP control"}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200);
+            let headers = captured.lock().unwrap().last().unwrap().1.clone();
+            assert_eq!(headers[&header], expected);
+            assert!(!headers.contains_key("authorization"));
+            for path in [
+                litepath,
+                "/v1/responses?model=mock",
+                "/responses?model=mock",
+            ] {
+                let id = Uuid::new_v4().to_string();
+                let mut req = request(&base, path, Some("sk-caller"), &id);
+                for name in [
+                    "x-litellm-key",
+                    "api-key",
+                    "x-api-key",
+                    "x-litellm-api-key",
+                    "cookie",
+                ] {
+                    req.headers_mut().insert(name, "spoofed".parse().unwrap());
+                }
+                let (mut socket, response) = connect_async(req).await.unwrap();
+                assert_eq!(response.status(), 101);
+                let headers = captured.lock().unwrap().last().unwrap().1.clone();
+                assert_eq!(headers[&header], expected);
+                assert_eq!(headers["authorization"], "Bearer sk-caller");
+                assert_eq!(headers.get_all("authorization").iter().count(), 1);
+                assert_eq!(headers.get_all(&header).iter().count(), 1);
+                for name in [
+                    "x-litellm-key",
+                    "api-key",
+                    "x-api-key",
+                    "x-litellm-api-key",
+                    "cookie",
+                ] {
+                    if name != header {
+                        assert!(!headers.contains_key(name), "leaked {name}");
+                    }
+                }
+                for message in [
+                    Message::Text("custom-header echo".into()),
+                    Message::Binary(vec![1, 2, 3].into()),
+                ] {
+                    socket.send(message.clone()).await.unwrap();
+                    assert_eq!(socket.next().await.unwrap().unwrap(), message);
+                }
+                assert!(!format!("{:?}", response.headers()).contains("sk-caller"));
+                socket.close(None).await.unwrap();
+                drop(socket);
+                let record = traffic(&store, &id).await;
+                for secret in [
+                    "sk-caller",
+                    "spoofed",
+                    "stored-provider-only",
+                    "stored-fallback-only",
+                ] {
+                    assert!(!record.to_string().contains(secret));
+                }
+            }
+        }
+    }
+    for path in [litepath, "/v1/responses"] {
+        // A custom inbound key alone cannot select a stored-key fallback.
+        let before = captured.lock().unwrap().len();
+        let mut req = request(&base, path, None, "ws-custom-no-bearer");
+        req.headers_mut()
+            .insert("api-key", "sk-caller".parse().unwrap());
+        denied(req, 401).await;
+        // An Entra bearer plus dedicated Relayna key cannot become a caller
+        // LiteLLM socket, even when alternate caller keys are spoofed.
+        let mut req = request(&base, path, Some("entra.jwt.token"), "ws-custom-entra");
+        req.headers_mut()
+            .insert("x-relayna-key", keys[0].1.parse().unwrap());
+        req.headers_mut()
+            .insert("api-key", "sk-caller".parse().unwrap());
+        denied(req, 401).await;
+        assert_eq!(captured.lock().unwrap().len(), before);
+        let mut req = request(&base, path, Some("sk-invalid"), "ws-custom-invalid");
+        req.headers_mut()
+            .insert("api-key", "sk-caller".parse().unwrap());
+        denied(req, 401).await;
+        let headers = captured.lock().unwrap().last().unwrap().1.clone();
+        assert_eq!(headers["authorization"], "Bearer sk-invalid");
+        assert_eq!(headers["api-key"], "Bearer sk-invalid");
+    }
     // Restore shared settings for the existing integration suites.
     settings(&store, serde_json::to_value(previous_settings).unwrap()).await;
     for setting in previous_routes {

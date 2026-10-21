@@ -1,7 +1,17 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.47` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.48` is the
 current release target.
+
+Version `0.1.48` fixes caller-owned LiteLLM WebSocket authentication when the
+active provider uses a custom credential header. The configured header keeps
+its raw/bearer format, and socket handshakes also receive Bearer Authorization
+with the same caller key. HTTP and registered-service credentials retain their
+existing behavior. Real LiteLLM 1.100.1 and pinned 1.106.0 each passed 16 checks
+with a custom-header requirement, native provider socket frames and Sol-only
+model restrictions. No migration or new configuration is required. See
+[WebSocket credentials](websocket-transport.md#caller-owned-litellm-passthrough)
+and [upgrade guidance](deployment.md#upgrade-to-0148).
 
 Version `0.1.47` improves body admission and large-request memory reclamation.
 Slots follow retained upload buffers rather than upstream response-header
@@ -140,7 +150,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.47
+   python3 scripts/validate-release-metadata.py v0.1.48
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -158,15 +168,15 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.47 .
+   docker build -t relayna-gateway:0.1.48 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.47 -m "Release v0.1.47"
-   git push origin v0.1.47
+   git tag -a v0.1.48 -m "Release v0.1.48"
+   git push origin v0.1.48
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -176,10 +186,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.47`, the workflow publishes:
+For `v0.1.48`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.47
+ghcr.io/sarattha/relayna-gateway:0.1.48
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```

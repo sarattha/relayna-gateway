@@ -4,6 +4,30 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+## 0.1.48 - 2026-10-21
+
+### Fixed
+
+- Preserve custom LiteLLM credential headers on caller-owned WebSocket upgrades
+  while also supplying Bearer Authorization with the same caller key for LiteLLM's
+  initial socket authentication. Retain HTTP/service credential behavior and
+  LiteLLM model restrictions; no configuration or migration is required.
+
+### Verified
+
+- Real LiteLLM 1.100.1 and pinned 1.106.0 each pass 16 custom-header checks,
+  including actual native WebSocket frames, two-turn Responses sessions,
+  spoofed credentials and denied-model query/first-frame controls. All 437
+  workspace tests pass with real PostgreSQL and Redis; Nextest skips none.
+
+### Compatibility
+
+- Additive upstream Authorization only for caller-owned LiteLLM WebSocket
+  handshakes. Preserve custom raw/bearer values, HTTP/service credentials,
+  caller-only admission and model restrictions. No migration or new settings.
+  Upgrade all replicas; rollback restores the old handshake behavior. See
+  [upgrade guidance](docs/deployment.md#upgrade-to-0148).
+
 ## 0.1.47 - 2026-10-21
 
 ### Changed
