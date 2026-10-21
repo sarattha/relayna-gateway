@@ -9,6 +9,9 @@ provider uses `x-litellm-key`, including LiteLLM 1.100.1 with
 `general_settings.litellm_key_header_name: x-litellm-key`. Preserve the selected
 caller key and configured raw/bearer custom-header format, while supplying
 `Authorization: Bearer <same caller key>` for LiteLLM's initial socket auth.
+After Codex review, prepare the next patch release (v0.1.48, subject to a fresh
+tag check), verify its metadata and packaging, merge PR #139, and publish the
+release through the existing signed-image/GitHub release workflow.
 
 ## Progress
 
@@ -30,7 +33,11 @@ caller key and configured raw/bearer custom-header format, while supplying
 - [x] (2026-10-21) Commit 3d67438, push the focused branch and open/link
   [PR #139](https://github.com/sarattha/relayna-gateway/pull/139). The committed
   patch also passes a scoped Gitleaks history scan.
-- [ ] Monitor hosted CI and required review through the T3 watcher; merge when ready.
+- [ ] Request and monitor Codex review of PR #139; address any findings.
+- [ ] After review, bump the next patch version, update changelog/release/upgrade
+  documentation and image examples, and rerun mandatory verification.
+- [ ] Validate final hosted CI/review state, merge, and publish the new tag/release.
+- [ ] Verify published image/release artifacts and signatures; finish cleanup.
 
 ## Surprises & Discoveries
 
@@ -38,7 +45,9 @@ Latest release is v0.1.47, including the previous WebSocket timing/TLS fix.
 Provider validation already blocks `authorization` as a custom header regardless
 of case. HeaderMap lookup/replacement is case insensitive. Caller parsing removes
 the Bearer prefix before credential selection, preventing double prefixing.
-Explicit Codex review requests were used on both #136 and #138; request no more.
+Explicit Codex review requests were used on both #136 and #138. The user's newer
+instruction explicitly requests Codex review on this PR and release publication,
+superseding the earlier review-budget and no-release scope for this task.
 Actions was enabled on task entry; leave its setting unchanged.
 
 Both actual LiteLLM versions reproduce custom-only WS403 / HTTP200 and
@@ -57,8 +66,10 @@ returns an error frame without provider contact. The echo E2E's initial expected
 - 2026-10-21, user authorization: the brief explicitly authorizes this released
   wire-behavior change and preserving custom-header semantics; no additional
   approach confirmation is necessary.
-- 2026-10-21, Codex: document under Unreleased without changing release versions,
-  publishing tags, or changing the existing v0.1.47 release.
+- 2026-10-21, user: request Codex review, then bump version/changelog/docs, merge
+  and create a release. This supersedes the original Unreleased-only handoff.
+  Keep existing tags immutable and use the next available patch version. Make
+  one fresh explicit Codex review request for PR #139 under this authorization.
 
 ## Outcomes & Retrospective
 
@@ -77,8 +88,8 @@ and removed; generated TLS private keys, container environment files and raw
 server logs are removed. The original parent worktree remains clean.
 
 PR #139 is mergeable, with hosted CI running and GitHub's review decision
-`REVIEW_REQUIRED` at handoff to monitoring. No additional explicit Codex review
-request was sent, respecting the two-request budget already used on #136/#138.
+`REVIEW_REQUIRED`. The latest user instruction authorizes a new explicit Codex
+review request and expands the outcome to release publication after review.
 Actions remains enabled exactly as it was on task entry; no setting was changed.
 
 ## Context and Orientation
@@ -112,7 +123,12 @@ Add the small socket-only header insertion in the Pingora upstream request
 filter. Extend the echo E2E to require both headers for custom LiteLLM upgrades,
 check raw/bearer formats and mixed-case names across canonical/wildcard routes,
 prove bidirectional frames and credential stripping, and retain HTTP/service
-controls. Add documentation and an Unreleased changelog entry. Use separate
+controls. Add documentation and initially an Unreleased changelog entry. After
+Codex review, move the entry into the next patch release, update workspace and
+lockfile versions and current image/upgrade examples, and rerun the full stack.
+Merge only a verified patch, then create a new annotated tag at the merged main
+commit so the existing workflow publishes the signed image and GitHub release.
+Use separate
 task-owned live fixtures to exercise actual LiteLLM with a real Sol-only key and
 deterministic local HTTPS/WSS provider. Capture sanitized results and versions.
 
@@ -148,8 +164,9 @@ Use uniquely named task containers/databases and fresh schemas; do not modify
 other worktrees or stop unrelated services. Remove only task-owned services,
 keys and raw secret-bearing logs on cleanup. Restart the ordered verification
 script after fixing a failure. Preserve sanitized evidence. Use T3 PR linking
-immediately after creation and its watcher for monitoring. Do not request more
-explicit Codex reviews or publish a new release.
+immediately after creation and its watcher for monitoring. The newest user
+instruction authorizes Codex review and a new patch release. Never rewrite old
+release tags. Inspect remote tag/release state before retrying publication.
 
 ## Artifacts and Notes
 
