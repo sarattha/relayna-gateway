@@ -101,4 +101,31 @@ The mandatory ordered verification stack passed: fmt, Clippy, all 437 Cargo
 tests, audit, deny, machete, all 437 Nextest tests (zero skipped), Trivy,
 Gitleaks and Semgrep. Existing audit exceptions and scanner exclusions remain
 unchanged. The all-features workspace build, strict MkDocs and v0.1.47 release
-metadata check also passed. No new release/version/tag is part of this change.
+metadata check also passed for the original implementation. The user then
+authorized v0.1.48 after Codex review completed without findings; release
+verification and publication are tracked in the accompanying ExecPlan.
+
+## v0.1.48 release verification
+
+Codex completed review of `921fe68` with no findings
+([receipt](https://github.com/sarattha/relayna-gateway/pull/139#issuecomment-6319260430)).
+The runtime and regression tests remain unchanged after review. The v0.1.48
+versioned tree passes the full ordered verification stack again: 437 Cargo tests,
+437 Nextest tests with zero skipped, fmt/Clippy and all required security tools,
+using fresh real PostgreSQL/Redis services. The all-features workspace build,
+release metadata, strict MkDocs, npm tests, TypeScript and 54 React coverage tests
+also pass.
+
+Regenerated Admin UI assets differ only in version labels. Desktop 1440x1000
+and mobile 390x844 checks cover login, navigation, Monitor Overview, Discover
+Routes, Govern Settings, dialogs and wide tables. Both labels show v0.1.48;
+mobile tables scroll locally without page overflow. The earlier real-LiteLLM
+matrices cover the identical reviewed runtime patch.
+
+The production Dockerfile builds successfully. Local ARM64 image ID
+`sha256:086081d8c5182fc67bacc1ceea2f537937f3f997d40e608d714690e47e2ecc45`
+runs as the non-root `relayna` user. Against fresh PostgreSQL/Redis it returns
+200 for `/admin-ui/healthz`, `/admin-ui/readyz`, `/admin-ui`, `/admin-ui/app.js`
+and `/admin-ui/app.css`, with v0.1.48 labels in the embedded HTML and JavaScript.
+Trivy reports no fixable high/critical image findings using the release
+pipeline's existing flags. The smoke container is removed after verification.

@@ -7,6 +7,28 @@ virtual keys, Azure Foundry connections and registered agents, and replica
 synchronization of saved gateway Entra settings.
 The UI remains embedded in the Rust binary; no separate frontend service is needed.
 
+## Upgrade to 0.1.48
+
+There is no PostgreSQL migration, Redis format change, or new configuration
+relative to 0.1.47. Roll out `ghcr.io/sarattha/relayna-gateway:0.1.48` through the
+existing deployment process. Keep the LiteLLM provider's custom header name and
+raw/bearer value format configured as required by LiteLLM, including
+`general_settings.litellm_key_header_name: x-litellm-key` when applicable.
+
+Caller-owned LiteLLM socket handshakes now include the configured custom
+credential header and `Authorization: Bearer <same caller-owned LiteLLM key>`.
+LiteLLM 1.100.1 needs both when general auth requires a custom header. Existing
+HTTP translation, registered-service socket credentials, admission restrictions
+and LiteLLM model permissions retain their contracts. The fix does not enable
+Relayna-governed LiteLLM sessions or stored-key fallback. See
+[WebSocket setup](websocket-transport.md#caller-owned-litellm-passthrough).
+
+Upgrade all replicas before expecting custom-header socket compatibility on
+all connections. Existing sockets can drain normally. Rollback to 0.1.47 needs
+no data conversion, but restores the custom-header handshake failure; the
+standard Authorization configuration workaround remains available if both
+Gateway and LiteLLM use it consistently.
+
 ## Upgrade to 0.1.47
 
 There is no PostgreSQL migration, Redis format change, or new request/response
@@ -230,7 +252,7 @@ channel bindings are enabled; see [Accessa channels](accessa-channels.md).
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.47 .
+docker build -t relayna-gateway:0.1.48 .
 ```
 
 Run it with required dependencies:
@@ -250,7 +272,7 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.47
+  relayna-gateway:0.1.48
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -310,13 +332,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.47
+   ghcr.io/sarattha/relayna-gateway:0.1.48
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.47"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.48"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -324,7 +346,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.47
+   image: <your-registry>/<your-org>/relayna-gateway:0.1.48
    ```
 
 3. Store secrets through your cluster secret manager:

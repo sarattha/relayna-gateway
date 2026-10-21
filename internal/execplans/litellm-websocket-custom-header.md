@@ -33,9 +33,17 @@ release through the existing signed-image/GitHub release workflow.
 - [x] (2026-10-21) Commit 3d67438, push the focused branch and open/link
   [PR #139](https://github.com/sarattha/relayna-gateway/pull/139). The committed
   patch also passes a scoped Gitleaks history scan.
-- [ ] Request and monitor Codex review of PR #139; address any findings.
-- [ ] After review, bump the next patch version, update changelog/release/upgrade
-  documentation and image examples, and rerun mandatory verification.
+- [x] (2026-10-21) Codex review completed on 921fe68 with no findings and no
+  unresolved findings; receipt is PR comment 6319260430. No runtime edits needed.
+- [x] (2026-10-21) Bump v0.1.48 metadata, current image examples and UI labels;
+  update changelog/release/upgrade docs and regenerate assets. npm/TypeScript,
+  54 React tests, strict MkDocs, release metadata and desktop/mobile checks pass.
+- [x] (2026-10-21) v0.1.48 mandatory ordered stack passes in full, including
+  437 Cargo tests, 437 Nextest tests with zero skipped and all security scanners.
+  The workspace all-features build also passes.
+- [x] (2026-10-21) Production Docker image builds; ARM64 image smoke passes
+  health/readiness and all three Admin UI assets with v0.1.48 labels and non-root
+  user. Trivy image scan passes with the release pipeline's severity/unfixed policy.
 - [ ] Validate final hosted CI/review state, merge, and publish the new tag/release.
 - [ ] Verify published image/release artifacts and signatures; finish cleanup.
 
@@ -70,6 +78,10 @@ returns an error frame without provider contact. The echo E2E's initial expected
   and create a release. This supersedes the original Unreleased-only handoff.
   Keep existing tags immutable and use the next available patch version. Make
   one fresh explicit Codex review request for PR #139 under this authorization.
+- 2026-10-21, Codex: latest release remains v0.1.47 and v0.1.48 is unclaimed.
+  Prepare v0.1.48 with workspace/lockfile versions, current image examples and
+  source-owned Admin UI version labels regenerated through Vite. Preserve all
+  historical 0.1.47 release/benchmark notes. The reviewed runtime stays unchanged.
 
 ## Outcomes & Retrospective
 
@@ -91,6 +103,29 @@ PR #139 is mergeable, with hosted CI running and GitHub's review decision
 `REVIEW_REQUIRED`. The latest user instruction authorizes a new explicit Codex
 review request and expands the outcome to release publication after review.
 Actions remains enabled exactly as it was on task entry; no setting was changed.
+
+Codex completed its review of 921fe68 with no findings. Release metadata and
+documentation are being updated for v0.1.48. Final release verification, hosted
+CI, merge and publication remain pending; the runtime patch is unchanged.
+
+Workspace and five lockfile package versions now read 0.1.48. Current image
+examples, Kubernetes manifest, changelog, release/upgrade docs and source-owned
+UI labels are updated. Generated JS/index changes contain only the version
+strings. npm tests, TypeScript, all 54 React coverage tests and strict MkDocs
+pass. Desktop 1440x1000 and mobile 390x844 checks covered login, Monitor Overview,
+Discover Routes, Govern Settings, navigation, dialogs and wide tables. Both UI
+version labels read v0.1.48; mobile page width stays 390 while table contents
+scroll locally. T3 snapshots timed out twice; the documented Playwright fallback
+completed the check. Local screenshots are retained under
+`/tmp/relayna-ws-release-ui-screenshots`. The temporary browser/server are stopped.
+
+The final v0.1.48 ordered stack and all-features build pass. No dependencies or
+runtime logic changed after Codex review. Local production image ID
+`sha256:086081d8c5182fc67bacc1ceea2f537937f3f997d40e608d714690e47e2ecc45`
+is ARM64, runs as `relayna`, and passes health/readiness/asset smoke plus the
+release-policy Trivy scan. This is local image evidence; the hosted workflow
+builds and signs the published image separately. Final hosted CI, merge and
+publication remain pending.
 
 ## Context and Orientation
 
@@ -139,7 +174,7 @@ From this worktree, with disposable real DATABASE_URL and REDIS_URL:
     cargo test -p gateway-api --test websocket_transport_e2e --all-features
     bash .codex/skills/code-change-verification/scripts/run.sh
     cargo build --workspace --all-features
-    python3 scripts/validate-release-metadata.py v0.1.47
+    python3 scripts/validate-release-metadata.py v0.1.48
 
 Run real LiteLLM 1.100.1 from the existing pinned PyPI venv using a new database,
 fresh fixture-only master key and generated virtual key limited to gpt-6.1-sol.

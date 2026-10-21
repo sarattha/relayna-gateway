@@ -2,9 +2,16 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.47` feature set.
+This page summarizes the `v0.1.48` feature set.
 
-New in 0.1.47: request body admission follows the last retained buffer reference,
+New in 0.1.48: caller-owned LiteLLM WebSocket upgrades preserve the configured
+custom credential header and additionally send Bearer Authorization with the
+same caller key. This supports LiteLLM custom-header authentication without
+changing HTTP/service credentials or model permissions. See
+[WebSocket credentials](websocket-transport.md#caller-owned-litellm-passthrough)
+and [upgrade instructions](deployment.md#upgrade-to-0148).
+
+Introduced in 0.1.47: request body admission follows the last retained buffer reference,
 so completed uploads release slots without waiting for service response headers.
 The Debian image fixes glibc's large-allocation threshold to reduce retained
 resident memory. Rewritten bodies must fit before budget reservation. Native

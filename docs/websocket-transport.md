@@ -82,8 +82,8 @@ identity fields when replacing `access`. LiteLLM endpoint availability depends o
 the deployed LiteLLM version and configured upstream models.
 
 Path denies, method allows and UI/admin exposure gates remain in force. Caller
-keys use the configured LiteLLM credential header translation. For WebSocket
-upgrades, Gateway also sends `Authorization: Bearer <same caller-owned LiteLLM key>`.
+keys use the configured LiteLLM credential header translation. From v0.1.48, WebSocket
+upgrades also send `Authorization: Bearer <same caller-owned LiteLLM key>`.
 This supports LiteLLM versions such as 1.100.1 whose initial WebSocket auth reads
 Authorization before general auth enforces `litellm_key_header_name`. Keep the
 provider's custom header and its raw/bearer value format configured as required
