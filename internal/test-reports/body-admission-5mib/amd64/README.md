@@ -55,7 +55,7 @@ Success and rejection latency distributions are separate. Dispatch-to-complete-r
 
 The strict summarizer was rerun independently after downloading the artifact. Both summaries matched every value after canonicalizing per-pod list order (filesystem iteration can reorder that list). Exact payload/workload hashes, balanced requests, completeness, response verification, pod counts, gauge bounds, scrape success, and counter/status agreement passed. The successful workflow also gated controlled 100% success and zero unexpected results/restarts/OOMs in both matrices.
 
-The rebased source passed the full mandatory local verification stack with live PostgreSQL/Redis (437/437 Nextest tests, zero skips), the workspace build, and GitHub CI. Release metadata/UI/documentation changes are verified separately before publication.
+The rebased source passed the full mandatory local verification stack with live PostgreSQL/Redis (437/437 Nextest tests, zero skips), the workspace build, and GitHub CI. The final 0.1.47 version/embedded-asset update also passed the full local stack, locked workspace build, UI tests/typecheck/React coverage, strict documentation build, release metadata, and Dockerfile checks. Desktop/mobile local UI login, Monitor/Discover/Govern navigation, service drawer and wide-table checks passed with no console errors. Rust implementation sources are unchanged from the measured commit. The release tag's workflow supplies the final publication build, image scan, signing and attestation checks.
 
 ## Reproduce and inspect
 

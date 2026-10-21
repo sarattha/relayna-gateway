@@ -66,9 +66,16 @@ containing reproducible tooling and measured results.
 - [x] Prepared 0.1.47 workspace/lockfile versions, UI badges/generated assets,
   changelog, image examples, upgrade guidance, and release/feature documentation.
   UI tests/typecheck/React coverage and the strict documentation build passed.
-- [ ] Pass final mandatory verification after version/embedded-asset updates.
-- [ ] Pass required checks on the rebased release candidate, merge PR #137,
-  and publish the release with verified assets/image.
+- [x] Final 0.1.47 mandatory verification passed after version/embedded-asset
+  updates, including 437/437 Nextest tests with zero skips and every mandatory
+  scanner. The locked workspace build, three Dockerfile checks, release
+  metadata, strict docs, UI tests/typecheck/React coverage, and desktop/mobile
+  UI smoke checks passed. Measured Rust sources are unchanged from 5ecb053.
+- [x] Prepared the authorized publication handoff: the user explicitly approved
+  admin merge after all checks pass because main requires a code-owner review.
+  Merge PR #137 preserving the measured commits, then tag v0.1.47 and let the
+  existing Release workflow build/scan/sign/attest/publish. Publication status
+  is recorded by PR #137 and the [release](https://github.com/sarattha/relayna-gateway/releases/tag/v0.1.47).
 
 ## Surprises & Discoveries
 
@@ -186,8 +193,10 @@ requests succeeded at 62.0–63.3 MiB RSS/pod and approximately 12.05-second p95
 including the twelve-second mock delay. The five-second 64 RPS burst had no
 OOMs or transport failures; 64 slots completed 320/320 at 314.5 MiB RSS/pod,
 while smaller limits returned valid overload responses. Defaults remain eight
-slots and 512 MiB. Version 0.1.47 metadata/documentation is prepared; final
-verification, authorized merge and release publication remain to be completed.
+slots and 512 MiB. Final version 0.1.47 local verification and documentation are
+complete. The user explicitly approved admin merge after checks pass. The
+remaining publication steps are external GitHub actions; PR #137, the v0.1.47
+release/tag, and the Release workflow provide their authoritative status.
 
 The controlled experiment is complete: thirty measured conditions, three
 repetitions per setting/version, and 5400 total scheduled requests. At eight
