@@ -15,19 +15,39 @@ reports retain their original runtime versions; record new runs separately.
 
 ## Native amd64 rerun
 
-The `Body admission benchmark (amd64)` GitHub Actions workflow runs the
-improved image on a native `ubuntu-24.04` x86_64 host, with an explicitly
-`linux/amd64` image and an amd64 kind node. It asserts the host, image, and node
-architectures before measuring. It runs all five limits with three controlled
-repetitions and the separate five-limit burst sweep described below. Builds
-finish before measurement starts; raw observations, image/binary hashes,
-workload hashes, and host metadata are uploaded as an artifact.
+The current `Body admission size capacity (amd64)` GitHub Actions workflow
+pulls the immutable published v0.1.49 runtime on a native `ubuntu-24.04`
+x86_64 host. It verifies host, image, and Kubernetes node architectures and
+records runtime and harness commits separately. No builds overlap measurement.
 
-Run it manually with `gh workflow run body-admission-benchmark.yml --ref main`
-(or use a release tag as the ref). This expensive experiment uses explicit
-dispatch rather than rerunning on documentation pushes. Existing ARM64 results
-remain a separate experiment. See the [native amd64 confirmation](../../internal/test-reports/body-admission-5mib/amd64/README.md)
-for the measured candidate, raw evidence, and scope of the comparison.
+Run the pilot first, then the full six-size resource search from the branch
+containing this workflow:
+
+```sh
+gh workflow run body-admission-benchmark.yml --ref <branch> -f mode=pilot
+gh workflow run body-admission-benchmark.yml --ref <branch> -f mode=full
+```
+
+Both modes use two fresh Gateway pods per trial, each with 2 CPU / 1 GiB
+limits and a 512 MiB serialized-body budget. The pilot checks 5 and 100 MiB;
+the full run searches 5, 10, 20, 40, 80, and 100 MiB sequentially on the same
+host. Each size uses a fixed simultaneous cohort per pod equal to twice
+`floor(512 / body_MiB)`. The mock pauses reads for ten seconds and waits two
+seconds after upload. Client requests have a sixty-second absolute deadline.
+These are backpressure resource tests, distinct from the historical fixed-rate
+comparison documented below.
+
+`capacity_sweep.py` explores slot counts below and above the arithmetic byte
+bound, refines observed resource failures, and confirms selected settings with
+three fresh-pod trials. OOMs, restarts, errors and incomplete observations stay
+in the artifacts. Latency is reported without imposing an SLO. A configured
+slot count is a ceiling rather than preallocated memory; report observed
+occupancy and tested boundaries rather than assuming a universal maximum.
+The workflow uploads each size immediately and retains combined evidence.
+
+Existing ARM64 results remain separate. See the
+[original native amd64 confirmation](../../internal/test-reports/body-admission-5mib/amd64/README.md)
+for the earlier baseline/candidate comparison and original workload.
 
 ## Method
 
@@ -130,8 +150,10 @@ The runner generates benchmark-only operator/service credentials in a
 Kubernetes Secret and a real virtual key in the driver's temporary filesystem.
 Credentials never appear in artifacts. Do not run in a production namespace.
 Setup is repeatable; reusing the namespace retains only synthetic benchmark
-data. Output directories cannot overwrite completed conditions. Incomplete
-runs must be marked/discarded and rerun into a new output directory.
+data. Output directories cannot overwrite completed conditions. Preserve and
+mark incomplete runs, then rerun into a new output directory. The resource
+search uses `--retain-failures` to capture unsuccessful warmups, pod snapshots,
+memory samples, and redacted diagnostics without discarding failed conditions.
 
 Summarize results and validate the measured limits, evenly distributed offered
 traffic, verified bodies, and agreement between 503s and admission counters:
