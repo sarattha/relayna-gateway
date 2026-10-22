@@ -19,10 +19,24 @@ mock registered service and fixed 5,242,880-byte JSON workload.
   v0.1.47; preserve the original implementation branch.
 - [x] (2026-10-22 07:55Z) Identify and fix summarizer filename matching that
   would omit three-digit slot counts and multi-digit repetitions.
-- [ ] Prepare and verify the experiment workflow and benchmark-only changes.
-- [ ] Run native amd64 64/128 comparisons and preserve raw artifacts.
-- [ ] Independently validate summaries and document memory, timing, overload
-  reasons, and limits of the experiment.
+- [x] (2026-10-22 08:10Z) Actionlint, Python compilation, Node syntax,
+  numeric-width regression checks, and the complete repository verification
+  stack passed. Nextest ran 437 tests with zero skips. Removed the two local
+  verification fixture containers after completion.
+- [x] (2026-10-22 08:31Z) All 18 native conditions completed: 26,040 measured
+  requests across 36 fresh pods. Workflow 39745691424 at harness commit
+  `e322ac368358479c54003e830a78f4ed2dfc5d8a` uploaded its artifacts and removed
+  its cluster. Preserve its failure conclusion: three upstream-connection
+  502s in the 64-slot stress repetitions failed the clean-run gate.
+- [x] (2026-10-22 08:35Z) Independently regenerate all summaries, validate
+  provenance/configuration/counts/bounds and final zero body gauges, preserve
+  all raw observations under `internal/test-reports/body-admission-128/amd64/`,
+  and write the measured memory/timing/overload report.
+- [x] (2026-10-22 08:38Z) Prepare the complete report for publication, scan
+  its 6.42 MB of observations with Gitleaks (zero leaks), and verify the
+  interactive visual at desktop/light and mobile/dark widths without console
+  errors or horizontal overflow. The final thread handoff and remote
+  `test/body-admission-128-amd64` branch record publication status.
 
 ## Surprises & Discoveries
 
@@ -30,6 +44,19 @@ mock registered service and fixed 5,242,880-byte JSON workload.
   Match numeric filenames of any width while excluding pod snapshot files.
 - The existing native workflow has no dispatch inputs and tests only five
   limits ending at 64. Use a dedicated branch of the existing manual workflow.
+- The runtime reached the configured 128 slots and 511.995 MiB sampled body
+  bytes under stress. Raising the count moved most admission failures to the
+  independent byte budget: 3,990 byte denials and 127 count denials at 128.
+- All conditions remained below the 1 GiB pod memory limit with zero OOMs,
+  restarts, client transport failures, or metrics errors. The 64-slot stress
+  runs nevertheless returned three `502 upstream_connection` errors. The
+  measurement workflow correctly failed its clean-run gate; do not hide those
+  failures or change the gate to force a green conclusion.
+- Client latencies include the driver's HTTP connection-pool queue. A 30-second
+  arrival window drained in approximately 93 seconds at 64 and 113 seconds at
+  128. The 30-second socket inactivity timeout is not an end-to-end deadline.
+- This runner used an EPYC 7763 rather than the earlier native report's EPYC
+  9V45. Use within-run 64/128 comparisons; avoid cross-host performance ratios.
 
 ## Decision Log
 
@@ -52,8 +79,20 @@ mock registered service and fixed 5,242,880-byte JSON workload.
 
 ## Outcomes & Retrospective
 
-Pending measured results. The production deployment and runtime code remain
-outside the scope of this benchmark-only follow-up.
+128 slots improved the 64 RPS burst from 672/960 successes to 958/960 while
+raising worst RSS from 397.4 to 582.0 MiB per pod. At 128 RPS for 30 seconds,
+128 slots completed 7,403/11,520 versus 3,929/11,520 at 64 slots, at higher
+memory (653.3 versus 439.9 MiB peak RSS; 768.6 versus 483.8 MiB cgroup peak)
+and successful-request p95 latency (82.6 versus 63.9 seconds). The 512 MiB
+byte budget remained enforced and became the main overload source at 128.
+
+All 14,042 successful responses verified their upload and credential checks.
+11,995 valid overload 503s and all three unexpected 502s are preserved. The
+results support 128 as tested burst headroom under the specified resources,
+not a sustainable capacity or latency claim for the heavier offered workload.
+No production configuration or runtime implementation was changed. The exact
+cause of the three upstream connection failures was not isolated; process logs
+were not exported, so root-cause claims would exceed the collected evidence.
 
 ## Context and Orientation
 
@@ -115,8 +154,12 @@ restart stale port-forwards or overwrite the earlier completed benchmark data.
 
 ## Artifacts and Notes
 
-Native run URL, experiment commit, artifact paths, final counts, and measured
-results will be added after execution.
+Native workflow: https://github.com/sarattha/relayna-gateway/actions/runs/39745691424.
+Harness commit: `e322ac368358479c54003e830a78f4ed2dfc5d8a`.
+Local verification transcript: `/tmp/relayna-128-verification.log`.
+Report and complete raw evidence:
+`internal/test-reports/body-admission-128/amd64/README.md`.
+Independent audit: `internal/test-reports/body-admission-128/amd64/independent-validation.json`.
 
 ## Interfaces and Dependencies
 

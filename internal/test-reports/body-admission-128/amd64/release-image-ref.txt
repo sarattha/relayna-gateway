@@ -1,0 +1,1 @@
+ghcr.io/sarattha/relayna-gateway@sha256:08ef644f5f7564013388ff36ab81e4616c61a605bb56217ce381fcc23b07e67e

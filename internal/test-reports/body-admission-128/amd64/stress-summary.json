@@ -1,0 +1,276 @@
+[
+  {
+    "environment": {
+      "label": "release-0147-amd64-stress",
+      "image": "relayna-gateway:body-amd64",
+      "source_commit": "d2ff47859356dea354b9817dc0adec514b6a0364",
+      "created_at": "2026-10-22T08:17:01.947468+00:00",
+      "limits": [
+        64,
+        128
+      ],
+      "repetitions": 3,
+      "rps": 128.0,
+      "duration_seconds": 30.0,
+      "delay_ms": 2000,
+      "gateway_resources": {
+        "cpu_limit": 2,
+        "memory_limit_bytes": 1073741824
+      },
+      "malloc_mmap_threshold_override": null,
+      "docker": {
+        "NCPU": 4,
+        "MemTotal": 16760344576,
+        "Architecture": "x86_64",
+        "KernelVersion": "7.0.0-1017-azure",
+        "ServerVersion": "28.0.4",
+        "OperatingSystem": "Ubuntu 24.04.5 LTS"
+      },
+      "image_id": "sha256:641dc023b3dddc391b65d4d7d0d9b5b1a7627ded60bfe286ec3809918ed7a2f6",
+      "image_architecture": "amd64",
+      "kubernetes_nodes": [
+        {
+          "architecture": "amd64",
+          "bootID": "8c479766-99d0-4597-92df-dec6e291363c",
+          "containerRuntimeVersion": "containerd://2.3.1",
+          "kernelVersion": "7.0.0-1017-azure",
+          "kubeProxyVersion": "",
+          "kubeletVersion": "v1.36.1",
+          "machineID": "3d195b794c444028a6fc4d84e1b4f2e3",
+          "operatingSystem": "linux",
+          "osImage": "Debian GNU/Linux 13 (trixie)",
+          "swap": {
+            "capacity": 3221221376
+          },
+          "systemUUID": "edea16c9-f48c-422c-97cc-45d959f55463"
+        }
+      ],
+      "scripts_sha256": {
+        "mock.mjs": "427169350d50716cee501613efd6c47a15950f57e339dd48d681fabfed8a057a",
+        "workload.mjs": "aca90d993f24787053fad3fdc63e7f57ac64d795d90e79c64bbc4fcb98ce7cef"
+      },
+      "image_allocator_environment": {
+        "MALLOC_MMAP_THRESHOLD_": "131072"
+      }
+    },
+    "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4",
+    "conditions": [
+      {
+        "label": "release-0147-amd64-stress",
+        "limit": 64,
+        "repetitions": 3,
+        "requests": 11520,
+        "successes": 3929,
+        "rejections": 7588,
+        "unexpected_results": 3,
+        "success_percent": 34.10590277777778,
+        "success_rps_offered_window": 43.65555555555556,
+        "success_rps_including_drain": 14.065238655099911,
+        "success_p50_ms": 43896.260324,
+        "success_p95_ms": 63852.121037000004,
+        "success_p99_ms": 64551.59962600001,
+        "success_ttfb_p95_ms": 63852.084078,
+        "rejection_p95_ms": 56604.38463900001,
+        "dispatch_lag_p99_ms": 17.401669999999285,
+        "rss_peak_mib": 439.8671875,
+        "cgroup_peak_mib": 483.7890625,
+        "cgroup_sampled_peak_mib": 483.4296875,
+        "buffered_requests_peak": 64,
+        "buffered_bytes_peak_mib": 320.0,
+        "concurrency_denials": 7588,
+        "byte_denials": 0,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          1308,
+          1314,
+          1307
+        ],
+        "verified_successes": 3929,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 92889.577955,
+            "successes": 1308,
+            "success_p95_ms": 63687.14270299999,
+            "memory": [
+              {
+                "pod": "gateway-5cb6dcb47b-6d6jq",
+                "sample_count": 365,
+                "rss_peak_bytes": 458825728.0,
+                "cgroup_sampled_peak_bytes": 499023872.0,
+                "cgroup_kernel_peak_bytes": 499339264.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-5cb6dcb47b-66r8m",
+                "sample_count": 365,
+                "rss_peak_bytes": 461234176.0,
+                "cgroup_sampled_peak_bytes": 495226880.0,
+                "cgroup_kernel_peak_bytes": 497164288.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 93575.679911,
+            "successes": 1314,
+            "success_p95_ms": 64319.486735,
+            "memory": [
+              {
+                "pod": "gateway-7f6c8c56d5-ncbkl",
+                "sample_count": 367,
+                "rss_peak_bytes": 458084352.0,
+                "cgroup_sampled_peak_bytes": 494665728.0,
+                "cgroup_kernel_peak_bytes": 495706112.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-7f6c8c56d5-tvtz6",
+                "sample_count": 367,
+                "rss_peak_bytes": 457736192.0,
+                "cgroup_sampled_peak_bytes": 492032000.0,
+                "cgroup_kernel_peak_bytes": 496144384.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 92875.89633300001,
+            "successes": 1307,
+            "success_p95_ms": 63531.903942,
+            "memory": [
+              {
+                "pod": "gateway-85f99ff48d-47cd9",
+                "sample_count": 365,
+                "rss_peak_bytes": 460136448.0,
+                "cgroup_sampled_peak_bytes": 506912768.0,
+                "cgroup_kernel_peak_bytes": 507289600.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-85f99ff48d-bjjhl",
+                "sample_count": 365,
+                "rss_peak_bytes": 459034624.0,
+                "cgroup_sampled_peak_bytes": 496705536.0,
+                "cgroup_kernel_peak_bytes": 496705536.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "release-0147-amd64-stress",
+        "limit": 128,
+        "repetitions": 3,
+        "requests": 11520,
+        "successes": 7403,
+        "rejections": 4117,
+        "unexpected_results": 0,
+        "success_percent": 64.26215277777777,
+        "success_rps_offered_window": 82.25555555555556,
+        "success_rps_including_drain": 21.87933313249185,
+        "success_p50_ms": 51764.036628999995,
+        "success_p95_ms": 82618.256397,
+        "success_p99_ms": 83182.830419,
+        "success_ttfb_p95_ms": 82618.226782,
+        "rejection_p95_ms": 75485.40199900001,
+        "dispatch_lag_p99_ms": 9.203400999998848,
+        "rss_peak_mib": 653.328125,
+        "cgroup_peak_mib": 768.609375,
+        "cgroup_sampled_peak_mib": 768.1953125,
+        "buffered_requests_peak": 128,
+        "buffered_bytes_peak_mib": 511.99537658691406,
+        "concurrency_denials": 127,
+        "byte_denials": 3990,
+        "restarts": 0,
+        "oom": false,
+        "max_pod_throttled_ms": 0.0,
+        "successes_per_repetition": [
+          2493,
+          2479,
+          2431
+        ],
+        "verified_successes": 7403,
+        "per_repetition": [
+          {
+            "repetition": 1,
+            "elapsed_ms_including_drain": 112532.85998,
+            "successes": 2493,
+            "success_p95_ms": 82270.79555499999,
+            "memory": [
+              {
+                "pod": "gateway-55cbf9d598-bxw65",
+                "sample_count": 439,
+                "rss_peak_bytes": 682950656.0,
+                "cgroup_sampled_peak_bytes": 763629568.0,
+                "cgroup_kernel_peak_bytes": 771067904.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-55cbf9d598-sv999",
+                "sample_count": 439,
+                "rss_peak_bytes": 684822528.0,
+                "cgroup_sampled_peak_bytes": 776941568.0,
+                "cgroup_kernel_peak_bytes": 786444288.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 2,
+            "elapsed_ms_including_drain": 113171.804609,
+            "successes": 2479,
+            "success_p95_ms": 83031.386371,
+            "memory": [
+              {
+                "pod": "gateway-5c64966fbd-szbdc",
+                "sample_count": 442,
+                "rss_peak_bytes": 683913216.0,
+                "cgroup_sampled_peak_bytes": 749752320.0,
+                "cgroup_kernel_peak_bytes": 763392000.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-5c64966fbd-kxqm2",
+                "sample_count": 442,
+                "rss_peak_bytes": 683184128.0,
+                "cgroup_sampled_peak_bytes": 805511168.0,
+                "cgroup_kernel_peak_bytes": 805945344.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          },
+          {
+            "repetition": 3,
+            "elapsed_ms_including_drain": 112651.16898100001,
+            "successes": 2431,
+            "success_p95_ms": 82392.205743,
+            "memory": [
+              {
+                "pod": "gateway-64cc5cd8dc-kvzvs",
+                "sample_count": 440,
+                "rss_peak_bytes": 684122112.0,
+                "cgroup_sampled_peak_bytes": 786190336.0,
+                "cgroup_kernel_peak_bytes": 789893120.0,
+                "cpu_throttled_usec": 0.0
+              },
+              {
+                "pod": "gateway-64cc5cd8dc-sgjj5",
+                "sample_count": 441,
+                "rss_peak_bytes": 685064192.0,
+                "cgroup_sampled_peak_bytes": 792821760.0,
+                "cgroup_kernel_peak_bytes": 793202688.0,
+                "cpu_throttled_usec": 0.0
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

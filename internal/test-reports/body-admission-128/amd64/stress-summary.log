@@ -1,0 +1,6 @@
+| Version | Limit/pod | Success | Success RPS¹ | p50 ms | p95 ms | RSS peak MiB/pod | Cgroup peak MiB/pod | Peak slots/pod |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| release-0147-amd64-stress | 64 | 34.1% | 43.7 | 43896.3 | 63852.1 | 439.9 | 483.8 | 64 |
+| release-0147-amd64-stress | 128 | 64.3% | 82.3 | 51764.0 | 82618.3 | 653.3 | 768.6 | 128 |
+
+¹ Successes divided by offered-load duration; drain-inclusive throughput is retained in summary.json. Memory is the worst observed individual pod across all repetitions; latency pools successful requests only.

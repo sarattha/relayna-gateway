@@ -1,0 +1,53 @@
+{
+  "label": "release-0147-amd64-stress",
+  "image": "relayna-gateway:body-amd64",
+  "source_commit": "d2ff47859356dea354b9817dc0adec514b6a0364",
+  "created_at": "2026-10-22T08:17:01.947468+00:00",
+  "limits": [
+    64,
+    128
+  ],
+  "repetitions": 3,
+  "rps": 128.0,
+  "duration_seconds": 30.0,
+  "delay_ms": 2000,
+  "gateway_resources": {
+    "cpu_limit": 2,
+    "memory_limit_bytes": 1073741824
+  },
+  "malloc_mmap_threshold_override": null,
+  "docker": {
+    "NCPU": 4,
+    "MemTotal": 16760344576,
+    "Architecture": "x86_64",
+    "KernelVersion": "7.0.0-1017-azure",
+    "ServerVersion": "28.0.4",
+    "OperatingSystem": "Ubuntu 24.04.5 LTS"
+  },
+  "image_id": "sha256:641dc023b3dddc391b65d4d7d0d9b5b1a7627ded60bfe286ec3809918ed7a2f6",
+  "image_architecture": "amd64",
+  "kubernetes_nodes": [
+    {
+      "architecture": "amd64",
+      "bootID": "8c479766-99d0-4597-92df-dec6e291363c",
+      "containerRuntimeVersion": "containerd://2.3.1",
+      "kernelVersion": "7.0.0-1017-azure",
+      "kubeProxyVersion": "",
+      "kubeletVersion": "v1.36.1",
+      "machineID": "3d195b794c444028a6fc4d84e1b4f2e3",
+      "operatingSystem": "linux",
+      "osImage": "Debian GNU/Linux 13 (trixie)",
+      "swap": {
+        "capacity": 3221221376
+      },
+      "systemUUID": "edea16c9-f48c-422c-97cc-45d959f55463"
+    }
+  ],
+  "scripts_sha256": {
+    "mock.mjs": "427169350d50716cee501613efd6c47a15950f57e339dd48d681fabfed8a057a",
+    "workload.mjs": "aca90d993f24787053fad3fdc63e7f57ac64d795d90e79c64bbc4fcb98ce7cef"
+  },
+  "image_allocator_environment": {
+    "MALLOC_MMAP_THRESHOLD_": "131072"
+  }
+}

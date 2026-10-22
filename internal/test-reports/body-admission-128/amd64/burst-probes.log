@@ -1,0 +1,8 @@
+| Version | Slots/pod | 200 / offered | 503 | Transport errors | OOM pods | RSS observed MiB/pod | Success p95 ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| release-0147-amd64-burst | 128 | 319 / 320 | 1 | 0 | 0 | 582.0 | 9546.7 |
+| release-0147-amd64-burst | 128 | 319 / 320 | 1 | 0 | 0 | 578.7 | 9259.7 |
+| release-0147-amd64-burst | 128 | 320 / 320 | 0 | 0 | 0 | 581.1 | 9451.5 |
+| release-0147-amd64-burst | 64 | 225 / 320 | 95 | 0 | 0 | 397.4 | 8832.4 |
+| release-0147-amd64-burst | 64 | 219 / 320 | 101 | 0 | 0 | 390.9 | 8987.0 |
+| release-0147-amd64-burst | 64 | 228 / 320 | 92 | 0 | 0 | 388.1 | 8704.7 |

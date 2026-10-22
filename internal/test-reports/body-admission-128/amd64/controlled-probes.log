@@ -1,0 +1,8 @@
+| Version | Slots/pod | 200 / offered | 503 | Transport errors | OOM pods | RSS observed MiB/pod | Success p95 ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| release-0147-amd64-controlled | 128 | 180 / 180 | 0 | 0 | 0 | 61.8 | 12079.4 |
+| release-0147-amd64-controlled | 128 | 180 / 180 | 0 | 0 | 0 | 62.3 | 12077.9 |
+| release-0147-amd64-controlled | 128 | 180 / 180 | 0 | 0 | 0 | 62.4 | 12080.3 |
+| release-0147-amd64-controlled | 64 | 180 / 180 | 0 | 0 | 0 | 63.2 | 12079.8 |
+| release-0147-amd64-controlled | 64 | 180 / 180 | 0 | 0 | 0 | 62.0 | 12080.9 |
+| release-0147-amd64-controlled | 64 | 180 / 180 | 0 | 0 | 0 | 61.8 | 12079.5 |

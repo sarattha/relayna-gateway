@@ -1,0 +1,8 @@
+| Version | Slots/pod | 200 / offered | 503 | Transport errors | OOM pods | RSS observed MiB/pod | Success p95 ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| release-0147-amd64-stress | 128 | 2493 / 3840 | 1347 | 0 | 0 | 653.1 | 82270.8 |
+| release-0147-amd64-stress | 128 | 2479 / 3840 | 1361 | 0 | 0 | 652.2 | 83031.4 |
+| release-0147-amd64-stress | 128 | 2431 / 3840 | 1409 | 0 | 0 | 653.3 | 82392.2 |
+| release-0147-amd64-stress | 64 | 1308 / 3840 | 2532 | 0 | 0 | 439.9 | 63687.1 |
+| release-0147-amd64-stress | 64 | 1314 / 3840 | 2524 | 0 | 0 | 436.9 | 64319.5 |
+| release-0147-amd64-stress | 64 | 1307 / 3840 | 2532 | 0 | 0 | 438.8 | 63531.9 |

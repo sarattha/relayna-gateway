@@ -1,0 +1,173 @@
+[
+  {
+    "environment": {
+      "label": "release-0147-amd64-burst",
+      "image": "relayna-gateway:body-amd64",
+      "source_commit": "d2ff47859356dea354b9817dc0adec514b6a0364",
+      "created_at": "2026-10-22T08:14:36.140717+00:00",
+      "limits": [
+        64,
+        128
+      ],
+      "repetitions": 3,
+      "rps": 64.0,
+      "duration_seconds": 5.0,
+      "delay_ms": 2000,
+      "gateway_resources": {
+        "cpu_limit": 2,
+        "memory_limit_bytes": 1073741824
+      },
+      "malloc_mmap_threshold_override": null,
+      "docker": {
+        "NCPU": 4,
+        "MemTotal": 16760344576,
+        "Architecture": "x86_64",
+        "KernelVersion": "7.0.0-1017-azure",
+        "ServerVersion": "28.0.4",
+        "OperatingSystem": "Ubuntu 24.04.5 LTS"
+      },
+      "image_id": "sha256:641dc023b3dddc391b65d4d7d0d9b5b1a7627ded60bfe286ec3809918ed7a2f6",
+      "image_architecture": "amd64",
+      "kubernetes_nodes": [
+        {
+          "architecture": "amd64",
+          "bootID": "8c479766-99d0-4597-92df-dec6e291363c",
+          "containerRuntimeVersion": "containerd://2.3.1",
+          "kernelVersion": "7.0.0-1017-azure",
+          "kubeProxyVersion": "",
+          "kubeletVersion": "v1.36.1",
+          "machineID": "3d195b794c444028a6fc4d84e1b4f2e3",
+          "operatingSystem": "linux",
+          "osImage": "Debian GNU/Linux 13 (trixie)",
+          "swap": {
+            "capacity": 3221221376
+          },
+          "systemUUID": "edea16c9-f48c-422c-97cc-45d959f55463"
+        }
+      ],
+      "scripts_sha256": {
+        "mock.mjs": "427169350d50716cee501613efd6c47a15950f57e339dd48d681fabfed8a057a",
+        "workload.mjs": "aca90d993f24787053fad3fdc63e7f57ac64d795d90e79c64bbc4fcb98ce7cef"
+      },
+      "image_allocator_environment": {
+        "MALLOC_MMAP_THRESHOLD_": "131072"
+      }
+    },
+    "conditions": [
+      {
+        "limit": 128,
+        "repetition": 1,
+        "requests": 320,
+        "successes": 319,
+        "overload_503s": 1,
+        "transport_errors": 0,
+        "other_http_statuses": 0,
+        "oom_pods": 0,
+        "restarts": 0,
+        "rss_observed_peak_mib": 582.015625,
+        "cgroup_observed_peak_mib": 580.37109375,
+        "timing_censored": false,
+        "success_p95_ms": 9546.680702000001,
+        "dispatch_lag_p99_ms": 3.5022430000000213,
+        "elapsed_ms_including_drain": 13767.961198,
+        "metric_scrape_errors": 0,
+        "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4"
+      },
+      {
+        "limit": 128,
+        "repetition": 2,
+        "requests": 320,
+        "successes": 319,
+        "overload_503s": 1,
+        "transport_errors": 0,
+        "other_http_statuses": 0,
+        "oom_pods": 0,
+        "restarts": 0,
+        "rss_observed_peak_mib": 578.6640625,
+        "cgroup_observed_peak_mib": 578.796875,
+        "timing_censored": false,
+        "success_p95_ms": 9259.744851,
+        "dispatch_lag_p99_ms": 4.483507000000145,
+        "elapsed_ms_including_drain": 13220.297246,
+        "metric_scrape_errors": 0,
+        "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4"
+      },
+      {
+        "limit": 128,
+        "repetition": 3,
+        "requests": 320,
+        "successes": 320,
+        "overload_503s": 0,
+        "transport_errors": 0,
+        "other_http_statuses": 0,
+        "oom_pods": 0,
+        "restarts": 0,
+        "rss_observed_peak_mib": 581.05078125,
+        "cgroup_observed_peak_mib": 579.36328125,
+        "timing_censored": false,
+        "success_p95_ms": 9451.467390999998,
+        "dispatch_lag_p99_ms": 2.7580950000001394,
+        "elapsed_ms_including_drain": 13522.235827,
+        "metric_scrape_errors": 0,
+        "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4"
+      },
+      {
+        "limit": 64,
+        "repetition": 1,
+        "requests": 320,
+        "successes": 225,
+        "overload_503s": 95,
+        "transport_errors": 0,
+        "other_http_statuses": 0,
+        "oom_pods": 0,
+        "restarts": 0,
+        "rss_observed_peak_mib": 397.375,
+        "cgroup_observed_peak_mib": 398.93359375,
+        "timing_censored": false,
+        "success_p95_ms": 8832.382566,
+        "dispatch_lag_p99_ms": 3.900745999999799,
+        "elapsed_ms_including_drain": 11696.577259,
+        "metric_scrape_errors": 0,
+        "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4"
+      },
+      {
+        "limit": 64,
+        "repetition": 2,
+        "requests": 320,
+        "successes": 219,
+        "overload_503s": 101,
+        "transport_errors": 0,
+        "other_http_statuses": 0,
+        "oom_pods": 0,
+        "restarts": 0,
+        "rss_observed_peak_mib": 390.89453125,
+        "cgroup_observed_peak_mib": 389.96484375,
+        "timing_censored": false,
+        "success_p95_ms": 8986.952372,
+        "dispatch_lag_p99_ms": 7.734385000000202,
+        "elapsed_ms_including_drain": 11685.342089,
+        "metric_scrape_errors": 0,
+        "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4"
+      },
+      {
+        "limit": 64,
+        "repetition": 3,
+        "requests": 320,
+        "successes": 228,
+        "overload_503s": 92,
+        "transport_errors": 0,
+        "other_http_statuses": 0,
+        "oom_pods": 0,
+        "restarts": 0,
+        "rss_observed_peak_mib": 388.13671875,
+        "cgroup_observed_peak_mib": 391.7109375,
+        "timing_censored": false,
+        "success_p95_ms": 8704.702677000001,
+        "dispatch_lag_p99_ms": 3.5187980000000607,
+        "elapsed_ms_including_drain": 11620.652382999999,
+        "metric_scrape_errors": 0,
+        "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4"
+      }
+    ]
+  }
+]

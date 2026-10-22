@@ -1,0 +1,5 @@
+{
+  "failures": [
+    "stress: clean-run validation failed: {'limit': 64, 'repetition': 2, 'requests': 3840, 'successes': 1314, 'overload_503s': 2524, 'transport_errors': 0, 'other_http_statuses': 2, 'oom_pods': 0, 'restarts': 0, 'rss_observed_peak_mib': 436.86328125, 'cgroup_observed_peak_mib': 473.16015625, 'timing_censored': False, 'success_p95_ms': 64319.486735, 'dispatch_lag_p99_ms': 14.087158000000272, 'elapsed_ms_including_drain': 93575.679911, 'metric_scrape_errors': 0, 'body_sha256': '37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4'}"
+  ]
+}
