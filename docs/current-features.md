@@ -2,9 +2,14 @@
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.48` feature set.
+This page summarizes the `v0.1.49` feature set.
 
-New in 0.1.48: caller-owned LiteLLM WebSocket upgrades preserve the configured
+New in 0.1.49: build/test tooling requires patched Node.js 24.x/26.x versions
+for CVE-2026-111497. Local, test-harness, and benchmark helpers use Node.js
+22.23.4. See [tooling setup](getting-started.md#install-tools) and
+[upgrade instructions](deployment.md#upgrade-to-0149).
+
+Introduced in 0.1.48: caller-owned LiteLLM WebSocket upgrades preserve the configured
 custom credential header and additionally send Bearer Authorization with the
 same caller key. This supports LiteLLM custom-header authentication without
 changing HTTP/service credentials or model permissions. See

@@ -78,9 +78,9 @@ class Benchmark:
             service("postgres", 5432),
             deployment("redis", "redis:7-alpine", command_args=["redis-server", "--save", "", "--appendonly", "no"]),
             service("redis", 6379),
-            deployment("mock", "node:22-alpine", env={"SERVICE_TOKEN": self.secret_ref("service"), "DELAY_MS": self.args.delay_ms}, command_args=["node", "/bench/mock.mjs"], volumes=True),
+            deployment("mock", "node:22.23.4-alpine", env={"SERVICE_TOKEN": self.secret_ref("service"), "DELAY_MS": self.args.delay_ms}, command_args=["node", "/bench/mock.mjs"], volumes=True),
             service("mock", 4000),
-            deployment("driver", "node:22-alpine", env={"ADMIN_TOKEN": self.secret_ref("admin"), "SERVICE_TOKEN": self.secret_ref("service")}, command_args=["sleep", "infinity"], volumes=True),
+            deployment("driver", "node:22.23.4-alpine", env={"ADMIN_TOKEN": self.secret_ref("admin"), "SERVICE_TOKEN": self.secret_ref("service")}, command_args=["sleep", "infinity"], volumes=True),
         ])
         for name in ["postgres", "redis", "mock", "driver"]:
             self.kube("rollout", "status", f"deployment/{name}", "--timeout=180s", stdout=subprocess.DEVNULL)

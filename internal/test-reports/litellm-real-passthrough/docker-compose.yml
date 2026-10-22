@@ -20,7 +20,7 @@ services:
       retries: 30
 
   mock-provider:
-    image: node:22-alpine
+    image: node:22.23.4-alpine
     working_dir: /app
     command: ["node", "server.mjs"]
     environment:
@@ -113,7 +113,7 @@ services:
       - "19181:8081"
 
   mock-hi-service:
-    image: node:22-alpine
+    image: node:22.23.4-alpine
     working_dir: /app
     command: ["node", "server.mjs"]
     environment:

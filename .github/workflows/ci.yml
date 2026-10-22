@@ -49,6 +49,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Set up Node.js for integration tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "^24.22.1"
+          check-latest: true
+
       - name: Cache Cargo registry and build output
         if: steps.cargo.outputs.present == 'true'
         uses: Swatinem/rust-cache@v2
@@ -87,6 +93,12 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@1.98.0
+
+      - name: Set up Node.js for integration tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "^24.22.1"
+          check-latest: true
 
       - name: Cache Cargo registry and build output
         uses: Swatinem/rust-cache@v2
@@ -142,7 +154,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "^24.22.1"
+          check-latest: true
 
       - name: Install admin portal dependencies
         run: npm ci

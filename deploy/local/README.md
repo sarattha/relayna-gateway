@@ -9,6 +9,12 @@ From the repository root, start it with:
 
     ./deploy/local/run.sh --rebuild
 
+The Node-based helpers use the patched `node:22.23.4-alpine` image for
+CVE-2026-111497. To refresh an existing stack, rebuild and recreate the helpers:
+
+    docker compose -f deploy/local/docker-compose.yml build --pull oidc mock-upstream
+    docker compose -f deploy/local/docker-compose.yml up -d --force-recreate oidc mock-upstream
+
 Then open <http://127.0.0.1:18381/admin-ui>, select **Sign in with Microsoft**,
 and choose one of these development identities:
 

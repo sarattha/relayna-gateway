@@ -43,8 +43,12 @@ each key belongs to at most one profile on a given route.
 ## Frontend Source
 
 Admin UI 4.0 source files live in
-`crates/gateway-api/admin-ui`. Use Node.js 24.15 or newer. Build the React/TypeScript/Vite source into the static
-assets embedded by `gateway-api` with:
+`crates/gateway-api/admin-ui`. Use Node.js 24.22.1 or newer on the 24.x line,
+or 26.12.1 or newer on the 26.x line. These minimums include the
+[CVE-2026-111497 fix](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases).
+The root npm configuration enforces the supported versions during installation.
+Build the React/TypeScript/Vite source into the static assets embedded by
+`gateway-api` from the repository root with:
 
 ```bash
 npm ci

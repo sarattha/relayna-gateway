@@ -4,6 +4,29 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+## 0.1.49 - 2026-10-22
+
+### Fixed
+
+- Require patched Node.js 24.22.1+ on 24.x or 26.12.1+ on 26.x for build/test
+  tooling, including Node launched by Rust integration tests. Enforce npm
+  engine requirements and pin local helper, test-harness, and benchmark images
+  to Node.js 22.23.4 to address CVE-2026-111497.
+
+### Verified
+
+- Reject vulnerable Node versions during npm installation; build the Admin UI,
+  run frontend/OIDC regressions, and start both helper containers on patched
+  runtimes. All 437 workspace tests and 437 Nextest tests pass with real
+  PostgreSQL and Redis; Nextest skips none.
+
+### Compatibility
+
+- Development builds and tests require patched 24.x or 26.x Node.js. Rebuild
+  and recreate existing Node helper containers. The production gateway remains
+  a Rust binary with embedded UI assets; no database migration or Redis/API
+  format change is required. See [upgrade guidance](docs/deployment.md#upgrade-to-0149).
+
 ## 0.1.48 - 2026-10-21
 
 ### Fixed

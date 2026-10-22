@@ -59,6 +59,12 @@ jobs:
         if: steps.cargo.outputs.present == 'true'
         uses: Swatinem/rust-cache@v2
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "^24.22.1"
+          check-latest: true
+
       - name: Run release checks
         if: steps.cargo.outputs.present == 'true'
         run: |
@@ -66,11 +72,6 @@ jobs:
           cargo clippy --workspace --all-targets --all-features -- -D warnings
           cargo test --workspace --all-features
           cargo build --workspace --release --all-features
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
 
       - name: Install admin portal dependencies
         run: npm ci

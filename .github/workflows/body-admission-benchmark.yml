@@ -47,10 +47,10 @@ jobs:
           kind create cluster --name body-bench --image kindest/node:v1.36.1
           kind get kubeconfig --name body-bench > "$RUNNER_TEMP/body-bench.kubeconfig"
           chmod 600 "$RUNNER_TEMP/body-bench.kubeconfig"
-          for image in node:22-alpine postgres:16-alpine redis:7-alpine; do
+          for image in node:22.23.4-alpine postgres:16-alpine redis:7-alpine; do
             docker pull --platform linux/amd64 "$image"
           done
-          kind load docker-image relayna-gateway:body-amd64 node:22-alpine postgres:16-alpine redis:7-alpine --name body-bench
+          kind load docker-image relayna-gateway:body-amd64 node:22.23.4-alpine postgres:16-alpine redis:7-alpine --name body-bench
 
       - name: Record image and workload provenance
         run: |
@@ -59,10 +59,10 @@ jobs:
           git rev-parse HEAD > target/body-benchmark-amd64/source-commit.txt
           sha256sum benches/body-admission/workload.mjs benches/body-admission/mock.mjs > target/body-benchmark-amd64/workload-sha256.txt
           docker image inspect relayna-gateway:body-amd64 --format '{{json .}}' > target/body-benchmark-amd64/image.json
-          docker image inspect node:22-alpine postgres:16-alpine redis:7-alpine > target/body-benchmark-amd64/dependency-images.json
+          docker image inspect node:22.23.4-alpine postgres:16-alpine redis:7-alpine > target/body-benchmark-amd64/dependency-images.json
           docker run --rm --entrypoint sha256sum relayna-gateway:body-amd64 /usr/local/bin/relayna-gateway > target/body-benchmark-amd64/binary-sha256.txt
           docker run --rm --entrypoint ldd relayna-gateway:body-amd64 --version > target/body-benchmark-amd64/libc.txt
-          docker run --rm node:22-alpine node --version > target/body-benchmark-amd64/node-version.txt
+          docker run --rm node:22.23.4-alpine node --version > target/body-benchmark-amd64/node-version.txt
           docker run --rm postgres:16-alpine postgres --version > target/body-benchmark-amd64/postgres-version.txt
           docker run --rm redis:7-alpine redis-server --version > target/body-benchmark-amd64/redis-version.txt
 
