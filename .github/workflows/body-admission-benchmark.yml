@@ -1,15 +1,26 @@
-name: Body admission benchmark (amd64)
+name: Body admission size capacity (amd64)
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Pilot validation or complete six-size resource search
+        type: choice
+        options: [pilot, full]
+        default: pilot
+        required: true
 
 permissions:
   contents: read
 
+env:
+  RELEASE_IMAGE: ghcr.io/sarattha/relayna-gateway@sha256:1b40a38f8c5f211d9c5b650a450c4645ee53149d1af7235599afdc133ea69f75
+  RELEASE_COMMIT: 48c93c07d42b113b8073a403604b111871bf0fda
+
 jobs:
   benchmark:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - name: Check out measured source
         uses: actions/checkout@v4
@@ -18,27 +29,30 @@ jobs:
         run: |
           test "$(uname -m)" = x86_64
           test "$(docker info --format '{{.Architecture}}')" = x86_64
-          mkdir -p target/body-benchmark-amd64
-          uname -a > target/body-benchmark-amd64/host.txt
-          lscpu >> target/body-benchmark-amd64/host.txt
-          free -b >> target/body-benchmark-amd64/host.txt
-          docker version >> target/body-benchmark-amd64/host.txt
+          mkdir -p target/body-capacity/provenance
+          uname -a > target/body-capacity/provenance/host.txt
+          lscpu >> target/body-capacity/provenance/host.txt
+          free -b >> target/body-capacity/provenance/host.txt
+          docker version >> target/body-capacity/provenance/host.txt
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build native amd64 candidate
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: benches/body-admission/Dockerfile.gateway
-          platforms: linux/amd64
-          load: true
-          tags: relayna-gateway:body-amd64
-          cache-from: type=gha,scope=body-amd64
-          cache-to: type=gha,mode=max,scope=body-amd64
+      - name: Pull and validate published amd64 runtime
+        run: |
+          docker pull --platform linux/amd64 "$RELEASE_IMAGE"
+          docker tag "$RELEASE_IMAGE" relayna-gateway:body-amd64
+          docker image inspect relayna-gateway:body-amd64 > target/body-capacity/provenance/release-image.json
+          python3 - <<'CHECK_IMAGE'
+          import json
+          import os
+          from pathlib import Path
+          image = json.loads(Path("target/body-capacity/provenance/release-image.json").read_text())[0]
+          assert image["Architecture"] == "amd64" and image["Os"] == "linux"
+          assert image["Config"]["Labels"]["org.opencontainers.image.version"] == "0.1.49"
+          assert image["Config"]["Labels"]["org.opencontainers.image.revision"] == os.environ["RELEASE_COMMIT"]
+          assert "MALLOC_MMAP_THRESHOLD_=131072" in image["Config"]["Env"]
+          CHECK_IMAGE
 
       - name: Set up isolated Kubernetes cluster
+        id: cluster
         run: |
           curl --fail --location --retry 3 -o "$RUNNER_TEMP/kind-linux-amd64" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
           curl --fail --location --retry 3 -o "$RUNNER_TEMP/kind-linux-amd64.sha256sum" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64.sha256sum
@@ -56,66 +70,184 @@ jobs:
         run: |
           test "$(docker image inspect relayna-gateway:body-amd64 --format '{{.Architecture}}')" = amd64
           test "$(kubectl --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" get nodes -o jsonpath='{.items[0].status.nodeInfo.architecture}')" = amd64
-          git rev-parse HEAD > target/body-benchmark-amd64/source-commit.txt
-          sha256sum benches/body-admission/workload.mjs benches/body-admission/mock.mjs > target/body-benchmark-amd64/workload-sha256.txt
-          docker image inspect relayna-gateway:body-amd64 --format '{{json .}}' > target/body-benchmark-amd64/image.json
-          docker image inspect node:22.23.4-alpine postgres:16-alpine redis:7-alpine > target/body-benchmark-amd64/dependency-images.json
-          docker run --rm --entrypoint sha256sum relayna-gateway:body-amd64 /usr/local/bin/relayna-gateway > target/body-benchmark-amd64/binary-sha256.txt
-          docker run --rm --entrypoint ldd relayna-gateway:body-amd64 --version > target/body-benchmark-amd64/libc.txt
-          docker run --rm node:22.23.4-alpine node --version > target/body-benchmark-amd64/node-version.txt
-          docker run --rm postgres:16-alpine postgres --version > target/body-benchmark-amd64/postgres-version.txt
-          docker run --rm redis:7-alpine redis-server --version > target/body-benchmark-amd64/redis-version.txt
+          printf '%s\n' "$RELEASE_COMMIT" > target/body-capacity/provenance/source-commit.txt
+          git rev-parse HEAD > target/body-capacity/provenance/harness-commit.txt
+          printf '%s\n' "$RELEASE_IMAGE" > target/body-capacity/provenance/release-image-ref.txt
+          sha256sum benches/body-admission/workload.mjs benches/body-admission/mock.mjs benches/body-admission/run.py benches/body-admission/capacity_sweep.py > target/body-capacity/provenance/workload-sha256.txt
+          docker image inspect relayna-gateway:body-amd64 --format '{{json .}}' > target/body-capacity/provenance/image.json
+          docker image inspect node:22.23.4-alpine postgres:16-alpine redis:7-alpine > target/body-capacity/provenance/dependency-images.json
+          docker run --rm --entrypoint sha256sum relayna-gateway:body-amd64 /usr/local/bin/relayna-gateway > target/body-capacity/provenance/binary-sha256.txt
+          docker run --rm --entrypoint ldd relayna-gateway:body-amd64 --version > target/body-capacity/provenance/libc.txt
+          docker run --rm node:22.23.4-alpine node --version > target/body-capacity/provenance/node-version.txt
+          docker run --rm postgres:16-alpine postgres --version > target/body-capacity/provenance/postgres-version.txt
+          docker run --rm redis:7-alpine redis-server --version > target/body-capacity/provenance/redis-version.txt
 
-      - name: Run controlled matrix (two pods, five limits, three repetitions)
+      - name: Validate native pilot at 5 and 100 MiB
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'pilot' }}
         run: |
-          python3 benches/body-admission/run.py \
+          for size in 5 100; do
+            mkdir -p "target/body-capacity/pilot/${size}mib"
+            cp -R target/body-capacity/provenance "target/body-capacity/pilot/${size}mib/provenance"
+            if [ "$size" = 5 ]; then limits="64 128 256"; else limits="1 4 5"; fi
+            python3 benches/body-admission/capacity_sweep.py \
+              --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
+              --image relayna-gateway:body-amd64 --source-commit "$RELEASE_COMMIT" \
+              --body-mib "$size" --confirmation-repetitions 1 --pilot-limits $limits \
+              --output "target/body-capacity/pilot/${size}mib"
+          done
+
+      - name: Discover and confirm 5 MiB resource boundary
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        run: |
+          mkdir -p target/body-capacity/full/5mib
+          cp -R target/body-capacity/provenance target/body-capacity/full/5mib/provenance
+          python3 benches/body-admission/capacity_sweep.py \
             --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
-            --image relayna-gateway:body-amd64 --source-commit "$GITHUB_SHA" \
-            --label improved-amd64 --host-metadata \
-            --output target/body-benchmark-amd64/controlled
-          python3 benches/body-admission/summarize.py \
-            target/body-benchmark-amd64/controlled \
-            --output target/body-benchmark-amd64/controlled-summary.json
+            --image relayna-gateway:body-amd64 --source-commit "$RELEASE_COMMIT" \
+            --body-mib 5 --output target/body-capacity/full/5mib
 
-      - name: Run separate burst matrix (two pods, five limits)
-        run: |
-          python3 benches/body-admission/run.py \
-            --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
-            --image relayna-gateway:body-amd64 --source-commit "$GITHUB_SHA" \
-            --label improved-amd64-burst --host-metadata \
-            --rps 64 --duration 5 --delay-ms 2000 --memory-limit-mib 1024 --repetitions 1 \
-            --output target/body-benchmark-amd64/burst
-          python3 benches/body-admission/summarize.py \
-            target/body-benchmark-amd64/burst \
-            --output target/body-benchmark-amd64/burst-summary.json
-
-      - name: Validate candidate acceptance criteria
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          root = Path("target/body-benchmark-amd64")
-          for matrix, expected_requests in [("controlled", 540), ("burst", 320)]:
-              summary = json.loads((root / f"{matrix}-summary.json").read_text())[0]
-              assert summary["environment"]["image_architecture"] == "amd64"
-              assert all(node["architecture"] == "amd64" for node in summary["environment"]["kubernetes_nodes"])
-              for row in summary["conditions"]:
-                  assert row["requests"] == expected_requests, (matrix, row)
-                  assert row["unexpected_results"] == 0 and row["restarts"] == 0 and not row["oom"], (matrix, row)
-                  if matrix == "controlled":
-                      assert row["successes"] == expected_requests, row
-          PY
-
-      - name: Upload measurements
-        if: always()
+      - name: Upload 5 MiB observations immediately
+        if: ${{ always() && inputs.mode == 'full' }}
         uses: actions/upload-artifact@v4
         with:
-          name: body-admission-amd64-${{ github.sha }}
-          path: target/body-benchmark-amd64/
+          name: body-capacity-5mib-${{ github.run_id }}
+          path: target/body-capacity/full/5mib/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Remove benchmark cluster
+      - name: Discover and confirm 10 MiB resource boundary
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        run: |
+          mkdir -p target/body-capacity/full/10mib
+          cp -R target/body-capacity/provenance target/body-capacity/full/10mib/provenance
+          python3 benches/body-admission/capacity_sweep.py \
+            --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
+            --image relayna-gateway:body-amd64 --source-commit "$RELEASE_COMMIT" \
+            --body-mib 10 --output target/body-capacity/full/10mib
+
+      - name: Upload 10 MiB observations immediately
+        if: ${{ always() && inputs.mode == 'full' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: body-capacity-10mib-${{ github.run_id }}
+          path: target/body-capacity/full/10mib/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Discover and confirm 20 MiB resource boundary
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        run: |
+          mkdir -p target/body-capacity/full/20mib
+          cp -R target/body-capacity/provenance target/body-capacity/full/20mib/provenance
+          python3 benches/body-admission/capacity_sweep.py \
+            --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
+            --image relayna-gateway:body-amd64 --source-commit "$RELEASE_COMMIT" \
+            --body-mib 20 --output target/body-capacity/full/20mib
+
+      - name: Upload 20 MiB observations immediately
+        if: ${{ always() && inputs.mode == 'full' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: body-capacity-20mib-${{ github.run_id }}
+          path: target/body-capacity/full/20mib/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Discover and confirm 40 MiB resource boundary
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        run: |
+          mkdir -p target/body-capacity/full/40mib
+          cp -R target/body-capacity/provenance target/body-capacity/full/40mib/provenance
+          python3 benches/body-admission/capacity_sweep.py \
+            --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
+            --image relayna-gateway:body-amd64 --source-commit "$RELEASE_COMMIT" \
+            --body-mib 40 --output target/body-capacity/full/40mib
+
+      - name: Upload 40 MiB observations immediately
+        if: ${{ always() && inputs.mode == 'full' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: body-capacity-40mib-${{ github.run_id }}
+          path: target/body-capacity/full/40mib/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Discover and confirm 80 MiB resource boundary
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        run: |
+          mkdir -p target/body-capacity/full/80mib
+          cp -R target/body-capacity/provenance target/body-capacity/full/80mib/provenance
+          python3 benches/body-admission/capacity_sweep.py \
+            --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
+            --image relayna-gateway:body-amd64 --source-commit "$RELEASE_COMMIT" \
+            --body-mib 80 --output target/body-capacity/full/80mib
+
+      - name: Upload 80 MiB observations immediately
+        if: ${{ always() && inputs.mode == 'full' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: body-capacity-80mib-${{ github.run_id }}
+          path: target/body-capacity/full/80mib/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Discover and confirm 100 MiB resource boundary
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        run: |
+          mkdir -p target/body-capacity/full/100mib
+          cp -R target/body-capacity/provenance target/body-capacity/full/100mib/provenance
+          python3 benches/body-admission/capacity_sweep.py \
+            --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
+            --image relayna-gateway:body-amd64 --source-commit "$RELEASE_COMMIT" \
+            --body-mib 100 --output target/body-capacity/full/100mib
+
+      - name: Upload 100 MiB observations immediately
+        if: ${{ always() && inputs.mode == 'full' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: body-capacity-100mib-${{ github.run_id }}
+          path: target/body-capacity/full/100mib/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Validate resource-search evidence completeness
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
+        run: |
+          python3 - <<'VALIDATE'
+          import json
+          import os
+          from pathlib import Path
+          mode = "${{ inputs.mode }}"
+          root = Path("target/body-capacity") / mode
+          sizes = [5, 100] if mode == "pilot" else [5, 10, 20, 40, 80, 100]
+          findings = []
+          for size in sizes:
+              folder = root / f"{size}mib"
+              summary = json.loads((folder / "summary.json").read_text())
+              assert summary["complete"] and summary["body_mib"] == size
+              assert summary["source_commit"] == os.environ["RELEASE_COMMIT"]
+              for row in summary["trials"]:
+                  env = json.loads((folder / row["directory"] / "environment.json").read_text())
+                  assert env["image_architecture"] == "amd64"
+                  assert all(node["architecture"] == "amd64" for node in env["kubernetes_nodes"])
+                  assert env["gateway_resources"] == {"cpu_limit": 2, "memory_limit_bytes": 1073741824}
+                  assert env["body_bytes"] == size * 1048576
+                  if not row["resource_failure"]:
+                      assert not row["incomplete"] and not row["warmup_failed"], row
+                      assert row["memory_streams"] == 2 and not row["runner_exit_code"], row
+                  findings.append({"size_mib": size, "slots": row["slots"], "attempt": row["attempt"], "resource_failure": row["resource_failure"], "clean": row["clean"]})
+          Path("target/body-capacity/search-validation.json").write_text(json.dumps({"mode": mode, "trials": findings}, indent=2))
+          VALIDATE
+
+      - name: Upload complete evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: body-capacity-all-${{ github.run_id }}
+          path: target/body-capacity/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove isolated benchmark cluster
         if: always()
         run: kind delete cluster --name body-bench

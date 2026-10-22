@@ -2,6 +2,7 @@
 """Reproducible two-pod body admission experiment using only Python's stdlib."""
 
 import argparse
+import base64
 import datetime
 import hashlib
 import json
@@ -78,9 +79,9 @@ class Benchmark:
             service("postgres", 5432),
             deployment("redis", "redis:7-alpine", command_args=["redis-server", "--save", "", "--appendonly", "no"]),
             service("redis", 6379),
-            deployment("mock", "node:22.23.4-alpine", env={"SERVICE_TOKEN": self.secret_ref("service"), "DELAY_MS": self.args.delay_ms}, command_args=["node", "/bench/mock.mjs"], volumes=True),
+            deployment("mock", "node:22.23.4-alpine", env={"SERVICE_TOKEN": self.secret_ref("service"), "DELAY_MS": self.args.delay_ms, "READ_DELAY_MS": self.args.read_delay_ms}, command_args=["node", "/bench/mock.mjs"], volumes=True),
             service("mock", 4000),
-            deployment("driver", "node:22.23.4-alpine", env={"ADMIN_TOKEN": self.secret_ref("admin"), "SERVICE_TOKEN": self.secret_ref("service")}, command_args=["sleep", "infinity"], volumes=True),
+            deployment("driver", "node:22.23.4-alpine", env={"ADMIN_TOKEN": self.secret_ref("admin"), "SERVICE_TOKEN": self.secret_ref("service"), "BENCH_BODY_MIB": self.args.body_mib, "BENCH_CLIENT_DEADLINE_MS": self.args.client_deadline_ms, "BENCH_SERVICE_TIMEOUT_MS": 120000 if self.args.concurrent_per_pod else 30000}, command_args=["sleep", "infinity"], volumes=True),
         ])
         for name in ["postgres", "redis", "mock", "driver"]:
             self.kube("rollout", "status", f"deployment/{name}", "--timeout=180s", stdout=subprocess.DEVNULL)
@@ -123,6 +124,11 @@ class Benchmark:
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "limits": self.args.limits, "repetitions": self.args.repetitions,
             "rps": self.args.rps, "duration_seconds": self.args.duration, "delay_ms": self.args.delay_ms,
+            "body_bytes": self.args.body_mib * 1024 * 1024,
+            "load_mode": "simultaneous" if self.args.concurrent_per_pod else "fixed-rate",
+            "concurrent_per_pod": self.args.concurrent_per_pod,
+            "read_delay_ms": self.args.read_delay_ms,
+            "client_deadline_ms": self.args.client_deadline_ms,
             "gateway_resources": {"cpu_limit": 2, "memory_limit_bytes": self.args.memory_limit_mib * 1024 * 1024},
             "malloc_mmap_threshold_override": self.args.malloc_mmap_threshold,
             "docker": None,
@@ -158,10 +164,15 @@ class Benchmark:
                     samplers.append((process, stream))
                 config = {"label": self.args.label, "limit": limit, "repetition": repetition,
                           "pods": pods, "duration_seconds": self.args.duration, "rps": self.args.rps,
+                          "load_mode": metadata["load_mode"], "concurrent_per_pod": self.args.concurrent_per_pod,
+                          "upstream_read_delay_ms": self.args.read_delay_ms,
                           "upstream_delay_ms": self.args.delay_ms}
+                failure = None
                 try:
                     with (self.output / f"{name}.json").open("w") as output:
-                        self.kube("exec", "deployment/driver", "--", "node", "/bench/workload.mjs", json.dumps(config), stdout=output)
+                        self.kube("exec", "deployment/driver", "--", "node", "/bench/workload.mjs", json.dumps(config), stdout=output, timeout=self.args.condition_timeout or None)
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+                    failure = error
                 finally:
                     for process, stream in samplers:
                         process.terminate()
@@ -172,12 +183,45 @@ class Benchmark:
                             process.wait()
                         stream.close()
                 self.kube("get", "pods", "-l", "app=gateway", "-o", "json", stdout=(self.output / f"{name}.pods.json").open("w"))
+                if self.args.retain_failures:
+                    self.diagnostics(name, pods)
+                if failure:
+                    (self.output / f"{name}.failure.json").write_text(json.dumps({"error": str(failure)}))
+                    if self.args.retain_failures:
+                        print(f"{name}: incomplete driver result; evidence retained", flush=True)
+                        continue
+                    raise failure
                 result = json.loads((self.output / f"{name}.json").read_text())
+                if result.get("warmup_failed"):
+                    print(f"{name}: warmup failed; evidence retained", flush=True)
+                    if self.args.retain_failures:
+                        continue
+                    raise RuntimeError(f"warmup failed: {name}")
                 latency = result["success_latency_ms"]
                 timing = f"{latency['p95']:.1f} ms" if latency else "n/a"
                 print(f"{name}: statuses={result['status_counts']}, success p95={timing}", flush=True)
                 if result["completed_requests"] != result["scheduled_requests"] or result["verified_requests"] != result["successful_requests"]:
                     raise RuntimeError(f"incomplete or corrupted run: {name}")
+
+    def diagnostics(self, name, pods):
+        credentials = json.loads(self.kube("get", "secret", "credentials", "-o", "json", capture_output=True).stdout)
+        secrets = [base64.b64decode(value).decode() for value in credentials["data"].values()]
+        key = subprocess.run(self.kubectl + ["exec", "deployment/driver", "--", "cat", "/tmp/benchmark-key"], capture_output=True, text=True, timeout=15)
+        if key.returncode == 0:
+            secrets.append(key.stdout.strip())
+        for pod in pods + [{"name": "deployment/mock"}]:
+            for previous in (False, True):
+                args = self.kubectl + ["logs", pod["name"], "--tail=80"]
+                if previous:
+                    args.append("--previous")
+                result = subprocess.run(args, capture_output=True, text=True, timeout=20)
+                if result.returncode == 0:
+                    text = result.stdout
+                    for secret in secrets:
+                        if secret:
+                            text = text.replace(secret, "[REDACTED]")
+                    tag = pod["name"].replace("/", "-") + ("-previous" if previous else "")
+                    (self.output / f"{name}-{tag}.log").write_text(text)
 
 
 def main():
@@ -192,11 +236,17 @@ def main():
     parser.add_argument("--rps", type=float, default=12)
     parser.add_argument("--duration", type=float, default=15)
     parser.add_argument("--delay-ms", type=int, default=12000)
+    parser.add_argument("--body-mib", type=int, default=5)
+    parser.add_argument("--concurrent-per-pod", type=int, default=0, help="simultaneous finite cohort; zero keeps fixed-rate mode")
+    parser.add_argument("--read-delay-ms", type=int, default=0, help="mock upstream read pause; warmup remains unpaused")
+    parser.add_argument("--client-deadline-ms", type=int, default=0)
+    parser.add_argument("--condition-timeout", type=int, default=0)
+    parser.add_argument("--retain-failures", action="store_true", help="retain failed warmups/driver output and redacted diagnostic logs")
     parser.add_argument("--host-metadata", action="store_true")
     parser.add_argument("--malloc-mmap-threshold", type=int, help="diagnostic glibc allocator override; omitted for the comparison matrix")
     parser.add_argument("--memory-limit-mib", type=int, default=2048)
     args = parser.parse_args()
-    if args.rps <= 0 or args.duration <= 0 or args.delay_ms < 0 or args.repetitions < 1 or args.memory_limit_mib <= 0 or any(limit < 1 for limit in args.limits) or (args.malloc_mmap_threshold is not None and args.malloc_mmap_threshold <= 0):
+    if args.rps <= 0 or args.duration <= 0 or args.delay_ms < 0 or args.repetitions < 1 or args.memory_limit_mib <= 0 or any(limit < 1 for limit in args.limits) or (args.malloc_mmap_threshold is not None and args.malloc_mmap_threshold <= 0) or not 1 <= args.body_mib <= 100 or min(args.concurrent_per_pod, args.read_delay_ms, args.client_deadline_ms, args.condition_timeout) < 0:
         parser.error("rate, duration, repetitions, and limits must be positive; delay must be nonnegative")
     Benchmark(args).run()
 
