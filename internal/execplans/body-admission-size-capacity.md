@@ -29,9 +29,10 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
 - [x] (2026-10-22 15:31Z) Extend and locally verify the harness for variable body size,
   simultaneous bounded cohorts, upstream read backpressure, failure evidence,
   adaptive slot discovery, and repeated boundary confirmation.
-- [ ] Finish the mandatory full repository verification before pushing the
-  experiment branch. Formatting, Clippy, focused driver/analyzer checks, and
-  actionlint have passed; the full test/security stack is in progress.
+- [x] (2026-10-22 15:36Z) Finish mandatory full repository verification before
+  pushing: formatting, Clippy, workspace tests, audit, deny, machete, 437/437
+  Nextest tests, Trivy, full-history Gitleaks, and Semgrep passed. Focused
+  driver/analyzer checks, syntax checks, and actionlint also passed.
 - [ ] Run native amd64 discovery and confirmation sequentially for each size.
 - [ ] Independently validate and preserve every observation, including failures.
 - [ ] Publish a source-backed per-size resource/slot/memory/timing report and
