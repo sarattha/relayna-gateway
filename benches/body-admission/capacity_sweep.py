@@ -85,14 +85,18 @@ def analyze(folder, slots, attempt, expected_body_bytes, cohort):
                 "other_http_statuses": sum(result["status"] not in (0, 200, 503) for result in run["results"]),
                 "unexpected_results": [result for result in run["results"] if result["status"] not in (200, 503)]})
     row["concurrency_denials"] = row["byte_denials"] = None
+    row["admission_counter_gap"] = None
     row["terminal_zero"] = False
     if not row["resource_failure"] and row["metric_scrape_errors"] == 0:
         for key in ("concurrency_denials", "byte_denials"):
             row[key] = sum(max(sample[key] for sample in samples if sample["pod"] == pod["name"]) - min(sample[key] for sample in samples if sample["pod"] == pod["name"]) for pod in run["pods"])
-        assert run["status_counts"].get("503", 0) == row["concurrency_denials"] + row["byte_denials"]
+        # A reset can lose the rejection response while the server has already
+        # recorded its denial. Keep that failed observation and its discrepancy
+        # instead of aborting the resource search. Clean trials must reconcile.
+        row["admission_counter_gap"] = row["concurrency_denials"] + row["byte_denials"] - run["status_counts"].get("503", 0)
         final = {pod["name"]: [sample for sample in samples if sample["pod"] == pod["name"]][-1] for pod in run["pods"]}
         row["terminal_zero"] = all(sample["buffered_requests"] == sample["buffered_bytes"] == 0 for sample in final.values())
-    row["clean"] = not any((row["resource_failure"], row["metric_scrape_errors"], row["transport_errors"], row["other_http_statuses"], row["memory_censored"])) and row["terminal_zero"]
+    row["clean"] = not any((row["resource_failure"], row["metric_scrape_errors"], row["transport_errors"], row["other_http_statuses"], row["memory_censored"])) and row["terminal_zero"] and row["admission_counter_gap"] == 0
     return row
 
 

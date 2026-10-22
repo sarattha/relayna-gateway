@@ -33,7 +33,10 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   pushing: formatting, Clippy, workspace tests, audit, deny, machete, 437/437
   Nextest tests, Trivy, full-history Gitleaks, and Semgrep passed. Focused
   driver/analyzer checks, syntax checks, and actionlint also passed.
-- [ ] Run native amd64 discovery and confirmation sequentially for each size.
+- [x] (2026-10-22 17:02Z) Complete and independently validate 5 MiB discovery
+  and confirmation on native amd64.
+- [ ] Complete 10/20/40/80/100 MiB discovery and confirmation on independent
+  native hosts, preserving the requested per-pod limits and per-size hardware.
 - [ ] Independently validate and preserve every observation, including failures.
 - [ ] Publish a source-backed per-size resource/slot/memory/timing report and
   the final visual comparison.
@@ -57,6 +60,13 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   Preserve this evidence, add post-condition observation and previous-container
   restart detection, and repeat the full native comparison rather than claim a
   usable boundary from the prematurely stopped refinement.
+- The first selected 100 MiB run stopped after 19 checkpointed trials when a
+  264-slot condition had one connection reset and one more server denial than
+  received client 503s. Exact counter equality was incorrectly asserted even
+  for failed client observations. Preserve the raw failed point; record the
+  counter gap and require zero gap only for clean classification. Repeat
+  100 MiB after verifying this surgical analysis fix. The request workload,
+  resources, mock, driver and per-condition runner are unchanged.
 
 ## Decision Log
 
@@ -117,6 +127,11 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   refinement if a single-run candidate fails confirmation. Include failures
   first discovered during confirmation. This avoids a potentially long linear
   descent and prevents reporting a single successful candidate as the limit.
+  Date/Author: 2026-10-22, Codex.
+- Failed response delivery can leave a server denial without a received 503.
+  Store `admission_counter_gap`, classify the condition unclean, and continue
+  the existing search. Clean trials still require exact counter agreement;
+  do not reclassify resets as successful admission rejections or OOMs.
   Date/Author: 2026-10-22, Codex.
 
 ## Outcomes & Retrospective
@@ -225,6 +240,40 @@ all security checks passed; log `/tmp/relayna-capacity-observation-verification.
 Focused tests passed for the real stale-status artifact, healthy native control,
 cohort expansion, integer refinement, failed candidate confirmations, and
 resource failures first discovered during confirmation.
+
+The corrected 5 MiB study completed at approximately 17:01Z: 44 trials,
+32 clean / 12 with observed container failures. At the final cohort of 1024
+requests per pod, 128 slots passed all three trials; 129 slots OOMed on one of
+three trials. The 128-slot group's peaks were RSS 888.546875 MiB and cgroup
+1005.71484375 MiB; worst per-trial success p95 36580.570319 ms. All three
+verified 206 successful responses from 2048 offered requests, with intentional
+503s accounting for the remainder. Native host: Intel Xeon Platinum 8573C,
+four vCPUs. Independent source/hash/resource/counter/fresh-pod validation
+passed. Cancelled the remainder of this sequential run after preserving 5 MiB;
+its completed 5 MiB dataset is primary evidence, and any partial 10 MiB data
+remains separate.
+
+Selected-size orchestration passed actionlint and the entire required stack
+again at 17:12Z (437 Nextest tests passed; all commands passed). Log:
+`/tmp/relayna-capacity-selector-verification.log`. The four benchmark scripts
+are byte-identical to `d92af5c`; orchestration commit is
+`a6653e1d34dac050ef4a044f1bdb4080c896e570`. Five independent native runs were
+dispatched at 17:13Z with unchanged pod resources and workload:
+
+- 10 MiB: <https://github.com/sarattha/relayna-gateway/actions/runs/39820680177>
+- 20 MiB: <https://github.com/sarattha/relayna-gateway/actions/runs/39820686185>
+- 40 MiB: <https://github.com/sarattha/relayna-gateway/actions/runs/39820691161>
+- 80 MiB: <https://github.com/sarattha/relayna-gateway/actions/runs/39820696151>
+- 100 MiB: <https://github.com/sarattha/relayna-gateway/actions/runs/39820701600>
+
+Run map: `/tmp/relayna-capacity-selected-runs.json`. The source-backed report
+is being assembled under
+`internal/test-reports/body-admission-size-capacity/amd64/README.md`.
+Verification fixtures, recorded checks and a pinned-source artifact validator
+are in the sibling `verification/` directory. Temporary report generation
+helper: `/tmp/relayna-capacity-html.py`; it has passed desktop/mobile layout
+preflight using explicitly labeled pilot data. Complete and verify the final
+six-size page before `html_render` and the final response.
 
 ## Interfaces and Dependencies
 
