@@ -193,18 +193,33 @@ def main():
         clean = [row["slots"] for row in current() if row["clean"]]
         if clean:
             selected.add(max(clean))
-    for slots in sorted(selected):
+    def confirm(slots):
         while sum(row["slots"] == slots for row in current()) < args.confirmation_repetitions:
             trial(slots, "confirmation")
+        return all(row["clean"] for row in current() if row["slots"] == slots)
+
+    for slots in sorted(selected):
+        confirm(slots)
+    # A one-run candidate can fail confirmation, including a new failure at
+    # an otherwise clean search ceiling. Refine with the repeated criterion
+    # rather than a slow linear descent or accepting that single success.
+    failures = sorted({row["slots"] for row in current() if row["resource_failure"]})
     if failures:
-        candidate = low
-        while candidate > 0:
-            selected.add(candidate)
-            while sum(row["slots"] == candidate for row in current()) < args.confirmation_repetitions:
-                trial(candidate, "confirmation")
-            if all(row["clean"] for row in current() if row["slots"] == candidate):
-                break
-            candidate -= 1
+        high = failures[0]
+        stable = [slots for slots in {row["slots"] for row in current()}
+                  if slots < high
+                  and sum(row["slots"] == slots for row in current()) >= args.confirmation_repetitions
+                  and all(row["clean"] for row in current() if row["slots"] == slots)]
+        low = max(stable, default=0)
+        while high - low > 1:
+            middle = (high + low) // 2
+            selected.add(middle)
+            if confirm(middle):
+                low = middle
+            else:
+                high = middle
+        selected.add(high)
+        confirm(high)
     summary["confirmed_limits"] = sorted(selected)
     summary["final_cohort_per_pod"] = cohort
     summary["complete"] = True

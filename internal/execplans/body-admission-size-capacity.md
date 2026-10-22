@@ -103,6 +103,11 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   This affects evidence capture after measurement, not the offered workload,
   memory sampler or client timings. Repeat all six sizes on one new native host
   with corrected boundary detection. Date/Author: 2026-10-22, Codex.
+- Confirmed boundaries use the three-run criterion during a second binary
+  refinement if a single-run candidate fails confirmation. Include failures
+  first discovered during confirmation. This avoids a potentially long linear
+  descent and prevents reporting a single successful candidate as the limit.
+  Date/Author: 2026-10-22, Codex.
 
 ## Outcomes & Retrospective
 
