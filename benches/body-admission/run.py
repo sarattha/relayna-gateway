@@ -129,6 +129,7 @@ class Benchmark:
             "concurrent_per_pod": self.args.concurrent_per_pod,
             "read_delay_ms": self.args.read_delay_ms,
             "client_deadline_ms": self.args.client_deadline_ms,
+            "client_socket_timeout_ms": max(30000, self.args.client_deadline_ms),
             "post_condition_observation_seconds": 10 if self.args.retain_failures else 0,
             "gateway_resources": {"cpu_limit": 2, "memory_limit_bytes": self.args.memory_limit_mib * 1024 * 1024},
             "malloc_mmap_threshold_override": self.args.malloc_mmap_threshold,

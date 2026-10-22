@@ -37,6 +37,16 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   and confirmation on native amd64.
 - [ ] Complete 10/20/40/80/100 MiB discovery and confirmation on independent
   native hosts, preserving the requested per-pod limits and per-size hardware.
+- [x] (2026-10-22 17:39Z) Complete and independently validate 40 MiB:
+  177 slots passed three trials; 178 had an OOM. At 1024 offered requests per
+  pod, clean-setting peaks were RSS 836.35546875 / cgroup 993.296875 MiB and
+  worst success p95 40149.566499 ms. Native AMD EPYC 7763; 27 trials total.
+- [x] (2026-10-22 17:43Z) Complete and independently validate 80 MiB:
+  174 slots passed three trials; 175 had an OOM. At 1024 offered requests per
+  pod, clean-setting peaks were RSS 831.625 / cgroup 1010.81640625 MiB and
+  worst success p95 59932.801431 ms. All confirmations completed without client
+  errors, but latency is close to the technical 60-second watchdog. Native
+  AMD EPYC 7763; 28 trials total.
 - [ ] Independently validate and preserve every observation, including failures.
 - [ ] Publish a source-backed per-size resource/slot/memory/timing report and
   the final visual comparison.
@@ -67,6 +77,15 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   counter gap and require zero gap only for clean classification. Repeat
   100 MiB after verifying this surgical analysis fix. The request workload,
   resources, mock, driver and per-condition runner are unchanged.
+- The completed initial 10 MiB search's 39-slot clean result was bounded by
+  the driver's 30-second inactivity timeout, not memory: 128-slot trials had
+  no container failures and 866–1013 MiB cgroup peaks but 1–2 idle-timeout
+  responses at roughly 40-second success latency. Align inactivity with the
+  already configured absolute watchdog (60 seconds for this sweep), retain
+  the original observations, and rerun 10 MiB so a hidden 30-second target
+  does not contradict the user's resource-boundary criterion. Fixed-rate
+  defaults retain the original 30-second timeout. Validate a real 35-second
+  silent-response case before dispatch.
 
 ## Decision Log
 
@@ -274,6 +293,21 @@ are in the sibling `verification/` directory. Temporary report generation
 helper: `/tmp/relayna-capacity-html.py`; it has passed desktop/mobile layout
 preflight using explicitly labeled pilot data. Complete and verify the final
 six-size page before `html_render` and the final response.
+
+Counter-gap handling passed the full verification stack at 17:47Z (437/437
+Nextest, all commands passed); log `/tmp/relayna-capacity-counter-verification.log`.
+Commit `83d34cf2db5ee29b779fe6d67dcf2c5b68aab3d1` changes failed-trial analysis
+only; request driver, mock and per-condition runner are unchanged.
+Fresh complete retries:
+
+- 100 MiB: <https://github.com/sarattha/relayna-gateway/actions/runs/39825735001>
+- 20 MiB: <https://github.com/sarattha/relayna-gateway/actions/runs/39826384990>
+
+The original selected 20 MiB run hit the same counter issue at the third
+169-slot confirmation after 37 checkpointed trials. Corrected analysis replay
+proved a new 165-slot measurement was still needed; no complete result was
+fabricated from the partial evidence. Preserve its raw data and use the fresh
+20 MiB retry for the final comparison.
 
 ## Interfaces and Dependencies
 

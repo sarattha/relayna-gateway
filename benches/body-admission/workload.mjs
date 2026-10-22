@@ -12,10 +12,11 @@ const body = Buffer.alloc(size, "x");
 body.write(prefix, 0);
 body.write(suffix, size - suffix.length);
 const digest = createHash("sha256").update(body).digest("hex");
+const socketTimeoutMs = Math.max(30000, Number(process.env.BENCH_CLIENT_DEADLINE_MS ?? 0));
 const agent = new http.Agent({ keepAlive: true, maxSockets: 256 });
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function request(url, { method = "GET", token, data, timeout = 30000 } = {}) {
+function request(url, { method = "GET", token, data, timeout = socketTimeoutMs } = {}) {
   return new Promise((resolve, reject) => {
     const start = performance.now();
     let received = false;
@@ -185,6 +186,7 @@ async function run(config) {
     successful_requests: successes.length, status_counts: counts,
     verified_requests: successes.filter(result => result.verified).length,
     http_max_sockets_per_host: agent.maxSockets,
+    client_socket_timeout_ms: socketTimeoutMs,
     success_rps_offered_window: config.concurrent_per_pod ? null : successes.length / config.duration_seconds,
     success_rps_including_drain: successes.length / (elapsed / 1000),
     success_latency_ms: distribution(successes.map(result => result.ms)),

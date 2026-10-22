@@ -43,7 +43,10 @@ clean, the search doubles the tested ceiling and offered cohort, up to an
 explicit finite exploration bound. Refinement and three-run confirmations use
 the same final cohort; results record the offered cohort for every trial.
 The mock pauses reads for ten seconds and waits two
-seconds after upload. Client requests have a sixty-second absolute deadline.
+seconds after upload. Client requests have a sixty-second absolute deadline;
+socket inactivity uses at least that configured deadline, avoiding a hidden
+thirty-second cutoff during resource-only measurements. Fixed-rate defaults
+without an absolute deadline retain the original thirty-second socket timeout.
 These are backpressure resource tests, distinct from the historical fixed-rate
 comparison documented below.
 
