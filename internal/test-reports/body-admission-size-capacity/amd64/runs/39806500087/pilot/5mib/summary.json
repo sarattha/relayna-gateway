@@ -1,0 +1,229 @@
+{
+  "body_mib": 5,
+  "body_bytes": 5242880,
+  "full_body_arithmetic_bound_per_pod": 102,
+  "cohort_per_pod": 204,
+  "upstream_read_delay_ms": 10000,
+  "post_upload_delay_ms": 2000,
+  "image": "relayna-gateway:body-amd64",
+  "source_commit": "48c93c07d42b113b8073a403604b111871bf0fda",
+  "confirmation_repetitions": 1,
+  "harness_sha256": {
+    "capacity_sweep.py": "9bd1be8dc71a53d31df60e16aef279c536f509fcf8edd74082ff52859cac27cf",
+    "run.py": "9aceba8f870a5208fd722b4492cf2f4c8d5ec9efaaa8776dd21282aef8ca8d9d",
+    "mock.mjs": "564c25aa58de00b2436cf3a16bde0ad8ea459c59a17eb634e571d332aee3aa13",
+    "workload.mjs": "cf4f020e44aceb92ec926a3394ed73dff3c31223eb26f862eac92b76d3806d24"
+  },
+  "trials": [
+    {
+      "slots": 64,
+      "attempt": 1,
+      "directory": "slots-0064-attempt-1",
+      "body_bytes": 5242880,
+      "expected_requests": 408,
+      "restarts": 0,
+      "oom_pods": 0,
+      "pod_names": [
+        "gateway-ccf979bd7-gk6l9",
+        "gateway-ccf979bd7-gw7l6"
+      ],
+      "memory_streams": 2,
+      "rss_peak_mib": 448.72265625,
+      "cgroup_peak_mib": 476.671875,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 408,
+      "successes": 128,
+      "statuses": {
+        "200": 128,
+        "503": 280
+      },
+      "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4",
+      "elapsed_ms": 17871.527460999998,
+      "success_latency_ms": {
+        "count": 128,
+        "min": 12059.943996999998,
+        "mean": 17369.649389632814,
+        "p50": 17594.315050999998,
+        "p95": 17809.894606,
+        "p99": 17841.324971000002,
+        "max": 17858.672851000003
+      },
+      "rejection_latency_ms": {
+        "count": 280,
+        "min": 5008.309353,
+        "mean": 5396.007549260712,
+        "p50": 5470.659989,
+        "p95": 5564.304094,
+        "p99": 5587.8541669999995,
+        "max": 5604.847419
+      },
+      "dispatch_lag_ms": {
+        "count": 408,
+        "min": 1.2199970000000349,
+        "mean": 140.96147266421568,
+        "p50": 168.946864,
+        "p95": 249.02083700000003,
+        "p99": 258.891567,
+        "max": 259.786868
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 64,
+      "buffered_bytes_peak_mib": 320.0,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 280,
+      "byte_denials": 0,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 128,
+      "attempt": 1,
+      "directory": "slots-0128-attempt-1",
+      "body_bytes": 5242880,
+      "expected_requests": 408,
+      "restarts": 0,
+      "oom_pods": 0,
+      "pod_names": [
+        "gateway-867598f64c-gtclk",
+        "gateway-867598f64c-qblrn"
+      ],
+      "memory_streams": 2,
+      "rss_peak_mib": 694.37890625,
+      "cgroup_peak_mib": 757.1484375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 408,
+      "successes": 204,
+      "statuses": {
+        "200": 204,
+        "503": 204
+      },
+      "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4",
+      "elapsed_ms": 18523.634793999998,
+      "success_latency_ms": {
+        "count": 204,
+        "min": 12065.421857000001,
+        "mean": 17808.82048907353,
+        "p50": 18078.058655,
+        "p95": 18427.392505,
+        "p99": 18459.208532,
+        "max": 18494.992417
+      },
+      "rejection_latency_ms": {
+        "count": 204,
+        "min": 5219.1494379999995,
+        "mean": 5631.653476112745,
+        "p50": 5480.279457000001,
+        "p95": 6312.910048,
+        "p99": 6411.194808,
+        "max": 6443.7043570000005
+      },
+      "dispatch_lag_ms": {
+        "count": 408,
+        "min": 1.2047779999999193,
+        "mean": 107.41962613725485,
+        "p50": 100.85952099999997,
+        "p95": 322.0910379999999,
+        "p99": 328.06237499999986,
+        "max": 329.64414699999986
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 128,
+      "buffered_bytes_peak_mib": 511.82649993896484,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 152,
+      "byte_denials": 52,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 256,
+      "attempt": 1,
+      "directory": "slots-0256-attempt-1",
+      "body_bytes": 5242880,
+      "expected_requests": 408,
+      "restarts": 0,
+      "oom_pods": 0,
+      "pod_names": [
+        "gateway-7597b84d64-4skk6",
+        "gateway-7597b84d64-nktm2"
+      ],
+      "memory_streams": 2,
+      "rss_peak_mib": 686.375,
+      "cgroup_peak_mib": 756.015625,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 408,
+      "successes": 204,
+      "statuses": {
+        "200": 204,
+        "503": 204
+      },
+      "body_sha256": "37439e9de7c7e8c68d54d1bbde5bad4aa394b147b39a683fa21d9ce6d79d36f4",
+      "elapsed_ms": 18357.195624,
+      "success_latency_ms": {
+        "count": 204,
+        "min": 12178.736321999999,
+        "mean": 17413.249997181367,
+        "p50": 17744.220779,
+        "p95": 18186.925191,
+        "p99": 18212.922444,
+        "max": 18225.006039
+      },
+      "rejection_latency_ms": {
+        "count": 204,
+        "min": 6027.752935,
+        "mean": 6497.626591573533,
+        "p50": 6505.503119999999,
+        "p95": 6868.038496,
+        "p99": 6978.33168,
+        "max": 7042.264563
+      },
+      "dispatch_lag_ms": {
+        "count": 408,
+        "min": 1.2020139999999628,
+        "mean": 129.27664068382347,
+        "p50": 126.918856,
+        "p95": 231.84539499999994,
+        "p99": 236.11451499999998,
+        "max": 237.18546400000002
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 204,
+      "buffered_bytes_peak_mib": 511.6174011230469,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 0,
+      "byte_denials": 204,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    }
+  ],
+  "complete": true,
+  "confirmed_limits": [
+    128,
+    256
+  ],
+  "completed_at_unix": 1792683580.9792526
+}

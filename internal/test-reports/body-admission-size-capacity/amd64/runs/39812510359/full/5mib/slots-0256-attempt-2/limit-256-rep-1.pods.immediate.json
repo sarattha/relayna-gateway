@@ -1,0 +1,639 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/restartedAt": "2026-10-22T16:24:04Z"
+                },
+                "creationTimestamp": "2026-10-22T16:24:04Z",
+                "generateName": "gateway-9895b7c58-",
+                "generation": 1,
+                "labels": {
+                    "app": "gateway",
+                    "pod-template-hash": "9895b7c58"
+                },
+                "name": "gateway-9895b7c58-5bh8f",
+                "namespace": "gateway-body-bench",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "ReplicaSet",
+                        "name": "gateway-9895b7c58",
+                        "uid": "0adaae38-15d7-4d96-a9bb-ed729f04f6ac"
+                    }
+                ],
+                "resourceVersion": "2514",
+                "uid": "569afee9-1544-447e-b9e5-0148b5e7419e"
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "env": [
+                            {
+                                "name": "DATABASE_URL",
+                                "value": "postgres://benchmark:benchmark-local-only@postgres:5432/benchmark"
+                            },
+                            {
+                                "name": "REDIS_URL",
+                                "value": "redis://redis:6379"
+                            },
+                            {
+                                "name": "LITELLM_BASE_URL",
+                                "value": "http://mock:4000"
+                            },
+                            {
+                                "name": "LITELLM_SERVICE_KEY",
+                                "valueFrom": {
+                                    "secretKeyRef": {
+                                        "key": "service",
+                                        "name": "credentials"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "GATEWAY_ADMIN_TOKEN",
+                                "valueFrom": {
+                                    "secretKeyRef": {
+                                        "key": "admin",
+                                        "name": "credentials"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "GATEWAY_BIND_ADDR",
+                                "value": "0.0.0.0:8080"
+                            },
+                            {
+                                "name": "GATEWAY_CONTROL_BIND_ADDR",
+                                "value": "0.0.0.0:8081"
+                            },
+                            {
+                                "name": "GATEWAY_MAX_BUFFERED_REQUESTS",
+                                "value": "256"
+                            },
+                            {
+                                "name": "GATEWAY_MAX_INFLIGHT_BUFFER_BYTES",
+                                "value": "536870912"
+                            },
+                            {
+                                "name": "LOG_LEVEL",
+                                "value": "error"
+                            }
+                        ],
+                        "image": "relayna-gateway:body-amd64",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "gateway",
+                        "readinessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/admin-ui/readyz",
+                                "port": 8081,
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 1,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 2
+                        },
+                        "resources": {
+                            "limits": {
+                                "cpu": "2",
+                                "memory": "1Gi"
+                            },
+                            "requests": {
+                                "cpu": "500m",
+                                "memory": "256Mi"
+                            }
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "kube-api-access-bq58t",
+                                "readOnly": true
+                            }
+                        ]
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": true,
+                "nodeName": "body-bench-control-plane",
+                "preemptionPolicy": "PreemptLowerPriority",
+                "priority": 0,
+                "restartPolicy": "Always",
+                "schedulerName": "default-scheduler",
+                "securityContext": {},
+                "serviceAccount": "default",
+                "serviceAccountName": "default",
+                "terminationGracePeriodSeconds": 5,
+                "tolerations": [
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    }
+                ],
+                "volumes": [
+                    {
+                        "name": "kube-api-access-bq58t",
+                        "projected": {
+                            "defaultMode": 420,
+                            "sources": [
+                                {
+                                    "serviceAccountToken": {
+                                        "expirationSeconds": 3607,
+                                        "path": "token"
+                                    }
+                                },
+                                {
+                                    "configMap": {
+                                        "items": [
+                                            {
+                                                "key": "ca.crt",
+                                                "path": "ca.crt"
+                                            }
+                                        ],
+                                        "name": "kube-root-ca.crt"
+                                    }
+                                },
+                                {
+                                    "downwardAPI": {
+                                        "items": [
+                                            {
+                                                "fieldRef": {
+                                                    "apiVersion": "v1",
+                                                    "fieldPath": "metadata.namespace"
+                                                },
+                                                "path": "namespace"
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "status": {
+                "allocatedResources": {
+                    "cpu": "500m",
+                    "memory": "256Mi"
+                },
+                "conditions": [
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-10-22T16:24:04Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodReadyToStartContainers"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-10-22T16:24:04Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "Initialized"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-10-22T16:24:43Z",
+                        "message": "containers with unready status: [gateway]",
+                        "observedGeneration": 1,
+                        "reason": "ContainersNotReady",
+                        "status": "False",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-10-22T16:24:43Z",
+                        "message": "containers with unready status: [gateway]",
+                        "observedGeneration": 1,
+                        "reason": "ContainersNotReady",
+                        "status": "False",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-10-22T16:24:04Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodScheduled"
+                    }
+                ],
+                "containerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "500m",
+                            "memory": "256Mi"
+                        },
+                        "containerID": "containerd://4304d08d9c63b31534c49af5a79830888a21b086eea0bc210ca56462cb88a92a",
+                        "image": "docker.io/library/relayna-gateway:body-amd64",
+                        "imageID": "docker.io/library/import-2026-10-22@sha256:5b1e9ced6bf4fdd7349097fd346a6a300770957a3409d4895862fd1932c956b2",
+                        "lastState": {
+                            "terminated": {
+                                "containerID": "containerd://0e58bc7265397c44518728a11e4297f0077ce42b5e8a65007fb355f9531dbee3",
+                                "exitCode": 137,
+                                "finishedAt": "2026-10-22T16:24:43Z",
+                                "reason": "OOMKilled",
+                                "startedAt": "2026-10-22T16:24:04Z"
+                            }
+                        },
+                        "name": "gateway",
+                        "ready": false,
+                        "resources": {
+                            "limits": {
+                                "cpu": "2",
+                                "memory": "1Gi"
+                            },
+                            "requests": {
+                                "cpu": "500m",
+                                "memory": "256Mi"
+                            }
+                        },
+                        "restartCount": 1,
+                        "started": true,
+                        "state": {
+                            "running": {
+                                "startedAt": "2026-10-22T16:24:43Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 10001,
+                                "supplementalGroups": [
+                                    10001
+                                ],
+                                "uid": 10001
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "kube-api-access-bq58t",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            }
+                        ]
+                    }
+                ],
+                "hostIP": "172.18.0.2",
+                "hostIPs": [
+                    {
+                        "ip": "172.18.0.2"
+                    }
+                ],
+                "observedGeneration": 1,
+                "phase": "Running",
+                "podIP": "10.244.0.27",
+                "podIPs": [
+                    {
+                        "ip": "10.244.0.27"
+                    }
+                ],
+                "qosClass": "Burstable",
+                "resources": {
+                    "limits": {
+                        "cpu": "2",
+                        "memory": "1Gi"
+                    },
+                    "requests": {
+                        "cpu": "489m",
+                        "memory": "256Mi"
+                    }
+                },
+                "startTime": "2026-10-22T16:24:04Z"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/restartedAt": "2026-10-22T16:24:04Z"
+                },
+                "creationTimestamp": "2026-10-22T16:24:05Z",
+                "generateName": "gateway-9895b7c58-",
+                "generation": 1,
+                "labels": {
+                    "app": "gateway",
+                    "pod-template-hash": "9895b7c58"
+                },
+                "name": "gateway-9895b7c58-ff4df",
+                "namespace": "gateway-body-bench",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "ReplicaSet",
+                        "name": "gateway-9895b7c58",
+                        "uid": "0adaae38-15d7-4d96-a9bb-ed729f04f6ac"
+                    }
+                ],
+                "resourceVersion": "2511",
+                "uid": "b29f1b3c-eda6-4142-9f25-56e6eb9c6924"
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "env": [
+                            {
+                                "name": "DATABASE_URL",
+                                "value": "postgres://benchmark:benchmark-local-only@postgres:5432/benchmark"
+                            },
+                            {
+                                "name": "REDIS_URL",
+                                "value": "redis://redis:6379"
+                            },
+                            {
+                                "name": "LITELLM_BASE_URL",
+                                "value": "http://mock:4000"
+                            },
+                            {
+                                "name": "LITELLM_SERVICE_KEY",
+                                "valueFrom": {
+                                    "secretKeyRef": {
+                                        "key": "service",
+                                        "name": "credentials"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "GATEWAY_ADMIN_TOKEN",
+                                "valueFrom": {
+                                    "secretKeyRef": {
+                                        "key": "admin",
+                                        "name": "credentials"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "GATEWAY_BIND_ADDR",
+                                "value": "0.0.0.0:8080"
+                            },
+                            {
+                                "name": "GATEWAY_CONTROL_BIND_ADDR",
+                                "value": "0.0.0.0:8081"
+                            },
+                            {
+                                "name": "GATEWAY_MAX_BUFFERED_REQUESTS",
+                                "value": "256"
+                            },
+                            {
+                                "name": "GATEWAY_MAX_INFLIGHT_BUFFER_BYTES",
+                                "value": "536870912"
+                            },
+                            {
+                                "name": "LOG_LEVEL",
+                                "value": "error"
+                            }
+                        ],
+                        "image": "relayna-gateway:body-amd64",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "gateway",
+                        "readinessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/admin-ui/readyz",
+                                "port": 8081,
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 1,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 2
+                        },
+                        "resources": {
+                            "limits": {
+                                "cpu": "2",
+                                "memory": "1Gi"
+                            },
+                            "requests": {
+                                "cpu": "500m",
+                                "memory": "256Mi"
+                            }
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "kube-api-access-7pfkk",
+                                "readOnly": true
+                            }
+                        ]
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": true,
+                "nodeName": "body-bench-control-plane",
+                "preemptionPolicy": "PreemptLowerPriority",
+                "priority": 0,
+                "restartPolicy": "Always",
+                "schedulerName": "default-scheduler",
+                "securityContext": {},
+                "serviceAccount": "default",
+                "serviceAccountName": "default",
+                "terminationGracePeriodSeconds": 5,
+                "tolerations": [
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    }
+                ],
+                "volumes": [
+                    {
+                        "name": "kube-api-access-7pfkk",
+                        "projected": {
+                            "defaultMode": 420,
+                            "sources": [
+                                {
+                                    "serviceAccountToken": {
+                                        "expirationSeconds": 3607,
+                                        "path": "token"
+                                    }
+                                },
+                                {
+                                    "configMap": {
+                                        "items": [
+                                            {
+                                                "key": "ca.crt",
+                                                "path": "ca.crt"
+                                            }
+                                        ],
+                                        "name": "kube-root-ca.crt"
+                                    }
+                                },
+                                {
+                                    "downwardAPI": {
+                                        "items": [
+                                            {
+                                                "fieldRef": {
+                                                    "apiVersion": "v1",
+                                                    "fieldPath": "metadata.namespace"
+                                                },
+                                                "path": "namespace"
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "status": {
+                "allocatedResources": {
+                    "cpu": "500m",
+                    "memory": "256Mi"
+                },
+                "conditions": [
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-10-22T16:24:06Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodReadyToStartContainers"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-10-22T16:24:05Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "Initialized"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-10-22T16:24:43Z",
+                        "message": "containers with unready status: [gateway]",
+                        "observedGeneration": 1,
+                        "reason": "ContainersNotReady",
+                        "status": "False",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-10-22T16:24:43Z",
+                        "message": "containers with unready status: [gateway]",
+                        "observedGeneration": 1,
+                        "reason": "ContainersNotReady",
+                        "status": "False",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-10-22T16:24:05Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodScheduled"
+                    }
+                ],
+                "containerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "500m",
+                            "memory": "256Mi"
+                        },
+                        "containerID": "containerd://9761610ad3b5535f222115fd9b9b746028bc902675dc5ed0268d03729925c6d7",
+                        "image": "docker.io/library/relayna-gateway:body-amd64",
+                        "imageID": "docker.io/library/import-2026-10-22@sha256:5b1e9ced6bf4fdd7349097fd346a6a300770957a3409d4895862fd1932c956b2",
+                        "lastState": {
+                            "terminated": {
+                                "containerID": "containerd://2b6a3f4a2436799453e9d3594c3d82a1f23eec3a80e8d57ba24c1ee1fa0f7b78",
+                                "exitCode": 137,
+                                "finishedAt": "2026-10-22T16:24:43Z",
+                                "reason": "OOMKilled",
+                                "startedAt": "2026-10-22T16:24:06Z"
+                            }
+                        },
+                        "name": "gateway",
+                        "ready": false,
+                        "resources": {
+                            "limits": {
+                                "cpu": "2",
+                                "memory": "1Gi"
+                            },
+                            "requests": {
+                                "cpu": "500m",
+                                "memory": "256Mi"
+                            }
+                        },
+                        "restartCount": 1,
+                        "started": true,
+                        "state": {
+                            "running": {
+                                "startedAt": "2026-10-22T16:24:43Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 10001,
+                                "supplementalGroups": [
+                                    10001
+                                ],
+                                "uid": 10001
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "kube-api-access-7pfkk",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            }
+                        ]
+                    }
+                ],
+                "hostIP": "172.18.0.2",
+                "hostIPs": [
+                    {
+                        "ip": "172.18.0.2"
+                    }
+                ],
+                "observedGeneration": 1,
+                "phase": "Running",
+                "podIP": "10.244.0.28",
+                "podIPs": [
+                    {
+                        "ip": "10.244.0.28"
+                    }
+                ],
+                "qosClass": "Burstable",
+                "resources": {
+                    "limits": {
+                        "cpu": "2",
+                        "memory": "1Gi"
+                    },
+                    "requests": {
+                        "cpu": "489m",
+                        "memory": "256Mi"
+                    }
+                },
+                "startTime": "2026-10-22T16:24:05Z"
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

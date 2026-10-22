@@ -1,0 +1,58 @@
+{
+  "label": "capacity-100mib-slots16-attempt1",
+  "image": "relayna-gateway:body-amd64",
+  "source_commit": "48c93c07d42b113b8073a403604b111871bf0fda",
+  "created_at": "2026-10-22T17:19:24.776470+00:00",
+  "limits": [
+    16
+  ],
+  "repetitions": 1,
+  "rps": 12,
+  "duration_seconds": 15,
+  "delay_ms": 2000,
+  "body_bytes": 104857600,
+  "load_mode": "simultaneous",
+  "concurrent_per_pod": 32,
+  "read_delay_ms": 10000,
+  "client_deadline_ms": 60000,
+  "post_condition_observation_seconds": 10,
+  "gateway_resources": {
+    "cpu_limit": 2,
+    "memory_limit_bytes": 1073741824
+  },
+  "malloc_mmap_threshold_override": null,
+  "docker": {
+    "NCPU": 4,
+    "MemTotal": 16766414848,
+    "Architecture": "x86_64",
+    "KernelVersion": "6.17.0-1022-azure",
+    "ServerVersion": "28.0.4",
+    "OperatingSystem": "Ubuntu 24.04.5 LTS"
+  },
+  "image_id": "sha256:fa54c51e170949a6b7778c9ee4174442869e01a67676b89b825001d11466a653",
+  "image_architecture": "amd64",
+  "kubernetes_nodes": [
+    {
+      "architecture": "amd64",
+      "bootID": "713bbf31-d825-4bb6-adf0-3fe39dbbea4c",
+      "containerRuntimeVersion": "containerd://2.3.1",
+      "kernelVersion": "6.17.0-1022-azure",
+      "kubeProxyVersion": "",
+      "kubeletVersion": "v1.36.1",
+      "machineID": "ed8fdd0c08bb415e88ee880ffe0ffc57",
+      "operatingSystem": "linux",
+      "osImage": "Debian GNU/Linux 13 (trixie)",
+      "swap": {
+        "capacity": 3221221376
+      },
+      "systemUUID": "66e8969e-821b-4f9c-b489-a86038b0e3bf"
+    }
+  ],
+  "scripts_sha256": {
+    "mock.mjs": "564c25aa58de00b2436cf3a16bde0ad8ea459c59a17eb634e571d332aee3aa13",
+    "workload.mjs": "cf4f020e44aceb92ec926a3394ed73dff3c31223eb26f862eac92b76d3806d24"
+  },
+  "image_allocator_environment": {
+    "MALLOC_MMAP_THRESHOLD_": "131072"
+  }
+}

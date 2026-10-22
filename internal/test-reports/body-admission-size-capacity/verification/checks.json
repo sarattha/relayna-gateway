@@ -1,0 +1,117 @@
+{
+  "harness_commit": "635ffd827d8181ea08ed175352aa4e1da80781e7",
+  "completed_at_utc": "2026-10-22T18:24:01.389835+00:00",
+  "local_verification_host": "Darwin arm64",
+  "verification_host_separate_from_native_measurement_host": true,
+  "command": "bash .codex/skills/code-change-verification/scripts/run.sh",
+  "exit_code": 0,
+  "steps_passed": [
+    "cargo fmt --all --check",
+    "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "cargo test --workspace --all-features",
+    "cargo audit (existing repository advisory exceptions)",
+    "cargo deny check",
+    "cargo machete",
+    "cargo nextest run --workspace --all-features",
+    "trivy fs HIGH,CRITICAL",
+    "gitleaks full history",
+    "semgrep repository policy"
+  ],
+  "nextest": {
+    "passed": 437,
+    "failed": 0,
+    "skipped": 0
+  },
+  "focused_checks_passed": [
+    "Node workload/mock syntax",
+    "Python runner/search syntax",
+    "actionlint 1.7.7",
+    "Exact 5 and 100 MiB JSON with independent digest and upstream credential verification",
+    "Fixture service/policy resizing",
+    "Early admission rejection classification",
+    "300 simultaneous requests per distinct host (600 total), above prior 256 socket cap",
+    "Absolute deadlines settle all requests",
+    "Unsuccessful warmup retains structured evidence",
+    "Real native healthy artifact analysis",
+    "Real stale-status artifact detects previous-container restarts",
+    "Integer boundary refinement and three-trial confirmation",
+    "Expanded cohort confirmation uses one fixed final offered load",
+    "Failed single-run candidate triggers repeated-criterion refinement",
+    "Failure first seen during confirmation triggers refinement",
+    "Real 35-second silent response completes under the 60-second resource deadline",
+    "Real lost-denial artifacts reconcile without being relabeled as HTTP successes",
+    "Real missing admitted response remains resource-unstable",
+    "Accounted lost denial does not stop cohort expansion or three-trial confirmation",
+    "Non-resource failure stops repeated refinement without being relabeled as an OOM"
+  ],
+  "measurement_status": "complete",
+  "selected_native_runs": [
+    {
+      "body_mib": 5,
+      "run_id": 39812510359,
+      "harness_commit": "d92af5c77e388c0950e170d5610497a0d58dd2b1"
+    },
+    {
+      "body_mib": 10,
+      "run_id": 39830138631,
+      "harness_commit": "635ffd827d8181ea08ed175352aa4e1da80781e7"
+    },
+    {
+      "body_mib": 20,
+      "run_id": 39826384990,
+      "harness_commit": "83d34cf2db5ee29b779fe6d67dcf2c5b68aab3d1"
+    },
+    {
+      "body_mib": 40,
+      "run_id": 39820691161,
+      "harness_commit": "a6653e1d34dac050ef4a044f1bdb4080c896e570"
+    },
+    {
+      "body_mib": 80,
+      "run_id": 39820696151,
+      "harness_commit": "a6653e1d34dac050ef4a044f1bdb4080c896e570"
+    },
+    {
+      "body_mib": 100,
+      "run_id": 39830143142,
+      "harness_commit": "635ffd827d8181ea08ed175352aa4e1da80781e7"
+    }
+  ],
+  "resource_criterion": "Every admitted request verified; no resource failure; complete memory/metric evidence; terminal gauges zero; lost denial replies separately reported and exactly counter-accounted.",
+  "verification_log": "repository-verification.log",
+  "verification_log_sha256": "0183c5e2023bc177e2fd4e36db7eb8b8b17908394901dccd2196a40a95fde063",
+  "tested_workload_sha256": {
+    "run.py": "5d9c06f7a0989386e473b68400d82cbef2ce537e44dc87a26ad05efd09dc7eb9",
+    "capacity_sweep.py": "29e14c313207d36f6df97a8639e14625da4734a65dad9260f17eb58ec44045aa",
+    "mock.mjs": "564c25aa58de00b2436cf3a16bde0ad8ea459c59a17eb634e571d332aee3aa13",
+    "workload.mjs": "bfe4632993d5fcf49866e5da892993f452b7f6f5d31475db0dd2ece2dc55f594"
+  },
+  "primary_trials": 217,
+  "fresh_gateway_pods": 434,
+  "selected_confirmation_trials": 18,
+  "selected_confirmation_http_clean_trials": 18,
+  "visual_qa": {
+    "desktop": {
+      "width": 728,
+      "appearance": "dark",
+      "content_height": 1188
+    },
+    "mobile": {
+      "width": 360,
+      "appearance": "light",
+      "content_height": 2041
+    },
+    "size_metric_controls_checked_per_layout": 18,
+    "keyboard_details_passed": true,
+    "horizontal_overflow": false,
+    "console_errors": 0,
+    "html_sha256": "955a7ad6874ba116f03675bad231d808816b83c1927d9d450c7c9a397d4c94d4"
+  },
+  "artifact_secret_scan": {
+    "command": "gitleaks detect --no-git --source internal/test-reports/body-admission-size-capacity --redact",
+    "exit_code": 0,
+    "findings": 0,
+    "log": "artifact-secret-scan.log",
+    "log_sha256": "68fe321f0094cb47902564fb3a66086f207a7f438f6949120b014e728e232304"
+  }
+}

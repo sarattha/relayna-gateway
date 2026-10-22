@@ -35,8 +35,8 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   driver/analyzer checks, syntax checks, and actionlint also passed.
 - [x] (2026-10-22 17:02Z) Complete and independently validate 5 MiB discovery
   and confirmation on native amd64.
-- [ ] Complete 10/20/40/80/100 MiB discovery and confirmation on independent
-  native hosts, preserving the requested per-pod limits and per-size hardware.
+- [x] (2026-10-22 19:05Z) Complete the remaining 100 MiB study on its independent native host,
+  preserving the requested per-pod limits and hardware. All six sizes done.
 - [x] (2026-10-22 17:39Z) Complete and independently validate 40 MiB:
   177 slots passed three trials; 178 had an OOM. At 1024 offered requests per
   pod, clean-setting peaks were RSS 836.35546875 / cgroup 993.296875 MiB and
@@ -47,9 +47,24 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   worst success p95 59932.801431 ms. All confirmations completed without client
   errors, but latency is close to the technical 60-second watchdog. Native
   AMD EPYC 7763; 28 trials total.
-- [ ] Independently validate and preserve every observation, including failures.
-- [ ] Publish a source-backed per-size resource/slot/memory/timing report and
-  the final visual comparison.
+- [x] (2026-10-22 18:37Z) Complete and independently validate 10 MiB with
+  the final resource criterion and 60-second socket/absolute watchdogs:
+  215 slots passed 3/3, 216 OOMed 2/3; final cohort 1024 per pod, peak RSS
+  830.90625 / cgroup 947.5390625 MiB, worst success p95 30948.265286 ms.
+  All 104 admitted responses per trial verified; zero client errors.
+  Host: native AMD EPYC 9V45, four vCPUs, 22 fresh-pod trials.
+- [x] (2026-10-22 18:39Z) Complete and independently validate 20 MiB:
+  127 slots passed 3/3; 128 OOMed 1/3. Final cohort 1024 per pod, peak RSS
+  882.484375 / cgroup 1022.34375 MiB, worst success p95 40184.311173 ms.
+  All confirmations were HTTP-clean; historical 30-second inactivity caused
+  no failed observations anywhere in this 46-trial retry, so the strict-clean
+  and resource predicates agree. Host: native Intel Xeon Platinum 8573C.
+  Memory headroom at this observed edge is only 1.65625 MiB (0.16%).
+- [x] (2026-10-22 19:05Z) Independently validate and preserve every observation, including failures. All six primary studies total 217 trials / 434 fresh pods; 4117 raw files indexed. Selected settings all have 3/3 HTTP-clean trials and an adjacent observed OOM.
+- [x] (2026-10-22 19:10Z) Publish a source-backed six-size report, aggregate
+  JSON/CSV, exact source snapshots and raw checksums. Export the SVG and verify
+  the final HTML on desktop/mobile, all 18 controls and keyboard details.
+  The complete 158 MB evidence bundle passed its explicit secret scan.
 
 ## Surprises & Discoveries
 
@@ -153,10 +168,34 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   do not reclassify resets as successful admission rejections or OOMs.
   Date/Author: 2026-10-22, Codex.
 
+- Final criterion: expand/refine/confirm on resource stability, allowing only
+  exactly counter-accounted lost denial replies while requiring every admitted
+  response to complete and verify. Keep the HTTP-clean flag separately. This
+  implements the user's resource-boundary choice without an implicit response
+  delivery or latency SLO. All final selected groups nevertheless passed the
+  stricter HTTP-clean criterion. Date/Author: 2026-10-22, Codex.
+
 ## Outcomes & Retrospective
 
-Pending native measurements. Never silently omit OOMs, connection errors,
-timeouts, incomplete measurements, or invalid warmups to report a clean limit.
+All six native amd64 sizes are measured and independently validated: 217
+primary trials using 434 fresh Gateway pods. At the final 1024-request-per-pod
+cohort, largest 3/3 resource-stable settings are 128, 215, 127, 177, 174 and 130
+slots per pod for 5, 10, 20, 40, 80 and 100 MiB respectively. Each has an
+adjacent observed OOM; all 18 selected confirmation trials are HTTP-clean.
+Worst successful-response p95 values are 36.6, 30.9, 40.2, 40.1, 59.9 and
+37.1 seconds, including the fixture's read/response pauses. Native CPU models
+vary and are recorded per size. These are workload-specific observed edges:
+the 100 MiB group leaves only 0.25 MiB cgroup headroom, so the measured counts
+are not production settings.
+
+The harness now preserves failed measurements, waits for delayed restart
+status, distinguishes resource stability from lost rejection delivery, and
+aligns the resource socket timeout with its absolute watchdog. Real artifact
+regressions preserve the cases that exposed each issue. Verbatim source
+snapshots and raw checksums make the report independently recheckable. The
+entire required repository stack passed, including 437 Nextest tests.
+The completed report, source snapshots, raw evidence and visual artifacts are
+ready on the experiment branch; all requested measurement work is complete.
 
 ## Context and Orientation
 
@@ -329,6 +368,58 @@ log `/tmp/relayna-capacity-idle-verification.log`), commit
 `45156c33d49dd90eace49190932f671b8a9df3c4`. The final resource-predicate change
 is undergoing the required full stack before native retries. No runtime code
 or production configuration is changed.
+
+Final resource-stability harness commit:
+`635ffd827d8181ea08ed175352aa4e1da80781e7`. Focused real-artifact and
+orchestration regression checks passed, as did actionlint 1.7.7. Fresh native
+retries dispatched at approximately 18:19Z:
+
+- 10 MiB: <https://github.com/sarattha/relayna-gateway/actions/runs/39830138631>
+- 100 MiB: <https://github.com/sarattha/relayna-gateway/actions/runs/39830143142>
+
+The unchanged Rust workspace checks and final required full-stack verification
+run alongside these independent native measurements; completion requires the
+entire verification stack to pass. The existing 20 MiB retry remains active.
+
+The final resource-stability harness passed the entire required verification
+stack at 18:24Z, including 437/437 Nextest tests and all repository security
+checks. Durable log and checksum:
+`internal/test-reports/body-admission-size-capacity/verification/repository-verification.log`
+and `verification/checks.json`. Mandatory code checks are complete; native
+artifact validation continues as each size finishes.
+
+At 18:55Z, all five completed primary results are validated and preserved;
+only final 100 MiB run `39830143142` remains active. Its combined artifact is
+`body-capacity-all-39830143142`, downloaded to
+`/tmp/relayna-body-size-capacity-combined-39830143142` when ready. The bounded
+local watcher is `/tmp/relayna-capacity-watch.py` (PTY session 32624), with
+state in `/tmp/relayna-capacity-watcher.json`. Native Actions work continues
+independently if the local watcher is interrupted.
+
+Final report tooling is now durable in
+`internal/test-reports/body-admission-size-capacity/verification/`:
+`validate.py`, `aggregate.py`, `comparison.py`, `plot.py`, regression checks,
+and verbatim source snapshots for all six recorded harness revisions. The
+`amd64/primary-runs.json` manifest pins all six primary native run IDs and
+harness commits. After copying the final 100 MiB artifact into `amd64/runs/`,
+run `verification/aggregate.py` from the repository root. It requires three
+resource-stable trials, adjacent observed OOM, no observed lower-slot resource
+failures in the final cohort, and exact source/hash/resource/body validation.
+It generates the aggregate JSON/CSV and SHA-256 raw evidence index. Finish the
+README narrative/tables, SVG and self-contained HTML, preview desktop/mobile
+and publish via html_render, scan all final data for secrets, then commit/push
+this benchmark branch. Do not open a new PR or release without a new request;
+the earlier release task is complete. Include the required PR draft summary.
+Local verification PostgreSQL/Redis fixtures have been removed after the full
+stack passed; all other local containers were left alone.
+
+The final 100 MiB study completed at 19:05Z: 50 trials, native AMD EPYC 9V74,
+final cohort 1024 per pod. 130 slots passed 3/3 HTTP-clean; 131 OOMed 1/3.
+Selected cgroup peak 1023.75 MiB leaves only 0.25 MiB headroom; worst success
+p95 37115.039519 ms. The aggregate source/snapshot/hash/resource/body/outcome
+validator passed all six sizes, 217 trials, 434 fresh pods, with 4117 preserved
+raw files. All 18 selected confirmation trials were HTTP-clean. Final result
+publication, visual QA and final artifact secret scan are in progress.
 
 ## Interfaces and Dependencies
 

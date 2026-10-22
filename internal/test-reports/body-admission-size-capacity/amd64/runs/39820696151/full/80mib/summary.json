@@ -1,0 +1,3477 @@
+{
+  "body_mib": 80,
+  "body_bytes": 83886080,
+  "full_body_arithmetic_bound_per_pod": 6,
+  "cohort_per_pod": 32,
+  "upstream_read_delay_ms": 10000,
+  "post_upload_delay_ms": 2000,
+  "image": "relayna-gateway:body-amd64",
+  "source_commit": "48c93c07d42b113b8073a403604b111871bf0fda",
+  "confirmation_repetitions": 3,
+  "max_search_slots": 4096,
+  "harness_sha256": {
+    "capacity_sweep.py": "8f482fcfafa26fd14c4e510aac192141b8d153c2e395abeafabd52ecbf44a57a",
+    "run.py": "1513dd1527b93afd2d86e4ce5432391e08de93d5a6aeeb615e79a3fd767d5638",
+    "mock.mjs": "564c25aa58de00b2436cf3a16bde0ad8ea459c59a17eb634e571d332aee3aa13",
+    "workload.mjs": "cf4f020e44aceb92ec926a3394ed73dff3c31223eb26f862eac92b76d3806d24"
+  },
+  "trials": [
+    {
+      "slots": 1,
+      "attempt": 1,
+      "directory": "slots-0001-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 32,
+      "expected_requests": 64,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-8968dbfc5-l2klf",
+        "gateway-8968dbfc5-zbtwl"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 109.9140625,
+      "cgroup_peak_mib": 177.40625,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 64,
+      "successes": 2,
+      "statuses": {
+        "200": 2,
+        "503": 62
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 13399.525966000001,
+      "success_latency_ms": {
+        "count": 2,
+        "min": 13391.465411000001,
+        "mean": 13394.883298,
+        "p50": 13391.465411000001,
+        "p95": 13398.301185,
+        "p99": 13398.301185,
+        "max": 13398.301185
+      },
+      "rejection_latency_ms": {
+        "count": 62,
+        "min": 1220.294129,
+        "mean": 1309.0901643870966,
+        "p50": 1287.334389,
+        "p95": 1464.7572049999999,
+        "p99": 1483.198104,
+        "max": 1483.198104
+      },
+      "dispatch_lag_ms": {
+        "count": 64,
+        "min": 0.931381999999985,
+        "mean": 18.752726734374964,
+        "p50": 16.642249999999876,
+        "p95": 32.702444000000014,
+        "p99": 33.57811199999992,
+        "max": 33.57811199999992
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 1,
+      "buffered_bytes_peak_mib": 80.0,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 62,
+      "byte_denials": 0,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 2,
+      "attempt": 1,
+      "directory": "slots-0002-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 32,
+      "expected_requests": 64,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-7cd5f87b95-gtnjb",
+        "gateway-7cd5f87b95-n4wc9"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 194.01953125,
+      "cgroup_peak_mib": 257.57421875,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 64,
+      "successes": 4,
+      "statuses": {
+        "200": 4,
+        "503": 60
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 13747.602006,
+      "success_latency_ms": {
+        "count": 4,
+        "min": 13485.955066999999,
+        "mean": 13578.70251425,
+        "p50": 13487.536425,
+        "p95": 13730.103896,
+        "p99": 13730.103896,
+        "max": 13730.103896
+      },
+      "rejection_latency_ms": {
+        "count": 60,
+        "min": 1258.2033629999999,
+        "mean": 1334.5323028666664,
+        "p50": 1305.471072,
+        "p95": 1471.544537,
+        "p99": 1595.245031,
+        "max": 1595.245031
+      },
+      "dispatch_lag_ms": {
+        "count": 64,
+        "min": 1.327632999999878,
+        "mean": 19.282482578124878,
+        "p50": 18.464646999999786,
+        "p95": 33.35101099999997,
+        "p99": 34.3856159999998,
+        "max": 34.3856159999998
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 2,
+      "buffered_bytes_peak_mib": 160.0,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 60,
+      "byte_denials": 0,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 3,
+      "attempt": 1,
+      "directory": "slots-0003-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 32,
+      "expected_requests": 64,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-76568fffcc-bgchg",
+        "gateway-76568fffcc-nbnqv"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 311.32421875,
+      "cgroup_peak_mib": 336.953125,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 64,
+      "successes": 6,
+      "statuses": {
+        "200": 6,
+        "503": 58
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 13877.074594,
+      "success_latency_ms": {
+        "count": 6,
+        "min": 13324.811893999999,
+        "mean": 13721.372809333334,
+        "p50": 13812.712525,
+        "p95": 13849.853154,
+        "p99": 13849.853154,
+        "max": 13849.853154
+      },
+      "rejection_latency_ms": {
+        "count": 58,
+        "min": 1322.6023390000003,
+        "mean": 1390.7170736896546,
+        "p50": 1378.127886,
+        "p95": 1456.73817,
+        "p99": 1670.6605740000002,
+        "max": 1670.6605740000002
+      },
+      "dispatch_lag_ms": {
+        "count": 64,
+        "min": 1.3938059999998131,
+        "mean": 19.726624468749893,
+        "p50": 18.971530999999914,
+        "p95": 33.36742499999991,
+        "p99": 34.364449999999806,
+        "max": 34.364449999999806
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 3,
+      "buffered_bytes_peak_mib": 240.0,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 58,
+      "byte_denials": 0,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 4,
+      "attempt": 1,
+      "directory": "slots-0004-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 32,
+      "expected_requests": 64,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-6bbfd59b4c-26v4x",
+        "gateway-6bbfd59b4c-h45wr"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 409.46484375,
+      "cgroup_peak_mib": 420.69140625,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 64,
+      "successes": 8,
+      "statuses": {
+        "200": 8,
+        "503": 56
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 14160.486773,
+      "success_latency_ms": {
+        "count": 8,
+        "min": 13547.349053,
+        "mean": 13991.099579875,
+        "p50": 14098.92629,
+        "p95": 14153.008437,
+        "p99": 14153.008437,
+        "max": 14153.008437
+      },
+      "rejection_latency_ms": {
+        "count": 56,
+        "min": 1255.458689,
+        "mean": 1401.0246148749998,
+        "p50": 1336.5432730000002,
+        "p95": 1731.3264849999998,
+        "p99": 1740.166268,
+        "max": 1740.166268
+      },
+      "dispatch_lag_ms": {
+        "count": 64,
+        "min": 1.3222630000000208,
+        "mean": 20.810270328124933,
+        "p50": 19.374035999999933,
+        "p95": 36.56114200000002,
+        "p99": 37.55656399999998,
+        "max": 37.55656399999998
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 4,
+      "buffered_bytes_peak_mib": 320.0,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 56,
+      "byte_denials": 0,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 5,
+      "attempt": 1,
+      "directory": "slots-0005-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 32,
+      "expected_requests": 64,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-78c678764b-gg9g7",
+        "gateway-78c678764b-trpgx"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 509.0390625,
+      "cgroup_peak_mib": 499.6328125,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 64,
+      "successes": 10,
+      "statuses": {
+        "200": 10,
+        "503": 54
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 14485.933183000001,
+      "success_latency_ms": {
+        "count": 10,
+        "min": 14010.808004,
+        "mean": 14351.5495481,
+        "p50": 14434.513073,
+        "p95": 14471.699223000001,
+        "p99": 14471.699223000001,
+        "max": 14471.699223000001
+      },
+      "rejection_latency_ms": {
+        "count": 54,
+        "min": 1247.3265669999998,
+        "mean": 1371.8410878888885,
+        "p50": 1359.0923910000001,
+        "p95": 1645.9429309999998,
+        "p99": 1727.2607209999999,
+        "max": 1727.2607209999999
+      },
+      "dispatch_lag_ms": {
+        "count": 64,
+        "min": 0.8892530000000534,
+        "mean": 20.433750203124998,
+        "p50": 19.323556999999937,
+        "p95": 35.40825700000005,
+        "p99": 36.603382999999894,
+        "max": 36.603382999999894
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 5,
+      "buffered_bytes_peak_mib": 400.0,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 54,
+      "byte_denials": 0,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 6,
+      "attempt": 1,
+      "directory": "slots-0006-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 32,
+      "expected_requests": 64,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-7988d6cfdc-m76r4",
+        "gateway-7988d6cfdc-mcl2c"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 586.16796875,
+      "cgroup_peak_mib": 588.7109375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 64,
+      "successes": 12,
+      "statuses": {
+        "200": 12,
+        "503": 52
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 14661.113290000001,
+      "success_latency_ms": {
+        "count": 12,
+        "min": 13478.95747,
+        "mean": 14421.339149666666,
+        "p50": 14544.212088,
+        "p95": 14651.515849,
+        "p99": 14651.515849,
+        "max": 14651.515849
+      },
+      "rejection_latency_ms": {
+        "count": 52,
+        "min": 1215.932878,
+        "mean": 1310.0940045000002,
+        "p50": 1303.4386399999999,
+        "p95": 1395.1565990000001,
+        "p99": 1698.8154929999998,
+        "max": 1698.8154929999998
+      },
+      "dispatch_lag_ms": {
+        "count": 64,
+        "min": 1.0520959999998922,
+        "mean": 17.669047249999917,
+        "p50": 16.668659999999818,
+        "p95": 30.33924499999989,
+        "p99": 31.1379179999999,
+        "max": 31.1379179999999
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 6,
+      "buffered_bytes_peak_mib": 480.0,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 52,
+      "byte_denials": 0,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 7,
+      "attempt": 1,
+      "directory": "slots-0007-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 32,
+      "expected_requests": 64,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-6df67664d-8pzkr",
+        "gateway-6df67664d-k4r59"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 589.765625,
+      "cgroup_peak_mib": 608.0078125,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 64,
+      "successes": 12,
+      "statuses": {
+        "200": 12,
+        "503": 52
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 14770.543613,
+      "success_latency_ms": {
+        "count": 12,
+        "min": 13299.435688000001,
+        "mean": 14296.414432333333,
+        "p50": 14307.138239,
+        "p95": 14754.818331999999,
+        "p99": 14754.818331999999,
+        "max": 14754.818331999999
+      },
+      "rejection_latency_ms": {
+        "count": 52,
+        "min": 1266.1329719999999,
+        "mean": 1460.6957811153852,
+        "p50": 1375.1309640000002,
+        "p95": 1949.149027,
+        "p99": 2915.0300590000006,
+        "max": 2915.0300590000006
+      },
+      "dispatch_lag_ms": {
+        "count": 64,
+        "min": 0.9245890000001964,
+        "mean": 19.191788234375082,
+        "p50": 18.016454000000067,
+        "p95": 34.25806200000011,
+        "p99": 35.33855200000016,
+        "max": 35.33855200000016
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 7,
+      "buffered_bytes_peak_mib": 509.42448329925537,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 49,
+      "byte_denials": 3,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 8,
+      "attempt": 1,
+      "directory": "slots-0008-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 32,
+      "expected_requests": 64,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-5db94c87c4-2gsdj",
+        "gateway-5db94c87c4-7kkvt"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 583.58203125,
+      "cgroup_peak_mib": 607.55078125,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 64,
+      "successes": 12,
+      "statuses": {
+        "200": 12,
+        "503": 52
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 14751.383493000001,
+      "success_latency_ms": {
+        "count": 12,
+        "min": 13822.862778,
+        "mean": 14467.643383833334,
+        "p50": 14534.462141999998,
+        "p95": 14730.363924000001,
+        "p99": 14730.363924000001,
+        "max": 14730.363924000001
+      },
+      "rejection_latency_ms": {
+        "count": 52,
+        "min": 1309.9513019999997,
+        "mean": 1523.3915086730774,
+        "p50": 1406.574976,
+        "p95": 2206.647387,
+        "p99": 3072.953542,
+        "max": 3072.953542
+      },
+      "dispatch_lag_ms": {
+        "count": 64,
+        "min": 0.9368020000001707,
+        "mean": 19.053179234375065,
+        "p50": 17.50855300000012,
+        "p95": 34.62909200000013,
+        "p99": 35.64430000000016,
+        "max": 35.64430000000016
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 8,
+      "buffered_bytes_peak_mib": 498.2826986312866,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 48,
+      "byte_denials": 4,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 12,
+      "attempt": 1,
+      "directory": "slots-0012-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 32,
+      "expected_requests": 64,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-75d7d96bb8-pg8hx",
+        "gateway-75d7d96bb8-xc6t7"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 609.4140625,
+      "cgroup_peak_mib": 612.9140625,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 64,
+      "successes": 12,
+      "statuses": {
+        "200": 12,
+        "503": 52
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 14710.066245999999,
+      "success_latency_ms": {
+        "count": 12,
+        "min": 13298.340136,
+        "mean": 14447.106983166668,
+        "p50": 14590.449042,
+        "p95": 14685.356219000001,
+        "p99": 14685.356219000001,
+        "max": 14685.356219000001
+      },
+      "rejection_latency_ms": {
+        "count": 52,
+        "min": 1259.6196779999998,
+        "mean": 1722.048038134616,
+        "p50": 1362.708384,
+        "p95": 3188.2410530000006,
+        "p99": 3487.961177,
+        "max": 3487.961177
+      },
+      "dispatch_lag_ms": {
+        "count": 64,
+        "min": 0.9846710000001622,
+        "mean": 17.046504453125085,
+        "p50": 15.89674500000001,
+        "p95": 29.62145899999996,
+        "p99": 30.530779000000166,
+        "max": 30.530779000000166
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 12,
+      "buffered_bytes_peak_mib": 509.2165517807007,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 40,
+      "byte_denials": 12,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 16,
+      "attempt": 1,
+      "directory": "slots-0016-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 32,
+      "expected_requests": 64,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-7fd7f7c88c-b2sdf",
+        "gateway-7fd7f7c88c-sk47g"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 608.62109375,
+      "cgroup_peak_mib": 613.0546875,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 64,
+      "successes": 12,
+      "statuses": {
+        "200": 12,
+        "503": 52
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 14785.009229,
+      "success_latency_ms": {
+        "count": 12,
+        "min": 13659.636550000001,
+        "mean": 14288.768554499999,
+        "p50": 14298.241174,
+        "p95": 14757.453493,
+        "p99": 14757.453493,
+        "max": 14757.453493
+      },
+      "rejection_latency_ms": {
+        "count": 52,
+        "min": 1454.7486810000003,
+        "mean": 2152.0703470961535,
+        "p50": 1791.40434,
+        "p95": 3380.557183,
+        "p99": 3766.5862080000006,
+        "max": 3766.5862080000006
+      },
+      "dispatch_lag_ms": {
+        "count": 64,
+        "min": 0.8995919999999842,
+        "mean": 18.670094234374965,
+        "p50": 17.730963999999858,
+        "p95": 32.62610100000006,
+        "p99": 33.697394999999915,
+        "max": 33.697394999999915
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 16,
+      "buffered_bytes_peak_mib": 504.227445602417,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 32,
+      "byte_denials": 20,
+      "terminal_zero": true,
+      "phase": "discovery",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 32,
+      "attempt": 1,
+      "directory": "slots-0032-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 64,
+      "expected_requests": 128,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-bfcfc6c86-fl2gl",
+        "gateway-bfcfc6c86-tk7q5"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 612.7421875,
+      "cgroup_peak_mib": 623.68359375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 128,
+      "successes": 12,
+      "statuses": {
+        "200": 12,
+        "503": 116
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 15776.705085000001,
+      "success_latency_ms": {
+        "count": 12,
+        "min": 12320.097285,
+        "mean": 14973.492960166664,
+        "p50": 15396.90609,
+        "p95": 15757.794271,
+        "p99": 15757.794271,
+        "max": 15757.794271
+      },
+      "rejection_latency_ms": {
+        "count": 116,
+        "min": 2637.6550469999997,
+        "mean": 3389.666715370689,
+        "p50": 3147.4151789999996,
+        "p95": 4925.025847,
+        "p99": 5211.364953,
+        "max": 5220.421368
+      },
+      "dispatch_lag_ms": {
+        "count": 128,
+        "min": 1.0913809999999557,
+        "mean": 42.0644658124999,
+        "p50": 42.8842659999998,
+        "p95": 75.65236299999992,
+        "p99": 76.85692599999993,
+        "max": 77.08903999999984
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 32,
+      "buffered_bytes_peak_mib": 511.94758129119873,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 64,
+      "byte_denials": 52,
+      "terminal_zero": true,
+      "phase": "expansion",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 64,
+      "attempt": 1,
+      "directory": "slots-0064-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 128,
+      "expected_requests": 256,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-6cdb7447dc-tzd8d",
+        "gateway-6cdb7447dc-zjnnz"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 616.0546875,
+      "cgroup_peak_mib": 664.37109375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 256,
+      "successes": 12,
+      "statuses": {
+        "200": 12,
+        "503": 244
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 17890.86075,
+      "success_latency_ms": {
+        "count": 12,
+        "min": 12325.423229999999,
+        "mean": 16658.12095625,
+        "p50": 17591.013462000003,
+        "p95": 17831.217955,
+        "p99": 17831.217955,
+        "max": 17831.217955
+      },
+      "rejection_latency_ms": {
+        "count": 244,
+        "min": 5023.564279,
+        "mean": 6003.17165220082,
+        "p50": 5870.389652,
+        "p95": 7587.647932,
+        "p99": 7927.137445,
+        "max": 8283.170827
+      },
+      "dispatch_lag_ms": {
+        "count": 256,
+        "min": 1.1020539999999528,
+        "mean": 77.31484935156246,
+        "p50": 84.64488899999992,
+        "p95": 128.5647530000001,
+        "p99": 131.862167,
+        "max": 132.57062399999995
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 64,
+      "buffered_bytes_peak_mib": 511.9218740463257,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 116,
+      "byte_denials": 128,
+      "terminal_zero": true,
+      "phase": "expansion",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 128,
+      "attempt": 1,
+      "directory": "slots-0128-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 256,
+      "expected_requests": 512,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-5b4b54567c-hh67b",
+        "gateway-5b4b54567c-mvsz7"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 673.11328125,
+      "cgroup_peak_mib": 717.53125,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 512,
+      "successes": 14,
+      "statuses": {
+        "200": 14,
+        "503": 498
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 22543.719222,
+      "success_latency_ms": {
+        "count": 14,
+        "min": 13638.444506,
+        "mean": 20573.40711792857,
+        "p50": 21403.212465,
+        "p95": 22449.886265,
+        "p99": 22449.886265,
+        "max": 22449.886265
+      },
+      "rejection_latency_ms": {
+        "count": 498,
+        "min": 9364.332784,
+        "mean": 10829.53937466063,
+        "p50": 10621.706997000001,
+        "p95": 12840.327742000001,
+        "p99": 13987.14063,
+        "max": 14607.724475
+      },
+      "dispatch_lag_ms": {
+        "count": 512,
+        "min": 1.4794100000001436,
+        "mean": 161.4377737910158,
+        "p50": 124.47638500000016,
+        "p95": 338.687044,
+        "p99": 348.98940100000004,
+        "max": 350.39245800000003
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 127,
+      "buffered_bytes_peak_mib": 511.4028549194336,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 92,
+      "byte_denials": 406,
+      "terminal_zero": true,
+      "phase": "expansion",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 256,
+      "attempt": 1,
+      "directory": "slots-0256-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 512,
+      "expected_requests": 1024,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-545866546-97bp7",
+        "gateway-545866546-b668n"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 737.72265625,
+      "cgroup_peak_mib": 871.2109375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 1024,
+      "successes": 14,
+      "statuses": {
+        "200": 14,
+        "503": 1010
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 33466.965815,
+      "success_latency_ms": {
+        "count": 14,
+        "min": 24057.743266,
+        "mean": 30257.660457642858,
+        "p50": 31374.498763999996,
+        "p95": 33107.418486,
+        "p99": 33107.418486,
+        "max": 33107.418486
+      },
+      "rejection_latency_ms": {
+        "count": 1010,
+        "min": 17568.729691,
+        "mean": 20289.926217212906,
+        "p50": 20231.240428999998,
+        "p95": 22295.200446,
+        "p99": 23359.394467000002,
+        "max": 24143.765224000002
+      },
+      "dispatch_lag_ms": {
+        "count": 1024,
+        "min": 2.338076000000001,
+        "mean": 197.58900554492203,
+        "p50": 200.114188,
+        "p95": 350.611674,
+        "p99": 375.294668,
+        "max": 378.2420239999999
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 198,
+      "buffered_bytes_peak_mib": 511.99454975128174,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 0,
+      "byte_denials": 1010,
+      "terminal_zero": true,
+      "phase": "expansion",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 512,
+      "attempt": 1,
+      "directory": "slots-0512-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 2,
+      "oom_pods": 2,
+      "terminated_pods": 2,
+      "pod_names": [
+        "gateway-57cccc76cd-242kw",
+        "gateway-57cccc76cd-mpv4j"
+      ],
+      "previous_container_logs_pods": 2,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 873.27734375,
+      "cgroup_peak_mib": 1009.34375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": true,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": true,
+      "clean": false,
+      "requests": 2048,
+      "successes": 0,
+      "statuses": {
+        "0": 75,
+        "503": 1973
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 44427.670651,
+      "success_latency_ms": null,
+      "rejection_latency_ms": {
+        "count": 1973,
+        "min": 35939.185254,
+        "mean": 39280.21770233355,
+        "p50": 38845.986419,
+        "p95": 42830.140813000005,
+        "p99": 43603.055009,
+        "max": 44017.958603
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 5.782330000000002,
+        "mean": 362.8827265361329,
+        "p50": 384.80163100000004,
+        "p95": 641.6554039999999,
+        "p99": 663.1512869999999,
+        "max": 667.9405690000001
+      },
+      "metric_scrape_errors": 7,
+      "buffered_requests_peak": 252,
+      "buffered_bytes_peak_mib": 511.96353244781494,
+      "transport_errors": 75,
+      "other_http_statuses": 0,
+      "unexpected_results": [
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 655.3877399999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 641.2617680000001
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 640.3315070000001
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 627.5298599999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 624.0112259999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 621.6003549999998
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 617.3060899999998
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 613.240031
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 592.0894540000002
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 589.9427669999998
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 571.7015039999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 569.198891
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 568.2688009999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 564.492234
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 563.118794
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 550.7167770000001
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 542.665051
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 15.673735999999963
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 532.1065639999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 520.145262
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 509.98268800000005
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 496.91991099999996
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 198.6730970000001
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 492.24849900000004
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 480.140302
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 474.96076100000005
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 459.89554
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 445.39104999999995
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 412.70544500000005
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 345.1928720000001
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 330.08358
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 326.3063219999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 198.22189200000003
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 190.90020200000004
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 176.77920900000004
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 175.65101800000002
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 64.44748499999992
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 157.04064399999993
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 140.9935969999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 128.044306
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 102.0011649999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 96.98159200000009
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 87.25412099999994
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 86.72587199999998
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 76.98218999999995
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 74.37954999999988
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 68.9168380000001
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 47.30919999999992
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 37.86962700000004
+        },
+        {
+          "pod": "gateway-57cccc76cd-mpv4j",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 7.23507799999993
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 666.0759
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 651.1456329999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 639.3143039999998
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 634.6270830000001
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 632.0671159999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 627.2141899999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 625.726746
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 619.916023
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 613.5771619999998
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 602.5092109999998
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 587.5568719999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 500.526429
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 498.7169329999999
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 475.21859300000006
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 469.17720800000006
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 468.70287099999996
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 312.0579600000001
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 304.53474000000006
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 263.4267540000001
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 174.83290699999998
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 102.22936200000004
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 45.670343
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 37.53903799999989
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 36.86809199999993
+        },
+        {
+          "pod": "gateway-57cccc76cd-242kw",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 5.782330000000002
+        }
+      ],
+      "concurrency_denials": null,
+      "byte_denials": null,
+      "terminal_zero": false,
+      "phase": "expansion",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 256,
+      "attempt": 2,
+      "directory": "slots-0256-attempt-2",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 2,
+      "oom_pods": 2,
+      "terminated_pods": 2,
+      "pod_names": [
+        "gateway-7bf4dbbb87-2fdf5",
+        "gateway-7bf4dbbb87-gcztx"
+      ],
+      "previous_container_logs_pods": 2,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 847.8359375,
+      "cgroup_peak_mib": 998.18359375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": true,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": true,
+      "clean": false,
+      "requests": 2048,
+      "successes": 0,
+      "statuses": {
+        "0": 88,
+        "503": 1960
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 42375.11978,
+      "success_latency_ms": null,
+      "rejection_latency_ms": {
+        "count": 1960,
+        "min": 35213.213241000005,
+        "mean": 38753.54579129029,
+        "p50": 39054.78653,
+        "p95": 41236.027996000004,
+        "p99": 41828.878516,
+        "max": 42154.956007
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 6.09400699999992,
+        "mean": 371.2688782490233,
+        "p50": 387.90410900000006,
+        "p95": 652.2551530000001,
+        "p99": 674.0723929999999,
+        "max": 679.0850919999998
+      },
+      "metric_scrape_errors": 7,
+      "buffered_requests_peak": 251,
+      "buffered_bytes_peak_mib": 511.93539810180664,
+      "transport_errors": 88,
+      "other_http_statuses": 0,
+      "unexpected_results": [
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 659.8858190000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 616.099044
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 612.0046029999999
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 593.8296180000002
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 553.093811
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 187.9688329999999
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "write ECONNRESET",
+          "dispatch_lag_ms": 103.12046800000007
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 498.27060400000005
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 245.85940499999992
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 497.6760320000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 496.79405199999997
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "write ECONNRESET",
+          "dispatch_lag_ms": 45.791071999999986
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "write ECONNRESET",
+          "dispatch_lag_ms": 143.66236400000003
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 404.7743909999999
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "write ECONNRESET",
+          "dispatch_lag_ms": 54.80944700000009
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 332.374004
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 330.92451299999993
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 328.8415070000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 323.807092
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 301.1177070000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 243.363838
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 240.01403299999993
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 212.94615
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 205.9732180000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 176.185929
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 38.6692129999999
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 166.79569700000002
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 139.77844000000005
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 139.25928900000008
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 137.11520999999993
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 136.5778049999999
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 132.18038
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 123.7817930000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 121.66748800000005
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 112.67463999999995
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 107.80523300000004
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 48.01235500000007
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 99.66051700000003
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 99.11650000000009
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 95.00931100000003
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 87.2777410000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 78.35093600000005
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 73.95390199999997
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 70.11131599999999
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 38.089838999999984
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 61.26091799999995
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 58.50974199999996
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 48.79302499999994
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 45.00487199999998
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 29.35603500000002
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 15.36835300000007
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-2fdf5",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 6.09400699999992
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 664.0125710000002
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 656.2787910000002
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 652.2551530000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 620.6741440000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 619.270638
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 588.230963
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 586.0636679999998
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 441.120938
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "write ECONNRESET",
+          "dispatch_lag_ms": 78.66714699999989
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 315.540381
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 302.92468699999995
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 299.99264300000004
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 44.64509900000007
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 30.395479000000023
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 267.68315099999995
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 256.74371199999996
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 243.62300299999993
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 235.8480219999999
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 193.52208199999995
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 190.2499889999999
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 188.7321300000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 171.1775419999999
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 168.45432899999992
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 162.47411699999998
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 151.38919499999997
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 145.715324
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 13.882282999999916
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 94.16099499999996
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 62.32621999999992
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 61.56974500000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 52.22351800000001
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 49.589905000000044
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 43.41089099999999
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 40.290455000000065
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 16.715733
+        },
+        {
+          "pod": "gateway-7bf4dbbb87-gcztx",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 7.388408000000027
+        }
+      ],
+      "concurrency_denials": null,
+      "byte_denials": null,
+      "terminal_zero": false,
+      "phase": "refinement",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 128,
+      "attempt": 2,
+      "directory": "slots-0128-attempt-2",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-74d65bf859-4x77k",
+        "gateway-74d65bf859-vhb94"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 780.08984375,
+      "cgroup_peak_mib": 889.3515625,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 2048,
+      "successes": 13,
+      "statuses": {
+        "200": 13,
+        "503": 2035
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 59597.647319,
+      "success_latency_ms": {
+        "count": 13,
+        "min": 44274.673038,
+        "mean": 47933.360067999994,
+        "p50": 47626.592868,
+        "p95": 59564.740656,
+        "p99": 59564.740656,
+        "max": 59564.740656
+      },
+      "rejection_latency_ms": {
+        "count": 2035,
+        "min": 34969.364232,
+        "mean": 37564.07642796812,
+        "p50": 37566.004789,
+        "p95": 39510.999499,
+        "p99": 40803.404362,
+        "max": 42017.987506000005
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 8.021913999999924,
+        "mean": 368.74043378662094,
+        "p50": 392.01483099999996,
+        "p95": 646.896238,
+        "p99": 678.2512319999998,
+        "max": 683.1494129999999
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 128,
+      "buffered_bytes_peak_mib": 511.85008239746094,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 1579,
+      "byte_denials": 456,
+      "terminal_zero": true,
+      "phase": "refinement",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 192,
+      "attempt": 1,
+      "directory": "slots-0192-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 1,
+      "oom_pods": 1,
+      "terminated_pods": 1,
+      "pod_names": [
+        "gateway-7f596d8b7d-4nqs9",
+        "gateway-7f596d8b7d-n7vmv"
+      ],
+      "previous_container_logs_pods": 1,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 829.48046875,
+      "cgroup_peak_mib": 983.21484375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": true,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": true,
+      "clean": false,
+      "requests": 2048,
+      "successes": 6,
+      "statuses": {
+        "0": 17,
+        "200": 6,
+        "503": 2025
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 48110.708049,
+      "success_latency_ms": {
+        "count": 6,
+        "min": 45917.263523,
+        "mean": 47236.05284633333,
+        "p50": 47395.567499,
+        "p95": 47952.136666000006,
+        "p99": 47952.136666000006,
+        "max": 47952.136666000006
+      },
+      "rejection_latency_ms": {
+        "count": 2025,
+        "min": 34297.937211,
+        "mean": 37805.55954637972,
+        "p50": 38085.573088000005,
+        "p95": 40175.315297,
+        "p99": 41145.143990000004,
+        "max": 42225.589744000004
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 5.932080000000042,
+        "mean": 373.8581954008789,
+        "p50": 389.170523,
+        "p95": 656.7583379999999,
+        "p99": 676.0225320000002,
+        "max": 680.1186060000002
+      },
+      "metric_scrape_errors": 4,
+      "buffered_requests_peak": 192,
+      "buffered_bytes_peak_mib": 511.9456043243408,
+      "transport_errors": 17,
+      "other_http_statuses": 0,
+      "unexpected_results": [
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 678.942366
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "write ECONNRESET",
+          "dispatch_lag_ms": 433.099964
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 290.891443
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 555.5505500000002
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 337.9611520000001
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 489.9889270000001
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 466.735819
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 366.660472
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 362.71905600000014
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 346.96665200000007
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 266.118606
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 220.34139300000015
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 106.49441100000013
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 99.38184300000012
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 61.19603300000017
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 20.481824000000188
+        },
+        {
+          "pod": "gateway-7f596d8b7d-n7vmv",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 7.241700000000037
+        }
+      ],
+      "concurrency_denials": null,
+      "byte_denials": null,
+      "terminal_zero": false,
+      "phase": "refinement",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 160,
+      "attempt": 1,
+      "directory": "slots-0160-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-9bccc657c-8cvk7",
+        "gateway-9bccc657c-gdtwd"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 809.59765625,
+      "cgroup_peak_mib": 992.421875,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 2048,
+      "successes": 12,
+      "statuses": {
+        "200": 12,
+        "503": 2036
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 50253.8818,
+      "success_latency_ms": {
+        "count": 12,
+        "min": 44738.934178,
+        "mean": 47219.43637325,
+        "p50": 46900.796844000004,
+        "p95": 49667.262942999994,
+        "p99": 49667.262942999994,
+        "max": 49667.262942999994
+      },
+      "rejection_latency_ms": {
+        "count": 2036,
+        "min": 35657.558338,
+        "mean": 37754.73563634777,
+        "p50": 37684.354707,
+        "p95": 40000.80569,
+        "p99": 41379.08055,
+        "max": 42392.173428
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 5.808917999999949,
+        "mean": 354.38412866015614,
+        "p50": 370.430525,
+        "p95": 633.0410340000001,
+        "p99": 657.9590460000002,
+        "max": 662.870576
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 160,
+      "buffered_bytes_peak_mib": 511.7895612716675,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 1142,
+      "byte_denials": 894,
+      "terminal_zero": true,
+      "phase": "refinement",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 176,
+      "attempt": 1,
+      "directory": "slots-0176-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 2,
+      "oom_pods": 2,
+      "terminated_pods": 2,
+      "pod_names": [
+        "gateway-59ccb8565b-gs9bl",
+        "gateway-59ccb8565b-hwdls"
+      ],
+      "previous_container_logs_pods": 2,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 802.8984375,
+      "cgroup_peak_mib": 1018.59765625,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": true,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": true,
+      "clean": false,
+      "requests": 2048,
+      "successes": 0,
+      "statuses": {
+        "0": 22,
+        "503": 2026
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 42677.404358,
+      "success_latency_ms": null,
+      "rejection_latency_ms": {
+        "count": 2026,
+        "min": 34982.564074,
+        "mean": 38104.546755617426,
+        "p50": 38170.95945,
+        "p95": 40258.798052,
+        "p99": 41094.360794,
+        "max": 42296.64136
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 6.061019999999871,
+        "mean": 379.5848717958981,
+        "p50": 402.1794379999999,
+        "p95": 654.6464999999998,
+        "p99": 681.5559370000001,
+        "max": 685.9431260000001
+      },
+      "metric_scrape_errors": 7,
+      "buffered_requests_peak": 176,
+      "buffered_bytes_peak_mib": 511.9633541107178,
+      "transport_errors": 22,
+      "other_http_statuses": 0,
+      "unexpected_results": [
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 329.8591859999999
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 596.7846
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 586.9636549999998
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 325.439267
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 277.95886099999984
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 150.5426809999999
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 134.6780779999999
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 122.462804
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 119.40939099999991
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 82.0445749999999
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 63.63400699999988
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 59.885024999999814
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 57.34854899999982
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 43.975986999999805
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 18.758125999999947
+        },
+        {
+          "pod": "gateway-59ccb8565b-hwdls",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 7.500071999999818
+        },
+        {
+          "pod": "gateway-59ccb8565b-gs9bl",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 587.1549229999998
+        },
+        {
+          "pod": "gateway-59ccb8565b-gs9bl",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 320.37817799999993
+        },
+        {
+          "pod": "gateway-59ccb8565b-gs9bl",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 279.5645549999999
+        },
+        {
+          "pod": "gateway-59ccb8565b-gs9bl",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 110.87452899999994
+        },
+        {
+          "pod": "gateway-59ccb8565b-gs9bl",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 9.305179999999837
+        },
+        {
+          "pod": "gateway-59ccb8565b-gs9bl",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 6.061019999999871
+        }
+      ],
+      "concurrency_denials": null,
+      "byte_denials": null,
+      "terminal_zero": false,
+      "phase": "refinement",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 168,
+      "attempt": 1,
+      "directory": "slots-0168-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-8457fddb95-8bmdk",
+        "gateway-8457fddb95-c7w4l"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 807.890625,
+      "cgroup_peak_mib": 933.3828125,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 2048,
+      "successes": 13,
+      "statuses": {
+        "200": 13,
+        "503": 2035
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 57315.176138999996,
+      "success_latency_ms": {
+        "count": 13,
+        "min": 44831.298782,
+        "mean": 47690.071614846136,
+        "p50": 47321.183681999995,
+        "p95": 56746.263952,
+        "p99": 56746.263952,
+        "max": 56746.263952
+      },
+      "rejection_latency_ms": {
+        "count": 2035,
+        "min": 35442.678907,
+        "mean": 37653.46658784372,
+        "p50": 37641.079688,
+        "p95": 39727.785805,
+        "p99": 41151.552164,
+        "max": 42188.785327
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 6.0273830000001,
+        "mean": 367.28248808691444,
+        "p50": 385.1810300000002,
+        "p95": 649.280968,
+        "p99": 672.278319,
+        "max": 677.4197240000003
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 168,
+      "buffered_bytes_peak_mib": 511.90979194641113,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 1299,
+      "byte_denials": 736,
+      "terminal_zero": true,
+      "phase": "refinement",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 172,
+      "attempt": 1,
+      "directory": "slots-0172-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-c9bb5756d-b7js5",
+        "gateway-c9bb5756d-sj96x"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 809.7734375,
+      "cgroup_peak_mib": 994.93359375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 2048,
+      "successes": 13,
+      "statuses": {
+        "200": 13,
+        "503": 2035
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 59581.701469,
+      "success_latency_ms": {
+        "count": 13,
+        "min": 44838.036530000005,
+        "mean": 47858.128322,
+        "p50": 47180.646374,
+        "p95": 59494.929831,
+        "p99": 59494.929831,
+        "max": 59494.929831
+      },
+      "rejection_latency_ms": {
+        "count": 2035,
+        "min": 35239.541002000005,
+        "mean": 37918.8596450457,
+        "p50": 37739.057764,
+        "p95": 40171.036756,
+        "p99": 41463.215766,
+        "max": 42699.232747
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 5.849620999999843,
+        "mean": 362.4941279990234,
+        "p50": 387.39293599999996,
+        "p95": 636.731196,
+        "p99": 658.7920980000001,
+        "max": 662.982295
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 172,
+      "buffered_bytes_peak_mib": 511.88727855682373,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 960,
+      "byte_denials": 1075,
+      "terminal_zero": true,
+      "phase": "refinement",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 174,
+      "attempt": 1,
+      "directory": "slots-0174-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-69c796b86b-857xs",
+        "gateway-69c796b86b-x4xf7"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 782.83203125,
+      "cgroup_peak_mib": 951.1953125,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 2048,
+      "successes": 16,
+      "statuses": {
+        "200": 16,
+        "503": 2032
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 59960.764553,
+      "success_latency_ms": {
+        "count": 16,
+        "min": 44498.005798000006,
+        "mean": 49618.0497658125,
+        "p50": 48034.169486,
+        "p95": 59932.801431,
+        "p99": 59932.801431,
+        "max": 59932.801431
+      },
+      "rejection_latency_ms": {
+        "count": 2032,
+        "min": 35282.483598,
+        "mean": 38497.658686502495,
+        "p50": 38596.274410000005,
+        "p95": 40551.227358,
+        "p99": 42022.859062,
+        "max": 42797.795808999996
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 5.839005000000043,
+        "mean": 359.87786996191414,
+        "p50": 378.18735100000004,
+        "p95": 636.4589449999999,
+        "p99": 662.1233029999999,
+        "max": 666.5255470000002
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 174,
+      "buffered_bytes_peak_mib": 511.9059171676636,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 1160,
+      "byte_denials": 872,
+      "terminal_zero": true,
+      "phase": "refinement",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 175,
+      "attempt": 1,
+      "directory": "slots-0175-attempt-1",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 1,
+      "oom_pods": 1,
+      "terminated_pods": 1,
+      "pod_names": [
+        "gateway-5cdf54cb8b-psnr6",
+        "gateway-5cdf54cb8b-snrqf"
+      ],
+      "previous_container_logs_pods": 1,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 760.0,
+      "cgroup_peak_mib": 1000.71484375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": true,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": true,
+      "clean": false,
+      "requests": 2048,
+      "successes": 7,
+      "statuses": {
+        "0": 13,
+        "200": 7,
+        "503": 2028
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 50233.483057000005,
+      "success_latency_ms": {
+        "count": 7,
+        "min": 44038.587626,
+        "mean": 47446.946497285724,
+        "p50": 47195.237914,
+        "p95": 49873.83921,
+        "p99": 49873.83921,
+        "max": 49873.83921
+      },
+      "rejection_latency_ms": {
+        "count": 2028,
+        "min": 36176.050893,
+        "mean": 38317.65021814154,
+        "p50": 38066.186226,
+        "p95": 40341.535785,
+        "p99": 41330.029045999996,
+        "max": 42640.599541999996
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 6.235098999999991,
+        "mean": 365.6941848881835,
+        "p50": 379.1257820000001,
+        "p95": 652.2304510000001,
+        "p99": 675.6773559999999,
+        "max": 679.930118
+      },
+      "metric_scrape_errors": 3,
+      "buffered_requests_peak": 175,
+      "buffered_bytes_peak_mib": 511.99904918670654,
+      "transport_errors": 13,
+      "other_http_statuses": 0,
+      "unexpected_results": [
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 627.8727459999998
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 593.1124750000001
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 572.1274839999999
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 494.7878289999999
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 399.36016900000004
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 250.36205999999993
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 187.30217100000004
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 121.44918000000007
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 103.64193299999988
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 99.06826299999989
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 85.823126
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 50.129416999999876
+        },
+        {
+          "pod": "gateway-5cdf54cb8b-psnr6",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 6.235098999999991
+        }
+      ],
+      "concurrency_denials": null,
+      "byte_denials": null,
+      "terminal_zero": false,
+      "phase": "refinement",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 174,
+      "attempt": 2,
+      "directory": "slots-0174-attempt-2",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-579fccc99b-425sl",
+        "gateway-579fccc99b-822xm"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 784.6171875,
+      "cgroup_peak_mib": 1010.81640625,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 2048,
+      "successes": 12,
+      "statuses": {
+        "200": 12,
+        "503": 2036
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 49697.837617000005,
+      "success_latency_ms": {
+        "count": 12,
+        "min": 45358.61723,
+        "mean": 47897.216790583334,
+        "p50": 47900.475471,
+        "p95": 49562.511099,
+        "p99": 49562.511099,
+        "max": 49562.511099
+      },
+      "rejection_latency_ms": {
+        "count": 2036,
+        "min": 35758.980274999994,
+        "mean": 38930.6636362568,
+        "p50": 38796.18507299999,
+        "p95": 41020.028917999996,
+        "p99": 42206.451208,
+        "max": 43197.517194
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 5.806939000000057,
+        "mean": 363.72798732421865,
+        "p50": 389.355632,
+        "p95": 630.1915310000002,
+        "p99": 658.9271620000002,
+        "max": 663.4144130000002
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 174,
+      "buffered_bytes_peak_mib": 511.81723403930664,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 1311,
+      "byte_denials": 725,
+      "terminal_zero": true,
+      "phase": "confirmation",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 174,
+      "attempt": 3,
+      "directory": "slots-0174-attempt-3",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-557b5bb6d8-pfp79",
+        "gateway-557b5bb6d8-rhc9l"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 831.625,
+      "cgroup_peak_mib": 984.62109375,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 2048,
+      "successes": 15,
+      "statuses": {
+        "200": 15,
+        "503": 2033
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 59866.04002,
+      "success_latency_ms": {
+        "count": 15,
+        "min": 44513.411315000005,
+        "mean": 49116.97631593333,
+        "p50": 47586.177833999995,
+        "p95": 59674.876159,
+        "p99": 59674.876159,
+        "max": 59674.876159
+      },
+      "rejection_latency_ms": {
+        "count": 2033,
+        "min": 35275.569918,
+        "mean": 37973.36169934232,
+        "p50": 37828.850812,
+        "p95": 40439.832362,
+        "p99": 41702.283917,
+        "max": 42430.352473
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 6.077031000000034,
+        "mean": 366.44250289648437,
+        "p50": 387.00772499999994,
+        "p95": 643.786132,
+        "p99": 667.4839549999999,
+        "max": 672.3939629999998
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 174,
+      "buffered_bytes_peak_mib": 511.95290660858154,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 1307,
+      "byte_denials": 726,
+      "terminal_zero": true,
+      "phase": "confirmation",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 175,
+      "attempt": 2,
+      "directory": "slots-0175-attempt-2",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 2,
+      "oom_pods": 2,
+      "terminated_pods": 2,
+      "pod_names": [
+        "gateway-c9d546765-j95t4",
+        "gateway-c9d546765-x7wcq"
+      ],
+      "previous_container_logs_pods": 2,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 796.2734375,
+      "cgroup_peak_mib": 1004.38671875,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": true,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": true,
+      "clean": false,
+      "requests": 2048,
+      "successes": 0,
+      "statuses": {
+        "0": 28,
+        "503": 2020
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 42357.581911,
+      "success_latency_ms": null,
+      "rejection_latency_ms": {
+        "count": 2020,
+        "min": 35492.012689999996,
+        "mean": 37951.954570875256,
+        "p50": 37774.149059999996,
+        "p95": 40153.959277,
+        "p99": 41330.626165999995,
+        "max": 42031.785163
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 5.904807000000119,
+        "mean": 358.5185607641602,
+        "p50": 379.180826,
+        "p95": 634.8892610000003,
+        "p99": 656.4180550000001,
+        "max": 660.9743370000001
+      },
+      "metric_scrape_errors": 7,
+      "buffered_requests_peak": 175,
+      "buffered_bytes_peak_mib": 511.78954887390137,
+      "transport_errors": 28,
+      "other_http_statuses": 0,
+      "unexpected_results": [
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 579.8772910000002
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 148.72477000000003
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 131.9278760000002
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 130.69000800000003
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 129.02414900000008
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 120.42959500000006
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 105.55000100000007
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 92.5866030000002
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 91.96767400000022
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 80.57242600000018
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 78.65909300000021
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 60.00662200000011
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 29.62408800000003
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 28.907246000000214
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 20.01702300000011
+        },
+        {
+          "pod": "gateway-c9d546765-j95t4",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 5.904807000000119
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 425.9144970000002
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 411.03331100000014
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 296.9389170000002
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 235.83463800000004
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 229.53573300000016
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 228.49021500000003
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 217.28492200000005
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 153.463303
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "read ECONNRESET",
+          "dispatch_lag_ms": 117.02570100000003
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 87.39984100000015
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 84.92774200000008
+        },
+        {
+          "pod": "gateway-c9d546765-x7wcq",
+          "status": 0,
+          "error": "socket hang up",
+          "dispatch_lag_ms": 7.29301600000008
+        }
+      ],
+      "concurrency_denials": null,
+      "byte_denials": null,
+      "terminal_zero": false,
+      "phase": "confirmation",
+      "runner_exit_code": 0
+    },
+    {
+      "slots": 175,
+      "attempt": 3,
+      "directory": "slots-0175-attempt-3",
+      "body_bytes": 83886080,
+      "cohort_per_pod": 1024,
+      "expected_requests": 2048,
+      "restarts": 0,
+      "oom_pods": 0,
+      "terminated_pods": 0,
+      "pod_names": [
+        "gateway-776d74bc46-cvdv9",
+        "gateway-776d74bc46-dmflg"
+      ],
+      "previous_container_logs_pods": 0,
+      "snapshot_missed_restarts": 0,
+      "memory_streams": 2,
+      "rss_peak_mib": 791.14453125,
+      "cgroup_peak_mib": 968.890625,
+      "max_pod_throttled_ms": 0.0,
+      "resource_failure": false,
+      "warmup_failed": false,
+      "incomplete": false,
+      "memory_censored": false,
+      "clean": true,
+      "requests": 2048,
+      "successes": 13,
+      "statuses": {
+        "200": 13,
+        "503": 2035
+      },
+      "body_sha256": "10b8c6e20db12c2eabfc7d9ecd5c2ef6290bb43ab007c804170e88a9bdb8e153",
+      "elapsed_ms": 50917.722103,
+      "success_latency_ms": {
+        "count": 13,
+        "min": 44665.212343,
+        "mean": 47316.811223692304,
+        "p50": 47431.395427999996,
+        "p95": 50359.078491,
+        "p99": 50359.078491,
+        "max": 50359.078491
+      },
+      "rejection_latency_ms": {
+        "count": 2035,
+        "min": 35004.813543,
+        "mean": 38042.39690104218,
+        "p50": 37859.744890999995,
+        "p95": 40183.123460999996,
+        "p99": 41606.155684000005,
+        "max": 42608.182318
+      },
+      "dispatch_lag_ms": {
+        "count": 2048,
+        "min": 6.2390899999998055,
+        "mean": 362.84537018261744,
+        "p50": 381.06156599999986,
+        "p95": 636.9630969999998,
+        "p99": 663.7856569999999,
+        "max": 668.4440709999999
+      },
+      "metric_scrape_errors": 0,
+      "buffered_requests_peak": 175,
+      "buffered_bytes_peak_mib": 511.94560146331787,
+      "transport_errors": 0,
+      "other_http_statuses": 0,
+      "unexpected_results": [],
+      "concurrency_denials": 1373,
+      "byte_denials": 662,
+      "terminal_zero": true,
+      "phase": "confirmation",
+      "runner_exit_code": 0
+    }
+  ],
+  "complete": true,
+  "confirmed_limits": [
+    174,
+    175
+  ],
+  "final_cohort_per_pod": 1024,
+  "completed_at_unix": 1792690930.4613743
+}

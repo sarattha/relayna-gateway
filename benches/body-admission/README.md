@@ -39,8 +39,8 @@ limits and a 512 MiB serialized-body budget. The pilot checks 5 and 100 MiB;
 the full run searches 5, 10, 20, 40, 80, and 100 MiB sequentially on the same
 host. Each size initially uses a fixed simultaneous cohort per pod equal to
 twice the largest slot count in its discovery grid. If the whole grid stays
-clean, the search doubles the tested ceiling and offered cohort, up to an
-explicit finite exploration bound. Refinement and three-run confirmations use
+resource-stable, the search doubles the tested ceiling and offered cohort, up
+to an explicit finite exploration bound. Refinement and three-run confirmations use
 the same final cohort; results record the offered cohort for every trial.
 The mock pauses reads for ten seconds and waits two
 seconds after upload. Client requests have a sixty-second absolute deadline;
@@ -58,14 +58,24 @@ slot count is a ceiling rather than preallocated memory; report observed
 occupancy and tested boundaries rather than assuming a universal maximum.
 The workflow uploads each size immediately and retains combined evidence.
 
+Resource stability requires no container failure, complete memory/metric
+evidence, returned-to-zero admission gauges, and every admitted request to
+complete with a verified body. Lost rejection responses remain client errors
+and are allowed only when exactly accounted for by server admission denials.
+The separate `clean` field additionally requires zero client errors. Neither
+latency nor rejection-response delivery silently defines the resource limit.
+See the [six-size native resource study](../../internal/test-reports/body-admission-size-capacity/amd64/README.md)
+for measured boundaries and all retained observations.
+
 Existing ARM64 results remain separate. See the
 [original native amd64 confirmation](../../internal/test-reports/body-admission-5mib/amd64/README.md)
 for the earlier baseline/candidate comparison and original workload.
 
-## Method
+## Fixed-rate 5 MiB method
 
-Each condition has exactly two Gateway pods, each limited to two CPUs and
-2 GiB memory. The serialized-body budget stays at 512 MiB per pod. Sweep
+The original fixed-rate conditions have exactly two Gateway pods, each limited
+to two CPUs and 2 GiB memory. The serialized-body budget stays at 512 MiB per
+pod. Sweep
 `GATEWAY_MAX_BUFFERED_REQUESTS` through 8, 16, 24, 32, and 64. The default load
 is 12 requests/second for 15 seconds, with three repetitions and fresh Gateway
 pods for each repetition. The runner waits for old pods to disappear before

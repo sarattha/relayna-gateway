@@ -1,0 +1,80 @@
+[
+    {
+        "Id": "sha256:fa54c51e170949a6b7778c9ee4174442869e01a67676b89b825001d11466a653",
+        "RepoTags": [
+            "relayna-gateway:body-amd64"
+        ],
+        "RepoDigests": [
+            "ghcr.io/sarattha/relayna-gateway@sha256:1b40a38f8c5f211d9c5b650a450c4645ee53149d1af7235599afdc133ea69f75"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-10-22T15:10:19.226257343Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "relayna",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "ExposedPorts": {
+                "8080/tcp": {},
+                "8081/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "MALLOC_MMAP_THRESHOLD_=131072",
+                "GATEWAY_BIND_ADDR=0.0.0.0:8080",
+                "GATEWAY_CONTROL_BIND_ADDR=0.0.0.0:8081",
+                "LOG_LEVEL=gateway_api=info,gateway_proxy=info"
+            ],
+            "Cmd": null,
+            "Image": "",
+            "Volumes": null,
+            "WorkingDir": "/app",
+            "Entrypoint": [
+                "/usr/local/bin/relayna-gateway"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "org.opencontainers.image.created": "2026-10-22T15:05:25.734Z",
+                "org.opencontainers.image.description": "Rust AI API gateway and control plane for Relayna: virtual keys, policy, routing, metering, budgets, rate limits, and streaming LLM proxying via Pingora.",
+                "org.opencontainers.image.licenses": "MIT",
+                "org.opencontainers.image.revision": "48c93c07d42b113b8073a403604b111871bf0fda",
+                "org.opencontainers.image.source": "https://github.com/sarattha/relayna-gateway",
+                "org.opencontainers.image.title": "relayna-gateway",
+                "org.opencontainers.image.url": "https://github.com/sarattha/relayna-gateway",
+                "org.opencontainers.image.version": "0.1.49"
+            }
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 122946685,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/7fc0d532fc0705eb3b79d406ec762f2aa935f0deb2629d85a0337509216cdc92/diff:/var/lib/docker/overlay2/1657efb3192a4bf0fbbd29df64371f7f46dc896650e24c9b04954ca558afc3dd/diff:/var/lib/docker/overlay2/bd767cc0b98726bc0112c65eec8e3b7a95722bc890c25994f12a38c90bc82b89/diff",
+                "MergedDir": "/var/lib/docker/overlay2/11d20fd3a21b4fa051f2d8c93aac57b43cb05547e7fb25e274073f171707f71d/merged",
+                "UpperDir": "/var/lib/docker/overlay2/11d20fd3a21b4fa051f2d8c93aac57b43cb05547e7fb25e274073f171707f71d/diff",
+                "WorkDir": "/var/lib/docker/overlay2/11d20fd3a21b4fa051f2d8c93aac57b43cb05547e7fb25e274073f171707f71d/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:9b35de7893378218e365c34c2c735fb0032a859112fb7345ca8ea73f9aa1db70",
+                "sha256:efc1c3473d194bbfe02f05b964d56f251e76e276354556e99c817ebab4c2e5c2",
+                "sha256:6eeeefd87d1843c422f4e766e6be488cbff90c7a9ff93d18fedec923eeece302",
+                "sha256:a5d29fb7b6357a7cb880a1bcae9d09801a2aea91c596ff8540ac1aa15b36b421"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-10-22T16:16:07.472878246Z"
+        }
+    }
+]
