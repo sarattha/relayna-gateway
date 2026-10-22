@@ -96,6 +96,16 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   consistent. Upload each size's results immediately before proceeding to the
   next size; retain final combined artifacts and always clean up the cluster.
   Date/Author: 2026-10-22, Codex.
+- Supersede the single-host requirement for the remaining sizes if needed:
+  the corrected first size has required more than forty minutes, so six exact
+  repeated boundaries risk exceeding the original 180-minute job watchdog.
+  Add a selected-size workflow input and a six-hour per-job watchdog; retain
+  all four benchmark script hashes and runtime/workload settings unchanged.
+  Complete 5 MiB first, then run remaining sizes independently. Each size's
+  slot comparisons and confirmations stay on one native host. Report hardware
+  per size and avoid attributing cross-host latency differences solely to body
+  size. This changes orchestration, not the requested two-pod resource limits.
+  Date/Author: 2026-10-22, Codex.
 - Observe pod status after diagnostics and another ten seconds in failure-
   retaining mode; keep the immediate snapshot too. Classify any terminated
   Gateway container or available previous-container logs as a resource failure;
@@ -202,7 +212,19 @@ refinement and three-run confirmations stay within the same offered cohort.
 Full native six-size run:
 <https://github.com/sarattha/relayna-gateway/actions/runs/39809024251>,
 harness commit `86b120e4b6eb201cb79c4e48a082d97b12baf9ce`. Per-size artifacts
-are uploaded immediately; final raw evidence, boundaries, and outcomes pending.
+were uploaded immediately. This exploratory run was cancelled at 16:14Z after
+the status-reporting race was identified; retain all its combined partial
+artifacts separately. The 5 MiB sweep completed and 10 MiB partial trials were
+captured. It is not the final six-size dataset.
+
+Corrected native six-size run:
+<https://github.com/sarattha/relayna-gateway/actions/runs/39812510359>,
+harness commit `d92af5c77e388c0950e170d5610497a0d58dd2b1`. Dispatched at 16:15Z
+after the complete mandatory verification passed again (437/437 Nextest tests;
+all security checks passed; log `/tmp/relayna-capacity-observation-verification.log`).
+Focused tests passed for the real stale-status artifact, healthy native control,
+cohort expansion, integer refinement, failed candidate confirmations, and
+resource failures first discovered during confirmation.
 
 ## Interfaces and Dependencies
 

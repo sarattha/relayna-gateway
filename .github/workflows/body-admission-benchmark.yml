@@ -9,6 +9,12 @@ on:
         options: [pilot, full]
         default: pilot
         required: true
+      body_mib:
+        description: One payload size, or all sizes sequentially on one host
+        type: choice
+        options: [all, "5", "10", "20", "40", "80", "100"]
+        default: all
+        required: true
 
 permissions:
   contents: read
@@ -20,7 +26,7 @@ env:
 jobs:
   benchmark:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 360
     steps:
       - name: Check out measured source
         uses: actions/checkout@v4
@@ -97,7 +103,7 @@ jobs:
           done
 
       - name: Discover and confirm 5 MiB resource boundary
-        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '5') }}
         run: |
           mkdir -p target/body-capacity/full/5mib
           cp -R target/body-capacity/provenance target/body-capacity/full/5mib/provenance
@@ -107,7 +113,7 @@ jobs:
             --body-mib 5 --output target/body-capacity/full/5mib
 
       - name: Upload 5 MiB observations immediately
-        if: ${{ always() && inputs.mode == 'full' }}
+        if: ${{ always() && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '5') }}
         uses: actions/upload-artifact@v4
         with:
           name: body-capacity-5mib-${{ github.run_id }}
@@ -116,7 +122,7 @@ jobs:
           retention-days: 30
 
       - name: Discover and confirm 10 MiB resource boundary
-        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '10') }}
         run: |
           mkdir -p target/body-capacity/full/10mib
           cp -R target/body-capacity/provenance target/body-capacity/full/10mib/provenance
@@ -126,7 +132,7 @@ jobs:
             --body-mib 10 --output target/body-capacity/full/10mib
 
       - name: Upload 10 MiB observations immediately
-        if: ${{ always() && inputs.mode == 'full' }}
+        if: ${{ always() && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '10') }}
         uses: actions/upload-artifact@v4
         with:
           name: body-capacity-10mib-${{ github.run_id }}
@@ -135,7 +141,7 @@ jobs:
           retention-days: 30
 
       - name: Discover and confirm 20 MiB resource boundary
-        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '20') }}
         run: |
           mkdir -p target/body-capacity/full/20mib
           cp -R target/body-capacity/provenance target/body-capacity/full/20mib/provenance
@@ -145,7 +151,7 @@ jobs:
             --body-mib 20 --output target/body-capacity/full/20mib
 
       - name: Upload 20 MiB observations immediately
-        if: ${{ always() && inputs.mode == 'full' }}
+        if: ${{ always() && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '20') }}
         uses: actions/upload-artifact@v4
         with:
           name: body-capacity-20mib-${{ github.run_id }}
@@ -154,7 +160,7 @@ jobs:
           retention-days: 30
 
       - name: Discover and confirm 40 MiB resource boundary
-        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '40') }}
         run: |
           mkdir -p target/body-capacity/full/40mib
           cp -R target/body-capacity/provenance target/body-capacity/full/40mib/provenance
@@ -164,7 +170,7 @@ jobs:
             --body-mib 40 --output target/body-capacity/full/40mib
 
       - name: Upload 40 MiB observations immediately
-        if: ${{ always() && inputs.mode == 'full' }}
+        if: ${{ always() && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '40') }}
         uses: actions/upload-artifact@v4
         with:
           name: body-capacity-40mib-${{ github.run_id }}
@@ -173,7 +179,7 @@ jobs:
           retention-days: 30
 
       - name: Discover and confirm 80 MiB resource boundary
-        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '80') }}
         run: |
           mkdir -p target/body-capacity/full/80mib
           cp -R target/body-capacity/provenance target/body-capacity/full/80mib/provenance
@@ -183,7 +189,7 @@ jobs:
             --body-mib 80 --output target/body-capacity/full/80mib
 
       - name: Upload 80 MiB observations immediately
-        if: ${{ always() && inputs.mode == 'full' }}
+        if: ${{ always() && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '80') }}
         uses: actions/upload-artifact@v4
         with:
           name: body-capacity-80mib-${{ github.run_id }}
@@ -192,7 +198,7 @@ jobs:
           retention-days: 30
 
       - name: Discover and confirm 100 MiB resource boundary
-        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' }}
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '100') }}
         run: |
           mkdir -p target/body-capacity/full/100mib
           cp -R target/body-capacity/provenance target/body-capacity/full/100mib/provenance
@@ -202,7 +208,7 @@ jobs:
             --body-mib 100 --output target/body-capacity/full/100mib
 
       - name: Upload 100 MiB observations immediately
-        if: ${{ always() && inputs.mode == 'full' }}
+        if: ${{ always() && inputs.mode == 'full' && (inputs.body_mib == 'all' || inputs.body_mib == '100') }}
         uses: actions/upload-artifact@v4
         with:
           name: body-capacity-100mib-${{ github.run_id }}
@@ -219,7 +225,8 @@ jobs:
           from pathlib import Path
           mode = "${{ inputs.mode }}"
           root = Path("target/body-capacity") / mode
-          sizes = [5, 100] if mode == "pilot" else [5, 10, 20, 40, 80, 100]
+          selected = "${{ inputs.body_mib }}"
+          sizes = [5, 100] if mode == "pilot" else ([5, 10, 20, 40, 80, 100] if selected == "all" else [int(selected)])
           findings = []
           for size in sizes:
               folder = root / f"{size}mib"

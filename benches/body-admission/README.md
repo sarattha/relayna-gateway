@@ -28,6 +28,12 @@ gh workflow run body-admission-benchmark.yml --ref <branch> -f mode=pilot
 gh workflow run body-admission-benchmark.yml --ref <branch> -f mode=full
 ```
 
+For long searches or independent continuation runs, select a single size with
+`-f body_mib=10` (also 5, 20, 40, 80, or 100). Each selected size gets its own
+native host and up to six hours. Slot comparisons within a size remain on one
+host. When using separate runs, retain per-size host provenance and qualify
+cross-size latency comparisons for any CPU-model differences.
+
 Both modes use two fresh Gateway pods per trial, each with 2 CPU / 1 GiB
 limits and a 512 MiB serialized-body budget. The pilot checks 5 and 100 MiB;
 the full run searches 5, 10, 20, 40, 80, and 100 MiB sequentially on the same
