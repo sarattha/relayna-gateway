@@ -31,12 +31,16 @@ runtimes in automation and containers, and preserves normal builds and tests.
   disposable PostgreSQL/Redis and patched Node on PATH; all steps pass.
   The additional workspace build passes. Remove disposable database/cache
   containers and helper smoke-test images.
-- [ ] Open the pull request and request Codex code review; monitor CI/review
-  using the app-owned PR watcher and address actionable feedback.
-- [ ] After the initial Codex review is resolved, prepare the next patch
-  release with matching workspace/lockfile versions, changelog, and release and
-  upgrade documentation; verify and request review of the final head.
-- [ ] Merge only after final-head checks and review requirements are satisfied.
+- [x] (2026-10-22) Opened review-ready PR #140 at c5ec74a and requested
+  @codex review. Codex returned a clean review receipt for this exact head with
+  no review threads or findings; proceed to the authorized release follow-up.
+- [x] (2026-10-22) Prepare and locally verify v0.1.49 after the clean initial
+  review: synchronize workspace/lockfile versions, UI labels/generated assets,
+  deployment examples, changelog, and release/upgrade documentation. The full
+  verification helper and additional workspace build pass again.
+- [ ] Request Codex review of the release follow-up and merge only after
+  final-head CI and review requirements are satisfied. Track the external
+  review and merge outcome on PR #140.
 
 ## Surprises & Discoveries
 
@@ -66,6 +70,14 @@ changes supported development runtimes and helper image versions. Gateway
 routes, configuration, schemas, credentials, and wire protocols retain their
 released behavior. No compatibility shim or data migration is needed. The
 user's request to fix the finding authorizes raising insecure tooling floors.
+Date/author: 2026-10-22, Codex.
+
+After the clean initial Codex review, prepare v0.1.49: the latest fetched tag
+and main remain v0.1.48. Synchronize workspace/crate lockfile versions, UI
+version labels and regenerated assets, the Kubernetes image example, README,
+release target/checklist, changelog, current-feature index, and upgrade guidance.
+This is release metadata maintenance under the user's explicit authorization;
+the tooling compatibility decision and gateway contracts remain unchanged.
 Date/author: 2026-10-22, Codex.
 
 The user authorizes the complete PR lifecycle: open for review, babysit and
@@ -100,6 +112,17 @@ audits/policy checks, unused-dependency checks, Trivy, Gitleaks, and Semgrep.
 The additional cargo build --workspace --all-features passes. All five affected
 Compose configurations validate with required fixture variables supplied.
 Disposable database/cache containers and helper smoke-test images are removed.
+
+The authorized v0.1.49 follow-up synchronizes release metadata, current image
+examples, changelog/docs, and generated UI version labels. Frontend build/static
+regressions, 54 React tests, type checks, metadata checks, and strict MkDocs pass.
+The version badge was visually checked at desktop and mobile widths using the
+read-only Owner fixture in Chrome after the T3 snapshot tool timed out twice.
+The full verification helper and additional workspace build pass for the
+release follow-up, with all 437 Cargo tests and 437 Nextest tests passing and
+zero Nextest skips. Disposable release-check PostgreSQL/Redis containers and the
+read-only UI fixture server are removed. Final-head GitHub checks and Codex
+review remain the merge gate; no tag or published release is created here.
 
 Deployed application stacks and the machine-wide Node.js installation remain
 outside this repository patch; validation uses isolated patched runtimes and
@@ -175,6 +198,14 @@ Rebuild helper images and recreate their containers to apply patched runtimes;
 changing a Dockerfile cannot update an already-running container.
 
 ## Artifacts and Notes
+
+Pull request: https://github.com/sarattha/relayna-gateway/pull/140.
+Initial review request:
+https://github.com/sarattha/relayna-gateway/pull/140#issuecomment-6342521198.
+Clean initial review receipt:
+https://github.com/sarattha/relayna-gateway/pull/140#issuecomment-6342524945.
+The release follow-up requires fresh final-head checks and Codex review before
+merge. The user has not requested a Git tag or published release.
 
 Record focused results, the independent review outcome, and full verification
 status in the living sections before the final handoff. No exploit or production

@@ -7,6 +7,26 @@ virtual keys, Azure Foundry connections and registered agents, and replica
 synchronization of saved gateway Entra settings.
 The UI remains embedded in the Rust binary; no separate frontend service is needed.
 
+## Upgrade to 0.1.49
+
+This release patches Node.js tooling and helper containers for
+[CVE-2026-111497](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases).
+The production gateway is a Rust binary and serves embedded static UI assets;
+Node.js is used by build/test tooling and development helpers.
+
+Before building or testing, use Node.js 24.22.1 or newer on 24.x, or 26.12.1 or
+newer on 26.x. npm installation rejects unsupported versions. Rust integration
+tests also launch Node, so use the patched runtime on PATH for Cargo checks.
+Rebuild and recreate existing local helpers to adopt Node.js 22.23.4; see the
+[local stack instructions](https://github.com/sarattha/relayna-gateway/blob/main/deploy/local/README.md).
+Runnable Compose test harnesses and benchmark pods use the same patched image.
+
+Roll out `ghcr.io/sarattha/relayna-gateway:0.1.49` through the existing deployment
+process after the release image is published. No PostgreSQL migration, Redis
+format change, API change, or new gateway setting is introduced relative to
+0.1.48. A gateway rollback needs no data conversion; keep patched Node tooling
+and helper images when rolling back application binaries.
+
 ## Upgrade to 0.1.48
 
 There is no PostgreSQL migration, Redis format change, or new configuration

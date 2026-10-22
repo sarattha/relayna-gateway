@@ -1,7 +1,15 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.48` is the
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.49` is the
 current release target.
+
+Version `0.1.49` excludes Node.js releases affected by CVE-2026-111497 from
+build/test tooling and helper containers. npm enforces patched 24.x/26.x
+versions, CI selects patched Node before Rust tests that launch the OIDC helper,
+and local/test/benchmark images use Node.js 22.23.4. Rebuild and recreate existing
+helper containers; no database migration or runtime API change is required. See
+[tooling requirements](getting-started.md#install-tools) and
+[upgrade guidance](deployment.md#upgrade-to-0149).
 
 Version `0.1.48` fixes caller-owned LiteLLM WebSocket authentication when the
 active provider uses a custom credential header. The configured header keeps
@@ -150,7 +158,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.48
+   python3 scripts/validate-release-metadata.py v0.1.49
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -168,15 +176,15 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.48 .
+   docker build -t relayna-gateway:0.1.49 .
    ```
 
 5. Commit the release changes.
 6. Create and push the tag:
 
    ```bash
-   git tag -a v0.1.48 -m "Release v0.1.48"
-   git push origin v0.1.48
+   git tag -a v0.1.49 -m "Release v0.1.49"
+   git push origin v0.1.49
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -186,10 +194,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.48`, the workflow publishes:
+For `v0.1.49`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.48
+ghcr.io/sarattha/relayna-gateway:0.1.49
 ghcr.io/sarattha/relayna-gateway:0.1
 ghcr.io/sarattha/relayna-gateway:latest
 ```
