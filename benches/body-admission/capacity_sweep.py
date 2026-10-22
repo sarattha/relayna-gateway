@@ -61,6 +61,7 @@ def analyze(folder, slots, attempt, expected_body_bytes, cohort):
     row["incomplete"] = not run or raw.with_suffix(".failure.json").exists()
     row["memory_censored"] = row["resource_failure"] or row["memory_streams"] != 2
     row["clean"] = False
+    row["resource_stable"] = False
     if row["incomplete"] or row["warmup_failed"]:
         row["warmup_results"] = run.get("warmup_results", [])
         return row
@@ -96,7 +97,11 @@ def analyze(folder, slots, attempt, expected_body_bytes, cohort):
         row["admission_counter_gap"] = row["concurrency_denials"] + row["byte_denials"] - run["status_counts"].get("503", 0)
         final = {pod["name"]: [sample for sample in samples if sample["pod"] == pod["name"]][-1] for pod in run["pods"]}
         row["terminal_zero"] = all(sample["buffered_requests"] == sample["buffered_bytes"] == 0 for sample in final.values())
-    row["clean"] = not any((row["resource_failure"], row["metric_scrape_errors"], row["transport_errors"], row["other_http_statuses"], row["memory_censored"])) and row["terminal_zero"] and row["admission_counter_gap"] == 0
+    # Every offered request must reconcile to either a verified success or a
+    # server admission denial. A lost denial response is reported separately
+    # from resource stability; a missing admitted response remains invalid.
+    row["resource_stable"] = not any((row["resource_failure"], row["metric_scrape_errors"], row["other_http_statuses"], row["memory_censored"])) and row["terminal_zero"] and row["admission_counter_gap"] == row["transport_errors"]
+    row["clean"] = row["resource_stable"] and row["transport_errors"] == 0
     return row
 
 
@@ -127,6 +132,7 @@ def main():
                "upstream_read_delay_ms": 10000, "post_upload_delay_ms": 2000,
                "image": args.image, "source_commit": args.source_commit,
                "confirmation_repetitions": args.confirmation_repetitions,
+               "criterion": "resource_stability",
                "max_search_slots": args.max_search_slots,
                "harness_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in (HERE / "capacity_sweep.py", HERE / "run.py", HERE / "mock.mjs", HERE / "workload.mjs")},
                "trials": rows, "complete": False}
@@ -153,10 +159,10 @@ def main():
         row = analyze(folder, slots, attempt, args.body_mib * MIB, cohort)
         row.update(phase=phase, runner_exit_code=result.returncode)
         if result.returncode:
-            row["clean"] = False
+            row["resource_stable"] = row["clean"] = False
         rows.append(row)
         save()
-        print(json.dumps({key: row.get(key) for key in ("slots", "attempt", "successes", "statuses", "rss_peak_mib", "cgroup_peak_mib", "buffered_requests_peak", "resource_failure", "clean")}), flush=True)
+        print(json.dumps({key: row.get(key) for key in ("slots", "attempt", "successes", "statuses", "rss_peak_mib", "cgroup_peak_mib", "buffered_requests_peak", "resource_failure", "resource_stable", "clean")}), flush=True)
         return row
 
     for slots in grid:
@@ -167,7 +173,7 @@ def main():
     # Do not mistake the offered cohort for an algorithmic limit. If the
     # entire grid survives, double both the tested ceiling and its offered
     # cohort. Refine and confirm within the final cohort, never across loads.
-    while not args.pilot_limits and all(row["clean"] for row in rows):
+    while not args.pilot_limits and all(row["resource_stable"] for row in rows):
         ceiling = max(row["slots"] for row in rows)
         if ceiling >= args.max_search_slots:
             summary["expansion_stop"] = "finite search bound reached without a resource failure"
@@ -179,11 +185,11 @@ def main():
     failures = sorted({row["slots"] for row in current() if row["resource_failure"]})
     if failures:
         high = failures[0]
-        low = max((row["slots"] for row in current() if row["clean"] and row["slots"] < high), default=0)
+        low = max((row["slots"] for row in current() if row["resource_stable"] and row["slots"] < high), default=0)
         while high - low > 1:
             middle = (high + low) // 2
             row = trial(middle, "refinement")
-            if row["clean"]:
+            if row["resource_stable"]:
                 low = middle
             elif row["resource_failure"]:
                 high = middle
@@ -194,13 +200,13 @@ def main():
     else:
         tested = sorted({row["slots"] for row in current()})
         selected = {min(tested, key=lambda value: abs(value - capacity)), tested[-1]}
-        clean = [row["slots"] for row in current() if row["clean"]]
+        clean = [row["slots"] for row in current() if row["resource_stable"]]
         if clean:
             selected.add(max(clean))
     def confirm(slots):
         while sum(row["slots"] == slots for row in current()) < args.confirmation_repetitions:
             trial(slots, "confirmation")
-        return all(row["clean"] for row in current() if row["slots"] == slots)
+        return all(row["resource_stable"] for row in current() if row["slots"] == slots)
 
     for slots in sorted(selected):
         confirm(slots)
@@ -213,15 +219,18 @@ def main():
         stable = [slots for slots in {row["slots"] for row in current()}
                   if slots < high
                   and sum(row["slots"] == slots for row in current()) >= args.confirmation_repetitions
-                  and all(row["clean"] for row in current() if row["slots"] == slots)]
+                  and all(row["resource_stable"] for row in current() if row["slots"] == slots)]
         low = max(stable, default=0)
         while high - low > 1:
             middle = (high + low) // 2
             selected.add(middle)
             if confirm(middle):
                 low = middle
-            else:
+            elif any(row["resource_failure"] for row in current() if row["slots"] == middle):
                 high = middle
+            else:
+                summary["confirmation_stop"] = "non-resource failure prevents repeated refinement"
+                break
         selected.add(high)
         confirm(high)
     summary["confirmed_limits"] = sorted(selected)

@@ -309,6 +309,27 @@ proved a new 165-slot measurement was still needed; no complete result was
 fabricated from the partial evidence. Preserve its raw data and use the fresh
 20 MiB retry for the final comparison.
 
+The 100 MiB retry completed its search with no resource failure because a
+single lost rejection response at 64 slots stopped the strict HTTP-clean
+expansion predicate. Its 695 MiB peak is not a resource boundary. Separate
+resource stability from response delivery: every request must reconcile to a
+verified success or a server admission denial, both memory streams and all
+metrics must be complete, admission gauges must return to zero, and there must
+be no termination/restart. Lost rejection replies are reported as client errors
+and are allowed only when exactly reconciled by the server denial counter gap.
+Missing admitted responses still invalidate the trial. Keep the stricter
+zero-client-error `clean` field separately. Expand/refine/confirm using the
+resource criterion selected by the user; do not introduce an HTTP delivery SLO.
+Regression checks cover accounted denial loss, missing admitted responses,
+confirmation-only resource failures, and a finite lower bound without OOM.
+
+The 60-second socket-idle alignment passed a real 35-second silent-response
+regression and the full repository stack at 18:09Z (437 Nextest tests passed;
+log `/tmp/relayna-capacity-idle-verification.log`), commit
+`45156c33d49dd90eace49190932f671b8a9df3c4`. The final resource-predicate change
+is undergoing the required full stack before native retries. No runtime code
+or production configuration is changed.
+
 ## Interfaces and Dependencies
 
 Native GitHub-hosted Ubuntu 24.04 amd64, Docker, kind v0.33.0/Kubernetes

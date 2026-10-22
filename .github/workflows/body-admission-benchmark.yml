@@ -232,6 +232,7 @@ jobs:
               folder = root / f"{size}mib"
               summary = json.loads((folder / "summary.json").read_text())
               assert summary["complete"] and summary["body_mib"] == size
+              assert summary["criterion"] == "resource_stability"
               assert summary["source_commit"] == os.environ["RELEASE_COMMIT"]
               for row in summary["trials"]:
                   env = json.loads((folder / row["directory"] / "environment.json").read_text())
@@ -243,7 +244,7 @@ jobs:
                   if not row["resource_failure"]:
                       assert not row["incomplete"] and not row["warmup_failed"], row
                       assert row["memory_streams"] == 2 and not row["runner_exit_code"], row
-                  findings.append({"size_mib": size, "slots": row["slots"], "attempt": row["attempt"], "resource_failure": row["resource_failure"], "clean": row["clean"]})
+                  findings.append({"size_mib": size, "slots": row["slots"], "attempt": row["attempt"], "resource_failure": row["resource_failure"], "resource_stable": row["resource_stable"], "clean": row["clean"]})
           Path("target/body-capacity/search-validation.json").write_text(json.dumps({"mode": mode, "trials": findings}, indent=2))
           VALIDATE
 
