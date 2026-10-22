@@ -1,10 +1,14 @@
-name: Body admission benchmark (amd64)
+name: Body admission benchmark (amd64, 64 vs 128)
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  RELEASE_IMAGE: ghcr.io/sarattha/relayna-gateway@sha256:08ef644f5f7564013388ff36ab81e4616c61a605bb56217ce381fcc23b07e67e
+  RELEASE_COMMIT: d2ff47859356dea354b9817dc0adec514b6a0364
 
 jobs:
   benchmark:
@@ -24,21 +28,25 @@ jobs:
           free -b >> target/body-benchmark-amd64/host.txt
           docker version >> target/body-benchmark-amd64/host.txt
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Pull immutable native amd64 release
+        run: |
+          docker pull --platform linux/amd64 "$RELEASE_IMAGE"
+          docker tag "$RELEASE_IMAGE" relayna-gateway:body-amd64
+          docker image inspect relayna-gateway:body-amd64 > target/body-benchmark-amd64/release-image.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Build native amd64 candidate
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: benches/body-admission/Dockerfile.gateway
-          platforms: linux/amd64
-          load: true
-          tags: relayna-gateway:body-amd64
-          cache-from: type=gha,scope=body-amd64
-          cache-to: type=gha,mode=max,scope=body-amd64
+          image = json.loads(Path("target/body-benchmark-amd64/release-image.json").read_text())[0]
+          assert image["Architecture"] == "amd64" and image["Os"] == "linux"
+          assert image["Config"]["Labels"]["org.opencontainers.image.version"] == "0.1.47"
+          assert image["Config"]["Labels"]["org.opencontainers.image.revision"] == os.environ["RELEASE_COMMIT"]
+          assert "MALLOC_MMAP_THRESHOLD_=131072" in image["Config"]["Env"]
+          PY
 
       - name: Set up isolated Kubernetes cluster
+        id: cluster
         run: |
           curl --fail --location --retry 3 -o "$RUNNER_TEMP/kind-linux-amd64" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
           curl --fail --location --retry 3 -o "$RUNNER_TEMP/kind-linux-amd64.sha256sum" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64.sha256sum
@@ -56,7 +64,9 @@ jobs:
         run: |
           test "$(docker image inspect relayna-gateway:body-amd64 --format '{{.Architecture}}')" = amd64
           test "$(kubectl --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" get nodes -o jsonpath='{.items[0].status.nodeInfo.architecture}')" = amd64
-          git rev-parse HEAD > target/body-benchmark-amd64/source-commit.txt
+          printf '%s\n' "$RELEASE_COMMIT" > target/body-benchmark-amd64/source-commit.txt
+          git rev-parse HEAD > target/body-benchmark-amd64/harness-commit.txt
+          printf '%s\n' "$RELEASE_IMAGE" > target/body-benchmark-amd64/release-image-ref.txt
           sha256sum benches/body-admission/workload.mjs benches/body-admission/mock.mjs > target/body-benchmark-amd64/workload-sha256.txt
           docker image inspect relayna-gateway:body-amd64 --format '{{json .}}' > target/body-benchmark-amd64/image.json
           docker image inspect node:22-alpine postgres:16-alpine redis:7-alpine > target/body-benchmark-amd64/dependency-images.json
@@ -66,45 +76,80 @@ jobs:
           docker run --rm postgres:16-alpine postgres --version > target/body-benchmark-amd64/postgres-version.txt
           docker run --rm redis:7-alpine redis-server --version > target/body-benchmark-amd64/redis-version.txt
 
-      - name: Run controlled matrix (two pods, five limits, three repetitions)
+      - name: Run controlled 64 vs 128 comparison (12 RPS, three repetitions)
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
         run: |
           python3 benches/body-admission/run.py \
             --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
-            --image relayna-gateway:body-amd64 --source-commit "$GITHUB_SHA" \
-            --label improved-amd64 --host-metadata \
+            --image relayna-gateway:body-amd64 --source-commit "$RELEASE_COMMIT" \
+            --label release-0147-amd64-controlled --host-metadata \
+            --limits 64 128 --repetitions 3 --memory-limit-mib 1024 \
             --output target/body-benchmark-amd64/controlled
-          python3 benches/body-admission/summarize.py \
-            target/body-benchmark-amd64/controlled \
-            --output target/body-benchmark-amd64/controlled-summary.json
 
-      - name: Run separate burst matrix (two pods, five limits)
+      - name: Run burst 64 vs 128 comparison (64 RPS, three repetitions)
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
         run: |
           python3 benches/body-admission/run.py \
             --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
-            --image relayna-gateway:body-amd64 --source-commit "$GITHUB_SHA" \
-            --label improved-amd64-burst --host-metadata \
-            --rps 64 --duration 5 --delay-ms 2000 --memory-limit-mib 1024 --repetitions 1 \
+            --image relayna-gateway:body-amd64 --source-commit "$RELEASE_COMMIT" \
+            --label release-0147-amd64-burst --host-metadata \
+            --limits 64 128 --repetitions 3 --memory-limit-mib 1024 \
+            --rps 64 --duration 5 --delay-ms 2000 \
             --output target/body-benchmark-amd64/burst
-          python3 benches/body-admission/summarize.py \
-            target/body-benchmark-amd64/burst \
-            --output target/body-benchmark-amd64/burst-summary.json
 
-      - name: Validate candidate acceptance criteria
+      - name: Run heavier 64 vs 128 comparison (128 RPS for 30 seconds)
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
+        run: |
+          python3 benches/body-admission/run.py \
+            --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
+            --image relayna-gateway:body-amd64 --source-commit "$RELEASE_COMMIT" \
+            --label release-0147-amd64-stress --host-metadata \
+            --limits 64 128 --repetitions 3 --memory-limit-mib 1024 \
+            --rps 128 --duration 30 --delay-ms 2000 \
+            --output target/body-benchmark-amd64/stress
+
+      - name: Summarize all observations and validate clean-run criteria
+        if: ${{ !cancelled() && steps.cluster.outcome == 'success' }}
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
+          import subprocess
 
           root = Path("target/body-benchmark-amd64")
-          for matrix, expected_requests in [("controlled", 540), ("burst", 320)]:
-              summary = json.loads((root / f"{matrix}-summary.json").read_text())[0]
-              assert summary["environment"]["image_architecture"] == "amd64"
-              assert all(node["architecture"] == "amd64" for node in summary["environment"]["kubernetes_nodes"])
-              for row in summary["conditions"]:
-                  assert row["requests"] == expected_requests, (matrix, row)
-                  assert row["unexpected_results"] == 0 and row["restarts"] == 0 and not row["oom"], (matrix, row)
-                  if matrix == "controlled":
-                      assert row["successes"] == expected_requests, row
+          failures = []
+          for matrix, expected_requests in [("controlled", 540), ("burst", 960), ("stress", 11520)]:
+              for script, suffix in [("summarize_probes.py", "probes"), ("summarize.py", "summary")]:
+                  result = subprocess.run([
+                      "python3", f"benches/body-admission/{script}", str(root / matrix),
+                      "--output", str(root / f"{matrix}-{suffix}.json"),
+                  ], capture_output=True, text=True)
+                  (root / f"{matrix}-{suffix}.log").write_text(result.stdout + result.stderr)
+                  print(result.stdout, end="")
+                  if result.returncode:
+                      failures.append(f"{matrix}: {script} failed: {result.stderr}")
+              try:
+                  probes = json.loads((root / f"{matrix}-probes.json").read_text())[0]
+                  assert len(probes["conditions"]) == 6
+                  for row in probes["conditions"]:
+                      assert row["oom_pods"] == 0 and row["restarts"] == 0, row
+                      assert row["transport_errors"] == 0 and row["other_http_statuses"] == 0, row
+                      assert row["metric_scrape_errors"] == 0 and not row["timing_censored"], row
+                  summary = json.loads((root / f"{matrix}-summary.json").read_text())[0]
+                  assert summary["environment"]["image_architecture"] == "amd64"
+                  assert summary["environment"]["limits"] == [64, 128]
+                  assert summary["environment"]["repetitions"] == 3
+                  assert all(node["architecture"] == "amd64" for node in summary["environment"]["kubernetes_nodes"])
+                  for row in summary["conditions"]:
+                      assert row["requests"] == expected_requests, row
+                      assert row["unexpected_results"] == 0 and row["restarts"] == 0 and not row["oom"], row
+                      if matrix == "controlled":
+                          assert row["successes"] == expected_requests, row
+              except (AssertionError, OSError, ValueError) as error:
+                  failures.append(f"{matrix}: clean-run validation failed: {error}")
+          (root / "validation.json").write_text(json.dumps({"failures": failures}, indent=2))
+          if failures:
+              raise SystemExit("\n".join(failures))
           PY
 
       - name: Upload measurements

@@ -4,6 +4,7 @@
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 
 
@@ -19,7 +20,9 @@ def summarize(directory):
     directory = Path(directory)
     environment = json.loads((directory / "environment.json").read_text())
     groups = {}
-    for path in sorted(directory.glob("limit-??-rep-?.json")):
+    for path in sorted(directory.glob("limit-*-rep-*.json")):
+        if not re.fullmatch(r"limit-\d+-rep-\d+\.json", path.name):
+            continue
         run = json.loads(path.read_text())
         memory = []
         for sample_path in directory.glob(path.stem + "-*.memory.txt"):

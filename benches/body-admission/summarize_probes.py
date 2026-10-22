@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 
@@ -10,7 +11,9 @@ def summarize(directory):
     directory = Path(directory)
     environment = json.loads((directory / "environment.json").read_text())
     conditions = []
-    for path in sorted(directory.glob("limit-??-rep-?.json")):
+    for path in sorted(directory.glob("limit-*-rep-*.json")):
+        if not re.fullmatch(r"limit-\d+-rep-\d+\.json", path.name):
+            continue
         run = json.loads(path.read_text())
         pods = json.loads(path.with_suffix(".pods.json").read_text())["items"]
         statuses = [status for pod in pods for status in pod["status"]["containerStatuses"]]
