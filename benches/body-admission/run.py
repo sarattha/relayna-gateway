@@ -129,6 +129,7 @@ class Benchmark:
             "concurrent_per_pod": self.args.concurrent_per_pod,
             "read_delay_ms": self.args.read_delay_ms,
             "client_deadline_ms": self.args.client_deadline_ms,
+            "post_condition_observation_seconds": 10 if self.args.retain_failures else 0,
             "gateway_resources": {"cpu_limit": 2, "memory_limit_bytes": self.args.memory_limit_mib * 1024 * 1024},
             "malloc_mmap_threshold_override": self.args.malloc_mmap_threshold,
             "docker": None,
@@ -182,9 +183,14 @@ class Benchmark:
                             process.kill()
                             process.wait()
                         stream.close()
-                self.kube("get", "pods", "-l", "app=gateway", "-o", "json", stdout=(self.output / f"{name}.pods.json").open("w"))
                 if self.args.retain_failures:
+                    self.kube("get", "pods", "-l", "app=gateway", "-o", "json", stdout=(self.output / f"{name}.pods.immediate.json").open("w"))
                     self.diagnostics(name, pods)
+                    # Kubelet status can lag a process death: immediate status
+                    # may still say Ready/restartCount=0 while --previous logs
+                    # already exist. Observe after the measured window too.
+                    time.sleep(10)
+                self.kube("get", "pods", "-l", "app=gateway", "-o", "json", stdout=(self.output / f"{name}.pods.json").open("w"))
                 if failure:
                     (self.output / f"{name}.failure.json").write_text(json.dumps({"error": str(failure)}))
                     if self.args.retain_failures:

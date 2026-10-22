@@ -32,7 +32,11 @@ def analyze(folder, slots, attempt, expected_body_bytes, cohort):
     states = [state for pod in pods for state in pod["status"]["containerStatuses"]]
     row["restarts"] = sum(state["restartCount"] for state in states)
     row["oom_pods"] = sum(any(state.get(phase, {}).get("terminated", {}).get("reason") == "OOMKilled" for phase in ("state", "lastState")) for state in states)
+    row["terminated_pods"] = sum(any(state.get(phase, {}).get("terminated") for phase in ("state", "lastState")) for state in states)
     row["pod_names"] = [pod["metadata"]["name"] for pod in pods]
+    previous = [pod for pod in pods if (folder / f"{raw.stem}-{pod['metadata']['name']}-previous.log").exists()]
+    row["previous_container_logs_pods"] = len(previous)
+    row["snapshot_missed_restarts"] = sum(pod["status"]["containerStatuses"][0]["restartCount"] == 0 for pod in previous)
     for pod in pods:
         container = pod["spec"]["containers"][0]
         assert container["resources"]["limits"] == {"cpu": "2", "memory": "1Gi"}
@@ -48,7 +52,7 @@ def analyze(folder, slots, attempt, expected_body_bytes, cohort):
     row["rss_peak_mib"] = max((sample[2] for stream in memory for sample in stream), default=0) / MIB
     row["cgroup_peak_mib"] = max((sample[3] for stream in memory for sample in stream), default=0) / MIB
     row["max_pod_throttled_ms"] = max((max(0, stream[-1][4] - stream[0][4]) for stream in memory), default=0) / 1000
-    row["resource_failure"] = bool(row["oom_pods"] or row["restarts"])
+    row["resource_failure"] = bool(row["terminated_pods"] or row["restarts"] or previous)
     try:
         run = json.loads(raw.read_text())
     except (ValueError, OSError):

@@ -158,6 +158,11 @@ data. Output directories cannot overwrite completed conditions. Preserve and
 mark incomplete runs, then rerun into a new output directory. The resource
 search uses `--retain-failures` to capture unsuccessful warmups, pod snapshots,
 memory samples, and redacted diagnostics without discarding failed conditions.
+That mode retains an immediate pod snapshot and observes status again at least
+ten seconds after measurement: Kubernetes restart/OOM status can lag process
+death. Successful retrieval of a Gateway's previous-container logs is also
+restart evidence, even if the immediate snapshot still reports zero restarts.
+The observation window is outside the recorded client timing and memory run.
 
 Summarize results and validate the measured limits, evenly distributed offered
 traffic, verified bodies, and agreement between 503s and admission counters:

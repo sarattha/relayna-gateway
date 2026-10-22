@@ -50,6 +50,13 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
 - Mathematical complete-body bounds from 512 MiB are 102, 51, 25, 12, 6, and
   5 per pod. Partial bodies can occupy more slots. Parsing, allocations,
   sockets, and other runtime state remain outside the serialized-byte budget.
+- The first full 5 MiB sweep found OOMs in all three 512-slot trials at
+  1024 offered requests per pod. Its 256-slot refinement lost connections but
+  the immediate pod snapshot still claimed Ready/restartCount=0. Both previous
+  container logs were retrieved seconds later, proving a restart reporting race.
+  Preserve this evidence, add post-condition observation and previous-container
+  restart detection, and repeat the full native comparison rather than claim a
+  usable boundary from the prematurely stopped refinement.
 
 ## Decision Log
 
@@ -89,6 +96,13 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   consistent. Upload each size's results immediately before proceeding to the
   next size; retain final combined artifacts and always clean up the cluster.
   Date/Author: 2026-10-22, Codex.
+- Observe pod status after diagnostics and another ten seconds in failure-
+  retaining mode; keep the immediate snapshot too. Classify any terminated
+  Gateway container or available previous-container logs as a resource failure;
+  keep OOMKilled distinct from other terminations or inferred restarts.
+  This affects evidence capture after measurement, not the offered workload,
+  memory sampler or client timings. Repeat all six sizes on one new native host
+  with corrected boundary detection. Date/Author: 2026-10-22, Codex.
 
 ## Outcomes & Retrospective
 
@@ -172,6 +186,18 @@ Native pilot: Actions run
 harness commit `5ea737f`; dispatched after the complete verification passed.
 The pilot is evidence for fixture validation, separate from the subsequent
 full six-size comparison.
+
+Expanded-cohort verification passed again at 15:53Z, including all 437 Nextest
+tests and every required security check. Log:
+`/tmp/relayna-capacity-expanded-verification.log`. The additional driver check
+completed 300 requests per distinct host (600 total), proving the configured
+client socket ceiling can exceed 256. Adaptive-search checks proved integer
+refinement and three-run confirmations stay within the same offered cohort.
+
+Full native six-size run:
+<https://github.com/sarattha/relayna-gateway/actions/runs/39809024251>,
+harness commit `86b120e4b6eb201cb79c4e48a082d97b12baf9ce`. Per-size artifacts
+are uploaded immediately; final raw evidence, boundaries, and outcomes pending.
 
 ## Interfaces and Dependencies
 
