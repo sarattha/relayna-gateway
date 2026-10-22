@@ -31,8 +31,12 @@ gh workflow run body-admission-benchmark.yml --ref <branch> -f mode=full
 Both modes use two fresh Gateway pods per trial, each with 2 CPU / 1 GiB
 limits and a 512 MiB serialized-body budget. The pilot checks 5 and 100 MiB;
 the full run searches 5, 10, 20, 40, 80, and 100 MiB sequentially on the same
-host. Each size uses a fixed simultaneous cohort per pod equal to twice
-`floor(512 / body_MiB)`. The mock pauses reads for ten seconds and waits two
+host. Each size initially uses a fixed simultaneous cohort per pod equal to
+twice the largest slot count in its discovery grid. If the whole grid stays
+clean, the search doubles the tested ceiling and offered cohort, up to an
+explicit finite exploration bound. Refinement and three-run confirmations use
+the same final cohort; results record the offered cohort for every trial.
+The mock pauses reads for ten seconds and waits two
 seconds after upload. Client requests have a sixty-second absolute deadline.
 These are backpressure resource tests, distinct from the historical fixed-rate
 comparison documented below.

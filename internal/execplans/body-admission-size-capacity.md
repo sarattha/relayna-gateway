@@ -65,14 +65,25 @@ byte-limited or causes OOM/restarts/errors under the specified fixture.
   delay, labeled as a backpressure resource test rather than the earlier
   fast-reading workload. Validate actual occupancy in the native pilot.
   Date/Author: 2026-10-22, Codex.
-- Use a fixed simultaneous cohort per body size across slot settings:
-  twice the complete-body arithmetic capacity per pod. Discovery samples
+- Use a fixed simultaneous cohort per body size across initial slot settings:
+  twice the largest slot count in the discovery grid per pod. Discovery samples
   below/at/above the byte-cap boundary, then repeats the boundary settings
   until there are three fresh-pod trials. If a memory cliff appears, refine
   the neighboring integer counts. If bytes dominate without a cliff, report
   that no finite configuration ceiling was established rather than fabricating
   one. Preserve non-monotonic failures and avoid treating a single run as a
   universal safe maximum.
+  Date/Author: 2026-10-22, Codex.
+- The pilot survived all six conditions: 5 MiB at 64/128/256 slots and 100 MiB
+  at 1/4/5 slots, with verified bodies and no OOM/restarts. At 256 configured
+  slots its 204-request-per-pod cohort could exercise only 204 slots; the byte
+  budget plateaued near 512 MiB. Correct that offered-load ceiling before the
+  full search: start at twice the largest discovery slot setting; if all
+  settings are clean, double the ceiling/cohort up to 4096 configured slots.
+  Refine and confirm only within the same final offered cohort. Report a
+  tested lower bound if that finite search still finds no resource cliff.
+  Native pilot retained buffers for at least eleven seconds at 100 MiB, so the
+  existing upstream pause is effective without changing its implementation.
   Date/Author: 2026-10-22, Codex.
 - Use a single native GitHub runner for all six sizes to keep CPU hardware
   consistent. Upload each size's results immediately before proceeding to the
@@ -155,6 +166,12 @@ absolute deadlines, and structured unsuccessful warmups. Analyzer checks use
 a real earlier native artifact and inject an OOM/restart and unsuccessful
 warmup to verify failure classification. Syntax checks and actionlint passed.
 Full required verification log: `/tmp/relayna-capacity-verification.log`.
+
+Native pilot: Actions run
+<https://github.com/sarattha/relayna-gateway/actions/runs/39806500087>,
+harness commit `5ea737f`; dispatched after the complete verification passed.
+The pilot is evidence for fixture validation, separate from the subsequent
+full six-size comparison.
 
 ## Interfaces and Dependencies
 

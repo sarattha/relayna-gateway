@@ -25,7 +25,8 @@ def analyze(folder, slots, attempt, expected_body_bytes, cohort):
     folder = Path(folder)
     raw = folder / f"limit-{slots:02}-rep-1.json"
     row = {"slots": slots, "attempt": attempt, "directory": folder.name,
-           "body_bytes": expected_body_bytes, "expected_requests": 2 * cohort}
+           "body_bytes": expected_body_bytes, "cohort_per_pod": cohort,
+           "expected_requests": 2 * cohort}
     pods = json.loads(raw.with_suffix(".pods.json").read_text())["items"]
     assert len(pods) == 2, "expected exactly two Gateway pods"
     states = [state for pod in pods for state in pod["status"]["containerStatuses"]]
@@ -100,19 +101,25 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--pilot-limits", nargs="+", type=int)
     parser.add_argument("--confirmation-repetitions", type=int, default=3)
+    parser.add_argument("--max-search-slots", type=int, default=4096,
+                        help="finite exploration bound; report a lower bound if no resource cliff appears")
     args = parser.parse_args()
     root = Path(args.output)
     root.mkdir(parents=True, exist_ok=True)
     if (root / "summary.json").exists():
         raise RuntimeError("refusing to overwrite a completed sweep")
     capacity = 512 // args.body_mib
-    cohort = 2 * capacity
+    grid = args.pilot_limits or GRIDS[args.body_mib]
+    if args.confirmation_repetitions < 1 or min(grid) < 1 or args.max_search_slots < max(grid):
+        parser.error("positive repetitions/slots and a search bound at least as large as the grid are required")
+    cohort = 2 * max(grid)
     rows = []
     summary = {"body_mib": args.body_mib, "body_bytes": args.body_mib * MIB,
                "full_body_arithmetic_bound_per_pod": capacity, "cohort_per_pod": cohort,
                "upstream_read_delay_ms": 10000, "post_upload_delay_ms": 2000,
                "image": args.image, "source_commit": args.source_commit,
                "confirmation_repetitions": args.confirmation_repetitions,
+               "max_search_slots": args.max_search_slots,
                "harness_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in (HERE / "capacity_sweep.py", HERE / "run.py", HERE / "mock.mjs", HERE / "workload.mjs")},
                "trials": rows, "complete": False}
 
@@ -144,16 +151,27 @@ def main():
         print(json.dumps({key: row.get(key) for key in ("slots", "attempt", "successes", "statuses", "rss_peak_mib", "cgroup_peak_mib", "buffered_requests_peak", "resource_failure", "clean")}), flush=True)
         return row
 
-    grid = args.pilot_limits or GRIDS[args.body_mib]
     for slots in grid:
         trial(slots, "discovery")
         if len(rows) >= 2 and all(row["resource_failure"] for row in rows[-2:]):
             summary["discovery_stop"] = "two consecutive resource failures; higher counts untested"
             break
-    failures = sorted({row["slots"] for row in rows if row["resource_failure"]})
+    # Do not mistake the offered cohort for an algorithmic limit. If the
+    # entire grid survives, double both the tested ceiling and its offered
+    # cohort. Refine and confirm within the final cohort, never across loads.
+    while not args.pilot_limits and all(row["clean"] for row in rows):
+        ceiling = max(row["slots"] for row in rows)
+        if ceiling >= args.max_search_slots:
+            summary["expansion_stop"] = "finite search bound reached without a resource failure"
+            break
+        ceiling = min(2 * ceiling, args.max_search_slots)
+        cohort = 2 * ceiling
+        trial(ceiling, "expansion")
+    current = lambda: [row for row in rows if row["cohort_per_pod"] == cohort]
+    failures = sorted({row["slots"] for row in current() if row["resource_failure"]})
     if failures:
         high = failures[0]
-        low = max((row["slots"] for row in rows if row["clean"] and row["slots"] < high), default=0)
+        low = max((row["slots"] for row in current() if row["clean"] and row["slots"] < high), default=0)
         while high - low > 1:
             middle = (high + low) // 2
             row = trial(middle, "refinement")
@@ -166,23 +184,25 @@ def main():
                 break
         selected = {value for value in (low, high) if value > 0}
     else:
-        tested = sorted({row["slots"] for row in rows})
+        tested = sorted({row["slots"] for row in current()})
         selected = {min(tested, key=lambda value: abs(value - capacity)), tested[-1]}
-        clean = [row["slots"] for row in rows if row["clean"]]
+        clean = [row["slots"] for row in current() if row["clean"]]
         if clean:
             selected.add(max(clean))
     for slots in sorted(selected):
-        while sum(row["slots"] == slots for row in rows) < args.confirmation_repetitions:
+        while sum(row["slots"] == slots for row in current()) < args.confirmation_repetitions:
             trial(slots, "confirmation")
     if failures:
-        for slots in sorted({row["slots"] for row in rows if row["slots"] < failures[0]}, reverse=True):
-            if all(row["clean"] for row in rows if row["slots"] == slots):
-                selected.add(slots)
-                while sum(row["slots"] == slots for row in rows) < args.confirmation_repetitions:
-                    trial(slots, "confirmation")
-                if all(row["clean"] for row in rows if row["slots"] == slots):
-                    break
+        candidate = low
+        while candidate > 0:
+            selected.add(candidate)
+            while sum(row["slots"] == candidate for row in current()) < args.confirmation_repetitions:
+                trial(candidate, "confirmation")
+            if all(row["clean"] for row in current() if row["slots"] == candidate):
+                break
+            candidate -= 1
     summary["confirmed_limits"] = sorted(selected)
+    summary["final_cohort_per_pod"] = cohort
     summary["complete"] = True
     summary["completed_at_unix"] = time.time()
     save()
