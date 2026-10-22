@@ -41,6 +41,11 @@ runtimes in automation and containers, and preserves normal builds and tests.
 - [ ] Request Codex review of the release follow-up and merge only after
   final-head CI and review requirements are satisfied. Track the external
   review and merge outcome on PR #140.
+- [x] (2026-10-22) Address Codex P2 on c1f1c3d: update five active deployment
+  guide image examples from 0.1.48 to 0.1.49. Strict MkDocs, release metadata,
+  current-image consistency checks across the guide/README/release guide and
+  manifest, and diff checks pass. Publish the docs-only follow-up through the
+  PR review workflow; final-head review/CI remains the merge gate.
 
 ## Surprises & Discoveries
 
@@ -62,6 +67,12 @@ Run the helper as the documented superset of the mandatory Rust checks.
 npm installation reports six existing dependency advisories (three moderate,
 three high). The dependency graph is byte-for-byte equivalent after normalizing
 the root engines metadata; this patch does not update unrelated npm packages.
+
+Codex found five active Docker/Kubernetes examples below the historical upgrade
+sections in docs/deployment.md that still selected 0.1.48. The initial release
+pass had synchronized the README and manifest but missed these generic
+instructions. Match all active guide examples to the workspace release target
+while preserving historical upgrade references.
 
 ## Decision Log
 
@@ -123,6 +134,12 @@ release follow-up, with all 437 Cargo tests and 437 Nextest tests passing and
 zero Nextest skips. Disposable release-check PostgreSQL/Redis containers and the
 read-only UI fixture server are removed. Final-head GitHub checks and Codex
 review remain the merge gate; no tag or published release is created here.
+
+The Codex P2 deployment-example correction changes docs only. Strict MkDocs and
+release metadata validation pass; all five generic deployment image references
+match 0.1.49 and historical upgrade references remain unchanged. Rust checks
+are not rerun for this docs-only follow-up under AGENTS.md's documented
+exception; the v0.1.49 implementation already passed the full stack above.
 
 Deployed application stacks and the machine-wide Node.js installation remain
 outside this repository patch; validation uses isolated patched runtimes and
