@@ -10,6 +10,9 @@ explicit kubeconfig and never changes the current Kubernetes context.
 Optional figure export uses `uv` and Matplotlib; measurement and summaries use
 Python's standard library and the Node container.
 
+The mock and driver use Node.js 22.23.4, patched for CVE-2026-111497. Historical
+reports retain their original runtime versions; record new runs separately.
+
 ## Native amd64 rerun
 
 The `Body admission benchmark (amd64)` GitHub Actions workflow runs the
@@ -86,10 +89,10 @@ Use an existing local kind cluster or create one dedicated to this experiment:
 kind create cluster --name body-bench
 kind get kubeconfig --name body-bench > /tmp/relayna-body-bench.kubeconfig
 chmod 600 /tmp/relayna-body-bench.kubeconfig
-docker pull node:22-alpine
+docker pull node:22.23.4-alpine
 docker pull postgres:16-alpine
 docker pull redis:7-alpine
-kind load docker-image node:22-alpine postgres:16-alpine redis:7-alpine --name body-bench
+kind load docker-image node:22.23.4-alpine postgres:16-alpine redis:7-alpine --name body-bench
 BODY_BENCH_BASELINE_TREE="$(mktemp -d)/source"
 git worktree add --detach "$BODY_BENCH_BASELINE_TREE" v0.1.46
 docker build -f "$(pwd)/benches/body-admission/Dockerfile.baseline" \

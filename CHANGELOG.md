@@ -4,6 +4,13 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Require patched Node.js 24.22.1+ on 24.x or 26.12.1+ on 26.x for build/test
+  tooling, including Node launched by Rust integration tests. Enforce npm
+  engine requirements and pin local helper, test-harness, and benchmark images
+  to Node.js 22.23.4 to address CVE-2026-111497.
+
 ## 0.1.48 - 2026-10-21
 
 ### Fixed

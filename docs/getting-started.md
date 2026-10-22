@@ -7,7 +7,9 @@ These steps run Relayna Gateway locally with PostgreSQL, Redis, and an OpenAI-co
 - Rust stable with `cargo`, `rustfmt`, and `clippy`.
 - PostgreSQL 14 or newer.
 - Redis 6 or newer.
-- Node.js 20 or newer for admin UI test checks.
+- Node.js 24.22.1 or newer on the 24.x line, or 26.12.1 or newer on the 26.x
+  line, for Admin UI builds/tests and the development OIDC helper used by Rust
+  integration tests. npm rejects older or unsupported versions during install.
 - Python 3 for documentation checks.
 
 ## Start PostgreSQL
