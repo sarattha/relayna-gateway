@@ -4720,6 +4720,7 @@ code {
 }
 
 .panel-heading {
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
@@ -4907,6 +4908,7 @@ td .subtle, td small {
   border-radius: 7px;
   padding: 12px 14px;
   font-size: 12px;
+  display: block;
 }
 
 .modal-backdrop {
@@ -5113,14 +5115,17 @@ td .subtle, td small {
 
 button.help-trigger {
   border-radius: 50%;
+  flex: 0 0 17px;
   justify-content: center;
   align-items: center;
   width: 17px;
+  min-width: 17px;
   height: 17px;
   min-height: 0;
   padding: 0;
   font-size: 10px;
   font-weight: 400;
+  line-height: 1;
   display: inline-flex;
 }
 
@@ -5155,8 +5160,27 @@ input[type="checkbox"], input[type="radio"] {
   margin: 0;
 }
 
+.owner-service-card {
+  grid-template-rows: subgrid;
+  grid-row: span 5;
+}
+
+.owner-service-card > .member-meta {
+  align-content: flex-start;
+  align-items: flex-start;
+}
+
+.member-card {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.member-access-details {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .owner-service-card > button {
-  justify-self: start;
+  place-self: start;
 }
 
 .owner-dashboard-toolbar {
@@ -5165,6 +5189,24 @@ input[type="checkbox"], input[type="radio"] {
 
 .owner-incident-panel, .owner-request-panel {
   margin-top: 0;
+}
+
+.readiness-banner {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: grid;
+}
+
+@media (max-width: 640px) {
+  .readiness-banner {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .readiness-banner > button {
+    grid-column: 2;
+    justify-self: start;
+    margin-left: 0;
+  }
 }
 
 .usage-status {
@@ -5178,6 +5220,27 @@ input[type="checkbox"], input[type="radio"] {
 .usage-status .badge {
   justify-content: center;
   margin: 0;
+}
+
+.audit-action {
+  white-space: nowrap;
+  align-items: center;
+  gap: 6px;
+  display: inline-flex;
+}
+
+.audit-action .badge {
+  margin: 0;
+}
+
+.service-name {
+  align-items: baseline;
+  gap: 6px;
+  display: inline-flex;
+}
+
+.service-name > i {
+  flex: none;
 }
 
 .binding-route {
@@ -5259,6 +5322,14 @@ input[type="checkbox"], input[type="radio"] {
   font-size: 10px;
 }
 
+[data-gateway-part="notice"]:not(:empty) {
+  margin-top: 12px;
+}
+
+[data-gateway-part="notice"] > .notice {
+  margin: 0;
+}
+
 .monitor-kpis {
   border-bottom: 1px solid var(--border);
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -5268,9 +5339,13 @@ input[type="checkbox"], input[type="radio"] {
 }
 
 .monitor-kpi {
+  grid-template-rows: subgrid;
   border-right: 1px solid var(--border);
+  grid-row: span 3;
+  row-gap: 0;
   min-width: 0;
   padding: 0 18px;
+  display: grid;
 }
 
 .monitor-kpi:first-child {
@@ -6337,21 +6412,24 @@ input[type="checkbox"], input[type="radio"] {
 }
 
 .insight-metric {
-  align-items: flex-start;
-  gap: 11px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-rows: subgrid;
+  grid-row: span 2;
+  gap: 7px 11px;
   min-width: 0;
-  display: flex;
+  display: grid;
 }
 
 .insight-metric > div {
-  min-width: 0;
+  display: contents;
 }
 
 .insight-icon {
   color: #59758d;
   background: #f0f4f7;
   border-radius: 10px;
-  flex: 0 0 34px;
+  grid-row: 1 / span 2;
+  align-self: start;
   place-items: center;
   width: 34px;
   height: 34px;
@@ -6383,9 +6461,10 @@ input[type="checkbox"], input[type="radio"] {
 
 .insight-label {
   color: var(--muted-foreground);
+  grid-area: 1 / 2;
+  align-self: start;
   align-items: center;
   gap: 4px;
-  margin-bottom: 7px;
   font-size: 11px;
   line-height: 1.4;
   display: flex;
@@ -6447,6 +6526,8 @@ input[type="checkbox"], input[type="radio"] {
   letter-spacing: -.035em;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+  grid-area: 2 / 2;
+  align-self: start;
   font-size: 25px;
   font-weight: 600;
   line-height: 1.15;
@@ -6817,7 +6898,8 @@ button:not(:disabled):active {
   }
 
   .insight-metric {
-    gap: 7px;
+    grid-template-columns: 27px minmax(0, 1fr);
+    column-gap: 7px;
   }
 
   .insight-icon {

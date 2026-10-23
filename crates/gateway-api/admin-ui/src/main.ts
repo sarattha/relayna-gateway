@@ -1563,7 +1563,7 @@ function auditEventTable(rows) {
     rows.map((row) => [
       time(row.created_at),
       `<code>${esc(row.actor_member_id ? `member:${row.actor_member_id}` : row.actor_token_id ? `token:${row.actor_token_id}` : "system")}</code>`,
-      `<i class="ti ti-list-details" aria-hidden="true"></i> ${badge(row.action)}`,
+      `<span class="audit-action"><i class="ti ti-list-details" aria-hidden="true"></i>${badge(row.action)}</span>`,
       `<strong>${esc(row.target_type)}</strong><div class="subtle"><code>${esc(row.target_id || "")}</code></div>`,
       `<code>${esc(row.request_id || "")}</code>`,
       esc(row.ip || ""),
@@ -2032,7 +2032,7 @@ function serviceRouteTable(rows) {
   return table(
     ["Service", "Route", "Protocol", "Identity", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
     rows.map((row) => [
-      `<strong><i class="ti ti-apps" aria-hidden="true"></i> ${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
+      `<strong class="service-name"><i class="ti ti-apps" aria-hidden="true"></i><span>${esc(row.name)}</span></strong><div class="subtle">${esc(row.source)}</div>`,
       `<code>${esc(row.route_pattern)}</code>`,
       `<i class="ti ti-plug-connected" aria-hidden="true"></i> ${serviceProtocolSummary(row)}`,
       endpointIdentityBadge(row.access),
@@ -3026,7 +3026,7 @@ function serviceTable(rows) {
   return table(
     ["Name", "State", "Route", "Protocol", "Identity", "Upstream", "Health check", "Credential", "Cost", "Actions"],
     rows.map((row) => [
-      `<strong><i class="ti ti-apps" aria-hidden="true"></i> ${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
+      `<strong class="service-name"><i class="ti ti-apps" aria-hidden="true"></i><span>${esc(row.name)}</span></strong><div class="subtle">${esc(row.source)}</div>`,
       serviceBadges(row),
       `<code>${esc(row.route_pattern)}</code>`,
       `<i class="ti ti-plug-connected" aria-hidden="true"></i> ${serviceProtocolSummary(row)}`,

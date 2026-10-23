@@ -19,6 +19,10 @@ feedback on actionable controls. Keyboard focus remains visible, and reduced
 motion preferences remove movement. Read-only charts stay stable while their
 measurements update.
 
+Metric values share aligned rows when captions wrap. On narrow screens,
+headings and action groups stack, while status messages keep their own space
+above the measurements. Wide result tables retain horizontal scrolling.
+
 Choose **Light**, **Dark** or **System** under **Theme** in the sidebar footer or
 on the sign-in screen. System follows the device appearance. The browser saves
 an explicit preference locally and applies it before the console paints. Dark
