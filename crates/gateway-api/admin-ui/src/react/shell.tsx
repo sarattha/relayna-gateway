@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { Button, Input, NativeSelect } from "../components/ui";
+import { RelaynaMark } from "./brand";
 import {
   getThemePreference,
   setThemePreference,
@@ -45,10 +46,10 @@ export function ConsoleShell() {
         >
           <div className="login-brand-lockup">
             <span className="login-brand-icon" aria-hidden="true">
-              <i className="ti ti-route-alt-left"></i>
+              <RelaynaMark />
             </span>
             <span>
-              <strong>Relayna</strong>
+              <strong>relayna</strong>
               <small>Gateway</small>
             </span>
           </div>
@@ -167,7 +168,7 @@ export function ConsoleShell() {
         <aside id="sidebar" className="sidebar" aria-label="Admin navigation">
           <div className="sidebar-header">
             <div className="brand">
-              <i className="ti ti-route" aria-hidden="true"></i>
+              <RelaynaMark />
               <span className="brand-title">
                 <strong>relayna</strong>
                 <small>AI control plane</small>

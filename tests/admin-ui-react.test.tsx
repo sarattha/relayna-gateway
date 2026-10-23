@@ -525,6 +525,12 @@ describe("shared console and accessibility", () => {
     expect(container.querySelectorAll("[data-view]")).toHaveLength(18);
     expect(screen.getByLabelText("Operator token")).toBeTruthy();
     expect(screen.getByText("AI control plane")).toBeTruthy();
+    const marks = container.querySelectorAll("svg.relayna-mark");
+    expect(marks).toHaveLength(2);
+    expect(marks[0].innerHTML).toBe(marks[1].innerHTML);
+    expect([...marks].every((mark) => mark.getAttribute("aria-hidden") === "true" && mark.getAttribute("focusable") === "false")).toBe(true);
+    expect(container.querySelector(".login-brand-lockup strong")?.textContent).toBe("relayna");
+    expect(container.querySelector(".brand-title strong")?.textContent).toBe("relayna");
     expect(
       container.querySelector("#entra-sign-in")?.getAttribute("href"),
     ).toBe("/admin-ui/auth/login");

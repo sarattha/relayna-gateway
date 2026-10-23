@@ -7918,6 +7918,78 @@ button:not(:disabled):active {
   min-width: 62px;
 }
 
+:root {
+  --rg-brand-body: #185c49;
+  --rg-brand-relay: #4e9673;
+}
+
+:root[data-theme="dark"] {
+  --rg-brand-body: #a8ddbf;
+  --rg-brand-relay: #59ab80;
+}
+
+.relayna-mark {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  display: block;
+  overflow: visible;
+}
+
+.relayna-mark-body {
+  fill: var(--rg-brand-body);
+}
+
+.relayna-mark-relay {
+  fill: var(--rg-brand-relay);
+}
+
+.brand {
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.brand > .relayna-mark {
+  margin-top: 1px;
+}
+
+.brand-title strong {
+  letter-spacing: -.055em;
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.login-brand-icon, :root[data-theme="dark"] .login-brand-icon {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  width: 52px;
+  height: 52px;
+}
+
+.login-brand-icon .relayna-mark {
+  width: 52px;
+  height: 52px;
+}
+
+.login-brand-lockup {
+  gap: 11px;
+}
+
+.login-brand-lockup strong {
+  letter-spacing: -.055em;
+  font-size: 30px;
+  font-weight: 650;
+}
+
+.login-brand-lockup small {
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  margin-top: 3px;
+  font-size: 10px;
+}
+
 @property --tw-translate-x {
   syntax: "*";
   inherits: false;

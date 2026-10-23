@@ -20109,9 +20109,30 @@ var init_ui = __esmMin((() => {
 	NativeSelect.displayName = "NativeSelect";
 }));
 //#endregion
-//#region crates/gateway-api/admin-ui/src/theme-preference.ts
+//#region crates/gateway-api/admin-ui/src/react/brand.tsx
 var import_client$7 = require_client();
 init_ui();
+var import_jsx_runtime$9 = require_jsx_runtime();
+/** Relayna's gateway stem and outgoing relay form one compact R. */
+function RelaynaMark() {
+	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("svg", {
+		className: "relayna-mark",
+		viewBox: "0 0 48 48",
+		width: "48",
+		height: "48",
+		"aria-hidden": "true",
+		focusable: "false",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+			className: "relayna-mark-body",
+			d: "M8 40V13a6 6 0 0 1 6-6h11a14 14 0 0 1 0 28h-5v-8h5a6 6 0 0 0 0-12h-9v25Z"
+		}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+			className: "relayna-mark-relay",
+			d: "M20 31h10l11 10H30Z"
+		})]
+	});
+}
+//#endregion
+//#region crates/gateway-api/admin-ui/src/theme-preference.ts
 var THEME_STORAGE_KEY = "relayna.theme";
 var THEME_CHANGE_EVENT = "relayna:theme-change";
 var preference = "system";
@@ -20200,7 +20221,6 @@ function initializeThemePreference() {
 //#endregion
 //#region crates/gateway-api/admin-ui/src/react/shell.tsx
 var import_react$7 = /* @__PURE__ */ __toESM(require_react(), 1);
-var import_jsx_runtime$9 = require_jsx_runtime();
 function ThemeSwitcher() {
 	const preference = (0, import_react$7.useSyncExternalStore)(subscribeThemePreference, getThemePreference, () => "system");
 	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("label", {
@@ -20246,8 +20266,8 @@ function ConsoleShell() {
 						children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 							className: "login-brand-icon",
 							"aria-hidden": "true",
-							children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", { className: "ti ti-route-alt-left" })
-						}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", { children: "Relayna" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", { children: "Gateway" })] })]
+							children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(RelaynaMark, {})
+						}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", { children: "relayna" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", { children: "Gateway" })] })]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 						className: "login-brand-message",
@@ -20391,10 +20411,7 @@ function ConsoleShell() {
 							className: "sidebar-header",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 								className: "brand",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
-									className: "ti ti-route",
-									"aria-hidden": "true"
-								}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", {
+								children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(RelaynaMark, {}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", {
 									className: "brand-title",
 									children: [
 										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", { children: "relayna" }),

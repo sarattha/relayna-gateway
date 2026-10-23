@@ -1269,3 +1269,18 @@ button:not(:disabled):active { transform: translateY(0); }
 .drawer-body > .panel > .panel-heading { justify-content: flex-end; }
 .policy-layer-guardrails > div:has(> code) { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; margin-top: 10px; font-size: 11px; }
 .policy-layer-guardrails > div:has(> code) > span { color: var(--muted-foreground); min-width: 62px; }
+
+/* Relayna's two-part R is shared by sign-in and the console shell. */
+:root { --rg-brand-body: #185c49; --rg-brand-relay: #4e9673; }
+:root[data-theme="dark"] { --rg-brand-body: #a8ddbf; --rg-brand-relay: #59ab80; }
+.relayna-mark { display: block; width: 40px; height: 40px; flex: 0 0 40px; overflow: visible; }
+.relayna-mark-body { fill: var(--rg-brand-body); }
+.relayna-mark-relay { fill: var(--rg-brand-relay); }
+.brand { align-items: flex-start; gap: 9px; }
+.brand > .relayna-mark { margin-top: 1px; }
+.brand-title strong { font-size: 24px; line-height: 1.1; font-weight: 650; letter-spacing: -.055em; }
+.login-brand-icon, :root[data-theme="dark"] .login-brand-icon { width: 52px; height: 52px; border: 0; border-radius: 0; background: transparent; }
+.login-brand-icon .relayna-mark { width: 52px; height: 52px; }
+.login-brand-lockup { gap: 11px; }
+.login-brand-lockup strong { font-size: 30px; font-weight: 650; letter-spacing: -.055em; }
+.login-brand-lockup small { font-size: 10px; letter-spacing: .13em; text-transform: uppercase; margin-top: 3px; }
