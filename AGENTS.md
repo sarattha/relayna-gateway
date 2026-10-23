@@ -121,8 +121,8 @@ record the measured runtime commit separately from those later commits.
 
 1. Use `scripts/bench-body-admission` and the protocol in
    `benches/body-admission/README.md`. Run the full adaptive resource search for
-   **5, 10, 20, 40, 80 and 100 MiB JSON**, with at least **three confirmation
-   trials**, two Gateway pods, and per-pod limits of **2 CPUs / 1 GiB memory /
+   **5, 10, 20, 40, 80 and 100 MiB JSON**, with at least **three fresh-pod
+   trials per confirmed setting**, two Gateway pods, and per-pod limits of **2 CPUs / 1 GiB memory /
    512 MiB serialized-body budget**. A smoke/pilot run alone does not fulfill
    this release requirement. For example, after setting the candidate version:
 
@@ -137,7 +137,8 @@ record the measured runtime commit separately from those later commits.
    ensure its runtime/build inputs match the final release candidate; record
    any later results-only or documentation-only commits separately.
 2. Run natively on **amd64 or arm64**, including Apple Silicon. Record the
-   host/CPU model, Docker resources, architecture, image and harness provenance.
+   host/CPU model (or explicitly unavailable when the host does not expose it),
+   Docker resources, architecture, image and harness provenance.
    Host, Docker, image and kind node architectures must match. Keep architecture,
    hardware and offered-cohort differences explicit in comparisons.
 3. Retain raw observations, checkpoints, HTML/JSON/CSV reports, failed trials,

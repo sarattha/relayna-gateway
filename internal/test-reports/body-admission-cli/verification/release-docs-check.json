@@ -1,0 +1,12 @@
+{
+  "docs_build": "mkdocs build --strict passed",
+  "release_metadata": "0.1.49 validated",
+  "published_page": "benchmarks/v0.1.49/",
+  "resource_timing_provenance_tables": 3,
+  "body_rows_per_table": 6,
+  "interactive_asset": "assets/benchmarks/v0.1.49-amd64.html",
+  "asset_byte_identical_to_validated_original": true,
+  "interactive_sizes": 6,
+  "size_metric_keyboard_combinations_checked": 18,
+  "horizontal_overflow": false
+}

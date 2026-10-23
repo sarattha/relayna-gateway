@@ -18,7 +18,7 @@ observations. Existing historical measurements remain immutable.
   generic HTML/JSON/CSV reporting, and workflow integration.
 - [x] Verify real native arm64 smoke workloads and failure reports; run focused
   regression tests and the full required repository verification stack.
-- [x] Open and register PR #141; native amd64 and arm64 workflow pilots queued.
+- [x] Open and register PR #141; native amd64 and arm64 workflow pilots passed.
 - [x] Add the user-requested mandatory release benchmark policy and versioned
   documentation, starting with the immutable v0.1.49 baseline.
 - [ ] Monitor checks/reviews, address findings, merge PR #141.
@@ -94,8 +94,12 @@ kubeconfig byte-for-byte. An actual SIGTERM during kind creation returned 143,
 retained an interrupted report and removed the owned node. Full repository
 verification passed: 437 workspace tests, 437 Nextest tests with no skips, and
 all mandatory security checks. Evidence is in
-`internal/test-reports/body-admission-cli/`. PR creation and merge remain the
-final app-owned workflow step.
+`internal/test-reports/body-admission-cli/`. PR #141 is open and linked. Both native workflow pilots passed. The
+user-requested per-version benchmark policy and v0.1.49 results are documented
+and validated. After the standalone contrast review fix, the full stack passed
+again at `a998d6c`, including all 437 workspace and 437 Nextest tests with no
+skips. Push the documentation/evidence update, resolve the addressed review
+thread and use the app-owned watcher through final CI and merge.
 
 
 ## Context and Orientation

@@ -16,7 +16,7 @@ Use the [source benchmark CLI](https://github.com/sarattha/relayna-gateway/blob/
 on native amd64 or arm64, including Apple Silicon. Each trial uses two fresh
 Gateway pods, each limited to **2 CPUs / 1 GiB**, with a **512 MiB body budget**.
 Run the full adaptive resource search for all six sizes, with at least three
-confirmation trials. Smoke tests verify tooling but cannot replace this search.
+fresh-pod trials per confirmed setting. Smoke tests verify tooling but cannot replace this search.
 
 ```sh
 scripts/bench-body-admission run --build \
