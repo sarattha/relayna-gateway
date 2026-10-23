@@ -4721,6 +4721,14 @@ code {
   margin-top: 20px;
 }
 
+.gateway-status-controls {
+  align-items: flex-end;
+}
+
+.gateway-status-controls > button {
+  min-height: 36px;
+}
+
 .form-section {
   border: 1px solid var(--border);
   box-shadow: none;

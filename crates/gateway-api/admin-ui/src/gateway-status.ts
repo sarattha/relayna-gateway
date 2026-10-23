@@ -180,7 +180,7 @@ export function mountGatewayStatus({ content, api, esc, attr = esc, badge, table
   let instanceId = String(initialInstanceId), response = null, previousResponse = null, failed = false, disposed = false;
   let generation = 0, controller = null;
   content.innerHTML = `<section class="panel">
-    <div class="actions">
+    <div class="actions gateway-status-controls">
       <label>Window<select data-gateway-window>${WINDOWS.map((seconds) => `<option value="${seconds}"${seconds === windowSeconds ? " selected" : ""}>${windowLabel(seconds)}</option>`).join("")}</select></label>
       <label>Instance<select data-gateway-instance><option value="all">All reporting instances</option></select></label>
       <button type="button" data-gateway-refresh>Refresh</button>
