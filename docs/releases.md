@@ -3,6 +3,12 @@
 Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.49` is the
 current release target.
 
+Every version starting with v0.1.49 requires a full body-admission benchmark
+and versioned results before release. See the [benchmark history and release
+protocol](benchmarks/index.md). The [v0.1.49 results](benchmarks/v0.1.49.md)
+establish the initial six-size native amd64 resource baseline, including memory,
+latency, admission outcomes and raw evidence.
+
 Version `0.1.49` excludes Node.js releases affected by CVE-2026-111497 from
 build/test tooling and helper containers. npm enforces patched 24.x/26.x
 versions, CI selects patched Node before Rust tests that launch the OIDC helper,

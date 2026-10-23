@@ -1,0 +1,164 @@
+{
+  "harness_commit": "635ffd827d8181ea08ed175352aa4e1da80781e7",
+  "sizes": [
+    {
+      "cpu_model": "AMD EPYC 9V45 96-Core Processor",
+      "run_id": 39830138631,
+      "run_url": "https://github.com/sarattha/relayna-gateway/actions/runs/39830138631",
+      "body_mib": 10,
+      "arithmetic_complete_bodies": 51,
+      "cohort_per_pod": 1024,
+      "largest_three_resource_stable_slot_setting": 215,
+      "largest_three_clean_slot_setting": 215,
+      "first_observed_resource_failure": 216,
+      "final_cohort_tested_slot_range": [
+        128,
+        512
+      ],
+      "all_tested_slot_range": [
+        16,
+        512
+      ],
+      "trials": 22,
+      "resource_failure_trials": 5,
+      "clean_trials": 17,
+      "resource_stable_trials": 17,
+      "stable_rss_peak_mib": 830.90625,
+      "stable_cgroup_peak_mib": 947.5390625,
+      "stable_success_p50_max_ms": 28739.012136999998,
+      "stable_success_p99_max_ms": 30983.414104,
+      "stable_success_max_ms": 30995.285775,
+      "stable_rejection_p95_max_ms": 19483.217146,
+      "stable_elapsed_max_ms": 31298.533444,
+      "stable_cpu_throttled_max_ms": 0.0,
+      "stable_per_trial_outcomes": [
+        {
+          "slots": 215,
+          "attempt": 1,
+          "statuses": {
+            "200": 104,
+            "503": 1944
+          },
+          "successes": 104,
+          "concurrency_denials": 1107,
+          "byte_denials": 837,
+          "transport_errors": 0,
+          "admission_counter_gap": 0,
+          "rss_peak_mib": 827.96484375,
+          "cgroup_peak_mib": 947.5390625,
+          "success_latency_ms": {
+            "count": 104,
+            "min": 20471.826189,
+            "mean": 28186.233869807675,
+            "p50": 28231.810111,
+            "p95": 30171.051646,
+            "p99": 30238.409601,
+            "max": 30239.506089
+          },
+          "rejection_latency_ms": {
+            "count": 1944,
+            "min": 16838.401489,
+            "mean": 17810.515527197003,
+            "p50": 17663.245641999998,
+            "p95": 18898.963934000003,
+            "p99": 19218.306623,
+            "max": 19379.110263
+          },
+          "max_pod_throttled_ms": 0.0
+        },
+        {
+          "slots": 215,
+          "attempt": 2,
+          "statuses": {
+            "200": 104,
+            "503": 1944
+          },
+          "successes": 104,
+          "concurrency_denials": 992,
+          "byte_denials": 952,
+          "transport_errors": 0,
+          "admission_counter_gap": 0,
+          "rss_peak_mib": 830.90625,
+          "cgroup_peak_mib": 922.0390625,
+          "success_latency_ms": {
+            "count": 104,
+            "min": 19991.967984000003,
+            "mean": 28454.499351249993,
+            "p50": 28071.677531,
+            "p95": 30360.423602,
+            "p99": 30383.676437000002,
+            "max": 30403.36826
+          },
+          "rejection_latency_ms": {
+            "count": 1944,
+            "min": 16529.582047,
+            "mean": 17727.562435086442,
+            "p50": 17550.988784999998,
+            "p95": 18828.546433000003,
+            "p99": 19067.403926,
+            "max": 19206.896565
+          },
+          "max_pod_throttled_ms": 0.0
+        },
+        {
+          "slots": 215,
+          "attempt": 3,
+          "statuses": {
+            "200": 104,
+            "503": 1944
+          },
+          "successes": 104,
+          "concurrency_denials": 1047,
+          "byte_denials": 897,
+          "transport_errors": 0,
+          "admission_counter_gap": 0,
+          "rss_peak_mib": 827.2109375,
+          "cgroup_peak_mib": 911.26171875,
+          "success_latency_ms": {
+            "count": 104,
+            "min": 20544.290273,
+            "mean": 29086.399277471173,
+            "p50": 28739.012136999998,
+            "p95": 30948.265285999998,
+            "p99": 30983.414104,
+            "max": 30995.285775
+          },
+          "rejection_latency_ms": {
+            "count": 1944,
+            "min": 17128.222971000003,
+            "mean": 18358.631550052978,
+            "p50": 18161.252978,
+            "p95": 19483.217146,
+            "p99": 19723.23733,
+            "max": 20050.300451
+          },
+          "max_pod_throttled_ms": 0.0
+        }
+      ],
+      "stable_success_p95_max_ms": 30948.265285999998,
+      "stable_successes_min": 104,
+      "stable_successes_max": 104,
+      "stable_observed_slots_peak": 215,
+      "stable_observed_bytes_peak_mib": 511.91042137145996,
+      "stable_trials": 3,
+      "stable_clean_trials": 3,
+      "stable_transport_errors": 0,
+      "stable_lost_denial_responses": 0,
+      "stable_other_http_statuses": 0,
+      "adjacent_setting": 216,
+      "adjacent_trials": 3,
+      "adjacent_resource_failure_trials": 2,
+      "adjacent_oom_trials": 2,
+      "resource_failures_below_chosen": [],
+      "confirmation_stop": null,
+      "refinement_stop": null,
+      "raw_directory": "runs/39830138631/full/10mib",
+      "client_socket_timeout_ms": 60000,
+      "criterion": "resource_stability",
+      "discovery_stop": null,
+      "expansion_stop": null
+    }
+  ],
+  "fresh_gateway_pods": 44,
+  "trials": 22
+}

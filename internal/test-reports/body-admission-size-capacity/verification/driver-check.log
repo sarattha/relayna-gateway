@@ -1,0 +1,7 @@
+PASS exact 5 MiB upload, hash, credentials, read pause and fixture resizing
+PASS exact 100 MiB upload, hash, credentials, read pause and fixture resizing
+PASS early rejection returns complete classified observations
+PASS 300-request cohorts per distinct host exceed the old 256-socket cap
+PASS absolute deadlines settle every request and exit
+PASS 35-second silent response completes under the 60-second resource watchdog
+PASS unsuccessful warmup retains structured evidence

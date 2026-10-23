@@ -3,18 +3,31 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 
-const size = 5 * 1024 * 1024;
+const bodyMiB = Number(process.env.BENCH_BODY_MIB ?? 5);
+if (!Number.isInteger(bodyMiB) || bodyMiB < 1 || bodyMiB > 100) throw new Error("invalid benchmark body size");
+const size = bodyMiB * 1024 * 1024;
 const prefix = '{"payload":"';
 const suffix = '"}';
-const body = Buffer.from(prefix + "x".repeat(size - prefix.length - suffix.length) + suffix);
+const body = Buffer.alloc(size, "x");
+body.write(prefix, 0);
+body.write(suffix, size - suffix.length);
 const digest = createHash("sha256").update(body).digest("hex");
+const socketTimeoutMs = Math.max(30000, Number(process.env.BENCH_CLIENT_DEADLINE_MS ?? 0));
 const agent = new http.Agent({ keepAlive: true, maxSockets: 256 });
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function request(url, { method = "GET", token, data, timeout = 30000 } = {}) {
+function request(url, { method = "GET", token, data, timeout = socketTimeoutMs } = {}) {
   return new Promise((resolve, reject) => {
     const start = performance.now();
     let received = false;
+    let deadline;
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      if (error) reject(error); else resolve(value);
+    };
     const req = http.request(url, {
       method, agent,
       headers: {
@@ -31,15 +44,21 @@ function request(url, { method = "GET", token, data, timeout = 30000 } = {}) {
         if (bytes > 65536) res.destroy(new Error("unexpected large benchmark response"));
         else chunks.push(chunk);
       });
-      res.on("error", reject);
-      res.on("end", () => resolve({
+      res.on("error", error => finish(error));
+      res.on("end", () => finish(null, {
         status: res.statusCode, ms: performance.now() - start,
         ttfb_ms: ttfb, text: Buffer.concat(chunks).toString(),
       }));
     });
     // An early rejection may close the upload socket after returning its 503.
-    req.on("error", error => { if (!received) reject(error); });
+    req.on("error", error => { if (!received) finish(error); });
     req.setTimeout(timeout, () => req.destroy(new Error("request timeout")));
+    const deadlineMs = Number(process.env.BENCH_CLIENT_DEADLINE_MS ?? 0);
+    if (deadlineMs > 0) deadline = setTimeout(() => {
+      const error = new Error("benchmark wall-clock deadline");
+      finish(error);
+      req.destroy(error);
+    }, deadlineMs);
     req.end(data);
   });
 }
@@ -55,20 +74,28 @@ async function seed(control) {
   // policy. Explicitly configure this isolated namespace for service traffic.
   await post("/admin-ui/admin/policy-layers", { kind: "global", policy: {}, guardrail_policy: {} });
   const existing = await request(control + "/admin-ui/admin/services/body-benchmark", { token });
+  const maxBodyBytes = Math.max(8 * 1024 * 1024, size);
+  const serviceTimeout = Number(process.env.BENCH_SERVICE_TIMEOUT_MS ?? 30000);
   if (existing.status === 404) await post("/admin-ui/admin/services", {
     name: "body-benchmark", route_pattern: "/services/body-benchmark/*",
     upstream_base_url: "http://mock:4000", credential: process.env.SERVICE_TOKEN,
-    allowed_methods: ["POST"], max_body_bytes: 8 * 1024 * 1024,
-    timeout_ms: 30000, cost_mode: "none",
+    allowed_methods: ["POST"], max_body_bytes: maxBodyBytes,
+    timeout_ms: serviceTimeout, cost_mode: "none",
   });
   else if (existing.status !== 200) throw new Error(`service lookup: ${existing.status} ${existing.text}`);
+  else {
+    const updated = await request(control + "/admin-ui/admin/services/body-benchmark", {
+      method: "PATCH", token, data: Buffer.from(JSON.stringify({ max_body_bytes: maxBodyBytes, timeout_ms: serviceTimeout })),
+    });
+    if (updated.status !== 200) throw new Error(`service update: ${updated.status} ${updated.text}`);
+  }
   const created = await post("/admin-ui/admin/keys", {
     name: "body-admission-benchmark", owner_type: "individual",
     service_names: ["body-benchmark"],
     policy: {
       allowed_routes: ["/services/*"], allowed_services: ["body-benchmark"],
       allowed_providers: ["internal-service"], allow_streaming: true, allow_tools: true,
-      max_request_body_bytes: 8 * 1024 * 1024,
+      max_request_body_bytes: maxBodyBytes,
     },
   });
   writeFileSync("/tmp/benchmark-key", created.raw_key, { mode: 0o600 });
@@ -97,6 +124,7 @@ function metrics(text) {
 }
 
 async function run(config) {
+  agent.maxSockets = Math.max(256, config.concurrent_per_pod ?? 0);
   const token = readFileSync("/tmp/benchmark-key", "utf8");
   const results = [];
   const samples = [];
@@ -127,7 +155,10 @@ async function run(config) {
   };
   // Warm authentication, database pools, code paths, and allocators equally.
   await Promise.all(config.pods.map(pod => send(pod, performance.now(), true)));
-  if (results.some(result => result.status !== 200 || !result.verified)) throw new Error(`warmup failed: ${JSON.stringify(results)}`);
+  if (results.some(result => result.status !== 200 || !result.verified)) {
+    process.stdout.write(JSON.stringify({ ...config, body_bytes: size, body_sha256: digest, warmup_failed: true, warmup_results: results }) + "\n");
+    return;
+  }
   results.length = 0;
   await sleep(500);
   await fetchMetrics();
@@ -135,9 +166,9 @@ async function run(config) {
   const sampleTask = (async () => { while (sampling) { await fetchMetrics(); await sleep(250); } })();
   const start = performance.now();
   const startUnix = Date.now();
-  const count = Math.round(config.duration_seconds * config.rps);
+  const count = config.concurrent_per_pod ? 2 * config.concurrent_per_pod : Math.round(config.duration_seconds * config.rps);
   await Promise.all(Array.from({ length: count }, (_, i) => new Promise(resolve => {
-    const scheduled = start + i * 1000 / config.rps;
+    const scheduled = config.concurrent_per_pod ? start : start + i * 1000 / config.rps;
     setTimeout(() => send(config.pods[i % 2], scheduled).then(resolve), Math.max(0, scheduled - performance.now()));
   })));
   const elapsed = performance.now() - start;
@@ -154,7 +185,9 @@ async function run(config) {
     elapsed_ms: elapsed, scheduled_requests: count, completed_requests: results.length,
     successful_requests: successes.length, status_counts: counts,
     verified_requests: successes.filter(result => result.verified).length,
-    success_rps_offered_window: successes.length / config.duration_seconds,
+    http_max_sockets_per_host: agent.maxSockets,
+    client_socket_timeout_ms: socketTimeoutMs,
+    success_rps_offered_window: config.concurrent_per_pod ? null : successes.length / config.duration_seconds,
     success_rps_including_drain: successes.length / (elapsed / 1000),
     success_latency_ms: distribution(successes.map(result => result.ms)),
     success_ttfb_ms: distribution(successes.map(result => result.ttfb_ms)),

@@ -1,121 +1,111 @@
-name: Body admission benchmark (amd64)
+name: Native body admission benchmark
 
 on:
   workflow_dispatch:
+    inputs:
+      architecture:
+        description: Native runner architecture (no emulation)
+        type: choice
+        options: [amd64, arm64]
+        default: amd64
+        required: true
+      mode:
+        description: Quick fixed-slot validation or adaptive resource search
+        type: choice
+        options: [pilot, full]
+        default: pilot
+        required: true
+      body_mib:
+        description: One payload size, or all six sizes sequentially
+        type: choice
+        options: [all, "5", "10", "20", "40", "80", "100"]
+        default: all
+        required: true
+      image:
+        description: Optional native Gateway image; leave empty to build checked-out source
+        type: string
+        required: false
 
 permissions:
   contents: read
 
 jobs:
   benchmark:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 360
     steps:
-      - name: Check out measured source
+      - name: Check out benchmark source
         uses: actions/checkout@v4
 
-      - name: Verify native amd64 host
+      - name: Install native kind
+        env:
+          BENCH_ARCH: ${{ inputs.architecture }}
         run: |
-          test "$(uname -m)" = x86_64
-          test "$(docker info --format '{{.Architecture}}')" = x86_64
-          mkdir -p target/body-benchmark-amd64
-          uname -a > target/body-benchmark-amd64/host.txt
-          lscpu >> target/body-benchmark-amd64/host.txt
-          free -b >> target/body-benchmark-amd64/host.txt
-          docker version >> target/body-benchmark-amd64/host.txt
+          set -euo pipefail
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/kind-linux-$BENCH_ARCH" "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-$BENCH_ARCH"
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/kind-linux-$BENCH_ARCH.sha256sum" "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-$BENCH_ARCH.sha256sum"
+          (cd "$RUNNER_TEMP" && sha256sum --check "kind-linux-$BENCH_ARCH.sha256sum")
+          sudo install -m 0755 "$RUNNER_TEMP/kind-linux-$BENCH_ARCH" /usr/local/bin/kind
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build native amd64 candidate
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: benches/body-admission/Dockerfile.gateway
-          platforms: linux/amd64
-          load: true
-          tags: relayna-gateway:body-amd64
-          cache-from: type=gha,scope=body-amd64
-          cache-to: type=gha,mode=max,scope=body-amd64
-
-      - name: Set up isolated Kubernetes cluster
+      - name: Run native benchmark CLI
+        env:
+          BENCH_IMAGE: ${{ inputs.image }}
+          BENCH_MODE: ${{ inputs.mode }}
+          BENCH_SIZE: ${{ inputs.body_mib }}
+          BENCH_ARCH: ${{ inputs.architecture }}
         run: |
-          curl --fail --location --retry 3 -o "$RUNNER_TEMP/kind-linux-amd64" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
-          curl --fail --location --retry 3 -o "$RUNNER_TEMP/kind-linux-amd64.sha256sum" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64.sha256sum
-          (cd "$RUNNER_TEMP" && sha256sum --check kind-linux-amd64.sha256sum)
-          sudo install -m 0755 "$RUNNER_TEMP/kind-linux-amd64" /usr/local/bin/kind
-          kind create cluster --name body-bench --image kindest/node:v1.36.1
-          kind get kubeconfig --name body-bench > "$RUNNER_TEMP/body-bench.kubeconfig"
-          chmod 600 "$RUNNER_TEMP/body-bench.kubeconfig"
-          for image in node:22.23.4-alpine postgres:16-alpine redis:7-alpine; do
-            docker pull --platform linux/amd64 "$image"
-          done
-          kind load docker-image relayna-gateway:body-amd64 node:22.23.4-alpine postgres:16-alpine redis:7-alpine --name body-bench
+          set -euo pipefail
+          scripts/bench-body-admission --json doctor > "$RUNNER_TEMP/body-doctor.json"
+          python3 -c 'import json,os; assert json.load(open(os.environ["RUNNER_TEMP"]+"/body-doctor.json"))["architecture"] == os.environ["BENCH_ARCH"]'
+          args=()
+          if [ -n "$BENCH_IMAGE" ]; then
+            args+=(--image "$BENCH_IMAGE")
+          else
+            args+=(--build)
+          fi
+          if [ "$BENCH_SIZE" != all ]; then
+            args+=(--body-mib "$BENCH_SIZE")
+          fi
+          if [ "$BENCH_MODE" = pilot ]; then
+            args+=(--slots 1 4 --repetitions 1)
+          fi
+          scripts/bench-body-admission --json run --output target/body-capacity "${args[@]}"
 
-      - name: Record image and workload provenance
+      - name: Recover partial report and clean up owned cluster
+        if: always()
+        env:
+          BENCH_SIZE: ${{ inputs.body_mib }}
         run: |
-          test "$(docker image inspect relayna-gateway:body-amd64 --format '{{.Architecture}}')" = amd64
-          test "$(kubectl --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" get nodes -o jsonpath='{.items[0].status.nodeInfo.architecture}')" = amd64
-          git rev-parse HEAD > target/body-benchmark-amd64/source-commit.txt
-          sha256sum benches/body-admission/workload.mjs benches/body-admission/mock.mjs > target/body-benchmark-amd64/workload-sha256.txt
-          docker image inspect relayna-gateway:body-amd64 --format '{{json .}}' > target/body-benchmark-amd64/image.json
-          docker image inspect node:22.23.4-alpine postgres:16-alpine redis:7-alpine > target/body-benchmark-amd64/dependency-images.json
-          docker run --rm --entrypoint sha256sum relayna-gateway:body-amd64 /usr/local/bin/relayna-gateway > target/body-benchmark-amd64/binary-sha256.txt
-          docker run --rm --entrypoint ldd relayna-gateway:body-amd64 --version > target/body-benchmark-amd64/libc.txt
-          docker run --rm node:22.23.4-alpine node --version > target/body-benchmark-amd64/node-version.txt
-          docker run --rm postgres:16-alpine postgres --version > target/body-benchmark-amd64/postgres-version.txt
-          docker run --rm redis:7-alpine redis-server --version > target/body-benchmark-amd64/redis-version.txt
-
-      - name: Run controlled matrix (two pods, five limits, three repetitions)
-        run: |
-          python3 benches/body-admission/run.py \
-            --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
-            --image relayna-gateway:body-amd64 --source-commit "$GITHUB_SHA" \
-            --label improved-amd64 --host-metadata \
-            --output target/body-benchmark-amd64/controlled
-          python3 benches/body-admission/summarize.py \
-            target/body-benchmark-amd64/controlled \
-            --output target/body-benchmark-amd64/controlled-summary.json
-
-      - name: Run separate burst matrix (two pods, five limits)
-        run: |
-          python3 benches/body-admission/run.py \
-            --kubeconfig "$RUNNER_TEMP/body-bench.kubeconfig" \
-            --image relayna-gateway:body-amd64 --source-commit "$GITHUB_SHA" \
-            --label improved-amd64-burst --host-metadata \
-            --rps 64 --duration 5 --delay-ms 2000 --memory-limit-mib 1024 --repetitions 1 \
-            --output target/body-benchmark-amd64/burst
-          python3 benches/body-admission/summarize.py \
-            target/body-benchmark-amd64/burst \
-            --output target/body-benchmark-amd64/burst-summary.json
-
-      - name: Validate candidate acceptance criteria
-        run: |
-          python3 - <<'PY'
-          import json
+          python3 - <<'PY_REPORT'
+          import json, os
           from pathlib import Path
-
-          root = Path("target/body-benchmark-amd64")
-          for matrix, expected_requests in [("controlled", 540), ("burst", 320)]:
-              summary = json.loads((root / f"{matrix}-summary.json").read_text())[0]
-              assert summary["environment"]["image_architecture"] == "amd64"
-              assert all(node["architecture"] == "amd64" for node in summary["environment"]["kubernetes_nodes"])
-              for row in summary["conditions"]:
-                  assert row["requests"] == expected_requests, (matrix, row)
-                  assert row["unexpected_results"] == 0 and row["restarts"] == 0 and not row["oom"], (matrix, row)
-                  if matrix == "controlled":
-                      assert row["successes"] == expected_requests, row
+          root = Path("target/body-capacity")
+          root.mkdir(parents=True, exist_ok=True)
+          if not (root / "run.json").exists():
+              size = os.environ["BENCH_SIZE"]
+              data = {"status": "failed", "body_mib": [5, 10, 20, 40, 80, 100] if size == "all" else [int(size)],
+                      "errors": [{"stage": "workflow setup", "message": "Benchmark CLI was not reached; see Actions step logs."}]}
+              (root / "run.json").write_text(json.dumps(data))
+          PY_REPORT
+          if [ -f target/body-capacity/run.json ]; then
+            scripts/bench-body-admission --json report target/body-capacity
+            python3 - <<'PY'
+          import json, re, subprocess, tempfile
+          from pathlib import Path
+          run = json.loads(Path("target/body-capacity/run.json").read_text())
+          cluster = run.get("cluster", "")
+          if re.fullmatch(r"relayna-body-bench-[0-9a-f]{12}", cluster):
+              with tempfile.TemporaryDirectory() as cleanup:
+                  subprocess.run(["kind", "delete", "cluster", "--name", cluster,
+                                  "--kubeconfig", str(Path(cleanup) / "kubeconfig")], check=True, timeout=180)
           PY
+          fi
 
-      - name: Upload measurements
+      - name: Upload HTML report and raw evidence (including failures)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: body-admission-amd64-${{ github.sha }}
-          path: target/body-benchmark-amd64/
-          if-no-files-found: error
+          name: body-capacity-${{ inputs.architecture }}-${{ inputs.body_mib }}-${{ inputs.mode }}
+          path: target/body-capacity/
+          if-no-files-found: warn
           retention-days: 30
-
-      - name: Remove benchmark cluster
-        if: always()
-        run: kind delete cluster --name body-bench

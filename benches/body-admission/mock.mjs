@@ -17,4 +17,9 @@ http.createServer((req, res) => {
       res.end(result);
     }, req.url.startsWith("/warmup") ? 0 : Number(process.env.DELAY_MS ?? 12000));
   });
+  const readDelay = req.url.startsWith("/warmup") ? 0 : Number(process.env.READ_DELAY_MS ?? 0);
+  if (readDelay > 0) {
+    req.pause();
+    setTimeout(() => req.resume(), readDelay);
+  }
 }).listen(4000, "0.0.0.0");
