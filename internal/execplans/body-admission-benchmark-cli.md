@@ -18,9 +18,19 @@ observations. Existing historical measurements remain immutable.
   generic HTML/JSON/CSV reporting, and workflow integration.
 - [x] Verify real native arm64 smoke workloads and failure reports; run focused
   regression tests and the full required repository verification stack.
-- [ ] Open and register the PR, monitor checks/reviews, address findings, merge.
+- [x] Open and register PR #141; native amd64 and arm64 workflow pilots queued.
+- [x] Add the user-requested mandatory release benchmark policy and versioned
+  documentation, starting with the immutable v0.1.49 baseline.
+- [ ] Monitor checks/reviews, address findings, merge PR #141.
 
 ## Surprises & Discoveries
+
+Automated PR review found that standalone dark-mode media styles changed text
+without setting a dark canvas. The T3 HTML renderer injects theme variables but
+does not emulate prefers-color-scheme, so its initial dark appearance preview
+masked this issue. Set explicit standalone backgrounds/color-scheme, and verify
+real media emulation in the collaborative browser: body contrast is 14.74:1 in
+dark and 15.57:1 in light, with no host theme injection.
 
 A real native ARM smoke attempt showed that the old v0.1.49 digest is an
 amd64-only index, not a multi-platform release. Retain that expected failure
@@ -36,6 +46,13 @@ or interrupted run. Promote the useful behavior into maintained source rather
 than importing code from historical test reports.
 
 ## Decision Log
+
+- User follow-up: every version bump from v0.1.49 must run the full six-size
+  resource search, natively on amd64 or arm64, and publish a versioned results
+  page before merge/tag/release. Current v0.1.49 reuses its exact already
+  measured immutable release image; do not confuse later ARM tooling smoke
+  tests with that capacity baseline. Add the policy in AGENTS.md and expose
+  the baseline tables and interactive report in the public docs.
 
 - Compatibility boundary: released v0.1.49 runtime/configuration/data contracts
   remain intact. Changes are benchmark tooling and ephemeral fixture setup.

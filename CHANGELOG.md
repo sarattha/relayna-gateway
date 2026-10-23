@@ -12,8 +12,18 @@ All notable changes to Relayna Gateway are documented in this file.
   a 512 MiB body budget. Completed, failed and interrupted runs retain
   interactive HTML, JSON and CSV reports with memory, timing and failure
   evidence. See the [benchmark guide](benches/body-admission/README.md).
+- Require a full benchmark run and versioned results documentation for every
+  version bump starting with v0.1.49; publish the initial
+  [release benchmark history](docs/benchmarks/index.md).
 
 ## 0.1.49 - 2026-10-22
+
+### Benchmarks
+
+- Record the initial [per-version benchmark results](docs/benchmarks/v0.1.49.md):
+  six native amd64 JSON sizes, 217 primary trials, resource edges, memory,
+  latency and failure evidence. Results describe this exact released runtime;
+  observed edges require production headroom.
 
 ### Fixed
 
@@ -297,6 +307,9 @@ All notable changes to Relayna Gateway are documented in this file.
   a 512 MiB body budget. Completed, failed and interrupted runs retain
   interactive HTML, JSON and CSV reports with memory, timing and failure
   evidence. See the [benchmark guide](benches/body-admission/README.md).
+- Require a full benchmark run and versioned results documentation for every
+  version bump starting with v0.1.49; publish the initial
+  [release benchmark history](docs/benchmarks/index.md).
 
 ## 0.1.39 - 2026-09-20
 

@@ -46,6 +46,9 @@ nav:
   - Deployment: deployment.md
   - Operations: operations.md
   - Security Exceptions: security-exceptions.md
+  - Benchmarks:
+      - Release benchmark history: benchmarks/index.md
+      - v0.1.49 results: benchmarks/v0.1.49.md
   - Releases: releases.md
 markdown_extensions:
   - admonition

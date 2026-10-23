@@ -109,6 +109,64 @@ record the decision in the ExecPlan.
 If you intentionally skip an ExecPlan for complex work, note why in your
 response so reviewers understand the choice.
 
+### Mandatory Benchmarks for Every Version Bump
+
+Starting with **v0.1.49**, every version bump must include fresh body-admission
+benchmarks and a versioned results document, including patch, security, docs,
+and tooling releases. Benchmark the final release candidate runtime after committing version and
+runtime changes, before merging the version bump or creating the release tag.
+Changes to measured runtime/build inputs require another run. Results-only or
+documentation-only commits may follow without rerunning an unchanged runtime;
+record the measured runtime commit separately from those later commits.
+
+1. Use `scripts/bench-body-admission` and the protocol in
+   `benches/body-admission/README.md`. Run the full adaptive resource search for
+   **5, 10, 20, 40, 80 and 100 MiB JSON**, with at least **three confirmation
+   trials**, two Gateway pods, and per-pod limits of **2 CPUs / 1 GiB memory /
+   512 MiB serialized-body budget**. A smoke/pilot run alone does not fulfill
+   this release requirement. For example, after setting the candidate version:
+
+   ```sh
+   scripts/bench-body-admission run --build \
+     --body-mib 5 10 20 40 80 100 --repetitions 3 \
+     --output target/release-benchmarks/vX.Y.Z
+   ```
+
+   An immutable candidate `--image` may replace `--build`. Record its source
+   commit and resolved image ID/digest. Measure a committed candidate and
+   ensure its runtime/build inputs match the final release candidate; record
+   any later results-only or documentation-only commits separately.
+2. Run natively on **amd64 or arm64**, including Apple Silicon. Record the
+   host/CPU model, Docker resources, architecture, image and harness provenance.
+   Host, Docker, image and kind node architectures must match. Keep architecture,
+   hardware and offered-cohort differences explicit in comparisons.
+3. Retain raw observations, checkpoints, HTML/JSON/CSV reports, failed trials,
+   provenance and checksums in a version-attributable directory under
+   `internal/test-reports/`. Keep generated credentials and kubeconfigs out of
+   artifacts. Preserve earlier versions' evidence.
+4. Add **`docs/benchmarks/vX.Y.Z.md`**, link it from
+   `docs/benchmarks/index.md`, the MkDocs navigation and the version's release
+   documentation, and link the results in `CHANGELOG.md` and release notes.
+   Include commands/date, exact runtime/harness identity, architecture/hardware,
+   resource caps, request sizes, offered cohort, repetitions, observed slots,
+   peak RSS/cgroup memory and headroom, success latency p50/p95/p99, rejection
+   latency, elapsed time, verified successes, 503s, transport errors, OOMs and
+   restarts. Link the interactive HTML and raw JSON/CSV evidence. State missing
+   or censored measurements explicitly.
+5. Compare with the preceding version when conditions are comparable; explain
+   resource/latency regressions and hardware, cohort or methodology differences.
+   Distinguish a repeated adjacent resource edge from a finite tested lower
+   bound or an incomplete search. Observed edges require production headroom;
+   expected admission 503s and intentional resource-boundary OOMs remain results.
+6. Do not mark a version bump ready, merge it, tag it or publish its release
+   while benchmark execution or documentation is incomplete. Retain failure
+   reports, fix invalid/non-resource failures and rerun into a new directory.
+   Earlier-version measurements cannot substitute for a new version's run.
+
+The already completed immutable v0.1.49 resource study supplies the initial
+baseline in `docs/benchmarks/v0.1.49.md`. The per-version requirement begins
+there; older releases do not require retrospective reruns.
+
 ### Preserve User Work
 
 The working tree may contain local changes that you did not make. Do not
@@ -207,6 +265,7 @@ workers that need metered provider access.
 - `crates/gateway-telemetry/`: tracing, metrics, OpenTelemetry, and log
   redaction helpers.
 - `tests/`: Integration tests and black-box gateway behavior tests.
+- `docs/benchmarks/`: per-version benchmark index and results, starting at v0.1.49.
 - `.github/`: CI, issue templates, PR templates, and Codex CI prompts.
 - `.codex/`: Repository-specific Codex skills and verification scripts.
 
@@ -247,8 +306,10 @@ boundaries compatible with the split above.
 4. Implement the change using the package ownership boundaries above.
 5. Add or update tests for behavioral changes.
 6. Run the relevant tests and mandatory pre-push/PR checks.
-7. Keep commits small and use concise, imperative commit messages.
-8. When reporting substantial work as complete, use `$pr-draft-summary` unless
+7. For version bumps, complete the mandatory benchmarks and versioned results
+   documentation before marking the release ready.
+8. Keep commits small and use concise, imperative commit messages.
+9. When reporting substantial work as complete, use `$pr-draft-summary` unless
    the documented skip cases apply.
 
 ### Common Commands
