@@ -16,7 +16,7 @@ observations. Existing historical measurements remain immutable.
 - [x] Define the command surface and compatibility boundary.
 - [x] Implement orchestration, architecture checks, checkpoint/failure handling,
   generic HTML/JSON/CSV reporting, and workflow integration.
-- [ ] Verify real native arm64 smoke workloads and failure reports; run focused
+- [x] Verify real native arm64 smoke workloads and failure reports; run focused
   regression tests and the full required repository verification stack.
 - [ ] Open and register the PR, monitor checks/reviews, address findings, merge.
 
@@ -72,8 +72,13 @@ checkpoint recovery and native Actions workflow. Twenty-one behavioral tests pas
 on Python 3.10 and 3.15; the historical search regression/replay script and
 actionlint pass. The first production-Dockerfile native arm64 build and 5/100 MiB
 one-slot smoke completed with verified successes and expected admission 503s,
-no resource failures, and automatic cluster cleanup. Final source-image rerun,
-full repository verification and PR/merge remain pending.
+no resource failures, and automatic cluster cleanup. Final source-image rerun from `/tmp` also passed, preserving the caller’s
+kubeconfig byte-for-byte. An actual SIGTERM during kind creation returned 143,
+retained an interrupted report and removed the owned node. Full repository
+verification passed: 437 workspace tests, 437 Nextest tests with no skips, and
+all mandatory security checks. Evidence is in
+`internal/test-reports/body-admission-cli/`. PR creation and merge remain the
+final app-owned workflow step.
 
 
 ## Context and Orientation

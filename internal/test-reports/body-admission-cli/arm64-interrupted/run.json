@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "run_id": "e54a5b123451",
+  "status": "interrupted",
+  "stage": "finished",
+  "started_at": "2026-10-23T07:48:32.840935+00:00",
+  "body_mib": [
+    5
+  ],
+  "mode": "sweep",
+  "repetitions": 1,
+  "cluster": "relayna-body-bench-e54a5b123451",
+  "native_verified": false,
+  "resources": {
+    "pods": 2,
+    "cpu_per_pod": 2,
+    "memory_mib_per_pod": 1024,
+    "body_budget_mib_per_pod": 512
+  },
+  "completed_sizes": [],
+  "errors": [
+    {
+      "stage": "create isolated cluster",
+      "message": "Interrupted: received signal 15"
+    }
+  ],
+  "preflight": {
+    "schema_version": 1,
+    "ready": true,
+    "python": "3.15.0",
+    "host": {
+      "system": "Darwin",
+      "architecture": "arm64",
+      "cpu_model": "Apple M1 Pro"
+    },
+    "tools": {
+      "docker": "/usr/local/bin/docker",
+      "kind": "/opt/homebrew/bin/kind",
+      "kubectl": "/opt/homebrew/bin/kubectl"
+    },
+    "docker": {
+      "Architecture": "aarch64",
+      "NCPU": 10,
+      "MemTotal": 20940111872,
+      "KernelVersion": "7.0.14-linuxkit",
+      "ServerVersion": "29.8.2",
+      "OperatingSystem": "Docker Desktop",
+      "CgroupVersion": "2"
+    },
+    "errors": [],
+    "architecture": "arm64"
+  },
+  "architecture": "arm64",
+  "harness_commit": "7024eab1299555ec59e20df7bf631811478f2d81",
+  "harness_dirty": true,
+  "harness_sha256": {
+    "benchmark.py": "81c0a1c7e471114a19eb314efb90f38a4a85b74be9d3ec7040fd35e353f40252",
+    "capacity_report.py": "0a0b990c4b59c1d38a931ded8cfe7a8dd315d0beba923dfbc87705a4bfb12f0b",
+    "capacity_sweep.py": "1d4121fe0fd89f077cd0f139dd5dbdf20b849333d338fab7c444a4aa902e7d6a",
+    "html_report.py": "49f53b81a8ebb44cdb32bb71f71e9ea5509532aadbd4fc5aca83eeea07272276",
+    "plot.py": "f2fe631c87919878c647cd063df519ce8de90e2e18069f25d5766863f7939cb3",
+    "run.py": "5d9c06f7a0989386e473b68400d82cbef2ce537e44dc87a26ad05efd09dc7eb9",
+    "summarize.py": "e1a151ee55ab8de246cc5842d5f0fef6c08495611a658083103f377eab3faea8",
+    "summarize_probes.py": "ab6ed60e0d8d3df631556604f176b3dd6a3e8a3543b57d4d124d2b95d3dd5dea",
+    "test_benchmark.py": "e346b399929c089921bf9367fa64dcaf946ce51aab565ed4bf4d7bef12391836",
+    "mock.mjs": "564c25aa58de00b2436cf3a16bde0ad8ea459c59a17eb634e571d332aee3aa13",
+    "workload.mjs": "bfe4632993d5fcf49866e5da892993f452b7f6f5d31475db0dd2ece2dc55f594"
+  },
+  "image": {
+    "reference": "relayna-body-benchmark:e3231d850d74",
+    "loaded_reference": "relayna-body-benchmark:e54a5b123451",
+    "id": "sha256:3f6abc8ed83e6b5f75002294ad0e7eb295d7017ce87945a6199dcb69dc277d2c",
+    "architecture": "arm64",
+    "source_commit": "b8299a19fa6acae143102f65b57538520e25ea92",
+    "version": "unknown"
+  },
+  "finished_at": "2026-10-23T07:48:45.445894+00:00"
+}

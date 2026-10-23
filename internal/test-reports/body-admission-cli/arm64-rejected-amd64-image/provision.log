@@ -1,0 +1,3 @@
+["docker", "pull", "--platform", "linux/arm64", "ghcr.io/sarattha/relayna-gateway@sha256:1b40a38f8c5f211d9c5b650a450c4645ee53149d1af7235599afdc133ea69f75"]
+ghcr.io/sarattha/relayna-gateway@sha256:1b40a38f8c5f211d9c5b650a450c4645ee53149d1af7235599afdc133ea69f75: Pulling from sarattha/relayna-gateway
+no matching manifest for linux/arm64 in the manifest list entries
