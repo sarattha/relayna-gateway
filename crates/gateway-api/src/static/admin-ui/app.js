@@ -11837,11 +11837,11 @@ var init_dist$16 = __esmMin((() => {
 function useId$2(deterministicId) {
 	const [id, setId] = import_react$34.useState(useReactId());
 	useLayoutEffect2(() => {
-		if (!deterministicId) setId((reactId) => reactId ?? String(count$1++));
+		if (!deterministicId) setId((reactId) => reactId ?? String(count$2++));
 	}, [deterministicId]);
 	return deterministicId || (id ? `radix-${id}` : "");
 }
-var import_react$34, __defProp$14, __name$14, useReactId, count$1;
+var import_react$34, __defProp$14, __name$14, useReactId, count$2;
 var init_dist$15 = __esmMin((() => {
 	import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$16();
@@ -11851,7 +11851,7 @@ var init_dist$15 = __esmMin((() => {
 		configurable: true
 	});
 	useReactId = import_react$34[" useId ".trim().toString()] || (() => void 0);
-	count$1 = 0;
+	count$2 = 0;
 	__name$14(useId$2, "useId");
 }));
 //#endregion
@@ -12741,14 +12741,14 @@ function useFocusGuards() {
 		const { start, end } = guards;
 		if (document.body.firstElementChild !== start) document.body.insertAdjacentElement("afterbegin", start);
 		if (document.body.lastElementChild !== end) document.body.insertAdjacentElement("beforeend", end);
-		count++;
+		count$1++;
 		return () => {
-			if (count === 1) {
+			if (count$1 === 1) {
 				guards?.start.remove();
 				guards?.end.remove();
 				guards = null;
 			}
-			count = Math.max(0, count - 1);
+			count$1 = Math.max(0, count$1 - 1);
 		};
 	}, []);
 }
@@ -12762,7 +12762,7 @@ function createFocusGuard() {
 	element.style.pointerEvents = "none";
 	return element;
 }
-var import_react$23, __defProp$5, __name$5, count, guards;
+var import_react$23, __defProp$5, __name$5, count$1, guards;
 var init_dist$6 = __esmMin((() => {
 	import_react$23 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$5 = Object.defineProperty;
@@ -12770,7 +12770,7 @@ var init_dist$6 = __esmMin((() => {
 		value,
 		configurable: true
 	});
-	count = 0;
+	count$1 = 0;
 	guards = null;
 	__name$5(FocusGuards, "FocusGuards");
 	__name$5(useFocusGuards, "useFocusGuards");
@@ -22681,24 +22681,60 @@ function parseTrafficFrames(buffer) {
 	};
 }
 function mergeTrafficRows(rows, batch, limit = 200) {
+	const terminalIds = new Set(rows.filter((row) => row.completed).map((row) => row.id));
 	const merged = new Map(batch.gap ? [] : rows.map((row) => [row.id, row]));
-	for (const row of batch.rows) merged.set(row.id, row);
+	for (const row of batch.rows) {
+		if (terminalIds.has(row.id) && !row.completed) continue;
+		if (row.completed) terminalIds.add(row.id);
+		merged.set(row.id, row);
+	}
+	if (batch.active) {
+		const completed = [...merged.values()].filter((row) => row.completed);
+		return [...batch.active.rows.filter((row) => !terminalIds.has(row.id)).map((row) => {
+			const full = merged.get(row.id);
+			if (!full || full.summary_only || !row.summary_only) return row;
+			return {
+				...full,
+				...row,
+				summary_only: false,
+				timeline: full.timeline,
+				upstream_timings: full.upstream_timings,
+				usage: full.usage,
+				debug_bundle: full.debug_bundle,
+				recording_failures: [.../* @__PURE__ */ new Set([...full.recording_failures || [], ...row.recording_failures || []])],
+				diagnostics: {
+					...full.diagnostics,
+					...row.diagnostics,
+					authentication_profile: full.diagnostics.authentication_profile,
+					entra: full.diagnostics.entra
+				}
+			};
+		}), ...completed.sort((a, b) => (b.completed_at || b.started_at).localeCompare(a.completed_at || a.started_at)).slice(0, limit)];
+	}
 	return [...merged.values()].sort((a, b) => b.started_at.localeCompare(a.started_at) || b.id.localeCompare(a.id)).slice(0, limit);
 }
-function matchesTraffic(row, filters) {
-	return (!filters.request_id || row.request_id.includes(filters.request_id)) && (!filters.service || row.service === filters.service) && (!filters.project_id || row.project_id === filters.project_id) && (!filters.key_id || row.key_id === filters.key_id) && (!filters.failure_code || row.diagnostics.failure_code === filters.failure_code) && (!filters.status || String(row.client_status) === filters.status) && (filters.outcome !== "failures" || Boolean(row.diagnostics.failure_code)) && (filters.outcome !== "active" || !row.completed);
+function trafficProtocol(row) {
+	return row.diagnostics?.protocol || (row.diagnostics?.websocket ? "websocket" : "unknown");
 }
-function mountTraffic({ content, api, headers, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, refreshWebSocketMetrics, initialFilters = {}, onFilters = () => {} }) {
+function matchesTraffic(row, filters) {
+	return (!filters.request_id || row.request_id.includes(filters.request_id)) && (!filters.service || row.service === filters.service) && (!filters.project_id || row.project_id === filters.project_id) && (!filters.key_id || row.key_id === filters.key_id) && (!filters.failure_code || row.diagnostics.failure_code === filters.failure_code) && (!filters.status || String(row.client_status) === filters.status) && (!filters.protocol || trafficProtocol(row) === filters.protocol) && (filters.outcome !== "failures" || Boolean(row.diagnostics.failure_code)) && (filters.outcome !== "active" || !row.completed) && (filters.outcome !== "completed" || row.completed);
+}
+function mountTraffic({ content, api, headers, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, refreshWebSocketMetrics, initialFilters = {}, initialMode = "active", onFilters = () => {} }) {
 	let rows = [], cursor = null, instance = "Connecting", selected = null, filters = { ...initialFilters };
-	let mode = "live", paused = false, disposed = false, controller = null, reconnect = null;
+	let mode = initialMode, paused = false, disposed = false, controller = null, reconnect = null;
 	let warning = "", historyCursor = null, historyGeneration = 0, connectionGeneration = 0;
+	let activeGeneration = 0, activeTimer = null, cluster = null, activeCursor = null, historyWindow = null;
+	let historyTimer = null, historyAtNewest = true, activeAtNewest = true;
+	let activeStale = false;
+	let selectedInstance = "all";
 	content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Traffic monitor</h3><div class="actions traffic-source-actions">
-        <label>Traffic source<select id="traffic-mode" aria-label="Traffic source" aria-describedby="traffic-source-help"><option value="live">Live instance</option><option value="history">Saved history · all instances</option></select></label>
+        <label>Traffic view<select id="traffic-mode" aria-label="Traffic view" aria-describedby="traffic-source-help"><option value="active">Active · all instances</option><option value="history">Recent completed · all instances</option><option value="legacy">Saved history by arrival · all instances</option><option value="live">Live journal · one instance</option></select></label>
+        <label id="traffic-instance-label">Gateway instance<select id="traffic-instance"><option value="all">All instances</option></select></label>
         <button id="traffic-pause" type="button">Pause</button></div></div>
       <p id="traffic-connection" role="status" aria-live="polite">Connecting…</p>
-      <p id="traffic-source-help" class="help">Live view retains up to 200 recent requests from one gateway process. Saved history includes completed records across instances; its default window is 24 hours. Unknown routes are hidden to avoid capturing sensitive paths.</p>
+      <p id="traffic-source-help" class="help">Active HTTP/SSE and WebSocket summaries have independent retention budgets. Recent completed requests default to the last 30 minutes by completion time and refresh every five seconds on Newest. Older pages and fixed end-time windows stay frozen. Saved history by arrival includes legacy records and defaults to 24 hours. Window filters use the selected history clock. The live journal covers one process.</p>
       <div id="traffic-warning" class="notice hidden" role="status"></div>
       <form id="traffic-filters"><div class="form-grid">
         <label>Request ID<input name="request_id" maxlength="128" placeholder="Client correlation ID"></label>
@@ -22707,9 +22743,10 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
         <label>Key ID<input name="key_id" placeholder="Exact key UUID"></label>
         <label>Client HTTP status<input name="status" type="number" min="100" max="599" placeholder="503"></label>
         <label>Failure reason<input name="failure_code" maxlength="80" placeholder="control_state_unavailable"></label>
-        <label>Outcome<select name="outcome"><option value="all">All requests</option><option value="failures">Failures only</option><option value="active">Active only · live</option></select></label>
-        <label>History from<input name="from" type="datetime-local"></label>
-        <label>History to<input name="to" type="datetime-local"></label>
+        <label>Protocol partition<select name="protocol"><option value="">All protocols</option><option value="http">HTTP / SSE</option><option value="websocket">WebSocket</option><option value="unknown">Not recorded</option></select></label>
+        <label>Outcome<select name="outcome"><option value="all">All requests</option><option value="failures">Failures only</option><option value="active">Active only</option><option value="completed">Completed only</option></select></label>
+        <label>Window from<input name="from" type="datetime-local"></label>
+        <label>Window to<input name="to" type="datetime-local"></label>
         </div><div class="form-actions"><button type="submit">Apply filters</button></div>
       </form>
     </section>
@@ -22718,14 +22755,19 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
     <section id="traffic-detail" class="panel hidden" tabindex="-1"></section>`;
 	let detailBackdrop = null, closeDetail = null, renderedDetailRow = null;
 	const element = (id) => content.querySelector(`#${id}`) || detailBackdrop?.querySelector(`#${id}`);
+	element("traffic-mode").value = mode;
+	element("traffic-pages").classList.toggle("hidden", mode === "live");
+	element("traffic-instance-label").classList.toggle("hidden", mode !== "active");
 	for (const [name, value] of Object.entries(filters)) {
 		const field = element("traffic-filters").elements.namedItem(name);
 		if (field) field.value = value;
 	}
 	const label = (value) => (value || "unknown").replaceAll("_", " ");
+	const isHistory = () => mode === "history" || mode === "legacy";
+	const staleRow = (row) => mode === "active" && (activeStale || cluster?.unavailable || cluster?.instances?.some((item) => item.instance_id === row.instance_id && item.stale));
 	function connection(message) {
 		if (disposed) return;
-		const value = `${message} · ${mode === "live" ? `Instance ${instance}` : "All instances"}`;
+		const value = `${message} · ${mode === "live" ? `Instance ${instance}` : selectedInstance === "all" || isHistory() ? "All instances" : `Instance ${selectedInstance}`}`;
 		if (element("traffic-connection").textContent !== value) element("traffic-connection").textContent = value;
 	}
 	function render() {
@@ -22735,7 +22777,9 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		const visible = rows.filter((row) => matchesTraffic(row, filters));
 		const groups = /* @__PURE__ */ new Map();
 		for (const row of visible) if (row.diagnostics.failure_code) groups.set(row.diagnostics.failure_code, (groups.get(row.diagnostics.failure_code) || 0) + 1);
-		element("traffic-summary").textContent = `${visible.length} displayed · ${visible.filter((row) => !row.completed).length} active in retained records · ${[...groups].map(([reason, count]) => `${label(reason)}: ${count}`).join(" · ") || "No failures in displayed records"}`;
+		const activeCounts = mode === "active" && !cluster?.unavailable && cluster?.counts;
+		const countText = activeCounts ? `${cluster.partial ? "Known" : "Exact"} active before filters: HTTP/SSE ${activeCounts.http ?? "unknown"} · WebSocket ${activeCounts.websocket ?? "unknown"}` : mode === "active" ? "Current counts unknown" : isHistory() ? "Saved page · counts cover displayed rows" : `${visible.filter((row) => !row.completed).length} active in retained records`;
+		element("traffic-summary").textContent = `${visible.length} displayed · ${countText} · ${[...groups].map(([reason, count]) => `${label(reason)}: ${count}`).join(" · ") || "No failures in displayed records"}`;
 		if (filters.failure_code && !groups.has(filters.failure_code)) groups.set(filters.failure_code, 0);
 		const focusedReason = element("traffic-failure-groups").contains(document.activeElement) ? document.activeElement?.dataset?.trafficReason : null;
 		element("traffic-failure-groups").innerHTML = [...groups].map(([reason, count]) => `<button type="button" data-traffic-reason="${attr(reason)}" aria-pressed="${filters.failure_code === reason}">${esc(label(reason))}: ${count}</button>`).join("") + (filters.failure_code ? `<span class="help">Click the selected reason again to clear its filter.</span>` : "");
@@ -22746,12 +22790,11 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			};
 			onFilters(filters);
 			element("traffic-filters").elements.namedItem("failure_code").value = filters.failure_code;
-			if (mode === "history") history();
-			else render();
+			refresh();
 		}));
 		if (focusedReason) ([...element("traffic-failure-groups").querySelectorAll("[data-traffic-reason]")].find((button) => button.dataset.trafficReason === focusedReason) || element("traffic-filters").elements.namedItem("failure_code")).focus({ preventScroll: true });
 		element("traffic-rows").innerHTML = table([
-			"Arrived",
+			mode === "history" ? "Completed / arrived" : "Arrived",
 			"Request",
 			"Protocol / transfer",
 			"Endpoint / service",
@@ -22765,18 +22808,18 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			"Recording",
 			"Details"
 		], visible.map((row) => [
-			time(row.started_at),
+			mode === "history" ? `${row.completed_at ? time(row.completed_at) : "Completion not recorded"}<div class="subtle">Arrived ${time(row.started_at)}</div>` : time(row.started_at),
 			`<code>${esc(row.request_id)}</code>`,
-			row.diagnostics.websocket ? `${badge("WS", "neutral")}<div class="subtle">↑ ${esc(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc(row.diagnostics.websocket.upstream_bytes)} B</div>` : badge(row.diagnostics?.protocol === "http" ? "HTTP" : "Not recorded", "neutral"),
+			trafficProtocol(row) === "websocket" ? badge("WS", "neutral") + (row.diagnostics.websocket ? `<div class="subtle">↑ ${esc(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc(row.diagnostics.websocket.upstream_bytes)} B</div>` : "") : badge(trafficProtocol(row) === "http" ? row.streaming ? "HTTP / SSE" : "HTTP" : "Not recorded", "neutral"),
 			`${esc(row.method)} ${esc(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc(row.service || row.provider || "Not selected")}</span>`,
 			badge(routingModeLabel(row.diagnostics), "neutral"),
-			badge(label(row.completed ? row.diagnostics.outcome : row.stage), row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
+			badge(staleRow(row) ? `Last known ${label(row.stage)} · stale` : label(row.completed ? row.diagnostics.outcome : row.stage), staleRow(row) ? "neutral" : row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
 			esc(row.client_status ?? "—"),
 			esc(row.diagnostics.upstream_status ?? "—"),
 			esc(row.attempts),
-			`<span data-traffic-elapsed="${attr(row.id)}">${esc(row.completed ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)))} ms</span>`,
+			`<span data-traffic-elapsed="${attr(row.id)}">${esc(row.completed || staleRow(row) ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)))} ms${staleRow(row) ? " · last observed" : ""}</span>`,
 			esc(label(row.diagnostics.failure_code || "none")),
-			row.recording_failures.length ? badge("Recording failed", "bad") : esc(row.completed ? "No reported failure" : "In progress"),
+			row.recording_failures?.length ? badge("Recording failed", "bad") : esc(row.completed ? "No reported failure" : "In progress"),
 			`<button type="button" data-traffic-id="${attr(row.id)}">Inspect</button>`
 		]));
 		element("traffic-rows").querySelectorAll("[data-traffic-id]").forEach((button) => button.addEventListener("click", () => {
@@ -22821,7 +22864,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		const copyFocus = detail.contains(document.activeElement) ? document.activeElement?.dataset?.investigationCopy : null;
 		const rawFocus = document.activeElement === detail.querySelector("[data-investigation-section=raw] > summary");
 		const rawOpen = detail.querySelector("[data-investigation-section=raw]")?.open;
-		detail.innerHTML = investigationView({ traffic: row });
+		detail.innerHTML = (row.summary_only ? `<p class="notice">Active summary. Full investigation details are available from retained lifecycle updates or saved history after completion.</p>` : "") + investigationView({ traffic: row });
 		if (rawOpen) detail.querySelector("[data-investigation-section=raw]").open = true;
 		bindInvestigationActions(detail, row.request_id);
 		if (copyFocus) [...detail.querySelectorAll("[data-investigation-copy]")].find((button) => button.dataset.investigationCopy === copyFocus)?.focus({ preventScroll: true });
@@ -22829,9 +22872,98 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 	}
 	function stopConnection() {
 		connectionGeneration++;
+		activeGeneration++;
+		historyGeneration++;
 		controller?.abort();
 		controller = null;
 		clearTimeout(reconnect);
+		clearTimeout(activeTimer);
+		clearTimeout(historyTimer);
+	}
+	function refresh() {
+		if (isHistory()) history();
+		else if (mode === "active") active();
+		else {
+			stopConnection();
+			cursor = null;
+			render();
+			connect();
+		}
+	}
+	async function active(older = false, polling = false) {
+		if (disposed || paused || mode !== "active") return;
+		const before = older ? activeCursor : null;
+		if (older && !before) return;
+		clearTimeout(activeTimer);
+		activeAtNewest = !older;
+		const generation = ++activeGeneration;
+		element("traffic-older").disabled = true;
+		element("traffic-newest").disabled = true;
+		if (!polling) {
+			if (!older) {
+				rows = [];
+				cluster = null;
+				activeCursor = null;
+			}
+			selected = null;
+			render();
+			connection("Loading active traffic");
+		}
+		try {
+			const query = new URLSearchParams({
+				limit: "100",
+				instance_id: selectedInstance
+			});
+			for (const key of [
+				"request_id",
+				"service",
+				"project_id",
+				"key_id",
+				"status",
+				"failure_code",
+				"protocol"
+			]) if (filters[key]) query.set(key, filters[key]);
+			if (filters.outcome === "failures") query.set("failures_only", "true");
+			if (before) {
+				query.set("before", before.started_at);
+				query.set("before_id", before.id);
+			}
+			const result = await api(`/admin-ui/admin/traffic/cluster?${query}`);
+			if (disposed || paused || mode !== "active" || generation !== activeGeneration) return;
+			cluster = result;
+			activeStale = false;
+			rows = filters.outcome === "completed" ? [] : result.rows || [];
+			activeCursor = result.has_more && result.before && result.before_id ? {
+				started_at: result.before,
+				id: result.before_id
+			} : null;
+			element("traffic-older").disabled = !activeCursor;
+			const knownInstances = result.instances || [];
+			const options = `<option value="all">All instances</option>` + knownInstances.map((item) => `<option value="${attr(item.instance_id)}">${esc(item.instance_id)}${item.stale ? " · stale" : ""}</option>`).join("") + (selectedInstance !== "all" && !knownInstances.some((item) => item.instance_id === selectedInstance) ? `<option value="${attr(selectedInstance)}">${esc(selectedInstance)} · unavailable</option>` : "");
+			const selector = element("traffic-instance");
+			if (selector.innerHTML !== options) selector.innerHTML = options;
+			selector.value = selectedInstance;
+			warning = result.unavailable ? "Active traffic unavailable. Counts and coverage are unknown; retrying." : [
+				result.partial ? "Cluster coverage is partial; displayed rows may be stale. Stale or unavailable instances are excluded from current counts." : "",
+				result.truncated ? "Active summary retention is saturated. Counts are independent of retained rows; filtered counts may be unknown." : "",
+				result.has_more ? "More matching active summaries are available. Select a protocol or narrower filter, or use Older when available." : ""
+			].filter(Boolean).join(" ");
+			connection(result.unavailable ? "Active traffic unavailable" : `Active traffic · sampled ${time(result.sampled_at)}`);
+			render();
+		} catch (error) {
+			if (!disposed && mode === "active" && generation === activeGeneration) {
+				cluster = null;
+				activeStale = true;
+				warning = `Active traffic unavailable: ${error.message}. Displayed rows are stale; current counts are unknown.`;
+				connection("Active traffic unavailable · retrying");
+				render();
+			}
+		} finally {
+			if (!disposed && !paused && mode === "active" && generation === activeGeneration) {
+				element("traffic-newest").disabled = false;
+				if (!older) activeTimer = setTimeout(() => active(false, true), 2e3);
+			}
+		}
 	}
 	async function connect() {
 		if (disposed || paused || mode !== "live") return;
@@ -22841,7 +22973,18 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		let watchdog = setTimeout(() => attempt.abort(), 12e3);
 		let reader;
 		try {
-			const response = await fetch("/admin-ui/admin/traffic/live", {
+			const query = new URLSearchParams({ snapshot: "true" });
+			for (const key of [
+				"request_id",
+				"service",
+				"project_id",
+				"key_id",
+				"status",
+				"failure_code",
+				"protocol"
+			]) if (filters[key]) query.set(key, filters[key]);
+			if (filters.outcome === "failures") query.set("failures_only", "true");
+			const response = await fetch(`/admin-ui/admin/traffic/live?${query}`, {
 				headers: {
 					...headers(),
 					...cursor ? { "last-event-id": cursor } : {}
@@ -22869,7 +23012,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 					cursor = batch.cursor;
 					rows = mergeTrafficRows(rows, batch);
 					connection("Live");
-					if (batch.rows.length || batch.gap) render();
+					if (batch.rows.length || batch.gap || batch.active) render();
 				}
 			}
 			if (!disposed && !paused && mode === "live" && generation === connectionGeneration) connection("Reconnecting for authorization refresh");
@@ -22881,51 +23024,71 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			if (!disposed && !paused && mode === "live" && generation === connectionGeneration) reconnect = setTimeout(connect, 1500);
 		}
 	}
-	async function history(older = false) {
+	async function history(older = false, polling = false) {
+		if (disposed || !isHistory() || polling && paused) return;
 		const before = older ? historyCursor : null;
 		if (older && !before) return;
-		historyCursor = null;
+		clearTimeout(historyTimer);
+		historyAtNewest = !older;
+		if (!polling && !older) historyCursor = null;
 		element("traffic-older").disabled = true;
 		element("traffic-newest").disabled = true;
 		const generation = ++historyGeneration;
-		rows = [];
-		selected = null;
-		render();
-		connection("Loading saved history");
+		if (!polling) {
+			if (!older) rows = [];
+			selected = null;
+			render();
+			connection("Loading saved history");
+		}
 		try {
-			const query = new URLSearchParams({ limit: "100" });
+			const query = new URLSearchParams({
+				limit: "100",
+				time_basis: mode === "legacy" ? "started" : "completed"
+			});
 			for (const key of [
 				"request_id",
 				"service",
 				"project_id",
 				"key_id",
 				"status",
-				"failure_code"
+				"failure_code",
+				"protocol"
 			]) if (filters[key]) query.set(key, filters[key]);
 			if (filters.outcome === "active") throw new Error("Active requests are available in Live instance mode.");
 			if (filters.outcome === "failures") query.set("failures_only", "true");
-			for (const key of ["from", "to"]) if (filters[key]) query.set(key, new Date(filters[key]).toISOString());
+			if (!older || !historyWindow) {
+				const end = filters.to ? new Date(filters.to) : /* @__PURE__ */ new Date();
+				historyWindow = {
+					from: filters.from ? new Date(filters.from).toISOString() : (/* @__PURE__ */ new Date(end.getTime() - (mode === "legacy" ? 1440 : 30) * 60 * 1e3)).toISOString(),
+					to: end.toISOString()
+				};
+			}
+			for (const key of ["from", "to"]) query.set(key, historyWindow[key]);
 			if (before) {
-				query.set("before", before.started_at);
+				query.set("before", mode === "legacy" ? before.started_at : before.completed_at || before.started_at);
 				query.set("before_id", before.id);
 			}
 			const result = await api(`/admin-ui/admin/traffic/history?${query}`);
-			if (disposed || mode !== "history" || generation !== historyGeneration) return;
+			if (disposed || !isHistory() || generation !== historyGeneration) return;
 			rows = result;
 			historyCursor = rows.at(-1);
-			selected = null;
+			if (!polling) selected = null;
 			element("traffic-older").disabled = result.length < 100;
-			warning = "Saved history contains records successfully written to the database. Recording failures and in-flight requests may only be available in live records or gateway logs.";
-			connection("Saved history");
+			warning = mode === "legacy" ? "Saved history uses arrival time and includes legacy records without a completion timestamp. Recording failures may only be available in live records or gateway logs." : "Saved history uses completion time. Use Saved history by arrival for legacy records without a completion timestamp. Recording failures may only be available in live records or gateway logs.";
+			connection(`Saved history${paused ? " · paused" : mode === "legacy" ? " by arrival" : historyAtNewest && !filters.to ? " · newest refreshes every five seconds" : " · frozen window"}`);
 			render();
 		} catch (error) {
-			if (!disposed && generation === historyGeneration) {
-				warning = `History unavailable: ${error.message}`;
+			if (!disposed && isHistory() && generation === historyGeneration) {
+				warning = `History unavailable: ${error.message}${polling ? ". Displayed rows are stale; retrying." : ""}`;
+				if (polling || older) element("traffic-older").disabled = !historyCursor || rows.length < 100;
 				connection("History unavailable");
 				render();
 			}
 		} finally {
-			if (!disposed && mode === "history" && generation === historyGeneration) element("traffic-newest").disabled = false;
+			if (!disposed && isHistory() && generation === historyGeneration) {
+				element("traffic-newest").disabled = false;
+				if (mode === "history" && historyAtNewest && !filters.to && !paused) historyTimer = setTimeout(() => history(false, true), 5e3);
+			}
 		}
 	}
 	element("traffic-filters").addEventListener("submit", (event) => {
@@ -22938,8 +23101,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			const field = event.currentTarget.elements.namedItem(name);
 			if (field) field.value = value;
 		}
-		if (mode === "history") history();
-		else render();
+		refresh();
 	});
 	element("traffic-mode").addEventListener("change", (event) => {
 		mode = event.target.value;
@@ -22948,16 +23110,18 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		rows = [];
 		selected = null;
 		warning = "";
-		element("traffic-pages").classList.toggle("hidden", mode !== "history");
-		element("traffic-pause").disabled = mode === "history";
-		if (mode === "history") history();
-		else {
-			cursor = null;
-			paused = false;
-			element("traffic-pause").textContent = "Pause";
-			render();
-			connect();
-		}
+		cluster = null;
+		element("traffic-pages").classList.toggle("hidden", mode === "live");
+		element("traffic-instance-label").classList.toggle("hidden", mode !== "active");
+		element("traffic-pause").disabled = false;
+		cursor = null;
+		paused = false;
+		element("traffic-pause").textContent = "Pause";
+		refresh();
+	});
+	element("traffic-instance").addEventListener("change", (event) => {
+		selectedInstance = event.target.value;
+		active();
 	});
 	element("traffic-pause").addEventListener("click", () => {
 		paused = !paused;
@@ -22965,21 +23129,37 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		if (paused) {
 			stopConnection();
 			connection("Paused · updates are not being received");
+		} else if (mode === "active") {
+			if (activeAtNewest) active();
+			else {
+				element("traffic-older").disabled = !activeCursor;
+				element("traffic-newest").disabled = false;
+				connection("Active traffic · older page remains frozen");
+			}
+		} else if (isHistory()) {
+			if (historyAtNewest) history(false, true);
+			else {
+				element("traffic-older").disabled = !historyCursor || rows.length < 100;
+				element("traffic-newest").disabled = false;
+				connection("Saved history · older page remains frozen");
+			}
 		} else connect();
 	});
-	element("traffic-newest").addEventListener("click", () => history());
-	element("traffic-older").addEventListener("click", () => history(true));
+	element("traffic-newest").addEventListener("click", () => mode === "active" ? active() : history());
+	element("traffic-older").addEventListener("click", () => mode === "active" ? active(true) : history(true));
 	const elapsedTimer = setInterval(() => {
-		if (disposed || paused || mode !== "live") return;
-		refreshWebSocketMetrics?.(element("traffic-detail"));
+		if (disposed || paused || isHistory()) return;
+		if (!staleRow(rows.find((row) => row.id === selected) || {})) refreshWebSocketMetrics?.(element("traffic-detail"));
 		for (const row of rows) {
-			if (row.completed) continue;
+			if (row.completed || staleRow(row)) continue;
 			const cell = content.querySelector(`[data-traffic-elapsed="${row.id}"]`);
 			if (cell) cell.textContent = `${Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at))} ms`;
 		}
 	}, 1e3);
 	render();
-	connect();
+	if (mode === "active") active();
+	else if (isHistory()) history();
+	else connect();
 	return () => {
 		closeDetail?.();
 		disposed = true;
@@ -22989,6 +23169,315 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 	};
 }
 var init_traffic = __esmMin((() => {}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/gateway-status.ts
+function gatewayStatusPath(instanceId = "all", windowSeconds = 60) {
+	return `/admin-ui/admin/gateway/status?${new URLSearchParams({
+		instance_id: String(instanceId),
+		window_seconds: String(WINDOWS.includes(Number(windowSeconds)) ? windowSeconds : 60)
+	})}`;
+}
+function staleSample(sample, now) {
+	const sampled = Date.parse(sample?.sampled_at);
+	return sample?.stale === true || !Number.isFinite(sampled) || Math.abs(now - sampled) > STALE_AFTER_MS;
+}
+function selectGatewayStatus(response, { instanceId = "all", windowSeconds = 60, now = Date.now(), failed = false } = {}) {
+	const instances = Array.isArray(response?.instances) ? response.instances.slice(0, 128) : [];
+	const selected = instances.find((row) => row.instance_id === instanceId);
+	const fresh = instances.filter((row) => !staleSample(row, now));
+	let runtime = instanceId === "all" ? response?.aggregate : selected?.runtime;
+	if (runtime?.window_seconds !== windowSeconds || runtime?.schema_version !== 1) runtime = null;
+	const stale = instanceId === "all" ? instances.length > 0 && fresh.length === 0 : Boolean(selected && staleSample(selected, now));
+	const compatibleRates = (instanceId === "all" ? fresh : selected && !stale ? [selected] : []).filter((row) => row.runtime?.schema_version === 1 && row.runtime?.window_seconds === windowSeconds);
+	const arrivalsPerSecond = compatibleRates.length > 0 && compatibleRates.every((row) => number(row.runtime?.counters?.started) && row.runtime?.observed_seconds > 0) ? compatibleRates.reduce((sum, row) => sum + row.runtime.counters.started / row.runtime.observed_seconds, 0) : null;
+	let label = "Current snapshot", tone = "neutral", message = "";
+	if (failed) {
+		label = "Refresh failed";
+		tone = "bad";
+		message = "Gateway status could not be refreshed. Values shown are the last received snapshot.";
+	} else if (response?.unavailable) {
+		label = "Unavailable";
+		tone = "bad";
+		message = runtime ? "Cluster collection is unavailable. Only reporting instances are included; missing measurements are unknown." : "Gateway status is unavailable. Missing measurements are unknown.";
+	} else if (stale) {
+		label = "Stale snapshot";
+		tone = "warn";
+		message = "These measurements are stale. Current traffic and capacity are unknown.";
+	} else if (response?.partial || fresh.length !== instances.length || runtime?.incompatible_instances > 0) {
+		label = "Partial snapshot";
+		tone = "warn";
+		message = "Only reporting instances are included. Missing or stale instances do not count as zero activity.";
+	} else if (!runtime) {
+		label = "Unknown";
+		message = response ? "No compatible runtime snapshot is available for this selection." : "Waiting for a gateway runtime snapshot.";
+	}
+	return {
+		runtime,
+		instances,
+		freshCount: fresh.length,
+		arrivalsPerSecond,
+		stale,
+		failed,
+		label,
+		tone,
+		message
+	};
+}
+function gatewayQuantile(histogram, percentile) {
+	if (!histogram || !number(histogram.sample_count)) return "Unknown";
+	if (histogram.sample_count === 0) return "No samples";
+	const value = histogram[`p${percentile}_ms`];
+	return number(value) ? `≤ ${value.toLocaleString(void 0, { maximumFractionDigits: 3 })} ms` : "Above histogram range";
+}
+function bytes(value) {
+	if (!number(value)) return "Unknown";
+	if (value < 1024) return `${value.toLocaleString()} B`;
+	if (value < 1048576) return `${(value / 1024).toLocaleString(void 0, { maximumFractionDigits: 1 })} KiB`;
+	return `${(value / 1048576).toLocaleString(void 0, { maximumFractionDigits: 1 })} MiB`;
+}
+function capacityText(capacity, kind) {
+	if (!capacity) return "Unknown";
+	const format = kind === "bytes" ? bytes : count;
+	return `${format(capacity[`used_${kind}`])} occupied · ${format(capacity[`free_${kind}`])} free / ${format(capacity[`max_${kind}`])}`;
+}
+function gatewayCpuUtilization(current, previous, instanceId = "all") {
+	const before = new Map((previous?.instances || []).map((row) => [row.instance_id, row]));
+	const selected = (current?.instances || []).filter((row) => instanceId === "all" || row.instance_id === instanceId);
+	if (!selected.length) return null;
+	let usedCores = 0, limitCores = 0;
+	for (const row of selected) {
+		const old = before.get(row.instance_id);
+		const process = row.runtime?.process, prior = old?.runtime?.process;
+		const elapsed = row.runtime?.sampled_at_unix_ms - old?.runtime?.sampled_at_unix_ms;
+		if (!number(process?.cgroup_cpu_usage_usec) || !number(prior?.cgroup_cpu_usage_usec)) return null;
+		const delta = process.cgroup_cpu_usage_usec - prior.cgroup_cpu_usage_usec;
+		if (staleSample(row, Date.now()) || !number(delta) || !(elapsed > 0) || !number(process?.cgroup_cpu_limit_cores) || process.cgroup_cpu_limit_cores === 0) return null;
+		usedCores += delta / (elapsed * 1e3);
+		limitCores += process.cgroup_cpu_limit_cores;
+	}
+	return limitCores > 0 ? 100 * usedCores / limitCores : null;
+}
+function gatewayStatusView(selection, { esc, badge, table }, { compact = false, windowSeconds = 60 } = {}) {
+	const runtime = selection.runtime;
+	const active = runtime?.active;
+	const latency = runtime?.latency;
+	const capacity = runtime?.body_capacity;
+	const status = badge(selection.label, selection.tone);
+	const notice = selection.message ? `<p class="notice inline" data-kind="${selection.tone}" role="status">${esc(selection.message)}</p>` : "";
+	const stat = (label, value) => `<div class="stat"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+	const metricStrip = `<div class="grid metric-strip">
+    ${stat("Active HTTP / SSE / WS", `${count(active?.http)} / ${count(active?.sse)} / ${count(active?.websocket)}`)}
+    ${stat("Arrivals / second", number(selection.arrivalsPerSecond) ? selection.arrivalsPerSecond.toLocaleString(void 0, { maximumFractionDigits: 2 }) : "Unknown")}
+    ${stat(`Completed · ${windowLabel(windowSeconds)}`, count(runtime?.counters?.completed))}
+    ${stat("Body slots", capacityText(capacity, "requests"))}
+    ${stat("Body bytes", capacityText(capacity, "bytes"))}
+    ${stat("HTTP success p95", gatewayQuantile(latency?.http_success_duration, 95))}
+  </div>`;
+	if (compact) return `<div class="panel-heading"><h3>Gateway status</h3>${status}</div>${notice}${metricStrip}`;
+	const latencyRows = [
+		["HTTP + SSE · all outcomes", "http_duration"],
+		["HTTP + SSE · successes", "http_success_duration"],
+		["HTTP + SSE · upstream duration", "upstream_duration"],
+		["HTTP + SSE · first body byte", "ttfb"],
+		["SSE · first content token", "ttft"],
+		["WebSocket · handshake", "websocket_handshake"],
+		["WebSocket · session only", "websocket_session"],
+		["Body admission · decision", "admission_decision"],
+		["Body admission · rejected decision", "admission_rejection"],
+		["Body lease · retention", "body_retention"]
+	].map(([label, key]) => [
+		esc(label),
+		count(latency?.[key]?.sample_count),
+		...[
+			50,
+			95,
+			99
+		].map((percentile) => esc(gatewayQuantile(latency?.[key], percentile)))
+	]);
+	const process = runtime?.process;
+	const processRows = [
+		["CPU since preceding sample", number(selection.cpuUtilization) ? `${selection.cpuUtilization.toLocaleString(void 0, { maximumFractionDigits: 1 })}% of cgroup CPU limit` : "Unknown"],
+		["Process RSS", bytes(process?.rss_bytes)],
+		["Cgroup memory in use / limit", `${bytes(process?.cgroup_memory_current_bytes)} / ${bytes(process?.cgroup_memory_limit_bytes)}`],
+		["Cgroup memory headroom", number(process?.cgroup_memory_limit_bytes) && number(process?.cgroup_memory_current_bytes) ? bytes(Math.max(0, process.cgroup_memory_limit_bytes - process.cgroup_memory_current_bytes)) : "Unknown"],
+		["Cgroup CPU limit", number(process?.cgroup_cpu_limit_cores) ? `${count(process.cgroup_cpu_limit_cores)} cores` : "Unknown"],
+		["Cgroup CPU used", number(process?.cgroup_cpu_usage_usec) ? `${(process.cgroup_cpu_usage_usec / 1e6).toLocaleString()} s` : "Unknown"],
+		["Cgroup throttled periods / periods", `${count(process?.cgroup_cpu_throttled_periods)} / ${count(process?.cgroup_cpu_periods)}`],
+		["Cgroup throttled time", number(process?.cgroup_cpu_throttled_usec) ? `${(process.cgroup_cpu_throttled_usec / 1e6).toLocaleString()} s` : "Unknown"],
+		["Cgroup OOM events / kills", `${count(process?.cgroup_oom_events)} / ${count(process?.cgroup_oom_kills)}`],
+		["Restarts", count(process?.restarts)]
+	].map(([label, value]) => [esc(label), esc(value)]);
+	const denials = runtime?.admission_denials;
+	const recording = runtime?.recording_failures;
+	const readiness = (value, latency) => `${value === true ? "Ready" : value === false ? "Unavailable" : "Unknown"}${number(latency) ? ` · ${latency.toLocaleString()} ms probe` : ""}`;
+	const dependencyRows = (selection.instances || []).map((row) => {
+		const dependency = row.dependencies;
+		return [
+			esc(row.instance_id),
+			esc(staleSample(row, Date.now()) ? "Stale" : "Reporting"),
+			esc(readiness(dependency?.postgres_ready, dependency?.postgres_readiness_latency_ms)),
+			esc(`${count(dependency?.postgres_pool_connections)} open · ${count(dependency?.postgres_pool_idle)} idle`),
+			esc(readiness(dependency?.redis_ready, dependency?.redis_readiness_latency_ms)),
+			esc(dependency?.publication_failed === true ? "Failed" : dependency?.publication_failed === false ? "Reporting" : "Unknown")
+		];
+	});
+	return `<div class="panel-heading"><h3>Gateway</h3>${status}</div>${notice}${metricStrip}
+    <p class="help">${esc(count(runtime?.instance_count))} reporting instances · ${esc(count(runtime?.observed_seconds))} s observed of ${esc(windowLabel(windowSeconds))}.
+      ${runtime?.uptime_seconds == null ? "Process uptime is unavailable for a cluster aggregate." : `Process uptime: ${esc(count(runtime.uptime_seconds))} s.`}
+      Counts include rejected and unattributed proxy traffic; these measurements do not depend on Usage writes.</p>
+    <p class="help">Admission is fail-fast. Rejections in this window: slots ${esc(count(denials?.concurrency))} · bytes ${esc(count(denials?.bytes))} · other ${esc(count(denials?.other))}. No admission queue is used.</p>
+    <p class="help">Body capacity describes retained managed buffers. Use container memory headroom below to assess total memory.</p>
+    <p class="help">Recording failures in this window: Usage ${esc(count(recording?.usage_events))} · debug bundles ${esc(count(recording?.debug_bundles))} · request traffic ${esc(count(recording?.request_traffic))}.</p>
+    <div class="panel-heading"><h4>Latency distribution</h4></div>
+    <p class="help">Quantiles are histogram bucket upper bounds, merged across reporting instances. Sample counts apply to this window. HTTP success includes completed SSE; WebSocket sessions are separate. First-token samples require observed SSE content.</p>
+    <div class="table-wrap">${table([
+		"Measurement",
+		"Samples",
+		"p50",
+		"p95",
+		"p99"
+	], latencyRows)}</div>
+    <div class="panel-heading"><h4>Process and container</h4></div>
+    <p class="help">Cgroup counters are cumulative and may include other processes in the same cgroup. Unsupported or missing platform measurements are unknown. An unlimited memory limit is also shown as unknown.</p>
+    <div class="table-wrap">${table(["Measurement", "Value"], processRows)}</div>
+    <div class="panel-heading"><h4>Dependencies and recording pipeline</h4></div>
+    <p class="help">Readiness probes run every five seconds. Probe latency is separate from application query latency. PostgreSQL connections here belong to the primary pool; Usage has a separate four-connection pool.</p>
+    <div class="table-wrap">${table([
+		"Instance",
+		"Source",
+		"PostgreSQL",
+		"Primary pool",
+		"Redis",
+		"Observation publisher"
+	], dependencyRows)}</div>`;
+}
+function mountGatewayStatus({ content, api, esc, attr = esc, badge, table, compact = false, refreshMs = 2e3, initialWindowSeconds = 60, initialInstanceId = "all" }) {
+	let windowSeconds = WINDOWS.includes(Number(initialWindowSeconds)) ? Number(initialWindowSeconds) : 60;
+	let instanceId = String(initialInstanceId), response = null, previousResponse = null, failed = false, disposed = false;
+	let generation = 0, controller = null;
+	content.innerHTML = `<section class="panel">
+    <div class="actions">
+      <label>Window<select data-gateway-window>${WINDOWS.map((seconds) => `<option value="${seconds}"${seconds === windowSeconds ? " selected" : ""}>${windowLabel(seconds)}</option>`).join("")}</select></label>
+      <label>Instance<select data-gateway-instance><option value="all">All reporting instances</option></select></label>
+      <button type="button" data-gateway-refresh>Refresh</button>
+    </div>
+    <div data-gateway-status role="region" aria-label="Gateway runtime status"></div>
+  </section>`;
+	const windowControl = content.querySelector("[data-gateway-window]");
+	const instanceControl = content.querySelector("[data-gateway-instance]");
+	const refreshControl = content.querySelector("[data-gateway-refresh]");
+	const statusHost = content.querySelector("[data-gateway-status]");
+	const knownInstances = /* @__PURE__ */ new Map();
+	function render() {
+		if (disposed) return;
+		const selection = selectGatewayStatus(response, {
+			instanceId,
+			windowSeconds,
+			failed
+		});
+		selection.cpuUtilization = gatewayCpuUtilization(response, previousResponse, instanceId);
+		for (const row of selection.instances) if (typeof row.instance_id === "string" && row.instance_id.length <= 128) knownInstances.set(row.instance_id, row);
+		if (knownInstances.size > 128) for (const id of knownInstances.keys()) {
+			if (knownInstances.size <= 128) break;
+			if (id !== instanceId) knownInstances.delete(id);
+		}
+		if (instanceId !== "all" && !knownInstances.has(instanceId)) knownInstances.set(instanceId, {
+			instance_id: instanceId,
+			stale: true
+		});
+		const options = `<option value="all">All reporting instances</option>` + [...knownInstances.values()].map((row) => `<option value="${attr(row.instance_id)}">${esc(row.instance_id)}${staleSample(row, Date.now()) ? " · stale" : ""}</option>`).join("");
+		if (instanceControl.innerHTML !== options) instanceControl.innerHTML = options;
+		instanceControl.value = instanceId;
+		statusHost.innerHTML = gatewayStatusView(selection, {
+			esc,
+			badge,
+			table
+		}, {
+			compact,
+			windowSeconds
+		});
+	}
+	async function refresh() {
+		if (disposed) return;
+		const current = ++generation;
+		controller?.abort();
+		controller = new AbortController();
+		refreshControl.disabled = true;
+		statusHost.setAttribute("aria-busy", "true");
+		try {
+			const next = await api(gatewayStatusPath(instanceId, windowSeconds), { signal: controller.signal });
+			if (disposed || current !== generation) return;
+			previousResponse = response;
+			response = next;
+			failed = false;
+		} catch (error) {
+			if (disposed || current !== generation) return;
+			failed = true;
+		} finally {
+			if (!disposed && current === generation) {
+				refreshControl.disabled = false;
+				statusHost.setAttribute("aria-busy", "false");
+				render();
+			}
+		}
+	}
+	const changeWindow = () => {
+		windowSeconds = Number(windowControl.value);
+		render();
+		refresh();
+	};
+	const changeInstance = () => {
+		instanceId = instanceControl.value;
+		render();
+		refresh();
+	};
+	const clickRefresh = () => {
+		refresh();
+	};
+	windowControl.addEventListener("change", changeWindow);
+	instanceControl.addEventListener("change", changeInstance);
+	refreshControl.addEventListener("click", clickRefresh);
+	render();
+	refresh();
+	const interval = refreshMs > 0 ? setInterval(() => {
+		render();
+		refresh();
+	}, Math.max(1e3, refreshMs)) : null;
+	const dispose = () => {
+		disposed = true;
+		++generation;
+		controller?.abort();
+		if (interval !== null) clearInterval(interval);
+		windowControl.removeEventListener("change", changeWindow);
+		instanceControl.removeEventListener("change", changeInstance);
+		refreshControl.removeEventListener("click", clickRefresh);
+	};
+	return dispose;
+}
+function mountHealthGatewayStatus(options) {
+	return mountGatewayStatus({
+		...options,
+		compact: false
+	});
+}
+function mountTrafficGatewayStatus(options) {
+	return mountGatewayStatus({
+		...options,
+		compact: true
+	});
+}
+var WINDOWS, STALE_AFTER_MS, number, count, windowLabel;
+var init_gateway_status = __esmMin((() => {
+	WINDOWS = [
+		60,
+		300,
+		900
+	];
+	STALE_AFTER_MS = 5e3;
+	number = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+	count = (value) => number(value) ? value.toLocaleString() : "Unknown";
+	windowLabel = (seconds) => `${seconds / 60} min`;
+}));
 //#endregion
 //#region crates/gateway-api/admin-ui/src/design-system/guidance-content.ts
 function fieldGuidance(name, context) {
@@ -23005,9 +23494,11 @@ function fieldGuidance(name, context) {
 			service: "Exact registered service name. Blank includes every service, including requests without a selected service.",
 			failure_code: "Exact recorded failure code, such as control_state_unavailable. Blank includes every reason and requests without a failure. Click a reason chip to apply or clear it.",
 			status: "Client HTTP status, such as 503. A 200 can still be an interrupted stream; inspect its outcome.",
-			outcome: "Failures selects recorded failure reasons. Active means unfinished requests and is available only in live mode.",
-			from: "Saved-history start in local time. Blank defaults to the last 24 hours. Ignored in live mode.",
-			to: "Saved-history end in local time, including this instant. Blank has no upper bound. Ignored in live mode."
+			outcome: "Failures selects recorded failure reasons. Active shows unfinished requests in the selected observation scope.",
+			protocol: "Separate HTTP requests and WebSocket sessions. Legacy records without a captured protocol remain Unknown.",
+			instance_id: "Select one gateway process or all reporting instances. Stale or missing publishers make coverage partial.",
+			from: "History start in local time. Recent completions defaults to the last 30 minutes; legacy arrival history defaults to the last 24 hours. Ignored for active requests.",
+			to: "History end in local time, including this instant. A fixed end freezes the recent page. Ignored for active requests."
 		};
 		if (traffic[name]) return traffic[name];
 	}
@@ -23227,7 +23718,13 @@ var init_guidance_content = __esmMin((() => {
 		"Attempt": "Upstream attempt number. 0 is gateway processing before the first upstream attempt; 1 is the first attempt.",
 		"Trace ID": "Distributed tracing identifier, when recorded. Use it to correlate gateway activity with other instrumented services.",
 		"Task / run": "Relayna task and execution run identifiers recorded with this request. Not recorded means the request supplied no retained linkage.",
-		"Gateway instance": "Gateway process that observed this request. Live Traffic is limited to one instance; saved history spans instances.",
+		"Gateway instance": "Gateway process that observed this request. Active Traffic can combine reporting instances; the live journal observes one process. Saved history spans instances.",
+		"Body slots": "Occupied and vacant slots for retained managed buffers. A slot can remain occupied after forwarding while a buffer reference is retained; it does not count every active connection.",
+		"Body bytes": "Occupied and vacant managed buffer bytes within the effective admission limit. This excludes other process memory; compare container memory headroom separately.",
+		"Arrivals / second": "Sum of reporting instances' request arrival rates, each divided by its own observed seconds in the rolling window. Includes denied and unattributed proxy requests and remains independent of Usage persistence.",
+		"HTTP success": "Successful completed HTTP request duration, including downstream delivery. An interrupted stream does not become successful because its headers reported HTTP 200.",
+		"WebSocket · handshake": "Time to establish or reject a WebSocket upgrade. Open-session duration has its own distribution and is not HTTP request latency.",
+		"WebSocket · session only": "Observed WebSocket session lifetime at termination. This does not measure individual application turns or message success.",
 		"Service version": "Version reported by the upstream service and retained by the gateway. Not recorded does not identify a deployment version.",
 		"DNS": "Hostname resolution time, including the OS resolver/cache. IP literals need no DNS; missing data is not a measured zero.",
 		"TCP connect": "New TCP connection setup, excluding DNS and TLS. A reused connection has no new connect measurement.",
@@ -37183,6 +37680,8 @@ function showCommandPalette() {
 	});
 }
 async function signOut() {
+	stopGatewayStatus?.();
+	stopGatewayStatus = null;
 	stopTraffic?.();
 	stopTraffic = null;
 	let logoutUrl = null;
@@ -37206,6 +37705,8 @@ async function refresh({ focus = false } = {}) {
 	renderGeneration += 1;
 	const generation = ++viewGeneration;
 	const view = state.view;
+	stopGatewayStatus?.();
+	stopGatewayStatus = null;
 	closeContentDrawer?.();
 	viewController.abort();
 	viewController = new AbortController();
@@ -37257,6 +37758,17 @@ async function refresh({ focus = false } = {}) {
 					project_id: state.projectScope
 				},
 				onFilters: applyTrafficFilters
+			});
+			const gatewayHost = document.createElement("div");
+			gatewayHost.style.minWidth = "0";
+			content.prepend(gatewayHost);
+			stopGatewayStatus = mountTrafficGatewayStatus({
+				content: gatewayHost,
+				api,
+				esc,
+				attr,
+				badge,
+				table
 			});
 		}
 		if (view === "usage") await usage();
@@ -39677,17 +40189,15 @@ function healthCheckLabel(row) {
 }
 async function usage() {
 	const renderId = ++renderGeneration;
-	const loaded = await Promise.all([
+	const inventories = Promise.allSettled([
 		api("/admin-ui/admin/projects"),
 		api("/admin-ui/admin/services"),
 		api("/admin-ui/admin/keys")
 	]);
-	if (renderId !== renderGeneration) return;
-	[state.projects, state.services, state.keys] = loaded;
-	if (renderId !== renderGeneration) return;
 	content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Usage filters</h3></div>
+      <div data-usage-inventory-status role="status"></div>
       <form id="usage-form" class="form-grid">
         ${formSection("Primary filters", "Start with ownership, service, status, and time range.", `
         <label>Project<select name="project_id"><option value="">All</option>${projectOptions()}</select></label>
@@ -39697,7 +40207,7 @@ async function usage() {
         <label>Status<select name="status"><option value="">All</option><option value="success">Success</option><option value="failure">Failure</option></select></label>
         <label>Status code<input name="status_code" type="number" min="100" max="599" placeholder="500"></label>
         <label>Time range<select name="time_preset">
-          <option value="">All time</option>
+          <option value="all_time">All time</option>
           <option value="last_1h">Last 1h</option>
           <option value="last_6h">Last 6h</option>
           <option value="last_24h">Last 24h</option>
@@ -39769,7 +40279,7 @@ async function usage() {
           <button type="button" data-usage-export-action="copy-url">Copy URL</button>
           <button type="button" data-usage-export-action="copy-curl">Copy curl</button>
         </div>
-        <div id="usage-export-help" class="help">Leave both dates blank to use the Usage time filter. Entering either date replaces that range; a blank start or end means no limit on that side. Other Usage filters still apply. All rows needs both a start and end (here or in Usage) and supports Download only.</div>
+        <div id="usage-export-help" class="help">Leave both dates blank to use the Usage time filter. Entering either date replaces that range; a blank start or end means no limit on that side. Other Usage filters still apply. All rows needs both a start and end (here or in Usage). Downloads stream to disk; Copy URL and Copy curl use the same streaming endpoint.</div>
       </form>
     </section>
     <section class="panel">
@@ -39788,13 +40298,18 @@ async function usage() {
   `;
 	const usageForm = document.querySelector("#usage-form");
 	for (const [name, value] of Object.entries({
+		time_preset: "last_24h",
 		...state.usageFilters,
 		project_id: state.projectScope
 	})) {
 		const field = usageForm.elements.namedItem(name);
-		if (field) field.value = value;
+		if (!field) continue;
+		const selected = name === "time_preset" && value === "" ? "all_time" : value;
+		if (field.tagName === "SELECT" && selected && ![...field.options].some((option) => option.value === selected)) field.add(new Option(selected, selected));
+		field.value = selected;
 	}
 	document.querySelector("#usage-form").addEventListener("submit", handleAsync(applyUsageFilters));
+	bindUsageSuggestions(usageForm);
 	document.querySelector("#task-usage-form").addEventListener("submit", handleAsync(loadTaskUsage));
 	document.querySelectorAll("[data-usage-export-action]").forEach((button) => {
 		button.addEventListener("click", handleAsync(usageExportAction));
@@ -39802,93 +40317,266 @@ async function usage() {
 	document.querySelector("#usage-export-form [name=export_limit]")?.addEventListener("change", syncUsageExportControls);
 	syncUsageExportControls();
 	organizeView("usage");
+	inventories.then((loaded) => {
+		if (renderId !== renderGeneration || usageForm !== document.querySelector("#usage-form")) return;
+		const fields = [
+			[
+				"projects",
+				"project_id",
+				projectOptions
+			],
+			[
+				"services",
+				"service",
+				serviceOptions
+			],
+			[
+				"keys",
+				"key_id",
+				keyOptions
+			]
+		];
+		const failed = [];
+		loaded.forEach((result, index) => {
+			const [inventory, name, options] = fields[index];
+			if (result.status !== "fulfilled") {
+				failed.push(inventory);
+				return;
+			}
+			state[inventory] = result.value;
+			const field = usageForm.elements.namedItem(name);
+			const selected = field.value;
+			field.innerHTML = `<option value="">All</option>${options()}`;
+			if (selected && ![...field.options].some((option) => option.value === selected)) field.add(new Option(selected, selected));
+			field.value = selected;
+		});
+		document.querySelector("[data-usage-inventory-status]").textContent = failed.length ? `Filter labels unavailable: ${failed.join(", ")}. Usage queries remain available.` : "";
+	});
 	await loadUsage();
 }
 async function loadUsage(event) {
 	event?.preventDefault();
+	usageLoad?.controllers.forEach((controller) => controller.abort());
 	const generation = ++usageGeneration;
 	const root = document.querySelector("#usage-results");
-	if (root) {
-		root.innerHTML = emptyState("Loading usage for the applied filters…");
-		root.setAttribute("aria-busy", "true");
-	}
+	if (!root) return;
 	const query = usageQueryFromForm(event?.target);
-	const filterQuery = usageFilterValuesQueryFromForm(event?.target);
 	const pageSize = usagePageSize();
-	query.set("offset", String(state.usagePagination.eventsOffset));
 	query.set("timeseries_limit", String(pageSize));
-	query.set("timeseries_offset", String(state.usagePagination.timeseriesOffset));
 	query.set("service_timeseries_limit", String(pageSize));
-	query.set("service_timeseries_offset", String(state.usagePagination.serviceTimeseriesOffset));
-	let loaded;
-	try {
-		loaded = await Promise.all([
-			api(`/admin-ui/admin/usage/dashboard?${query}`),
-			api(`/admin-ui/admin/usage/events?${query}`),
-			api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=route`),
-			api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=endpoint`),
-			api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=model`)
-		]);
-	} catch (error) {
-		if (generation !== usageGeneration || root !== document.querySelector("#usage-results") || error.name === "AbortError") return;
-		if (root) {
-			root.setAttribute("aria-busy", "false");
-			root.innerHTML = `<div class="notice" role="alert">Usage could not load: ${esc(error.message)} <button type="button" data-retry-usage>Retry</button></div>`;
-			root.querySelector("[data-retry-usage]").addEventListener("click", handleAsync(() => loadUsage()));
-		}
-		return;
-	}
-	const [dashboard, events, routeOptions, endpointOptions, modelOptions] = loaded;
-	if (generation !== usageGeneration || root !== document.querySelector("#usage-results")) return;
-	root?.setAttribute("aria-busy", "false");
-	const summary = dashboard.summary;
-	updateUsageDatalists(routeOptions.values, endpointOptions.values, modelOptions.values);
-	const results = document.querySelector("#usage-results");
-	if (!results) return;
-	results.innerHTML = `
+	state.usagePagination.eventsOffset = 0;
+	usageLoad = {
+		generation,
+		root,
+		query,
+		controllers: /* @__PURE__ */ new Map(),
+		loaded: /* @__PURE__ */ new Set(),
+		queue: [],
+		active: 0,
+		eventCursors: ["start"],
+		eventIndex: 0,
+		eventsPage: null
+	};
+	const sections = [
+		["project-key-services", "Project → Virtual key → Service"],
+		["projects", "Projects"],
+		["keys", "Keys"],
+		["services", "Services"],
+		["endpoints", "Endpoints"],
+		["providers", "Providers"],
+		["models", "Models"],
+		["tasks", "Tasks"],
+		["events", "Recent requests"],
+		["timeseries", "Timeseries"],
+		["service-timeseries", "Service timeseries"],
+		["unused-keys", "Unused keys"]
+	];
+	root.innerHTML = `
     <p class="applied-filters">Applied filters: ${esc([...query].filter(([key]) => ![
 		"offset",
 		"limit",
 		"timeseries_limit",
-		"timeseries_offset",
 		"service_timeseries_limit",
-		"service_timeseries_offset",
 		"breakdown_limit",
 		"sort_by",
 		"interval"
 	].includes(key)).map(([key, value]) => `${key}: ${value}`).join(" · ") || "All recorded usage")}</p>
-    <div class="grid stats">
-      ${stat("Requests", summary.request_count)}
-      ${stat("Failures", summary.failure_count)}
+    <div data-usage-summary aria-busy="true">${emptyState("Loading usage summary…")}</div>
+    ${query.get("key_id") ? `<p><button type="button" data-usage-litellm-spend>View LiteLLM reported spend</button> <span class="help">Current mapped-key counter · independent of date filters</span></p>` : ""}
+    ${sections.map(([section, title]) => `<h4>${esc(title)}</h4><div data-usage-section="${attr(section)}">${emptyState("Select this section to load it.")}</div>`).join("")}
+  `;
+	root.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
+	tabulateUsage(root);
+	await Promise.allSettled([loadUsageSummary(), loadUsageSection("events")]);
+}
+function usageRequestCurrent(load) {
+	return usageLoad === load && load.root === document.querySelector("#usage-results");
+}
+function usageRequestController(load, section) {
+	load.controllers.get(section)?.abort();
+	const controller = new AbortController();
+	load.controllers.set(section, controller);
+	return controller;
+}
+async function loadUsageSummary() {
+	const load = usageLoad;
+	if (!load || !usageRequestCurrent(load)) return;
+	const host = load.root.querySelector("[data-usage-summary]");
+	const controller = usageRequestController(load, "summary");
+	host.setAttribute("aria-busy", "true");
+	try {
+		const summary = await api(`/admin-ui/admin/usage/summary?${load.query}`, { signal: controller.signal });
+		if (!usageRequestCurrent(load) || controller.signal.aborted) return;
+		host.innerHTML = `<div class="grid stats">
+      ${stat("Requests", summary.request_count)}${stat("Failures", summary.failure_count)}
       ${stat("Cost", money(summary.estimated_cost_usd))}
       ${stat("Avg latency", summary.average_latency_ms == null ? "n/a" : `${Math.round(summary.average_latency_ms)} ms`)}
       ${stat("Fallback rate", percent(summary.fallback_rate))}
-      ${stat("Expensive", summary.expensive_request_count || 0)}
-      ${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
-    </div>
-    ${query.get("key_id") ? `<p><button type="button" data-usage-litellm-spend>View LiteLLM reported spend</button> <span class="help">Current mapped-key counter · independent of date filters</span></p>` : ""}
-    <h4>Project → Virtual key → Service</h4>
-    ${usageProjectKeyServiceHierarchy(dashboard.breakdowns.project_key_services || [])}
-    <h4>Projects</h4>${usageBreakdownTable(dashboard.breakdowns.projects, projectName)}
-    <h4>Keys</h4>${usageBreakdownTable(dashboard.breakdowns.keys, keyName)}
-    <h4>Services</h4>${usageBreakdownTable(dashboard.breakdowns.services)}
-    <h4>Endpoints</h4>${usageBreakdownTable(dashboard.breakdowns.endpoints || [])}
-    <h4>Providers</h4>${usageBreakdownTable(dashboard.breakdowns.providers)}
-    <h4>Models</h4>${usageBreakdownTable(dashboard.breakdowns.models)}
-    <h4>Tasks</h4>${usageBreakdownTable(dashboard.breakdowns.tasks)}
-    ${usagePagedTable("Recent requests", "events", usageEventsTable(events.rows), events, events.rows.length)}
-    ${usagePagedTable("Timeseries", "timeseries", usageTimeseriesTable(dashboard.timeseries), dashboard.timeseries_page, dashboard.timeseries.length)}
-    ${usagePagedTable("Service timeseries", "service-timeseries", usageServiceTimeseriesTable(dashboard.service_timeseries || []), dashboard.service_timeseries_page, (dashboard.service_timeseries || []).length)}
-    <h4>Unused keys</h4>${unusedKeysTable(dashboard.unused_keys)}
-  `;
-	results.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
-	tabulateUsage(results);
-	results.querySelectorAll("[data-debug-request]").forEach((button) => {
-		button.addEventListener("click", handleAsync(openDebugRequest));
+      ${stat("Expensive", summary.expensive_request_count || 0)}${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
+    </div>`;
+	} catch (error) {
+		if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
+		host.innerHTML = `<div class="notice" role="alert">Usage summary unavailable: ${esc(error.message)} <button type="button" data-retry-usage-summary>Retry summary</button></div>`;
+		host.querySelector("[data-retry-usage-summary]").addEventListener("click", handleAsync(loadUsageSummary));
+	} finally {
+		if (usageRequestCurrent(load) && !controller.signal.aborted) host.setAttribute("aria-busy", "false");
+	}
+}
+function loadVisibleUsageSections(root) {
+	const load = usageLoad;
+	if (!load || load.root !== root) return;
+	root.querySelectorAll("[data-usage-section]").forEach((host) => {
+		const section = host.dataset.usageSection;
+		if (!host.closest(".breakdown-section")?.hidden && !load.loaded.has(section) && !load.controllers.has(section) && !load.queue.includes(section)) load.queue.push(section);
 	});
-	results.querySelectorAll("[data-usage-page-section]").forEach((button) => {
-		button.addEventListener("click", handleAsync(changeUsagePage));
-	});
+	drainUsageSections(load);
+}
+function drainUsageSections(load) {
+	if (!usageRequestCurrent(load)) return;
+	while (load.active < 3 && load.queue.length) {
+		const section = load.queue.shift();
+		if (load.loaded.has(section) || load.controllers.has(section)) continue;
+		load.active += 1;
+		loadUsageSection(section).finally(() => {
+			load.active -= 1;
+			drainUsageSections(load);
+		});
+	}
+}
+async function loadUsageSection(section, force = false) {
+	const load = usageLoad;
+	if (!load || !usageRequestCurrent(load) || !force && load.controllers.has(section)) return;
+	const host = load.root.querySelector(`[data-usage-section="${section}"]`);
+	if (!host) return;
+	const controller = usageRequestController(load, section);
+	host.setAttribute("aria-busy", "true");
+	host.innerHTML = emptyState("Loading this usage section…");
+	const query = new URLSearchParams(load.query);
+	query.set("timeseries_offset", String(state.usagePagination.timeseriesOffset));
+	query.set("service_timeseries_offset", String(state.usagePagination.serviceTimeseriesOffset));
+	if (section === "events") {
+		if (![
+			"cost",
+			"latency",
+			"tokens",
+			"status_code"
+		].includes(query.get("sort_by"))) {
+			query.set("cursor", load.eventCursors[load.eventIndex] || "start");
+			query.set("offset", "0");
+		} else query.set("offset", String(state.usagePagination.eventsOffset));
+	}
+	try {
+		const data = await api(`${section === "events" ? "/admin-ui/admin/usage/events" : `/admin-ui/admin/usage/sections/${section}`}?${query}`, { signal: controller.signal });
+		if (!usageRequestCurrent(load) || controller.signal.aborted) return;
+		load.loaded.add(section);
+		if (section === "events") {
+			load.eventsPage = data;
+			if (load.eventIndex === 0 && data.snapshot_cursor) load.eventCursors[0] = data.snapshot_cursor;
+			host.innerHTML = usagePagedTable("Recent requests", section, usageEventsTable(data.rows || []), {
+				...data,
+				offset: state.usagePagination.eventsOffset
+			}, (data.rows || []).length);
+		} else if (section === "timeseries" || section === "service-timeseries") {
+			const rows = data.rows || [];
+			host.innerHTML = usagePagedTable(section === "timeseries" ? "Timeseries" : "Service timeseries", section, section === "timeseries" ? usageTimeseriesTable(rows) : usageServiceTimeseriesTable(rows), data.page, rows.length);
+		} else if (section === "project-key-services") host.innerHTML = usageProjectKeyServiceHierarchy(data.rows || []);
+		else if (section === "unused-keys") host.innerHTML = unusedKeysTable(data.rows || []);
+		else host.innerHTML = usageBreakdownTable(data.rows || [], section === "projects" ? usageProjectName : section === "keys" ? usageKeyName : void 0);
+		if ([
+			"events",
+			"timeseries",
+			"service-timeseries"
+		].includes(section)) host.previousElementSibling.hidden = true;
+		host.querySelectorAll("[data-debug-request]").forEach((button) => button.addEventListener("click", handleAsync(openDebugRequest)));
+		host.querySelectorAll("[data-usage-page-section]").forEach((button) => button.addEventListener("click", handleAsync(changeUsagePage)));
+	} catch (error) {
+		if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
+		host.innerHTML = `<div class="notice" role="alert">This Usage section is unavailable: ${esc(error.message)} <button type="button" data-retry-usage-section>Retry section</button></div>`;
+		host.querySelector("[data-retry-usage-section]").addEventListener("click", handleAsync(() => loadUsageSection(section, true)));
+	} finally {
+		if (usageRequestCurrent(load) && !controller.signal.aborted) host.setAttribute("aria-busy", "false");
+	}
+}
+function bindUsageSuggestions(form) {
+	for (const field of [
+		"route",
+		"endpoint",
+		"model"
+	]) {
+		const input = form.elements.namedItem(field);
+		let timer;
+		let controller;
+		const load = async () => {
+			if (form !== document.querySelector("#usage-form")) return;
+			controller?.abort();
+			const current = controller = new AbortController();
+			const status = input.parentElement.querySelector("[data-usage-suggestion-status]") || document.createElement("small");
+			status.dataset.usageSuggestionStatus = field;
+			status.setAttribute("role", "status");
+			input.parentElement.append(status);
+			try {
+				const filterQuery = usageFilterValuesQueryFromForm(form);
+				filterQuery.delete(field);
+				filterQuery.set("field", field);
+				filterQuery.set("q", input.value.trim());
+				filterQuery.set("limit", "20");
+				const data = await api(`/admin-ui/admin/usage/filter-values?${filterQuery}`, { signal: current.signal });
+				if (current.signal.aborted || form !== document.querySelector("#usage-form")) return;
+				document.querySelector(`#usage-${field}-options`).innerHTML = (data.values || []).map((value) => `<option value="${attr(value)}"></option>`).join("");
+				status.textContent = "";
+			} catch (error) {
+				if (!current.signal.aborted && error.name !== "AbortError") status.textContent = "Suggestions unavailable. Exact values can still be entered.";
+			}
+		};
+		input.addEventListener("focus", () => {
+			clearTimeout(timer);
+			load();
+		});
+		input.addEventListener("input", () => {
+			controller?.abort();
+			clearTimeout(timer);
+			timer = setTimeout(load, 250);
+		});
+		form.addEventListener("change", () => {
+			controller?.abort();
+			clearTimeout(timer);
+		});
+	}
+}
+function usageIdentifierLabels() {
+	if (!usageLabelCache || usageLabelCache.projects !== state.projects || usageLabelCache.keys !== state.keys) usageLabelCache = {
+		projects: state.projects,
+		keys: state.keys,
+		projectNames: new Map(state.projects.map((project) => [project.id, project.name])),
+		keyNames: new Map(state.keys.map((key) => [key.id, key.name ? `${key.name} (${key.key_prefix})` : key.key_prefix]))
+	};
+	return usageLabelCache;
+}
+function usageProjectName(projectId) {
+	return projectId && projectId !== "individual" ? usageIdentifierLabels().projectNames.get(projectId) || projectId : "Individual";
+}
+function usageKeyName(keyId) {
+	return usageIdentifierLabels().keyNames.get(keyId) || keyId;
 }
 async function applyUsageFilters(event) {
 	event.preventDefault();
@@ -39918,12 +40606,19 @@ function usagePageSize() {
 async function changeUsagePage(event) {
 	const section = event.currentTarget.dataset.usagePageSection;
 	const direction = event.currentTarget.dataset.usagePageDirection;
-	const pageSize = usagePageSize();
 	const key = usagePaginationKey(section);
-	if (!key) return;
+	if (!key || !usageLoad) return;
+	const limitKey = section === "timeseries" ? "timeseries_limit" : section === "service-timeseries" ? "service_timeseries_limit" : "limit";
+	const pageSize = Number(section === "events" && usageLoad.eventsPage?.limit || usageLoad.query.get(limitKey) || 50);
+	if (section === "events") {
+		if (direction === "next") {
+			usageLoad.eventCursors[usageLoad.eventIndex + 1] = usageLoad.eventsPage?.next_cursor;
+			usageLoad.eventIndex += 1;
+		} else usageLoad.eventIndex = Math.max(0, usageLoad.eventIndex - 1);
+	}
 	const current = state.usagePagination[key];
 	state.usagePagination[key] = direction === "next" ? current + pageSize : Math.max(0, current - pageSize);
-	await loadUsage();
+	await loadUsageSection(section, true);
 }
 function usagePaginationKey(section) {
 	if (section === "events") return "eventsOffset";
@@ -39992,30 +40687,9 @@ function usageFilterValuesQueryFromForm(formElement = document.querySelector("#u
 	if (range.to) query.set("to", range.to);
 	return query;
 }
-function updateUsageDatalists(routes = [], endpoints = [], models = []) {
-	const routeDefaults = [
-		"/v1/chat/completions",
-		"/v1/responses",
-		"/v1/embeddings",
-		"/v1/rerank",
-		"/v1/messages",
-		"/summary",
-		"/translation",
-		"/ocr",
-		"/embeddings",
-		"/services/*",
-		"/providers/openai/*"
-	];
-	const routeList = document.querySelector("#usage-route-options");
-	const endpointList = document.querySelector("#usage-endpoint-options");
-	const modelList = document.querySelector("#usage-model-options");
-	if (routeList) routeList.innerHTML = [.../* @__PURE__ */ new Set([...routeDefaults, ...routes])].map((value) => `<option value="${attr(value)}"></option>`).join("");
-	if (endpointList) endpointList.innerHTML = [...new Set(endpoints)].map((value) => `<option value="${attr(value)}"></option>`).join("");
-	if (modelList) modelList.innerHTML = [...new Set(models)].map((value) => `<option value="${attr(value)}"></option>`).join("");
-}
 function usageDateRange(form) {
 	const preset = form.get("time_preset");
-	if (!preset) return {};
+	if (!preset || preset === "all_time") return {};
 	const now = /* @__PURE__ */ new Date();
 	if (preset === "custom") {
 		const fromInput = form.get("from");
@@ -40063,9 +40737,13 @@ async function usageExportAction(event) {
 	const format = exportForm ? new FormData(exportForm).get("export_format") || "csv" : "csv";
 	const { query, allRows } = usageExportQuery();
 	if (allRows) {
-		if (action !== "download") throw new Error("All rows is available for Download only. Preview, URL, and curl exports remain limited to one request.");
-		await downloadAllUsageExport(format, query);
-		return;
+		if (action === "preview") throw new Error("Preview is limited to one bounded page. Choose a maximum row count.");
+		if (!query.get("from") || !query.get("to")) throw new Error("All rows requires a bounded start and end time.");
+		query.set("stream", "true");
+		if (action === "download") {
+			await downloadAllUsageExport(format, query);
+			return;
+		}
 	}
 	const path = usageExportPath(format, query);
 	if (action === "copy-url") {
@@ -40102,7 +40780,8 @@ function usageExportQuery() {
 	if (data) {
 		const exportLimit = data.get("export_limit");
 		allRows = exportLimit === "all";
-		query.set("limit", allRows ? String(usageExportBatchSize) : exportLimit || "1000");
+		if (allRows) query.delete("limit");
+		else query.set("limit", exportLimit || "1000");
 		query.set("offset", allRows ? "0" : data.get("export_offset") || "0");
 		if (exportRange) {
 			query.delete("from");
@@ -40143,81 +40822,38 @@ function syncUsageExportControls() {
 	const allRows = new FormData(form).get("export_limit") === "all";
 	form.querySelector("[name=export_offset]").disabled = allRows;
 	form.querySelectorAll("[data-usage-export-action]").forEach((button) => {
-		button.disabled = allRows && button.dataset.usageExportAction !== "download";
+		button.disabled = allRows && button.dataset.usageExportAction === "preview";
 	});
 }
 async function downloadAllUsageExport(format, baseQuery) {
 	if (!baseQuery.get("from") || !baseQuery.get("to")) throw new Error("All rows requires a bounded start and end time. Set Export from and Export to, or apply a bounded Usage time filter.");
-	const parts = [];
-	let csvHeader = "";
-	let jsonStarted = false;
-	let rowCount = 0;
-	let offset = 0;
-	while (true) {
-		const query = new URLSearchParams(baseQuery);
-		query.set("limit", String(usageExportBatchSize));
-		query.set("offset", String(offset));
-		const response = await fetchWithTimeout(usageExportPath(format, query), { headers: usageExportHeaders() });
-		if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-		let pageRows;
-		if (format === "json") {
-			const page = await response.json();
-			const rows = Array.isArray(page.rows) ? page.rows : [];
-			if (!jsonStarted) {
-				parts.push(`{"summary":${JSON.stringify(page.summary)},"rows":[`);
-				jsonStarted = true;
-			}
-			if (rows.length) {
-				if (rowCount) parts.push(",");
-				parts.push(rows.map((row) => JSON.stringify(row)).join(","));
-			}
-			pageRows = rows.length;
-		} else {
-			const page = splitUsageCsvPage(await response.text());
-			if (!csvHeader) {
-				csvHeader = page.header;
-				parts.push(csvHeader);
-			} else if (page.header !== csvHeader) throw new Error("Usage export columns changed while the download was running.");
-			parts.push(page.body);
-			pageRows = countCsvRecords(page.body);
+	const query = new URLSearchParams(baseQuery);
+	query.set("stream", "true");
+	query.delete("offset");
+	const path = usageExportPath(format, query);
+	const filename = `relayna-usage-${(/* @__PURE__ */ new Date()).toISOString().replaceAll(":", "-")}.${format}`;
+	if (!window.showSaveFilePicker) throw new Error("This browser cannot stream downloads to disk. Use Copy curl for All rows, or choose a bounded row count.");
+	const writable = await (await window.showSaveFilePicker({ suggestedName: filename })).createWritable();
+	const controller = new AbortController();
+	const abort = () => controller.abort();
+	viewController.signal.addEventListener("abort", abort, { once: true });
+	try {
+		const response = await fetch(path, {
+			headers: usageExportHeaders(),
+			signal: controller.signal
+		});
+		if (!response.ok || !response.body) {
+			await writable.abort();
+			throw new Error(`Usage export unavailable: ${response.status} ${response.statusText}`);
 		}
-		rowCount += pageRows;
-		if (pageRows < usageExportBatchSize) break;
-		offset += pageRows;
+		await response.body.pipeTo(writable, { signal: controller.signal });
+		setNotice("Usage export saved.", "success");
+	} catch (error) {
+		await writable.abort().catch(() => {});
+		throw error;
+	} finally {
+		viewController.signal.removeEventListener("abort", abort);
 	}
-	if (format === "json") parts.push(jsonStarted ? "]}" : "{\"summary\":null,\"rows\":[]}");
-	downloadUsageExport(parts, format);
-	setNotice(`Downloaded ${rowCount.toLocaleString()} usage rows.`, "success");
-}
-function splitUsageCsvPage(csv) {
-	const headerEnd = csv.indexOf("\n");
-	if (headerEnd === -1) return {
-		header: csv,
-		body: ""
-	};
-	return {
-		header: csv.slice(0, headerEnd + 1),
-		body: csv.slice(headerEnd + 1)
-	};
-}
-function countCsvRecords(csv) {
-	if (!csv) return 0;
-	let rows = 0;
-	let quoted = false;
-	for (let index = 0; index < csv.length; index += 1) if (csv[index] === "\"") {
-		if (quoted && csv[index + 1] === "\"") index += 1;
-		else quoted = !quoted;
-	} else if (csv[index] === "\n" && !quoted) rows += 1;
-	return rows + (csv.endsWith("\n") ? 0 : 1);
-}
-function downloadUsageExport(parts, format) {
-	const blob = new Blob(parts, { type: format === "json" ? "application/json" : "text/csv;charset=utf-8" });
-	const url = URL.createObjectURL(blob);
-	const anchor = document.createElement("a");
-	anchor.href = url;
-	anchor.download = `relayna-usage-${(/* @__PURE__ */ new Date()).toISOString()}.${format}`;
-	anchor.click();
-	URL.revokeObjectURL(url);
 }
 async function loadTaskUsage(event) {
 	event.preventDefault();
@@ -40265,11 +40901,11 @@ function usageProjectKeyServiceHierarchy(rows) {
     <div class="help">Showing ${rows.length} top project, key, and service combinations using the selected sort and limit.</div>
     ${[...projects.entries()].map(([projectId, keys], projectIndex) => `
       <details class="usage-hierarchy-project" data-usage-project="${attr(projectId || "individual")}" ${projectIndex === 0 ? "open" : ""}>
-        <summary><span><strong>${esc(projectName(projectId))}</strong><small>${keys.size} virtual ${keys.size === 1 ? "key" : "keys"}</small></span><span>${[...keys.values()].reduce((count, services) => count + services.length, 0)} combinations</span></summary>
+        <summary><span><strong>${esc(usageProjectName(projectId))}</strong><small>${keys.size} virtual ${keys.size === 1 ? "key" : "keys"}</small></span><span>${[...keys.values()].reduce((count, services) => count + services.length, 0)} combinations</span></summary>
         <div class="usage-hierarchy-keys">
           ${[...keys.entries()].map(([keyId, services], keyIndex) => `
             <details class="usage-hierarchy-key" data-usage-key="${attr(keyId)}" ${projectIndex === 0 && keyIndex === 0 ? "open" : ""}>
-              <summary><span><strong><code>${esc(keyName(keyId))}</code></strong><small>${services.length} ${services.length === 1 ? "service" : "services"}</small></span></summary>
+              <summary><span><strong><code>${esc(usageKeyName(keyId))}</code></strong><small>${services.length} ${services.length === 1 ? "service" : "services"}</small></span></summary>
               ${usageProjectKeyServiceTable(services)}
             </details>`).join("")}
         </div>
@@ -40400,7 +41036,7 @@ function unusedKeysTable(rows) {
 		"Last used"
 	], rows.map((row) => [
 		`<code>${esc(row.key_prefix)}</code>`,
-		esc(projectName(row.project_id || "")),
+		esc(usageProjectName(row.project_id || "")),
 		time(row.created_at),
 		row.last_used_at ? time(row.last_used_at) : "never"
 	]));
@@ -40450,10 +41086,25 @@ function usageServiceTimeseriesTable(rows) {
 }
 async function health() {
 	const renderId = ++renderGeneration;
+	const gatewayHost = document.createElement("div");
+	gatewayHost.style.minWidth = "0";
+	content.replaceChildren(gatewayHost);
+	stopGatewayStatus = mountHealthGatewayStatus({
+		content: gatewayHost,
+		api,
+		esc,
+		attr,
+		badge,
+		table
+	});
 	const issues = [];
+	const recentWindow = new URLSearchParams({
+		from: (/* @__PURE__ */ new Date(Date.now() - 864e5)).toISOString(),
+		to: (/* @__PURE__ */ new Date()).toISOString()
+	});
 	const [ready, rows, healthState, importVersions] = await Promise.all([
 		readiness(),
-		monitoringPanel("/admin-ui/admin/provider-health", [], issues),
+		monitoringPanel(`/admin-ui/admin/provider-health?${recentWindow}`, [], issues),
 		monitoringPanel("/admin-ui/admin/provider-health/state", [], issues),
 		monitoringPanel("/admin-ui/admin/services/import/versions", [], issues)
 	]);
@@ -40473,7 +41124,7 @@ async function health() {
       ${stat("Fallbacks", fallbackCount)}
     </div>
     <section class="panel">
-      <div class="panel-heading"><h3>Recorded reliability</h3><span class="subtle">All recorded usage · minimum 20 requests · elevated at 5%</span></div>
+      <div class="panel-heading"><h3>Recorded reliability</h3><span class="subtle">Last 24 hours · minimum 20 requests · elevated at 5%</span></div>
       ${healthTable(rows)}
     </section>
     <section class="panel">
@@ -40540,6 +41191,7 @@ async function health() {
 	document.querySelectorAll("[data-import-rollback]").forEach((button) => {
 		button.addEventListener("click", handleAsync(rollbackImportVersion));
 	});
+	content.prepend(gatewayHost);
 	organizeView("health");
 	content.querySelector("[data-retry-monitoring]")?.addEventListener("click", () => refresh());
 }
@@ -42443,6 +43095,7 @@ function tabulateUsage(root) {
 			button.setAttribute("aria-pressed", String(index === chosen));
 		});
 		hint.textContent = chosen < 0 ? "Showing all breakdowns. Select a breakdown to focus on it." : "Click the selected breakdown again to show all breakdowns.";
+		if (typeof loadVisibleUsageSections === "function") loadVisibleUsageSections(root);
 	};
 	sections.forEach(({ button }, index) => button.addEventListener("click", () => select(state.usageTab === button.textContent ? -1 : index)));
 	select(state.usageTab === null ? -1 : Math.max(0, sections.findIndex(({ button }) => button.textContent === state.usageTab)));
@@ -42504,7 +43157,7 @@ function prepareProfileKeys(root) {
 		});
 	});
 }
-var tokenKey, viewIds, ownerViewIds, state, login, app, content, requestTimeoutMs, usageExportBatchSize, noticeTimer, dialogCounter, dialogInertRoots, overviewChart, ownerDashboardChart, ownerDashboardGeneration, stopTraffic, viewGeneration, viewController, usageGeneration, renderGeneration, pendingWrites, monitoringCache, closeContentDrawer, scopedViews;
+var tokenKey, viewIds, ownerViewIds, state, login, app, content, requestTimeoutMs, noticeTimer, dialogCounter, dialogInertRoots, overviewChart, ownerDashboardChart, ownerDashboardGeneration, stopTraffic, stopGatewayStatus, viewGeneration, viewController, usageGeneration, usageLoad, usageLabelCache, renderGeneration, pendingWrites, monitoringCache, closeContentDrawer, scopedViews;
 var init_main = __esmMin((() => {
 	init_provider_create();
 	init_foundry_check();
@@ -42516,6 +43169,7 @@ var init_main = __esmMin((() => {
 	init_auth_profiles();
 	init_monitoring();
 	init_traffic();
+	init_gateway_status();
 	init_guidance();
 	init_investigation();
 	init_tabler_icons_min();
@@ -42588,7 +43242,6 @@ var init_main = __esmMin((() => {
 	app = document.querySelector("#app");
 	content = document.querySelector("#content");
 	requestTimeoutMs = 8e3;
-	usageExportBatchSize = 1e4;
 	noticeTimer = null;
 	dialogCounter = 0;
 	dialogInertRoots = /* @__PURE__ */ new Map();
@@ -42596,9 +43249,12 @@ var init_main = __esmMin((() => {
 	ownerDashboardChart = null;
 	ownerDashboardGeneration = 0;
 	stopTraffic = null;
+	stopGatewayStatus = null;
 	viewGeneration = 0;
 	viewController = new AbortController();
 	usageGeneration = 0;
+	usageLoad = null;
+	usageLabelCache = null;
 	renderGeneration = 0;
 	pendingWrites = 0;
 	monitoringCache = /* @__PURE__ */ new Map();

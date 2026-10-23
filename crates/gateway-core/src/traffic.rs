@@ -4,13 +4,24 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
+    borrow::Borrow,
     collections::{HashMap, HashSet, VecDeque},
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc, Mutex, OnceLock,
+    },
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
 const JOURNAL_CAPACITY: usize = 512;
 const TIMELINE_CAPACITY: usize = 32;
+const ACTIVE_RECORD_LIMIT: usize = 2048;
+const ACTIVE_BYTE_LIMIT: usize = 2 * 1024 * 1024;
+const SOCKET_SAMPLE_INTERVAL: Duration = Duration::from_millis(500);
+// Reserve space for cumulative counters and activity timestamps so frame hooks
+// can coalesce fixed-size metadata without per-frame serialization.
+const SOCKET_PROGRESS_RESERVE: usize = 512;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RequestDiagnostics {
@@ -225,6 +236,16 @@ impl From<&crate::UsageEvent> for TrafficUsage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrafficRequest {
+    /// Process-local lifecycle identity, shared by clones; never persisted.
+    #[serde(skip)]
+    pub monitor_state: Arc<AtomicU8>,
+    #[serde(skip)]
+    pub monitor_sampled_at: Arc<Mutex<Option<Instant>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime<Utc>>,
+    /// Active registry projections deliberately omit investigation details.
+    #[serde(default)]
+    pub summary_only: bool,
     #[serde(default)]
     pub upstream_timings: Vec<UpstreamTiming>,
     #[serde(default)]
@@ -260,6 +281,10 @@ pub struct TrafficRequest {
 impl Default for TrafficRequest {
     fn default() -> Self {
         Self {
+            monitor_state: Arc::default(),
+            monitor_sampled_at: Arc::default(),
+            completed_at: None,
+            summary_only: false,
             upstream_timings: Vec::new(),
             usage: None,
             debug_bundle: None,
@@ -289,6 +314,15 @@ impl Default for TrafficRequest {
 }
 
 impl TrafficRequest {
+    pub fn protocol(&self) -> &str {
+        match self.diagnostics.protocol.as_deref() {
+            Some("websocket") => "websocket",
+            Some("http") => "http",
+            _ if self.diagnostics.websocket.is_some() => "websocket",
+            _ => "unknown",
+        }
+    }
+
     pub fn step(&mut self, stage: &str, elapsed_ms: i64, code: Option<&str>) {
         self.stage = stage.into();
         self.elapsed_ms = elapsed_ms;
@@ -322,6 +356,7 @@ impl TrafficRequest {
             .any(|value| value == destination)
         {
             self.recording_failures.push(destination.into());
+            gateway_telemetry::runtime::record_recording_failure(destination);
         }
         // Only fixed destination names and internal IDs; never raw database errors.
         tracing::error!(request_id = %self.request_id, diagnostic_id = %self.id,
@@ -332,6 +367,8 @@ impl TrafficRequest {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct TrafficQuery {
+    /// Opt-in live-feed registry projection; ignored by saved history.
+    pub snapshot: Option<bool>,
     pub id: Option<Uuid>,
     pub request_id: Option<String>,
     pub service: Option<String>,
@@ -345,6 +382,9 @@ pub struct TrafficQuery {
     pub before: Option<DateTime<Utc>>,
     pub before_id: Option<Uuid>,
     pub limit: Option<i64>,
+    /// Omitted preserves the released start-time history window and cursor.
+    pub time_basis: Option<String>,
+    pub protocol: Option<String>,
 }
 
 impl TrafficQuery {
@@ -356,10 +396,60 @@ impl TrafficQuery {
             || self.request_id.as_ref().is_some_and(|v| v.len() > 128)
             || self.failure_code.as_ref().is_some_and(|v| v.len() > 80)
             || self.service.as_ref().is_some_and(|v| v.len() > 256)
+            || self
+                .time_basis
+                .as_deref()
+                .is_some_and(|v| !matches!(v, "started" | "completed"))
+            || self
+                .protocol
+                .as_deref()
+                .is_some_and(|v| !matches!(v, "http" | "websocket" | "unknown"))
         {
             return Err(GatewayError::InvalidUsageQuery);
         }
         Ok(())
+    }
+
+    /// Live request IDs retain substring matching; history retains exact matching.
+    pub fn matches_active(&self, row: &TrafficRequest) -> bool {
+        self.id.is_none_or(|v| v == row.id)
+            && self
+                .request_id
+                .as_ref()
+                .is_none_or(|v| row.request_id.contains(v))
+            && self
+                .service
+                .as_ref()
+                .is_none_or(|v| row.service.as_ref() == Some(v))
+            && self.project_id.is_none_or(|v| row.project_id == Some(v))
+            && self.key_id.is_none_or(|v| row.key_id == Some(v))
+            && self.status.is_none_or(|v| row.client_status == Some(v))
+            && self
+                .failure_code
+                .as_ref()
+                .is_none_or(|v| row.diagnostics.failure_code.as_ref() == Some(v))
+            && (self.failures_only != Some(true) || row.diagnostics.failure_code.is_some())
+            && self.protocol.as_ref().is_none_or(|v| row.protocol() == v)
+            && self.from.is_none_or(|v| row.started_at >= v)
+            && self.to.is_none_or(|v| row.started_at <= v)
+            && self
+                .before
+                .zip(self.before_id)
+                .is_none_or(|v| (row.started_at, row.id) < v)
+    }
+
+    fn has_row_filters(&self) -> bool {
+        self.id.is_some()
+            || self.request_id.is_some()
+            || self.service.is_some()
+            || self.project_id.is_some()
+            || self.key_id.is_some()
+            || self.status.is_some()
+            || self.failure_code.is_some()
+            || self.failures_only == Some(true)
+            || self.from.is_some()
+            || self.to.is_some()
+            || self.before.is_some()
     }
 }
 
@@ -369,11 +459,226 @@ pub trait TrafficStore: Send + Sync {
     async fn traffic_history(&self, query: TrafficQuery) -> GatewayResult<Vec<TrafficRequest>>;
 }
 
+/// Exact unfiltered counts are independent of retained summary rows.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TrafficActiveCounts {
+    pub http: u64,
+    pub websocket: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrafficCoverage {
+    pub total: u64,
+    pub retained: usize,
+    /// Serialized row bytes, including reserved space for coalesced counters.
+    pub retained_bytes: usize,
+    pub record_limit: usize,
+    pub byte_limit: usize,
+    pub saturated: bool,
+    /// None means that missing summaries prevent an exact filtered count.
+    pub matching: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrafficSummarySnapshot {
+    pub instance_id: String,
+    pub sampled_at: DateTime<Utc>,
+    pub counts: TrafficActiveCounts,
+    pub http: TrafficCoverage,
+    pub websocket: TrafficCoverage,
+}
+
+/// A bounded metadata projection suitable for cluster publication. Counts apply
+/// to this process; row filters are evaluated before each protocol's page limit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrafficActiveSnapshot {
+    #[serde(flatten)]
+    pub summary: TrafficSummarySnapshot,
+    pub rows: Vec<TrafficRequest>,
+    pub has_more: bool,
+    pub truncated: bool,
+}
+
+#[derive(Debug)]
+struct ActivePartition {
+    rows: HashMap<Uuid, (TrafficRequest, usize)>,
+    bytes: usize,
+    total: u64,
+    record_limit: usize,
+    byte_limit: usize,
+}
+
+impl ActivePartition {
+    fn new(record_limit: usize, byte_limit: usize) -> Self {
+        Self {
+            rows: HashMap::new(),
+            bytes: 0,
+            total: 0,
+            record_limit,
+            byte_limit,
+        }
+    }
+
+    fn remove(&mut self, id: &Uuid) {
+        if let Some((_, size)) = self.rows.remove(id) {
+            self.bytes = self.bytes.saturating_sub(size);
+        }
+    }
+
+    fn update(&mut self, request: &TrafficRequest) {
+        let row = active_projection(request);
+        let size = serde_json::to_vec(&row)
+            .map_or(usize::MAX, |json| json.len())
+            .saturating_add(if row.diagnostics.websocket.is_some() {
+                SOCKET_PROGRESS_RESERVE
+            } else {
+                0
+            });
+        let previous = self.rows.get(&row.id).map_or(0, |(_, size)| *size);
+        if (self.rows.contains_key(&row.id) || self.rows.len() < self.record_limit)
+            && self.bytes.saturating_sub(previous).saturating_add(size) <= self.byte_limit
+        {
+            self.bytes = self.bytes.saturating_sub(previous).saturating_add(size);
+            self.rows.insert(row.id, (row, size));
+        } else {
+            // A growing row must not leave a misleading stale projection behind.
+            self.remove(&request.id);
+        }
+    }
+
+    fn coverage(&self) -> TrafficCoverage {
+        TrafficCoverage {
+            total: self.total,
+            retained: self.rows.len(),
+            retained_bytes: self.bytes,
+            record_limit: self.record_limit,
+            byte_limit: self.byte_limit,
+            saturated: self.total > self.rows.len() as u64,
+            matching: Some(self.total),
+        }
+    }
+}
+
+/// The registry stores only this allowlist, never identity claims, payloads,
+/// timelines, usage/debug snapshots or raw transport errors.
+fn active_projection(request: &TrafficRequest) -> TrafficRequest {
+    let bounded = |s: &str| s.chars().take(256).collect::<String>();
+    let optional = |s: &Option<String>| s.as_deref().map(bounded);
+    let mut socket = request.diagnostics.websocket.clone();
+    if let Some(socket) = &mut socket {
+        socket.state = bounded(&socket.state);
+        socket.app = optional(&socket.app);
+        socket.channel = bounded(&socket.channel);
+        socket.close_cause = optional(&socket.close_cause);
+    }
+    TrafficRequest {
+        monitor_state: request.monitor_state.clone(),
+        monitor_sampled_at: request.monitor_sampled_at.clone(),
+        completed_at: request.completed_at,
+        summary_only: true,
+        upstream_timings: Vec::new(),
+        usage: None,
+        debug_bundle: None,
+        key_prefix: optional(&request.key_prefix),
+        id: request.id,
+        request_id: bounded(&request.request_id),
+        instance_id: bounded(&request.instance_id),
+        started_at: request.started_at,
+        elapsed_ms: request.elapsed_ms,
+        method: bounded(&request.method),
+        endpoint: optional(&request.endpoint),
+        service: optional(&request.service),
+        provider: optional(&request.provider),
+        key_id: request.key_id,
+        project_id: request.project_id,
+        stage: bounded(&request.stage),
+        client_status: request.client_status,
+        attempts: request.attempts,
+        streaming: request.streaming,
+        completed: request.completed,
+        diagnostics: RequestDiagnostics {
+            protocol: request.diagnostics.protocol.as_deref().map(bounded),
+            websocket: socket,
+            routing_mode: optional(&request.diagnostics.routing_mode),
+            traffic_id: request.diagnostics.traffic_id,
+            failure_stage: optional(&request.diagnostics.failure_stage),
+            failure_code: optional(&request.diagnostics.failure_code),
+            failure_source: optional(&request.diagnostics.failure_source),
+            outcome: optional(&request.diagnostics.outcome),
+            upstream_status: request.diagnostics.upstream_status,
+            instance_id: Some(bounded(&request.instance_id)),
+            ..Default::default()
+        },
+        timeline: Vec::new(),
+        timeline_truncated: request.timeline_truncated,
+        recording_failures: request
+            .recording_failures
+            .iter()
+            .take(3)
+            .map(|s| bounded(s))
+            .collect(),
+    }
+}
+
+/// Copy only fixed-size cumulative progress. A burst followed by a quiet socket
+/// still exposes its final counters, without cloning the timeline on each frame.
+fn coalesce_socket_progress(target: &mut TrafficRequest, source: &TrafficRequest) {
+    target.elapsed_ms = source.elapsed_ms;
+    if let Some((target, source)) = target
+        .diagnostics
+        .websocket
+        .as_mut()
+        .zip(source.diagnostics.websocket.as_ref())
+    {
+        target.observed_at = source.observed_at;
+        target.duration_ms = source.duration_ms;
+        target.client_bytes = source.client_bytes;
+        target.upstream_bytes = source.upstream_bytes;
+        target.client_frames = source.client_frames;
+        target.upstream_frames = source.upstream_frames;
+        target.client_close_frame = source.client_close_frame;
+        target.upstream_close_frame = source.upstream_close_frame;
+        target.last_client_activity_at = source.last_client_activity_at;
+        target.last_upstream_activity_at = source.last_upstream_activity_at;
+    }
+}
+
+#[derive(Debug)]
+struct MonitorState {
+    sequence: u64,
+    journal: VecDeque<(u64, TrafficRequest)>,
+    socket_updates: HashMap<Uuid, (Instant, TrafficRequest)>,
+    http: ActivePartition,
+    websocket: ActivePartition,
+}
+
 pub struct TrafficMonitor {
     pub instance_id: String,
-    journal: Mutex<(u64, VecDeque<(u64, TrafficRequest)>)>,
-    socket_updates: Mutex<HashMap<Uuid, TrafficRequest>>,
+    state: Arc<Mutex<MonitorState>>,
     capacity: usize,
+}
+
+/// Context-owned cleanup, independent of journal clones. Aborted tasks must not
+/// leave immortal active rows or gauges when terminal logging cannot run.
+#[derive(Debug)]
+pub struct TrafficActiveLease {
+    id: Uuid,
+    lifecycle: Arc<AtomicU8>,
+    state: Arc<Mutex<MonitorState>>,
+}
+
+impl Drop for TrafficActiveLease {
+    fn drop(&mut self) {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        match self.lifecycle.swap(3, Ordering::Relaxed) {
+            1 => state.http.total = state.http.total.saturating_sub(1),
+            2 => state.websocket.total = state.websocket.total.saturating_sub(1),
+            _ => return,
+        }
+        state.http.remove(&self.id);
+        state.websocket.remove(&self.id);
+        state.socket_updates.remove(&self.id);
+    }
 }
 
 #[derive(Serialize)]
@@ -383,57 +688,222 @@ pub struct TrafficBatch {
     pub gap: bool,
     pub evicted_updates: u64,
     pub rows: Vec<TrafficRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active: Option<TrafficActiveSnapshot>,
 }
 
 impl TrafficMonitor {
     pub fn new(capacity: usize) -> Self {
+        Self::with_active_limits(capacity, ACTIVE_RECORD_LIMIT, ACTIVE_BYTE_LIMIT)
+    }
+
+    fn with_active_limits(capacity: usize, records: usize, bytes: usize) -> Self {
         Self {
             instance_id: Uuid::new_v4().to_string(),
-            journal: Mutex::new((0, VecDeque::new())),
-            socket_updates: Mutex::new(HashMap::new()),
+            state: Arc::new(Mutex::new(MonitorState {
+                sequence: 0,
+                journal: VecDeque::new(),
+                socket_updates: HashMap::new(),
+                http: ActivePartition::new(records, bytes),
+                websocket: ActivePartition::new(records, bytes),
+            })),
             capacity: capacity.max(1),
         }
     }
 
-    /// Keep only the latest socket sample until the next live poll.
-    pub fn publish_socket_progress(&self, request: TrafficRequest) {
-        let mut updates = self
-            .socket_updates
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if updates.len() < self.capacity || updates.contains_key(&request.id) {
-            updates.insert(request.id, request);
+    pub fn active_lease(&self, request: &TrafficRequest) -> TrafficActiveLease {
+        TrafficActiveLease {
+            id: request.id,
+            lifecycle: request.monitor_state.clone(),
+            state: self.state.clone(),
+        }
+    }
+
+    // The shared lifecycle marker makes counts exact even when row budgets fill,
+    // without an unbounded set of IDs. Late cloned socket samples cannot reopen
+    // a completed request. Only this monitor's serialized lifecycle path writes it.
+    fn observe(state: &mut MonitorState, request: &TrafficRequest) -> bool {
+        let previous = request.monitor_state.load(Ordering::Relaxed);
+        if previous == 3 {
+            return false;
+        }
+        let protocol = if request.protocol() == "websocket" {
+            2
+        } else {
+            1
+        };
+        let next = if request.completed { 3 } else { protocol };
+        if previous != next {
+            if previous == 1 {
+                state.http.total = state.http.total.saturating_sub(1);
+            }
+            if previous == 2 {
+                state.websocket.total = state.websocket.total.saturating_sub(1);
+            }
+            if next == 1 {
+                state.http.total = state.http.total.saturating_add(1);
+            }
+            if next == 2 {
+                state.websocket.total = state.websocket.total.saturating_add(1);
+            }
+            request.monitor_state.store(next, Ordering::Relaxed);
+        }
+        if request.completed || protocol != 1 {
+            state.http.remove(&request.id);
+        }
+        if request.completed || protocol != 2 {
+            state.websocket.remove(&request.id);
+        }
+        if !request.completed {
+            if protocol == 2 {
+                state.websocket.update(request);
+            } else {
+                state.http.update(request);
+            }
+        }
+        true
+    }
+
+    /// Accept a reference so frame hooks never clone the full record before
+    /// throttling. The latest cumulative sample is retained at most twice/sec.
+    pub fn publish_socket_progress(&self, request: impl Borrow<TrafficRequest>) {
+        let request = request.borrow();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if request.completed || request.monitor_state.load(Ordering::Relaxed) == 3 {
+            return;
+        }
+        if let Some((row, _)) = state.websocket.rows.get_mut(&request.id) {
+            coalesce_socket_progress(row, request);
+        }
+        if let Some((_, row)) = state.socket_updates.get_mut(&request.id) {
+            coalesce_socket_progress(row, request);
+        }
+        {
+            let mut last = request
+                .monitor_sampled_at
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if last.is_some_and(|at| at.elapsed() < SOCKET_SAMPLE_INTERVAL) {
+                return;
+            }
+            *last = Some(Instant::now());
+        }
+        if !Self::observe(&mut state, request) {
+            return;
+        }
+        if state.socket_updates.len() < self.capacity
+            || state.socket_updates.contains_key(&request.id)
+        {
+            state
+                .socket_updates
+                .insert(request.id, (Instant::now(), request.clone()));
         }
     }
 
     pub fn publish(&self, request: TrafficRequest) {
-        let mut updates = self
-            .socket_updates
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        updates.remove(&request.id);
-        let mut journal = self.journal.lock().unwrap_or_else(|e| e.into_inner());
-        journal.0 += 1;
-        let sequence = journal.0;
-        journal.1.push_back((sequence, request));
-        while journal.1.len() > self.capacity {
-            journal.1.pop_front();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.socket_updates.remove(&request.id);
+        // Subsequent terminal publications carry recording results and usage.
+        if !Self::observe(&mut state, &request) && !request.completed {
+            return;
+        }
+        Self::append(&mut state, self.capacity, request);
+    }
+
+    fn append(state: &mut MonitorState, capacity: usize, request: TrafficRequest) {
+        state.sequence += 1;
+        let sequence = state.sequence;
+        state.journal.push_back((sequence, request));
+        while state.journal.len() > capacity {
+            state.journal.pop_front();
+        }
+    }
+
+    pub fn summary_snapshot(&self) -> TrafficSummarySnapshot {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        TrafficSummarySnapshot {
+            instance_id: self.instance_id.clone(),
+            sampled_at: Utc::now(),
+            counts: TrafficActiveCounts {
+                http: state.http.total,
+                websocket: state.websocket.total,
+            },
+            http: state.http.coverage(),
+            websocket: state.websocket.coverage(),
+        }
+    }
+
+    pub fn active_snapshot(&self, query: &TrafficQuery) -> TrafficActiveSnapshot {
+        self.active_snapshot_with_limit(query, query.limit.unwrap_or(100).clamp(1, 200) as usize)
+    }
+
+    /// All retained projections (at most 4096 rows / 4 MiB of row JSON), for
+    /// bounded Redis publication. API readers should use active_snapshot instead.
+    pub fn publication_snapshot(&self) -> TrafficActiveSnapshot {
+        self.active_snapshot_with_limit(&TrafficQuery::default(), ACTIVE_RECORD_LIMIT)
+    }
+
+    fn active_snapshot_with_limit(
+        &self,
+        query: &TrafficQuery,
+        limit: usize,
+    ) -> TrafficActiveSnapshot {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut rows = Vec::new();
+        let mut has_more = false;
+        let mut http = state.http.coverage();
+        let mut websocket = state.websocket.coverage();
+        for (protocol, partition, coverage) in [
+            ("http", &state.http, &mut http),
+            ("websocket", &state.websocket, &mut websocket),
+        ] {
+            let mut matches: Vec<_> = partition
+                .rows
+                .values()
+                .map(|(row, _)| row)
+                .filter(|row| query.matches_active(row))
+                .collect();
+            matches.sort_unstable_by_key(|row| std::cmp::Reverse((row.started_at, row.id)));
+            coverage.matching = if coverage.saturated && query.has_row_filters() {
+                None
+            } else {
+                Some(matches.len() as u64)
+            };
+            // A protocol filter selects a whole partition, including overflow.
+            if !query.has_row_filters() {
+                coverage.matching =
+                    Some(if query.protocol.as_deref().is_none_or(|p| p == protocol) {
+                        partition.total
+                    } else {
+                        0
+                    });
+            }
+            has_more |= matches.len() > limit;
+            rows.extend(matches.into_iter().take(limit).cloned());
+        }
+        TrafficActiveSnapshot {
+            truncated: http.saturated || websocket.saturated,
+            summary: TrafficSummarySnapshot {
+                instance_id: self.instance_id.clone(),
+                sampled_at: Utc::now(),
+                counts: TrafficActiveCounts {
+                    http: state.http.total,
+                    websocket: state.websocket.total,
+                },
+                http,
+                websocket,
+            },
+            rows,
+            has_more,
         }
     }
 
     pub fn batch(&self, cursor: Option<&str>) -> TrafficBatch {
-        let mut updates = self
-            .socket_updates
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let mut journal = self.journal.lock().unwrap_or_else(|e| e.into_inner());
-        for (_, request) in updates.drain() {
-            journal.0 += 1;
-            let sequence = journal.0;
-            journal.1.push_back((sequence, request));
-        }
-        while journal.1.len() > self.capacity {
-            journal.1.pop_front();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let pending = std::mem::take(&mut state.socket_updates);
+        for (_, (_, request)) in pending {
+            // Completion removes pending samples while holding the same lock.
+            Self::append(&mut state, self.capacity, request);
         }
         let parsed = cursor.and_then(|v| v.rsplit_once(':'));
         let sequence = parsed.and_then(|(instance, seq)| {
@@ -441,13 +911,16 @@ impl TrafficMonitor {
                 .then(|| seq.parse::<u64>().ok())
                 .flatten()
         });
-        let oldest = journal.1.front().map_or(journal.0 + 1, |(seq, _)| *seq);
+        let oldest = state
+            .journal
+            .front()
+            .map_or(state.sequence + 1, |(seq, _)| *seq);
         let gap = cursor.is_some()
-            && sequence.is_none_or(|seq| seq.saturating_add(1) < oldest || seq > journal.0);
+            && sequence.is_none_or(|seq| seq.saturating_add(1) < oldest || seq > state.sequence);
         let after = if gap { 0 } else { sequence.unwrap_or(0) };
         let mut seen = HashSet::new();
-        let rows = journal
-            .1
+        let rows = state
+            .journal
             .iter()
             .rev()
             .filter(|(seq, request)| *seq > after && seen.insert(request.id))
@@ -455,10 +928,11 @@ impl TrafficMonitor {
             .collect();
         TrafficBatch {
             instance_id: self.instance_id.clone(),
-            cursor: format!("{}:{}", self.instance_id, journal.0),
+            cursor: format!("{}:{}", self.instance_id, state.sequence),
             gap,
             evicted_updates: oldest.saturating_sub(1),
             rows,
+            active: None,
         }
     }
 }
@@ -530,32 +1004,268 @@ mod tests {
         let mut row = TrafficRequest::default();
         for n in 0..100 {
             row.elapsed_ms = n;
-            monitor.publish_socket_progress(row.clone());
+            monitor.publish_socket_progress(&row);
         }
         let batch = monitor.batch(None);
         assert_eq!(batch.rows.len(), 1);
-        assert_eq!(batch.rows[0].elapsed_ms, 99);
+        assert_eq!(
+            batch.rows[0].elapsed_ms, 99,
+            "coalesce progress while throttling full clones"
+        );
         assert_eq!(batch.evicted_updates, 0);
+        // A live poll must not reset the per-request throttle.
+        monitor.publish_socket_progress(&row);
+        assert!(monitor.batch(Some(&batch.cursor)).rows.is_empty());
+        *row.monitor_sampled_at.lock().unwrap() = Some(Instant::now() - SOCKET_SAMPLE_INTERVAL);
         row.elapsed_ms = 100;
-        monitor.publish_socket_progress(row.clone());
+        monitor.publish_socket_progress(&row);
+        let late = row.clone();
         row.completed = true;
         monitor.publish(row);
+        monitor.publish_socket_progress(late);
         let batch = monitor.batch(Some(&batch.cursor));
         assert_eq!(batch.rows.len(), 1);
         assert!(batch.rows[0].completed);
         for _ in 0..10 {
             monitor.publish_socket_progress(TrafficRequest::default());
         }
-        assert_eq!(monitor.socket_updates.lock().unwrap().len(), 2);
+        assert_eq!(monitor.state.lock().unwrap().socket_updates.len(), 2);
         let batch = monitor.batch(None);
         assert_eq!(batch.rows.len(), 2);
         assert!(batch.evicted_updates > 0);
     }
 
     #[test]
+    fn quiet_active_requests_survive_churn_reconnect_and_protocol_budgets() {
+        let monitor = TrafficMonitor::with_active_limits(2, 2, 16 * 1024);
+        let mut http = TrafficRequest::default();
+        http.diagnostics.protocol = Some("http".into());
+        http.started_at = Utc::now() - chrono::Duration::days(2);
+        let mut socket = TrafficRequest::default();
+        socket.diagnostics.protocol = Some("websocket".into());
+        socket.started_at = http.started_at;
+        monitor.publish(http.clone());
+        monitor.publish(socket.clone());
+        let cursor = monitor.batch(None).cursor;
+        for _ in 0..20 {
+            let mut row = TrafficRequest::default();
+            row.diagnostics.protocol = Some("http".into());
+            monitor.publish(row.clone());
+            row.completed = true;
+            monitor.publish(row);
+        }
+        assert!(monitor.batch(Some(&cursor)).gap);
+        let snapshot = monitor.active_snapshot(&TrafficQuery::default());
+        assert_eq!(snapshot.rows.len(), 2);
+        assert!(snapshot.rows.iter().any(|r| r.id == socket.id));
+        assert!(snapshot.rows.iter().any(|r| r.id == http.id));
+        assert_eq!(snapshot.summary.counts.http, 1);
+        assert_eq!(snapshot.summary.counts.websocket, 1);
+        assert!(!snapshot.truncated);
+
+        // HTTP saturation cannot evict the quiet WS or corrupt exact counts.
+        let mut overflow = Vec::new();
+        for _ in 0..8 {
+            let mut row = TrafficRequest::default();
+            row.diagnostics.protocol = Some("http".into());
+            monitor.publish(row.clone());
+            overflow.push(row);
+        }
+        let summary = monitor.summary_snapshot();
+        assert_eq!(summary.counts.http, 9);
+        assert_eq!(summary.http.retained, 2);
+        assert!(summary.http.saturated);
+        assert!(!summary.websocket.saturated);
+        assert_eq!(summary.counts.websocket, 1);
+        for mut row in overflow {
+            row.completed = true;
+            monitor.publish(row);
+        }
+        assert_eq!(monitor.summary_snapshot().counts.http, 1);
+        http.completed = true;
+        socket.completed = true;
+        monitor.publish(http);
+        monitor.publish(socket);
+        let summary = monitor.summary_snapshot();
+        assert_eq!(summary.counts.http + summary.counts.websocket, 0);
+    }
+
+    #[test]
+    fn active_filters_precede_limits_and_summary_bytes_are_bounded() {
+        let monitor = TrafficMonitor::with_active_limits(2, 4, 8 * 1024);
+        let mut target = TrafficRequest {
+            service: Some("target".into()),
+            ..Default::default()
+        };
+        target.diagnostics.protocol = Some("http".into());
+        target.diagnostics.entra = Some(EntraDiagnostics {
+            groups: vec!["private-claim".into()],
+            ..Default::default()
+        });
+        target.timeline.push(TrafficStep {
+            stage: "received".into(),
+            elapsed_ms: 0,
+            code: None,
+            upstream_status: None,
+            attempt: 0,
+        });
+        monitor.publish(target.clone());
+        for _ in 0..8 {
+            monitor.publish(TrafficRequest::default());
+        }
+        let query = TrafficQuery {
+            service: Some("target".into()),
+            limit: Some(1),
+            ..Default::default()
+        };
+        let snapshot = monitor.active_snapshot(&query);
+        assert_eq!(snapshot.rows.len(), 1);
+        assert_eq!(snapshot.rows[0].id, target.id);
+        assert!(snapshot.rows[0].summary_only);
+        assert!(snapshot.rows[0].timeline.is_empty());
+        assert!(snapshot.rows[0].diagnostics.entra.is_none());
+        assert!(snapshot.summary.http.retained_bytes <= 8 * 1024);
+        assert_eq!(
+            snapshot.summary.http.matching, None,
+            "overflow makes filtered counts unknown"
+        );
+        let snapshot = monitor.publication_snapshot();
+        assert_eq!(snapshot.summary.http.matching, Some(9));
+        assert!(snapshot.truncated);
+
+        // No row fits, but exact active counts and explicit partial coverage remain.
+        let tiny = TrafficMonitor::with_active_limits(2, 4, 1);
+        tiny.publish(TrafficRequest::default());
+        let snapshot = tiny.active_snapshot(&TrafficQuery::default());
+        assert!(snapshot.rows.is_empty());
+        assert_eq!(snapshot.summary.counts.http, 1);
+        assert!(snapshot.summary.http.saturated);
+    }
+
+    #[test]
+    fn completion_and_protocol_filters_are_additive_and_validated() {
+        assert!(TrafficQuery::default().validate().is_ok());
+        for basis in ["started", "completed"] {
+            assert!(TrafficQuery {
+                time_basis: Some(basis.into()),
+                ..Default::default()
+            }
+            .validate()
+            .is_ok());
+        }
+        for protocol in ["http", "websocket", "unknown"] {
+            assert!(TrafficQuery {
+                protocol: Some(protocol.into()),
+                ..Default::default()
+            }
+            .validate()
+            .is_ok());
+        }
+        assert!(TrafficQuery {
+            protocol: Some("payload".into()),
+            ..Default::default()
+        }
+        .validate()
+        .is_err());
+        assert!(TrafficQuery {
+            time_basis: Some("invalid".into()),
+            ..Default::default()
+        }
+        .validate()
+        .is_err());
+        let mut row = TrafficRequest::default();
+        let monitor = TrafficMonitor::new(2);
+        monitor.publish(row.clone());
+        row.diagnostics.protocol = Some("websocket".into());
+        monitor.publish(row.clone());
+        let summary = monitor.summary_snapshot();
+        assert_eq!(summary.counts.http, 0);
+        assert_eq!(summary.counts.websocket, 1);
+        let late = row.clone();
+        row.completed = true;
+        monitor.publish(row.clone());
+        monitor.publish(late.clone());
+        monitor.publish_socket_progress(late);
+        monitor.publish(row);
+        let snapshot = monitor.active_snapshot(&TrafficQuery::default());
+        assert!(snapshot.rows.is_empty());
+        assert_eq!(snapshot.summary.counts.websocket, 0);
+        assert!(monitor.batch(None).rows[0].completed);
+    }
+
+    #[test]
+    fn context_drop_retires_active_state_even_while_journal_clones_survive() {
+        let monitor = TrafficMonitor::new(2);
+        let row = TrafficRequest::default();
+        let lease = monitor.active_lease(&row);
+        monitor.publish(row.clone());
+        assert_eq!(monitor.summary_snapshot().counts.http, 1);
+        drop(lease);
+        assert_eq!(monitor.summary_snapshot().counts.http, 0);
+        assert!(monitor.publication_snapshot().rows.is_empty());
+        monitor.publish_socket_progress(&row);
+        monitor.publish(row);
+        assert!(monitor.publication_snapshot().rows.is_empty());
+    }
+
+    #[test]
+    fn quiet_socket_keeps_final_burst_counters_without_cloning_investigation_metadata() {
+        let monitor = TrafficMonitor::new(2);
+        let mut row = TrafficRequest::default();
+        row.diagnostics.protocol = Some("websocket".into());
+        row.diagnostics.websocket = Some(WebSocketDiagnostics {
+            state: "open".into(),
+            ..Default::default()
+        });
+        monitor.publish(row.clone());
+        monitor.publish_socket_progress(&row);
+        // This investigation field must only be copied on the next full sample.
+        row.endpoint = Some("/changed-after-sample".into());
+        let socket = row.diagnostics.websocket.as_mut().unwrap();
+        socket.client_bytes = u64::MAX;
+        socket.upstream_bytes = u64::MAX;
+        socket.client_frames = u64::MAX;
+        socket.upstream_frames = u64::MAX;
+        socket.duration_ms = u64::MAX;
+        socket.observed_at = Some(Utc::now());
+        socket.last_client_activity_at = socket.observed_at;
+        socket.last_upstream_activity_at = socket.observed_at;
+        monitor.publish_socket_progress(&row);
+        let snapshot = monitor.publication_snapshot();
+        assert_eq!(
+            snapshot.rows[0]
+                .diagnostics
+                .websocket
+                .as_ref()
+                .unwrap()
+                .upstream_bytes,
+            u64::MAX
+        );
+        assert!(snapshot.rows[0].endpoint.is_none());
+        let json_bytes = serde_json::to_vec(&snapshot.rows[0]).unwrap().len();
+        assert!(json_bytes <= snapshot.summary.websocket.retained_bytes);
+        assert_eq!(
+            monitor.batch(None).rows[0]
+                .diagnostics
+                .websocket
+                .as_ref()
+                .unwrap()
+                .client_frames,
+            u64::MAX
+        );
+    }
+
+    #[test]
     fn legacy_traffic_json_remains_readable_without_fabricated_timings() {
         let mut json = serde_json::to_value(TrafficRequest::default()).unwrap();
-        for field in ["upstream_timings", "usage", "debug_bundle", "key_prefix"] {
+        for field in [
+            "upstream_timings",
+            "usage",
+            "debug_bundle",
+            "key_prefix",
+            "completed_at",
+            "summary_only",
+        ] {
             json.as_object_mut().unwrap().remove(field);
         }
         json["diagnostics"]
@@ -570,6 +1280,8 @@ mod tests {
         assert!(old.upstream_timings.is_empty());
         assert!(old.usage.is_none());
         assert!(old.debug_bundle.is_none());
+        assert!(old.completed_at.is_none());
+        assert!(!old.summary_only);
         assert!(old.diagnostics.traffic_id.is_none());
         assert!(old.diagnostics.routing_mode.is_none());
     }

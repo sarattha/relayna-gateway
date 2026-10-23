@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "build:admin-ui": "vite build --config crates/gateway-api/admin-ui/vite.config.ts",
-    "test": "node tests/admin-ui.test.mjs && node tests/admin-ui-design-system.test.mjs && node tests/admin-ui-traffic.test.mjs",
+    "test": "node tests/admin-ui.test.mjs && node tests/admin-ui-design-system.test.mjs && node tests/admin-ui-traffic.test.mjs && node tests/admin-ui-gateway-status.test.mjs",
     "test:react": "vitest run --config crates/gateway-api/admin-ui/vitest.config.ts",
     "test:react:coverage": "vitest run --config crates/gateway-api/admin-ui/vitest.config.ts --coverage",
     "typecheck:admin-ui": "tsc -p crates/gateway-api/admin-ui/tsconfig.react.json"

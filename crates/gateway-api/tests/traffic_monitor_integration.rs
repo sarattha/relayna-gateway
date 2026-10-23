@@ -582,11 +582,167 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
     ] {
         assert_eq!(query_history(invalid).send().await.unwrap().status(), 400);
     }
+    // Completion-time windows include quiet sockets that began days ago, and
+    // apply protocol predicates before the limit and completion cursor.
+    let completed_at = chrono::Utc::now();
+    let mut completed_ids = std::collections::HashSet::new();
+    let mut long_socket = None;
+    for variant in 0..6 {
+        let mut record = row.clone();
+        record.id = Uuid::new_v4();
+        record.request_id = format!("completion-matrix-{variant}");
+        record.service = Some("completion-matrix".into());
+        record.started_at = completed_at - chrono::Duration::days(2);
+        record.completed_at = if variant == 4 {
+            None
+        } else {
+            Some(completed_at - chrono::Duration::minutes(if variant == 5 { 31 } else { 0 }))
+        };
+        record.diagnostics.protocol = Some(if variant == 3 { "http" } else { "websocket" }.into());
+        if variant == 4 {
+            record.diagnostics.protocol = None;
+            record.diagnostics.websocket = Some(gateway_core::traffic::WebSocketDiagnostics {
+                state: "closed".into(),
+                ..Default::default()
+            });
+        }
+        store.insert_traffic(&record).await.unwrap();
+        if variant < 3 {
+            completed_ids.insert(record.id);
+        }
+        if variant == 0 {
+            long_socket = Some(record);
+        }
+    }
+    let long_socket = long_socket.unwrap();
+    // Existing rows do not need a bulk migration UPDATE to retain protocol
+    // filtering: nullable columns fall back to their allowlisted JSON metadata.
+    sqlx::query("UPDATE request_traffic SET protocol = NULL WHERE service = 'completion-matrix'")
+        .execute(store.pool())
+        .await
+        .unwrap();
+    let mut unknown = long_socket.clone();
+    unknown.id = Uuid::new_v4();
+    unknown.request_id = "legacy-unknown-protocol".into();
+    unknown.diagnostics.protocol = None;
+    unknown.diagnostics.websocket = None;
+    unknown.completed_at = None;
+    store.insert_traffic(&unknown).await.unwrap();
+    let legacy_bounds = vec![
+        (
+            "from".into(),
+            (completed_at - chrono::Duration::days(3)).to_rfc3339(),
+        ),
+        ("to".into(), completed_at.to_rfc3339()),
+        ("service".into(), "completion-matrix".into()),
+    ];
+    let mut filters = legacy_bounds.clone();
+    filters.push(("protocol".into(), "websocket".into()));
+    assert_eq!(
+        query_history(filters)
+            .send()
+            .await
+            .unwrap()
+            .json::<Vec<Value>>()
+            .await
+            .unwrap()
+            .len(),
+        5
+    );
+    let mut filters = legacy_bounds;
+    filters.push(("protocol".into(), "unknown".into()));
+    let legacy_unknown = query_history(filters)
+        .send()
+        .await
+        .unwrap()
+        .json::<Vec<Value>>()
+        .await
+        .unwrap();
+    assert_eq!(legacy_unknown.len(), 1);
+    assert_eq!(legacy_unknown[0]["id"], json!(unknown.id));
+    let legacy = query_history(vec![("request_id".into(), long_socket.request_id.clone())])
+        .send()
+        .await
+        .unwrap()
+        .json::<Vec<Value>>()
+        .await
+        .unwrap();
+    assert!(legacy.is_empty(), "released start-time default remains 24h");
+    let recent = query_history(vec![
+        ("request_id".into(), long_socket.request_id.clone()),
+        ("time_basis".into(), "completed".into()),
+    ])
+    .send()
+    .await
+    .unwrap()
+    .json::<Vec<Value>>()
+    .await
+    .unwrap();
+    assert_eq!(
+        recent.len(),
+        1,
+        "newly closed old WS is present in the 30m completion window"
+    );
+    assert_eq!(recent[0]["completed_at"], json!(completed_at));
+    let mut found = std::collections::HashSet::new();
+    let mut before = None;
+    loop {
+        let mut filters = vec![
+            ("time_basis".into(), "completed".into()),
+            ("service".into(), "completion-matrix".into()),
+            ("protocol".into(), "websocket".into()),
+            ("limit".into(), "1".into()),
+        ];
+        if let Some(id) = before {
+            filters.push(("before".into(), completed_at.to_rfc3339()));
+            filters.push(("before_id".into(), id));
+        }
+        let page = query_history(filters)
+            .send()
+            .await
+            .unwrap()
+            .json::<Vec<gateway_core::traffic::TrafficRequest>>()
+            .await
+            .unwrap();
+        if page.is_empty() {
+            break;
+        }
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].protocol(), "websocket");
+        assert!(found.insert(page[0].id));
+        before = Some(page[0].id.to_string());
+    }
+    assert_eq!(found, completed_ids);
+    for (name, value) in [("protocol", "raw"), ("time_basis", "invalid")] {
+        assert_eq!(
+            query_history(vec![(name.into(), value.into())])
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            400
+        );
+    }
     // Every diagnostic destination fails independently; observe live evidence and logs.
     for table in ["usage_events", "request_debug_bundles", "request_traffic"] {
         sqlx::query(&format!("ALTER TABLE {table} ADD CONSTRAINT test_recording_failure CHECK (request_id <> 'recording-failure') NOT VALID"))
             .execute(store.pool()).await.unwrap();
     }
+    let runtime_before: Value = client
+        .get(format!(
+            "{control}/admin-ui/admin/gateway/status?instance_id={}",
+            row.instance_id
+        ))
+        .bearer_auth(&operator.raw_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let completed_before = runtime_before["aggregate"]["totals"]["completed"]
+        .as_u64()
+        .unwrap();
     let _ = client
         .post(format!("{proxy}/v1/chat/completions"))
         .bearer_auth(&key.raw_key)
@@ -620,6 +776,10 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
     )
     .unwrap();
     assert_eq!(batch["gap"], true);
+    assert!(
+        batch.get("active").is_none(),
+        "legacy SSE response remains opt-in"
+    );
     let failed = batch["rows"]
         .as_array()
         .unwrap()
@@ -632,6 +792,63 @@ async fn real_proxy_captures_early_failures_attempts_stream_abort_and_recording_
             .unwrap()
             .contains(&json!(destination)));
     }
+    let mut metrics_finished = false;
+    for _ in 0..40 {
+        let status: Value = client
+            .get(format!(
+                "{control}/admin-ui/admin/gateway/status?instance_id={}",
+                row.instance_id
+            ))
+            .bearer_auth(&operator.raw_token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if status["aggregate"]["totals"]["completed"]
+            .as_u64()
+            .is_some_and(|n| n > completed_before)
+        {
+            metrics_finished = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        metrics_finished,
+        "all diagnostic DB writes can fail without suppressing terminal runtime metrics"
+    );
+    let mut snapshot_feed = client
+        .get(format!(
+            "{control}/admin-ui/admin/traffic/live?snapshot=true&protocol=websocket&limit=1"
+        ))
+        .bearer_auth(&operator.raw_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(snapshot_feed.status(), 200);
+    let mut snapshot_frame = String::new();
+    while !snapshot_frame.contains("\n\n") {
+        snapshot_frame.push_str(&String::from_utf8_lossy(
+            &snapshot_feed.chunk().await.unwrap().unwrap(),
+        ));
+    }
+    let snapshot: Value = serde_json::from_str(
+        snapshot_frame
+            .lines()
+            .find_map(|line| line.strip_prefix("data: "))
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(snapshot["active"]["counts"]["http"].is_u64());
+    assert!(snapshot["active"]["http"]["retained_bytes"].is_u64());
+    assert!(snapshot["active"]["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|row| row["diagnostics"]["protocol"] == "websocket"));
+    drop(snapshot_feed);
     assert!(!text.contains("traffic-test-provider-credential"));
     let logs = std::fs::read_to_string(&log_path).unwrap();
     assert!(logs.contains("gateway diagnostic recording failed"));

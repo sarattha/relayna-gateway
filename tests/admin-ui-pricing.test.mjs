@@ -54,7 +54,7 @@ const ui = new Function("document", "FormData", "Event", "state", "api", "confir
   const serviceAction = noop, openFoundryEditor = noop, previewServiceOpenApi = noop;
   const setNotice = noop, applyUsageFilters = noop, loadTaskUsage = noop;
   const confirmAction = async () => { confirmation.calls++; return confirmation.accept; };
-  const usageExportAction = noop, syncUsageExportControls = noop, loadUsage = noop;
+  const usageExportAction = noop, syncUsageExportControls = noop, loadUsage = noop, bindUsageSuggestions = noop;
   ${functions}
   return {services, serviceEditForm, bindPricingRuleEditors, bindEndpointPricingEditors, serviceBody, submitService, patchService, policyFields, usage, money};
 `)(document, FormData, Event, state, api, confirmation);

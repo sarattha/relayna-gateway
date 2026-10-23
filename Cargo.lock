@@ -1157,6 +1157,7 @@ dependencies = [
 name = "gateway-telemetry"
 version = "0.1.49"
 dependencies = [
+ "serde",
  "serde_json",
  "tracing",
  "tracing-subscriber",

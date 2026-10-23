@@ -50,7 +50,7 @@ globalThis.document = { activeElement: null };
 globalThis.FormData = class { constructor() { return new Map([...fieldValues].map(([name, field]) => [name, field.value])); } };
 globalThis.fetch = async () => ({ok:true,body:{getReader:()=>({read:()=>pendingRead,cancel:async()=>{}})}});
 const historyRow = make('5', {request_id:'history',recording_failures:[],elapsed_ms:1});
-const dispose = mountTraffic({content, api:async path=>{historyPath=path;return [historyRow];},headers:()=>({}),esc:String,attr:String,
+const dispose = mountTraffic({content, initialMode:"live", api:async path=>{historyPath=path;return [historyRow];},headers:()=>({}),esc:String,attr:String,
   table:(_,rows)=>{displayed=rows;return '';},badge:String,time:String,routingModeLabel:()=>'',
   onFilters:filters=>{applied=filters;},investigationView:()=>''});
 try {
@@ -119,7 +119,7 @@ globalThis.fetch=async(_url,{signal})=>{
   signal.addEventListener('abort',()=>reader.cancel(),{once:true});
   return {ok:true,body:{getReader:()=>reader}};
 };
-const close=mountTraffic({content:{innerHTML:'',querySelector:selector=>node(selector.slice(1))},api:async path=>{calls.push(new URL(path,'http://test'));return pendingHistory?await pendingHistory:apiResult;},headers:()=>({}),esc:String,attr:String,table:(_,rows)=>{rendered=rows;return '';},badge:String,time:String,routingModeLabel:()=>'',onFilters:()=>{},investigationView:()=>''});
+const close=mountTraffic({initialMode:"live",content:{innerHTML:'',querySelector:selector=>node(selector.slice(1))},api:async path=>{calls.push(new URL(path,'http://test'));return pendingHistory?await pendingHistory:apiResult;},headers:()=>({}),esc:String,attr:String,table:(_,rows)=>{rendered=rows;return '';},badge:String,time:String,routingModeLabel:()=>'',onFilters:()=>{},investigationView:()=>''});
 const apply=async values=>{controls.clear();for(const [name,value]of Object.entries(values))controls.set(name,{value});node('traffic-filters').handlers.submit({preventDefault(){},currentTarget:node('traffic-filters')});await flush();};
 const mode=async value=>{node('traffic-mode').handlers.change({target:{value}});await flush();};
 try {
@@ -141,7 +141,8 @@ try {
   await apply({outcome:'all'});assert.equal(calls.at(-1).searchParams.has('failures_only'),false);
   const callCount=calls.length;await apply({outcome:'active'});assert.equal(calls.length,callCount);assert.match(node('traffic-warning').textContent,/Active requests.*Live/);
   await apply({from:'invalid-date'});assert.match(node('traffic-warning').textContent,/History unavailable/);assert.equal(node('traffic-older').disabled,true);
-  await apply({});assert.equal(calls.at(-1).searchParams.toString(),'limit=100');
+  await apply({});assert.equal(calls.at(-1).searchParams.get('time_basis'),'completed');
+  assert.equal(Date.parse(calls.at(-1).searchParams.get('to'))-Date.parse(calls.at(-1).searchParams.get('from')),30*60*1000);
   // Reason chips apply and toggle off an exact reason without changing other fields.
   node('traffic-failure-groups').buttons[0].handlers.click();await flush();assert.equal(calls.at(-1).searchParams.get('failure_code'),'upstream_timeout');
   node('traffic-failure-groups').buttons[0].handlers.click();await flush();assert.equal(calls.at(-1).searchParams.has('failure_code'),false);
@@ -158,3 +159,201 @@ try {
   node('traffic-pause').handlers.click();await flush();await emit([{...base,completed:true}]);assert.equal(rendered.length,0,'completion removes row from Active only');
 }finally{close();Object.assign(globalThis,savedGlobals);}
 console.log('ok - all mounted history filters, normalization, dates, chips, pagination reset, empty results, pause/resume and active completion');
+
+// Independent active snapshots retain quiet HTTP/SSE and WS records after journal
+// churn, and stale progress cannot replace a completed row.
+const quietSocket=make('quiet',{started_at:'2026-01-01T00:00:00Z',completed:false,diagnostics:{protocol:'websocket'},recording_failures:[]});
+const quietHttp={...quietSocket,id:'quiet-http',diagnostics:{protocol:'http'}};
+const snapshotMerge=mergeTrafficRows([make('terminal')],{gap:true,rows:[],active:{rows:[quietSocket,quietHttp]}},1);
+assert.equal(snapshotMerge.length,2,'active rows use a separate budget from the completed journal');
+assert.equal(matchesTraffic(quietSocket,{protocol:'websocket'}),true);
+assert.equal(matchesTraffic(quietSocket,{protocol:'http'}),false);
+assert.equal(matchesTraffic(quietHttp,{protocol:'http'}),true);
+assert.equal(matchesTraffic({...quietSocket,completed:true},{outcome:'completed'}),true);
+assert.equal(mergeTrafficRows([make('1')],{rows:[make('1',{completed:false})]})[0].completed,true);
+console.log('ok - independent protocol partitions, quiet connections and terminal progress ordering');
+
+const fullActive={...quietSocket,summary_only:false,stage:'upstream_connected',elapsed_ms:100,
+  timeline:[{stage:'identity_verified',elapsed_ms:10}],upstream_timings:[{attempt:1,connect_ms:12}],
+  usage:{total_tokens:0},debug_bundle:{routing_decisions:['service selected']},recording_failures:['history_write_failed'],
+  diagnostics:{protocol:'websocket',websocket:{client_bytes:10,upstream_bytes:20},
+    entra:{verification:'verified',source:'jwt',tenant_id:'synthetic-tenant'},
+    authentication_profile:{id:'synthetic-profile',outcome:'verified'}}};
+const activeSummary={...fullActive,summary_only:true,stage:'streaming',elapsed_ms:300,client_status:101,attempts:2,
+  timeline:[],upstream_timings:[],usage:null,debug_bundle:null,recording_failures:[],
+  diagnostics:{protocol:'websocket',websocket:{client_bytes:100,upstream_bytes:200},entra:null}};
+const [investigated]=mergeTrafficRows([],{rows:[fullActive],active:{rows:[activeSummary]}});
+assert.equal(investigated.summary_only,false);
+for(const field of ['timeline','upstream_timings','usage','debug_bundle','recording_failures'])assert.deepEqual(investigated[field],fullActive[field],field);
+for(const field of ['entra','authentication_profile'])assert.deepEqual(investigated.diagnostics[field],fullActive.diagnostics[field],field);
+for(const field of ['stage','elapsed_ms','client_status','attempts'])assert.equal(investigated[field],activeSummary[field],field);
+assert.deepEqual(investigated.diagnostics.websocket,activeSummary.diagnostics.websocket,'fresh summary counters update full investigations');
+const [quietInvestigation]=mergeTrafficRows([investigated],{rows:[],active:{rows:[{...activeSummary,elapsed_ms:500}]}});
+assert.deepEqual(quietInvestigation.timeline,fullActive.timeline,'quiet active snapshots retain previous full lifecycle details');
+assert.equal(quietInvestigation.elapsed_ms,500);
+for(const gap of [false,true]) {
+  assert.equal(mergeTrafficRows([{...fullActive,completed:true}],{gap,rows:[fullActive],active:{rows:[activeSummary]}}).some(row=>!row.completed),false,'terminal rows cannot be resurrected by stale active updates');
+  assert.equal(mergeTrafficRows([],{gap,rows:[{...fullActive,completed:true},fullActive],active:{rows:[activeSummary]}})[0].completed,true,'terminal updates win within the same batch');
+}
+console.log('ok - full active investigations survive summary refreshes with current counters and terminal ordering');
+
+const clusterGlobals={document:globalThis.document,fetch:globalThis.fetch,FormData:globalThis.FormData,setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout};
+const clusterNodes=new Map(), clusterControls=new Map(), clusterCalls=[],clusterTimers=new Map();
+let clusterTimerId=-1;
+let clusterRows=[], clusterResult={scope:'cluster',sampled_at:'2026-10-23T10:00:00Z',partial:false,unavailable:false,
+  instances:[{instance_id:'pod-a',stale:false}],rows:[quietSocket,quietHttp],counts:{http:2000,websocket:10},matching:null,
+  has_more:true,truncated:true,before:quietHttp.started_at,before_id:quietHttp.id};
+let clusterPending=null;
+const cn=id=>{
+  if(!clusterNodes.has(id))clusterNodes.set(id,{textContent:'',innerHTML:'',value:'',handlers:{},disabled:false,
+    classList:{toggle(){},add(){}},contains(){return false;},querySelectorAll(){return [];},
+    elements:{namedItem(name){if(!clusterControls.has(name))clusterControls.set(name,{value:''});return clusterControls.get(name);}},
+    addEventListener(name,handler){this.handlers[name]=handler;}});
+  return clusterNodes.get(id);
+};
+globalThis.document={activeElement:null};
+globalThis.fetch=async()=>{throw new Error('the default active view must use the cluster API');};
+globalThis.FormData=class{constructor(){return new Map([...clusterControls].map(([name,c])=>[name,c.value]));}};
+globalThis.setTimeout=(fn,ms,...args)=>{if(ms!==2000)return clusterGlobals.setTimeout(fn,ms,...args);const id=clusterTimerId--;clusterTimers.set(id,fn);return id;};
+globalThis.clearTimeout=id=>{if(clusterTimers.has(id))clusterTimers.delete(id);else clusterGlobals.clearTimeout(id);};
+const stopCluster=mountTraffic({content:{innerHTML:'',querySelector:selector=>cn(selector.slice(1))},
+  api:async path=>{const url=new URL(path,'http://test');clusterCalls.push(url);return url.pathname.endsWith('/history')?[]:clusterPending?await clusterPending:clusterResult;},
+  headers:()=>({}),esc:String,attr:String,table:(_,rows)=>{clusterRows=rows;return '';},badge:String,time:String,
+  routingModeLabel:()=>'',investigationView:()=>''});
+try {
+  await flush();
+  assert.equal(clusterCalls[0].pathname,'/admin-ui/admin/traffic/cluster');
+  assert.equal(clusterCalls[0].searchParams.get('instance_id'),'all');
+  assert.equal(clusterRows.length,2,'old quiet sockets and HTTP streams are discoverable');
+  assert.match(cn('traffic-summary').textContent,/Exact active before filters: HTTP\/SSE 2000 · WebSocket 10/);
+  assert.match(cn('traffic-warning').textContent,/saturated/);
+  assert.equal(clusterTimers.size,1,'newest active page refreshes');
+  const newestClusterResult=clusterResult;
+  const olderActive={...quietSocket,id:'older-active',request_id:'older-active-page'};
+  clusterResult={...clusterResult,rows:[olderActive],has_more:false,before:null,before_id:null};
+  cn('traffic-older').handlers.click();await flush();
+  assert.equal(clusterCalls.at(-1).searchParams.get('before'),quietHttp.started_at);
+  assert.equal(clusterCalls.at(-1).searchParams.get('before_id'),quietHttp.id);
+  assert.equal(clusterRows.length,1);assert.match(clusterRows[0][1],/older-active-page/);
+  assert.equal(clusterTimers.size,0,'loaded older active pages remain frozen');
+  const beforeActiveResume=clusterCalls.length;
+  cn('traffic-pause').handlers.click();cn('traffic-pause').handlers.click();await flush();
+  assert.equal(clusterCalls.length,beforeActiveResume,'Resume keeps the loaded older active page');
+  assert.match(clusterRows[0][1],/older-active-page/);
+  assert.equal(cn('traffic-older').disabled,true);assert.equal(cn('traffic-newest').disabled,false);
+  assert.match(cn('traffic-connection').textContent,/older page remains frozen/);
+  assert.equal(clusterTimers.size,0,'Resume does not restart polling for older active pages');
+  clusterResult=newestClusterResult;
+  cn('traffic-newest').handlers.click();await flush();assert.equal(clusterTimers.size,1);
+  const displayedNewest=clusterRows;
+  let resolveActiveOlder;clusterPending=new Promise(r=>{resolveActiveOlder=r;});
+  cn('traffic-older').handlers.click();await flush();
+  const activeOlderQuery=clusterCalls.at(-1).search;
+  assert.deepEqual(clusterRows,displayedNewest,'loading Older retains the previous active page');
+  assert.equal(cn('traffic-older').disabled,true);assert.equal(cn('traffic-newest').disabled,true);
+  cn('traffic-pause').handlers.click();
+  const beforeInterruptedResume=clusterCalls.length;
+  cn('traffic-pause').handlers.click();await flush();
+  assert.equal(clusterCalls.length,beforeInterruptedResume,'Resume does not jump to Newest after interrupting Older');
+  assert.equal(cn('traffic-older').disabled,false);assert.equal(cn('traffic-newest').disabled,false);
+  assert.equal(clusterTimers.size,0);
+  resolveActiveOlder({...clusterResult,rows:[{...olderActive,request_id:'discarded-active-page'}]});clusterPending=null;await flush();
+  assert.deepEqual(clusterRows,displayedNewest,'an interrupted Older response cannot overwrite the frozen page after Resume');
+  clusterResult={...clusterResult,rows:[olderActive],has_more:false};
+  cn('traffic-older').handlers.click();await flush();
+  assert.equal(clusterCalls.at(-1).search,activeOlderQuery,'the retained cursor retries the interrupted active page');
+  assert.match(clusterRows[0][1],/older-active-page/);assert.equal(clusterTimers.size,0);
+  clusterResult=newestClusterResult;
+  cn('traffic-instance').handlers.change({target:{value:'pod-a'}});await flush();
+  assert.equal(clusterCalls.at(-1).searchParams.get('instance_id'),'pod-a');
+  clusterControls.set('protocol',{value:'websocket'});
+  clusterControls.set('from',{value:'2026-10-23T09:00'});
+  cn('traffic-filters').handlers.submit({preventDefault(){},currentTarget:cn('traffic-filters')});await flush();
+  assert.equal(clusterCalls.at(-1).searchParams.get('protocol'),'websocket');
+  assert.equal(clusterCalls.at(-1).searchParams.has('from'),false,'completed-time filters must not hide old active connections');
+  assert.equal(clusterRows.length,1);
+  clusterResult={...clusterResult,partial:true,instances:[{instance_id:'pod-a',stale:true}],counts:{http:0,websocket:0}};
+  cn('traffic-newest').handlers.click();await flush();
+  assert.match(cn('traffic-summary').textContent,/Known active/);
+  assert.match(cn('traffic-warning').textContent,/rows may be stale/);
+  clusterResult={...clusterResult,unavailable:true};
+  cn('traffic-newest').handlers.click();await flush();
+  assert.match(cn('traffic-summary').textContent,/Current counts unknown/);
+  assert.match(cn('traffic-warning').textContent,/coverage are unknown/);
+  let resolve;clusterPending=new Promise(r=>{resolve=r;});
+  cn('traffic-newest').handlers.click();await flush();
+  cn('traffic-mode').handlers.change({target:{value:'history'}});await flush();
+  assert.equal(clusterRows.length,0);
+  resolve({...clusterResult,rows:[quietSocket]});await flush();
+  assert.equal(clusterRows.length,0,'late cluster responses cannot overwrite completed history');
+  assert.equal(clusterCalls.at(-1).searchParams.get('time_basis'),'completed');
+  assert.equal(clusterCalls.at(-1).searchParams.get('protocol'),'websocket');
+} finally {stopCluster();Object.assign(globalThis,clusterGlobals);}
+console.log('ok - default cluster active view, exact counts, stale coverage, server filters, frozen active pages across Pause/Resume, interrupted Older and mode races');
+
+// The newest completion page refreshes on one bounded five-second timer. Keep
+// its rows during a pending refresh; historical pages and explicit end times freeze.
+const historyGlobals={document:globalThis.document,fetch:globalThis.fetch,FormData:globalThis.FormData,setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout};
+const historyNodes=new Map(),historyControls=new Map(),historyCalls=[],historyTimers=new Map();
+let timerId=-1,historyRendered=[],historyHeaders=[],historyPending=null;
+const completionRows=Array.from({length:100},(_,i)=>make(`completed-${i}`,{started_at:'2026-01-01T00:00:00Z',completed_at:'2026-10-23T10:00:00Z',recording_failures:[]}));
+let historyResult=completionRows;
+const hn=id=>{
+  if(!historyNodes.has(id))historyNodes.set(id,{textContent:'',innerHTML:'',value:'',handlers:{},disabled:false,
+    classList:{toggle(){},add(){}},contains(){return false;},querySelectorAll(){return [];},
+    elements:{namedItem(name){if(!historyControls.has(name))historyControls.set(name,{value:''});return historyControls.get(name);}},
+    addEventListener(name,handler){this.handlers[name]=handler;}});
+  return historyNodes.get(id);
+};
+globalThis.document={activeElement:null};
+globalThis.fetch=async()=>{throw new Error('saved history must not open SSE');};
+globalThis.FormData=class{constructor(){return new Map([...historyControls].map(([name,c])=>[name,c.value]));}};
+globalThis.setTimeout=(fn,ms,...args)=>{if(ms!==5000)return historyGlobals.setTimeout(fn,ms,...args);const id=timerId--;historyTimers.set(id,fn);return id;};
+globalThis.clearTimeout=id=>{if(historyTimers.has(id))historyTimers.delete(id);else historyGlobals.clearTimeout(id);};
+const historyDispose=mountTraffic({initialMode:'history',content:{innerHTML:'',querySelector:selector=>hn(selector.slice(1))},
+  api:async path=>{historyCalls.push(new URL(path,'http://test'));return historyPending?await historyPending:historyResult;},
+  headers:()=>({}),esc:String,attr:String,table:(headers,rows)=>{historyHeaders=headers;historyRendered=rows;return '';},badge:String,time:String,routingModeLabel:()=>'',investigationView:()=>''});
+try {
+  await flush();assert.equal(historyTimers.size,1);assert.equal(historyRendered.length,100);
+  const [id,poll]=[...historyTimers][0];historyTimers.delete(id);
+  let resolve;historyPending=new Promise(r=>{resolve=r;});
+  const polling=poll();await flush();
+  assert.equal(historyRendered.length,100,'polling keeps the displayed page while awaiting the DB');
+  resolve([completionRows[0]]);await polling;historyPending=null;await flush();
+  assert.equal(historyRendered.length,1);assert.equal(historyTimers.size,1);
+  hn('traffic-newest').handlers.click();await flush();assert.equal(historyRendered.length,100);
+  let resolveOlder;historyPending=new Promise(r=>{resolveOlder=r;});
+  hn('traffic-older').handlers.click();await flush();
+  assert.equal(historyTimers.size,0,'older pages remain frozen');
+  assert.equal(historyCalls.at(-1).searchParams.get('before'),completionRows.at(-1).completed_at);
+  const olderQuery=historyCalls.at(-1).search;
+  assert.equal(historyRendered.length,100,'loading Older retains the usable previous page');
+  assert.equal(hn('traffic-older').disabled,true);assert.equal(hn('traffic-newest').disabled,true);
+  hn('traffic-pause').handlers.click();
+  resolveOlder([{...completionRows[0],request_id:'discarded-older-response'}]);historyPending=null;await flush();
+  assert.equal(historyRendered.length,100,'a paused Older response cannot overwrite the previous page');
+  const beforeResume=historyCalls.length;
+  hn('traffic-pause').handlers.click();await flush();
+  assert.equal(historyCalls.length,beforeResume,'resuming an older page must not jump to Newest');
+  assert.equal(hn('traffic-older').disabled,false);assert.equal(hn('traffic-newest').disabled,false);
+  assert.equal(historyTimers.size,0);
+  historyResult=[{...completionRows[0],request_id:'recovered-older-page'}];
+  hn('traffic-older').handlers.click();await flush();
+  assert.equal(historyCalls.at(-1).search,olderQuery,'the restored cursor retries the interrupted Older page');
+  assert.equal(historyRendered.length,1);assert.match(historyRendered[0][1],/recovered-older-page/);
+  historyResult=completionRows;
+  hn('traffic-newest').handlers.click();await flush();assert.equal(historyTimers.size,1);
+  hn('traffic-pause').handlers.click();assert.equal(historyTimers.size,0,'Pause stops history refresh');
+  hn('traffic-pause').handlers.click();await flush();assert.equal(historyTimers.size,1,'Resume restarts the newest page');
+  historyControls.set('to',{value:'2026-09-03T11:00'});
+  hn('traffic-filters').handlers.submit({preventDefault(){},currentTarget:hn('traffic-filters')});await flush();
+  assert.equal(historyTimers.size,0,'an explicit fixed end time remains manual');
+  historyResult=[{...completionRows[0],completed_at:null}];
+  hn('traffic-mode').handlers.change({target:{value:'legacy'}});await flush();
+  const legacyQuery=historyCalls.at(-1).searchParams;
+  assert.equal(legacyQuery.get('time_basis'),'started');
+  assert.equal(Date.parse(legacyQuery.get('to'))-Date.parse(legacyQuery.get('from')),24*60*60*1000);
+  assert.equal(historyRendered.length,1,'the UI retains access to legacy rows without completion timestamps');
+  assert.equal(historyHeaders[0],'Arrived');assert.equal(historyTimers.size,0);
+} finally {historyDispose();Object.assign(globalThis,historyGlobals);}
+console.log('ok - newest completion polling, stable pending rows, frozen older pages, Pause/Resume and legacy arrival history');

@@ -13,12 +13,23 @@ const BUDGET_EPOCH_KEY: &str = "budget:accounting-epoch:v2";
 #[derive(Clone)]
 pub struct RedisReadiness {
     client: redis::Client,
+    monitoring_identity: Uuid,
 }
 
 impl RedisReadiness {
+    /// Distinguishes in-process observation caches without exposing the URL.
+    pub fn monitoring_identity(&self) -> Uuid {
+        self.monitoring_identity
+    }
+
+    pub fn monitoring(&self) -> crate::RedisMonitoringStore {
+        crate::RedisMonitoringStore::from_client(self.client.clone())
+    }
+
     pub fn new(redis_url: &str) -> redis::RedisResult<Self> {
         Ok(Self {
             client: redis::Client::open(redis_url)?,
+            monitoring_identity: Uuid::new_v4(),
         })
     }
 

@@ -1,3 +1,4 @@
+mod gateway_monitoring;
 mod litellm_spend;
 use crate::portal::{
     constant_time_eq, pkce_challenge, random_opaque_token, safe_return_to, token_hash,
@@ -212,6 +213,10 @@ fn litellm_ui_client() -> reqwest::Client {
         .expect("LiteLLM UI proxy client")
 }
 
+pub async fn run_gateway_monitoring(redis: RedisReadiness, store: PostgresStore) {
+    gateway_monitoring::run(redis, store).await;
+}
+
 pub fn router(store: PostgresStore, redis: RedisReadiness) -> Router {
     let auth_env = GatewayAuthEnv::default();
     let auth_runtime = SharedGatewayAuthRuntime::new(
@@ -342,6 +347,14 @@ pub fn router_with_state(state: AppState) -> Router {
     Router::new()
         .route("/admin-ui/healthz", get(healthz))
         .route("/admin-ui/readyz", get(readyz))
+        .route(
+            "/admin-ui/admin/gateway/status",
+            get(gateway_monitoring::status),
+        )
+        .route(
+            "/admin-ui/admin/traffic/cluster",
+            get(gateway_monitoring::cluster_traffic),
+        )
         .route("/admin-ui/auth/config", get(portal_auth_config))
         .route("/admin-ui/auth/login", get(portal_auth_login))
         .route("/admin-ui/auth/callback", get(portal_auth_callback))
@@ -681,6 +694,10 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin-ui/admin/traffic/history", get(traffic_history))
         .route("/admin-ui/admin/usage/summary", get(usage_summary))
         .route("/admin-ui/admin/usage/dashboard", get(usage_dashboard))
+        .route(
+            "/admin-ui/admin/usage/sections/{section}",
+            get(usage_section),
+        )
         .route("/admin-ui/admin/usage/timeseries", get(usage_timeseries))
         .route("/admin-ui/admin/usage/by-key", get(usage_by_key))
         .route("/admin-ui/admin/usage/by-project", get(usage_by_project))
@@ -4893,12 +4910,19 @@ async fn service_sync_status(
 
 // Each stream reauthorizes after at most 30 seconds. Admission bounds concurrent
 // viewers and disconnecting drops the permit without spawning background tasks.
-async fn traffic_live(State(state): State<AppState>, headers: HeaderMap) -> Response {
+async fn traffic_live(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TrafficQuery>,
+) -> Response {
     use axum::response::sse::{Event, Sse};
     use std::{convert::Infallible, sync::OnceLock, time::Instant};
     static VIEWERS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
     if let Err(response) = require_admin_scope(&state, &headers, SCOPE_USAGE_READ).await {
         return response;
+    }
+    if let Err(error) = query.validate() {
+        return error_response(&headers, error);
     }
     let Ok(permit) = VIEWERS
         .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(32)))
@@ -4913,12 +4937,15 @@ async fn traffic_live(State(state): State<AppState>, headers: HeaderMap) -> Resp
         .filter(|value| value.len() <= 192)
         .map(str::to_owned);
     let stream = futures_util::stream::unfold(
-        (cursor, Instant::now(), permit),
-        |(cursor, started, permit)| async move {
+        (cursor, Instant::now(), permit, query),
+        |(cursor, started, permit, query)| async move {
             if started.elapsed() >= Duration::from_secs(30) {
                 return None;
             }
-            let batch = traffic::monitor().batch(cursor.as_deref());
+            let mut batch = traffic::monitor().batch(cursor.as_deref());
+            if query.snapshot == Some(true) {
+                batch.active = Some(traffic::monitor().active_snapshot(&query));
+            }
             let next = batch.cursor.clone();
             let event = Event::default()
                 .event("traffic")
@@ -4926,7 +4953,10 @@ async fn traffic_live(State(state): State<AppState>, headers: HeaderMap) -> Resp
                 .json_data(batch)
                 .expect("traffic serialization");
             tokio::time::sleep(Duration::from_millis(500)).await;
-            Some((Ok::<_, Infallible>(event), (Some(next), started, permit)))
+            Some((
+                Ok::<_, Infallible>(event),
+                (Some(next), started, permit, query),
+            ))
         },
     );
     let mut response = Sse::new(stream).into_response();
@@ -4964,12 +4994,58 @@ async fn traffic_history(
     }
 }
 
+// Keep expensive analytics from consuming every control-plane connection.
+// Admission is immediate. PostgreSQL also uses an isolated four-connection
+// Usage pool and a server statement deadline; dropping a future alone need not
+// stop server work immediately.
+async fn usage_analytics<T>(
+    query: impl std::future::Future<Output = GatewayResult<T>>,
+) -> GatewayResult<T> {
+    static ANALYTICS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
+    let _permit = ANALYTICS
+        .try_acquire()
+        .map_err(|_| GatewayError::GatewayOverloaded)?;
+    tokio::time::timeout(Duration::from_secs(20), query)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+}
+
+async fn usage_read_query<T, Fut>(
+    headers: HeaderMap,
+    state: &AppState,
+    query: impl FnOnce(Arc<dyn GatewayData>) -> Fut,
+) -> Response
+where
+    T: Serialize,
+    Fut: std::future::Future<Output = GatewayResult<T>>,
+{
+    if let Err(response) = require_admin_scope(state, &headers, SCOPE_USAGE_READ).await {
+        return response;
+    }
+    match usage_analytics(query(state.store.clone())).await {
+        Ok(value) => ([("cache-control", "no-store")], Json(value)).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
+}
+
+async fn usage_section(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(section): Path<gateway_core::observability::UsageSectionKind>,
+    Query(query): Query<UsageQuery>,
+) -> Response {
+    usage_read_query(headers, &state, |store| async move {
+        store.usage_section(query, section).await
+    })
+    .await
+}
+
 async fn usage_summary(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+    usage_read_query(headers, &state, |store| async move {
         store.usage_summary(query).await
     })
     .await
@@ -4980,7 +5056,7 @@ async fn usage_dashboard(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+    usage_read_query(headers, &state, |store| async move {
         store.usage_dashboard(query).await
     })
     .await
@@ -4991,7 +5067,7 @@ async fn usage_timeseries(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+    usage_read_query(headers, &state, |store| async move {
         store.usage_timeseries(query).await
     })
     .await
@@ -5050,7 +5126,7 @@ async fn usage_events(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+    usage_read_query(headers, &state, |store| async move {
         store.usage_events(query).await
     })
     .await
@@ -5061,7 +5137,7 @@ async fn usage_filter_values(
     headers: HeaderMap,
     Query(query): Query<UsageFilterValuesQuery>,
 ) -> Response {
-    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+    usage_read_query(headers, &state, |store| async move {
         store.usage_filter_values(query).await
     })
     .await
@@ -5072,10 +5148,13 @@ async fn usage_export_json(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
+    if query.stream.unwrap_or(false) {
+        return usage_export_stream(state, headers, query, false).await;
+    }
     if let Err(response) = require_admin_scope(&state, &headers, SCOPE_USAGE_EXPORT).await {
         return response;
     }
-    match state.store.usage_export(query).await {
+    match usage_analytics(state.store.usage_export(query)).await {
         Ok(export) => (
             StatusCode::OK,
             [
@@ -5097,7 +5176,7 @@ async fn usage_unused_keys(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
-    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+    usage_read_query(headers, &state, |store| async move {
         store.unused_keys(query).await
     })
     .await
@@ -5108,10 +5187,13 @@ async fn usage_export_csv(
     headers: HeaderMap,
     Query(query): Query<UsageQuery>,
 ) -> Response {
+    if query.stream.unwrap_or(false) {
+        return usage_export_stream(state, headers, query, true).await;
+    }
     if let Err(response) = require_admin_scope(&state, &headers, SCOPE_USAGE_EXPORT).await {
         return response;
     }
-    match state.store.usage_export(query).await {
+    match usage_analytics(state.store.usage_export(query)).await {
         Ok(export) => (
             StatusCode::OK,
             [
@@ -5135,10 +5217,155 @@ async fn task_usage(
     Query(mut query): Query<UsageQuery>,
 ) -> Response {
     query.task_id = Some(task_id);
-    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+    usage_read_query(headers, &state, |store| async move {
         store.usage_summary(query).await
     })
     .await
+}
+
+struct UsageExportStream {
+    store: Arc<dyn GatewayData>,
+    query: UsageQuery,
+    page: Option<gateway_core::UsageEventsPage>,
+    prefix: Option<Bytes>,
+    csv: bool,
+    emitted_rows: bool,
+    done: bool,
+    finished: bool,
+    _permit: tokio::sync::SemaphorePermit<'static>,
+}
+
+async fn usage_export_stream(
+    state: AppState,
+    headers: HeaderMap,
+    mut query: UsageQuery,
+    csv: bool,
+) -> Response {
+    if let Err(response) = require_admin_scope(&state, &headers, SCOPE_USAGE_EXPORT).await {
+        return response;
+    }
+    if query.from.zip(query.to).is_none_or(|(from, to)| from >= to)
+        || query.cursor.is_some()
+        || query.offset.is_some_and(|offset| offset != 0)
+    {
+        return error_response(&headers, GatewayError::InvalidUsageQuery);
+    }
+    static EXPORTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+    let permit = match EXPORTS.try_acquire() {
+        Ok(permit) => permit,
+        Err(_) => return error_response(&headers, GatewayError::GatewayOverloaded),
+    };
+    query.limit = Some(1_000);
+    query.offset = Some(0);
+    query.sort_by = Some("created_at".to_owned());
+    query.sort_order = Some("asc".to_owned());
+    query.cursor = Some("start".to_owned());
+    let first_page = match usage_analytics(state.store.usage_export_page(query.clone())).await {
+        Ok(page) => page,
+        Err(error) => return error_response(&headers, error),
+    };
+    let mut summary_query = query.clone();
+    summary_query.cursor = first_page.snapshot_cursor.clone();
+    let summary = match usage_analytics(state.store.usage_summary(summary_query)).await {
+        Ok(summary) => summary,
+        Err(error) => return error_response(&headers, error),
+    };
+    let prefix = if csv {
+        usage_export_csv_body(&UsageExport {
+            summary,
+            rows: Vec::new(),
+        })
+    } else {
+        format!(
+            "{{\"summary\":{},\"rows\":[",
+            serde_json::to_string(&summary).unwrap_or_default()
+        )
+    };
+    let stream = futures_util::stream::try_unfold(
+        UsageExportStream {
+            store: state.store,
+            query,
+            page: Some(first_page),
+            prefix: Some(Bytes::from(prefix)),
+            csv,
+            emitted_rows: false,
+            done: false,
+            finished: false,
+            _permit: permit,
+        },
+        |mut stream| async move {
+            if let Some(prefix) = stream.prefix.take() {
+                return Ok(Some((prefix, stream)));
+            }
+            if stream.finished {
+                return Ok(None);
+            }
+            if stream.done {
+                stream.finished = true;
+                return if stream.csv {
+                    Ok(None)
+                } else {
+                    Ok(Some((Bytes::from_static(b"]}"), stream)))
+                };
+            }
+            let page = match stream.page.take() {
+                Some(page) => page,
+                None => usage_analytics(stream.store.usage_export_page(stream.query.clone()))
+                    .await
+                    .map_err(|_| std::io::Error::other("Usage export batch unavailable"))?,
+            };
+            stream.done = !page.has_more;
+            stream.query.offset = Some(if page.next_cursor.is_some() {
+                0
+            } else {
+                stream.query.offset.unwrap_or_default() + page.rows.len() as i64
+            });
+            stream.query.cursor = page.next_cursor;
+            let chunk = if stream.csv {
+                let csv = usage_export_csv_body(&UsageExport {
+                    summary: Default::default(),
+                    rows: page.rows,
+                });
+                csv.split_once('\n')
+                    .map(|(_, rows)| rows.to_owned())
+                    .unwrap_or_default()
+            } else {
+                let rows = serde_json::to_string(&page.rows).map_err(std::io::Error::other)?;
+                let separator = if stream.emitted_rows && !page.rows.is_empty() {
+                    ","
+                } else {
+                    ""
+                };
+                stream.emitted_rows |= !page.rows.is_empty();
+                format!("{separator}{}", &rows[1..rows.len() - 1])
+            };
+            Ok::<_, std::io::Error>(Some((Bytes::from(chunk), stream)))
+        },
+    );
+    (
+        StatusCode::OK,
+        [
+            (
+                "content-type",
+                if csv {
+                    "text/csv; charset=utf-8"
+                } else {
+                    "application/json"
+                },
+            ),
+            (
+                "content-disposition",
+                if csv {
+                    "attachment; filename=\"relayna-usage.csv\""
+                } else {
+                    "attachment; filename=\"relayna-usage.json\""
+                },
+            ),
+            ("cache-control", "no-store"),
+        ],
+        Body::from_stream(stream),
+    )
+        .into_response()
 }
 
 fn usage_export_csv_body(export: &UsageExport) -> String {
@@ -5210,7 +5437,7 @@ async fn usage_breakdown(
     query: UsageQuery,
     dimension: UsageBreakdownDimension,
 ) -> Response {
-    admin_query(headers, &state, SCOPE_USAGE_READ, |store| async move {
+    usage_read_query(headers, &state, |store| async move {
         store.usage_breakdown(query, dimension).await
     })
     .await
@@ -9213,8 +9440,11 @@ mod tests {
 
     #[async_trait]
     impl UsageQueryStore for MemoryStore {
-        async fn usage_summary(&self, _query: UsageQuery) -> GatewayResult<UsageSummary> {
-            Ok(UsageSummary::default())
+        async fn usage_summary(&self, query: UsageQuery) -> GatewayResult<UsageSummary> {
+            if self.store_fault == Some("usage_summary") {
+                return Err(GatewayError::StoreUnavailable);
+            }
+            Ok(self.usage_export(query).await?.summary)
         }
 
         async fn usage_timeseries(
@@ -9395,6 +9625,8 @@ mod tests {
                 limit,
                 offset,
                 has_more,
+                next_cursor: None,
+                snapshot_cursor: None,
             })
         }
 
@@ -13797,6 +14029,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn monitoring_routes_parse_real_ui_queries_and_enforce_admin_scope() {
+        let store = default_store();
+        store
+            .operator_tokens
+            .lock()
+            .expect("lock poisoned")
+            .extend([
+                TEST_USAGE_OPERATOR_TOKEN.to_owned(),
+                TEST_POLICY_OPERATOR_TOKEN.to_owned(),
+            ]);
+        let app = router_with_state(test_state_with_redis_url(store, "redis://127.0.0.1:0"));
+        for route in [
+            "/admin-ui/admin/traffic/cluster?limit=100&instance_id=all",
+            "/admin-ui/admin/traffic/cluster?limit=100&instance_id=all&status=503&failures_only=true&protocol=http",
+            "/admin-ui/admin/gateway/status?instance_id=all&window_seconds=300",
+        ] {
+            let response = admin_get(app.clone(), route, Some(TEST_USAGE_OPERATOR_TOKEN)).await;
+            assert_eq!(response.status(), StatusCode::OK, "{route}");
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "private, no-store");
+            let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+            let value: Value = serde_json::from_slice(&body).unwrap();
+            assert!(value["partial"].as_bool().unwrap());
+            assert!(value["instances"].is_array());
+            assert_eq!(admin_get(app.clone(), route, None).await.status(), StatusCode::UNAUTHORIZED);
+            assert_eq!(admin_get(app.clone(), route, Some(TEST_POLICY_OPERATOR_TOKEN)).await.status(), StatusCode::FORBIDDEN);
+        }
+        assert_eq!(
+            admin_get(
+                app.clone(),
+                "/admin-ui/admin/traffic/cluster?limit=201",
+                Some(TEST_USAGE_OPERATOR_TOKEN)
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            admin_get(
+                app,
+                "/admin-ui/admin/gateway/status?window_seconds=5",
+                Some(TEST_USAGE_OPERATOR_TOKEN)
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[tokio::test]
     async fn metrics_endpoint_is_scrapeable_without_admin_token() {
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
@@ -13903,6 +14184,97 @@ mod tests {
         .await;
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn usage_sections_and_streaming_exports_are_additive_and_scoped() {
+        let store = default_store();
+        let project = Uuid::new_v4();
+        let base = test_usage_event_for_project("usage-stream", project);
+        store
+            .events
+            .lock()
+            .unwrap()
+            .extend((0..1_005).map(|index| UsageEvent {
+                request_id: format!("usage-stream-{index}"),
+                ..base.clone()
+            }));
+        let app = router_with_state(test_state(store));
+        let path = format!("/admin-ui/admin/usage/sections/endpoints?project_id={project}");
+        assert_eq!(
+            admin_get(app.clone(), &path, None).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let response = admin_get(app.clone(), &path, Some(TEST_OPERATOR_TOKEN)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["rows"][0]["name"], "GET /shared");
+        assert_eq!(value["rows"][0]["summary"]["request_count"], 1_005);
+        assert!(value.get("summary").is_none());
+        let response = admin_get(
+            app.clone(),
+            "/admin-ui/admin/usage/export.json?stream=true",
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let from = (base.created_at - ChronoDuration::hours(1)).to_rfc3339();
+        let to = (base.created_at + ChronoDuration::hours(1)).to_rfc3339();
+        let mut params = url::form_urlencoded::Serializer::new(String::new());
+        params
+            .append_pair("stream", "true")
+            .append_pair("from", &from)
+            .append_pair("to", &to)
+            .append_pair("project_id", &project.to_string());
+        let query = params.finish();
+        for format in ["json", "csv"] {
+            let path = format!("/admin-ui/admin/usage/export.{format}?{query}");
+            let response = admin_get(app.clone(), &path, Some(TEST_OPERATOR_TOKEN)).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            if format == "json" {
+                let export: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(export["rows"].as_array().unwrap().len(), 1_005);
+                assert_eq!(export["summary"]["request_count"], 1_005);
+            } else {
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                assert_eq!(text.lines().count(), 1_006);
+                assert_eq!(text.matches("request_id,key_id,").count(), 1);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn usage_summary_failure_does_not_prevent_events() {
+        let mut store = default_store();
+        store.store_fault = Some("usage_summary");
+        let app = router_with_state(test_state(store));
+        assert_eq!(
+            admin_get(
+                app.clone(),
+                "/admin-ui/admin/usage/summary",
+                Some(TEST_OPERATOR_TOKEN)
+            )
+            .await
+            .status(),
+            StatusCode::BAD_GATEWAY
+        );
+        assert_eq!(
+            admin_get(
+                app,
+                "/admin-ui/admin/usage/events",
+                Some(TEST_OPERATOR_TOKEN)
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
     }
 
     #[tokio::test]

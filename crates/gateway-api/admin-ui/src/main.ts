@@ -8,6 +8,7 @@ import { mountUserTokenForwarding } from "./react/user-token-forwarding";
 import { profileFields, profilesFromForm, showProfileError, profileKeyOptions } from "./auth-profiles";
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic } from "./traffic";
+import { mountHealthGatewayStatus, mountTrafficGatewayStatus } from "./gateway-status";
 import { installComponentGuidance } from "./design-system/guidance";
 import { refreshWebSocketMetrics, routingModeLabel, usageValue, requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
@@ -90,7 +91,6 @@ const login = document.querySelector("#login");
 const app = document.querySelector("#app");
 const content = document.querySelector("#content");
 const requestTimeoutMs = 8000;
-const usageExportBatchSize = 10_000;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let dialogCounter = 0;
 const dialogInertRoots = new Map();
@@ -98,9 +98,12 @@ let overviewChart: Chart | null = null;
 let ownerDashboardChart: Chart | null = null;
 let ownerDashboardGeneration = 0;
 let stopTraffic = null;
+let stopGatewayStatus = null;
 let viewGeneration = 0;
 let viewController = new AbortController();
 let usageGeneration = 0;
+let usageLoad = null;
+let usageLabelCache = null;
 let renderGeneration = 0;
 let pendingWrites = 0;
 
@@ -585,6 +588,8 @@ document.querySelector("#login-form").addEventListener("submit", async (event) =
 });
 
 async function signOut() {
+  stopGatewayStatus?.();
+  stopGatewayStatus = null;
   stopTraffic?.();
   stopTraffic = null;
   let logoutUrl = null;
@@ -664,6 +669,8 @@ async function refresh({ focus = false } = {}) {
   renderGeneration += 1;
   const generation = ++viewGeneration;
   const view = state.view;
+  stopGatewayStatus?.();
+  stopGatewayStatus = null;
   closeContentDrawer?.();
   viewController.abort();
   viewController = new AbortController();
@@ -697,6 +704,10 @@ async function refresh({ focus = false } = {}) {
       state.projects = projects;
       syncProjectScope();
       stopTraffic = mountTraffic({ content, api, headers: usageExportHeaders, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, refreshWebSocketMetrics, initialFilters: { ...state.trafficFilters, project_id: state.projectScope }, onFilters: applyTrafficFilters });
+      const gatewayHost = document.createElement("div");
+      gatewayHost.style.minWidth = "0";
+      content.prepend(gatewayHost);
+      stopGatewayStatus = mountTrafficGatewayStatus({ content: gatewayHost, api, esc, attr, badge, table });
     }
     if (view === "usage") await usage();
     if (view === "health") await health();
@@ -2974,13 +2985,12 @@ function healthCheckLabel(row) {
 
 async function usage() {
   const renderId = ++renderGeneration;
-  const loaded = await Promise.all([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services"), api("/admin-ui/admin/keys")]);
-  if (renderId !== renderGeneration) return;
-  [state.projects, state.services, state.keys] = loaded;
-  if (renderId !== renderGeneration) return;
+  // Inventories enrich labels and controls; they must not gate recorded usage.
+  const inventories = Promise.allSettled([api("/admin-ui/admin/projects"), api("/admin-ui/admin/services"), api("/admin-ui/admin/keys")]);
   content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Usage filters</h3></div>
+      <div data-usage-inventory-status role="status"></div>
       <form id="usage-form" class="form-grid">
         ${formSection("Primary filters", "Start with ownership, service, status, and time range.", `
         <label>Project<select name="project_id"><option value="">All</option>${projectOptions()}</select></label>
@@ -2990,7 +3000,7 @@ async function usage() {
         <label>Status<select name="status"><option value="">All</option><option value="success">Success</option><option value="failure">Failure</option></select></label>
         <label>Status code<input name="status_code" type="number" min="100" max="599" placeholder="500"></label>
         <label>Time range<select name="time_preset">
-          <option value="">All time</option>
+          <option value="all_time">All time</option>
           <option value="last_1h">Last 1h</option>
           <option value="last_6h">Last 6h</option>
           <option value="last_24h">Last 24h</option>
@@ -3062,7 +3072,7 @@ async function usage() {
           <button type="button" data-usage-export-action="copy-url">Copy URL</button>
           <button type="button" data-usage-export-action="copy-curl">Copy curl</button>
         </div>
-        <div id="usage-export-help" class="help">Leave both dates blank to use the Usage time filter. Entering either date replaces that range; a blank start or end means no limit on that side. Other Usage filters still apply. All rows needs both a start and end (here or in Usage) and supports Download only.</div>
+        <div id="usage-export-help" class="help">Leave both dates blank to use the Usage time filter. Entering either date replaces that range; a blank start or end means no limit on that side. Other Usage filters still apply. All rows needs both a start and end (here or in Usage). Downloads stream to disk; Copy URL and Copy curl use the same streaming endpoint.</div>
       </form>
     </section>
     <section class="panel">
@@ -3080,11 +3090,15 @@ async function usage() {
     <section class="panel"><div class="panel-heading"><h3>Usage breakdown</h3></div><div id="usage-results"></div></section>
   `;
   const usageForm = document.querySelector("#usage-form");
-  for (const [name, value] of Object.entries({ ...state.usageFilters, project_id: state.projectScope })) {
+  for (const [name, value] of Object.entries({ time_preset: "last_24h", ...state.usageFilters, project_id: state.projectScope })) {
     const field = usageForm.elements.namedItem(name);
-    if (field) field.value = value;
+    if (!field) continue;
+    const selected = name === "time_preset" && value === "" ? "all_time" : value;
+    if (field.tagName === "SELECT" && selected && ![...field.options].some((option) => option.value === selected)) field.add(new Option(selected, selected));
+    field.value = selected;
   }
   document.querySelector("#usage-form").addEventListener("submit", handleAsync(applyUsageFilters));
+  bindUsageSuggestions(usageForm);
   document.querySelector("#task-usage-form").addEventListener("submit", handleAsync(loadTaskUsage));
   document.querySelectorAll("[data-usage-export-action]").forEach((button) => {
     button.addEventListener("click", handleAsync(usageExportAction));
@@ -3092,81 +3106,201 @@ async function usage() {
   document.querySelector("#usage-export-form [name=export_limit]")?.addEventListener("change", syncUsageExportControls);
   syncUsageExportControls();
   organizeView("usage");
+  inventories.then((loaded) => {
+    if (renderId !== renderGeneration || usageForm !== document.querySelector("#usage-form")) return;
+    const fields = [["projects", "project_id", projectOptions], ["services", "service", serviceOptions], ["keys", "key_id", keyOptions]];
+    const failed = [];
+    loaded.forEach((result, index) => {
+      const [inventory, name, options] = fields[index];
+      if (result.status !== "fulfilled") { failed.push(inventory); return; }
+      state[inventory] = result.value;
+      const field = usageForm.elements.namedItem(name);
+      const selected = field.value;
+      field.innerHTML = `<option value="">All</option>${options()}`;
+      if (selected && ![...field.options].some((option) => option.value === selected)) field.add(new Option(selected, selected));
+      field.value = selected;
+    });
+    document.querySelector("[data-usage-inventory-status]").textContent = failed.length ? `Filter labels unavailable: ${failed.join(", ")}. Usage queries remain available.` : "";
+  });
   await loadUsage();
 }
 
 async function loadUsage(event) {
   event?.preventDefault();
+  usageLoad?.controllers.forEach((controller) => controller.abort());
   const generation = ++usageGeneration;
   const root = document.querySelector("#usage-results");
-  if (root) { root.innerHTML = emptyState("Loading usage for the applied filters…"); root.setAttribute("aria-busy", "true"); }
+  if (!root) return;
   const query = usageQueryFromForm(event?.target);
-  const filterQuery = usageFilterValuesQueryFromForm(event?.target);
+  // Freeze this applied range for section requests and cursor navigation.
   const pageSize = usagePageSize();
-  query.set("offset", String(state.usagePagination.eventsOffset));
   query.set("timeseries_limit", String(pageSize));
-  query.set("timeseries_offset", String(state.usagePagination.timeseriesOffset));
   query.set("service_timeseries_limit", String(pageSize));
-  query.set("service_timeseries_offset", String(state.usagePagination.serviceTimeseriesOffset));
-  let loaded;
+  state.usagePagination.eventsOffset = 0;
+  usageLoad = { generation, root, query, controllers: new Map(), loaded: new Set(), queue: [], active: 0, eventCursors: ["start"], eventIndex: 0, eventsPage: null };
+  const sections = [
+    ["project-key-services", "Project → Virtual key → Service"], ["projects", "Projects"], ["keys", "Keys"],
+    ["services", "Services"], ["endpoints", "Endpoints"], ["providers", "Providers"], ["models", "Models"],
+    ["tasks", "Tasks"], ["events", "Recent requests"], ["timeseries", "Timeseries"],
+    ["service-timeseries", "Service timeseries"], ["unused-keys", "Unused keys"],
+  ];
+  root.innerHTML = `
+    <p class="applied-filters">Applied filters: ${esc([...query].filter(([key]) => !["offset", "limit", "timeseries_limit", "service_timeseries_limit", "breakdown_limit", "sort_by", "interval"].includes(key)).map(([key, value]) => `${key}: ${value}`).join(" · ") || "All recorded usage")}</p>
+    <div data-usage-summary aria-busy="true">${emptyState("Loading usage summary…")}</div>
+    ${query.get("key_id") ? `<p><button type="button" data-usage-litellm-spend>View LiteLLM reported spend</button> <span class="help">Current mapped-key counter · independent of date filters</span></p>` : ""}
+    ${sections.map(([section, title]) => `<h4>${esc(title)}</h4><div data-usage-section="${attr(section)}">${emptyState("Select this section to load it.")}</div>`).join("")}
+  `;
+  root.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
+  tabulateUsage(root);
+  // Summary and rows settle independently. Neither failure replaces the other.
+  await Promise.allSettled([loadUsageSummary(), loadUsageSection("events")]);
+}
+
+function usageRequestCurrent(load) {
+  return usageLoad === load && load.root === document.querySelector("#usage-results");
+}
+
+function usageRequestController(load, section) {
+  load.controllers.get(section)?.abort();
+  const controller = new AbortController();
+  load.controllers.set(section, controller);
+  return controller;
+}
+
+async function loadUsageSummary() {
+  const load = usageLoad;
+  if (!load || !usageRequestCurrent(load)) return;
+  const host = load.root.querySelector("[data-usage-summary]");
+  const controller = usageRequestController(load, "summary");
+  host.setAttribute("aria-busy", "true");
   try {
-    loaded = await Promise.all([
-    api(`/admin-ui/admin/usage/dashboard?${query}`),
-    api(`/admin-ui/admin/usage/events?${query}`),
-    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=route`),
-    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=endpoint`),
-    api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=model`),
-    ]);
-  } catch (error) {
-    if (generation !== usageGeneration || root !== document.querySelector("#usage-results") || error.name === "AbortError") return;
-    if (root) {
-      root.setAttribute("aria-busy", "false");
-      root.innerHTML = `<div class="notice" role="alert">Usage could not load: ${esc(error.message)} <button type="button" data-retry-usage>Retry</button></div>`;
-      root.querySelector("[data-retry-usage]").addEventListener("click", handleAsync(() => loadUsage()));
-    }
-    return;
-  }
-  const [dashboard, events, routeOptions, endpointOptions, modelOptions] = loaded;
-  if (generation !== usageGeneration || root !== document.querySelector("#usage-results")) return;
-  root?.setAttribute("aria-busy", "false");
-  const summary = dashboard.summary;
-  updateUsageDatalists(routeOptions.values, endpointOptions.values, modelOptions.values);
-  const results = document.querySelector("#usage-results");
-  if (!results) return;
-  results.innerHTML = `
-    <p class="applied-filters">Applied filters: ${esc([...query].filter(([key]) => !["offset", "limit", "timeseries_limit", "timeseries_offset", "service_timeseries_limit", "service_timeseries_offset", "breakdown_limit", "sort_by", "interval"].includes(key)).map(([key, value]) => `${key}: ${value}`).join(" · ") || "All recorded usage")}</p>
-    <div class="grid stats">
-      ${stat("Requests", summary.request_count)}
-      ${stat("Failures", summary.failure_count)}
+    const summary = await api(`/admin-ui/admin/usage/summary?${load.query}`, { signal: controller.signal });
+    if (!usageRequestCurrent(load) || controller.signal.aborted) return;
+    host.innerHTML = `<div class="grid stats">
+      ${stat("Requests", summary.request_count)}${stat("Failures", summary.failure_count)}
       ${stat("Cost", money(summary.estimated_cost_usd))}
       ${stat("Avg latency", summary.average_latency_ms == null ? "n/a" : `${Math.round(summary.average_latency_ms)} ms`)}
       ${stat("Fallback rate", percent(summary.fallback_rate))}
-      ${stat("Expensive", summary.expensive_request_count || 0)}
-      ${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
-    </div>
-    ${query.get("key_id") ? `<p><button type="button" data-usage-litellm-spend>View LiteLLM reported spend</button> <span class="help">Current mapped-key counter · independent of date filters</span></p>` : ""}
-    <h4>Project → Virtual key → Service</h4>
-    ${usageProjectKeyServiceHierarchy(dashboard.breakdowns.project_key_services || [])}
-    <h4>Projects</h4>${usageBreakdownTable(dashboard.breakdowns.projects, projectName)}
-    <h4>Keys</h4>${usageBreakdownTable(dashboard.breakdowns.keys, keyName)}
-    <h4>Services</h4>${usageBreakdownTable(dashboard.breakdowns.services)}
-    <h4>Endpoints</h4>${usageBreakdownTable(dashboard.breakdowns.endpoints || [])}
-    <h4>Providers</h4>${usageBreakdownTable(dashboard.breakdowns.providers)}
-    <h4>Models</h4>${usageBreakdownTable(dashboard.breakdowns.models)}
-    <h4>Tasks</h4>${usageBreakdownTable(dashboard.breakdowns.tasks)}
-    ${usagePagedTable("Recent requests", "events", usageEventsTable(events.rows), events, events.rows.length)}
-    ${usagePagedTable("Timeseries", "timeseries", usageTimeseriesTable(dashboard.timeseries), dashboard.timeseries_page, dashboard.timeseries.length)}
-    ${usagePagedTable("Service timeseries", "service-timeseries", usageServiceTimeseriesTable(dashboard.service_timeseries || []), dashboard.service_timeseries_page, (dashboard.service_timeseries || []).length)}
-    <h4>Unused keys</h4>${unusedKeysTable(dashboard.unused_keys)}
-  `;
-  results.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
-  tabulateUsage(results);
-  results.querySelectorAll("[data-debug-request]").forEach((button) => {
-    button.addEventListener("click", handleAsync(openDebugRequest));
+      ${stat("Expensive", summary.expensive_request_count || 0)}${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
+    </div>`;
+  } catch (error) {
+    if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
+    host.innerHTML = `<div class="notice" role="alert">Usage summary unavailable: ${esc(error.message)} <button type="button" data-retry-usage-summary>Retry summary</button></div>`;
+    host.querySelector("[data-retry-usage-summary]").addEventListener("click", handleAsync(loadUsageSummary));
+  } finally {
+    if (usageRequestCurrent(load) && !controller.signal.aborted) host.setAttribute("aria-busy", "false");
+  }
+}
+
+function loadVisibleUsageSections(root) {
+  const load = usageLoad;
+  if (!load || load.root !== root) return;
+  root.querySelectorAll("[data-usage-section]").forEach((host) => {
+    const section = host.dataset.usageSection;
+    if (!host.closest(".breakdown-section")?.hidden && !load.loaded.has(section) && !load.controllers.has(section) && !load.queue.includes(section)) load.queue.push(section);
   });
-  results.querySelectorAll("[data-usage-page-section]").forEach((button) => {
-    button.addEventListener("click", handleAsync(changeUsagePage));
-  });
+  drainUsageSections(load);
+}
+
+function drainUsageSections(load) {
+  if (!usageRequestCurrent(load)) return;
+  while (load.active < 3 && load.queue.length) {
+    const section = load.queue.shift();
+    if (load.loaded.has(section) || load.controllers.has(section)) continue;
+    load.active += 1;
+    loadUsageSection(section).finally(() => { load.active -= 1; drainUsageSections(load); });
+  }
+}
+
+async function loadUsageSection(section, force = false) {
+  const load = usageLoad;
+  if (!load || !usageRequestCurrent(load) || (!force && load.controllers.has(section))) return;
+  const host = load.root.querySelector(`[data-usage-section="${section}"]`);
+  if (!host) return;
+  const controller = usageRequestController(load, section);
+  host.setAttribute("aria-busy", "true");
+  host.innerHTML = emptyState("Loading this usage section…");
+  const query = new URLSearchParams(load.query);
+  query.set("timeseries_offset", String(state.usagePagination.timeseriesOffset));
+  query.set("service_timeseries_offset", String(state.usagePagination.serviceTimeseriesOffset));
+  if (section === "events") {
+    const chronological = !["cost", "latency", "tokens", "status_code"].includes(query.get("sort_by"));
+    if (chronological) { query.set("cursor", load.eventCursors[load.eventIndex] || "start"); query.set("offset", "0"); }
+    else query.set("offset", String(state.usagePagination.eventsOffset));
+  }
+  try {
+    const path = section === "events" ? "/admin-ui/admin/usage/events" : `/admin-ui/admin/usage/sections/${section}`;
+    const data = await api(`${path}?${query}`, { signal: controller.signal });
+    if (!usageRequestCurrent(load) || controller.signal.aborted) return;
+    load.loaded.add(section);
+    if (section === "events") {
+      load.eventsPage = data;
+      if (load.eventIndex === 0 && data.snapshot_cursor) load.eventCursors[0] = data.snapshot_cursor;
+      host.innerHTML = usagePagedTable("Recent requests", section, usageEventsTable(data.rows || []), { ...data, offset: state.usagePagination.eventsOffset }, (data.rows || []).length);
+    } else if (section === "timeseries" || section === "service-timeseries") {
+      const rows = data.rows || [];
+      host.innerHTML = usagePagedTable(section === "timeseries" ? "Timeseries" : "Service timeseries", section, section === "timeseries" ? usageTimeseriesTable(rows) : usageServiceTimeseriesTable(rows), data.page, rows.length);
+    } else if (section === "project-key-services") host.innerHTML = usageProjectKeyServiceHierarchy(data.rows || []);
+    else if (section === "unused-keys") host.innerHTML = unusedKeysTable(data.rows || []);
+    else host.innerHTML = usageBreakdownTable(data.rows || [], section === "projects" ? usageProjectName : section === "keys" ? usageKeyName : undefined);
+    if (["events", "timeseries", "service-timeseries"].includes(section)) host.previousElementSibling.hidden = true;
+    host.querySelectorAll("[data-debug-request]").forEach((button) => button.addEventListener("click", handleAsync(openDebugRequest)));
+    host.querySelectorAll("[data-usage-page-section]").forEach((button) => button.addEventListener("click", handleAsync(changeUsagePage)));
+  } catch (error) {
+    if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
+    host.innerHTML = `<div class="notice" role="alert">This Usage section is unavailable: ${esc(error.message)} <button type="button" data-retry-usage-section>Retry section</button></div>`;
+    host.querySelector("[data-retry-usage-section]").addEventListener("click", handleAsync(() => loadUsageSection(section, true)));
+  } finally {
+    if (usageRequestCurrent(load) && !controller.signal.aborted) host.setAttribute("aria-busy", "false");
+  }
+}
+
+function bindUsageSuggestions(form) {
+  for (const field of ["route", "endpoint", "model"]) {
+    const input = form.elements.namedItem(field);
+    let timer;
+    let controller;
+    const load = async () => {
+      if (form !== document.querySelector("#usage-form")) return;
+      controller?.abort();
+      const current = controller = new AbortController();
+      const status = input.parentElement.querySelector("[data-usage-suggestion-status]") || document.createElement("small");
+      status.dataset.usageSuggestionStatus = field;
+      status.setAttribute("role", "status");
+      input.parentElement.append(status);
+      try {
+        const filterQuery = usageFilterValuesQueryFromForm(form);
+        filterQuery.delete(field);
+        filterQuery.set("field", field);
+        filterQuery.set("q", input.value.trim());
+        filterQuery.set("limit", "20");
+        const data = await api(`/admin-ui/admin/usage/filter-values?${filterQuery}`, { signal: current.signal });
+        if (current.signal.aborted || form !== document.querySelector("#usage-form")) return;
+        document.querySelector(`#usage-${field}-options`).innerHTML = (data.values || []).map((value) => `<option value="${attr(value)}"></option>`).join("");
+        status.textContent = "";
+      } catch (error) {
+        if (!current.signal.aborted && error.name !== "AbortError") status.textContent = "Suggestions unavailable. Exact values can still be entered.";
+      }
+    };
+    input.addEventListener("focus", () => { clearTimeout(timer); load(); });
+    input.addEventListener("input", () => { controller?.abort(); clearTimeout(timer); timer = setTimeout(load, 250); });
+    form.addEventListener("change", () => { controller?.abort(); clearTimeout(timer); });
+  }
+}
+
+function usageIdentifierLabels() {
+  if (!usageLabelCache || usageLabelCache.projects !== state.projects || usageLabelCache.keys !== state.keys) {
+    usageLabelCache = { projects: state.projects, keys: state.keys, projectNames: new Map(state.projects.map((project) => [project.id, project.name])), keyNames: new Map(state.keys.map((key) => [key.id, key.name ? `${key.name} (${key.key_prefix})` : key.key_prefix])) };
+  }
+  return usageLabelCache;
+}
+
+function usageProjectName(projectId) {
+  return projectId && projectId !== "individual" ? usageIdentifierLabels().projectNames.get(projectId) || projectId : "Individual";
+}
+
+function usageKeyName(keyId) {
+  return usageIdentifierLabels().keyNames.get(keyId) || keyId;
 }
 
 async function applyUsageFilters(event) {
@@ -3200,12 +3334,19 @@ function usagePageSize() {
 async function changeUsagePage(event) {
   const section = event.currentTarget.dataset.usagePageSection;
   const direction = event.currentTarget.dataset.usagePageDirection;
-  const pageSize = usagePageSize();
   const key = usagePaginationKey(section);
-  if (!key) return;
+  if (!key || !usageLoad) return;
+  const limitKey = section === "timeseries" ? "timeseries_limit" : section === "service-timeseries" ? "service_timeseries_limit" : "limit";
+  const pageSize = Number((section === "events" && usageLoad.eventsPage?.limit) || usageLoad.query.get(limitKey) || 50);
+  if (section === "events") {
+    if (direction === "next") {
+      usageLoad.eventCursors[usageLoad.eventIndex + 1] = usageLoad.eventsPage?.next_cursor;
+      usageLoad.eventIndex += 1;
+    } else usageLoad.eventIndex = Math.max(0, usageLoad.eventIndex - 1);
+  }
   const current = state.usagePagination[key];
   state.usagePagination[key] = direction === "next" ? current + pageSize : Math.max(0, current - pageSize);
-  await loadUsage();
+  await loadUsageSection(section, true);
 }
 
 function usagePaginationKey(section) {
@@ -3246,19 +3387,9 @@ function usageFilterValuesQueryFromForm(formElement = document.querySelector("#u
   return query;
 }
 
-function updateUsageDatalists(routes = [], endpoints = [], models = []) {
-  const routeDefaults = ["/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/rerank", "/v1/messages", "/summary", "/translation", "/ocr", "/embeddings", "/services/*", "/providers/openai/*"];
-  const routeList = document.querySelector("#usage-route-options");
-  const endpointList = document.querySelector("#usage-endpoint-options");
-  const modelList = document.querySelector("#usage-model-options");
-  if (routeList) routeList.innerHTML = [...new Set([...routeDefaults, ...routes])].map((value) => `<option value="${attr(value)}"></option>`).join("");
-  if (endpointList) endpointList.innerHTML = [...new Set(endpoints)].map((value) => `<option value="${attr(value)}"></option>`).join("");
-  if (modelList) modelList.innerHTML = [...new Set(models)].map((value) => `<option value="${attr(value)}"></option>`).join("");
-}
-
 function usageDateRange(form) {
   const preset = form.get("time_preset");
-  if (!preset) return {};
+  if (!preset || preset === "all_time") return {};
 
   const now = new Date();
   if (preset === "custom") {
@@ -3312,11 +3443,10 @@ async function usageExportAction(event) {
   const format = exportForm ? new FormData(exportForm).get("export_format") || "csv" : "csv";
   const { query, allRows } = usageExportQuery();
   if (allRows) {
-    if (action !== "download") {
-      throw new Error("All rows is available for Download only. Preview, URL, and curl exports remain limited to one request.");
-    }
-    await downloadAllUsageExport(format, query);
-    return;
+    if (action === "preview") throw new Error("Preview is limited to one bounded page. Choose a maximum row count.");
+    if (!query.get("from") || !query.get("to")) throw new Error("All rows requires a bounded start and end time.");
+    query.set("stream", "true");
+    if (action === "download") { await downloadAllUsageExport(format, query); return; }
   }
   const path = usageExportPath(format, query);
   if (action === "copy-url") {
@@ -3356,7 +3486,8 @@ function usageExportQuery() {
   if (data) {
     const exportLimit = data.get("export_limit");
     allRows = exportLimit === "all";
-    query.set("limit", allRows ? String(usageExportBatchSize) : exportLimit || "1000");
+    if (allRows) query.delete("limit");
+    else query.set("limit", exportLimit || "1000");
     query.set("offset", allRows ? "0" : data.get("export_offset") || "0");
 
     if (exportRange) {
@@ -3404,7 +3535,7 @@ function syncUsageExportControls() {
   const allRows = new FormData(form).get("export_limit") === "all";
   form.querySelector("[name=export_offset]").disabled = allRows;
   form.querySelectorAll("[data-usage-export-action]").forEach((button) => {
-    button.disabled = allRows && button.dataset.usageExportAction !== "download";
+    button.disabled = allRows && button.dataset.usageExportAction === "preview";
   });
 }
 
@@ -3412,93 +3543,37 @@ async function downloadAllUsageExport(format, baseQuery) {
   if (!baseQuery.get("from") || !baseQuery.get("to")) {
     throw new Error("All rows requires a bounded start and end time. Set Export from and Export to, or apply a bounded Usage time filter.");
   }
-
-  const parts = [];
-  let csvHeader = "";
-  let jsonStarted = false;
-  let rowCount = 0;
-  let offset = 0;
-
-  while (true) {
-    const query = new URLSearchParams(baseQuery);
-    query.set("limit", String(usageExportBatchSize));
-    query.set("offset", String(offset));
-    const response = await fetchWithTimeout(usageExportPath(format, query), {
-      headers: usageExportHeaders(),
-    });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-
-    let pageRows;
-    if (format === "json") {
-      const page = await response.json();
-      const rows = Array.isArray(page.rows) ? page.rows : [];
-      if (!jsonStarted) {
-        parts.push(`{"summary":${JSON.stringify(page.summary)},"rows":[`);
-        jsonStarted = true;
-      }
-      if (rows.length) {
-        if (rowCount) parts.push(",");
-        parts.push(rows.map((row) => JSON.stringify(row)).join(","));
-      }
-      pageRows = rows.length;
-    } else {
-      const page = splitUsageCsvPage(await response.text());
-      if (!csvHeader) {
-        csvHeader = page.header;
-        parts.push(csvHeader);
-      } else if (page.header !== csvHeader) {
-        throw new Error("Usage export columns changed while the download was running.");
-      }
-      parts.push(page.body);
-      pageRows = countCsvRecords(page.body);
-    }
-
-    rowCount += pageRows;
-    if (pageRows < usageExportBatchSize) break;
-    offset += pageRows;
+  const query = new URLSearchParams(baseQuery);
+  query.set("stream", "true");
+  query.delete("offset");
+  const path = usageExportPath(format, query);
+  const filename = `relayna-usage-${new Date().toISOString().replaceAll(":", "-")}.${format}`;
+  if (!window.showSaveFilePicker) {
+    // Both session and operator requests need protected headers. Native links
+    // cannot carry those headers; do not weaken auth or buffer a huge Blob.
+    throw new Error("This browser cannot stream downloads to disk. Use Copy curl for All rows, or choose a bounded row count.");
   }
-
-  if (format === "json") parts.push(jsonStarted ? "]}" : '{"summary":null,"rows":[]}');
-  downloadUsageExport(parts, format);
-  setNotice(`Downloaded ${rowCount.toLocaleString()} usage rows.`, "success");
-}
-
-function splitUsageCsvPage(csv) {
-  const headerEnd = csv.indexOf("\n");
-  if (headerEnd === -1) return { header: csv, body: "" };
-  return {
-    header: csv.slice(0, headerEnd + 1),
-    body: csv.slice(headerEnd + 1),
-  };
-}
-
-function countCsvRecords(csv) {
-  if (!csv) return 0;
-  let rows = 0;
-  let quoted = false;
-  for (let index = 0; index < csv.length; index += 1) {
-    if (csv[index] === '"') {
-      if (quoted && csv[index + 1] === '"') {
-        index += 1;
-      } else {
-        quoted = !quoted;
-      }
-    } else if (csv[index] === "\n" && !quoted) {
-      rows += 1;
+  const file = await window.showSaveFilePicker({ suggestedName: filename });
+  const writable = await file.createWritable();
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  viewController.signal.addEventListener("abort", abort, { once: true });
+  try {
+    // fetchWithTimeout buffers finite responses; this path keeps backpressure
+    // from the file sink through the browser to each bounded database batch.
+    const response = await fetch(path, { headers: usageExportHeaders(), signal: controller.signal });
+    if (!response.ok || !response.body) {
+      await writable.abort();
+      throw new Error(`Usage export unavailable: ${response.status} ${response.statusText}`);
     }
+    await response.body.pipeTo(writable, { signal: controller.signal });
+    setNotice("Usage export saved.", "success");
+  } catch (error) {
+    await writable.abort().catch(() => {});
+    throw error;
+  } finally {
+    viewController.signal.removeEventListener("abort", abort);
   }
-  return rows + (csv.endsWith("\n") ? 0 : 1);
-}
-
-function downloadUsageExport(parts, format) {
-  const type = format === "json" ? "application/json" : "text/csv;charset=utf-8";
-  const blob = new Blob(parts, { type });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `relayna-usage-${new Date().toISOString()}.${format}`;
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
 
 async function loadTaskUsage(event) {
@@ -3547,11 +3622,11 @@ function usageProjectKeyServiceHierarchy(rows) {
     <div class="help">Showing ${rows.length} top project, key, and service combinations using the selected sort and limit.</div>
     ${[...projects.entries()].map(([projectId, keys], projectIndex) => `
       <details class="usage-hierarchy-project" data-usage-project="${attr(projectId || "individual")}" ${projectIndex === 0 ? "open" : ""}>
-        <summary><span><strong>${esc(projectName(projectId))}</strong><small>${keys.size} virtual ${keys.size === 1 ? "key" : "keys"}</small></span><span>${[...keys.values()].reduce((count, services) => count + services.length, 0)} combinations</span></summary>
+        <summary><span><strong>${esc(usageProjectName(projectId))}</strong><small>${keys.size} virtual ${keys.size === 1 ? "key" : "keys"}</small></span><span>${[...keys.values()].reduce((count, services) => count + services.length, 0)} combinations</span></summary>
         <div class="usage-hierarchy-keys">
           ${[...keys.entries()].map(([keyId, services], keyIndex) => `
             <details class="usage-hierarchy-key" data-usage-key="${attr(keyId)}" ${projectIndex === 0 && keyIndex === 0 ? "open" : ""}>
-              <summary><span><strong><code>${esc(keyName(keyId))}</code></strong><small>${services.length} ${services.length === 1 ? "service" : "services"}</small></span></summary>
+              <summary><span><strong><code>${esc(usageKeyName(keyId))}</code></strong><small>${services.length} ${services.length === 1 ? "service" : "services"}</small></span></summary>
               ${usageProjectKeyServiceTable(services)}
             </details>`).join("")}
         </div>
@@ -3654,7 +3729,7 @@ function unusedKeysTable(rows) {
     ["Key", "Project", "Created", "Last used"],
     rows.map((row) => [
       `<code>${esc(row.key_prefix)}</code>`,
-      esc(projectName(row.project_id || "")),
+      esc(usageProjectName(row.project_id || "")),
       time(row.created_at),
       row.last_used_at ? time(row.last_used_at) : "never",
     ]),
@@ -3698,10 +3773,15 @@ function usageServiceTimeseriesTable(rows) {
 
 async function health() {
   const renderId = ++renderGeneration;
+  const gatewayHost = document.createElement("div");
+  gatewayHost.style.minWidth = "0";
+  content.replaceChildren(gatewayHost);
+  stopGatewayStatus = mountHealthGatewayStatus({ content: gatewayHost, api, esc, attr, badge, table });
   const issues = [];
+  const recentWindow = new URLSearchParams({ from: new Date(Date.now() - 86400000).toISOString(), to: new Date().toISOString() });
   const [ready, rows, healthState, importVersions] = await Promise.all([
     readiness(),
-    monitoringPanel("/admin-ui/admin/provider-health", [], issues),
+    monitoringPanel(`/admin-ui/admin/provider-health?${recentWindow}`, [], issues),
     monitoringPanel("/admin-ui/admin/provider-health/state", [], issues),
     monitoringPanel("/admin-ui/admin/services/import/versions", [], issues),
   ]);
@@ -3721,7 +3801,7 @@ async function health() {
       ${stat("Fallbacks", fallbackCount)}
     </div>
     <section class="panel">
-      <div class="panel-heading"><h3>Recorded reliability</h3><span class="subtle">All recorded usage · minimum 20 requests · elevated at 5%</span></div>
+      <div class="panel-heading"><h3>Recorded reliability</h3><span class="subtle">Last 24 hours · minimum 20 requests · elevated at 5%</span></div>
       ${healthTable(rows)}
     </section>
     <section class="panel">
@@ -3788,6 +3868,7 @@ async function health() {
   document.querySelectorAll("[data-import-rollback]").forEach((button) => {
     button.addEventListener("click", handleAsync(rollbackImportVersion));
   });
+  content.prepend(gatewayHost);
   organizeView("health");
   content.querySelector("[data-retry-monitoring]")?.addEventListener("click", () => refresh());
 }
@@ -5674,6 +5755,7 @@ function tabulateUsage(root) {
       button.setAttribute("aria-pressed", String(index === chosen));
     });
     hint.textContent = chosen < 0 ? "Showing all breakdowns. Select a breakdown to focus on it." : "Click the selected breakdown again to show all breakdowns.";
+    if (typeof loadVisibleUsageSections === "function") loadVisibleUsageSections(root);
   };
   sections.forEach(({ button }, index) => button.addEventListener("click", () => select(state.usageTab === button.textContent ? -1 : index)));
   select(state.usageTab === null ? -1 : Math.max(0, sections.findIndex(({ button }) => button.textContent === state.usageTab)));

@@ -6,6 +6,7 @@ import "./admin-ui-reliability-cost.test.mjs";
 import "./admin-ui-investigation.test.mjs";
 import "./admin-ui-guidance.test.mjs";
 import "./admin-ui-pricing.test.mjs";
+import "./admin-ui-usage.test.mjs";
 import { reliability } from "./admin-ui-monitoring.test.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -212,7 +213,10 @@ test("command palette respects the active workspace and keeps rows readable", ()
 
 test("admin portal calls the expected gateway admin APIs", () => {
   for (const endpoint of [
-    "/admin-ui/admin/usage/dashboard",
+    "/admin-ui/admin/usage/summary",
+    "/admin-ui/admin/usage/sections/",
+    "/admin-ui/admin/gateway/status",
+    "/admin-ui/admin/traffic/cluster",
     "/admin-ui/admin/usage/events",
     "/admin-ui/admin/usage/filter-values",
     "/admin-ui/admin/provider-health",
@@ -374,7 +378,7 @@ test("routes view exposes canonical provider route modes", () => {
   assert.match(js, /managed_by_gateway/);
   assert.match(js, /direct_litellm_passthrough/);
   assert.match(js, /OpenAI-compatible and rerank routes/);
-  assert.match(js, /"\/v1\/rerank"/);
+  assert.match(sourceJs, /mountRouteConfiguration/);
   assert.match(js, /Anthropic Claude routes/);
   assert.match(css, /\.route-logo\.openai/);
   assert.match(css, /\.route-logo\.anthropic/);
@@ -538,9 +542,9 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /function usageDateRange\(form\)/);
   assert.match(js, /function usageFilterValuesQueryFromForm\(formElement = document\.querySelector\("#usage-form"\)\)/);
   assert.match(js, /const filterQuery = usageFilterValuesQueryFromForm\(/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/filter-values\?\$\{filterQuery\}&field=route/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/filter-values\?\$\{filterQuery\}&field=endpoint/);
-  assert.match(js, /\/admin-ui\/admin\/usage\/dashboard/);
+  assert.match(sourceJs, /filterQuery\.set\("field", field\)/);
+  assert.match(sourceJs, /filterQuery\.set\("q", input\.value\.trim\(\)\)/);
+  assert.match(js, /\/admin-ui\/admin\/usage\/summary/);
   assert.match(js, /\/admin-ui\/admin\/usage\/events/);
   assert.match(js, /\/admin-ui\/admin\/usage\/filter-values/);
   assert.match(js, /\/admin-ui\/admin\/usage\/export\.\$\{format\}/);
@@ -552,7 +556,6 @@ test("usage view exposes project key service and route drilldown filters", () =>
     assert.match(sourceJs, new RegExp(`name="${field}"`));
   }
   assert.match(sourceJs, /value="all">All rows \(download\)/);
-  assert.match(sourceJs, /const usageExportBatchSize = 10_000/);
   assert.match(sourceJs, /function usageExportDateRange\(form\)/);
   assert.match(sourceJs, /function usageQueryFromForm\(formElement = document\.querySelector\("#usage-form"\), \{ includeDateRange = true \} = \{\}\)/);
   assert.match(sourceJs, /const exportRange = data \? usageExportDateRange\(data\) : null;\s+const query = usageQueryFromForm\(undefined, \{ includeDateRange: !exportRange \}\);/);
@@ -560,22 +563,18 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(sourceJs, /state\.session\?\.csrf_token/);
   assert.match(sourceJs, /headers: usageExportHeaders\(\)/);
   assert.match(sourceJs, /function syncUsageExportControls\(\)/);
-  assert.match(sourceJs, /button\.dataset\.usageExportAction !== "download"/);
+  assert.match(sourceJs, /button\.dataset\.usageExportAction === "preview"/);
   assert.match(sourceJs, /Export start time must be before the end time/);
   assert.match(sourceJs, /All rows requires a bounded start and end time/);
-  assert.match(sourceJs, /query\.set\("limit", String\(usageExportBatchSize\)\)/);
-  assert.match(sourceJs, /query\.set\("offset", String\(offset\)\)/);
-  assert.match(sourceJs, /offset \+= pageRows/);
-  assert.match(sourceJs, /function splitUsageCsvPage\(csv\)/);
-  assert.match(sourceJs, /function countCsvRecords\(csv\)/);
-  assert.match(sourceJs, /page\.header !== csvHeader/);
+  assert.match(sourceJs, /query\.set\("stream", "true"\)/);
+  assert.match(sourceJs, /response\.body\.pipeTo\(writable/);
   assert.match(sourceJs, /class="actions usage-export-actions"/);
   assert.match(css, /\.usage-export-form/);
   assert.match(css, /\.usage-export-actions/);
   assert.match(js, /GATEWAY_OPERATOR_TOKEN/);
   assert.match(js, /data-debug-request/);
-  assert.match(js, /dashboard\.breakdowns\.endpoints \|\| \[\]/);
-  assert.match(js, /dashboard\.breakdowns\.project_key_services \|\| \[\]/);
+  assert.match(sourceJs, /\["endpoints", "Endpoints"\]/);
+  assert.match(sourceJs, /section === "project-key-services"/);
   assert.match(js, /function usageProjectKeyServiceHierarchy\(rows\)/);
   assert.match(js, /function usageProjectKeyServiceTable\(rows\)/);
   assert.match(js, /data-usage-project=/);
@@ -589,7 +588,7 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(js, /function usageTimeseriesTable\(rows\)/);
   assert.match(js, /Service timeseries/);
   assert.match(js, /function usageServiceTimeseriesTable\(rows\)/);
-  assert.match(js, /dashboard\.service_timeseries \|\| \[\]/);
+  assert.match(sourceJs, /section === "service-timeseries"/);
   assert.match(js, /Rows per page/);
   assert.match(js, /function resetUsagePagination\(\)/);
   assert.match(js, /function usagePagedTable\(title, section, tableMarkup, page = \{\}, rowCount = 0\)/);
@@ -599,19 +598,6 @@ test("usage view exposes project key service and route drilldown filters", () =>
   assert.match(css, /\.table-pager/);
   assert.match(css, /\.usage-hierarchy-project/);
   assert.match(css, /\.usage-hierarchy-key/);
-});
-
-test("all-rows CSV pagination counts quoted multiline records", () => {
-  const countCsvRecords = Function(`return (${sourceFunction("countCsvRecords")})`)();
-  const splitUsageCsvPage = Function(`return (${sourceFunction("splitUsageCsvPage")})`)();
-  const csv = 'request_id,status\nreq-1,success\nreq-2,"failed\nwith detail"\n';
-  const page = splitUsageCsvPage(csv);
-
-  assert.equal(page.header, "request_id,status\n");
-  assert.equal(page.body, 'req-1,success\nreq-2,"failed\nwith detail"\n');
-  assert.equal(countCsvRecords(page.body), 2);
-  assert.equal(countCsvRecords("req-3,success"), 1);
-  assert.equal(countCsvRecords(""), 0);
 });
 
 test("audit view exposes read-only operator event filters and redacted snapshots", () => {

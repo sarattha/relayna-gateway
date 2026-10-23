@@ -107,24 +107,39 @@ terminal diagnostic from being emitted.
 
 ## Live scope, history and gaps
 
-The live feed belongs to **one gateway process**, identified by a UUID that
-changes on restart. It is not a cluster-wide traffic counter. All records and
-failure logs include that instance ID. With several replicas, use an instance
-address or session affinity for continuous live inspection of one replica; use
-saved history for completed requests across replicas.
+**Active · all instances** is the default view. Select HTTP/SSE or WebSocket,
+an individual process or all reporting processes, and project/service/key
+filters. A dedicated registry retains active summaries independently of recent
+completion volume and journal churn. Each protocol has a 2,048-record / 2 MiB
+summary budget. Counts are independent of retained rows; saturation, partial
+coverage, stale sources, and unknown filtered counts are explicit. Use Older
+and Newest for bounded active pages. Older pages stay fixed until Newest.
+
+**Recent completed · all instances** uses completion time with a default
+30-minute window. A session opened yesterday and closed now appears in this
+window. Set the time range for longer history and use Older/Newest. Historical
+records without completion timestamps remain accessible through start-time
+history; no end timestamp is invented. Durable retention remains operator-managed.
+
+**Live journal · one instance** retains the released process-local SSE behavior.
+Its process UUID changes on restart. Session affinity stabilizes one process;
+it does not supply fleet coverage. All records and failure logs carry process
+identity. See [Gateway monitoring](gateway-monitoring.md#multiple-gateway-instances)
+for the bounded Redis publication, freshness, and cluster failure semantics.
 
 The process journal keeps the latest **512 lifecycle updates**. Each update
 contains the retained request timeline (up to **32 steps**); the browser displays
-up to **200 requests**. Older updates and requests can be evicted, including
-long-lived active requests. Active counts and reason counts refer only to retained
-records. Truncated timelines, journal eviction, replay gaps, instance changes and
+up to **200 requests** in this legacy journal view. This window can evict older
+updates; use the independent Active view to find long-lived requests. Reason
+counts in the journal refer only to displayed records. Truncated timelines,
+journal eviction, replay gaps, instance changes and
 disconnected streams are explicitly reported. Pausing, overflow or reconnecting
 may therefore lose intermediate observations.
 
-**Saved history · all instances** queries completed PostgreSQL records, newest
-first, 100 at a time. Its default lookback is 24 hours. Set History from/to for
-other periods and use Older/Newest for pagination. Request IDs are exact matches
-in history (substring matches in the retained live window). Anonymous failures
+The legacy history API still defaults to a 24-hour start-time lookback and
+returns 100 completed PostgreSQL rows per page. The new UI opts into completion
+time and its 30-minute default. Request IDs are exact matches
+in history (substring matches in live/active snapshots). Anonymous failures
 have nullable key/project IDs and never create fabricated billing identities.
 Records from before this release have no diagnostic history.
 
@@ -194,6 +209,13 @@ DELETE FROM request_traffic WHERE id IN (
   An exact `id` lookup omits the default 24-hour lookback unless `from` is supplied;
   it still requires the same admin authorization.
   Pass both `before` (last row's start time) and `before_id` for stable pagination.
+  Add `time_basis=completed` to filter/order/page using recorded completion time;
+  `before` then means the last row's `completed_at`. Optional `protocol` accepts
+  `http`, `websocket`, or `unknown`. Omitted time basis preserves released behavior.
+- `GET /admin-ui/admin/traffic/cluster`: bounded active snapshots across reporting
+  instances, with `instance_id=all|<process-uuid>`, the existing scope filters,
+  protocol selection, coverage and before/before_id pagination. See
+  [Gateway monitoring](gateway-monitoring.md).
 - Usage JSON responses now include `diagnostics`: `failure_stage`, `failure_code`,
   `failure_source`, `outcome`, `upstream_status`, `instance_id`, optional
   `traffic_id`, and optional `routing_mode` (`managed_by_gateway` or

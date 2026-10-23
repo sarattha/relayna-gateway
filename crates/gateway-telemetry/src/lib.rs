@@ -2,6 +2,13 @@ use serde_json::{json, Value};
 use tracing::{field, Span};
 use tracing_subscriber::{filter::Directive, fmt, EnvFilter};
 
+pub mod runtime;
+mod runtime_process;
+pub use runtime::{
+    merge_runtime_snapshots, runtime_request_started, runtime_snapshot, RuntimeOutcome,
+    RuntimeRequest, RuntimeSnapshot, RuntimeTransport,
+};
+
 const AUTHORIZATION_DEBUG_TARGET: &str = "relayna_authorization_debug";
 const AUTHORIZATION_DEBUG_MAX_DETAILS_BYTES: usize = 65_536;
 static AUTHORIZATION_DEBUG_ENABLED: std::sync::atomic::AtomicBool =
@@ -216,6 +223,7 @@ pub fn buffered_bytes_removed(bytes: usize) {
 pub fn record_body_admission_rejection(reason: &str) {
     BODY_ADMISSION_REJECTIONS_TOTAL.fetch_add(1, Ordering::Relaxed);
     increment_denial_metric("body_admission", "all", reason);
+    runtime::record_admission_denial(reason);
 }
 
 pub fn record_upstream_duration_ms(route: &str, provider: &str, stream: bool, latency_ms: u64) {
@@ -429,6 +437,7 @@ gateway_circuit_transitions_total {}
     render_provider_fallback_metrics(&mut metrics);
     render_circuit_state_metrics(&mut metrics);
     render_histograms(&mut metrics);
+    runtime::render_prometheus(&mut metrics);
     metrics.push_str("# TYPE gateway_guardrail_executions_total counter\n");
     metrics.push_str("# TYPE gateway_guardrail_failures_total counter\n");
     metrics.push_str("# TYPE gateway_guardrail_latency_ms_total counter\n");
