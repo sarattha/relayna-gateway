@@ -46,10 +46,24 @@ def inspect_image(image):
                                              text=True, stderr=subprocess.DEVNULL, env=environment(), timeout=30))[0]
 
 
+def cpu_model():
+    try:
+        if platform.system() == "Darwin":
+            return subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], text=True,
+                                           stderr=subprocess.DEVNULL, timeout=5).strip()
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            key, separator, value = line.partition(":")
+            if separator and key.strip() in ("model name", "Hardware", "Model"):
+                return value.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return platform.processor() or "not recorded"
+
+
 def doctor():
     tools = {name: shutil.which(name) for name in ("docker", "kind", "kubectl")}
     result = {"schema_version": 1, "ready": False, "python": platform.python_version(),
-              "host": {"system": platform.system(), "architecture": platform.machine()},
+              "host": {"system": platform.system(), "architecture": platform.machine(), "cpu_model": cpu_model()},
               "tools": tools, "docker": None, "errors": []}
     for name, path in tools.items():
         if not path:

@@ -4,6 +4,15 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Add a source-controlled body-admission benchmark CLI for native amd64 and
+  arm64, including Apple Silicon. Run fixed slot sweeps or adaptive resource
+  searches for 5–100 MiB JSON against two pods, each with 2 CPUs / 1 GiB and
+  a 512 MiB body budget. Completed, failed and interrupted runs retain
+  interactive HTML, JSON and CSV reports with memory, timing and failure
+  evidence. See the [benchmark guide](benches/body-admission/README.md).
+
 ## 0.1.49 - 2026-10-22
 
 ### Fixed
@@ -279,6 +288,15 @@ All notable changes to Relayna Gateway are documented in this file.
 - Caller mode rejects mandatory Gateway identity conflicts with `503 litellm_authentication_conflict`; disabled/denied paths return `403 policy_denied`. The authenticated operator UI proxy retains its existing contract.
 
 ## Unreleased
+
+### Added
+
+- Add a source-controlled body-admission benchmark CLI for native amd64 and
+  arm64, including Apple Silicon. Run fixed slot sweeps or adaptive resource
+  searches for 5–100 MiB JSON against two pods, each with 2 CPUs / 1 GiB and
+  a 512 MiB body budget. Completed, failed and interrupted runs retain
+  interactive HTML, JSON and CSV reports with memory, timing and failure
+  evidence. See the [benchmark guide](benches/body-admission/README.md).
 
 ## 0.1.39 - 2026-09-20
 

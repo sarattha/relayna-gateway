@@ -97,7 +97,7 @@ class Orchestration(unittest.TestCase):
 
     def test_doctor_rejects_engine_emulation(self):
         info = json.dumps(dict(Architecture="x86_64", OSType="linux"))
-        with patch.object(benchmark.shutil, "which", return_value="tool"), patch.object(benchmark.platform, "machine", return_value="arm64"), patch.object(benchmark.subprocess, "check_output", return_value=info):
+        with patch.object(benchmark.shutil, "which", return_value="tool"), patch.object(benchmark.platform, "machine", return_value="arm64"), patch.object(benchmark, "cpu_model", return_value="fixture CPU"), patch.object(benchmark.subprocess, "check_output", return_value=info):
             self.assertFalse(benchmark.doctor()["ready"])
 
     def test_preflight_failure_leaves_report_and_does_not_touch_clusters(self):
