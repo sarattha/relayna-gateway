@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 import time
 
 
@@ -105,7 +106,7 @@ def analyze(folder, slots, attempt, expected_body_bytes, cohort):
     return row
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kubeconfig", required=True)
     parser.add_argument("--image", required=True)
@@ -116,13 +117,14 @@ def main():
     parser.add_argument("--confirmation-repetitions", type=int, default=3)
     parser.add_argument("--max-search-slots", type=int, default=4096,
                         help="finite exploration bound; report a lower bound if no resource cliff appears")
-    args = parser.parse_args()
+    parser.add_argument("--fixed-limits", nargs="+", type=int, help="repeat exactly these slots without adaptive search")
+    args = parser.parse_args(argv)
     root = Path(args.output)
     root.mkdir(parents=True, exist_ok=True)
     if (root / "summary.json").exists():
         raise RuntimeError("refusing to overwrite a completed sweep")
     capacity = 512 // args.body_mib
-    grid = args.pilot_limits or GRIDS[args.body_mib]
+    grid = args.fixed_limits or args.pilot_limits or GRIDS[args.body_mib]
     if args.confirmation_repetitions < 1 or min(grid) < 1 or args.max_search_slots < max(grid):
         parser.error("positive repetitions/slots and a search bound at least as large as the grid are required")
     cohort = 2 * max(grid)
@@ -133,12 +135,15 @@ def main():
                "image": args.image, "source_commit": args.source_commit,
                "confirmation_repetitions": args.confirmation_repetitions,
                "criterion": "resource_stability",
+               "search_mode": "fixed" if args.fixed_limits else "adaptive",
                "max_search_slots": args.max_search_slots,
                "harness_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in (HERE / "capacity_sweep.py", HERE / "run.py", HERE / "mock.mjs", HERE / "workload.mjs")},
                "trials": rows, "complete": False}
 
     def save():
-        (root / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+        temporary = root / "summary.json.tmp"
+        temporary.write_text(json.dumps(summary, indent=2) + "\n")
+        temporary.replace(root / "summary.json")
 
     def trial(slots, phase):
         attempt = 1 + sum(row["slots"] == slots for row in rows)
@@ -146,7 +151,7 @@ def main():
         if folder.exists():
             raise RuntimeError(f"refusing to overwrite {folder}")
         print(f"{args.body_mib} MiB: {phase}: slots={slots}, attempt={attempt}", flush=True)
-        command = ["python3", str(HERE / "run.py"), "--kubeconfig", args.kubeconfig,
+        command = [sys.executable, str(HERE / "run.py"), "--kubeconfig", args.kubeconfig,
                    "--image", args.image, "--source-commit", args.source_commit,
                    "--label", f"capacity-{args.body_mib}mib-slots{slots}-attempt{attempt}",
                    "--output", str(folder), "--body-mib", str(args.body_mib),
@@ -154,90 +159,117 @@ def main():
                    "--concurrent-per-pod", str(cohort), "--read-delay-ms", "10000",
                    "--delay-ms", "2000", "--client-deadline-ms", "60000",
                    "--condition-timeout", "150", "--retain-failures", "--host-metadata"]
-        with (root / f"{folder.name}.runner.log").open("w") as log:
-            result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=300)
-        row = analyze(folder, slots, attempt, args.body_mib * MIB, cohort)
-        row.update(phase=phase, runner_exit_code=result.returncode)
-        if result.returncode:
-            row["resource_stable"] = row["clean"] = False
+        row = {"slots": slots, "attempt": attempt, "directory": folder.name,
+               "body_bytes": args.body_mib * MIB, "cohort_per_pod": cohort,
+               "phase": phase, "status": "running", "incomplete": True,
+               "resource_failure": False, "resource_stable": False, "clean": False,
+               "memory_censored": True}
         rows.append(row)
         save()
+        try:
+            with (root / f"{folder.name}.runner.log").open("w") as log:
+                result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=300)
+            analyzed = analyze(folder, slots, attempt, args.body_mib * MIB, cohort)
+            row.clear()
+            row.update(analyzed, phase=phase, runner_exit_code=result.returncode, status="completed")
+            if result.returncode:
+                row["resource_stable"] = row["clean"] = False
+        except BaseException as error:
+            row.update(status="interrupted" if isinstance(error, KeyboardInterrupt) else "invalid",
+                       analysis_error=f"{type(error).__name__}: {error}")
+            raise
+        finally:
+            save()
         print(json.dumps({key: row.get(key) for key in ("slots", "attempt", "successes", "statuses", "rss_peak_mib", "cgroup_peak_mib", "buffered_requests_peak", "resource_failure", "resource_stable", "clean")}), flush=True)
         return row
 
-    for slots in grid:
-        trial(slots, "discovery")
-        if len(rows) >= 2 and all(row["resource_failure"] for row in rows[-2:]):
-            summary["discovery_stop"] = "two consecutive resource failures; higher counts untested"
-            break
-    # Do not mistake the offered cohort for an algorithmic limit. If the
-    # entire grid survives, double both the tested ceiling and its offered
-    # cohort. Refine and confirm within the final cohort, never across loads.
-    while not args.pilot_limits and all(row["resource_stable"] for row in rows):
-        ceiling = max(row["slots"] for row in rows)
-        if ceiling >= args.max_search_slots:
-            summary["expansion_stop"] = "finite search bound reached without a resource failure"
-            break
-        ceiling = min(2 * ceiling, args.max_search_slots)
-        cohort = 2 * ceiling
-        trial(ceiling, "expansion")
-    current = lambda: [row for row in rows if row["cohort_per_pod"] == cohort]
-    failures = sorted({row["slots"] for row in current() if row["resource_failure"]})
-    if failures:
-        high = failures[0]
-        low = max((row["slots"] for row in current() if row["resource_stable"] and row["slots"] < high), default=0)
-        while high - low > 1:
-            middle = (high + low) // 2
-            row = trial(middle, "refinement")
-            if row["resource_stable"]:
-                low = middle
-            elif row["resource_failure"]:
-                high = middle
-            else:
-                summary["refinement_stop"] = "non-resource failure prevents monotonic refinement"
-                break
-        selected = {value for value in (low, high) if value > 0}
-    else:
-        tested = sorted({row["slots"] for row in current()})
-        selected = {min(tested, key=lambda value: abs(value - capacity)), tested[-1]}
-        clean = [row["slots"] for row in current() if row["resource_stable"]]
-        if clean:
-            selected.add(max(clean))
-    def confirm(slots):
-        while sum(row["slots"] == slots for row in current()) < args.confirmation_repetitions:
-            trial(slots, "confirmation")
-        return all(row["resource_stable"] for row in current() if row["slots"] == slots)
-
-    for slots in sorted(selected):
-        confirm(slots)
-    # A one-run candidate can fail confirmation, including a new failure at
-    # an otherwise clean search ceiling. Refine with the repeated criterion
-    # rather than a slow linear descent or accepting that single success.
-    failures = sorted({row["slots"] for row in current() if row["resource_failure"]})
-    if failures:
-        high = failures[0]
-        stable = [slots for slots in {row["slots"] for row in current()}
-                  if slots < high
-                  and sum(row["slots"] == slots for row in current()) >= args.confirmation_repetitions
-                  and all(row["resource_stable"] for row in current() if row["slots"] == slots)]
-        low = max(stable, default=0)
-        while high - low > 1:
-            middle = (high + low) // 2
-            selected.add(middle)
-            if confirm(middle):
-                low = middle
-            elif any(row["resource_failure"] for row in current() if row["slots"] == middle):
-                high = middle
-            else:
-                summary["confirmation_stop"] = "non-resource failure prevents repeated refinement"
-                break
-        selected.add(high)
-        confirm(high)
-    summary["confirmed_limits"] = sorted(selected)
-    summary["final_cohort_per_pod"] = cohort
-    summary["complete"] = True
-    summary["completed_at_unix"] = time.time()
     save()
+    try:
+        if args.fixed_limits:
+            for slots in grid:
+                for _ in range(args.confirmation_repetitions):
+                    trial(slots, "fixed")
+            summary.update(tested_limits=sorted(set(grid)), final_cohort_per_pod=cohort,
+                           complete=True, completed_at_unix=time.time())
+            return
+        for slots in grid:
+            trial(slots, "discovery")
+            if len(rows) >= 2 and all(row["resource_failure"] for row in rows[-2:]):
+                summary["discovery_stop"] = "two consecutive resource failures; higher counts untested"
+                break
+        # Do not mistake the offered cohort for an algorithmic limit. If the
+        # entire grid survives, double both the tested ceiling and its offered
+        # cohort. Refine and confirm within the final cohort, never across loads.
+        while not args.pilot_limits and all(row["resource_stable"] for row in rows):
+            ceiling = max(row["slots"] for row in rows)
+            if ceiling >= args.max_search_slots:
+                summary["expansion_stop"] = "finite search bound reached without a resource failure"
+                break
+            ceiling = min(2 * ceiling, args.max_search_slots)
+            cohort = 2 * ceiling
+            trial(ceiling, "expansion")
+        current = lambda: [row for row in rows if row["cohort_per_pod"] == cohort]
+        failures = sorted({row["slots"] for row in current() if row["resource_failure"]})
+        if failures:
+            high = failures[0]
+            low = max((row["slots"] for row in current() if row["resource_stable"] and row["slots"] < high), default=0)
+            while high - low > 1:
+                middle = (high + low) // 2
+                row = trial(middle, "refinement")
+                if row["resource_stable"]:
+                    low = middle
+                elif row["resource_failure"]:
+                    high = middle
+                else:
+                    summary["refinement_stop"] = "non-resource failure prevents monotonic refinement"
+                    break
+            selected = {value for value in (low, high) if value > 0}
+        else:
+            tested = sorted({row["slots"] for row in current()})
+            selected = {min(tested, key=lambda value: abs(value - capacity)), tested[-1]}
+            clean = [row["slots"] for row in current() if row["resource_stable"]]
+            if clean:
+                selected.add(max(clean))
+        def confirm(slots):
+            while sum(row["slots"] == slots for row in current()) < args.confirmation_repetitions:
+                trial(slots, "confirmation")
+            return all(row["resource_stable"] for row in current() if row["slots"] == slots)
+
+        for slots in sorted(selected):
+            confirm(slots)
+        # A one-run candidate can fail confirmation, including a new failure at
+        # an otherwise clean search ceiling. Refine with the repeated criterion
+        # rather than a slow linear descent or accepting that single success.
+        failures = sorted({row["slots"] for row in current() if row["resource_failure"]})
+        if failures:
+            high = failures[0]
+            stable = [slots for slots in {row["slots"] for row in current()}
+                      if slots < high
+                      and sum(row["slots"] == slots for row in current()) >= args.confirmation_repetitions
+                      and all(row["resource_stable"] for row in current() if row["slots"] == slots)]
+            low = max(stable, default=0)
+            while high - low > 1:
+                middle = (high + low) // 2
+                selected.add(middle)
+                if confirm(middle):
+                    low = middle
+                elif any(row["resource_failure"] for row in current() if row["slots"] == middle):
+                    high = middle
+                else:
+                    summary["confirmation_stop"] = "non-resource failure prevents repeated refinement"
+                    break
+            selected.add(high)
+            confirm(high)
+        summary["confirmed_limits"] = sorted(selected)
+        summary["final_cohort_per_pod"] = cohort
+        summary["complete"] = True
+        summary["completed_at_unix"] = time.time()
+        save()
+    except BaseException as error:
+        summary["error"] = f"{type(error).__name__}: {error}"
+        raise
+    finally:
+        save()
 
 
 if __name__ == "__main__":

@@ -4,59 +4,140 @@ This measures the real release-built Gateway proxy, PostgreSQL-backed virtual
 key authentication/policy/usage, Redis control state, and a mock registered
 service. It is a local Kubernetes experiment, not a production capacity claim.
 
-Requirements: Docker, kind, kubectl, Python 3. Use a local kind cluster; all
-benchmark resources live in namespace `gateway-body-bench`. The runner uses an
-explicit kubeconfig and never changes the current Kubernetes context.
-Optional figure export uses `uv` and Matplotlib; measurement and summaries use
-Python's standard library and the Node container.
+## Run from source on amd64 or arm64
 
-The mock and driver use Node.js 22.23.4, patched for CVE-2026-111497. Historical
-reports retain their original runtime versions; record new runs separately.
+Requirements: Python **3.10+**, Docker with Linux containers, kind, and kubectl.
+Apple Silicon uses native Linux arm64 containers in Docker Desktop. Host,
+Docker engine, image, and Kubernetes node architectures must match; the CLI
+rejects emulation. Allocate enough Docker resources for two Gateway pods plus
+PostgreSQL, Redis, the mock, driver and Kubernetes (the native smoke run used
+10 CPUs / 20 GiB for the VM). Each Gateway is still capped at 2 CPUs / 1 GiB.
+Do not run builds or other heavy work during measurements.
 
-## Native amd64 rerun
-
-The current `Body admission size capacity (amd64)` GitHub Actions workflow
-pulls the immutable published v0.1.49 runtime on a native `ubuntu-24.04`
-x86_64 host. It verifies host, image, and Kubernetes node architectures and
-records runtime and harness commits separately. No builds overlap measurement.
-
-Run the pilot first, then the full six-size resource search from the branch
-containing this workflow:
+The executable resolves source paths from its own location and works from any
+working directory. From the repository root:
 
 ```sh
-gh workflow run body-admission-benchmark.yml --ref <branch> -f mode=pilot
-gh workflow run body-admission-benchmark.yml --ref <branch> -f mode=full
+scripts/bench-body-admission doctor
+
+# Quick smoke: two JSON sizes, one slot per pod, one trial per size.
+scripts/bench-body-admission run \
+  --build \
+  --body-mib 5 100 --slots 1 --repetitions 1 \
+  --output target/body-smoke
+
+# Repeat the original 5 MiB slot matrix, plus 128, with three trials each.
+scripts/bench-body-admission run --build \
+  --body-mib 5 --slots 8 16 24 32 64 128 \
+  --output target/body-slot-sweep
+
+# Discover resource edges for all six sizes with the production source image.
+scripts/bench-body-admission --json run --build \
+  --output target/body-capacity
+
+# Recover/regenerate a complete or partial report offline, without Docker.
+scripts/bench-body-admission report target/body-capacity
 ```
 
-For long searches or independent continuation runs, select a single size with
-`-f body_mib=10` (also 5, 20, 40, 80, or 100). Each selected size gets its own
-native host and up to six hours. Slot comparisons within a size remain on one
-host. When using separate runs, retain per-size host provenance and qualify
-cross-size latency comparisons for any CPU-model differences.
+Choose `--build` or `--image`, never both. Builds use the production Dockerfile
+and finish before measurements. For release comparisons, use an immutable native image digest or a
+multi-platform index that includes your architecture; reports record the resolved image ID,
+image source/version labels, harness commit, dirty state, file hashes, host,
+Docker and node details. Tags can change. Nothing installs into your global
+PATH. You can invoke `/absolute/path/to/repo/scripts/bench-body-admission`
+from another directory.
 
-Both modes use two fresh Gateway pods per trial, each with 2 CPU / 1 GiB
-limits and a 512 MiB serialized-body budget. The pilot checks 5 and 100 MiB;
-the full run searches 5, 10, 20, 40, 80, and 100 MiB sequentially on the same
-host. Each size initially uses a fixed simultaneous cohort per pod equal to
-twice the largest slot count in its discovery grid. If the whole grid stays
-resource-stable, the search doubles the tested ceiling and offered cohort, up
-to an explicit finite exploration bound. Refinement and three-run confirmations use
-the same final cohort; results record the offered cohort for every trial.
-The mock pauses reads for ten seconds and waits two
-seconds after upload. Client requests have a sixty-second absolute deadline;
-socket inactivity uses at least that configured deadline, avoiding a hidden
-thirty-second cutoff during resource-only measurements. Fixed-rate defaults
-without an absolute deadline retain the original thirty-second socket timeout.
-These are backpressure resource tests, distinct from the historical fixed-rate
-comparison documented below.
+Every `run` owns a randomly named **isolated kind cluster**, private temporary
+kubeconfig and synthetic credentials. It never changes your Kubernetes context.
+The cluster is deleted after completion, setup/measurement failures, SIGINT or
+SIGTERM. Existing output directories are refused to preserve evidence. Setup
+may pull large images and a full capacity search can take hours per body size.
+Use a new output directory for every run; `--body-mib 10` runs one size.
 
-`capacity_sweep.py` explores slot counts below and above the arithmetic byte
-bound, refines observed resource failures, and confirms selected settings with
-three fresh-pod trials. OOMs, restarts, errors and incomplete observations stay
-in the artifacts. Latency is reported without imposing an SLO. A configured
-slot count is a ceiling rather than preallocated memory; report observed
-occupancy and tested boundaries rather than assuming a universal maximum.
-The workflow uploads each size immediately and retains combined evidence.
+Outputs in the requested directory:
+
+| File | Meaning |
+| --- | --- |
+| `report.html` | Self-contained interactive summary, memory/latency/occupancy charts and error details; open it in any browser |
+| `report.json`, `trials.csv` | Normalized summary and all trial measurements for further comparison |
+| `run.json`, `provision.log` | Status, provenance, setup/cleanup diagnostics |
+| `<size>mib/summary.json` | Atomic search checkpoint, including failed/incomplete trial intent |
+| `<size>mib/slots-*/` | Raw request results, metrics, pod snapshots, per-pod memory and redacted diagnostics |
+
+A report is created **before setup** and refreshed after each size and on exit,
+including failed and gracefully interrupted runs. `--json` (before the command)
+keeps stdout machine-readable and sends progress to stderr. Exit codes: `0` for
+a completed experiment, `1` for setup/evidence/cleanup failure, `2` for invalid
+arguments, `130` for SIGINT, `143` for SIGTERM. Expected observed OOM trials and
+admission 503s are experimental results, not a CLI failure. A successful offline
+`report` returns `0` even when the underlying run failed; its JSON status still
+identifies that failed run. Invalid commands or an existing output directory do
+not create/replace a report.
+
+SIGKILL, power loss, or host failure cannot run cleanup. Regenerate the report
+from the checkpoints, then delete **only** the cluster named in that run's
+`run.json`: `kind delete cluster --name relayna-body-bench-<recorded-id>`.
+An unfinished checkpoint stays visibly incomplete; the report never invents
+missing memory/latency measurements or calls a one-trial smoke run a confirmed
+limit. Keep the entire directory to preserve downloadable JSON/CSV links.
+
+## Interpret the resource search
+
+Both fixed sweeps (`--slots ...`) and adaptive searches (omit `--slots`) use two
+fresh Gateway pods per trial, each with **2 CPU / 1 GiB limits and a 512 MiB
+serialized-body budget**. Fixed sweeps run exactly the specified slot values,
+`--repetitions` times each (default three). Adaptive mode searches 5, 10, 20,
+40, 80 and 100 MiB JSON by default. Discovery starts below and above the
+complete-body arithmetic bound; if all settings survive, it doubles the slot
+ceiling and offered cohort up to `--max-search-slots` (default 4096). The bound
+must cover the initial grid. Refinement and confirmations use the same final
+offered cohort. All earlier cohorts remain in CSV/JSON; the summary/chart never
+combines them into one confirmation.
+
+The mock pauses upstream reads for **10 seconds**, then waits **2 seconds**
+after upload. Requests have a **60-second** absolute deadline, including socket
+inactivity. JSON has one string field with the exact requested serialized size; HTTP/1.1
+keepalive uses no TLS, compression or retries. The driver alternates directly
+between pod IPs, so this does not measure ingress/load-balancer distribution.
+Body length, SHA-256 and credential stripping are verified against
+the streaming mock. The fixture uses Node.js 22.23.4, PostgreSQL 16 and Redis 7.
+Historical reports keep their original fixture versions and source snapshots.
+
+The report labels a **confirmed resource edge** only when at least three trials
+at the candidate setting are resource-stable, the adjacent setting was tested
+at least three times with an observed OOM, and no lower-slot resource failure
+contradicts that edge at the same cohort. A finite search without such an edge
+is a **tested lower bound**. A fixed sweep is a **tested setting** unless it
+also proves the repeated adjacent edge. Missing evidence stays incomplete.
+These are observed workload/resource boundaries, not safe production defaults.
+Leave memory headroom and account for your actual JSON, dependencies, traffic
+mix and latency target. The slot ceiling is not preallocated memory, and
+floor(512 / body MiB) counts only complete serialized bodies, not all request
+processing memory. Thus increasing slots can still exhaust the 1 GiB pod.
+
+## GitHub Actions
+
+The `Native body admission benchmark` manual workflow calls the same CLI on
+native `ubuntu-24.04` amd64 or `ubuntu-24.04-arm` arm64 hosts. By default it builds the checked-out source natively before measurement.
+Select a prebuilt native image with `-f image=...`. The historical v0.1.49
+release image is amd64-only, so arm64 users should build from source. GitHub's [runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+lists the native runner labels.
+
+```sh
+gh workflow run body-admission-benchmark.yml --ref <branch> \
+  -f architecture=arm64 -f mode=pilot -f body_mib=5
+gh workflow run body-admission-benchmark.yml --ref <branch> \
+  -f architecture=amd64 -f mode=full -f body_mib=all
+```
+
+Pilot runs use slots 1 and 4, one repetition, for the requested size(s). Full
+runs use the adaptive search and three confirmations. A selected size receives
+up to six hours; select one size per workflow for independent longer searches.
+The workflow always attempts partial report recovery and artifact upload,
+including failed runs. Cancellation/runner loss may leave only the last uploaded
+checkpoint, or no artifact if the runner is killed before upload. Download the
+artifact and open `report.html`. Preserve host provenance when comparing sizes
+or architectures.
 
 Resource stability requires no container failure, complete memory/metric
 evidence, returned-to-zero admission gauges, and every admitted request to
@@ -124,7 +205,7 @@ and warmup. Fresh pods prevent earlier conditions from contaminating it.
 Pod snapshots record restarts/OOMs. Memory is reported per pod rather than
 presenting the two-pod sum as one pod's usage.
 
-## Build and run
+## Historical fixed-rate baseline comparison
 
 Use an existing local kind cluster or create one dedicated to this experiment:
 

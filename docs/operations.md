@@ -46,7 +46,13 @@ does not. Complete-body policy, pricing, and guardrail checks still finish
 before buffered request bytes are forwarded. Guardrail expansion must fit the
 aggregate byte budget as well. These limits bound managed buffers, not total
 pod RSS or all in-flight connections. See the [native amd64 two-pod 5 MiB benchmark](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/amd64/README.md)
-for measured memory and timing at different concurrency limits.
+for measured memory and timing at different concurrency limits. To repeat the
+resource search or a fixed-slot matrix on native amd64 or Apple Silicon/arm64,
+use the [source benchmark CLI](https://github.com/sarattha/relayna-gateway/blob/main/benches/body-admission/README.md).
+It provisions an isolated local cluster and generates an interactive HTML report
+after completed, failed, or interrupted runs, with memory, latency, admission
+rejections and OOM evidence kept separate. Resource edges need production
+headroom; they are not recommended defaults.
 
 `gateway_buffered_requests` is a gauge of retained managed bodies, not a count
 of requests per second or all requests waiting for a service response. A low
