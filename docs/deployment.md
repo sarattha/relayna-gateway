@@ -76,7 +76,7 @@ returned valid overload responses. These finite cohorts do not establish
 sustained capacity. Keep the defaults until representative measurements justify
 a change, and leave memory headroom beyond serialized body reservations.
 See [operations](operations.md#configuration) and the
-[full native amd64 report](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/amd64/README.md).
+[full native amd64 report](https://github.com/sarattha/relayna-gateway/blob/8903a62191d461f12c53d10108b1c880452945eb/internal/test-reports/body-admission-5mib/amd64/README.md).
 
 During rollout, check pod RSS/cgroup memory, admission rejections, request timing,
 and upstream behavior. Rollback uses the previous image without data conversion;

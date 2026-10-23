@@ -9,8 +9,7 @@ assignees: ''
 ### Please read this first
 
 - Have you searched existing issues for similar requests?
-- Have you checked whether the README, docs, or design manifesto already cover
-  this?
+- Have you checked whether the README or docs already cover this?
 
 ### Affected area
 

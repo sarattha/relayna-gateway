@@ -51,7 +51,7 @@ Important guidance:
   two separate first-order outcomes.
 - `documentation`: docs-only changes or comments/docstrings without behavior
   changes.
-- `project`: repository metadata, AGENTS.md, PLANS.md, issue/PR templates, or
+- `project`: repository metadata, AGENTS.md, issue/PR templates, or
   broad tooling that is not CI-specific.
 - `dependencies`: dependency additions, removals, updates, lockfile changes, or
   package metadata dependency changes.

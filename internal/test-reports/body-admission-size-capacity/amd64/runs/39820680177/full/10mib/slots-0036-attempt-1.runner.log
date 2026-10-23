@@ -1,3 +1,0 @@
-capacity-10mib-slots36-attempt1: limit-36-rep-1: starting fresh pods
-MEASUREMENT_START
-limit-36-rep-1: statuses={'200': 72, '503': 1976}, success p95=36976.3 ms

@@ -194,10 +194,9 @@ jobs:
         run: |
           test -f README.md
           test -f AGENTS.md
-          test -f PLANS.md
           test -f CHANGELOG.md
           test -f Dockerfile
-          test -f internal/design-manifesto.md
+          test -f docs/architecture.md
 
       - name: Validate JSON schemas
         run: |

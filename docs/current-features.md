@@ -443,7 +443,7 @@ it. Secrets are write-only in Admin API responses, audit snapshots, and the
 portal.
 
 The real LiteLLM verification harness under
-`internal/test-reports/litellm-real-passthrough` exercises canonical managed
+`tests/e2e/litellm-real-passthrough` exercises canonical managed
 and direct route modes, Anthropic `/v1/messages` direct passthrough, wildcard
 `/v1/models?source=wildcard`, path/query preservation, sensitive `/ui` blocking
 by default, client credential stripping, LiteLLM custom-header injection,

@@ -34,7 +34,7 @@ Steps:
    - Relayna runtime integration and async task submission behavior
    - telemetry metrics, logs, traces, redaction, and label cardinality
    - packaging metadata, dependency changes, Docker, and CI/release workflows
-   - docs, README, changelog, design manifesto, and migration guidance
+   - docs, README, changelog, architecture, and migration guidance
 
 Output:
 

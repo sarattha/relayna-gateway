@@ -106,7 +106,7 @@ All notable changes to Relayna Gateway are documented in this file.
   remain eight body slots and 512 MiB serialized bytes. Native glibc deployments
   should set `MALLOC_MMAP_THRESHOLD_=131072` before startup to match the Debian
   image; other allocators may ignore it. See [upgrade guidance](docs/deployment.md#upgrade-to-0147)
-  and [native amd64 measurements](internal/test-reports/body-admission-5mib/amd64/README.md).
+  and [native amd64 measurements](https://github.com/sarattha/relayna-gateway/blob/8903a62191d461f12c53d10108b1c880452945eb/internal/test-reports/body-admission-5mib/amd64/README.md).
 
 ## 0.1.46 - 2026-10-20
 

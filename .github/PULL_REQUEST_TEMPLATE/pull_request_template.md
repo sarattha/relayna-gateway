@@ -30,7 +30,7 @@
 - [ ] Redis counters / state
 - [ ] Telemetry / logs / metrics / traces
 - [ ] Relayna runtime integration
-- [ ] Docs (`docs`, README, changelog, manifesto)
+- [ ] Docs (`docs`, README, changelog, architecture)
 - [ ] Build, packaging, Docker, or CI
 
 ## Compatibility and migration notes

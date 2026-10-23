@@ -8,7 +8,7 @@ assignees: ''
 
 ### Please read this first
 
-- Have you read the relevant README, docs, or design manifesto section?
+- Have you read the relevant README or documentation section?
 - Have you searched existing issues for the same problem?
 - If this is about local infrastructure, confirm PostgreSQL, Redis, and the
   configured LiteLLM/provider upstream are reachable.

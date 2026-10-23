@@ -1,8 +1,0 @@
-PASS accounted lost denials do not stop expansion or confirmation
-PASS confirmation-only resource failures trigger repeated refinement
-PASS finite search ceiling remains a lower bound without a resource cliff
-PASS missing admitted responses cannot become resource-stable trials
-PASS real 100 MiB run 39825735001, slots 64, attempt 1: resource_stable=True, clean=False
-PASS real 20 MiB run 39820686185, slots 169, attempt 3: resource_stable=True, clean=False
-PASS real 10 MiB run 39820680177, slots 128, attempt 2: resource_stable=False, clean=False
-PASS real 5 MiB run 39812510359, slots 128, attempt 3: resource_stable=True, clean=True

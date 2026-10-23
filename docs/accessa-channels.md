@@ -230,7 +230,8 @@ Set `DATABASE_URL` and `REDIS_URL`; without a database URL the test explicitly
 skips. The system certificate override is needed on the tested macOS environment.
 The test starts independent mock BFF, adapters, Router, agent and OIDC servers,
 plus the real Pingora gateway. It does not use production Entra or providers.
-See `internal/test-reports/accessa/` for UI and coverage evidence.
+Historical UI and coverage evidence is retained in the
+[Git archive](https://github.com/sarattha/relayna-gateway/tree/8903a62191d461f12c53d10108b1c880452945eb/internal/test-reports/accessa/).
 
 For a Cortex browser/BFF stack on the existing Keystone Kind cluster, use the
 development gateway slice in `deploy/kind/README.md`. It keeps Gateway real,

@@ -8,7 +8,7 @@ assignees: ''
 
 ### Please read this first
 
-- Have you checked the README, docs, and design manifesto?
+- Have you checked the README and docs?
 - Have you searched existing issues for related questions?
 
 ### Question

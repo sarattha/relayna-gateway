@@ -1,3 +1,0 @@
-capacity-5mib-slots512-attempt1: limit-512-rep-1: starting fresh pods
-MEASUREMENT_START
-limit-512-rep-1: statuses={'0': 355, '200': 2, '503': 1691}, success p95=21578.2 ms
