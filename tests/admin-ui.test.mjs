@@ -3,6 +3,7 @@ import "./admin-ui-catalog-visuals.test.mjs";
 import "./admin-ui-governance-visuals.test.mjs";
 import "./admin-ui-owner-visuals.test.mjs";
 import "./admin-ui-global-visuals.test.mjs";
+import "./admin-ui-workflows.test.mjs";
 import "./admin-ui-theme.test.mjs";
 import "./admin-ui-dark-theme.test.mjs";
 import "./admin-ui-chart-theme.test.mjs";

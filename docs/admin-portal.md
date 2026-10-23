@@ -43,6 +43,19 @@ Detailed configuration, sanitized snapshots and request investigations remain
 available through disclosures and drawers. Essential field labels, units,
 credential handling and confirmation steps remain beside their controls.
 
+Action drawers share icon-led headings and compact section navigation. Section
+links open and scroll to the original form controls; moving between sections or
+closing and reopening a creation drawer preserves its draft. Essential units,
+blank values and zero-limit behavior remain visible, with fuller definitions in
+contextual help. Provider, Foundry and route-identity editors use the same visual
+language, while request drawers lead with recorded signals and expandable detail.
+
+Under **Virtual keys → Inherited policy layers**, review the saved layer scopes
+and expand **Rules & safeguards** for their constraints and last update. Choose
+**Create or replace layer** to open the layer editor. The scope diagram describes
+saved configuration; applicable layers combine with direct key policy and retain
+stricter constraints. Use the policy simulator to inspect an exact request.
+
 React owns the shell, authentication and route-assignment editors, and provider
 creation and Foundry dialogs. Existing operational controllers
 continue to own their page content and API workflows through explicit DOM
@@ -251,7 +264,8 @@ What to check: after saving, the provider row should show `enabled` and
 
 #### LiteLLM custom header and virtual-key mapping
 
-LiteLLM provider rows also control how Gateway authenticates to LiteLLM. Leave
+LiteLLM provider rows also control how Gateway authenticates to LiteLLM.
+Open **Configure credentials** in the provider row to edit these settings. Leave
 `Credential mode` as `authorization_bearer` when LiteLLM expects
 `Authorization: Bearer <key>`. Choose `custom_header` when production LiteLLM
 or an API gateway in front of LiteLLM expects a different header, such as

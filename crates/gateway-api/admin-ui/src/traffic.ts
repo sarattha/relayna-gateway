@@ -173,7 +173,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
       const detail = element("traffic-detail");
       detailBackdrop = document.createElement("section");
       detailBackdrop.className = "modal-backdrop drawer-backdrop";
-      detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="traffic-investigation-title"><div class="drawer-heading"><h3 id="traffic-investigation-title">Request investigation</h3><button type="button" id="traffic-close" aria-label="Close Request investigation">Close</button></div><div class="drawer-body"></div></div>`;
+      detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="traffic-investigation-title"><div class="drawer-heading"><span class="drawer-mark" aria-hidden="true"><i class="ti ti-activity"></i></span><div class="drawer-title"><span class="eyebrow">Inspect & analyze</span><h3 id="traffic-investigation-title">Request investigation</h3></div><button type="button" class="icon-button" id="traffic-close" aria-label="Close Request investigation"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="drawer-body"></div></div>`;
       detailBackdrop.querySelector(".drawer-body").appendChild(detail);
       document.body.appendChild(detailBackdrop);
       closeDetail = mountDialog(detailBackdrop, { restoreFocus: () =>

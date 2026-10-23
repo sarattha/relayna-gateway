@@ -5,6 +5,7 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cva, type VariantProps } from "class-variance-authority";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { workflowIcon } from "../../design-system/workflows";
 
 export function cn(...values: ClassValue[]) {
   return twMerge(clsx(values));
@@ -151,6 +152,7 @@ export function Dialog({
   onClose,
   restoreFocus,
   initialFocus,
+  layout = "modal",
 }: {
   title: string;
   description?: string;
@@ -159,6 +161,7 @@ export function Dialog({
   onClose: () => void;
   restoreFocus?: HTMLElement | null;
   initialFocus?: React.RefObject<HTMLElement | null>;
+  layout?: "modal" | "drawer";
 }) {
   const descriptionId = React.useId();
   return (
@@ -173,14 +176,16 @@ export function Dialog({
             }
           }}
           aria-describedby={description ? descriptionId : undefined}
-          className="rg-dialog fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-32px)] w-[min(640px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-border bg-background shadow-xl"
+          data-layout={layout}
+          className={cn("rg-dialog fixed z-50 flex flex-col border border-border bg-background shadow-xl", layout === "drawer" ? "right-0 top-0" : "left-1/2 top-1/2 max-h-[calc(100dvh-32px)] w-[min(640px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl")}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             restoreFocus?.focus();
           }}
         >
-          <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
-            <div>
+          <header className="drawer-heading">
+            <span className="drawer-mark" aria-hidden="true"><i className={`ti ti-${workflowIcon(title)}`} /></span>
+            <div className="drawer-title">
               <DialogPrimitive.Title className="text-sm font-medium text-foreground">
                 {title}
               </DialogPrimitive.Title>
@@ -195,11 +200,11 @@ export function Dialog({
             </div>
             <DialogPrimitive.Close asChild>
               <Button variant="ghost" size="icon" aria-label="Close dialog">
-                ×
+                <i className="ti ti-x" aria-hidden="true" />
               </Button>
             </DialogPrimitive.Close>
           </header>
-          <div className="min-h-0 overflow-y-auto px-5 py-4">{children}</div>
+          <div className="rg-dialog-body min-h-0 overflow-y-auto px-5 py-4">{children}</div>
           {footer && (
             <footer className="flex flex-wrap gap-2 border-t border-border px-5 py-3">
               {footer}

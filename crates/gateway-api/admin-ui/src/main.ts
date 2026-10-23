@@ -14,6 +14,7 @@ import { catalogCredentialState, catalogServiceTransport, projectCatalogInsights
 import { keyGovernanceSnapshot, guardrailGovernanceSnapshot, memberAccessSnapshot, managedIdentitySnapshot, auditSampleSnapshot, settingsGovernanceSnapshot } from "./governance-visuals";
 import { ownerCatalogInsights, ownerDashboardInsights, ownerUsageDistribution, ownerRequestProfile, ownerIncidentSeries, ownerIncidentDescription } from "./owner-visuals";
 import { installComponentGuidance } from "./design-system/guidance";
+import { policyLayerCards } from "./policy-visuals";
 import { refreshWebSocketMetrics, routingModeLabel, usageValue, requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 import Chart from "chart.js/auto";
@@ -31,6 +32,10 @@ import {
   insightStrip,
   distributionBars,
   flowSummary,
+  drawerHeading,
+  mountDrawerNavigation,
+  prepareDrawerActions,
+  workflowIcon,
   tableWrap,
   viewMeta,
 } from "./design-system";
@@ -1068,7 +1073,6 @@ async function keys() {
         ${insightStrip(visual.insights, { label: "Key configuration in selected project scope" })}
         ${distributionBars("Key lifecycle", visual.lifecycle, { caption: "Loaded keys · selected project scope", empty: "No keys in this scope." })}
       </div>
-      ${flowSummary("Configured policy layers", visual.layers, "Gateway-wide layer inventory by scope kind. Matching layers and key policy determine the effective decision; use the simulator to inspect a request.")}
     </section>
     <div class="split">
       <section class="panel">
@@ -1106,6 +1110,9 @@ async function keys() {
         <h3>Inherited policy layers</h3>
         <span class="subtle">${state.policyLayers.length} configured</span>
       </div>
+      ${flowSummary("Applicable layers combine", visual.layers, "Gateway-wide saved configuration. Matching layers combine with direct key policy and retain stricter constraints; use the simulator to inspect an exact request.")}
+      <p class="policy-inheritance-note"><i class="ti ti-shield-lock" aria-hidden="true"></i> A blank field adds no restriction at that layer. Other applicable policies still apply.</p>
+      ${policyLayerTable(state.policyLayers)}
       <form id="policy-layer-form" class="form-grid">
         ${formSection("Layer identity", "Set the inheritance level and exact scope.", `
           <label>Layer<select name="kind">
@@ -1123,7 +1130,6 @@ async function keys() {
           <button type="submit" class="primary">Save layer</button>
         </div>
       </form>
-      ${policyLayerTable(state.policyLayers)}
     </section>
     <section class="panel">
       <div class="panel-heading">
@@ -1185,24 +1191,32 @@ async function keys() {
 function policyFields(key = null, neutral = false) {
   const policy = key?.policy || {};
   return `
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-route" aria-hidden="true"></i> Routing access</legend><div class="form-grid">
     <label>Routes<input name="allowed_routes" value="${attr(listValue(policy.allowed_routes, neutral ? "" : "/v1/chat/completions,/v1/responses"))}"></label>
     <label>Models<input name="allowed_models" value="${attr(listValue(policy.allowed_models, ""))}" placeholder="gpt-4o-mini"></label>
     <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers, neutral)}<small class="field-hint">Allowed provider adapters. No selection adds no restriction at this layer; inherited policies still apply.</small></div>
+    </div></fieldset>
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-gauge" aria-hidden="true"></i> Throughput & budgets</legend><div class="form-grid">
     <label>RPM limit<input name="rpm_limit" type="number" min="0" value="${attr(policy.rpm_limit ?? "")}"></label>
     <label>TPM limit<input name="tpm_limit" type="number" min="0" value="${attr(policy.tpm_limit ?? "")}"></label>
     <label>Daily budget<input name="daily_budget_usd" type="number" min="0" step="any" value="${attr(policy.daily_budget_usd ?? "")}"></label>
     <label>Monthly budget<input name="monthly_budget_usd" type="number" min="0" step="any" value="${attr(policy.monthly_budget_usd ?? "")}"></label>
     <label>Max daily requests<input name="max_requests_per_day" type="number" min="0" value="${attr(policy.max_requests_per_day ?? "")}"></label>
     <label>Max daily tokens<input name="max_tokens_per_day" type="number" min="0" value="${attr(policy.max_tokens_per_day ?? "")}"></label>
+    </div></fieldset>
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-adjustments" aria-hidden="true"></i> Per-request limits</legend><div class="form-grid">
     <label>Max cost/request<input name="max_cost_per_request" type="number" min="0" step="any" value="${attr(policy.max_cost_per_request ?? "")}"></label>
     <label>Max input tokens<input name="max_input_tokens_per_request" type="number" min="0" value="${attr(policy.max_input_tokens_per_request ?? "")}"></label>
     <label>Max output tokens<input name="max_output_tokens_per_request" type="number" min="0" value="${attr(policy.max_output_tokens_per_request ?? "")}"></label>
-    <label>Allowed UTC hours<input name="allowed_hours_utc" value="${attr(listValue(policy.allowed_hours_utc, ""))}" placeholder="0,8,17"></label>
-    <label>Stale disable days<input name="unused_key_auto_disable_after_days" type="number" min="0" value="${attr(policy.unused_key_auto_disable_after_days ?? "")}"></label>
     <label>Max request bytes<input name="max_request_body_bytes" type="number" min="0" value="${attr(policy.max_request_body_bytes ?? "")}"></label>
     <label>Max response bytes<input name="max_response_body_bytes" type="number" min="0" value="${attr(policy.max_response_body_bytes ?? "")}"></label>
+    </div></fieldset>
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-clock" aria-hidden="true"></i> Availability & features</legend><div class="form-grid">
+    <label>Allowed UTC hours<input name="allowed_hours_utc" value="${attr(listValue(policy.allowed_hours_utc, ""))}" placeholder="0,8,17"></label>
+    <label>Stale disable days<input name="unused_key_auto_disable_after_days" type="number" min="0" value="${attr(policy.unused_key_auto_disable_after_days ?? "")}"></label>
     <label class="check"><input name="allow_streaming" type="checkbox" ${policy.allow_streaming || neutral ? "checked" : ""}> Allow streaming</label>
     <label class="check"><input name="allow_tools" type="checkbox" ${policy.allow_tools || neutral ? "checked" : ""}> Allow tools</label>
+    </div></fieldset>
   `;
 }
 
@@ -1307,18 +1321,7 @@ function keyTable(rows) {
 }
 
 function policyLayerTable(rows) {
-  return table(
-    ["Layer", "Scope", "Version", "Policy", "Guardrails", "Updated", "Actions"],
-    rows.map((layer) => [
-      `<i class="ti ti-hierarchy" aria-hidden="true"></i> ${badge(layer.kind)}`,
-      `<code>${esc(layer.scope_id || "all")}</code>`,
-      esc(layer.policy?.policy_version ?? "1"),
-      keyPolicySummary({ policy: layer.policy, rotation_due_at: null, last_used_at: null }),
-      guardrailPolicySummary(layer.guardrail_policy),
-      time(layer.updated_at),
-      `<button type="button" class="danger" data-policy-layer-action="delete" data-layer-id="${attr(layer.id)}">Delete</button>`,
-    ]),
-  );
+  return policyLayerCards(rows, guardrailPolicySummary, time);
 }
 
 function keyLifecycleActions(key) {
@@ -4151,7 +4154,7 @@ async function rollbackImportVersion(event) {
 
 function formSection(title, description, body, open = false) {
   return `<details class="form-section wide-field" ${open ? "open" : ""}>
-    <summary><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><i class="ti ti-chevron-down" aria-hidden="true"></i></summary>
+    <summary><span class="form-section-symbol" aria-hidden="true"><i class="ti ti-${workflowIcon(title)}"></i></span><span class="form-section-copy"><strong>${esc(title)}</strong><small>${esc(description)}</small></span><i class="ti ti-chevron-down" aria-hidden="true"></i></summary>
     <div class="form-section-grid">${body}</div>
   </details>`;
 }
@@ -4454,11 +4457,11 @@ function editRouteIdentity(event) {
   const route = event.currentTarget.dataset.routeIdentity;
   const setting = state.routeIdentities.find((item) => item.route === route);
   const backdrop = document.createElement("section");
-  backdrop.className = "modal-backdrop";
+  backdrop.className = "modal-backdrop drawer-backdrop";
   const titleId = `dialog-title-${++dialogCounter}`;
-  backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
-    <h3 id="${titleId}">Endpoint identity · ${esc(route)}</h3>
-    <form class="modal-form"><div class="modal-scroll form-grid">${endpointIdentityFields(setting.access)}${["/litellm/*", "/v1/responses"].includes(route) ? websocketTransportFields(setting.access, true) : ""}</div>
+  backdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+    ${drawerHeading(`Endpoint identity · ${route}`, '<button type="button" class="icon-button" data-close-identity aria-label="Close endpoint identity"><i class="ti ti-x" aria-hidden="true"></i></button>', titleId)}
+    <form class="modal-form"><div class="modal-scroll drawer-body form-grid">${endpointIdentityFields(setting.access)}${["/litellm/*", "/v1/responses"].includes(route) ? websocketTransportFields(setting.access, true) : ""}</div>
       <div class="form-actions"><button class="primary">Save identity</button><button type="button" data-close-modal>Cancel</button></div>
     </form></div>`;
   document.body.appendChild(backdrop);
@@ -4466,6 +4469,7 @@ function editRouteIdentity(event) {
   prepareProfileKeys(backdrop);
   const close = mountDialog(backdrop, { initialFocus: "select", dismissible: false });
   backdrop.querySelector("[data-close-modal]").addEventListener("click", () => { if (!saving) close(); });
+  backdrop.querySelector("[data-close-identity]").addEventListener("click", () => { if (!saving) close(); });
   backdrop.addEventListener("keydown", (keyEvent) => { if (keyEvent.key === "Escape" && !saving) close(); });
   backdrop.querySelector("form").addEventListener("submit", handleAsync(async (submit) => {
     submit.preventDefault();
@@ -5339,16 +5343,22 @@ async function openOwnerRequestDetails(event) {
   const titleId = `dialog-title-${++dialogCounter}`;
   backdrop.innerHTML = `
     <div class="modal owner-request-drawer" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
-      <div class="owner-request-heading">
-        <div><span class="eyebrow">Sanitized request details</span><h3 id="${titleId}">${esc(requestId)}</h3></div>
-        <button type="button" data-close-owner-request aria-label="Close request details">Close</button>
-      </div>
-      <div class="modal-scroll owner-request-content">
+      ${drawerHeading("Request details", '<button type="button" class="icon-button" data-close-owner-request aria-label="Close request details"><i class="ti ti-x" aria-hidden="true"></i></button>', titleId)}
+      <div class="modal-scroll drawer-body owner-request-content">
+        <div class="investigation-identity"><code>${esc(requestId)}</code>${badge(details.request.status, details.request.status === "success" ? "good" : "bad")}</div>
+        ${insightStrip([{ label: "Latency", value: details.request.latency_ms == null ? null : `${details.request.latency_ms} ms`, icon: "clock" }, { label: "Recorded tokens", value: details.request.total_tokens ?? null, icon: "coins" }, { label: "Estimated cost", value: details.request.estimated_cost_usd == null ? null : money(details.request.estimated_cost_usd), icon: "coin" }], { label: "Recorded request" })}
+        <dl class="investigation-facts">
+          <div><dt>Route</dt><dd><code>${esc(details.request.route || "Not recorded")}</code></dd></div>
+          <div><dt>Provider</dt><dd>${esc(details.request.provider || "Not recorded")}</dd></div>
+          <div><dt>HTTP status</dt><dd>${esc(details.request.status_code ?? "Not recorded")}</dd></div>
+          <div><dt>Service version</dt><dd>${esc(details.request.service_version || "Not recorded")}</dd></div>
+        </dl>
+        <details class="catalog-disclosure"><summary><i class="ti ti-list-details" aria-hidden="true"></i> Request metadata</summary>
         ${table(["Field", "Value"], ownerRequestDetailsRows(details.request))}
-        <section class="owner-debug-section">
-          <h4>Debug bundle</h4>
+        </details>
+        <details class="catalog-disclosure owner-debug-section"><summary><i class="ti ti-code" aria-hidden="true"></i> Debug bundle</summary>
           ${details.debug_bundle ? jsonBlock(details.debug_bundle) : emptyState("Usage metadata is available, but no proxy debug bundle was captured for this request.")}
-        </section>
+        </details>
       </div>
     </div>`;
   document.body.appendChild(backdrop);
@@ -5742,15 +5752,26 @@ function showContentDrawer(title, markupOrNode, onClose = () => {}, restoreFocus
   const backdrop = document.createElement("section");
   backdrop.className = "modal-backdrop drawer-backdrop";
   const id = `drawer-title-${++dialogCounter}`;
-  backdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="${id}"><div class="drawer-heading"><h3 id="${id}">${esc(title)}</h3><button type="button" data-drawer-close aria-label="Close ${attr(title)}">Close</button></div><div class="drawer-body"></div></div>`;
+  backdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="${id}">${drawerHeading(title, `<button type="button" class="icon-button" data-drawer-close aria-label="Close ${attr(title)}"><i class="ti ti-x" aria-hidden="true"></i></button>`, id)}<div class="drawer-body"></div></div>`;
   const body = backdrop.querySelector(".drawer-body");
   if (markupOrNode instanceof Node) body.appendChild(markupOrNode);
   else body.innerHTML = markupOrNode;
+  prepareDrawerActions(body);
   document.body.appendChild(backdrop);
-  const close = mountDialog(backdrop, { restoreFocus, onClose: () => { closeContentDrawer = null; onClose(); } });
+  const disposeNavigation = mountDrawerNavigation(backdrop.querySelector(".resource-drawer"));
+  const close = mountDialog(backdrop, { restoreFocus, initialFocus: body.querySelector('input:not([type="hidden"]), select, textarea') ? '.drawer-body input:not([type="hidden"]), .drawer-body select, .drawer-body textarea' : "[data-drawer-close]", onClose: () => { disposeNavigation(); closeContentDrawer = null; onClose(); } });
   closeContentDrawer = close;
   backdrop.querySelector("[data-drawer-close]").addEventListener("click", () => close());
   return close;
+}
+
+function addFormDrawerAction(form, title, label, actions) {
+  const placeholder = document.createElement("div"); placeholder.hidden = true;
+  form.before(placeholder); placeholder.append(form);
+  const button = document.createElement("button"); button.type = "button";
+  button.innerHTML = `<i class="ti ti-${workflowIcon(title)}" aria-hidden="true"></i> ${esc(label)}`;
+  actions.append(button);
+  button.addEventListener("click", () => showContentDrawer(title, form, () => placeholder.append(form), button));
 }
 
 function organizeView(view) {
@@ -5803,11 +5824,27 @@ function organizeView(view) {
     if (!scoped.length && state.projectScope) inventory.insertAdjacentHTML("beforeend", emptyState(`No ${view === "keys" ? "virtual keys" : "projects"} in ${scopeLabel()}.`));
   }
   if (view === "keys") {
+    const form = content.querySelector("#policy-layer-form");
+    const panel = form.closest(".panel");
+    addFormDrawerAction(form, "Create or replace policy layer", "Create or replace layer", panel.querySelector(".panel-heading"));
     // Policy operations keep their complete real forms and simulator; expose
     // them on demand without putting them ahead of the inventory.
     for (const title of ["Inherited policy layers", "Policy simulator"]) {
       const panel = [...content.querySelectorAll(".panel")].find((item) => item.querySelector("h3")?.textContent === title);
       if (panel) disclosePanel(panel, title);
+    }
+  }
+  if (view === "providers") {
+    for (const form of content.querySelectorAll("[data-provider-config-form]")) {
+      const disclosure = form.closest("details");
+      const name = form.closest("tr")?.querySelector("td strong")?.textContent || "Provider";
+      addFormDrawerAction(form, `Credential settings · ${name}`, "Configure credentials", disclosure.parentElement);
+      disclosure.hidden = true;
+    }
+    for (const [id, title] of [["litellm-credential-form", "Create or replace credential mapping"], ["litellm-passthrough-form", "Configure wildcard ingress"]]) {
+      const form = content.querySelector(`#${id}`), disclosure = form.closest("details");
+      addFormDrawerAction(form, title, title, disclosure.parentElement);
+      disclosure.hidden = true;
     }
   }
   if (view === "usage") {
@@ -5861,7 +5898,9 @@ function disclosePanel(panel, title) {
   const details = document.createElement("details");
   details.className = "workflow-disclosure";
   const summary = document.createElement("summary");
-  summary.textContent = title;
+  summary.innerHTML = `<span class="workflow-symbol" aria-hidden="true"><i class="ti ti-${workflowIcon(title)}"></i></span><span>${esc(title)}</span><i class="ti ti-chevron-down" aria-hidden="true"></i>`;
+  const heading = panel.querySelector(".panel-heading h3");
+  if (heading?.textContent === title) heading.classList.add("sr-only");
   details.appendChild(summary);
   panel.before(details);
   details.appendChild(panel);

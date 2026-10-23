@@ -1,4 +1,4 @@
-import { fieldGuidance, termGuidance } from "./guidance-content";
+import { fieldGuidance, fieldSummary, termGuidance } from "./guidance-content";
 
 // Constrain the tooltip to the viewport, including narrow screens and bottom rows.
 export function tooltipPosition(anchor, size, viewport) {
@@ -113,6 +113,7 @@ export function installComponentGuidance(doc: Document = document) {
     if (control.hasAttribute('aria-describedby') || (control.type === 'checkbox' && !control.closest('label.check'))) return;
     const name = control.dataset.guidanceName || control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
     const explanation = fieldGuidance(name, contextFor(control));
+    const compact = fieldSummary(name, contextFor(control));
     const label = control.closest('label');
     if (!explanation || !label) return;
     const labelCopy = label.cloneNode(true) as HTMLElement;
@@ -124,11 +125,11 @@ export function installComponentGuidance(doc: Document = document) {
     const help = doc.createElement('small');
     help.id = `component-field-help-${++sequence}`;
     help.className = 'field-hint';
-    help.textContent = explanation;
+    help.textContent = compact || explanation;
     control.setAttribute('aria-describedby', help.id);
     label.append(help);
-    if (['profile', 'identity', 'traffic'].includes(contextFor(control)) || control.dataset.guidanceName || control.type === 'checkbox') {
-      help.hidden = true;
+    if (compact || ['profile', 'identity', 'traffic'].includes(contextFor(control)) || control.dataset.guidanceName || control.type === 'checkbox') {
+      help.hidden = !compact;
       const trigger = doc.createElement('button');
       trigger.type = 'button';
       trigger.className = 'help-trigger';

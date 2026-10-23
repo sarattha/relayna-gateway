@@ -9,6 +9,9 @@ const sourceModule = async path => {
 };
 const { serviceCatalogInsights } = await sourceModule("../crates/gateway-api/admin-ui/src/catalog-visuals.ts");
 const { insightStrip, distributionBars } = await sourceModule("../crates/gateway-api/admin-ui/src/design-system/insights.ts");
+const componentUrl = `data:text/javascript;base64,${Buffer.from(ts.transpileModule(readFileSync(new URL("../crates/gateway-api/admin-ui/src/design-system/components.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText).toString("base64")}`;
+const workflowSource = ts.transpileModule(readFileSync(new URL("../crates/gateway-api/admin-ui/src/design-system/workflows.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText.replace('"./components"', JSON.stringify(componentUrl));
+const { workflowIcon } = await import(`data:text/javascript;base64,${Buffer.from(workflowSource).toString("base64")}`);
 
 const source = readFileSync(new URL("../crates/gateway-api/admin-ui/src/main.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
@@ -39,7 +42,7 @@ const api = async (path, options) => {
 // Keep the real renderers, event bindings and serializers. Stub unrelated
 // identity/navigation infrastructure so native form validity is exercised.
 const ui = new Function("document", "FormData", "Event", "state", "api", "confirmation", "visuals", `
-  const { serviceCatalogInsights, insightStrip, distributionBars } = visuals;
+  const { serviceCatalogInsights, insightStrip, distributionBars, workflowIcon } = visuals;
   let renderGeneration = 0;
   const content = document.querySelector("#content");
   const noop = () => {};
@@ -65,7 +68,7 @@ const ui = new Function("document", "FormData", "Event", "state", "api", "confir
   const usageExportAction = noop, syncUsageExportControls = noop, loadUsage = noop, bindUsageSuggestions = noop;
   ${functions}
   return {services, serviceEditForm, bindPricingRuleEditors, bindEndpointPricingEditors, serviceBody, submitService, patchService, policyFields, usage, money};
-`)(document, FormData, Event, state, api, confirmation, { serviceCatalogInsights, insightStrip, distributionBars });
+`)(document, FormData, Event, state, api, confirmation, { serviceCatalogInsights, insightStrip, distributionBars, workflowIcon });
 
 function checkAmount(input) {
   assert.ok(input);

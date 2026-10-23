@@ -19766,6 +19766,159 @@ var init_bundle_mjs = __esmMin((() => {
 	twMerge = /*#__PURE__*/ createTailwindMerge(getDefaultConfig);
 }));
 //#endregion
+//#region crates/gateway-api/admin-ui/src/design-system/components.ts
+function toneForStatus(value) {
+	const status = String(value ?? "").toLowerCase();
+	if ([
+		"ready",
+		"ok",
+		"healthy",
+		"enabled",
+		"configured",
+		"active",
+		"success",
+		"non-expiring",
+		"closed"
+	].includes(status)) return "good";
+	if ([
+		"missing",
+		"failed",
+		"failure",
+		"disabled",
+		"revoked",
+		"expired",
+		"timeout",
+		"unhealthy",
+		"open"
+	].includes(status)) return "bad";
+	if ([
+		"unknown",
+		"pending",
+		"fallback",
+		"opt-in",
+		"default",
+		"degraded",
+		"half_open",
+		"half-open"
+	].includes(status)) return "warn";
+	return "neutral";
+}
+function html(value) {
+	return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;");
+}
+function badge(label, tone = toneForStatus(label)) {
+	return `<span class="badge ${tone}">${html(label ?? "unknown")}</span>`;
+}
+function panel(title, body, meta = "") {
+	const icon = {
+		Projects: "folders",
+		"Registered services": "cube",
+		"Provider configuration": "server-2",
+		"Virtual keys": "key",
+		"Policy simulator": "test-pipe",
+		"Inherited policy layers": "stack-2",
+		"Audit events": "history",
+		"Current availability & circuit state": "heartbeat",
+		"Latest changes": "history",
+		"Project activity": "chart-bar",
+		"Service bindings": "link"
+	}[title];
+	return `<section class="panel">${title ? `<div class="panel-heading"><h3>${icon ? `<i class="ti ti-${icon}" aria-hidden="true"></i>` : ""}${html(title)}</h3>${meta ? `<span class="subtle">${html(meta)}</span>` : ""}</div>` : ""}${body}</section>`;
+}
+function metricTile(label, value, tone = "neutral") {
+	return `<section class="panel stat ${tone}"><span>${html(label)}</span><strong>${html(value)}</strong></section>`;
+}
+function emptyState(message) {
+	return `<div class="empty-state"><i class="ti ti-inbox" aria-hidden="true"></i><p>${html(message)}</p></div>`;
+}
+function tableWrap(tableMarkup) {
+	return `<div class="table-wrap">${tableMarkup}</div>`;
+}
+function actionGroup(actions) {
+	return `<div class="form-actions">${actions}</div>`;
+}
+function jsonBlock(value) {
+	return `<pre>${html(JSON.stringify(value ?? null, null, 2))}</pre>`;
+}
+var init_components = __esmMin((() => {}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/design-system/workflows.ts
+function workflowIcon(title) {
+	const name = title.toLowerCase();
+	if (/simulator/.test(name)) return "test-pipe";
+	if (/guardrail|safeguard/.test(name)) return "shield-check";
+	if (/identity|authentication|entra/.test(name)) return "fingerprint";
+	if (/policy|layer/.test(name)) return "stack-2";
+	if (/pricing|cost|budget/.test(name)) return "coin";
+	if (/key|credential/.test(name)) return "key";
+	if (/project/.test(name)) return "folders";
+	if (/provider|upstream|connection/.test(name)) return "server-2";
+	if (/socket|transport|stream/.test(name)) return "plug-connected";
+	if (/request|investigation|traffic/.test(name)) return "activity";
+	if (/route|access|limit/.test(name)) return "route";
+	if (/service|endpoint/.test(name)) return "cube";
+	if (/data|usage/.test(name)) return "chart-bar";
+	return "adjustments";
+}
+function drawerHeading(title, closeControl, titleId) {
+	const readOnly = /investigation|chart data|request details/i.test(title);
+	return `<div class="drawer-heading"><span class="drawer-mark" aria-hidden="true"><i class="ti ti-${workflowIcon(title)}"></i></span><div class="drawer-title"><span class="eyebrow">${readOnly ? "Inspect & analyze" : "Configure gateway"}</span><h3 id="${html(titleId)}">${html(title)}</h3></div>${closeControl}</div>`;
+}
+function prepareDrawerActions(body) {
+	for (const form of body.querySelectorAll("form")) {
+		if (form.closest("[data-react-ui]") || form.querySelector(":scope > .form-actions")) continue;
+		const buttons = [...form.querySelectorAll(":scope > button[type=\"submit\"], :scope > button:not([type])")];
+		if (!buttons.length) continue;
+		const actions = body.ownerDocument.createElement("div");
+		actions.className = "form-actions wide-field";
+		form.append(actions);
+		actions.append(...buttons);
+	}
+}
+function mountDrawerNavigation(dialog) {
+	const body = dialog.querySelector(".drawer-body");
+	if (!body) return () => {};
+	const sections = [...body.querySelectorAll(".form-section")];
+	if (sections.length < 2) return () => {};
+	const doc = dialog.ownerDocument;
+	const nav = doc.createElement("nav");
+	nav.className = "drawer-nav";
+	nav.setAttribute("aria-label", "Editor sections");
+	const buttons = sections.map((section, index) => {
+		const title = section.querySelector("summary strong")?.textContent || `Section ${index + 1}`;
+		const button = doc.createElement("button");
+		button.type = "button";
+		button.innerHTML = `<i class="ti ti-${workflowIcon(title)}" aria-hidden="true"></i><span>${html(title)}</span>`;
+		button.addEventListener("click", () => {
+			section.open = true;
+			body.scrollTo({ top: body.scrollTop + section.getBoundingClientRect().top - body.getBoundingClientRect().top - 16 });
+			section.querySelector("summary")?.focus({ preventScroll: true });
+			buttons.forEach((item) => item.removeAttribute("aria-current"));
+			button.setAttribute("aria-current", "location");
+		});
+		nav.append(button);
+		return button;
+	});
+	buttons[0].setAttribute("aria-current", "location");
+	const update = () => {
+		const top = body.getBoundingClientRect().top + 60;
+		const current = sections.reduce((index, section, next) => section.getBoundingClientRect().top <= top ? next : index, 0);
+		buttons.forEach((button, index) => {
+			if (index === current) button.setAttribute("aria-current", "location");
+			else button.removeAttribute("aria-current");
+		});
+	};
+	body.addEventListener("scroll", update, { passive: true });
+	body.before(nav);
+	return () => {
+		body.removeEventListener("scroll", update);
+		nav.remove();
+	};
+}
+var init_workflows = __esmMin((() => {
+	init_components();
+}));
+//#endregion
 //#region crates/gateway-api/admin-ui/src/components/ui/index.tsx
 function cn(...values) {
 	return twMerge(clsx(values));
@@ -19835,7 +19988,7 @@ function Help({ label, children }) {
 		})
 	});
 }
-function Dialog({ title, description, children, footer, onClose, restoreFocus, initialFocus }) {
+function Dialog({ title, description, children, footer, onClose, restoreFocus, initialFocus, layout = "modal" }) {
 	const descriptionId = import_react$8.useId();
 	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Dialog$1, {
 		open: true,
@@ -19848,33 +20001,48 @@ function Dialog({ title, description, children, footer, onClose, restoreFocus, i
 				}
 			},
 			"aria-describedby": description ? descriptionId : void 0,
-			className: "rg-dialog fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-32px)] w-[min(640px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-border bg-background shadow-xl",
+			"data-layout": layout,
+			className: cn("rg-dialog fixed z-50 flex flex-col border border-border bg-background shadow-xl", layout === "drawer" ? "right-0 top-0" : "left-1/2 top-1/2 max-h-[calc(100dvh-32px)] w-[min(640px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl"),
 			onCloseAutoFocus: (event) => {
 				event.preventDefault();
 				restoreFocus?.focus();
 			},
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("header", {
-					className: "flex items-start justify-between gap-4 border-b border-border px-5 py-4",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogTitle, {
-						className: "text-sm font-medium text-foreground",
-						children: title
-					}), description && /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogDescription, {
-						id: descriptionId,
-						className: "mt-1 text-xs text-muted-foreground",
-						children: description
-					})] }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogClose, {
-						asChild: true,
-						children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
-							variant: "ghost",
-							size: "icon",
-							"aria-label": "Close dialog",
-							children: "×"
+					className: "drawer-heading",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
+							className: "drawer-mark",
+							"aria-hidden": "true",
+							children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", { className: `ti ti-${workflowIcon(title)}` })
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
+							className: "drawer-title",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogTitle, {
+								className: "text-sm font-medium text-foreground",
+								children: title
+							}), description && /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogDescription, {
+								id: descriptionId,
+								className: "mt-1 text-xs text-muted-foreground",
+								children: description
+							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogClose, {
+							asChild: true,
+							children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
+								variant: "ghost",
+								size: "icon",
+								"aria-label": "Close dialog",
+								children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
+									className: "ti ti-x",
+									"aria-hidden": "true"
+								})
+							})
 						})
-					})]
+					]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("div", {
-					className: "min-h-0 overflow-y-auto px-5 py-4",
+					className: "rg-dialog-body min-h-0 overflow-y-auto px-5 py-4",
 					children
 				}),
 				footer && /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("footer", {
@@ -19894,6 +20062,7 @@ var init_ui = __esmMin((() => {
 	init_dist();
 	init_clsx();
 	init_bundle_mjs();
+	init_workflows();
 	import_jsx_runtime$10 = require_jsx_runtime();
 	buttonVariants = cva("rg-button inline-flex items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50", {
 		variants: {
@@ -20741,6 +20910,13 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 function FoundryIdentityFields({ identity, credentialConfigured = false }) {
 	const [method, setMethod] = (0, import_react$6.useState)(identity?.method || "workload_identity");
 	return /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(import_jsx_runtime$8.Fragment, { children: [
+		/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+			className: "editor-section-heading",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("i", {
+				className: "ti ti-fingerprint",
+				"aria-hidden": "true"
+			}), "Azure identity"]
+		}),
 		/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
 			label: "Azure identity",
 			children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(NativeSelect, {
@@ -20855,6 +21031,7 @@ function FoundryEditor({ kind, record, providers, projects, onSave, onClose, res
 		}
 	};
 	return /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Dialog, {
+		layout: "drawer",
 		title: provider ? "Azure Foundry connection" : "Foundry service",
 		onClose: () => {
 			if (!busy) onClose();
@@ -20985,7 +21162,7 @@ function FoundryEditor({ kind, record, providers, projects, onSave, onClose, res
 					children: error
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
-					className: "flex gap-2 border-t border-border pt-4",
+					className: "editor-form-actions",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Button, {
 						type: "submit",
 						variant: "default",
@@ -21067,6 +21244,7 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 		}
 	};
 	return /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Dialog, {
+		layout: "drawer",
 		title: "Create provider",
 		description: "Choose a provider and configure its upstream connection.",
 		restoreFocus,
@@ -21081,6 +21259,13 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 					disabled: busy,
 					className: "grid min-w-0 gap-4",
 					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+							className: "editor-section-heading",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("i", {
+								className: "ti ti-server-2",
+								"aria-hidden": "true"
+							}), "Upstream connection"]
+						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
 							label: "Provider",
 							children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(NativeSelect, {
@@ -21134,6 +21319,13 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 						foundry ? /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(FoundryIdentityFields, {}) : /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
 							className: "grid gap-4",
 							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+									className: "editor-section-heading",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("i", {
+										className: "ti ti-key",
+										"aria-hidden": "true"
+									}), "Credential routing"]
+								}),
 								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
 									label: "Default credential (optional)",
 									help: "Write-only upstream credential. Leave blank if this provider does not require a shared credential.",
@@ -21188,7 +21380,7 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 					children: error
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
-					className: "flex gap-2 border-t border-border pt-4",
+					className: "editor-form-actions",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Button, {
 						type: "submit",
 						variant: "default",
@@ -22955,7 +23147,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			const detail = element("traffic-detail");
 			detailBackdrop = document.createElement("section");
 			detailBackdrop.className = "modal-backdrop drawer-backdrop";
-			detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="traffic-investigation-title"><div class="drawer-heading"><h3 id="traffic-investigation-title">Request investigation</h3><button type="button" id="traffic-close" aria-label="Close Request investigation">Close</button></div><div class="drawer-body"></div></div>`;
+			detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="traffic-investigation-title"><div class="drawer-heading"><span class="drawer-mark" aria-hidden="true"><i class="ti ti-activity"></i></span><div class="drawer-title"><span class="eyebrow">Inspect & analyze</span><h3 id="traffic-investigation-title">Request investigation</h3></div><button type="button" class="icon-button" id="traffic-close" aria-label="Close Request investigation"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="drawer-body"></div></div>`;
 			detailBackdrop.querySelector(".drawer-body").appendChild(detail);
 			document.body.appendChild(detailBackdrop);
 			closeDetail = mountDialog(detailBackdrop, {
@@ -24821,6 +25013,20 @@ var init_owner_visuals = __esmMin((() => {
 }));
 //#endregion
 //#region crates/gateway-api/admin-ui/src/design-system/guidance-content.ts
+/** Essential units and neutral/zero behavior stay beside the control. */
+function fieldSummary(name, context) {
+	if (context === "policy" && policyEssentials[name]) return policyEssentials[name];
+	if (["service", "configuration"].includes(context)) return {
+		timeout_ms: "Milliseconds. Must be greater than 0.",
+		max_body_bytes: "Bytes. Must be greater than 0; 1 MiB = 1,048,576 B.",
+		max_request_body_bytes: "Bytes. Must be greater than 0; 1 MiB = 1,048,576 B.",
+		max_response_body_bytes: "Bytes. Must be greater than 0; 1 MiB = 1,048,576 B.",
+		upstream_base_url: "HTTP(S) URL. Never include credentials.",
+		credential: "Write-only. On edits, blank keeps the saved credential.",
+		health_check_path: "Relative path. Blank omits the active health check.",
+		fallback_services: "Registered service names, in fallback order."
+	}[name];
+}
 function fieldGuidance(name, context) {
 	if (context === "profile") return profile[name.split(".").at(-1)] || shared[name];
 	if (context === "owner") {
@@ -24861,9 +25067,26 @@ function fieldGuidance(name, context) {
 	if (name !== "guardrail_override_names" && name.startsWith("guardrail_override_")) return "JSON object overriding this guardrail's configuration for this key. It must match the guardrail's config schema.";
 	return shared[name];
 }
-var layerLimit, policy, profile, shared, filterText, termGuidance;
+var layerLimit, policyEssentials, policy, profile, shared, filterText, termGuidance;
 var init_guidance_content = __esmMin((() => {
 	layerLimit = " Blank adds no limit at this policy layer; inherited limits still apply.";
+	policyEssentials = {
+		allowed_routes: "Comma-separated patterns. Blank adds no restriction.",
+		allowed_models: "Exact model names. Blank adds no restriction.",
+		rpm_limit: "Requests/min. 0 blocks; blank inherits.",
+		tpm_limit: "Estimated tokens/min. 0 gives no token allowance; blank inherits.",
+		daily_budget_usd: "USD/day. 0 blocks; blank inherits.",
+		monthly_budget_usd: "USD/month. 0 blocks; blank inherits.",
+		max_requests_per_day: "Requests/UTC day. 0 blocks; blank inherits.",
+		max_tokens_per_day: "Daily token threshold. 0 blocks; blank inherits.",
+		max_cost_per_request: "USD/request. 0 allows only zero-cost estimates; blank inherits.",
+		max_input_tokens_per_request: "Input tokens/request. 0 allows no positive count; blank inherits.",
+		max_output_tokens_per_request: "Output tokens/request. 0 allows no positive count; blank inherits.",
+		max_request_body_bytes: "Bytes. 0 allows only an empty body; blank inherits.",
+		max_response_body_bytes: "Bytes. 0 allows only an empty body; blank inherits.",
+		allowed_hours_utc: "UTC hours 0–23. 0 is midnight; blank adds no restriction.",
+		unused_key_auto_disable_after_days: "Inactive days. 0 is immediately eligible; blank adds no rule."
+	};
 	policy = {
 		allowed_routes: "Comma-separated gateway routes allowed by this layer. Blank adds no route restriction; other layers still apply.",
 		allowed_models: "Comma-separated exact model names. Blank adds no model restriction; other layers still apply.",
@@ -25210,7 +25433,9 @@ function installComponentGuidance(doc = document) {
 		if (seen.has(control) || control.closest("[data-react-ui]")) return;
 		seen.add(control);
 		if (control.hasAttribute("aria-describedby") || control.type === "checkbox" && !control.closest("label.check")) return;
-		const explanation = fieldGuidance(control.dataset.guidanceName || control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id, contextFor(control));
+		const name = control.dataset.guidanceName || control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
+		const explanation = fieldGuidance(name, contextFor(control));
+		const compact = fieldSummary(name, contextFor(control));
 		const label = control.closest("label");
 		if (!explanation || !label) return;
 		const labelCopy = label.cloneNode(true);
@@ -25220,15 +25445,15 @@ function installComponentGuidance(doc = document) {
 		const help = doc.createElement("small");
 		help.id = `component-field-help-${++sequence}`;
 		help.className = "field-hint";
-		help.textContent = explanation;
+		help.textContent = compact || explanation;
 		control.setAttribute("aria-describedby", help.id);
 		label.append(help);
-		if ([
+		if (compact || [
 			"profile",
 			"identity",
 			"traffic"
 		].includes(contextFor(control)) || control.dataset.guidanceName || control.type === "checkbox") {
-			help.hidden = true;
+			help.hidden = !compact;
 			const trigger = doc.createElement("button");
 			trigger.type = "button";
 			trigger.className = "help-trigger";
@@ -25298,6 +25523,58 @@ var init_guidance = __esmMin((() => {
 	init_guidance_content();
 	controls = "input:not([type=\"hidden\"]), select, textarea";
 	terms = "th, .stat > span:first-child, .posture-fact > span:first-child, .investigation-metrics > div > span:first-child, .investigation-facts dt";
+}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/policy-visuals.ts
+function policyLayerCards(rows, guardrailSummary, formatTime = (value) => String(value || "Not recorded")) {
+	if (!rows.length) return "<div class=\"monitor-empty\"><i class=\"ti ti-stack-2\" aria-hidden=\"true\"></i><span>No inherited layers configured. Direct key policy still applies.</span></div>";
+	return `<div class="policy-layer-list" role="list" aria-label="Saved policy layers">${rows.map((layer) => {
+		const policy = layer.policy || {}, [icon, label] = Object.hasOwn(kinds, layer.kind) ? kinds[layer.kind] : ["stack-2", String(layer.kind || "Unknown")];
+		const explicit = Object.entries(fields).filter(([name]) => policy[name] != null);
+		const limits = explicit.filter(([name]) => typeof policy[name] === "number").length;
+		const guardrails = layer.guardrail_policy || {};
+		const guardrailNames = [
+			["Mandatory", "mandatory_guardrails"],
+			["Optional", "optional_guardrails"],
+			["Forbidden", "forbidden_guardrails"]
+		].filter(([, key]) => Array.isArray(guardrails[key]) && guardrails[key].length).map(([title, key]) => `<div><span>${title}</span>${guardrails[key].map((name) => `<code class="badge neutral">${html(name)}</code>`).join("")}</div>`).join("");
+		return `<article class="policy-layer-card" role="listitem"><div class="policy-layer-heading"><span class="drawer-mark" aria-hidden="true"><i class="ti ti-${icon}"></i></span><div><h4>${html(label)} <span class="badge neutral">v${html(policy.policy_version ?? 1)}</span></h4><code>${html(layer.scope_id || (layer.kind === "global" ? "Gateway-wide" : "Scope not recorded"))}</code></div><button type="button" class="danger" data-policy-layer-action="delete" data-layer-id="${html(layer.id)}" aria-label="Delete ${html(label)} policy layer">Delete</button></div>
+      <div class="policy-layer-signals"><span><i class="ti ti-route" aria-hidden="true"></i>${Array.isArray(policy.allowed_routes) && policy.allowed_routes.length ? `${policy.allowed_routes.length} route patterns` : "No added route restriction"}</span><span><i class="ti ti-adjustments" aria-hidden="true"></i>${limits} numeric limits</span></div>
+      <details class="catalog-disclosure"><summary><i class="ti ti-list-details" aria-hidden="true"></i> Rules & safeguards <i class="ti ti-chevron-down" aria-hidden="true"></i></summary><dl class="policy-rule-list">${explicit.map(([name, title]) => `<div><dt>${html(title)}</dt><dd>${html(value(policy[name]))}</dd></div>`).join("") || "<div><dt>Policy</dt><dd>No explicit constraints recorded</dd></div>"}</dl><div class="policy-layer-guardrails"><h5>Guardrails</h5>${guardrailSummary(layer.guardrail_policy)}${guardrailNames}</div><p class="subtle">Updated ${html(formatTime(layer.updated_at))}</p></details></article>`;
+	}).join("")}</div>`;
+}
+var kinds, fields, value;
+var init_policy_visuals = __esmMin((() => {
+	init_components();
+	kinds = {
+		global: ["world", "Global"],
+		project: ["folder", "Project"],
+		team: ["users", "Team"],
+		route: ["route", "Route"],
+		model: ["sparkles", "Model"]
+	};
+	fields = {
+		allowed_routes: "Route patterns",
+		allowed_models: "Models",
+		allowed_providers: "Providers",
+		allowed_services: "Services",
+		rpm_limit: "Requests / minute",
+		tpm_limit: "Estimated tokens / minute",
+		daily_budget_usd: "Daily budget · USD",
+		monthly_budget_usd: "Monthly budget · USD",
+		max_requests_per_day: "Requests / UTC day",
+		max_tokens_per_day: "Daily token threshold",
+		max_cost_per_request: "Estimated USD / request",
+		max_input_tokens_per_request: "Input tokens / request",
+		max_output_tokens_per_request: "Output tokens / request",
+		allowed_hours_utc: "Allowed UTC hours",
+		unused_key_auto_disable_after_days: "Inactive days before disable",
+		max_request_body_bytes: "Request body · bytes",
+		max_response_body_bytes: "Response body · bytes",
+		allow_streaming: "Streaming",
+		allow_tools: "Tool calls"
+	};
+	value = (item) => Array.isArray(item) ? item.length ? item.join(", ") : "No added restriction" : typeof item === "boolean" ? item ? "Permitted at this layer" : "Denied at this layer" : String(item);
 }));
 //#endregion
 //#region crates/gateway-api/admin-ui/src/investigation.ts
@@ -38455,82 +38732,6 @@ var init_view_meta = __esmMin((() => {
 	};
 }));
 //#endregion
-//#region crates/gateway-api/admin-ui/src/design-system/components.ts
-function toneForStatus(value) {
-	const status = String(value ?? "").toLowerCase();
-	if ([
-		"ready",
-		"ok",
-		"healthy",
-		"enabled",
-		"configured",
-		"active",
-		"success",
-		"non-expiring",
-		"closed"
-	].includes(status)) return "good";
-	if ([
-		"missing",
-		"failed",
-		"failure",
-		"disabled",
-		"revoked",
-		"expired",
-		"timeout",
-		"unhealthy",
-		"open"
-	].includes(status)) return "bad";
-	if ([
-		"unknown",
-		"pending",
-		"fallback",
-		"opt-in",
-		"default",
-		"degraded",
-		"half_open",
-		"half-open"
-	].includes(status)) return "warn";
-	return "neutral";
-}
-function html(value) {
-	return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;");
-}
-function badge(label, tone = toneForStatus(label)) {
-	return `<span class="badge ${tone}">${html(label ?? "unknown")}</span>`;
-}
-function panel(title, body, meta = "") {
-	const icon = {
-		Projects: "folders",
-		"Registered services": "cube",
-		"Provider configuration": "server-2",
-		"Virtual keys": "key",
-		"Policy simulator": "test-pipe",
-		"Inherited policy layers": "stack-2",
-		"Audit events": "history",
-		"Current availability & circuit state": "heartbeat",
-		"Latest changes": "history",
-		"Project activity": "chart-bar",
-		"Service bindings": "link"
-	}[title];
-	return `<section class="panel">${title ? `<div class="panel-heading"><h3>${icon ? `<i class="ti ti-${icon}" aria-hidden="true"></i>` : ""}${html(title)}</h3>${meta ? `<span class="subtle">${html(meta)}</span>` : ""}</div>` : ""}${body}</section>`;
-}
-function metricTile(label, value, tone = "neutral") {
-	return `<section class="panel stat ${tone}"><span>${html(label)}</span><strong>${html(value)}</strong></section>`;
-}
-function emptyState(message) {
-	return `<div class="empty-state"><i class="ti ti-inbox" aria-hidden="true"></i><p>${html(message)}</p></div>`;
-}
-function tableWrap(tableMarkup) {
-	return `<div class="table-wrap">${tableMarkup}</div>`;
-}
-function actionGroup(actions) {
-	return `<div class="form-actions">${actions}</div>`;
-}
-function jsonBlock(value) {
-	return `<pre>${html(JSON.stringify(value ?? null, null, 2))}</pre>`;
-}
-var init_components = __esmMin((() => {}));
-//#endregion
 //#region crates/gateway-api/admin-ui/src/design-system/templates.ts
 function filterPanel(title, formMarkup) {
 	return panel(title, `<form data-filter-form>${formMarkup}</form>`);
@@ -38579,6 +38780,7 @@ var init_design_system$1 = __esmMin((() => {
 	init_templates();
 	init_view_meta();
 	init_insights();
+	init_workflows();
 }));
 //#endregion
 //#region crates/gateway-api/admin-ui/src/design-system.ts
@@ -39584,7 +39786,6 @@ async function keys() {
 		empty: "No keys in this scope."
 	})}
       </div>
-      ${flowSummary("Configured policy layers", visual.layers, "Gateway-wide layer inventory by scope kind. Matching layers and key policy determine the effective decision; use the simulator to inspect a request.")}
     </section>
     <div class="split">
       <section class="panel">
@@ -39622,6 +39823,9 @@ async function keys() {
         <h3>Inherited policy layers</h3>
         <span class="subtle">${state.policyLayers.length} configured</span>
       </div>
+      ${flowSummary("Applicable layers combine", visual.layers, "Gateway-wide saved configuration. Matching layers combine with direct key policy and retain stricter constraints; use the simulator to inspect an exact request.")}
+      <p class="policy-inheritance-note"><i class="ti ti-shield-lock" aria-hidden="true"></i> A blank field adds no restriction at that layer. Other applicable policies still apply.</p>
+      ${policyLayerTable(state.policyLayers)}
       <form id="policy-layer-form" class="form-grid">
         ${formSection("Layer identity", "Set the inheritance level and exact scope.", `
           <label>Layer<select name="kind">
@@ -39639,7 +39843,6 @@ async function keys() {
           <button type="submit" class="primary">Save layer</button>
         </div>
       </form>
-      ${policyLayerTable(state.policyLayers)}
     </section>
     <section class="panel">
       <div class="panel-heading">
@@ -39700,24 +39903,32 @@ async function keys() {
 function policyFields(key = null, neutral = false) {
 	const policy = key?.policy || {};
 	return `
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-route" aria-hidden="true"></i> Routing access</legend><div class="form-grid">
     <label>Routes<input name="allowed_routes" value="${attr(listValue(policy.allowed_routes, neutral ? "" : "/v1/chat/completions,/v1/responses"))}"></label>
     <label>Models<input name="allowed_models" value="${attr(listValue(policy.allowed_models, ""))}" placeholder="gpt-4o-mini"></label>
     <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers, neutral)}<small class="field-hint">Allowed provider adapters. No selection adds no restriction at this layer; inherited policies still apply.</small></div>
+    </div></fieldset>
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-gauge" aria-hidden="true"></i> Throughput & budgets</legend><div class="form-grid">
     <label>RPM limit<input name="rpm_limit" type="number" min="0" value="${attr(policy.rpm_limit ?? "")}"></label>
     <label>TPM limit<input name="tpm_limit" type="number" min="0" value="${attr(policy.tpm_limit ?? "")}"></label>
     <label>Daily budget<input name="daily_budget_usd" type="number" min="0" step="any" value="${attr(policy.daily_budget_usd ?? "")}"></label>
     <label>Monthly budget<input name="monthly_budget_usd" type="number" min="0" step="any" value="${attr(policy.monthly_budget_usd ?? "")}"></label>
     <label>Max daily requests<input name="max_requests_per_day" type="number" min="0" value="${attr(policy.max_requests_per_day ?? "")}"></label>
     <label>Max daily tokens<input name="max_tokens_per_day" type="number" min="0" value="${attr(policy.max_tokens_per_day ?? "")}"></label>
+    </div></fieldset>
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-adjustments" aria-hidden="true"></i> Per-request limits</legend><div class="form-grid">
     <label>Max cost/request<input name="max_cost_per_request" type="number" min="0" step="any" value="${attr(policy.max_cost_per_request ?? "")}"></label>
     <label>Max input tokens<input name="max_input_tokens_per_request" type="number" min="0" value="${attr(policy.max_input_tokens_per_request ?? "")}"></label>
     <label>Max output tokens<input name="max_output_tokens_per_request" type="number" min="0" value="${attr(policy.max_output_tokens_per_request ?? "")}"></label>
-    <label>Allowed UTC hours<input name="allowed_hours_utc" value="${attr(listValue(policy.allowed_hours_utc, ""))}" placeholder="0,8,17"></label>
-    <label>Stale disable days<input name="unused_key_auto_disable_after_days" type="number" min="0" value="${attr(policy.unused_key_auto_disable_after_days ?? "")}"></label>
     <label>Max request bytes<input name="max_request_body_bytes" type="number" min="0" value="${attr(policy.max_request_body_bytes ?? "")}"></label>
     <label>Max response bytes<input name="max_response_body_bytes" type="number" min="0" value="${attr(policy.max_response_body_bytes ?? "")}"></label>
+    </div></fieldset>
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-clock" aria-hidden="true"></i> Availability & features</legend><div class="form-grid">
+    <label>Allowed UTC hours<input name="allowed_hours_utc" value="${attr(listValue(policy.allowed_hours_utc, ""))}" placeholder="0,8,17"></label>
+    <label>Stale disable days<input name="unused_key_auto_disable_after_days" type="number" min="0" value="${attr(policy.unused_key_auto_disable_after_days ?? "")}"></label>
     <label class="check"><input name="allow_streaming" type="checkbox" ${policy.allow_streaming || neutral ? "checked" : ""}> Allow streaming</label>
     <label class="check"><input name="allow_tools" type="checkbox" ${policy.allow_tools || neutral ? "checked" : ""}> Allow tools</label>
+    </div></fieldset>
   `;
 }
 function guardrailPolicyFields(key = null) {
@@ -39817,27 +40028,7 @@ function keyTable(rows) {
 	]));
 }
 function policyLayerTable(rows) {
-	return table([
-		"Layer",
-		"Scope",
-		"Version",
-		"Policy",
-		"Guardrails",
-		"Updated",
-		"Actions"
-	], rows.map((layer) => [
-		`<i class="ti ti-hierarchy" aria-hidden="true"></i> ${badge(layer.kind)}`,
-		`<code>${esc(layer.scope_id || "all")}</code>`,
-		esc(layer.policy?.policy_version ?? "1"),
-		keyPolicySummary({
-			policy: layer.policy,
-			rotation_due_at: null,
-			last_used_at: null
-		}),
-		guardrailPolicySummary(layer.guardrail_policy),
-		time(layer.updated_at),
-		`<button type="button" class="danger" data-policy-layer-action="delete" data-layer-id="${attr(layer.id)}">Delete</button>`
-	]));
+	return policyLayerCards(rows, guardrailPolicySummary, time);
 }
 function keyLifecycleActions(key) {
 	const keyLabel = attr(key.name ? `${key.name} (${key.key_prefix})` : key.key_prefix);
@@ -42920,7 +43111,7 @@ async function rollbackImportVersion(event) {
 }
 function formSection(title, description, body, open = false) {
 	return `<details class="form-section wide-field" ${open ? "open" : ""}>
-    <summary><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><i class="ti ti-chevron-down" aria-hidden="true"></i></summary>
+    <summary><span class="form-section-symbol" aria-hidden="true"><i class="ti ti-${workflowIcon(title)}"></i></span><span class="form-section-copy"><strong>${esc(title)}</strong><small>${esc(description)}</small></span><i class="ti ti-chevron-down" aria-hidden="true"></i></summary>
     <div class="form-section-grid">${body}</div>
   </details>`;
 }
@@ -43226,11 +43417,11 @@ function editRouteIdentity(event) {
 	const route = event.currentTarget.dataset.routeIdentity;
 	const setting = state.routeIdentities.find((item) => item.route === route);
 	const backdrop = document.createElement("section");
-	backdrop.className = "modal-backdrop";
+	backdrop.className = "modal-backdrop drawer-backdrop";
 	const titleId = `dialog-title-${++dialogCounter}`;
-	backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
-    <h3 id="${titleId}">Endpoint identity · ${esc(route)}</h3>
-    <form class="modal-form"><div class="modal-scroll form-grid">${endpointIdentityFields(setting.access)}${["/litellm/*", "/v1/responses"].includes(route) ? websocketTransportFields(setting.access, true) : ""}</div>
+	backdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+    ${drawerHeading(`Endpoint identity · ${route}`, "<button type=\"button\" class=\"icon-button\" data-close-identity aria-label=\"Close endpoint identity\"><i class=\"ti ti-x\" aria-hidden=\"true\"></i></button>", titleId)}
+    <form class="modal-form"><div class="modal-scroll drawer-body form-grid">${endpointIdentityFields(setting.access)}${["/litellm/*", "/v1/responses"].includes(route) ? websocketTransportFields(setting.access, true) : ""}</div>
       <div class="form-actions"><button class="primary">Save identity</button><button type="button" data-close-modal>Cancel</button></div>
     </form></div>`;
 	document.body.appendChild(backdrop);
@@ -43241,6 +43432,9 @@ function editRouteIdentity(event) {
 		dismissible: false
 	});
 	backdrop.querySelector("[data-close-modal]").addEventListener("click", () => {
+		if (!saving) close();
+	});
+	backdrop.querySelector("[data-close-identity]").addEventListener("click", () => {
 		if (!saving) close();
 	});
 	backdrop.addEventListener("keydown", (keyEvent) => {
@@ -44153,16 +44347,38 @@ async function openOwnerRequestDetails(event) {
 	const titleId = `dialog-title-${++dialogCounter}`;
 	backdrop.innerHTML = `
     <div class="modal owner-request-drawer" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
-      <div class="owner-request-heading">
-        <div><span class="eyebrow">Sanitized request details</span><h3 id="${titleId}">${esc(requestId)}</h3></div>
-        <button type="button" data-close-owner-request aria-label="Close request details">Close</button>
-      </div>
-      <div class="modal-scroll owner-request-content">
+      ${drawerHeading("Request details", "<button type=\"button\" class=\"icon-button\" data-close-owner-request aria-label=\"Close request details\"><i class=\"ti ti-x\" aria-hidden=\"true\"></i></button>", titleId)}
+      <div class="modal-scroll drawer-body owner-request-content">
+        <div class="investigation-identity"><code>${esc(requestId)}</code>${badge(details.request.status, details.request.status === "success" ? "good" : "bad")}</div>
+        ${insightStrip([
+		{
+			label: "Latency",
+			value: details.request.latency_ms == null ? null : `${details.request.latency_ms} ms`,
+			icon: "clock"
+		},
+		{
+			label: "Recorded tokens",
+			value: details.request.total_tokens ?? null,
+			icon: "coins"
+		},
+		{
+			label: "Estimated cost",
+			value: details.request.estimated_cost_usd == null ? null : money(details.request.estimated_cost_usd),
+			icon: "coin"
+		}
+	], { label: "Recorded request" })}
+        <dl class="investigation-facts">
+          <div><dt>Route</dt><dd><code>${esc(details.request.route || "Not recorded")}</code></dd></div>
+          <div><dt>Provider</dt><dd>${esc(details.request.provider || "Not recorded")}</dd></div>
+          <div><dt>HTTP status</dt><dd>${esc(details.request.status_code ?? "Not recorded")}</dd></div>
+          <div><dt>Service version</dt><dd>${esc(details.request.service_version || "Not recorded")}</dd></div>
+        </dl>
+        <details class="catalog-disclosure"><summary><i class="ti ti-list-details" aria-hidden="true"></i> Request metadata</summary>
         ${table(["Field", "Value"], ownerRequestDetailsRows(details.request))}
-        <section class="owner-debug-section">
-          <h4>Debug bundle</h4>
+        </details>
+        <details class="catalog-disclosure owner-debug-section"><summary><i class="ti ti-code" aria-hidden="true"></i> Debug bundle</summary>
           ${details.debug_bundle ? jsonBlock(details.debug_bundle) : emptyState("Usage metadata is available, but no proxy debug bundle was captured for this request.")}
-        </section>
+        </details>
       </div>
     </div>`;
 	document.body.appendChild(backdrop);
@@ -44531,14 +44747,18 @@ function showContentDrawer(title, markupOrNode, onClose = () => {}, restoreFocus
 	const backdrop = document.createElement("section");
 	backdrop.className = "modal-backdrop drawer-backdrop";
 	const id = `drawer-title-${++dialogCounter}`;
-	backdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="${id}"><div class="drawer-heading"><h3 id="${id}">${esc(title)}</h3><button type="button" data-drawer-close aria-label="Close ${attr(title)}">Close</button></div><div class="drawer-body"></div></div>`;
+	backdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="${id}">${drawerHeading(title, `<button type="button" class="icon-button" data-drawer-close aria-label="Close ${attr(title)}"><i class="ti ti-x" aria-hidden="true"></i></button>`, id)}<div class="drawer-body"></div></div>`;
 	const body = backdrop.querySelector(".drawer-body");
 	if (markupOrNode instanceof Node) body.appendChild(markupOrNode);
 	else body.innerHTML = markupOrNode;
+	prepareDrawerActions(body);
 	document.body.appendChild(backdrop);
+	const disposeNavigation = mountDrawerNavigation(backdrop.querySelector(".resource-drawer"));
 	const close = mountDialog(backdrop, {
 		restoreFocus,
+		initialFocus: body.querySelector("input:not([type=\"hidden\"]), select, textarea") ? ".drawer-body input:not([type=\"hidden\"]), .drawer-body select, .drawer-body textarea" : "[data-drawer-close]",
 		onClose: () => {
+			disposeNavigation();
 			closeContentDrawer = null;
 			onClose();
 		}
@@ -44546,6 +44766,17 @@ function showContentDrawer(title, markupOrNode, onClose = () => {}, restoreFocus
 	closeContentDrawer = close;
 	backdrop.querySelector("[data-drawer-close]").addEventListener("click", () => close());
 	return close;
+}
+function addFormDrawerAction(form, title, label, actions) {
+	const placeholder = document.createElement("div");
+	placeholder.hidden = true;
+	form.before(placeholder);
+	placeholder.append(form);
+	const button = document.createElement("button");
+	button.type = "button";
+	button.innerHTML = `<i class="ti ti-${workflowIcon(title)}" aria-hidden="true"></i> ${esc(label)}`;
+	actions.append(button);
+	button.addEventListener("click", () => showContentDrawer(title, form, () => placeholder.append(form), button));
 }
 function organizeView(view) {
 	closeContentDrawer?.();
@@ -44607,9 +44838,25 @@ function organizeView(view) {
 		if (count) count.textContent = `${scoped.length} in ${scopeLabel()}`;
 		if (!scoped.length && state.projectScope) inventory.insertAdjacentHTML("beforeend", emptyState(`No ${view === "keys" ? "virtual keys" : "projects"} in ${scopeLabel()}.`));
 	}
-	if (view === "keys") for (const title of ["Inherited policy layers", "Policy simulator"]) {
-		const panel = [...content.querySelectorAll(".panel")].find((item) => item.querySelector("h3")?.textContent === title);
-		if (panel) disclosePanel(panel, title);
+	if (view === "keys") {
+		const form = content.querySelector("#policy-layer-form");
+		addFormDrawerAction(form, "Create or replace policy layer", "Create or replace layer", form.closest(".panel").querySelector(".panel-heading"));
+		for (const title of ["Inherited policy layers", "Policy simulator"]) {
+			const panel = [...content.querySelectorAll(".panel")].find((item) => item.querySelector("h3")?.textContent === title);
+			if (panel) disclosePanel(panel, title);
+		}
+	}
+	if (view === "providers") {
+		for (const form of content.querySelectorAll("[data-provider-config-form]")) {
+			const disclosure = form.closest("details");
+			addFormDrawerAction(form, `Credential settings · ${form.closest("tr")?.querySelector("td strong")?.textContent || "Provider"}`, "Configure credentials", disclosure.parentElement);
+			disclosure.hidden = true;
+		}
+		for (const [id, title] of [["litellm-credential-form", "Create or replace credential mapping"], ["litellm-passthrough-form", "Configure wildcard ingress"]]) {
+			const form = content.querySelector(`#${id}`), disclosure = form.closest("details");
+			addFormDrawerAction(form, title, title, disclosure.parentElement);
+			disclosure.hidden = true;
+		}
 	}
 	if (view === "usage") {
 		const results = content.querySelector("#usage-results")?.closest(".panel");
@@ -44676,7 +44923,9 @@ function disclosePanel(panel, title) {
 	const details = document.createElement("details");
 	details.className = "workflow-disclosure";
 	const summary = document.createElement("summary");
-	summary.textContent = title;
+	summary.innerHTML = `<span class="workflow-symbol" aria-hidden="true"><i class="ti ti-${workflowIcon(title)}"></i></span><span>${esc(title)}</span><i class="ti ti-chevron-down" aria-hidden="true"></i>`;
+	const heading = panel.querySelector(".panel-heading h3");
+	if (heading?.textContent === title) heading.classList.add("sr-only");
 	details.appendChild(summary);
 	panel.before(details);
 	details.appendChild(panel);
@@ -44815,6 +45064,7 @@ var init_main = __esmMin((() => {
 	init_governance_visuals();
 	init_owner_visuals();
 	init_guidance();
+	init_policy_visuals();
 	init_investigation();
 	init_tabler_icons_min();
 	init_auto();
