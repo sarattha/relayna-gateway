@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import ts from "typescript";
 
+const visualsSource = readFileSync(new URL("../crates/gateway-api/admin-ui/src/monitoring-visuals.ts", import.meta.url), "utf8");
+const visuals = await import(`data:text/javascript;base64,${Buffer.from(visualsSource).toString("base64")}`);
 const source = readFileSync(new URL("../crates/gateway-api/admin-ui/src/main.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
 const extract = name => {
@@ -17,26 +19,29 @@ function harness(respond) {
   const dom = new JSDOM('<main id="content"></main>');
   const state = { projects: [], keys: [], services: [], projectScope: "", usageFilters: {}, usageTab: "Recent requests", usagePagination: { eventsOffset: 0, timeseriesOffset: 0, serviceTimeseriesOffset: 0 } };
   const calls = [];
-  const names = ["usage", "loadUsage", "usageRequestCurrent", "usageRequestController", "loadUsageSummary", "loadVisibleUsageSections", "drainUsageSections", "loadUsageSection", "bindUsageSuggestions", "usageIdentifierLabels", "usageProjectName", "usageKeyName", "usageQueryFromForm", "usageFilterValuesQueryFromForm", "usageDateRange", "usagePageSize", "usagePaginationKey", "changeUsagePage", "usagePagedTable", "tabulateUsage"];
+  const names = ["usage", "loadUsage", "usageRequestCurrent", "usageRequestController", "loadUsageSummary", "loadUsageVisuals", "loadVisibleUsageSections", "drainUsageSections", "loadUsageSection", "bindUsageSuggestions", "usageIdentifierLabels", "usageProjectName", "usageKeyName", "usageQueryFromForm", "usageFilterValuesQueryFromForm", "usageDateRange", "usagePageSize", "usagePaginationKey", "changeUsagePage", "usagePagedTable", "tabulateUsage"];
   const api = async (path, options = {}) => {
     calls.push({ path, options });
     if (["projects", "keys", "services"].some(name => path === `/admin-ui/admin/${name}`)) return [];
     return respond(path, options);
   };
-  const ui = new Function("document", "FormData", "Option", "state", "api", `
+  const ui = new Function("document", "FormData", "Option", "state", "api", "visuals", `
     const content = document.querySelector('#content');
+    const { usageChartsShell, usageSummaryView, usageTrendConfigs, mountMonitorChart, usageRanking } = visuals;
+    const Chart = null;
     let renderGeneration=0, usageGeneration=0, usageLoad=null, usageLabelCache=null;
     const esc=x=>String(x), attr=esc, money=esc, percent=esc, stat=(name,value)=>name+': '+value;
     const emptyState=esc, formSection=(_title,_hint,markup)=>markup;
     const projectOptions=()=>'', keyOptions=()=>'', serviceOptions=()=>'';
     const handleAsync=fn=>fn, organizeView=()=>{}, syncUsageExportControls=()=>{};
+    const showContentDrawer=(title,markup)=>{const drawer=document.createElement('div');drawer.dataset.chartData='true';drawer.innerHTML=title+markup;document.body.appendChild(drawer);};
     const applyUsageFilters=()=>{}, loadTaskUsage=()=>{}, usageExportAction=()=>{}, showLiteLlmSpend=()=>{}, openDebugRequest=()=>{};
     const usageEventsTable=rows=>'<div data-events>'+rows.map(row=>row.request_id).join(',')+'</div>';
     const usageBreakdownTable=rows=>JSON.stringify(rows), usageTimeseriesTable=usageBreakdownTable, usageServiceTimeseriesTable=usageBreakdownTable;
     const usageProjectKeyServiceHierarchy=usageBreakdownTable, unusedKeysTable=usageBreakdownTable;
     ${names.map(extract).join("\n")}
     return {usage,loadUsage,loadUsageSummary,usageQueryFromForm,usageIdentifierLabels,usageProjectName,usageKeyName};
-  `)(dom.window.document, dom.window.FormData, dom.window.Option, state, api);
+  `)(dom.window.document, dom.window.FormData, dom.window.Option, state, api, visuals);
   return { dom, document: dom.window.document, state, calls, ui };
 }
 
@@ -54,7 +59,8 @@ function harness(respond) {
   assert.equal(h.document.querySelector('[name=time_preset]').value, 'last_24h');
   const dateQuery = h.ui.usageQueryFromForm();
   assert.ok(dateQuery.get('from') && dateQuery.get('to'));
-  assert.equal(h.calls.filter(call => /sections\/|filter-values/.test(call.path)).length, 0);
+  assert.equal(h.calls.filter(call => /sections\/timeseries/.test(call.path)).length, 1, 'one bounded optional chart read');
+  assert.equal(h.calls.filter(call => /sections\/(?!timeseries)|filter-values/.test(call.path)).length, 0);
   summary.reject(new Error('summary timed out'));
   await initial;
   assert.match(h.document.querySelector('[data-usage-summary]').textContent, /summary unavailable/);
@@ -135,7 +141,7 @@ console.log('ok - unapplied page-size edits keep events and both timeseries page
     return { rows: [{ request_id:'recovered' }], has_more:false };
   });
   await h.ui.usage();
-  assert.match(h.document.querySelector('[data-usage-summary]').textContent,/Requests: 17/);
+  assert.equal(h.document.querySelector('[data-usage-summary] .monitor-kpi strong').textContent, '17');
   assert.match(h.document.querySelector('[data-usage-section=events]').textContent,/unavailable/);
   fail = false;
   h.document.querySelector('[data-retry-usage-section]').click();
@@ -145,6 +151,39 @@ console.log('ok - unapplied page-size edits keep events and both timeseries page
   h.dom.window.close();
 }
 console.log('ok - failed event reads retain the independent summary and recover without recomputing it');
+
+{
+  let chartsFail = true;
+  const h = harness(path => {
+    if (path.includes('/summary?')) return { request_count: 17 };
+    if (path.includes('/sections/timeseries?')) {
+      if (chartsFail) throw new Error('chart read unavailable');
+      return { rows: [{ bucket: '2026-10-23T00:00:00Z', summary: { request_count: 17, success_count: 16, failure_count: 1, estimated_cost_usd: 0 } }] };
+    }
+    return { rows: [{ request_id: 'independent-events' }], has_more: false };
+  });
+  await h.ui.usage();
+  await tick();
+  assert.equal(h.document.querySelector('[data-usage-summary] .monitor-kpi strong').textContent, '17');
+  assert.match(h.document.querySelector('[data-events]').textContent, /independent-events/);
+  assert.match(h.document.querySelector('[data-usage-visuals]').textContent, /Charts unavailable/);
+  chartsFail = false;
+  h.document.querySelector('[data-retry-usage-charts]').click();
+  await tick();
+  assert.equal(h.document.querySelectorAll('[data-usage-visuals] canvas').length, 2);
+  const chartQuery = new URL(h.calls.find(call => call.path.includes('/sections/timeseries?')).path, 'http://test').searchParams;
+  assert.equal(chartQuery.get('timeseries_limit'), '168');
+  assert.equal(chartQuery.get('timeseries_offset'), '0');
+  assert.ok(chartQuery.get('from') && chartQuery.get('to'));
+  h.document.querySelector('[data-usage-chart-data]').click();
+  await tick();
+  assert.match(h.document.querySelector('[data-chart-data]').textContent, /Chart data · hourly buckets/);
+  assert.match(h.document.querySelector('[data-chart-data]').textContent, /2026-10-23T00:00:00Z/);
+  assert.equal(h.calls.filter(call => call.path.includes('/sections/timeseries?')).length, 2, 'the Data drawer reuses the exact chart response without another read');
+  assert.equal(h.calls.filter(call => call.path.includes('/summary?')).length, 1);
+  h.dom.window.close();
+}
+console.log('ok - chart failures preserve Usage results, bounded chart retries recover, and chart Data opens the source table');
 
 {
   const pending = [];
@@ -181,7 +220,7 @@ console.log('ok - explicit all time and saved project/key filters survive progre
   assert.equal(original.options.signal.aborted, true);
   slow.resolve({ request_count: 999 });
   await first;
-  assert.match(h.document.querySelector('[data-usage-summary]').textContent, /Requests: 42/);
+  assert.equal(h.document.querySelector('[data-usage-summary] .monitor-kpi strong').textContent, '42');
   assert.doesNotMatch(h.document.querySelector('[data-usage-summary]').textContent, /999/);
   const field = h.document.querySelector('[name=route]');
   field.value = '/exact-current';

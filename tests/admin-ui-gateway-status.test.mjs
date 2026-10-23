@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import "./admin-ui-monitoring-visuals.test.mjs";
 
-const source = readFileSync(new URL("../crates/gateway-api/admin-ui/src/gateway-status.ts", import.meta.url), "utf8");
+let source = readFileSync(new URL("../crates/gateway-api/admin-ui/src/gateway-status.ts", import.meta.url), "utf8");
+const visualsSource = readFileSync(new URL("../crates/gateway-api/admin-ui/src/monitoring-visuals.ts", import.meta.url), "utf8");
+const visualsUrl = `data:text/javascript;base64,${Buffer.from(visualsSource).toString("base64")}`;
+source = source.replace('"./monitoring-visuals"', JSON.stringify(visualsUrl));
 const { gatewayStatusPath, selectGatewayStatus, gatewayQuantile, gatewayStatusView, gatewayCpuUtilization, mountHealthGatewayStatus, mountTrafficGatewayStatus } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 const now = Date.now();
 const sampled_at = new Date(now).toISOString();
@@ -64,7 +68,8 @@ assert.ok(selectGatewayStatus({ ...envelope, unavailable: true, instances: [], a
 const full = gatewayStatusView(selectGatewayStatus(envelope, { now }), helpers);
 assert.ok(full.includes("5 free / 8"));
 assert.ok(full.includes("75 B free / 100 B"));
-assert.ok(full.includes("0 / 2 / 1"));
+assert.ok(full.includes("SSE<strong>2"));
+assert.ok(full.includes("WebSocket<strong>1"));
 assert.ok(full.includes("0 B"), "measured zero remains visible");
 assert.ok(full.includes("Unknown"), "missing diagnostics stay unknown");
 assert.ok(full.includes("WebSocket · session only"));
@@ -121,11 +126,11 @@ assert.equal(deferred[0].options.signal.aborted, true, "new selection aborts obs
 assert.ok(deferred[1].path.includes("instance_id=one"));
 deferred[1].resolve(envelope);
 await tick();
-assert.ok(compactContent.controls.get("status").innerHTML.includes("5 free / 8"));
+assert.ok(compactContent.controls.get("status").innerHTML.includes("3 / 8"));
 assert.ok(!compactContent.controls.get("status").innerHTML.includes("Latency distribution"));
 deferred[0].resolve({ ...envelope, aggregate: { ...runtime, body_capacity: null } });
 await tick();
-assert.ok(compactContent.controls.get("status").innerHTML.includes("5 free / 8"), "late responses cannot overwrite the new selection");
+assert.ok(compactContent.controls.get("status").innerHTML.includes("3 / 8"), "late responses cannot overwrite the new selection");
 compactContent.controls.get("refresh").listeners.get("click")();
 compactDispose();
 assert.equal(deferred.at(-1).options.signal.aborted, true);

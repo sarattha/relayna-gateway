@@ -128,6 +128,7 @@ try {
   assert.equal(rendered.length,1,'UUID case and numeric status normalize in live mode');
   assert.equal(controls.get('project_id').value,p);assert.equal(controls.get('status').value,'503');
   apiResult=[base];await mode('history');
+  assert.equal(node('traffic-warning').textContent,'','successful history reads do not display routine retention guidance as an error');
   for(const [name,value] of Object.entries(fields)) {
     await apply({[name]:` ${value} `});
     assert.equal(calls.at(-1).searchParams.get(name),value,`${name} query`);

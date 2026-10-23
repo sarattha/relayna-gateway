@@ -7,8 +7,9 @@ import { mountIdentityEditor } from "./react/mount-identity-editor";
 import { mountUserTokenForwarding } from "./react/user-token-forwarding";
 import { profileFields, profilesFromForm, showProfileError, profileKeyOptions } from "./auth-profiles";
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
-import { mountTraffic } from "./traffic";
+import { mountTraffic, trafficDuration } from "./traffic";
 import { mountHealthGatewayStatus, mountTrafficGatewayStatus } from "./gateway-status";
+import { mountMonitorChart, usageChartsShell, usageRanking, usageSummaryView, usageTrendConfigs } from "./monitoring-visuals";
 import { installComponentGuidance } from "./design-system/guidance";
 import { refreshWebSocketMetrics, routingModeLabel, usageValue, requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
@@ -680,6 +681,7 @@ async function refresh({ focus = false } = {}) {
   setNotice("");
   destroyOverviewChart();
   destroyOwnerDashboardChart();
+  usageLoad?.charts?.forEach(chart => chart?.destroy());
   if (state.view !== "service-dashboard" && state.view !== "project-dashboard") ownerDashboardGeneration += 1;
   applyViewChrome(view);
   document.querySelector("#page-actions").replaceChildren();
@@ -707,7 +709,7 @@ async function refresh({ focus = false } = {}) {
       const gatewayHost = document.createElement("div");
       gatewayHost.style.minWidth = "0";
       content.prepend(gatewayHost);
-      stopGatewayStatus = mountTrafficGatewayStatus({ content: gatewayHost, api, esc, attr, badge, table });
+      stopGatewayStatus = mountTrafficGatewayStatus({ content: gatewayHost, api, esc, attr, badge, table, Chart });
     }
     if (view === "usage") await usage();
     if (view === "health") await health();
@@ -3087,7 +3089,7 @@ async function usage() {
       </form>
       <div id="task-usage-result"></div>
     </section>
-    <section class="panel"><div class="panel-heading"><h3>Usage breakdown</h3></div><div id="usage-results"></div></section>
+    <section class="panel usage-analysis"><div class="panel-heading"><h3>Usage analysis</h3><span class="subtle">Recorded requests & cost</span></div><div id="usage-results"></div></section>
   `;
   const usageForm = document.querySelector("#usage-form");
   for (const [name, value] of Object.entries({ time_preset: "last_24h", ...state.usageFilters, project_id: state.projectScope })) {
@@ -3128,6 +3130,7 @@ async function usage() {
 async function loadUsage(event) {
   event?.preventDefault();
   usageLoad?.controllers.forEach((controller) => controller.abort());
+  usageLoad?.charts?.forEach(chart => chart?.destroy());
   const generation = ++usageGeneration;
   const root = document.querySelector("#usage-results");
   if (!root) return;
@@ -3137,7 +3140,7 @@ async function loadUsage(event) {
   query.set("timeseries_limit", String(pageSize));
   query.set("service_timeseries_limit", String(pageSize));
   state.usagePagination.eventsOffset = 0;
-  usageLoad = { generation, root, query, controllers: new Map(), loaded: new Set(), queue: [], active: 0, eventCursors: ["start"], eventIndex: 0, eventsPage: null };
+  usageLoad = { generation, root, query, controllers: new Map(), loaded: new Set(), queue: [], active: 0, eventCursors: ["start"], eventIndex: 0, eventsPage: null, charts: [] };
   const sections = [
     ["project-key-services", "Project → Virtual key → Service"], ["projects", "Projects"], ["keys", "Keys"],
     ["services", "Services"], ["endpoints", "Endpoints"], ["providers", "Providers"], ["models", "Models"],
@@ -3145,14 +3148,16 @@ async function loadUsage(event) {
     ["service-timeseries", "Service timeseries"], ["unused-keys", "Unused keys"],
   ];
   root.innerHTML = `
-    <p class="applied-filters">Applied filters: ${esc([...query].filter(([key]) => !["offset", "limit", "timeseries_limit", "service_timeseries_limit", "breakdown_limit", "sort_by", "interval"].includes(key)).map(([key, value]) => `${key}: ${value}`).join(" · ") || "All recorded usage")}</p>
+    <div class="monitor-filter-chips" aria-label="Applied usage filters"><span><i class="ti ti-calendar" aria-hidden="true"></i>${query.get("from") && query.get("to") ? `${esc(new Date(query.get("from")).toLocaleDateString())} – ${esc(new Date(query.get("to")).toLocaleDateString())}` : "All time"}</span><span><i class="ti ti-folder" aria-hidden="true"></i>${esc(query.get("project_id") ? usageProjectName(query.get("project_id")) : "All projects")}</span>${[...query].filter(([key]) => !["from", "to", "project_id", "offset", "limit", "timeseries_limit", "service_timeseries_limit", "breakdown_limit", "sort_by", "interval"].includes(key)).map(([key, value]) => `<span>${esc(key.replaceAll("_", " "))}<strong>${esc(value)}</strong></span>`).join("")}</div>
     <div data-usage-summary aria-busy="true">${emptyState("Loading usage summary…")}</div>
+    ${usageChartsShell()}
     ${query.get("key_id") ? `<p><button type="button" data-usage-litellm-spend>View LiteLLM reported spend</button> <span class="help">Current mapped-key counter · independent of date filters</span></p>` : ""}
     ${sections.map(([section, title]) => `<h4>${esc(title)}</h4><div data-usage-section="${attr(section)}">${emptyState("Select this section to load it.")}</div>`).join("")}
   `;
   root.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
   tabulateUsage(root);
   // Summary and rows settle independently. Neither failure replaces the other.
+  void loadUsageVisuals();
   await Promise.allSettled([loadUsageSummary(), loadUsageSection("events")]);
 }
 
@@ -3176,19 +3181,66 @@ async function loadUsageSummary() {
   try {
     const summary = await api(`/admin-ui/admin/usage/summary?${load.query}`, { signal: controller.signal });
     if (!usageRequestCurrent(load) || controller.signal.aborted) return;
-    host.innerHTML = `<div class="grid stats">
-      ${stat("Requests", summary.request_count)}${stat("Failures", summary.failure_count)}
-      ${stat("Cost", money(summary.estimated_cost_usd))}
-      ${stat("Avg latency", summary.average_latency_ms == null ? "n/a" : `${Math.round(summary.average_latency_ms)} ms`)}
-      ${stat("Fallback rate", percent(summary.fallback_rate))}
-      ${stat("Expensive", summary.expensive_request_count || 0)}${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
-    </div>`;
+    host.innerHTML = usageSummaryView(summary, { esc, money });
   } catch (error) {
     if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
     host.innerHTML = `<div class="notice" role="alert">Usage summary unavailable: ${esc(error.message)} <button type="button" data-retry-usage-summary>Retry summary</button></div>`;
     host.querySelector("[data-retry-usage-summary]").addEventListener("click", handleAsync(loadUsageSummary));
   } finally {
     if (usageRequestCurrent(load) && !controller.signal.aborted) host.setAttribute("aria-busy", "false");
+  }
+}
+
+async function loadUsageVisuals() {
+  const load = usageLoad;
+  if (!load || !usageRequestCurrent(load)) return;
+  const host = load.root.querySelector("[data-usage-visuals]");
+  if (!host) return;
+  const controller = usageRequestController(load, "visualization");
+  host.querySelectorAll("[data-usage-chart-data]").forEach(button => {
+    button.disabled = true;
+    button.onclick = () => showContentDrawer(`Chart data · ${load.chartInterval === "day" ? "daily" : "hourly"} buckets`, usageTimeseriesTable(load.chartRows || []), () => {}, button);
+  });
+  const query = new URLSearchParams(load.query);
+  const span = Date.parse(query.get("to")) - Date.parse(query.get("from"));
+  if (!query.get("from") || !query.get("to") || !(span > 0)) {
+    host.innerHTML = '<div class="monitor-empty"><i class="ti ti-calendar-stats" aria-hidden="true"></i><span>Choose a bounded time range to visualize trends.</span></div>';
+    host.setAttribute("aria-busy", "false");
+    return;
+  }
+  query.set("interval", span > 7 * 86400000 ? "day" : "hour");
+  query.set("timeseries_limit", "168");
+  query.set("timeseries_offset", "0");
+  host.setAttribute("aria-busy", "true");
+  load.visualizationActive = true;
+  try {
+    const data = await api(`/admin-ui/admin/usage/sections/timeseries?${query}`, { signal: controller.signal });
+    if (!usageRequestCurrent(load) || controller.signal.aborted) return;
+    const rows = data.rows || [];
+    load.chartRows = rows;
+    load.chartInterval = query.get("interval");
+    host.querySelectorAll("[data-usage-chart-data]").forEach(button => { button.disabled = !rows.length; });
+    const configs = usageTrendConfigs(rows, query.get("interval"));
+    for (const [index, key] of ["volume", "cost"].entries()) {
+      const target = host.querySelector(`[data-usage-${key}-host]`);
+      if (!target) continue;
+      if (!rows.length) { target.innerHTML = '<div class="monitor-empty"><i class="ti ti-chart-line" aria-hidden="true"></i><span>No recorded usage in this period</span></div>'; continue; }
+      target.innerHTML = `<canvas role="img" aria-label="${key === "volume" ? "Successful and failed requests" : "Estimated cost in USD"} over ${rows.length} returned ${query.get("interval")} buckets"></canvas>`;
+      const chart = mountMonitorChart(Chart, target.querySelector("canvas"), configs[index]);
+      if (chart) load.charts.push(chart);
+      const description = target.previousElementSibling.querySelector("span");
+      description.textContent = `${query.get("interval") === "hour" ? "Hourly" : "Daily"} · ${rows.length} buckets${data.page?.has_more ? " · first page of this range" : ""}`;
+    }
+  } catch (error) {
+    if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
+    host.innerHTML = `<div class="notice" role="status">Charts unavailable: ${esc(error.message)} <button type="button" data-retry-usage-charts>Retry charts</button></div>`;
+    host.querySelector("[data-retry-usage-charts]").addEventListener("click", handleAsync(() => { host.innerHTML = usageChartsShell().replace(/^<div[^>]*>|<\/div>$/g, ""); return loadUsageVisuals(); }));
+  } finally {
+    if (usageRequestCurrent(load)) {
+      load.visualizationActive = false;
+      if (!controller.signal.aborted) host.setAttribute("aria-busy", "false");
+      drainUsageSections(load);
+    }
   }
 }
 
@@ -3204,7 +3256,7 @@ function loadVisibleUsageSections(root) {
 
 function drainUsageSections(load) {
   if (!usageRequestCurrent(load)) return;
-  while (load.active < 3 && load.queue.length) {
+  while (load.active + (load.visualizationActive ? 1 : 0) < 3 && load.queue.length) {
     const section = load.queue.shift();
     if (load.loaded.has(section) || load.controllers.has(section)) continue;
     load.active += 1;
@@ -3242,7 +3294,10 @@ async function loadUsageSection(section, force = false) {
       host.innerHTML = usagePagedTable(section === "timeseries" ? "Timeseries" : "Service timeseries", section, section === "timeseries" ? usageTimeseriesTable(rows) : usageServiceTimeseriesTable(rows), data.page, rows.length);
     } else if (section === "project-key-services") host.innerHTML = usageProjectKeyServiceHierarchy(data.rows || []);
     else if (section === "unused-keys") host.innerHTML = unusedKeysTable(data.rows || []);
-    else host.innerHTML = usageBreakdownTable(data.rows || [], section === "projects" ? usageProjectName : section === "keys" ? usageKeyName : undefined);
+    else {
+      const label = section === "projects" ? usageProjectName : section === "keys" ? usageKeyName : value => value;
+      host.innerHTML = usageRanking(data.rows || [], label, esc) + usageBreakdownTable(data.rows || [], label);
+    }
     if (["events", "timeseries", "service-timeseries"].includes(section)) host.previousElementSibling.hidden = true;
     host.querySelectorAll("[data-debug-request]").forEach((button) => button.addEventListener("click", handleAsync(openDebugRequest)));
     host.querySelectorAll("[data-usage-page-section]").forEach((button) => button.addEventListener("click", handleAsync(changeUsagePage)));
@@ -3669,6 +3724,18 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
 }
 
 function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {}) {
+  if (!ownerService && !ownerProject) return table(
+    ["Created", "Request / service", "Model / provider", "Outcome", "Latency", "Tokens / cost", "Details"],
+    rows.map(row => [
+      time(row.created_at),
+      `<div class="traffic-request-cell"><code title="${attr(row.request_id)}">${esc(row.request_id)}</code><small>${esc(row.service_name || row.route || "Not recorded")} ${row.diagnostics?.websocket ? badge("WS", "neutral") : row.diagnostics?.protocol === "http" ? badge("HTTP", "neutral") : ""}</small></div>`,
+      `<span>${esc(row.model || "—")}</span><div class="subtle">${esc(row.provider || "Not recorded")}</div>`,
+      `${badge(row.status, row.status === "success" ? "good" : "bad")}<div class="subtle">HTTP ${esc(row.status_code)}</div>`,
+      esc(trafficDuration(row.latency_ms)),
+      `${esc(usageValue(row.diagnostics, row.total_tokens))} tokens<div class="subtle">${esc(usageValue(row.diagnostics, row.estimated_cost_usd, money))}</div>`,
+      `<button type="button" class="icon-button" aria-label="Inspect request ${attr(row.request_id)}" title="Inspect request" data-nav="health" data-debug-request="${attr(row.request_id)}" data-debug-usage="${attr(JSON.stringify(investigationUsageSnapshot(row)))}"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>`,
+    ]),
+  );
   return table(
     ["Created", "Request", "Protocol / transfer", "Route", "Routing mode", "Service", "Method", "Endpoint", "Model", "Provider", "Status", "Latency", "Tokens", "Cost", "Cost source", "Pricing rule", "Trace", "Actions"],
     rows.map((row) => [
@@ -3776,7 +3843,7 @@ async function health() {
   const gatewayHost = document.createElement("div");
   gatewayHost.style.minWidth = "0";
   content.replaceChildren(gatewayHost);
-  stopGatewayStatus = mountHealthGatewayStatus({ content: gatewayHost, api, esc, attr, badge, table });
+  stopGatewayStatus = mountHealthGatewayStatus({ content: gatewayHost, api, esc, attr, badge, table, Chart });
   const issues = [];
   const recentWindow = new URLSearchParams({ from: new Date(Date.now() - 86400000).toISOString(), to: new Date().toISOString() });
   const [ready, rows, healthState, importVersions] = await Promise.all([
@@ -3794,14 +3861,9 @@ async function health() {
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
     ${monitoringIssues(issues)}
-    <div class="grid stats">
-      ${stat("Gateway", ready.status)}
-      ${stat("Routes observed", rows.length)}
-      ${stat("Error rate", errorRate)}
-      ${stat("Fallbacks", fallbackCount)}
-    </div>
     <section class="panel">
       <div class="panel-heading"><h3>Recorded reliability</h3><span class="subtle">Last 24 hours · minimum 20 requests · elevated at 5%</span></div>
+      <div class="monitor-history-summary">${stat("Gateway", ready.status)}${stat("Routes observed", rows.length)}${stat("Error rate", errorRate)}${stat("Fallbacks", fallbackCount)}</div>
       ${healthTable(rows)}
     </section>
     <section class="panel">
@@ -5732,7 +5794,7 @@ function tabulateUsage(root) {
   nav.setAttribute("aria-label", "Usage breakdown");
   headings[0].before(nav);
   const hint = document.createElement("p");
-  hint.className = "help";
+  hint.className = "sr-only";
   nav.after(hint);
   const sections = headings.map((heading) => {
     const section = document.createElement("section");

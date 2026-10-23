@@ -43,6 +43,15 @@ export function trafficProtocol(row) {
   return row.diagnostics?.protocol || (row.diagnostics?.websocket ? "websocket" : "unknown");
 }
 
+export function trafficDuration(milliseconds) {
+  if (!Number.isFinite(milliseconds)) return "—";
+  const seconds = Math.max(0, milliseconds) / 1000;
+  if (seconds < 1) return `${Math.round(Math.max(0, milliseconds))} ms`;
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60 % 60)}m`;
+}
+
 export function matchesTraffic(row, filters) {
   return (!filters.request_id || row.request_id.includes(filters.request_id))
     && (!filters.service || row.service === filters.service)
@@ -65,30 +74,38 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
   let activeStale = false;
   let selectedInstance = "all";
   content.innerHTML = `
-    <section class="panel">
-      <div class="panel-heading"><h3>Traffic monitor</h3><div class="actions traffic-source-actions">
+    <section class="panel traffic-explorer">
+      <div class="panel-heading"><h3>Traffic explorer</h3><div class="actions traffic-source-actions">
         <label>Traffic view<select id="traffic-mode" aria-label="Traffic view" aria-describedby="traffic-source-help"><option value="active">Active · all instances</option><option value="history">Recent completed · all instances</option><option value="legacy">Saved history by arrival · all instances</option><option value="live">Live journal · one instance</option></select></label>
         <label id="traffic-instance-label">Gateway instance<select id="traffic-instance"><option value="all">All instances</option></select></label>
         <button id="traffic-pause" type="button">Pause</button></div></div>
-      <p id="traffic-connection" role="status" aria-live="polite">Connecting…</p>
-      <p id="traffic-source-help" class="help">Active HTTP/SSE and WebSocket summaries have independent retention budgets. Recent completed requests default to the last 30 minutes by completion time and refresh every five seconds on Newest. Older pages and fixed end-time windows stay frozen. Saved history by arrival includes legacy records and defaults to 24 hours. Window filters use the selected history clock. The live journal covers one process.</p>
+      <p id="traffic-connection" class="monitor-connection" role="status" aria-live="polite">Connecting…</p>
+      <p id="traffic-source-help" class="sr-only">Browse active sessions, recent completions, saved history or one process’s live journal.</p>
       <div id="traffic-warning" class="notice hidden" role="status"></div>
-      <form id="traffic-filters"><div class="form-grid">
-        <label>Request ID<input name="request_id" maxlength="128" placeholder="Client correlation ID"></label>
-        <label>Service<input name="service" maxlength="256" placeholder="Exact service name"></label>
-        <label>Project ID<input name="project_id" placeholder="Exact project UUID"></label>
-        <label>Key ID<input name="key_id" placeholder="Exact key UUID"></label>
-        <label>Client HTTP status<input name="status" type="number" min="100" max="599" placeholder="503"></label>
-        <label>Failure reason<input name="failure_code" maxlength="80" placeholder="control_state_unavailable"></label>
-        <label>Protocol partition<select name="protocol"><option value="">All protocols</option><option value="http">HTTP / SSE</option><option value="websocket">WebSocket</option><option value="unknown">Not recorded</option></select></label>
-        <label>Outcome<select name="outcome"><option value="all">All requests</option><option value="failures">Failures only</option><option value="active">Active only</option><option value="completed">Completed only</option></select></label>
-        <label>Window from<input name="from" type="datetime-local"></label>
-        <label>Window to<input name="to" type="datetime-local"></label>
-        </div><div class="form-actions"><button type="submit">Apply filters</button></div>
+      <div id="traffic-protocols" class="traffic-protocol-tabs" role="group" aria-label="Protocol partition">
+        <button type="button" data-traffic-protocol="" aria-pressed="true"><i class="ti ti-arrows-exchange" aria-hidden="true"></i>All protocols</button>
+        <button type="button" data-traffic-protocol="http" aria-pressed="false"><i class="ti ti-world" aria-hidden="true"></i>HTTP / SSE</button>
+        <button type="button" data-traffic-protocol="websocket" aria-pressed="false"><i class="ti ti-plug-connected" aria-hidden="true"></i>WebSocket</button>
+      </div>
+      <form id="traffic-filters">
+        <div class="traffic-quick-filters"><label>Request ID<input name="request_id" maxlength="128" placeholder="Search correlation ID"></label>
+          <label>Service<input name="service" maxlength="256" placeholder="Exact service name"></label>
+          <label>Outcome<select name="outcome"><option value="all">All requests</option><option value="failures">Failures only</option><option value="active">Active only</option><option value="completed">Completed only</option></select></label>
+          <button type="submit"><i class="ti ti-filter" aria-hidden="true"></i> Apply filters</button></div>
+        <details class="monitor-details traffic-advanced-filters"><summary><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>Advanced filters</summary><div class="form-grid">
+          <label>Project ID<input name="project_id" placeholder="Exact project UUID"></label>
+          <label>Key ID<input name="key_id" placeholder="Exact key UUID"></label>
+          <label>Client HTTP status<input name="status" type="number" min="100" max="599" placeholder="e.g. 503"></label>
+          <label>Failure reason<input name="failure_code" maxlength="80" placeholder="Exact failure code"></label>
+          <label>Protocol partition<select name="protocol"><option value="">All protocols</option><option value="http">HTTP / SSE</option><option value="websocket">WebSocket</option><option value="unknown">Not recorded</option></select></label>
+          <label>Window from<input name="from" type="datetime-local"></label><label>Window to<input name="to" type="datetime-local"></label>
+        </div></details>
       </form>
     </section>
     <section class="panel"><div class="panel-heading"><h3>Requests</h3><div id="traffic-pages" class="actions hidden"><button id="traffic-newest">Newest</button><button id="traffic-older">Older</button></div></div>
-      <p id="traffic-summary" class="help"></p><div id="traffic-failure-groups" class="actions"></div><div id="traffic-rows"></div></section>
+      <p id="traffic-summary" class="sr-only"></p><div id="traffic-counts" class="traffic-result-summary"></div><div id="traffic-failure-groups" class="actions"></div><div id="traffic-rows"></div>
+      <details class="monitor-details"><summary><i class="ti ti-info-circle" aria-hidden="true"></i>Sources & retention</summary><ul class="monitor-definitions"><li>Active HTTP/SSE and WebSocket sessions have independent retention budgets. Counts can exceed displayed rows.</li><li>Recent completed requests use completion time, default to 30 minutes, and refresh every five seconds on Newest.</li><li>Older pages and fixed end-time windows stay frozen. Saved history by arrival includes legacy records and defaults to 24 hours.</li><li>The live journal covers one process. Inspect a request for routing, timing, failure and recording details. Recording failures may only be available in live records or gateway logs.</li></ul></details>
+    </section>
     <section id="traffic-detail" class="panel hidden" tabindex="-1"></section>`;
   let detailBackdrop = null, closeDetail = null, renderedDetailRow = null;
   const element = (id) => content.querySelector(`#${id}`) || detailBackdrop?.querySelector(`#${id}`);
@@ -117,6 +134,8 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     const activeCounts = mode === "active" && !cluster?.unavailable && cluster?.counts;
     const countText = activeCounts ? `${cluster.partial ? "Known" : "Exact"} active before filters: HTTP/SSE ${activeCounts.http ?? "unknown"} · WebSocket ${activeCounts.websocket ?? "unknown"}` : mode === "active" ? "Current counts unknown" : isHistory() ? "Saved page · counts cover displayed rows" : `${visible.filter((row) => !row.completed).length} active in retained records`;
     element("traffic-summary").textContent = `${visible.length} displayed · ${countText} · ${[...groups].map(([reason, count]) => `${label(reason)}: ${count}`).join(" · ") || "No failures in displayed records"}`;
+    element("traffic-counts").innerHTML = `<span><strong>${visible.length}</strong> displayed</span><span>${esc(countText)}</span><span class="${groups.size ? "bad" : ""}"><i class="ti ti-${groups.size ? "alert-circle" : "circle-check"}" aria-hidden="true"></i> ${groups.size ? `${[...groups.values()].reduce((a, b) => a + b, 0)} failures on this page` : "No failures on this page"}</span>`;
+    element("traffic-protocols").querySelectorAll("[data-traffic-protocol]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.trafficProtocol === (filters.protocol || ""))));
     // Keep the active filter removable while history loads or its last match leaves the live window.
     if (filters.failure_code && !groups.has(filters.failure_code)) groups.set(filters.failure_code, 0);
     const focusedReason = element("traffic-failure-groups").contains(document.activeElement) ? document.activeElement?.dataset?.trafficReason : null;
@@ -132,20 +151,18 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
       const replacement = [...element("traffic-failure-groups").querySelectorAll("[data-traffic-reason]")].find(button => button.dataset.trafficReason === focusedReason);
       (replacement || element("traffic-filters").elements.namedItem("failure_code")).focus({ preventScroll: true });
     }
-    element("traffic-rows").innerHTML = table(
-      [mode === "history" ? "Completed / arrived" : "Arrived", "Request", "Protocol / transfer", "Endpoint / service", "Routing mode", "Stage / outcome", "Client HTTP", "Upstream HTTP", "Attempts", "Elapsed", "Failure reason", "Recording", "Details"],
-      visible.map((row) => [
-        mode === "history" ? `${row.completed_at ? time(row.completed_at) : "Completion not recorded"}<div class="subtle">Arrived ${time(row.started_at)}</div>` : time(row.started_at), `<code>${esc(row.request_id)}</code>`,
+    const tableMarkup = table(
+      [mode === "history" ? "Completed / arrived" : "Arrived", "Request / service", "Protocol", "Status / outcome", "Client / upstream", "Duration", "Details"],
+      visible.map(row => [
+        `<span class="traffic-clock">${mode === "history" ? `${row.completed_at ? time(row.completed_at) : "Completion not recorded"}<div class="subtle">Arrived ${time(row.started_at)}</div>` : time(row.started_at)}</span>`,
+        `<div class="traffic-request-cell"><code title="${attr(row.request_id)}">${esc(row.request_id)}</code><small>${esc(row.method)} ${esc(row.service || row.provider || "Unresolved route")}</small></div>`,
         trafficProtocol(row) === "websocket" ? badge("WS", "neutral") + (row.diagnostics.websocket ? `<div class="subtle">↑ ${esc(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc(row.diagnostics.websocket.upstream_bytes)} B</div>` : "") : badge(trafficProtocol(row) === "http" ? row.streaming ? "HTTP / SSE" : "HTTP" : "Not recorded", "neutral"),
-        `${esc(row.method)} ${esc(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc(row.service || row.provider || "Not selected")}</span>`,
-        badge(routingModeLabel(row.diagnostics), "neutral"),
-        badge(staleRow(row) ? `Last known ${label(row.stage)} · stale` : label(row.completed ? row.diagnostics.outcome : row.stage), staleRow(row) ? "neutral" : row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
-        esc(row.client_status ?? "—"), esc(row.diagnostics.upstream_status ?? "—"), esc(row.attempts),
-        `<span data-traffic-elapsed="${attr(row.id)}">${esc(row.completed || staleRow(row) ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)))} ms${staleRow(row) ? " · last observed" : ""}</span>`,
-        esc(label(row.diagnostics.failure_code || "none")),
-        row.recording_failures?.length ? badge("Recording failed", "bad") : esc(row.completed ? "No reported failure" : "In progress"),
-        `<button type="button" data-traffic-id="${attr(row.id)}">Inspect</button>`,
+        badge(staleRow(row) ? `Last known ${label(row.stage)} · stale` : label(row.completed ? row.diagnostics.outcome : row.stage), staleRow(row) ? "neutral" : row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "neutral") + (row.diagnostics.failure_code ? `<div class="subtle">${esc(label(row.diagnostics.failure_code))}</div>` : "") + (row.recording_failures?.length ? `<div>${badge("Recording failed", "bad")}</div>` : ""),
+        `<span class="traffic-request-http">${esc(row.client_status ?? "—")}<small>Upstream ${esc(row.diagnostics.upstream_status ?? "—")}</small></span>`,
+        `<span title="${attr(`${row.elapsed_ms} ms`)}" data-traffic-elapsed="${attr(row.id)}">${esc(trafficDuration(row.completed || staleRow(row) ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at))))}${staleRow(row) ? " · last observed" : ""}</span>`,
+        `<button type="button" class="icon-button" data-traffic-id="${attr(row.id)}" aria-label="Inspect request ${attr(row.request_id)}" title="Inspect request"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>`,
       ]));
+    element("traffic-rows").innerHTML = visible.length ? tableMarkup : `<div class="monitor-empty"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>${mode === "active" ? "No matching active requests. New sessions appear automatically." : "No matching requests in this window."}</span></div>`;
     element("traffic-rows").querySelectorAll("[data-traffic-id]").forEach((button) => button.addEventListener("click", () => {
       selected = button.dataset.trafficId; openDetail();
     }));
@@ -299,8 +316,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
       if (disposed || !isHistory() || generation !== historyGeneration) return;
       rows = result; historyCursor = rows.at(-1); if (!polling) selected = null;
       element("traffic-older").disabled = result.length < 100;
-      warning = mode === "legacy" ? "Saved history uses arrival time and includes legacy records without a completion timestamp. Recording failures may only be available in live records or gateway logs."
-        : "Saved history uses completion time. Use Saved history by arrival for legacy records without a completion timestamp. Recording failures may only be available in live records or gateway logs.";
+      warning = "";
       connection(`Saved history${paused ? " · paused" : mode === "legacy" ? " by arrival" : historyAtNewest && !filters.to ? " · newest refreshes every five seconds" : " · frozen window"}`); render();
     } catch (error) {
       if (!disposed && isHistory() && generation === historyGeneration) {
@@ -357,6 +373,11 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     }
     else connect();
   });
+  element("traffic-protocols").querySelectorAll("[data-traffic-protocol]").forEach(button => button.addEventListener("click", () => {
+    filters = { ...filters, protocol: button.dataset.trafficProtocol };
+    element("traffic-filters").elements.namedItem("protocol").value = filters.protocol;
+    onFilters(filters); refresh();
+  }));
   element("traffic-newest").addEventListener("click", () => mode === "active" ? active() : history());
   element("traffic-older").addEventListener("click", () => mode === "active" ? active(true) : history(true));
   const elapsedTimer = setInterval(() => {
@@ -365,7 +386,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     for (const row of rows) {
       if (row.completed || staleRow(row)) continue;
       const cell = content.querySelector(`[data-traffic-elapsed="${row.id}"]`);
-      if (cell) cell.textContent = `${Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at))} ms`;
+      if (cell) cell.textContent = trafficDuration(Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)));
     }
   }, 1000);
   render(); if (mode === "active") active(); else if (isHistory()) history(); else connect();

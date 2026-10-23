@@ -6,6 +6,18 @@ and a one-, five-, or fifteen-minute window. Measurements refresh every two
 seconds and identify partial coverage, stale publishers, failed refreshes, and
 unsupported measurements explicitly.
 
+The dashboards lead with visual signals. Health pairs a live request-rate chart
+with buffer-occupancy meters, a protocol mix, and p50/p95/p99 latency comparisons.
+Fleet dependency indicators show each reporting process. Expand the diagnostic
+sections for exact latency values, process counters, and metric definitions.
+Traffic provides HTTP/SSE and WebSocket tabs, concise request rows, and optional
+advanced filters; Inspect opens the complete request investigation.
+
+Live charts retain at most 90 browser observations, collected while that view is
+open. Changing the instance or window starts a new series. They are not persisted
+history; missing observations create gaps. Latency bars are histogram upper
+bounds. Missing measurements remain unknown rather than zero.
+
 ## Usage at production volume
 
 New Usage visits select **Last 24 hours**. All projects remains available, as do
@@ -13,6 +25,12 @@ explicit All time and custom windows. Applying filters freezes their time range
 for subsequent section and page requests. Summary and recent events load
 independently; a failed optional inventory, suggestion, or breakdown cannot
 replace successful results. Select a breakdown or timeseries tab to load it.
+Request-volume and estimated-cost charts share one additional, independent
+timeseries read, capped at 168 returned buckets. Longer windows use daily buckets;
+if more buckets are available, the chart identifies its first-page coverage.
+All time requires a bounded range to draw trends. Chart failure leaves the
+summary and request list usable. Ranked bars compare the request counts of the
+returned breakdown groups; the underlying table remains available.
 Suggestions use a bounded prefix search after focus or typing. Event pagination
 does not reload summary or other tabs.
 

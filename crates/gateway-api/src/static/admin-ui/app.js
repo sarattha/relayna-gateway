@@ -22716,6 +22716,14 @@ function mergeTrafficRows(rows, batch, limit = 200) {
 function trafficProtocol(row) {
 	return row.diagnostics?.protocol || (row.diagnostics?.websocket ? "websocket" : "unknown");
 }
+function trafficDuration(milliseconds) {
+	if (!Number.isFinite(milliseconds)) return "—";
+	const seconds = Math.max(0, milliseconds) / 1e3;
+	if (seconds < 1) return `${Math.round(Math.max(0, milliseconds))} ms`;
+	if (seconds < 60) return `${seconds.toFixed(1)} s`;
+	if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
+	return `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60 % 60)}m`;
+}
 function matchesTraffic(row, filters) {
 	return (!filters.request_id || row.request_id.includes(filters.request_id)) && (!filters.service || row.service === filters.service) && (!filters.project_id || row.project_id === filters.project_id) && (!filters.key_id || row.key_id === filters.key_id) && (!filters.failure_code || row.diagnostics.failure_code === filters.failure_code) && (!filters.status || String(row.client_status) === filters.status) && (!filters.protocol || trafficProtocol(row) === filters.protocol) && (filters.outcome !== "failures" || Boolean(row.diagnostics.failure_code)) && (filters.outcome !== "active" || !row.completed) && (filters.outcome !== "completed" || row.completed);
 }
@@ -22728,30 +22736,38 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 	let activeStale = false;
 	let selectedInstance = "all";
 	content.innerHTML = `
-    <section class="panel">
-      <div class="panel-heading"><h3>Traffic monitor</h3><div class="actions traffic-source-actions">
+    <section class="panel traffic-explorer">
+      <div class="panel-heading"><h3>Traffic explorer</h3><div class="actions traffic-source-actions">
         <label>Traffic view<select id="traffic-mode" aria-label="Traffic view" aria-describedby="traffic-source-help"><option value="active">Active · all instances</option><option value="history">Recent completed · all instances</option><option value="legacy">Saved history by arrival · all instances</option><option value="live">Live journal · one instance</option></select></label>
         <label id="traffic-instance-label">Gateway instance<select id="traffic-instance"><option value="all">All instances</option></select></label>
         <button id="traffic-pause" type="button">Pause</button></div></div>
-      <p id="traffic-connection" role="status" aria-live="polite">Connecting…</p>
-      <p id="traffic-source-help" class="help">Active HTTP/SSE and WebSocket summaries have independent retention budgets. Recent completed requests default to the last 30 minutes by completion time and refresh every five seconds on Newest. Older pages and fixed end-time windows stay frozen. Saved history by arrival includes legacy records and defaults to 24 hours. Window filters use the selected history clock. The live journal covers one process.</p>
+      <p id="traffic-connection" class="monitor-connection" role="status" aria-live="polite">Connecting…</p>
+      <p id="traffic-source-help" class="sr-only">Browse active sessions, recent completions, saved history or one process’s live journal.</p>
       <div id="traffic-warning" class="notice hidden" role="status"></div>
-      <form id="traffic-filters"><div class="form-grid">
-        <label>Request ID<input name="request_id" maxlength="128" placeholder="Client correlation ID"></label>
-        <label>Service<input name="service" maxlength="256" placeholder="Exact service name"></label>
-        <label>Project ID<input name="project_id" placeholder="Exact project UUID"></label>
-        <label>Key ID<input name="key_id" placeholder="Exact key UUID"></label>
-        <label>Client HTTP status<input name="status" type="number" min="100" max="599" placeholder="503"></label>
-        <label>Failure reason<input name="failure_code" maxlength="80" placeholder="control_state_unavailable"></label>
-        <label>Protocol partition<select name="protocol"><option value="">All protocols</option><option value="http">HTTP / SSE</option><option value="websocket">WebSocket</option><option value="unknown">Not recorded</option></select></label>
-        <label>Outcome<select name="outcome"><option value="all">All requests</option><option value="failures">Failures only</option><option value="active">Active only</option><option value="completed">Completed only</option></select></label>
-        <label>Window from<input name="from" type="datetime-local"></label>
-        <label>Window to<input name="to" type="datetime-local"></label>
-        </div><div class="form-actions"><button type="submit">Apply filters</button></div>
+      <div id="traffic-protocols" class="traffic-protocol-tabs" role="group" aria-label="Protocol partition">
+        <button type="button" data-traffic-protocol="" aria-pressed="true"><i class="ti ti-arrows-exchange" aria-hidden="true"></i>All protocols</button>
+        <button type="button" data-traffic-protocol="http" aria-pressed="false"><i class="ti ti-world" aria-hidden="true"></i>HTTP / SSE</button>
+        <button type="button" data-traffic-protocol="websocket" aria-pressed="false"><i class="ti ti-plug-connected" aria-hidden="true"></i>WebSocket</button>
+      </div>
+      <form id="traffic-filters">
+        <div class="traffic-quick-filters"><label>Request ID<input name="request_id" maxlength="128" placeholder="Search correlation ID"></label>
+          <label>Service<input name="service" maxlength="256" placeholder="Exact service name"></label>
+          <label>Outcome<select name="outcome"><option value="all">All requests</option><option value="failures">Failures only</option><option value="active">Active only</option><option value="completed">Completed only</option></select></label>
+          <button type="submit"><i class="ti ti-filter" aria-hidden="true"></i> Apply filters</button></div>
+        <details class="monitor-details traffic-advanced-filters"><summary><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>Advanced filters</summary><div class="form-grid">
+          <label>Project ID<input name="project_id" placeholder="Exact project UUID"></label>
+          <label>Key ID<input name="key_id" placeholder="Exact key UUID"></label>
+          <label>Client HTTP status<input name="status" type="number" min="100" max="599" placeholder="e.g. 503"></label>
+          <label>Failure reason<input name="failure_code" maxlength="80" placeholder="Exact failure code"></label>
+          <label>Protocol partition<select name="protocol"><option value="">All protocols</option><option value="http">HTTP / SSE</option><option value="websocket">WebSocket</option><option value="unknown">Not recorded</option></select></label>
+          <label>Window from<input name="from" type="datetime-local"></label><label>Window to<input name="to" type="datetime-local"></label>
+        </div></details>
       </form>
     </section>
     <section class="panel"><div class="panel-heading"><h3>Requests</h3><div id="traffic-pages" class="actions hidden"><button id="traffic-newest">Newest</button><button id="traffic-older">Older</button></div></div>
-      <p id="traffic-summary" class="help"></p><div id="traffic-failure-groups" class="actions"></div><div id="traffic-rows"></div></section>
+      <p id="traffic-summary" class="sr-only"></p><div id="traffic-counts" class="traffic-result-summary"></div><div id="traffic-failure-groups" class="actions"></div><div id="traffic-rows"></div>
+      <details class="monitor-details"><summary><i class="ti ti-info-circle" aria-hidden="true"></i>Sources & retention</summary><ul class="monitor-definitions"><li>Active HTTP/SSE and WebSocket sessions have independent retention budgets. Counts can exceed displayed rows.</li><li>Recent completed requests use completion time, default to 30 minutes, and refresh every five seconds on Newest.</li><li>Older pages and fixed end-time windows stay frozen. Saved history by arrival includes legacy records and defaults to 24 hours.</li><li>The live journal covers one process. Inspect a request for routing, timing, failure and recording details. Recording failures may only be available in live records or gateway logs.</li></ul></details>
+    </section>
     <section id="traffic-detail" class="panel hidden" tabindex="-1"></section>`;
 	let detailBackdrop = null, closeDetail = null, renderedDetailRow = null;
 	const element = (id) => content.querySelector(`#${id}`) || detailBackdrop?.querySelector(`#${id}`);
@@ -22780,6 +22796,8 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		const activeCounts = mode === "active" && !cluster?.unavailable && cluster?.counts;
 		const countText = activeCounts ? `${cluster.partial ? "Known" : "Exact"} active before filters: HTTP/SSE ${activeCounts.http ?? "unknown"} · WebSocket ${activeCounts.websocket ?? "unknown"}` : mode === "active" ? "Current counts unknown" : isHistory() ? "Saved page · counts cover displayed rows" : `${visible.filter((row) => !row.completed).length} active in retained records`;
 		element("traffic-summary").textContent = `${visible.length} displayed · ${countText} · ${[...groups].map(([reason, count]) => `${label(reason)}: ${count}`).join(" · ") || "No failures in displayed records"}`;
+		element("traffic-counts").innerHTML = `<span><strong>${visible.length}</strong> displayed</span><span>${esc(countText)}</span><span class="${groups.size ? "bad" : ""}"><i class="ti ti-${groups.size ? "alert-circle" : "circle-check"}" aria-hidden="true"></i> ${groups.size ? `${[...groups.values()].reduce((a, b) => a + b, 0)} failures on this page` : "No failures on this page"}</span>`;
+		element("traffic-protocols").querySelectorAll("[data-traffic-protocol]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.trafficProtocol === (filters.protocol || ""))));
 		if (filters.failure_code && !groups.has(filters.failure_code)) groups.set(filters.failure_code, 0);
 		const focusedReason = element("traffic-failure-groups").contains(document.activeElement) ? document.activeElement?.dataset?.trafficReason : null;
 		element("traffic-failure-groups").innerHTML = [...groups].map(([reason, count]) => `<button type="button" data-traffic-reason="${attr(reason)}" aria-pressed="${filters.failure_code === reason}">${esc(label(reason))}: ${count}</button>`).join("") + (filters.failure_code ? `<span class="help">Click the selected reason again to clear its filter.</span>` : "");
@@ -22793,35 +22811,24 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			refresh();
 		}));
 		if (focusedReason) ([...element("traffic-failure-groups").querySelectorAll("[data-traffic-reason]")].find((button) => button.dataset.trafficReason === focusedReason) || element("traffic-filters").elements.namedItem("failure_code")).focus({ preventScroll: true });
-		element("traffic-rows").innerHTML = table([
+		const tableMarkup = table([
 			mode === "history" ? "Completed / arrived" : "Arrived",
-			"Request",
-			"Protocol / transfer",
-			"Endpoint / service",
-			"Routing mode",
-			"Stage / outcome",
-			"Client HTTP",
-			"Upstream HTTP",
-			"Attempts",
-			"Elapsed",
-			"Failure reason",
-			"Recording",
+			"Request / service",
+			"Protocol",
+			"Status / outcome",
+			"Client / upstream",
+			"Duration",
 			"Details"
 		], visible.map((row) => [
-			mode === "history" ? `${row.completed_at ? time(row.completed_at) : "Completion not recorded"}<div class="subtle">Arrived ${time(row.started_at)}</div>` : time(row.started_at),
-			`<code>${esc(row.request_id)}</code>`,
+			`<span class="traffic-clock">${mode === "history" ? `${row.completed_at ? time(row.completed_at) : "Completion not recorded"}<div class="subtle">Arrived ${time(row.started_at)}</div>` : time(row.started_at)}</span>`,
+			`<div class="traffic-request-cell"><code title="${attr(row.request_id)}">${esc(row.request_id)}</code><small>${esc(row.method)} ${esc(row.service || row.provider || "Unresolved route")}</small></div>`,
 			trafficProtocol(row) === "websocket" ? badge("WS", "neutral") + (row.diagnostics.websocket ? `<div class="subtle">↑ ${esc(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc(row.diagnostics.websocket.upstream_bytes)} B</div>` : "") : badge(trafficProtocol(row) === "http" ? row.streaming ? "HTTP / SSE" : "HTTP" : "Not recorded", "neutral"),
-			`${esc(row.method)} ${esc(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc(row.service || row.provider || "Not selected")}</span>`,
-			badge(routingModeLabel(row.diagnostics), "neutral"),
-			badge(staleRow(row) ? `Last known ${label(row.stage)} · stale` : label(row.completed ? row.diagnostics.outcome : row.stage), staleRow(row) ? "neutral" : row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
-			esc(row.client_status ?? "—"),
-			esc(row.diagnostics.upstream_status ?? "—"),
-			esc(row.attempts),
-			`<span data-traffic-elapsed="${attr(row.id)}">${esc(row.completed || staleRow(row) ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)))} ms${staleRow(row) ? " · last observed" : ""}</span>`,
-			esc(label(row.diagnostics.failure_code || "none")),
-			row.recording_failures?.length ? badge("Recording failed", "bad") : esc(row.completed ? "No reported failure" : "In progress"),
-			`<button type="button" data-traffic-id="${attr(row.id)}">Inspect</button>`
+			badge(staleRow(row) ? `Last known ${label(row.stage)} · stale` : label(row.completed ? row.diagnostics.outcome : row.stage), staleRow(row) ? "neutral" : row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "neutral") + (row.diagnostics.failure_code ? `<div class="subtle">${esc(label(row.diagnostics.failure_code))}</div>` : "") + (row.recording_failures?.length ? `<div>${badge("Recording failed", "bad")}</div>` : ""),
+			`<span class="traffic-request-http">${esc(row.client_status ?? "—")}<small>Upstream ${esc(row.diagnostics.upstream_status ?? "—")}</small></span>`,
+			`<span title="${attr(`${row.elapsed_ms} ms`)}" data-traffic-elapsed="${attr(row.id)}">${esc(trafficDuration(row.completed || staleRow(row) ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at))))}${staleRow(row) ? " · last observed" : ""}</span>`,
+			`<button type="button" class="icon-button" data-traffic-id="${attr(row.id)}" aria-label="Inspect request ${attr(row.request_id)}" title="Inspect request"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>`
 		]));
+		element("traffic-rows").innerHTML = visible.length ? tableMarkup : `<div class="monitor-empty"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>${mode === "active" ? "No matching active requests. New sessions appear automatically." : "No matching requests in this window."}</span></div>`;
 		element("traffic-rows").querySelectorAll("[data-traffic-id]").forEach((button) => button.addEventListener("click", () => {
 			selected = button.dataset.trafficId;
 			openDetail();
@@ -23074,7 +23081,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			historyCursor = rows.at(-1);
 			if (!polling) selected = null;
 			element("traffic-older").disabled = result.length < 100;
-			warning = mode === "legacy" ? "Saved history uses arrival time and includes legacy records without a completion timestamp. Recording failures may only be available in live records or gateway logs." : "Saved history uses completion time. Use Saved history by arrival for legacy records without a completion timestamp. Recording failures may only be available in live records or gateway logs.";
+			warning = "";
 			connection(`Saved history${paused ? " · paused" : mode === "legacy" ? " by arrival" : historyAtNewest && !filters.to ? " · newest refreshes every five seconds" : " · frozen window"}`);
 			render();
 		} catch (error) {
@@ -23145,6 +23152,15 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			}
 		} else connect();
 	});
+	element("traffic-protocols").querySelectorAll("[data-traffic-protocol]").forEach((button) => button.addEventListener("click", () => {
+		filters = {
+			...filters,
+			protocol: button.dataset.trafficProtocol
+		};
+		element("traffic-filters").elements.namedItem("protocol").value = filters.protocol;
+		onFilters(filters);
+		refresh();
+	}));
 	element("traffic-newest").addEventListener("click", () => mode === "active" ? active() : history());
 	element("traffic-older").addEventListener("click", () => mode === "active" ? active(true) : history(true));
 	const elapsedTimer = setInterval(() => {
@@ -23153,7 +23169,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		for (const row of rows) {
 			if (row.completed || staleRow(row)) continue;
 			const cell = content.querySelector(`[data-traffic-elapsed="${row.id}"]`);
-			if (cell) cell.textContent = `${Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at))} ms`;
+			if (cell) cell.textContent = trafficDuration(Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)));
 		}
 	}, 1e3);
 	render();
@@ -23169,6 +23185,264 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 	};
 }
 var init_traffic = __esmMin((() => {}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/monitoring-visuals.ts
+function monitorKpi(label, value, { esc, icon = "activity", detail = "", tone = "neutral" } = {}) {
+	return `<div class="monitor-kpi ${esc(tone)}"><div class="monitor-kpi-label"><i class="ti ti-${esc(icon)}" aria-hidden="true"></i><span>${esc(label)}</span></div><strong>${esc(value)}</strong>${detail ? `<small>${esc(detail)}</small>` : ""}</div>`;
+}
+function capacityMeter(label, used, free, maximum, format, esc) {
+	const known = [
+		used,
+		free,
+		maximum
+	].every(measured) && maximum > 0;
+	const percent = known ? Math.min(100, used / maximum * 100) : null;
+	return `<div class="monitor-capacity"><div class="monitor-capacity-heading"><span>${esc(label)}</span><strong>${known ? esc(`${format(used)} / ${format(maximum)}`) : "Unknown"}</strong></div>
+    ${known ? `<progress max="${maximum}" value="${Math.min(used, maximum)}" aria-label="${esc(`${label}: ${format(used)} occupied of ${format(maximum)}`)}" class="${percent >= 90 ? "is-high" : percent >= 70 ? "is-elevated" : ""}"></progress>` : `<div class="monitor-meter-unknown" aria-hidden="true"></div>`}
+    <div class="monitor-capacity-foot"><span>${known ? `${esc(format(free))} free / ${esc(format(maximum))}` : "Capacity unavailable"}</span><span>${known ? `${percent.toFixed(0)}% used` : "—"}</span></div></div>`;
+}
+function protocolMix(active, esc) {
+	const values = [
+		active?.http,
+		active?.sse,
+		active?.websocket
+	];
+	const total = values.every(measured) ? values.reduce((a, b) => a + b, 0) : 0;
+	const labels = [
+		"HTTP",
+		"SSE",
+		"WebSocket"
+	], colors = [
+		"teal",
+		"blue",
+		"violet"
+	];
+	return `<div class="monitor-protocol-mix"><div class="monitor-protocol-bar" role="img" aria-label="${esc(labels.map((label, i) => `${label}: ${metricNumber(values[i])}`).join(", "))}">${total ? values.map((value, i) => `<span class="${colors[i]}" style="width:${100 * value / total}%"></span>`).join("") : `<span class="idle" style="width:100%"></span>`}</div><div class="monitor-legend">${labels.map((label, i) => `<span><i class="monitor-dot ${colors[i]}" aria-hidden="true"></i>${label}<strong>${esc(metricNumber(values[i]))}</strong></span>`).join("")}</div></div>`;
+}
+function monitorChartOptions({ horizontal = false, money = false } = {}) {
+	return {
+		responsive: true,
+		maintainAspectRatio: false,
+		animation: false,
+		interaction: {
+			mode: "index",
+			intersect: false
+		},
+		plugins: {
+			legend: {
+				display: true,
+				position: "bottom",
+				align: "start",
+				labels: {
+					color: monitorPalette.text,
+					boxWidth: 10,
+					boxHeight: 10,
+					usePointStyle: true,
+					pointStyle: "circle",
+					padding: 18,
+					font: { size: 11 }
+				}
+			},
+			tooltip: {
+				backgroundColor: "#20373d",
+				padding: 12,
+				cornerRadius: 7
+			}
+		},
+		scales: {
+			x: {
+				grid: { display: horizontal },
+				border: { display: false },
+				ticks: {
+					color: monitorPalette.text,
+					maxTicksLimit: 6,
+					font: { size: 10 }
+				},
+				...horizontal ? { beginAtZero: true } : {}
+			},
+			y: {
+				beginAtZero: true,
+				grid: {
+					color: "#edf0f2",
+					display: !horizontal
+				},
+				border: { display: false },
+				ticks: {
+					color: monitorPalette.text,
+					font: { size: 10 },
+					...money ? { callback: (value) => `$${Number(value).toLocaleString()}` } : { precision: 0 }
+				}
+			}
+		}
+	};
+}
+function mountMonitorChart(Chart, canvas, config) {
+	return Chart && canvas?.getContext ? new Chart(canvas, config) : null;
+}
+function appendGatewayObservation(history, selection, sampledAt) {
+	if (!Number.isFinite(sampledAt) || history.at(-1)?.at >= sampledAt) return history;
+	const current = selection.runtime && !selection.stale && !selection.failed;
+	const next = [...history];
+	if (next.length && sampledAt - next.at(-1).at > 1e4) next.push({
+		at: sampledAt - 1,
+		rate: null,
+		p95: null
+	});
+	next.push({
+		at: sampledAt,
+		rate: current && measured(selection.arrivalsPerSecond) ? selection.arrivalsPerSecond : null,
+		p95: current && selection.runtime.latency?.http_success_duration?.sample_count > 0 && measured(selection.runtime.latency.http_success_duration.p95_ms) ? selection.runtime.latency.http_success_duration.p95_ms : null
+	});
+	return next.slice(-90);
+}
+function gatewayTrendConfig(history, { compact = false } = {}) {
+	const options = monitorChartOptions();
+	options.plugins.legend.display = !compact;
+	options.scales.x.ticks.maxTicksLimit = 5;
+	if (compact || !history.some((point) => point.rate !== null)) {
+		options.scales.x.display = false;
+		options.scales.y.display = false;
+	}
+	if (!history.some((point) => point.rate !== null)) options.plugins.legend.display = false;
+	return {
+		type: "line",
+		data: {
+			labels: history.map((point) => new Date(point.at).toLocaleTimeString([], {
+				hour: "2-digit",
+				minute: "2-digit",
+				second: "2-digit"
+			})),
+			datasets: [{
+				label: "Arrivals / s",
+				data: history.map((point) => point.rate),
+				borderColor: monitorPalette.teal,
+				backgroundColor: "#e7f3ef",
+				fill: true,
+				pointRadius: history.length === 1 ? 3 : 0,
+				borderWidth: 2,
+				tension: .2,
+				spanGaps: false
+			}]
+		},
+		options
+	};
+}
+function usageSummaryView(summary, { esc, money }) {
+	const success = measured(summary.request_count) && summary.request_count > 0 && measured(summary.success_count) ? 100 * summary.success_count / summary.request_count : null;
+	return `<div class="monitor-kpis usage-kpis">
+    ${monitorKpi("Requests", metricNumber(summary.request_count), {
+		esc,
+		icon: "arrows-exchange",
+		detail: "Recorded in this period"
+	})}
+    ${monitorKpi("Estimated cost", measured(summary.estimated_cost_usd) ? money(summary.estimated_cost_usd) : "—", {
+		esc,
+		icon: "coin",
+		detail: "Reporting estimate · USD"
+	})}
+    ${monitorKpi("Success rate", success === null ? "—" : `${success.toFixed(2)}%`, {
+		esc,
+		icon: "circle-check",
+		detail: `${metricNumber(summary.failure_count)} failures`,
+		tone: summary.failure_count > 0 ? "warn" : "good"
+	})}
+    ${monitorKpi("Average latency", measured(summary.average_latency_ms) ? `${Math.round(summary.average_latency_ms).toLocaleString()} ms` : "—", {
+		esc,
+		icon: "clock",
+		detail: "Recorded request duration"
+	})}
+  </div><div class="monitor-signal-strip"><span><i class="ti ti-alert-circle" aria-hidden="true"></i>Failures <strong>${esc(metricNumber(summary.failure_count))}</strong></span><span><i class="ti ti-stack-2" aria-hidden="true"></i>Tokens <strong>${esc(metricNumber(summary.total_tokens))}</strong></span><span><i class="ti ti-route-alt-left" aria-hidden="true"></i>Fallbacks <strong>${measured(summary.fallback_rate) ? `${(summary.fallback_rate * 100).toFixed(1)}%` : "—"}</strong></span><span><i class="ti ti-shield-check" aria-hidden="true"></i>Guardrail blocks <strong>${esc(metricNumber(summary.guardrail_block_count))}</strong></span></div>`;
+}
+function usageChartsShell() {
+	return `<div class="monitor-chart-grid usage-chart-grid" data-usage-visuals aria-busy="true">
+    <figure class="monitor-figure"><figcaption><div><h3>Request volume</h3><span>Successes and failures over time</span></div><button type="button" class="monitor-data-link" data-usage-chart-data aria-label="View request trend data"><i class="ti ti-table" aria-hidden="true"></i>Data</button></figcaption><div class="monitor-chart" data-usage-volume-host><p class="monitor-chart-placeholder">Loading request trend…</p></div></figure>
+    <figure class="monitor-figure"><figcaption><div><h3>Cost over time</h3><span>Estimated spend · USD</span></div><button type="button" class="monitor-data-link" data-usage-chart-data aria-label="View cost trend data"><i class="ti ti-table" aria-hidden="true"></i>Data</button></figcaption><div class="monitor-chart" data-usage-cost-host><p class="monitor-chart-placeholder">Loading cost trend…</p></div></figure>
+  </div>`;
+}
+function usageTrendConfigs(rows, interval = "hour") {
+	const sorted = [...rows].map((row) => ({
+		at: Date.parse(row.bucket_start || row.bucket || row.name),
+		summary: row.summary || row
+	})).filter((row) => Number.isFinite(row.at)).sort((a, b) => a.at - b.at);
+	const intervalMs = interval === "day" ? 864e5 : 36e5;
+	const points = [];
+	for (const row of sorted) {
+		if (points.length && row.at - points.at(-1).at > intervalMs * 1.5) points.push({
+			at: row.at - 1,
+			summary: {}
+		});
+		points.push(row);
+	}
+	const values = (key, series = points) => series.map((row) => ({
+		x: row.at,
+		y: measured(row.summary[key]) ? row.summary[key] : null
+	}));
+	const options = (money) => {
+		const result = monitorChartOptions({ money });
+		result.scales.x.type = "linear";
+		result.scales.x.ticks.callback = (value) => new Date(value).toLocaleString([], {
+			month: "short",
+			day: "numeric",
+			hour: "2-digit"
+		});
+		result.plugins.tooltip.callbacks = { title: (items) => items.length ? new Date(items[0].parsed.x).toLocaleString() : "" };
+		return result;
+	};
+	return [{
+		type: "line",
+		data: { datasets: [{
+			label: "Successes",
+			data: values("success_count"),
+			borderColor: monitorPalette.teal,
+			backgroundColor: "#e7f3ef",
+			fill: true,
+			pointRadius: 0,
+			tension: .2,
+			borderWidth: 2,
+			spanGaps: false
+		}, {
+			label: "Failures",
+			data: values("failure_count"),
+			borderColor: monitorPalette.red,
+			backgroundColor: monitorPalette.red,
+			pointRadius: 0,
+			tension: .2,
+			borderWidth: 2,
+			spanGaps: false
+		}] },
+		options: options(false)
+	}, {
+		type: "bar",
+		data: { datasets: [{
+			label: "Estimated cost (USD)",
+			data: values("estimated_cost_usd", sorted),
+			backgroundColor: monitorPalette.blue,
+			borderRadius: 3,
+			maxBarThickness: 24
+		}] },
+		options: options(true)
+	}];
+}
+function usageRanking(rows, label, esc) {
+	const ranked = rows.filter((row) => measured(row.summary?.request_count)).sort((a, b) => b.summary.request_count - a.summary.request_count).slice(0, 8);
+	const maximum = ranked[0]?.summary.request_count;
+	if (!maximum) return "";
+	return `<div class="monitor-ranking" aria-label="Top returned consumers by request count"><div class="monitor-section-heading"><h4>Top consumers</h4><span>Requests · returned groups</span></div>${ranked.map((row) => `<div class="monitor-ranking-row"><span title="${esc(label(row.name))}">${esc(label(row.name))}</span><div class="monitor-ranking-track" aria-hidden="true"><span style="width:${100 * row.summary.request_count / maximum}%"></span></div><strong>${esc(metricNumber(row.summary.request_count))}</strong></div>`).join("")}</div>`;
+}
+var monitorPalette, measured, metricNumber;
+var init_monitoring_visuals = __esmMin((() => {
+	monitorPalette = {
+		teal: "#177264",
+		blue: "#4275c5",
+		violet: "#8c65b9",
+		red: "#c54c59",
+		amber: "#b77924",
+		muted: "#e8edef",
+		text: "#63717a"
+	};
+	measured = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+	metricNumber = (value) => measured(value) ? value.toLocaleString(void 0, { maximumFractionDigits: 2 }) : "—";
+}));
 //#endregion
 //#region crates/gateway-api/admin-ui/src/gateway-status.ts
 function gatewayStatusPath(instanceId = "all", windowSeconds = 60) {
@@ -23235,11 +23509,6 @@ function bytes(value) {
 	if (value < 1048576) return `${(value / 1024).toLocaleString(void 0, { maximumFractionDigits: 1 })} KiB`;
 	return `${(value / 1048576).toLocaleString(void 0, { maximumFractionDigits: 1 })} MiB`;
 }
-function capacityText(capacity, kind) {
-	if (!capacity) return "Unknown";
-	const format = kind === "bytes" ? bytes : count;
-	return `${format(capacity[`used_${kind}`])} occupied · ${format(capacity[`free_${kind}`])} free / ${format(capacity[`max_${kind}`])}`;
-}
 function gatewayCpuUtilization(current, previous, instanceId = "all") {
 	const before = new Map((previous?.instances || []).map((row) => [row.instance_id, row]));
 	const selected = (current?.instances || []).filter((row) => instanceId === "all" || row.instance_id === instanceId);
@@ -23257,23 +23526,56 @@ function gatewayCpuUtilization(current, previous, instanceId = "all") {
 	}
 	return limitCores > 0 ? 100 * usedCores / limitCores : null;
 }
-function gatewayStatusView(selection, { esc, badge, table }, { compact = false, windowSeconds = 60 } = {}) {
-	const runtime = selection.runtime;
-	const active = runtime?.active;
-	const latency = runtime?.latency;
-	const capacity = runtime?.body_capacity;
-	const status = badge(selection.label, selection.tone);
-	const notice = selection.message ? `<p class="notice inline" data-kind="${selection.tone}" role="status">${esc(selection.message)}</p>` : "";
-	const stat = (label, value) => `<div class="stat"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
-	const metricStrip = `<div class="grid metric-strip">
-    ${stat("Active HTTP / SSE / WS", `${count(active?.http)} / ${count(active?.sse)} / ${count(active?.websocket)}`)}
-    ${stat("Arrivals / second", number(selection.arrivalsPerSecond) ? selection.arrivalsPerSecond.toLocaleString(void 0, { maximumFractionDigits: 2 }) : "Unknown")}
-    ${stat(`Completed · ${windowLabel(windowSeconds)}`, count(runtime?.counters?.completed))}
-    ${stat("Body slots", capacityText(capacity, "requests"))}
-    ${stat("Body bytes", capacityText(capacity, "bytes"))}
-    ${stat("HTTP success p95", gatewayQuantile(latency?.http_success_duration, 95))}
+function gatewayStatusView(selection, { esc, badge, table }, { compact = false, windowSeconds = 60, hasTrend = false } = {}) {
+	const runtime = selection.runtime, active = runtime?.active, latency = runtime?.latency, capacity = runtime?.body_capacity;
+	const notice = `<div data-gateway-part="notice">${selection.message ? `<p class="notice inline" data-kind="${selection.tone}" role="status">${esc(selection.message)}</p>` : ""}</div>`;
+	const activeTotal = [
+		active?.http,
+		active?.sse,
+		active?.websocket
+	].every(number) ? active.http + active.sse + active.websocket : null;
+	const completed = runtime?.counters?.completed, failures = runtime?.counters?.failed;
+	const latencySeries = [
+		"http_success_duration",
+		"ttfb",
+		"ttft",
+		"websocket_handshake"
+	].map((key) => latency?.[key]);
+	const latencyEmpty = latencySeries.some((histogram) => histogram?.sample_count > 0 && [
+		50,
+		95,
+		99
+	].some((percentile) => number(histogram[`p${percentile}_ms`]))) ? "" : latencySeries.some((histogram) => histogram?.sample_count > 0) ? "Samples exceed the chart range" : latencySeries.some((histogram) => number(histogram?.sample_count)) ? "No latency samples in this window" : "Latency unavailable";
+	const rate = number(selection.arrivalsPerSecond) ? selection.arrivalsPerSecond.toLocaleString(void 0, { maximumFractionDigits: 2 }) : "—";
+	const scope = `<div class="monitor-scope-line" data-gateway-part="scope">${badge(selection.label, selection.tone)}<span><i class="ti ti-server" aria-hidden="true"></i> ${esc(count(runtime?.instance_count))} reporting instances</span><span>${esc(count(completed))} completed · ${esc(windowLabel(windowSeconds))}</span></div>`;
+	const kpis = `<div class="monitor-kpis" data-gateway-part="kpis">
+    ${monitorKpi("Arrivals / second", rate, {
+		esc,
+		icon: "activity",
+		detail: `Rolling ${windowLabel(windowSeconds)}`
+	})}
+    ${monitorKpi("In flight", metricNumber(activeTotal), {
+		esc,
+		icon: "arrows-exchange",
+		detail: "HTTP · SSE · WebSocket"
+	})}
+    ${monitorKpi("HTTP success p95", gatewayQuantile(latency?.http_success_duration, 95), {
+		esc,
+		icon: "clock",
+		detail: "Completed HTTP + SSE"
+	})}
+    ${compact ? monitorKpi("Body slots occupied", capacity ? `${count(capacity.used_requests)} / ${count(capacity.max_requests)}` : "—", {
+		esc,
+		icon: "stack-2",
+		detail: capacity ? `${bytes(capacity.free_bytes)} buffer space free` : "Capacity unavailable"
+	}) : monitorKpi("Failed requests", metricNumber(failures), {
+		esc,
+		icon: "alert-circle",
+		detail: number(completed) && completed > 0 && number(failures) ? `${(100 * failures / completed).toFixed(2)}% of completed requests` : "No completed samples",
+		tone: failures > 0 ? "bad" : "neutral"
+	})}
   </div>`;
-	if (compact) return `<div class="panel-heading"><h3>Gateway status</h3>${status}</div>${notice}${metricStrip}`;
+	if (compact) return `${scope}${notice}${kpis}<div class="monitor-compact-footer"><div data-gateway-part="protocols">${protocolMix(active, esc)}</div><div class="monitor-mini-trend"><canvas data-gateway-chart="trend" role="img" aria-label="Arrival rate observations since this page opened"></canvas></div></div>`;
 	const latencyRows = [
 		["HTTP + SSE · all outcomes", "http_duration"],
 		["HTTP + SSE · successes", "http_success_duration"],
@@ -23296,10 +23598,9 @@ function gatewayStatusView(selection, { esc, badge, table }, { compact = false, 
 	]);
 	const process = runtime?.process;
 	const processRows = [
-		["CPU since preceding sample", number(selection.cpuUtilization) ? `${selection.cpuUtilization.toLocaleString(void 0, { maximumFractionDigits: 1 })}% of cgroup CPU limit` : "Unknown"],
+		["CPU since preceding sample", number(selection.cpuUtilization) ? `${selection.cpuUtilization.toFixed(1)}% of cgroup CPU limit` : "Unknown"],
 		["Process RSS", bytes(process?.rss_bytes)],
 		["Cgroup memory in use / limit", `${bytes(process?.cgroup_memory_current_bytes)} / ${bytes(process?.cgroup_memory_limit_bytes)}`],
-		["Cgroup memory headroom", number(process?.cgroup_memory_limit_bytes) && number(process?.cgroup_memory_current_bytes) ? bytes(Math.max(0, process.cgroup_memory_limit_bytes - process.cgroup_memory_current_bytes)) : "Unknown"],
 		["Cgroup CPU limit", number(process?.cgroup_cpu_limit_cores) ? `${count(process.cgroup_cpu_limit_cores)} cores` : "Unknown"],
 		["Cgroup CPU used", number(process?.cgroup_cpu_usage_usec) ? `${(process.cgroup_cpu_usage_usec / 1e6).toLocaleString()} s` : "Unknown"],
 		["Cgroup throttled periods / periods", `${count(process?.cgroup_cpu_throttled_periods)} / ${count(process?.cgroup_cpu_periods)}`],
@@ -23307,60 +23608,101 @@ function gatewayStatusView(selection, { esc, badge, table }, { compact = false, 
 		["Cgroup OOM events / kills", `${count(process?.cgroup_oom_events)} / ${count(process?.cgroup_oom_kills)}`],
 		["Restarts", count(process?.restarts)]
 	].map(([label, value]) => [esc(label), esc(value)]);
-	const denials = runtime?.admission_denials;
-	const recording = runtime?.recording_failures;
-	const readiness = (value, latency) => `${value === true ? "Ready" : value === false ? "Unavailable" : "Unknown"}${number(latency) ? ` · ${latency.toLocaleString()} ms probe` : ""}`;
-	const dependencyRows = (selection.instances || []).map((row) => {
-		const dependency = row.dependencies;
-		return [
-			esc(row.instance_id),
-			esc(staleSample(row, Date.now()) ? "Stale" : "Reporting"),
-			esc(readiness(dependency?.postgres_ready, dependency?.postgres_readiness_latency_ms)),
-			esc(`${count(dependency?.postgres_pool_connections)} open · ${count(dependency?.postgres_pool_idle)} idle`),
-			esc(readiness(dependency?.redis_ready, dependency?.redis_readiness_latency_ms)),
-			esc(dependency?.publication_failed === true ? "Failed" : dependency?.publication_failed === false ? "Reporting" : "Unknown")
-		];
-	});
-	return `<div class="panel-heading"><h3>Gateway</h3>${status}</div>${notice}${metricStrip}
-    <p class="help">${esc(count(runtime?.instance_count))} reporting instances · ${esc(count(runtime?.observed_seconds))} s observed of ${esc(windowLabel(windowSeconds))}.
-      ${runtime?.uptime_seconds == null ? "Process uptime is unavailable for a cluster aggregate." : `Process uptime: ${esc(count(runtime.uptime_seconds))} s.`}
-      Counts include rejected and unattributed proxy traffic; these measurements do not depend on Usage writes.</p>
-    <p class="help">Admission is fail-fast. Rejections in this window: slots ${esc(count(denials?.concurrency))} · bytes ${esc(count(denials?.bytes))} · other ${esc(count(denials?.other))}. No admission queue is used.</p>
-    <p class="help">Body capacity describes retained managed buffers. Use container memory headroom below to assess total memory.</p>
-    <p class="help">Recording failures in this window: Usage ${esc(count(recording?.usage_events))} · debug bundles ${esc(count(recording?.debug_bundles))} · request traffic ${esc(count(recording?.request_traffic))}.</p>
-    <div class="panel-heading"><h4>Latency distribution</h4></div>
-    <p class="help">Quantiles are histogram bucket upper bounds, merged across reporting instances. Sample counts apply to this window. HTTP success includes completed SSE; WebSocket sessions are separate. First-token samples require observed SSE content.</p>
-    <div class="table-wrap">${table([
+	const dependency = (label, ready) => `<span class="monitor-dependency ${ready === true ? "good" : ready === false ? "bad" : "neutral"}"><i class="ti ti-${ready === true ? "circle-check" : ready === false ? "alert-circle" : "minus"}" aria-hidden="true"></i>${esc(label)}<small>${ready === true ? "Ready" : ready === false ? "Unavailable" : "Unknown"}</small></span>`;
+	const instances = (selection.instances || []).map((row) => {
+		const stale = staleSample(row, Date.now()), d = stale ? {} : row.dependencies;
+		return `<div class="monitor-instance"><div><i class="ti ti-server" aria-hidden="true"></i><code title="${esc(row.instance_id)}">${esc(String(row.instance_id).slice(0, 8))}</code>${badge(stale ? "Stale" : "Reporting", stale ? "warn" : "neutral")}</div><div class="monitor-dependencies">${dependency("PostgreSQL", d?.postgres_ready)}${dependency("Redis", d?.redis_ready)}${dependency("Publisher", d?.publication_failed === false ? true : d?.publication_failed === true ? false : null)}</div><small class="monitor-instance-meta">Primary pool: ${esc(count(d?.postgres_pool_idle))} idle / ${esc(count(d?.postgres_pool_connections))} open</small></div>`;
+	}).join("");
+	const recording = runtime?.recording_failures, denials = runtime?.admission_denials;
+	const recordingSignals = [
+		["Usage", recording?.usage_events],
+		["Debug bundles", recording?.debug_bundles],
+		["Traffic", recording?.request_traffic]
+	].map(([label, value]) => `<span class="${value > 0 ? "bad" : ""}">${esc(label)}<strong>${esc(count(value))}</strong></span>`).join("");
+	return `${scope}${notice}${kpis}
+    <div class="monitor-dashboard-grid">
+      <figure class="monitor-figure"><figcaption><h3>Live request rate</h3><span>Browser observations · since opened</span></figcaption><div class="monitor-chart"><canvas data-gateway-chart="trend" role="img" aria-label="Observed arrival rate, ${esc(rate)} requests per second in the latest sample"></canvas><div class="monitor-chart-empty" data-gateway-part="trend-empty">${hasTrend ? "" : "<i class=\"ti ti-chart-line\" aria-hidden=\"true\"></i><span>Waiting for live observations</span>"}</div></div></figure>
+      <div class="monitor-resource-panel" data-gateway-part="capacity"><div class="monitor-section-heading"><h3>Buffer capacity</h3><i class="ti ti-stack-2" aria-hidden="true"></i></div>${capacityMeter("Request slots", capacity?.used_requests, capacity?.free_requests, capacity?.max_requests, count, esc)}${capacityMeter("Serialized body bytes", capacity?.used_bytes, capacity?.free_bytes, capacity?.max_bytes, bytes, esc)}<div class="monitor-section-heading"><h4>Active protocols</h4><span>${esc(metricNumber(activeTotal))} in flight</span></div>${protocolMix(active, esc)}</div>
+      <figure class="monitor-figure"><figcaption><h3>Response latency</h3><span>Histogram upper bounds · milliseconds</span></figcaption><div class="monitor-chart monitor-latency-chart"><canvas data-gateway-chart="latency" role="img" aria-label="Compare p50, p95 and p99 for successful HTTP, first byte, first token and WebSocket handshake. Exact displayed values are in Latency distribution below."></canvas><div class="monitor-chart-empty" data-gateway-part="latency-empty">${latencyEmpty ? `<i class="ti ti-clock" aria-hidden="true"></i><span>${esc(latencyEmpty)}</span>` : ""}</div></div></figure>
+      <div class="monitor-resource-panel" data-gateway-part="dependencies"><div class="monitor-section-heading"><h3>Fleet & dependencies</h3><i class="ti ti-topology-star-3" aria-hidden="true"></i></div>${instances || `<div class="monitor-empty"><i class="ti ti-server-off" aria-hidden="true"></i><span>No reporting instances</span></div>`}<div class="monitor-section-heading"><h4>Recording failures</h4><span>${esc(windowLabel(windowSeconds))}</span></div><div class="monitor-recording-signals">${recordingSignals}</div></div>
+    </div>
+    <details class="monitor-details" data-gateway-detail="latency"><summary><i class="ti ti-chart-bar" aria-hidden="true"></i>Latency distribution & metric definitions</summary>
+      <p class="help">Quantiles are histogram bucket upper bounds, merged across reporting instances. HTTP success includes completed SSE. WebSocket session duration is separate from handshake latency.</p><div class="table-wrap">${table([
 		"Measurement",
 		"Samples",
 		"p50",
 		"p95",
 		"p99"
-	], latencyRows)}</div>
-    <div class="panel-heading"><h4>Process and container</h4></div>
-    <p class="help">Cgroup counters are cumulative and may include other processes in the same cgroup. Unsupported or missing platform measurements are unknown. An unlimited memory limit is also shown as unknown.</p>
-    <div class="table-wrap">${table(["Measurement", "Value"], processRows)}</div>
-    <div class="panel-heading"><h4>Dependencies and recording pipeline</h4></div>
-    <p class="help">Readiness probes run every five seconds. Probe latency is separate from application query latency. PostgreSQL connections here belong to the primary pool; Usage has a separate four-connection pool.</p>
-    <div class="table-wrap">${table([
-		"Instance",
-		"Source",
-		"PostgreSQL",
-		"Primary pool",
-		"Redis",
-		"Observation publisher"
-	], dependencyRows)}</div>`;
+	], latencyRows)}</div></details>
+    <details class="monitor-details" data-gateway-detail="runtime"><summary><i class="ti ti-cpu" aria-hidden="true"></i>Process, container & admission diagnostics</summary>
+      <p class="help">Unsupported platform measurements are Unknown. Cgroup counters can include other processes in the same container.</p><div class="table-wrap">${table(["Measurement", "Value"], processRows)}</div>
+      <div class="monitor-signal-strip"><span>Slot denials <strong>${esc(count(denials?.concurrency))}</strong></span><span>Byte denials <strong>${esc(count(denials?.bytes))}</strong></span><span>Other denials <strong>${esc(count(denials?.other))}</strong></span></div></details>
+    <details class="monitor-details" data-gateway-detail="definitions"><summary><i class="ti ti-info-circle" aria-hidden="true"></i>How to read this dashboard</summary><ul class="monitor-definitions"><li>Request rate uses each instance’s observed window. Counts include rejected and unattributed traffic.</li><li>Live trends are bounded observations collected while this page is open. Gaps mean missing observations.</li><li>Body meters measure retained managed buffers, not total container memory. No admission queue is used.</li><li>Process uptime: ${runtime?.uptime_seconds == null ? "unavailable for a cluster aggregate" : `${esc(count(runtime.uptime_seconds))} s`}. Observed window: ${esc(count(runtime?.observed_seconds))} s.</li><li>Dependency probes run every five seconds. PostgreSQL pool counts describe the primary pool; Usage has its own four-connection pool.</li></ul></details>`;
 }
-function mountGatewayStatus({ content, api, esc, attr = esc, badge, table, compact = false, refreshMs = 2e3, initialWindowSeconds = 60, initialInstanceId = "all" }) {
+function gatewayLatencyConfig(runtime) {
+	const keys = [
+		"http_success_duration",
+		"ttfb",
+		"ttft",
+		"websocket_handshake"
+	];
+	const options = monitorChartOptions({ horizontal: true });
+	options.indexAxis = "y";
+	options.scales.x.title = {
+		display: true,
+		text: "Milliseconds · upper bound",
+		color: monitorPalette.text,
+		font: { size: 10 }
+	};
+	options.plugins.tooltip.callbacks = { label: (context) => `${context.dataset.label}: ≤ ${context.raw} ms` };
+	if (!keys.some((key) => runtime?.latency?.[key]?.sample_count > 0 && [
+		50,
+		95,
+		99
+	].some((percentile) => measured(runtime.latency[key][`p${percentile}_ms`])))) {
+		options.scales.x.display = false;
+		options.scales.y.display = false;
+		options.plugins.legend.display = false;
+	}
+	return {
+		type: "bar",
+		data: {
+			labels: [
+				"HTTP success",
+				"First body byte",
+				"First content token",
+				"WS handshake"
+			],
+			datasets: [
+				50,
+				95,
+				99
+			].map((percentile, index) => ({
+				label: `p${percentile}`,
+				data: keys.map((key) => runtime?.latency?.[key]?.sample_count > 0 && measured(runtime.latency[key][`p${percentile}_ms`]) ? runtime.latency[key][`p${percentile}_ms`] : null),
+				backgroundColor: [
+					monitorPalette.teal,
+					monitorPalette.blue,
+					monitorPalette.violet
+				][index],
+				borderRadius: 3,
+				maxBarThickness: 9
+			}))
+		},
+		options
+	};
+}
+function mountGatewayStatus({ content, api, esc, attr = esc, badge, table, compact = false, refreshMs = 2e3, initialWindowSeconds = 60, initialInstanceId = "all", Chart = null }) {
 	let windowSeconds = WINDOWS.includes(Number(initialWindowSeconds)) ? Number(initialWindowSeconds) : 60;
 	let instanceId = String(initialInstanceId), response = null, previousResponse = null, failed = false, disposed = false;
 	let generation = 0, controller = null;
-	content.innerHTML = `<section class="panel">
-    <div class="actions gateway-status-controls">
+	let observations = [], charts = [];
+	content.innerHTML = `<section class="panel monitor-runtime${compact ? " is-compact" : ""}">
+    <div class="monitor-toolbar"><h3><i class="ti ti-activity-heartbeat" aria-hidden="true"></i>Gateway pulse</h3><div class="actions gateway-status-controls">
       <label>Window<select data-gateway-window>${WINDOWS.map((seconds) => `<option value="${seconds}"${seconds === windowSeconds ? " selected" : ""}>${windowLabel(seconds)}</option>`).join("")}</select></label>
       <label>Instance<select data-gateway-instance><option value="all">All reporting instances</option></select></label>
-      <button type="button" data-gateway-refresh>Refresh</button>
-    </div>
+      <button type="button" data-gateway-refresh><i class="ti ti-refresh" aria-hidden="true"></i><span>Refresh</span></button>
+    </div></div>
     <div data-gateway-status role="region" aria-label="Gateway runtime status"></div>
   </section>`;
 	const windowControl = content.querySelector("[data-gateway-window]");
@@ -23388,14 +23730,55 @@ function mountGatewayStatus({ content, api, esc, attr = esc, badge, table, compa
 		const options = `<option value="all">All reporting instances</option>` + [...knownInstances.values()].map((row) => `<option value="${attr(row.instance_id)}">${esc(row.instance_id)}${staleSample(row, Date.now()) ? " · stale" : ""}</option>`).join("");
 		if (instanceControl.innerHTML !== options) instanceControl.innerHTML = options;
 		instanceControl.value = instanceId;
-		statusHost.innerHTML = gatewayStatusView(selection, {
+		const openDetails = [...statusHost.querySelectorAll?.("details[open][data-gateway-detail]") || []].map((node) => node.dataset.gatewayDetail);
+		const focusedDetail = statusHost.querySelector?.("details[data-gateway-detail] > summary:focus")?.parentElement.dataset.gatewayDetail;
+		const previousCharts = new Map(charts.map((chart) => [chart.canvas.dataset.gatewayChart, chart]));
+		charts = [];
+		const markup = gatewayStatusView(selection, {
 			esc,
 			badge,
 			table
 		}, {
 			compact,
-			windowSeconds
+			windowSeconds,
+			hasTrend: observations.some((point) => point.rate !== null)
 		});
+		const nextFrame = statusHost.ownerDocument?.createElement("div");
+		if (nextFrame) nextFrame.innerHTML = markup;
+		if (nextFrame && statusHost.querySelector("[data-gateway-part=\"scope\"]")) {
+			for (const part of nextFrame.querySelectorAll("[data-gateway-part]")) {
+				const current = statusHost.querySelector(`[data-gateway-part="${part.dataset.gatewayPart}"]`);
+				if (current) current.innerHTML = part.innerHTML;
+			}
+			for (const detail of nextFrame.querySelectorAll("[data-gateway-detail]")) {
+				const current = statusHost.querySelector(`[data-gateway-detail="${detail.dataset.gatewayDetail}"]`);
+				if (current) current.innerHTML = detail.innerHTML;
+			}
+		} else statusHost.innerHTML = markup;
+		for (const name of openDetails) {
+			const node = statusHost.querySelector?.(`[data-gateway-detail="${name}"]`);
+			if (node) node.open = true;
+		}
+		if (focusedDetail) statusHost.querySelector?.(`[data-gateway-detail="${focusedDetail}"] > summary`)?.focus({ preventScroll: true });
+		const configs = [["trend", gatewayTrendConfig(observations, { compact })]];
+		if (!compact) configs.push(["latency", gatewayLatencyConfig(selection.runtime)]);
+		for (const [key, config] of configs) {
+			const canvas = statusHost.querySelector?.(`[data-gateway-chart="${key}"]`);
+			const previous = previousCharts.get(key);
+			if (previous && canvas) {
+				const nextLabel = nextFrame?.querySelector(`[data-gateway-chart="${key}"]`)?.getAttribute("aria-label");
+				if (nextLabel) previous.canvas.setAttribute("aria-label", nextLabel);
+				previous.data = config.data;
+				previous.options = config.options;
+				previous.update("none");
+				charts.push(previous);
+				previousCharts.delete(key);
+			} else {
+				const chart = mountMonitorChart(Chart, canvas, config);
+				if (chart) charts.push(chart);
+			}
+		}
+		previousCharts.forEach((chart) => chart.destroy());
 	}
 	async function refresh() {
 		if (disposed) return;
@@ -23410,6 +23793,10 @@ function mountGatewayStatus({ content, api, esc, attr = esc, badge, table, compa
 			previousResponse = response;
 			response = next;
 			failed = false;
+			observations = appendGatewayObservation(observations, selectGatewayStatus(response, {
+				instanceId,
+				windowSeconds
+			}), Date.parse(response.sampled_at));
 		} catch (error) {
 			if (disposed || current !== generation) return;
 			failed = true;
@@ -23423,11 +23810,13 @@ function mountGatewayStatus({ content, api, esc, attr = esc, badge, table, compa
 	}
 	const changeWindow = () => {
 		windowSeconds = Number(windowControl.value);
+		observations = [];
 		render();
 		refresh();
 	};
 	const changeInstance = () => {
 		instanceId = instanceControl.value;
+		observations = [];
 		render();
 		refresh();
 	};
@@ -23447,6 +23836,8 @@ function mountGatewayStatus({ content, api, esc, attr = esc, badge, table, compa
 		disposed = true;
 		++generation;
 		controller?.abort();
+		charts.forEach((chart) => chart?.destroy());
+		charts = [];
 		if (interval !== null) clearInterval(interval);
 		windowControl.removeEventListener("change", changeWindow);
 		instanceControl.removeEventListener("change", changeInstance);
@@ -23468,6 +23859,7 @@ function mountTrafficGatewayStatus(options) {
 }
 var WINDOWS, STALE_AFTER_MS, number, count, windowLabel;
 var init_gateway_status = __esmMin((() => {
+	init_monitoring_visuals();
 	WINDOWS = [
 		60,
 		300,
@@ -37026,17 +37418,17 @@ var init_view_meta = __esmMin((() => {
 		traffic: {
 			title: "Traffic",
 			domain: "Monitor",
-			summary: "Live requests, upstream attempts, failure reasons, and saved diagnostics."
+			summary: "Inspect live sessions and recent requests across your gateway."
 		},
 		health: {
 			title: "Health",
 			domain: "Monitor",
-			summary: "Provider checks, circuit state, import versions, and debug bundles."
+			summary: "Understand gateway demand, capacity, latency, and service health."
 		},
 		usage: {
 			title: "Usage & cost",
 			domain: "Monitor",
-			summary: "Cost, tokens, denials, fallbacks, guardrail blocks, task drilldowns, and exports."
+			summary: "Explore request trends, costs, and the projects driving them."
 		},
 		providers: {
 			title: "Providers",
@@ -37716,6 +38108,7 @@ async function refresh({ focus = false } = {}) {
 	setNotice("");
 	destroyOverviewChart();
 	destroyOwnerDashboardChart();
+	usageLoad?.charts?.forEach((chart) => chart?.destroy());
 	if (state.view !== "service-dashboard" && state.view !== "project-dashboard") ownerDashboardGeneration += 1;
 	applyViewChrome(view);
 	document.querySelector("#page-actions").replaceChildren();
@@ -37768,7 +38161,8 @@ async function refresh({ focus = false } = {}) {
 				esc,
 				attr,
 				badge,
-				table
+				table,
+				Chart: auto_default
 			});
 		}
 		if (view === "usage") await usage();
@@ -40294,7 +40688,7 @@ async function usage() {
       </form>
       <div id="task-usage-result"></div>
     </section>
-    <section class="panel"><div class="panel-heading"><h3>Usage breakdown</h3></div><div id="usage-results"></div></section>
+    <section class="panel usage-analysis"><div class="panel-heading"><h3>Usage analysis</h3><span class="subtle">Recorded requests & cost</span></div><div id="usage-results"></div></section>
   `;
 	const usageForm = document.querySelector("#usage-form");
 	for (const [name, value] of Object.entries({
@@ -40357,6 +40751,7 @@ async function usage() {
 async function loadUsage(event) {
 	event?.preventDefault();
 	usageLoad?.controllers.forEach((controller) => controller.abort());
+	usageLoad?.charts?.forEach((chart) => chart?.destroy());
 	const generation = ++usageGeneration;
 	const root = document.querySelector("#usage-results");
 	if (!root) return;
@@ -40375,7 +40770,8 @@ async function loadUsage(event) {
 		active: 0,
 		eventCursors: ["start"],
 		eventIndex: 0,
-		eventsPage: null
+		eventsPage: null,
+		charts: []
 	};
 	const sections = [
 		["project-key-services", "Project → Virtual key → Service"],
@@ -40392,7 +40788,10 @@ async function loadUsage(event) {
 		["unused-keys", "Unused keys"]
 	];
 	root.innerHTML = `
-    <p class="applied-filters">Applied filters: ${esc([...query].filter(([key]) => ![
+    <div class="monitor-filter-chips" aria-label="Applied usage filters"><span><i class="ti ti-calendar" aria-hidden="true"></i>${query.get("from") && query.get("to") ? `${esc(new Date(query.get("from")).toLocaleDateString())} – ${esc(new Date(query.get("to")).toLocaleDateString())}` : "All time"}</span><span><i class="ti ti-folder" aria-hidden="true"></i>${esc(query.get("project_id") ? usageProjectName(query.get("project_id")) : "All projects")}</span>${[...query].filter(([key]) => ![
+		"from",
+		"to",
+		"project_id",
 		"offset",
 		"limit",
 		"timeseries_limit",
@@ -40400,13 +40799,15 @@ async function loadUsage(event) {
 		"breakdown_limit",
 		"sort_by",
 		"interval"
-	].includes(key)).map(([key, value]) => `${key}: ${value}`).join(" · ") || "All recorded usage")}</p>
+	].includes(key)).map(([key, value]) => `<span>${esc(key.replaceAll("_", " "))}<strong>${esc(value)}</strong></span>`).join("")}</div>
     <div data-usage-summary aria-busy="true">${emptyState("Loading usage summary…")}</div>
+    ${usageChartsShell()}
     ${query.get("key_id") ? `<p><button type="button" data-usage-litellm-spend>View LiteLLM reported spend</button> <span class="help">Current mapped-key counter · independent of date filters</span></p>` : ""}
     ${sections.map(([section, title]) => `<h4>${esc(title)}</h4><div data-usage-section="${attr(section)}">${emptyState("Select this section to load it.")}</div>`).join("")}
   `;
 	root.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
 	tabulateUsage(root);
+	loadUsageVisuals();
 	await Promise.allSettled([loadUsageSummary(), loadUsageSection("events")]);
 }
 function usageRequestCurrent(load) {
@@ -40427,19 +40828,76 @@ async function loadUsageSummary() {
 	try {
 		const summary = await api(`/admin-ui/admin/usage/summary?${load.query}`, { signal: controller.signal });
 		if (!usageRequestCurrent(load) || controller.signal.aborted) return;
-		host.innerHTML = `<div class="grid stats">
-      ${stat("Requests", summary.request_count)}${stat("Failures", summary.failure_count)}
-      ${stat("Cost", money(summary.estimated_cost_usd))}
-      ${stat("Avg latency", summary.average_latency_ms == null ? "n/a" : `${Math.round(summary.average_latency_ms)} ms`)}
-      ${stat("Fallback rate", percent(summary.fallback_rate))}
-      ${stat("Expensive", summary.expensive_request_count || 0)}${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
-    </div>`;
+		host.innerHTML = usageSummaryView(summary, {
+			esc,
+			money
+		});
 	} catch (error) {
 		if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
 		host.innerHTML = `<div class="notice" role="alert">Usage summary unavailable: ${esc(error.message)} <button type="button" data-retry-usage-summary>Retry summary</button></div>`;
 		host.querySelector("[data-retry-usage-summary]").addEventListener("click", handleAsync(loadUsageSummary));
 	} finally {
 		if (usageRequestCurrent(load) && !controller.signal.aborted) host.setAttribute("aria-busy", "false");
+	}
+}
+async function loadUsageVisuals() {
+	const load = usageLoad;
+	if (!load || !usageRequestCurrent(load)) return;
+	const host = load.root.querySelector("[data-usage-visuals]");
+	if (!host) return;
+	const controller = usageRequestController(load, "visualization");
+	host.querySelectorAll("[data-usage-chart-data]").forEach((button) => {
+		button.disabled = true;
+		button.onclick = () => showContentDrawer(`Chart data · ${load.chartInterval === "day" ? "daily" : "hourly"} buckets`, usageTimeseriesTable(load.chartRows || []), () => {}, button);
+	});
+	const query = new URLSearchParams(load.query);
+	const span = Date.parse(query.get("to")) - Date.parse(query.get("from"));
+	if (!query.get("from") || !query.get("to") || !(span > 0)) {
+		host.innerHTML = "<div class=\"monitor-empty\"><i class=\"ti ti-calendar-stats\" aria-hidden=\"true\"></i><span>Choose a bounded time range to visualize trends.</span></div>";
+		host.setAttribute("aria-busy", "false");
+		return;
+	}
+	query.set("interval", span > 6048e5 ? "day" : "hour");
+	query.set("timeseries_limit", "168");
+	query.set("timeseries_offset", "0");
+	host.setAttribute("aria-busy", "true");
+	load.visualizationActive = true;
+	try {
+		const data = await api(`/admin-ui/admin/usage/sections/timeseries?${query}`, { signal: controller.signal });
+		if (!usageRequestCurrent(load) || controller.signal.aborted) return;
+		const rows = data.rows || [];
+		load.chartRows = rows;
+		load.chartInterval = query.get("interval");
+		host.querySelectorAll("[data-usage-chart-data]").forEach((button) => {
+			button.disabled = !rows.length;
+		});
+		const configs = usageTrendConfigs(rows, query.get("interval"));
+		for (const [index, key] of ["volume", "cost"].entries()) {
+			const target = host.querySelector(`[data-usage-${key}-host]`);
+			if (!target) continue;
+			if (!rows.length) {
+				target.innerHTML = "<div class=\"monitor-empty\"><i class=\"ti ti-chart-line\" aria-hidden=\"true\"></i><span>No recorded usage in this period</span></div>";
+				continue;
+			}
+			target.innerHTML = `<canvas role="img" aria-label="${key === "volume" ? "Successful and failed requests" : "Estimated cost in USD"} over ${rows.length} returned ${query.get("interval")} buckets"></canvas>`;
+			const chart = mountMonitorChart(auto_default, target.querySelector("canvas"), configs[index]);
+			if (chart) load.charts.push(chart);
+			const description = target.previousElementSibling.querySelector("span");
+			description.textContent = `${query.get("interval") === "hour" ? "Hourly" : "Daily"} · ${rows.length} buckets${data.page?.has_more ? " · first page of this range" : ""}`;
+		}
+	} catch (error) {
+		if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
+		host.innerHTML = `<div class="notice" role="status">Charts unavailable: ${esc(error.message)} <button type="button" data-retry-usage-charts>Retry charts</button></div>`;
+		host.querySelector("[data-retry-usage-charts]").addEventListener("click", handleAsync(() => {
+			host.innerHTML = usageChartsShell().replace(/^<div[^>]*>|<\/div>$/g, "");
+			return loadUsageVisuals();
+		}));
+	} finally {
+		if (usageRequestCurrent(load)) {
+			load.visualizationActive = false;
+			if (!controller.signal.aborted) host.setAttribute("aria-busy", "false");
+			drainUsageSections(load);
+		}
 	}
 }
 function loadVisibleUsageSections(root) {
@@ -40453,7 +40911,7 @@ function loadVisibleUsageSections(root) {
 }
 function drainUsageSections(load) {
 	if (!usageRequestCurrent(load)) return;
-	while (load.active < 3 && load.queue.length) {
+	while (load.active + (load.visualizationActive ? 1 : 0) < 3 && load.queue.length) {
 		const section = load.queue.shift();
 		if (load.loaded.has(section) || load.controllers.has(section)) continue;
 		load.active += 1;
@@ -40501,7 +40959,10 @@ async function loadUsageSection(section, force = false) {
 			host.innerHTML = usagePagedTable(section === "timeseries" ? "Timeseries" : "Service timeseries", section, section === "timeseries" ? usageTimeseriesTable(rows) : usageServiceTimeseriesTable(rows), data.page, rows.length);
 		} else if (section === "project-key-services") host.innerHTML = usageProjectKeyServiceHierarchy(data.rows || []);
 		else if (section === "unused-keys") host.innerHTML = unusedKeysTable(data.rows || []);
-		else host.innerHTML = usageBreakdownTable(data.rows || [], section === "projects" ? usageProjectName : section === "keys" ? usageKeyName : void 0);
+		else {
+			const label = section === "projects" ? usageProjectName : section === "keys" ? usageKeyName : (value) => value;
+			host.innerHTML = usageRanking(data.rows || [], label, esc) + usageBreakdownTable(data.rows || [], label);
+		}
 		if ([
 			"events",
 			"timeseries",
@@ -40950,6 +41411,23 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
   `;
 }
 function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {}) {
+	if (!ownerService && !ownerProject) return table([
+		"Created",
+		"Request / service",
+		"Model / provider",
+		"Outcome",
+		"Latency",
+		"Tokens / cost",
+		"Details"
+	], rows.map((row) => [
+		time(row.created_at),
+		`<div class="traffic-request-cell"><code title="${attr(row.request_id)}">${esc(row.request_id)}</code><small>${esc(row.service_name || row.route || "Not recorded")} ${row.diagnostics?.websocket ? badge("WS", "neutral") : row.diagnostics?.protocol === "http" ? badge("HTTP", "neutral") : ""}</small></div>`,
+		`<span>${esc(row.model || "—")}</span><div class="subtle">${esc(row.provider || "Not recorded")}</div>`,
+		`${badge(row.status, row.status === "success" ? "good" : "bad")}<div class="subtle">HTTP ${esc(row.status_code)}</div>`,
+		esc(trafficDuration(row.latency_ms)),
+		`${esc(usageValue(row.diagnostics, row.total_tokens))} tokens<div class="subtle">${esc(usageValue(row.diagnostics, row.estimated_cost_usd, money))}</div>`,
+		`<button type="button" class="icon-button" aria-label="Inspect request ${attr(row.request_id)}" title="Inspect request" data-nav="health" data-debug-request="${attr(row.request_id)}" data-debug-usage="${attr(JSON.stringify(investigationUsageSnapshot(row)))}"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>`
+	]));
 	return table([
 		"Created",
 		"Request",
@@ -41095,7 +41573,8 @@ async function health() {
 		esc,
 		attr,
 		badge,
-		table
+		table,
+		Chart: auto_default
 	});
 	const issues = [];
 	const recentWindow = new URLSearchParams({
@@ -41117,14 +41596,9 @@ async function health() {
 	if (renderId !== renderGeneration) return;
 	content.innerHTML = `
     ${monitoringIssues(issues)}
-    <div class="grid stats">
-      ${stat("Gateway", ready.status)}
-      ${stat("Routes observed", rows.length)}
-      ${stat("Error rate", errorRate)}
-      ${stat("Fallbacks", fallbackCount)}
-    </div>
     <section class="panel">
       <div class="panel-heading"><h3>Recorded reliability</h3><span class="subtle">Last 24 hours · minimum 20 requests · elevated at 5%</span></div>
+      <div class="monitor-history-summary">${stat("Gateway", ready.status)}${stat("Routes observed", rows.length)}${stat("Error rate", errorRate)}${stat("Fallbacks", fallbackCount)}</div>
       ${healthTable(rows)}
     </section>
     <section class="panel">
@@ -43066,7 +43540,7 @@ function tabulateUsage(root) {
 	nav.setAttribute("aria-label", "Usage breakdown");
 	headings[0].before(nav);
 	const hint = document.createElement("p");
-	hint.className = "help";
+	hint.className = "sr-only";
 	nav.after(hint);
 	const sections = headings.map((heading) => {
 		const section = document.createElement("section");
@@ -43170,6 +43644,7 @@ var init_main = __esmMin((() => {
 	init_monitoring();
 	init_traffic();
 	init_gateway_status();
+	init_monitoring_visuals();
 	init_guidance();
 	init_investigation();
 	init_tabler_icons_min();

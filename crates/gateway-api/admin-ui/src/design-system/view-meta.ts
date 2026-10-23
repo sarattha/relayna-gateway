@@ -33,17 +33,17 @@ export const viewMeta: Record<ViewId, ViewMeta> = {
   traffic: {
     title: "Traffic",
     domain: "Monitor",
-    summary: "Live requests, upstream attempts, failure reasons, and saved diagnostics.",
+    summary: "Inspect live sessions and recent requests across your gateway.",
   },
   health: {
     title: "Health",
     domain: "Monitor",
-    summary: "Provider checks, circuit state, import versions, and debug bundles.",
+    summary: "Understand gateway demand, capacity, latency, and service health.",
   },
   usage: {
     title: "Usage & cost",
     domain: "Monitor",
-    summary: "Cost, tokens, denials, fallbacks, guardrail blocks, task drilldowns, and exports.",
+    summary: "Explore request trends, costs, and the projects driving them.",
   },
   providers: {
     title: "Providers",
