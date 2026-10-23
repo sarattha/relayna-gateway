@@ -509,7 +509,7 @@ describe("shared console and accessibility", () => {
     const { container } = render(<ConsoleShell />);
     expect(container.querySelectorAll("[data-view]")).toHaveLength(18);
     expect(screen.getByLabelText("Operator token")).toBeTruthy();
-    expect(screen.getByText("Gateway console · 4.0")).toBeTruthy();
+    expect(screen.getByText("AI control plane")).toBeTruthy();
     expect(
       container.querySelector("#entra-sign-in")?.getAttribute("href"),
     ).toBe("/admin-ui/auth/login");

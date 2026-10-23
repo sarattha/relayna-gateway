@@ -14,6 +14,24 @@ Design 4.0 upgrades the shared shell and every Admin/Owner page with consistent
 neutral surfaces, compact typography, table spacing, field labels and semantic
 status colors. The design version is separate from the gateway release version.
 
+The light sidebar uses elevated selected items and subtle lift-and-shadow
+feedback on actionable controls. Keyboard focus remains visible, and reduced
+motion preferences remove movement. Read-only charts stay stable while their
+measurements update.
+
+Every workspace leads with visual context. Catalogs compare service links,
+provider setup, transport capability and routing configuration. Governance pages
+show key lifecycle, safeguard stages, exact access bindings and sampled audit
+actions. Owner catalogs and dashboards use the same visual language within
+their assigned resources. Configuration coverage does not imply a healthy
+connection; returned-page counts do not imply lifetime totals. Missing data
+remains unknown, independently of a measured zero.
+
+Information icons reveal secondary definitions on hover, keyboard focus or tap.
+Detailed configuration, sanitized snapshots and request investigations remain
+available through disclosures and drawers. Essential field labels, units,
+credential handling and confirmation steps remain beside their controls.
+
 React owns the shell, authentication and route-assignment editors, and provider
 creation and Foundry dialogs. Existing operational controllers
 continue to own their page content and API workflows through explicit DOM
@@ -26,6 +44,13 @@ shows no results; selected keys remain visible.
 Run `npm run typecheck:admin-ui` for strict checks of the React components and
 `npm run test:react:coverage` for mounted interaction coverage, alongside
 `npm test` for existing operational regressions. CI checks both suites.
+
+For a local visual tour without a Gateway or credentials, build the assets and
+run `node tests/fixtures/admin-ui-design-preview.mjs --port 18464`, then open
+`http://127.0.0.1:18464/admin-ui`. The loopback-only preview covers Admin and
+Owner workspaces with explicitly synthetic, frozen data. `/fixture` lists its
+session controls and limitations. Writes return 405; its charts and status
+indicators are design examples, not health or performance evidence.
 
 ## Configure authentication profiles
 

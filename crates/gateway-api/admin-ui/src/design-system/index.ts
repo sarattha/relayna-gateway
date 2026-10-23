@@ -3,6 +3,7 @@ import { metaForView } from "./view-meta";
 export * from "./components";
 export * from "./templates";
 export * from "./view-meta";
+export * from "./insights";
 
 export function applyViewChrome(view: string): void {
   const meta = metaForView(view);

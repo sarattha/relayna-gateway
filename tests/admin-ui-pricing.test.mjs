@@ -3,6 +3,13 @@ import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import ts from "typescript";
 
+const sourceModule = async path => {
+  const code = readFileSync(new URL(path, import.meta.url), "utf8");
+  return import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+};
+const { serviceCatalogInsights } = await sourceModule("../crates/gateway-api/admin-ui/src/catalog-visuals.ts");
+const { insightStrip, distributionBars } = await sourceModule("../crates/gateway-api/admin-ui/src/design-system/insights.ts");
+
 const source = readFileSync(new URL("../crates/gateway-api/admin-ui/src/main.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
 const names = ["services", "serviceEditForm", "normalizedPriceDecimal", "validateServicePriceInput", "servicePriceInputs", "bindServicePriceValidation", "validateServicePriceForm", "pricingRulesEditor", "pricingRuleRow", "bindPricingRuleEditors", "syncPricingRuleEditor", "pricingRuleFromRow", "openApiEndpointPricingEditor", "bindEndpointPricingEditors", "syncEndpointPricingEditor", "serviceBody", "pricingRulesFromForm", "endpointPricingRulesFromForm", "submitService", "patchService", "policyFields", "usage", "formSection", "option", "attr", "esc", "listValue", "csv", "blankToUndefined", "nullableString", "nullableNumber", "money"];
@@ -31,7 +38,8 @@ const api = async (path, options) => {
 };
 // Keep the real renderers, event bindings and serializers. Stub unrelated
 // identity/navigation infrastructure so native form validity is exercised.
-const ui = new Function("document", "FormData", "Event", "state", "api", "confirmation", `
+const ui = new Function("document", "FormData", "Event", "state", "api", "confirmation", "visuals", `
+  const { serviceCatalogInsights, insightStrip, distributionBars } = visuals;
   let renderGeneration = 0;
   const content = document.querySelector("#content");
   const noop = () => {};
@@ -57,7 +65,7 @@ const ui = new Function("document", "FormData", "Event", "state", "api", "confir
   const usageExportAction = noop, syncUsageExportControls = noop, loadUsage = noop, bindUsageSuggestions = noop;
   ${functions}
   return {services, serviceEditForm, bindPricingRuleEditors, bindEndpointPricingEditors, serviceBody, submitService, patchService, policyFields, usage, money};
-`)(document, FormData, Event, state, api, confirmation);
+`)(document, FormData, Event, state, api, confirmation, { serviceCatalogInsights, insightStrip, distributionBars });
 
 function checkAmount(input) {
   assert.ok(input);
@@ -77,6 +85,7 @@ function checkAmount(input) {
 }
 
 await ui.services();
+assert.deepEqual([...document.querySelectorAll(".insight-metric strong")].map(node => node.textContent), ["1 / 1", "0", "0"], "service pricing controls render alongside the real registration summary");
 const create = document.querySelector("#service-form");
 create.elements.namedItem("name").value = "tiny-price";
 create.elements.namedItem("service_type").value = "custom";

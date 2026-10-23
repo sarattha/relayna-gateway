@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import "./admin-ui-catalog-visuals.test.mjs";
+import "./admin-ui-governance-visuals.test.mjs";
+import "./admin-ui-owner-visuals.test.mjs";
+import "./admin-ui-global-visuals.test.mjs";
+import "./admin-ui-design-preview.test.mjs";
 import "./admin-ui-litellm-policy.test.mjs";
 import "./admin-ui-dialog.test.mjs";
 import "./admin-ui-auth-profiles.test.mjs";
@@ -413,8 +418,12 @@ test("key names are escaped in forms and inventory, submitted on create/edit and
   assert.ok(ownership({name:malicious}).includes(escape(malicious)));
   assert.ok(!ownership({name:malicious}).includes('<img'));
   const render = new Function('table','esc','keyOwnerLabel','listValue','keyStatus','keyExpiry','keyPolicySummary','time','keyLifecycleActions', `return (${sourceFunction('keyTable')});`)((headers, rows)=>rows, escape, ()=>'',()=>'',()=>'',()=>'',()=>'',()=>'',()=>'');
-  assert.ok(render([{name:malicious,key_prefix:'rk_safe'}])[0][0].includes(escape(malicious)));
-  assert.equal(render([{name:null,key_prefix:'rk_safe'}])[0][0],'<code>rk_safe</code>');
+  const namedKey = render([{name:malicious,key_prefix:'rk_safe'}])[0][0];
+  assert.ok(namedKey.includes(escape(malicious)));
+  assert.doesNotMatch(namedKey, /<img/);
+  const unnamedKey = render([{name:null,key_prefix:'rk_safe'}])[0][0];
+  assert.match(unnamedKey, /Virtual key<\/strong>/);
+  assert.match(unnamedKey, /<code>rk_safe<\/code>/);
   const label = new Function('state', `return (${sourceFunction('keyName')});`)({keys:[{id:'named',name:'Production',key_prefix:'rk_1'},{id:'unnamed',key_prefix:'rk_2'}]});
   assert.equal(label('named'),'Production (rk_1)');
   assert.equal(label('unnamed'),'rk_2');

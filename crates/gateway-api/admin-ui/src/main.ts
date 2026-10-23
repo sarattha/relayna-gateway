@@ -10,6 +10,9 @@ import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic, trafficDuration } from "./traffic";
 import { mountHealthGatewayStatus, mountTrafficGatewayStatus } from "./gateway-status";
 import { mountMonitorChart, usageChartsShell, usageRanking, usageSummaryView, usageTrendConfigs } from "./monitoring-visuals";
+import { catalogCredentialState, catalogServiceTransport, projectCatalogInsights, providerCatalogInsights, serviceCatalogInsights, routeCatalogInsights } from "./catalog-visuals";
+import { keyGovernanceSnapshot, guardrailGovernanceSnapshot, memberAccessSnapshot, managedIdentitySnapshot, auditSampleSnapshot, settingsGovernanceSnapshot } from "./governance-visuals";
+import { ownerCatalogInsights, ownerDashboardInsights, ownerUsageDistribution, ownerRequestProfile, ownerIncidentSeries, ownerIncidentDescription } from "./owner-visuals";
 import { installComponentGuidance } from "./design-system/guidance";
 import { refreshWebSocketMetrics, routingModeLabel, usageValue, requestInvestigationView, bindInvestigationActions, matchTrafficRecord, investigationUsageSnapshot } from "./investigation";
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
@@ -25,6 +28,9 @@ import {
   jsonBlock,
   metricTile,
   panel,
+  insightStrip,
+  distributionBars,
+  flowSummary,
   tableWrap,
   viewMeta,
 } from "./design-system";
@@ -766,12 +772,14 @@ async function overview() {
   content.innerHTML = `
     ${monitoringIssues(issues)}
     <div class="readiness-banner ${readyState ? "good" : "bad"}" role="status"><i class="ti ${readyState ? "ti-circle-check" : "ti-alert-triangle"}" aria-hidden="true"></i><span><strong>Gateway ${esc(ready.status.replaceAll("_", " "))}.</strong> ${ready.detail ? esc(ready.detail) : "Current readiness · gateway-wide"}</span><button type="button" class="link-button" data-overview-nav="health">View health →</button></div>
-    <div class="overview-metrics">
-      ${overviewFact("Requests", summary.request_count?.toLocaleString() ?? "—", overviewWindowLabel())}
-      ${overviewFact("Success rate", summary.request_count ? percent(1 - summary.failure_count / summary.request_count) : "—", `${summary.failure_count ?? "Unknown"} failed requests`)}
-      ${overviewFact("Average latency", summary.average_latency_ms == null ? "—" : `${Math.round(summary.average_latency_ms)} ms`, "Across recorded requests")}
-      ${overviewFact("Estimated cost", summary.estimated_cost_usd == null ? "—" : money(summary.estimated_cost_usd), "Usage estimate · USD")}
-    </div>
+    <section class="page-insights" aria-label="Gateway activity summary">
+      ${insightStrip([
+        { label: "Requests", value: summary.request_count, icon: "arrows-exchange" },
+        { label: "Success rate", value: summary.request_count > 0 && typeof summary.failure_count === "number" ? percent(1 - summary.failure_count / summary.request_count) : null, icon: "circle-check", detail: `${summary.failure_count ?? "Unknown"} recorded failures` },
+        { label: "Average latency", value: summary.average_latency_ms == null ? null : `${Math.round(summary.average_latency_ms)} ms`, icon: "clock" },
+        { label: "Estimated cost", value: summary.estimated_cost_usd == null ? null : money(summary.estimated_cost_usd), icon: "coin", detail: "Recorded reporting estimate · USD" },
+      ], { label: `${scopeLabel()} · ${overviewWindowLabel()}` })}
+    </section>
     <div class="overview-insights">
       <section class="panel chart-panel">
         <div class="panel-heading chart-heading"><div><h3>Request volume</h3><span class="subtle">${esc(scopeLabel())} · ${esc(overviewWindowLabel())}</span></div></div>
@@ -782,7 +790,10 @@ async function overview() {
         <div class="panel-heading"><h3>Gateway attention</h3><span class="badge warn">${issues.some((issue) => issue.startsWith("provider-health:") && issue.endsWith("unavailable")) ? "Unavailable" : `${risks.length} elevated rates`}</span></div>
         <p class="help">${esc(overviewWindowLabel())} · minimum 20 requests · elevated at 5%</p>
         <div class="attention-list">${issues.some((issue) => issue.startsWith("provider-health:") && issue.endsWith("unavailable")) ? emptyState("Reliability observations are unavailable.") : risks.length ? risks.slice(0, 3).map(overviewRiskRow).join("") : emptyState("No elevated rates in the recorded sample.")}</div>
-        <p class="help">${issues.some((issue) => issue.startsWith("keys:") && issue.endsWith("unavailable")) ? "Key inventory is unavailable." : `${activeKeys} active keys in ${esc(scopeLabel())}. ${scopedKeys.filter((key) => keyLifecycle(key) === "expired").length} expired.`}</p>
+        ${distributionBars("Key lifecycle", [
+          { label: "Active", value: issues.some(issue => issue.startsWith("keys:") && issue.endsWith("unavailable")) ? null : activeKeys, tone: "good" },
+          { label: "Expired", value: issues.some(issue => issue.startsWith("keys:") && issue.endsWith("unavailable")) ? null : scopedKeys.filter(key => keyLifecycle(key) === "expired").length, tone: "bad" },
+        ], { caption: `Saved key lifecycle in ${scopeLabel()}; an active key still requires policy approval.` })}
         <button type="button" class="link-button" data-overview-nav="keys">Review virtual keys →</button>
       </section>
     </div>
@@ -808,9 +819,10 @@ async function overview() {
 
 function overviewProjectActivity(projectUsage, projectsRows, issues) {
   const unavailable = issues.some((issue) => issue.startsWith("by-project:") && issue.endsWith("unavailable"));
+  const maximum = Math.max(1, ...projectUsage.map(row => Number.isFinite(row.summary.request_count) ? row.summary.request_count : 0));
   return `    <section class="panel">
       <div class="panel-heading"><div><h3>Project activity</h3><span class="subtle">${esc(overviewWindowLabel())} · ${unavailable ? "Activity unavailable" : `top ${projectUsage.length} recorded projects`} · ${esc(scopeLabel())}</span></div></div>
-      ${unavailable ? emptyState("Project activity is unavailable. Retry sources to load it.") : table(["Project", "Requests", "Failures", "Estimated cost", "Explore"], projectUsage.map((row) => [esc(projectsRows.find((project) => project.id === row.name)?.name || row.name), esc(row.summary.request_count), esc(row.summary.failure_count), money(row.summary.estimated_cost_usd), `<button type="button" data-overview-project="${attr(row.name)}">View usage</button>`]))}
+      ${unavailable ? emptyState("Project activity is unavailable. Retry sources to load it.") : table(["Project", "Requests", "Failures", "Estimated cost", "Explore"], projectUsage.map((row) => [esc(projectsRows.find((project) => project.id === row.name)?.name || row.name), !Number.isFinite(row.summary.request_count) ? "Unknown" : `<div class="request-rank"><strong>${esc(row.summary.request_count)}</strong><progress max="${maximum}" value="${attr(row.summary.request_count)}" aria-label="${attr(`${projectsRows.find(project => project.id === row.name)?.name || row.name}: ${row.summary.request_count} requests`)}"></progress></div>`, esc(row.summary.failure_count), money(row.summary.estimated_cost_usd), `<button type="button" data-overview-project="${attr(row.name)}">View usage</button>`]))}
     </section>`;
 }
 
@@ -842,10 +854,6 @@ function overviewWindowLabel() {
   if (state.overviewWindow === "30d") return "Last 30 days";
   if (state.overviewWindow === "24h") return "Last 24 hours";
   return "Last 7 days";
-}
-
-function overviewFact(label, value, detail, tone = "") {
-  return `<div class="posture-fact ${tone}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)}</small></div>`;
 }
 
 function overviewRisks(rows) {
@@ -944,7 +952,15 @@ async function projects() {
   if (renderId !== renderGeneration) return;
   [state.projects, state.services] = loaded;
   if (renderId !== renderGeneration) return;
+  const scopedProjects = state.projectScope ? state.projects.filter(project => project.id === state.projectScope) : state.projects;
+  const insights = projectCatalogInsights(scopedProjects, state.services);
   content.innerHTML = `
+    <section class="page-insights" aria-label="Project service coverage">
+      <div class="page-insights-grid">
+        ${insightStrip(insights.items, { label: "Service relationships" })}
+        ${distributionBars("Project link coverage", insights.distribution, { caption: insights.caption, empty: "No projects in this scope." })}
+      </div>
+    </section>
     <section class="panel">
       <div class="panel-heading"><h3>Create project</h3></div>
       <form id="project-form" class="form-grid">
@@ -966,15 +982,16 @@ async function projects() {
     button.addEventListener("click", handleAsync(projectAction));
   });
   organizeView("projects");
+  content.prepend(content.querySelector(".page-insights"));
 }
 
 function projectTable(rows) {
   return table(
     ["Name", "UUID", "Linked services", "Updated", "Actions"],
     rows.map((row) => [
-      esc(row.name),
+      `<strong><i class="ti ti-folder" aria-hidden="true"></i> ${esc(row.name)}</strong>`,
       `<code>${esc(row.id)}</code>`,
-      projectServiceForm(row),
+      `<details class="catalog-disclosure"><summary aria-label="Manage service access for project ${attr(row.name)}"><i class="ti ti-link" aria-hidden="true"></i> ${Array.isArray(row.service_names) ? `${row.service_names.length} service${row.service_names.length === 1 ? "" : "s"}` : "Links unknown"}<i class="ti ti-chevron-down" aria-hidden="true"></i></summary>${projectServiceForm(row)}</details>`,
       time(row.updated_at),
       `<div class="actions">
         <button data-project-action="usage" data-project-id="${attr(row.id)}" aria-label="View usage for project ${attr(row.name)}">Usage</button>
@@ -1041,8 +1058,17 @@ async function keys() {
   if (renderId !== renderGeneration) return;
   [state.keys, state.projects, state.services, state.guardrails, state.policyLayers] = loaded;
   const editing = state.keys.find((key) => key.id === state.editingKeyId);
+  const scopedKeys = state.projectScope ? state.keys.filter(key => key.project_id === state.projectScope) : state.keys;
+  const visual = keyGovernanceSnapshot(scopedKeys, state.policyLayers);
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
+    <section class="page-insights" aria-label="Virtual key governance summary">
+      <div class="page-insights-grid">
+        ${insightStrip(visual.insights, { label: "Key configuration in selected project scope" })}
+        ${distributionBars("Key lifecycle", visual.lifecycle, { caption: "Loaded keys · selected project scope", empty: "No keys in this scope." })}
+      </div>
+      ${flowSummary("Configured policy layers", visual.layers, "Gateway-wide layer inventory by scope kind. Matching layers and key policy determine the effective decision; use the simulator to inspect a request.")}
+    </section>
     <div class="split">
       <section class="panel">
         <div class="panel-heading">
@@ -1267,7 +1293,7 @@ function keyTable(rows) {
   return table(
     ["Key", "Owner", "Services", "Status", "Expiry", "Policy", "Updated", "Actions"],
     rows.map((key) => [
-      `${key.name ? `<span>${esc(key.name)}</span><br>` : ""}<code>${esc(key.key_prefix)}</code>`,
+      `<strong><i class="ti ti-key" aria-hidden="true"></i> ${key.name ? esc(key.name) : "Virtual key"}</strong><div class="subtle"><code>${esc(key.key_prefix)}</code></div>`,
       keyOwnerLabel(key),
       esc(listValue(key.service_names, "derived")),
       keyStatus(key),
@@ -1283,7 +1309,7 @@ function policyLayerTable(rows) {
   return table(
     ["Layer", "Scope", "Version", "Policy", "Guardrails", "Updated", "Actions"],
     rows.map((layer) => [
-      badge(layer.kind),
+      `<i class="ti ti-hierarchy" aria-hidden="true"></i> ${badge(layer.kind)}`,
       `<code>${esc(layer.scope_id || "all")}</code>`,
       esc(layer.policy?.policy_version ?? "1"),
       keyPolicySummary({ policy: layer.policy, rotation_due_at: null, last_used_at: null }),
@@ -1494,7 +1520,7 @@ async function audit() {
     <div class="form-actions"><button class="primary">Apply</button></div>
   `;
   if (renderId !== renderGeneration) return;
-  content.innerHTML = auditLogTemplate(formMarkup, '<div id="audit-results"></div>');
+  content.innerHTML = `<section class="page-insights" id="audit-insights" aria-label="Audit sample analysis" aria-busy="true"><p class="subtle">Loading audit sample…</p></section>${auditLogTemplate(formMarkup, '<div id="audit-results"></div>')}`;
   document.querySelector("[data-filter-form]").addEventListener("submit", handleAsync(loadAuditEvents));
   await loadAuditEvents();
   organizeView("audit");
@@ -1508,9 +1534,26 @@ async function loadAuditEvents(event) {
     const value = form.get(key);
     if (value) query.set(key, value);
   }
-  state.auditEvents = await api(`/admin-ui/admin/audit-events?${query}`);
+  const insights = document.querySelector("#audit-insights");
+  insights?.setAttribute("aria-busy", "true");
+  try {
+    state.auditEvents = await api(`/admin-ui/admin/audit-events?${query}`);
+  } catch (error) {
+    if (insights?.isConnected) {
+      insights.innerHTML = '<p class="subtle" role="status">Audit sample unavailable. Any previous results below may reflect earlier filters.</p>';
+      insights.setAttribute("aria-busy", "false");
+    }
+    throw error;
+  }
   const results = document.querySelector("#audit-results");
-  if (results) results.innerHTML = auditEventTable(state.auditEvents);
+  if (results) {
+    const visual = auditSampleSnapshot(state.auditEvents);
+    if (insights?.isConnected) {
+      insights.innerHTML = `<div class="page-insights-grid">${insightStrip(visual.insights, { label: "Loaded audit sample" })}${distributionBars("Actions in sample", visual.actions, { caption: "Returned events only · filtered and limited, not a lifetime total", empty: "No events match this sample." })}</div>`;
+      insights.setAttribute("aria-busy", "false");
+    }
+    results.innerHTML = auditEventTable(state.auditEvents);
+  }
 }
 
 function auditEventTable(rows) {
@@ -1519,12 +1562,12 @@ function auditEventTable(rows) {
     rows.map((row) => [
       time(row.created_at),
       `<code>${esc(row.actor_member_id ? `member:${row.actor_member_id}` : row.actor_token_id ? `token:${row.actor_token_id}` : "system")}</code>`,
-      badge(row.action),
+      `<i class="ti ti-list-details" aria-hidden="true"></i> ${badge(row.action)}`,
       `<strong>${esc(row.target_type)}</strong><div class="subtle"><code>${esc(row.target_id || "")}</code></div>`,
       `<code>${esc(row.request_id || "")}</code>`,
       esc(row.ip || ""),
       esc(row.user_agent || ""),
-      `<details><summary>Before/after</summary>${jsonBlock({ before: row.before, after: row.after })}</details>`,
+      `<details><summary><i class="ti ti-arrows-diff" aria-hidden="true"></i> Before/after</summary>${jsonBlock({ before: row.before, after: row.after })}</details>`,
     ]),
   );
 }
@@ -1627,13 +1670,22 @@ async function providers() {
   if (renderId !== renderGeneration) return;
   [state.providers, state.litellmCredentialMappings, state.litellmPassthroughSettings, state.keys, state.projects] = loaded;
   if (renderId !== renderGeneration) return;
+  const insights = providerCatalogInsights(state.providers, state.litellmCredentialMappings, state.litellmPassthroughSettings);
   content.innerHTML = `
+    <section class="page-insights" aria-label="Provider authentication coverage">
+      <div class="page-insights-grid">
+        ${insightStrip(insights.items, { label: "Credential routing" })}
+        ${distributionBars("Provider setup", insights.distribution, { caption: insights.caption, empty: "No provider connections registered." })}
+      </div>
+    </section>
     <section class="panel">
       <div class="panel-heading"><h3>Provider configuration</h3><span class="subtle">${state.providers.length} total</span></div>
       ${providerTable(state.providers)}
     </section>
     <section class="panel">
       <div class="panel-heading"><h3>LiteLLM credential mappings</h3><span class="subtle">${state.litellmCredentialMappings.length} total</span></div>
+      ${litellmCredentialMappingTable(state.litellmCredentialMappings)}
+      <details class="catalog-disclosure"><summary><i class="ti ti-key" aria-hidden="true"></i> Create or replace a credential mapping</summary>
       <form id="litellm-credential-form" class="form-grid">
         <label>Scope<select name="scope" data-litellm-mapping-scope>${option("key", "key")}${option("project", "")}</select></label>
         <label>Key<select name="key_target_id" data-litellm-key-target>${keyOptions()}</select></label>
@@ -1642,11 +1694,11 @@ async function providers() {
         <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
         <div class="form-actions"><button class="primary">Save mapping</button></div>
       </form>
-      ${litellmCredentialMappingTable(state.litellmCredentialMappings)}
+      </details>
     </section>
     <section class="panel">
       <div class="panel-heading"><h3>LiteLLM passthrough</h3><span class="subtle">single ingress mode</span></div>
-      ${litellmPassthroughForm(state.litellmPassthroughSettings)}
+      <details class="catalog-disclosure"><summary><i class="ti ti-arrows-split" aria-hidden="true"></i> Configure wildcard ingress</summary>${litellmPassthroughForm(state.litellmPassthroughSettings)}</details>
     </section>
   `;
   document.querySelectorAll("[data-foundry-provider]").forEach(button => button.addEventListener("click", handleAsync(() => openFoundryEditor("provider", state.providers.find(p => p.id === button.dataset.foundryProvider), button))));
@@ -1668,6 +1720,7 @@ async function providers() {
     button.addEventListener("click", handleAsync(liteLlmCredentialMappingAction));
   });
   organizeView("providers");
+  content.prepend(content.querySelector(".page-insights"));
   const createButton = document.createElement("button");
   createButton.type = "button";
   createButton.className = "primary";
@@ -1716,11 +1769,11 @@ function providerTable(rows) {
   return table(
     ["Provider", "Endpoint", "State", "Credential", "Authentication", "Updated", "Actions"],
     rows.map((row) => [
-      `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.provider)}</div>`,
+      `<strong><i class="ti ti-cloud" aria-hidden="true"></i> ${esc(row.name)}</strong><div class="subtle">${esc(row.provider)}</div>`,
       `<code>${esc(row.base_url)}</code>`,
-      row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
-      (row.credential_configured || (row.foundry && row.foundry.method !== "client_secret")) ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
-      providerAuthSettingsForm(row),
+      badge(row.enabled === true ? "enabled" : row.enabled === false ? "disabled" : "unknown", row.enabled === true ? "good" : row.enabled === false ? "bad" : "neutral"),
+      badge(catalogCredentialState(row).label, catalogCredentialState(row).tone),
+      row.provider === "litellm" ? `<details class="catalog-disclosure"><summary><i class="ti ti-shield-lock" aria-hidden="true"></i> Credential settings</summary>${providerAuthSettingsForm(row)}</details>` : providerAuthSettingsForm(row),
       time(row.updated_at),
       `<div class="actions">
         <button data-provider-action="${row.enabled ? "disable" : "enable"}" data-provider-id="${attr(row.id)}" aria-label="${row.enabled ? "Disable" : "Enable"} provider ${attr(row.name)}">${row.enabled ? "Disable" : "Enable"}</button>
@@ -1755,10 +1808,10 @@ function litellmCredentialMappingTable(rows) {
   return table(
     ["Scope", "Target", "State", "Credential", "Updated", "Actions"],
     rows.map((row) => [
-      esc(row.scope),
+      `<span class="badge neutral"><i class="ti ti-${row.scope === "project" ? "folder" : "key"}" aria-hidden="true"></i> ${esc(row.scope)}</span>`,
       `<strong>${esc(row.target_label || mappingTargetName(row))}</strong><div class="subtle"><code>${esc(row.target_id)}</code></div>`,
-      row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
-      row.credential_configured ? '<span class="badge good">configured</span>' : '<span class="badge bad">missing</span>',
+      badge(row.enabled === true ? "enabled" : row.enabled === false ? "disabled" : "unknown", row.enabled === true ? "good" : row.enabled === false ? "bad" : "neutral"),
+      badge(catalogCredentialState(row).label, catalogCredentialState(row).tone),
       time(row.updated_at),
       `<div class="actions">
         <button data-litellm-mapping-action="${row.enabled ? "disable" : "enable"}" data-mapping-id="${attr(row.id)}" aria-label="${row.enabled ? "Disable" : "Enable"} LiteLLM mapping for ${attr(row.target_label || mappingTargetName(row))}">${row.enabled ? "Disable" : "Enable"}</button>
@@ -1876,9 +1929,17 @@ async function routes() {
   if (renderId !== renderGeneration) return;
   [state.openaiRoutes, state.anthropicRoutes, state.services, state.routeIdentities] = loaded;
   if (renderId !== renderGeneration) return;
+  const insights = routeCatalogInsights(state.openaiRoutes, state.anthropicRoutes, state.services, state.routeIdentities);
   content.innerHTML = `
+    <section class="page-insights" aria-label="Route configuration and precedence">
+      <div class="page-insights-grid">
+        ${insightStrip(insights.items, { label: "Routing configuration" })}
+        ${distributionBars("Canonical forwarding modes", insights.distribution, { caption: insights.caption, empty: "No canonical route settings loaded." })}
+      </div>
+      ${flowSummary("Route precedence", insights.steps, "Control-plane routes are reserved. LiteLLM fallback applies only when configured and allowed.")}
+    </section>
     <section class="panel"><div class="panel-heading"><h3>Additional endpoint identity</h3></div>
-      <p class="field-hint">Choose authentication requirements for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
+      <p class="field-hint">Per-endpoint requirements. Registered services use their own saved identity settings.</p>
       ${table(["Route", "Protocol", "Identity", "Actions"], state.routeIdentities.filter((row) => ![...state.openaiRoutes, ...state.anthropicRoutes].some((item) => item.route === row.route)).map((row) => [`<code>${esc(row.route)}</code>`, row.access?.websocket ? '<span class="badge">HTTP + WS</span><div class="subtle">Caller-owned LiteLLM keys only</div>' : '<span class="badge">HTTP</span>', endpointIdentityBadge(row.access), routeIdentityButton(row.route)]))}
     </section>
     <section class="panel">
@@ -1917,6 +1978,7 @@ async function routes() {
   });
   document.querySelectorAll("[data-route-identity]").forEach((button) => button.addEventListener("click", editRouteIdentity));
   organizeView("routes");
+  content.prepend(content.querySelector(".page-insights"));
 }
 
 function routeFamilyLogo(family) {
@@ -1931,14 +1993,14 @@ function providerRouteTable(rows, family) {
   return table(
     ["Route", "Protocol", "Identity", "State", "Configuration", "Updated", "Actions"],
     rows.map((row) => [
-      `<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
+      `<strong><i class="ti ti-route" aria-hidden="true"></i> ${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
       row.route === "/v1/responses" && row.mode === "direct_litellm_passthrough" && state.routeIdentities.some((setting) => setting.route === row.route && setting.access?.websocket) ? '<span class="badge">HTTP + WS</span><div class="subtle">Caller-owned LiteLLM keys only</div>' : '<span class="badge">HTTP</span>',
       routeIdentityControl(row.route),
-      row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
+      badge(row.enabled === true ? "enabled" : row.enabled === false ? "disabled" : "unknown", row.enabled === true ? "good" : row.enabled === false ? "bad" : "neutral"),
       modeForm(row),
       time(row.updated_at),
       `<div class="actions">
-        <button ${actionAttr}="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}">${row.enabled ? "Disable" : "Enable"}</button>
+        <button ${actionAttr}="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}" aria-label="${row.enabled ? "Disable" : "Enable"} route ${attr(row.route)}">${row.enabled ? "Disable" : "Enable"}</button>
       </div>`,
     ]),
   );
@@ -1969,9 +2031,9 @@ function serviceRouteTable(rows) {
   return table(
     ["Service", "Route", "Protocol", "Identity", "State", "Methods", "Upstream", "Timeout", "Health check", "Credential"],
     rows.map((row) => [
-      `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
+      `<strong><i class="ti ti-apps" aria-hidden="true"></i> ${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       `<code>${esc(row.route_pattern)}</code>`,
-      serviceProtocolSummary(row),
+      `<i class="ti ti-plug-connected" aria-hidden="true"></i> ${serviceProtocolSummary(row)}`,
       endpointIdentityBadge(row.access),
       serviceBadges(row),
       esc(listValue(row.allowed_methods, "none")),
@@ -2148,7 +2210,14 @@ async function services() {
   [state.services, state.projects] = loaded;
   const editing = state.services.find((service) => service.name === state.editingServiceName);
   if (renderId !== renderGeneration) return;
+  const insights = serviceCatalogInsights(state.services, state.projects);
   content.innerHTML = `
+    <section class="page-insights" aria-label="Service registration coverage">
+      <div class="page-insights-grid">
+        ${insightStrip(insights.items, { label: "Service relationships and transport" })}
+        ${distributionBars("Registration sync state", insights.distribution, { caption: insights.caption, empty: "No services registered." })}
+      </div>
+    </section>
     <div class="service-stack">
       <section class="panel">
         <div class="panel-heading">
@@ -2194,7 +2263,7 @@ async function services() {
     </div>
     <section class="panel">
       <div class="panel-heading"><h3>Registered services</h3><span class="subtle">${state.services.length} total</span></div>
-      <p class="field-hint">Enable WebSocket transport for services that accept upgrades. Accessa bindings restrict WS to their GET run path. SSE uses HTTP.</p>
+      <p class="field-hint">Protocol shows configured transport. Accessa WebSockets use the GET run path; SSE uses HTTP.</p>
       ${serviceTable(state.services)}
     </section>
     <datalist id="service-routes">${serviceRouteOptions()}</datalist>
@@ -2218,6 +2287,7 @@ async function services() {
   });
   prepareProfileKeys(content);
   organizeView("services");
+  content.prepend(content.querySelector(".page-insights"));
 }
 
 function normalizedPriceDecimal(value) {
@@ -2547,16 +2617,17 @@ async function settings() {
   ]);
   if (renderId !== renderGeneration) return;
   [state.studioConnection, state.authSettings] = loaded;
+  const visual = settingsGovernanceSnapshot(state.studioConnection, state.authSettings);
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
-    <div class="grid stats">
-      ${stat("Studio source", state.studioConnection.source)}
-      ${stat("Token", state.studioConnection.token_configured ? "Configured" : "Not configured")}
-      ${stat("Base URL", state.studioConnection.base_url || "Unset")}
-      ${stat("Auth source", state.authSettings.source)}
-      ${stat("Entra ID", state.authSettings.unverified_bearer_enabled ? "Verification paused" : state.authSettings.entra.enabled ? "Enabled" : "Disabled")}
-      ${stat("Apigee", state.authSettings.apigee.trusted_header_enabled ? "Enabled" : "Disabled")}
-    </div>
+    <section class="page-insights" aria-label="Saved integration and trust configuration">
+      ${insightStrip(visual.insights, { label: "Saved configuration · connection health is not measured here" })}
+      ${flowSummary("Identity configuration boundaries", [
+        { label: "Shared trust settings", icon: "shield-check", value: state.authSettings.source || "Unknown source" },
+        { label: "Endpoint identity policy", icon: "route", value: "Per route or service" },
+        { label: "Virtual key governance", icon: "key", value: "Access and limits" },
+      ], "Request identity depends on endpoint policy and forwarding mode. Shared configuration alone does not grant access.")}
+    </section>
     <section class="panel">
       <div class="panel-heading"><h3>Studio connection</h3><span class="subtle">${esc(state.studioConnection.updated_at ? time(state.studioConnection.updated_at) : "fallback or unset")}</span></div>
       <form id="studio-connection-form" class="form-grid">
@@ -2954,10 +3025,10 @@ function serviceTable(rows) {
   return table(
     ["Name", "State", "Route", "Protocol", "Identity", "Upstream", "Health check", "Credential", "Cost", "Actions"],
     rows.map((row) => [
-      `<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
+      `<strong><i class="ti ti-apps" aria-hidden="true"></i> ${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
       serviceBadges(row),
       `<code>${esc(row.route_pattern)}</code>`,
-      serviceProtocolSummary(row),
+      `<i class="ti ti-plug-connected" aria-hidden="true"></i> ${serviceProtocolSummary(row)}`,
       endpointIdentityBadge(row.access),
       esc(row.foundry ? `Azure Foundry · ${row.foundry.mode === "registered_agent" ? row.foundry.agent_name : "Responses passthrough"}` : row.upstream_base_url || "missing"),
       esc(row.foundry ? "Not probed" : healthCheckLabel(row)),
@@ -2974,10 +3045,11 @@ function serviceTable(rows) {
 }
 
 function serviceBadges(row) {
-  const stateBadge = row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>';
-  const syncBadge = row.sync_status === "synced" || row.sync_status === "local"
-    ? `<span class="badge good">${esc(row.sync_status)}</span>`
-    : `<span class="badge bad">${esc(row.sync_status)}</span>`;
+  const stateBadge = badge(row.enabled === true ? "enabled" : row.enabled === false ? "disabled" : "unknown", row.enabled === true ? "good" : row.enabled === false ? "bad" : "neutral");
+  const syncTone = row.sync_status === "synced" || row.sync_status === "local" ? "good"
+    : row.sync_status === "failed" ? "bad"
+    : row.sync_status === "stale" || row.sync_status === "incomplete" ? "warn" : "neutral";
+  const syncBadge = badge(row.sync_status || "sync unknown", syncTone);
   return `${stateBadge} ${syncBadge}`;
 }
 
@@ -4142,8 +4214,16 @@ async function guardrails() {
     api("/admin-ui/admin/guardrails/summary"),
   ]);
   const selected = state.guardrails.guardrails.find((guardrail) => guardrail.name === state.editingGuardrailName);
+  const visual = guardrailGovernanceSnapshot(state.guardrails.guardrails, state.guardrailExecutions.executions);
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
+    <section class="page-insights" aria-label="Guardrail configuration and execution sample">
+      <div class="page-insights-grid">
+        ${insightStrip(visual.insights, { label: "Catalog policy coverage" })}
+        ${distributionBars("Recent execution actions", visual.actions, { caption: `${state.guardrailExecutions.executions.length} returned executions · maximum 50, not a lifetime total`, empty: "No execution samples returned." })}
+      </div>
+      ${flowSummary("Enabled definitions by execution stage", visual.stages, "A guardrail can support several stages. These counts describe catalog capability; applied key policy and request mode determine what runs.")}
+    </section>
     <div class="split guardrail-workspace">
       <section class="panel">
         <div class="panel-heading">
@@ -4160,11 +4240,11 @@ async function guardrails() {
       </section>
     </div>
     <section class="panel">
-      <div class="panel-heading"><h3>Summary</h3></div>
+      <div class="panel-heading"><h3>Recorded execution summary</h3><span class="subtle">Returned aggregate groups</span></div>
       ${guardrailSummaryTable(state.guardrailSummary.summary)}
     </section>
     <section class="panel">
-      <div class="panel-heading"><h3>Recent executions</h3></div>
+      <div class="panel-heading"><h3>Recent executions</h3><span class="subtle">Latest returned sample · up to 50 executions</span></div>
       ${guardrailExecutionTable(state.guardrailExecutions.executions)}
     </section>
   `;
@@ -4191,11 +4271,11 @@ function guardrailCatalogTable(rows) {
   return table(
     ["Name", "Provider", "Modes", "Default", "Failure", "Enabled", "Endpoint", "Token", "Actions"],
     rows.map((row) => [
-      `<code>${esc(row.name)}</code><div class="subtle">${esc(row.description)}</div>`,
-      esc(row.provider_kind),
-      esc(listValue(row.modes, "")),
+      `<i class="ti ti-shield-check" aria-hidden="true"></i> <code>${esc(row.name)}</code><div class="subtle">${esc(row.description)}</div>`,
+      badge(row.provider_kind),
+      (row.modes || []).map(mode => badge(mode === "pre_call" ? "Pre-call" : mode === "post_call" ? "Post-call" : mode === "during_call" ? "Streaming" : mode)).join(" "),
       row.default_on ? '<span class="badge good">default</span>' : '<span class="badge">opt-in</span>',
-      esc(row.failure_policy),
+      badge(row.failure_policy, row.failure_policy === "fail_open" || row.failure_policy === "dry_run" ? "warn" : "neutral"),
       row.enabled ? '<span class="badge good">enabled</span>' : '<span class="badge bad">disabled</span>',
       row.endpoint_configured ? '<span class="badge good">configured</span>' : '<span class="badge">built-in</span>',
       row.token_configured ? '<span class="badge good">configured</span>' : '<span class="badge">none</span>',
@@ -4310,9 +4390,9 @@ function guardrailSummaryTable(rows) {
     ["Guardrail", "Mode", "Action", "Failure policy", "Count", "Total latency"],
     rows.map((row) => [
       esc(row.guardrail_name),
-      esc(row.mode),
-      esc(row.action),
-      esc(row.failure_policy),
+      badge(row.mode),
+      badge(row.action, row.action === "allow" ? "good" : row.action === "warn" || row.action === "block" ? "warn" : "neutral"),
+      badge(row.failure_policy, row.failure_policy === "fail_open" || row.failure_policy === "dry_run" ? "warn" : "neutral"),
       row.count,
       `${esc(row.total_latency_ms)} ms`,
     ]),
@@ -4327,8 +4407,8 @@ function guardrailExecutionTable(rows) {
       `<code>${esc(row.request_id)}</code>`,
       row.key_id ? `<code>${esc(row.key_id)}</code>` : "",
       esc(row.guardrail_name),
-      esc(row.mode),
-      esc(row.action),
+      badge(row.mode),
+      badge(row.action, row.action === "allow" ? "good" : row.action === "warn" || row.action === "block" ? "warn" : "neutral"),
       `${esc(row.latency_ms)} ms`,
       esc(row.reason || ""),
     ]),
@@ -4772,8 +4852,15 @@ async function members() {
   ]);
   if (renderId !== renderGeneration) return;
   [state.members, state.services, state.projects] = loaded;
+  const visual = memberAccessSnapshot(state.members);
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
+    <section class="page-insights" aria-label="Portal approval and access summary">
+      <div class="page-insights-grid">
+        ${insightStrip(visual.insights, { label: "Gateway-wide portal access configuration" })}
+        ${distributionBars("Member approval state", visual.statuses, { caption: "Loaded members · assignments alone do not activate a pending or blocked member", empty: "No portal members yet." })}
+      </div>
+    </section>
     <section class="panel">
       <div class="panel-heading"><div><h3>Portal members</h3><p>Entra proves identity. Relayna approval and exact service membership grant access.</p></div><span class="badge">${state.members.length} members</span></div>
       <div class="member-grid">${state.members.map(memberAccessCard).join("") || emptyState("No one has signed in through Entra yet.")}</div>
@@ -4795,13 +4882,16 @@ function memberAccessCard(item) {
       <div><h4>${esc(member.display_name || member.email || member.object_id)}</h4><p>${esc(member.email || member.object_id)}</p></div>
       ${badge(member.status, member.status === "active" ? "good" : member.status === "blocked" ? "bad" : "warn")}
     </div>
-    <div class="member-meta"><span>${admin ? "Admin" : "Member"}</span><span>Last sign-in ${time(member.last_sign_in_at)}</span></div>
+    <div class="member-meta"><span><i class="ti ti-${admin ? "user-shield" : "user"}" aria-hidden="true"></i> ${admin ? "Admin role" : "Member role"}</span><span><i class="ti ti-clock" aria-hidden="true"></i> Last sign-in ${time(member.last_sign_in_at)}</span></div>
+    <div class="member-meta"><span><i class="ti ti-hierarchy" aria-hidden="true"></i> ${item.service_memberships?.length || 0} service · ${item.project_memberships?.length || 0} project assignments</span></div>
     <div class="actions">
       <button data-member-status="active" data-member-id="${attr(member.id)}">Approve</button>
       <button data-member-status="blocked" data-member-id="${attr(member.id)}" class="danger">Block</button>
       <button data-member-admin="${admin ? "false" : "true"}" data-member-id="${attr(member.id)}">${admin ? "Remove admin" : "Make admin"}</button>
     </div>
-    <h5>Service access</h5>
+    <details class="catalog-disclosure member-access-details">
+    <summary><i class="ti ti-adjustments" aria-hidden="true"></i> Manage resource access <i class="ti ti-chevron-down" aria-hidden="true"></i></summary>
+    <h5><i class="ti ti-server" aria-hidden="true"></i> Service access</h5>
     ${item.service_memberships?.length ? table(["Service", "Role", ""], item.service_memberships.map((membership) => [
       esc(membership.service_name),
       badge(membership.role),
@@ -4812,7 +4902,7 @@ function memberAccessCard(item) {
       <label>Role<select name="role">${option("viewer", "viewer")}${option("owner", "")}</select></label>
       <button type="submit">Assign</button>
     </form>
-    <h5>Project access</h5>
+    <h5><i class="ti ti-folder" aria-hidden="true"></i> Project access</h5>
     ${item.project_memberships?.length ? table(["Project", "Role", ""], item.project_memberships.map((membership) => [
       esc(projectName(membership.project_id)),
       badge(membership.role),
@@ -4823,6 +4913,7 @@ function memberAccessCard(item) {
       <label>Role<select name="role">${option("viewer", "viewer")}${option("owner", "")}</select></label>
       <button type="submit">Assign</button>
     </form>
+    </details>
   </article>`;
 }
 
@@ -4894,8 +4985,20 @@ async function managedIdentities() {
   ]);
   if (renderId !== renderGeneration) return;
   [state.managedIdentities, state.managedIdentityProjects, state.services, state.projects] = loaded;
+  const visual = managedIdentitySnapshot(state.managedIdentities, state.managedIdentityProjects);
   if (renderId !== renderGeneration) return;
   content.innerHTML = `
+    <section class="page-insights" aria-label="Workload identity binding summary">
+      <div class="page-insights-grid">
+        ${insightStrip(visual.insights, { label: "Gateway-wide workload access configuration" })}
+        ${distributionBars("Exact resource bindings", visual.resources, { caption: "Bindings can share a workload principal; enabled does not bypass token validation", empty: "No workload bindings registered." })}
+      </div>
+      ${flowSummary("Workload monitoring authorization", [
+        { label: "Tenant and audience", icon: "fingerprint", value: "Verified token" },
+        { label: "Required application role", icon: "user-shield", value: "Per binding" },
+        { label: "Enabled exact binding", icon: "lock", value: "Service or project" },
+      ], "All checks must pass. An optional object ID further narrows a binding; one binding never grants access to other resources.")}
+    </section>
     <section class="panel">
       <div class="panel-heading"><div><h3>Register managed identity</h3><p>A token must have the monitoring audience, required app role, and this exact service binding.</p></div></div>
       <form id="managed-identity-form" class="form-grid">
@@ -4940,9 +5043,9 @@ async function managedIdentities() {
 function managedIdentityProjectTable(rows) {
   if (!rows.length) return emptyState("No project managed identities registered.");
   return table(["Identity", "Tenant / client", "Project", "Role", "Status", "Actions"], rows.map((row) => [
-    `<strong>${esc(row.display_name)}</strong>${row.object_id ? `<div class="subtle"><code>${esc(row.object_id)}</code></div>` : ""}`,
+    `<i class="ti ti-fingerprint" aria-hidden="true"></i> <strong>${esc(row.display_name)}</strong>${row.object_id ? `<div class="subtle">Exact object: <code>${esc(row.object_id)}</code></div>` : '<div class="subtle">Tenant and client match</div>'}`,
     `<code>${esc(row.tenant_id)}</code><div class="subtle"><code>${esc(row.client_id)}</code></div>`,
-    esc(projectName(row.project_id)),
+    `<i class="ti ti-folder" aria-hidden="true"></i> ${esc(projectName(row.project_id))}`,
     `<code>${esc(row.required_role)}</code>`,
     badge(row.enabled ? "enabled" : "disabled", row.enabled ? "good" : "bad"),
     `<div class="actions"><button data-managed-project-toggle data-identity-id="${attr(row.id)}" data-enabled="${row.enabled ? "false" : "true"}">${row.enabled ? "Disable" : "Enable"}</button><button class="danger" data-managed-project-delete data-identity-id="${attr(row.id)}">Delete</button></div>`,
@@ -4952,9 +5055,9 @@ function managedIdentityProjectTable(rows) {
 function managedIdentityTable(rows) {
   if (!rows.length) return emptyState("No managed identities registered.");
   return table(["Identity", "Tenant / client", "Service", "Role", "Status", "Actions"], rows.map((row) => [
-    `<strong>${esc(row.display_name)}</strong>${row.object_id ? `<div class="subtle"><code>${esc(row.object_id)}</code></div>` : ""}`,
+    `<i class="ti ti-fingerprint" aria-hidden="true"></i> <strong>${esc(row.display_name)}</strong>${row.object_id ? `<div class="subtle">Exact object: <code>${esc(row.object_id)}</code></div>` : '<div class="subtle">Tenant and client match</div>'}`,
     `<code>${esc(row.tenant_id)}</code><div class="subtle"><code>${esc(row.client_id)}</code></div>`,
-    esc(row.service_name),
+    `<i class="ti ti-server" aria-hidden="true"></i> ${esc(row.service_name)}`,
     `<code>${esc(row.required_role)}</code>`,
     badge(row.enabled ? "enabled" : "disabled", row.enabled ? "good" : "bad"),
     `<div class="actions"><button data-managed-toggle data-identity-id="${attr(row.id)}" data-enabled="${row.enabled ? "false" : "true"}">${row.enabled ? "Disable" : "Enable"}</button><button class="danger" data-managed-delete data-identity-id="${attr(row.id)}">Delete</button></div>`,
@@ -5034,10 +5137,11 @@ async function myServices() {
   state.ownerServices = await api("/owner/v1/services");
   if (!state.selectedOwnerService && state.ownerServices.length) state.selectedOwnerService = state.ownerServices[0].service.name;
   if (renderId !== renderGeneration) return;
-  content.innerHTML = `<section class="panel">
-    <div class="panel-heading"><div><h3>My registered services</h3><p>Only Relayna assignments shown here are available through the dashboard and owner API.</p></div><span class="badge">${state.ownerServices.length}</span></div>
-    <div class="owner-service-grid">${state.ownerServices.map(ownerServiceCard).join("") || emptyState("No service access has been assigned to this member.")}</div>
-  </section>`;
+  content.innerHTML = `${ownerCatalogInsights(state.ownerServices, "services")}
+    <section class="panel">
+      <div class="panel-heading"><div><h3><i class="ti ti-server" aria-hidden="true"></i> My registered services</h3><p>Open a dashboard for an assigned service. Configuration does not indicate live health.</p></div><span class="badge">${state.ownerServices.length} assigned</span></div>
+      <div class="owner-service-grid">${state.ownerServices.map(ownerServiceCard).join("") || emptyState("No service access has been assigned to this member.")}</div>
+    </section>`;
   content.querySelectorAll("[data-open-owner-service]").forEach((button) => button.addEventListener("click", () => {
     state.selectedOwnerService = button.dataset.openOwnerService;
     navigateToView("service-dashboard");
@@ -5047,10 +5151,15 @@ async function myServices() {
 
 function ownerServiceCard(item) {
   const service = item.service;
+  const operations = Array.isArray(service.openapi_endpoints) ? service.openapi_endpoints.length : null;
+  const transport = catalogServiceTransport(service);
+  const websocket = transport === "unknown" ? "Transport not recorded" : transport === "http" ? "HTTP transport" : "WebSocket configured";
   return `<article class="owner-service-card">
-    <div><span class="eyebrow">${esc(item.role)}</span><h3>${esc(service.name)}</h3><p><code>${esc(service.route_pattern)}</code></p></div>
-    <div class="member-meta"><span>${service.enabled ? "Active" : "Disabled"}</span><span>${esc(service.allowed_methods?.join(", ") || "")}</span></div>
-    <button class="primary" data-open-owner-service="${attr(service.name)}">Open dashboard</button>
+    <div class="member-card-heading"><i class="ti ti-box" aria-hidden="true"></i>${badge(item.role, "neutral")}</div>
+    <div><h3>${esc(service.name)}</h3><p><code>${esc(service.route_pattern)}</code></p></div>
+    <div class="member-meta">${badge(service.enabled === true ? "Enabled" : service.enabled === false ? "Disabled" : "Status unavailable", service.enabled === true ? "good" : service.enabled === false ? "bad" : "neutral")}<span><i class="ti ti-route" aria-hidden="true"></i> ${esc(service.allowed_methods?.join(", ") || "Methods not recorded")}</span></div>
+    <div class="member-meta"><span><i class="ti ti-api" aria-hidden="true"></i> ${operations == null ? "Catalog unavailable" : `${operations} catalog operations`}</span><span><i class="ti ti-plug-connected" aria-hidden="true"></i> ${websocket}</span></div>
+    <button class="primary" data-open-owner-service="${attr(service.name)}" aria-label="Open dashboard for ${attr(service.name)}">Open dashboard <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button>
   </article>`;
 }
 
@@ -5059,10 +5168,11 @@ async function myProjects() {
   state.ownerProjects = await api("/owner/v1/projects");
   if (!state.selectedOwnerProject && state.ownerProjects.length) state.selectedOwnerProject = state.ownerProjects[0].project.id;
   if (renderId !== renderGeneration) return;
-  content.innerHTML = `<section class="panel">
-    <div class="panel-heading"><div><h3>My projects</h3><p>Only exact Relayna project assignments shown here are available through the dashboard and owner API.</p></div><span class="badge">${state.ownerProjects.length}</span></div>
-    <div class="owner-service-grid">${state.ownerProjects.map(ownerProjectCard).join("") || emptyState("No project access has been assigned to this member.")}</div>
-  </section>`;
+  content.innerHTML = `${ownerCatalogInsights(state.ownerProjects, "projects")}
+    <section class="panel">
+      <div class="panel-heading"><div><h3><i class="ti ti-folders" aria-hidden="true"></i> My projects</h3><p>Monitoring follows each request's recorded project ID, independently of configured service links.</p></div><span class="badge">${state.ownerProjects.length} assigned</span></div>
+      <div class="owner-service-grid">${state.ownerProjects.map(ownerProjectCard).join("") || emptyState("No project access has been assigned to this member.")}</div>
+    </section>`;
   content.querySelectorAll("[data-open-owner-project]").forEach((button) => button.addEventListener("click", () => {
     state.selectedOwnerProject = button.dataset.openOwnerProject;
     navigateToView("project-dashboard");
@@ -5072,10 +5182,13 @@ async function myProjects() {
 
 function ownerProjectCard(item) {
   const project = item.project;
+  const services = Array.isArray(project.service_names) ? project.service_names : null;
   return `<article class="owner-service-card">
-    <div><span class="eyebrow">${esc(item.role)}</span><h3>${esc(project.name)}</h3><p><code>${esc(project.id)}</code></p></div>
-    <div class="member-meta"><span>${project.service_names?.length || 0} linked services</span></div>
-    <button class="primary" data-open-owner-project="${attr(project.id)}">Open dashboard</button>
+    <div class="member-card-heading"><i class="ti ti-folder" aria-hidden="true"></i>${badge(item.role, "neutral")}</div>
+    <div><h3>${esc(project.name)}</h3><p><code>${esc(project.id)}</code></p></div>
+    <div class="member-meta"><span><i class="ti ti-affiliate" aria-hidden="true"></i> ${services ? `${services.length} configured service links` : "Service links unavailable"}</span></div>
+    <div class="member-meta">${services?.length ? services.slice(0, 3).map(name => badge(name, "neutral")).join("") + (services.length > 3 ? `<span>+${services.length - 3} more</span>` : "") : `<span>${services ? "No service links configured" : "Link configuration not recorded"}</span>`}</div>
+    <button class="primary" data-open-owner-project="${attr(project.id)}" aria-label="Open dashboard for ${attr(project.name)}">Open dashboard <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button>
   </article>`;
 }
 
@@ -5088,14 +5201,7 @@ function ownerDashboardRange() {
 }
 
 function ownerIncidentSummary(rows, markers) {
-  if (!rows.length) return "No service usage data is available for this period.";
-  const latest = rows[rows.length - 1].summary || {};
-  const requests = Number(latest.request_count || 0);
-  const failures = Number(latest.failure_count || 0);
-  const errorRate = requests ? (failures / requests) * 100 : 0;
-  const p95 = latest.p95_latency_ms == null ? "no P95 latency data" : `${Math.round(latest.p95_latency_ms)} milliseconds P95 latency`;
-  const versions = markers.length ? ` Observed version transitions: ${markers.map((marker) => marker.service_version).join(", ")}.` : " No service version transitions were observed.";
-  return `Latest bucket: ${errorRate.toFixed(1)} percent errors and ${p95}.${versions}`;
+  return ownerIncidentDescription(rows, markers);
 }
 
 function ownerChartLabel(row) {
@@ -5106,27 +5212,17 @@ function ownerChartLabel(row) {
 function renderOwnerIncidentChart(rows, markers) {
   const canvas = document.querySelector("#owner-incident-chart");
   if (!(canvas instanceof HTMLCanvasElement)) return;
-  const labels = rows.map(ownerChartLabel);
-  const bucketTimes = rows.map((row) => new Date(row.bucket_start || row.bucket || row.name).getTime());
-  const markerLabels = Array.from({ length: rows.length }, () => []);
-  for (const marker of markers) {
-    if (!rows.length) break;
-    const observed = new Date(marker.first_observed_at).getTime();
-    let index = 0;
-    for (let candidate = 0; candidate < bucketTimes.length; candidate += 1) {
-      if (bucketTimes[candidate] > observed) break;
-      index = candidate;
-    }
-    markerLabels[index].push(marker.service_version);
-  }
-  const p95 = rows.map((row) => row.summary?.p95_latency_ms == null ? null : Number(row.summary.p95_latency_ms));
+  destroyOwnerDashboardChart();
+  const { points, observations } = ownerIncidentSeries(rows, markers, ["6h", "24h"].includes(state.ownerDashboardFilters.range) ? "hour" : "day");
+  if (!points.length) return;
   const markerPlugin = {
     id: "service-version-markers",
     afterDatasetsDraw(chart) {
+      if (!chart.isDatasetVisible(2)) return;
       const { ctx, chartArea, scales } = chart;
-      markerLabels.forEach((versions, index) => {
-        if (!versions.length) return;
-        const x = scales.x.getPixelForValue(index);
+      observations.forEach((observation) => {
+        const x = scales.x.getPixelForValue(observation.at);
+        if (x < chartArea.left || x > chartArea.right) return;
         ctx.save();
         ctx.strokeStyle = "#6b7280";
         ctx.setLineDash([4, 4]);
@@ -5134,9 +5230,6 @@ function renderOwnerIncidentChart(rows, markers) {
         ctx.moveTo(x, chartArea.top);
         ctx.lineTo(x, chartArea.bottom);
         ctx.stroke();
-        ctx.fillStyle = "#36534d";
-        ctx.font = "600 10px Inter, sans-serif";
-        ctx.fillText(versions.join(" → "), Math.min(x + 5, chartArea.right - 96), chartArea.top + 12);
         ctx.restore();
       });
     },
@@ -5145,42 +5238,39 @@ function renderOwnerIncidentChart(rows, markers) {
     type: "line",
     plugins: [markerPlugin],
     data: {
-      labels,
       datasets: [
         {
           label: "Error rate (%)",
-          data: rows.map((row) => {
-            const summary = row.summary || {};
-            const requests = Number(summary.request_count || 0);
-            return requests ? Number(summary.failure_count || 0) / requests * 100 : 0;
-          }),
-          borderColor: "#d9474f",
-          backgroundColor: "#d9474f",
+          data: points.map(point => ({ x: point.at, y: point.errorRate })),
+          borderColor: "#c54c59",
+          backgroundColor: "#c54c59",
           yAxisID: "errorRate",
-          tension: 0.28,
+          tension: 0.2,
+          spanGaps: false,
           pointRadius: 2,
           borderWidth: 2,
         },
         {
           label: "P95 latency (ms)",
-          data: p95,
-          borderColor: "#087b60",
-          backgroundColor: "#087b60",
+          data: points.map(point => ({ x: point.at, y: point.p95 })),
+          borderColor: "#177264",
+          backgroundColor: "#177264",
           yAxisID: "latency",
-          tension: 0.28,
+          tension: 0.2,
+          spanGaps: false,
           pointRadius: 2,
           borderWidth: 2,
         },
         {
           label: "Service version",
-          data: markerLabels.map((versions, index) => versions.length ? (p95[index] ?? 0) : null),
+          data: observations.map(observation => ({ x: observation.at, y: 1 })),
           borderColor: "#6b7280",
           backgroundColor: "#6b7280",
-          yAxisID: "latency",
+          yAxisID: "version",
           showLine: false,
           pointStyle: "triangle",
-          pointRadius: markerLabels.map((versions) => versions.length ? 6 : 0),
-          markerLabels,
+          pointRadius: 5,
+          observations,
         },
       ],
     },
@@ -5188,26 +5278,28 @@ function renderOwnerIncidentChart(rows, markers) {
       animation: false,
       maintainAspectRatio: false,
       responsive: true,
-      interaction: { mode: "index", intersect: false },
+      interaction: { mode: "nearest", axis: "x", intersect: false },
       plugins: {
-        legend: { position: "top", align: "start", labels: { boxWidth: 18, color: "#536276", font: { size: 11, weight: 600 } } },
+        legend: { position: "bottom", align: "start", labels: { boxWidth: 10, usePointStyle: true, color: "#63717a", font: { size: 11, weight: 600 } } },
         tooltip: {
           backgroundColor: "#062f36",
           callbacks: {
+            title(items) { return items.length ? new Date(items[0].parsed.x).toLocaleString() : ""; },
             label(context) {
               if (context.dataset.label === "Service version") {
-                const versions = context.dataset.markerLabels?.[context.dataIndex] || [];
-                return versions.map((version) => `Version ${version} first observed by Gateway`);
+                const version = context.dataset.observations?.[context.dataIndex]?.version;
+                return `Version ${version} first observed by Gateway`;
               }
-              return `${context.dataset.label}: ${context.formattedValue}`;
+              return `${context.dataset.label}: ${Number(context.parsed.y).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
             },
           },
         },
       },
       scales: {
-        x: { grid: { display: false }, ticks: { color: "#58736e", maxTicksLimit: 8, font: { size: 10 } } },
-        errorRate: { beginAtZero: true, suggestedMax: 100, grid: { color: "#dcebe7" }, ticks: { color: "#8a3439", callback: (value) => `${value}%`, font: { size: 10 } } },
-        latency: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, ticks: { color: "#087b60", callback: (value) => `${value} ms`, font: { size: 10 } } },
+        x: { type: "linear", grid: { display: false }, ticks: { color: "#63717a", maxTicksLimit: 8, callback: value => ownerChartLabel({ bucket: Number(value) }), font: { size: 10 } } },
+        errorRate: { beginAtZero: true, suggestedMax: 100, grid: { color: "#edf0f2" }, ticks: { color: "#8a3439", callback: (value) => `${value}%`, font: { size: 10 } } },
+        latency: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, ticks: { color: "#177264", callback: (value) => `${value} ms`, font: { size: 10 } } },
+        version: { display: false, min: 0, max: 1.08 },
       },
     },
   } as any);
@@ -5312,28 +5404,25 @@ async function serviceDashboard() {
   const eventStart = events.rows?.length ? events.offset + 1 : 0;
   const eventEnd = events.rows?.length ? events.offset + events.rows.length : 0;
   content.innerHTML = `
+    ${ownerDashboardInsights(dashboard, { money, range: state.ownerDashboardFilters.range })}
     <section class="owner-dashboard-toolbar">
       <label>Service<select id="owner-service-select">${state.ownerServices.map((item) => option(item.service.name, serviceName)).join("")}</select></label>
       <span class="badge">${esc(dashboard.role)}</span>
-      <code>GET /owner/v1/services/${esc(serviceName)}/dashboard</code>
-    </section>
-    <section class="metric-strip">
-      ${metricTile("Requests", dashboard.summary.request_count)}
-      ${metricTile("Failures", dashboard.summary.failure_count)}
-      ${metricTile("P95 latency", dashboard.summary.p95_latency_ms == null ? "n/a" : `${Number(dashboard.summary.p95_latency_ms).toFixed(0)} ms`)}
-      ${metricTile("Estimated cost", money(dashboard.summary.estimated_cost_usd))}
+      <span class="subtle"><i class="ti ti-lock" aria-hidden="true"></i> Exact service scope · read only</span>
     </section>
     <section class="panel owner-incident-panel">
-      <div class="panel-heading"><div><h3>Incident signals</h3><p>Error rate and P95 latency with service-version observations.</p></div></div>
-      <p class="sr-only">${esc(ownerIncidentSummary(dashboard.timeseries || [], dashboard.version_markers || []))}</p>
-      <div class="owner-incident-chart-wrap"><canvas id="owner-incident-chart" role="img" aria-label="Service error rate and P95 latency over time with version transition markers"></canvas></div>
+      <div class="panel-heading"><div><h3><i class="ti ti-chart-line" aria-hidden="true"></i> Incident signals</h3><p>Recorded error rate and P95 latency · selected window, all outcomes.</p></div></div>
+      <p class="help" id="owner-incident-summary">${esc(ownerIncidentSummary(dashboard.timeseries || [], dashboard.version_markers || []))}</p>
+      ${dashboard.timeseries?.length ? `<div class="owner-incident-chart-wrap"><canvas id="owner-incident-chart" role="img" aria-label="Service error rate and P95 latency over time with version transition markers" aria-describedby="owner-incident-summary"></canvas></div>` : emptyState("No recorded request buckets in this window.")}
+      ${dashboard.version_markers?.length ? `<details class="monitor-details"><summary><i class="ti ti-flag" aria-hidden="true"></i> Version observations (${dashboard.version_markers.length})</summary>${table(["Version", "First Gateway observation"], dashboard.version_markers.map(marker => [esc(marker.service_version), time(marker.first_observed_at)]))}</details>` : ""}
     </section>
     <section class="owner-dashboard-grid">
-      ${panel("Endpoint usage", usageBreakdownTable(dashboard.endpoints || []))}
-      ${panel("Provider usage", usageBreakdownTable(dashboard.providers || []))}
+      ${panel("", `${ownerUsageDistribution("Endpoint usage", dashboard.endpoints || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Endpoint usage table</summary>${usageBreakdownTable(dashboard.endpoints || [])}</details>`)}
+      ${panel("", `${ownerUsageDistribution("Provider usage", dashboard.providers || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Provider usage table</summary>${usageBreakdownTable(dashboard.providers || [])}</details>`)}
+      ${panel("", `${ownerUsageDistribution("Model usage", dashboard.models || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Model usage table</summary>${usageBreakdownTable(dashboard.models || [])}</details>`)}
     </section>
     <section class="panel owner-request-panel">
-      <div class="panel-heading"><div><h3>Request logs</h3><p>Inspect every scoped request outcome without exposing payloads or credentials.</p></div></div>
+      <div class="panel-heading"><div><h3><i class="ti ti-list-search" aria-hidden="true"></i> Request logs</h3><p>Sanitized outcomes for this service. Outcome and status filters apply to this log only.</p></div></div>
       <div class="owner-request-filters" role="group" aria-label="Request log filters">
         <label>Time range<select id="owner-range-select">
           ${option("6h", state.ownerDashboardFilters.range, "Last 6 hours")}
@@ -5350,6 +5439,7 @@ async function serviceDashboard() {
           ${statusCodes.map((code) => option(code, state.ownerDashboardFilters.statusCode, code)).join("")}
         </select></label>
       </div>
+      <details class="monitor-details"><summary><i class="ti ti-chart-bar" aria-hidden="true"></i> Protocols in this request page</summary>${ownerRequestProfile(events.rows || [], events.has_more)}</details>
       <div class="table-pager owner-request-pager" aria-label="Request logs pagination">
         <span>Showing ${eventStart}-${eventEnd}</span>
         <button type="button" data-owner-page="previous" ${events.offset <= 0 ? "disabled" : ""}>Previous</button>
@@ -5431,30 +5521,26 @@ async function projectDashboard() {
   const eventStart = events.rows?.length ? events.offset + 1 : 0;
   const eventEnd = events.rows?.length ? events.offset + events.rows.length : 0;
   content.innerHTML = `
+    ${ownerDashboardInsights(dashboard, { money, range: state.ownerDashboardFilters.range })}
     <section class="owner-dashboard-toolbar">
       <label>Project<select id="owner-project-select">${state.ownerProjects.map((item) => option(item.project.id, projectId, item.project.name)).join("")}</select></label>
       <span class="badge">${esc(dashboard.role)}</span>
-      <code>GET /owner/v1/projects/${esc(projectId)}/dashboard</code>
-    </section>
-    <section class="metric-strip">
-      ${metricTile("Requests", dashboard.summary.request_count)}
-      ${metricTile("Failures", dashboard.summary.failure_count)}
-      ${metricTile("P95 latency", dashboard.summary.p95_latency_ms == null ? "n/a" : `${Number(dashboard.summary.p95_latency_ms).toFixed(0)} ms`)}
-      ${metricTile("Estimated cost", money(dashboard.summary.estimated_cost_usd))}
+      <span class="subtle"><i class="ti ti-lock" aria-hidden="true"></i> Exact project scope · read only</span>
     </section>
     <section class="panel owner-incident-panel">
-      <div class="panel-heading"><div><h3>Project incident signals</h3><p>Error rate and P95 latency for requests attributed to this exact project.</p></div></div>
-      <p class="sr-only">${esc(ownerIncidentSummary(dashboard.timeseries || [], dashboard.version_markers || []))}</p>
-      <div class="owner-incident-chart-wrap"><canvas id="owner-incident-chart" role="img" aria-label="Project error rate and P95 latency over time"></canvas></div>
+      <div class="panel-heading"><div><h3><i class="ti ti-chart-line" aria-hidden="true"></i> Project incident signals</h3><p>Recorded project attribution · selected window, all outcomes.</p></div></div>
+      <p class="help" id="owner-incident-summary">${esc(ownerIncidentSummary(dashboard.timeseries || [], dashboard.version_markers || []))}</p>
+      ${dashboard.timeseries?.length ? `<div class="owner-incident-chart-wrap"><canvas id="owner-incident-chart" role="img" aria-label="Project error rate and P95 latency over time with version observations" aria-describedby="owner-incident-summary"></canvas></div>` : emptyState("No recorded request buckets in this window.")}
+      ${dashboard.version_markers?.length ? `<details class="monitor-details"><summary><i class="ti ti-flag" aria-hidden="true"></i> Version observations (${dashboard.version_markers.length})</summary>${table(["Version", "First Gateway observation"], dashboard.version_markers.map(marker => [esc(marker.service_version), time(marker.first_observed_at)]))}</details>` : ""}
     </section>
     <section class="owner-dashboard-grid">
-      ${panel("Service usage", usageBreakdownTable(dashboard.services || []))}
-      ${panel("Endpoint usage", usageBreakdownTable(dashboard.endpoints || []))}
-      ${panel("Provider usage", usageBreakdownTable(dashboard.providers || []))}
-      ${panel("Model usage", usageBreakdownTable(dashboard.models || []))}
+      ${panel("", `${ownerUsageDistribution("Service usage", dashboard.services || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Service usage table</summary>${usageBreakdownTable(dashboard.services || [])}</details>`)}
+      ${panel("", `${ownerUsageDistribution("Endpoint usage", dashboard.endpoints || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Endpoint usage table</summary>${usageBreakdownTable(dashboard.endpoints || [])}</details>`)}
+      ${panel("", `${ownerUsageDistribution("Provider usage", dashboard.providers || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Provider usage table</summary>${usageBreakdownTable(dashboard.providers || [])}</details>`)}
+      ${panel("", `${ownerUsageDistribution("Model usage", dashboard.models || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Model usage table</summary>${usageBreakdownTable(dashboard.models || [])}</details>`)}
     </section>
     <section class="panel owner-request-panel">
-      <div class="panel-heading"><div><h3>Project request logs</h3><p>Inspect scoped request outcomes without exposing payloads or credentials.</p></div></div>
+      <div class="panel-heading"><div><h3><i class="ti ti-list-search" aria-hidden="true"></i> Project request logs</h3><p>Sanitized outcomes attributed to this project. Outcome and status filters apply to this log only.</p></div></div>
       <div class="owner-request-filters" role="group" aria-label="Project request log filters">
         <label>Time range<select id="owner-range-select">
           ${option("6h", state.ownerDashboardFilters.range, "Last 6 hours")}
@@ -5471,6 +5557,7 @@ async function projectDashboard() {
           ${statusCodes.map((code) => option(code, state.ownerDashboardFilters.statusCode, code)).join("")}
         </select></label>
       </div>
+      <details class="monitor-details"><summary><i class="ti ti-chart-bar" aria-hidden="true"></i> Protocols in this request page</summary>${ownerRequestProfile(events.rows || [], events.has_more)}</details>
       <div class="table-pager owner-request-pager" aria-label="Project request logs pagination">
         <span>Showing ${eventStart}-${eventEnd}</span>
         <button type="button" data-owner-page="previous" ${events.offset <= 0 ? "disabled" : ""}>Previous</button>
@@ -5749,6 +5836,12 @@ function organizeView(view) {
       const panel = content.querySelector(`#${formId}`)?.closest(".panel");
       if (panel) disclosePanel(panel, panel.querySelector("h3").textContent);
     }
+  }
+  const visualSummary = content.querySelector(".page-insights");
+  if (visualSummary) {
+    const identityTabs = content.querySelector(':scope > .result-tabs[aria-label="People and identities pages"]');
+    if (identityTabs) identityTabs.after(visualSummary);
+    else content.prepend(visualSummary);
   }
   const editForm = content.querySelector(view === "keys" ? "#key-edit-form" : view === "services" ? "#service-edit-form" : "#no-edit-form");
   if (editForm) {

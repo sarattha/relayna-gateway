@@ -138,7 +138,7 @@ export function ConsoleShell() {
               <i className="ti ti-route" aria-hidden="true"></i>
               <span className="brand-title">
                 <strong>relayna</strong>
-                <small>Gateway console · 4.0</small>
+                <small>AI control plane</small>
                 <span
                   className="version-indicator"
                   aria-label="Current Relayna Gateway version"
