@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { renderToString } from "react-dom/server";
 import { describe, it, expect, vi } from "vitest";
 import {
   KeyPicker,
@@ -23,6 +24,11 @@ import {
   readIdentityDraft,
 } from "../crates/gateway-api/admin-ui/src/react/mount-identity-editor";
 import { ConsoleShell } from "../crates/gateway-api/admin-ui/src/react/shell";
+import {
+  initializeThemePreference,
+  THEME_CHANGE_EVENT,
+  THEME_STORAGE_KEY,
+} from "../crates/gateway-api/admin-ui/src/theme-preference";
 import { UserTokenForwarding } from "../crates/gateway-api/admin-ui/src/react/user-token-forwarding";
 import {
   Button,
@@ -505,6 +511,15 @@ describe("identity editor", () => {
   });
 });
 describe("shared console and accessibility", () => {
+  it("renders the static shell with a system theme before browser initialization", () => {
+    const html = renderToString(<ConsoleShell />);
+    const host = document.createElement("div");
+    host.innerHTML = html;
+    const choices = host.querySelectorAll<HTMLSelectElement>(".theme-switcher");
+    expect(choices).toHaveLength(2);
+    expect([...choices].every((choice) => choice.value === "system")).toBe(true);
+    expect(host.querySelector("#content")).toBeTruthy();
+  });
   it("renders all Admin and Owner destinations, login and fixed asset links", () => {
     const { container } = render(<ConsoleShell />);
     expect(container.querySelectorAll("[data-view]")).toHaveLength(18);
@@ -514,6 +529,73 @@ describe("shared console and accessibility", () => {
       container.querySelector("#entra-sign-in")?.getAttribute("href"),
     ).toBe("/admin-ui/auth/login");
     expect(container.querySelector("#content")).toBeTruthy();
+  });
+  it("synchronizes accessible theme controls without replacing controller hosts or form drafts", async () => {
+    localStorage.removeItem(THEME_STORAGE_KEY);
+    const disposeTheme = initializeThemePreference();
+    const events: unknown[] = [];
+    const onThemeChange = (event: Event) =>
+      events.push((event as CustomEvent).detail);
+    document.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
+    const { container, unmount } = render(<ConsoleShell />);
+    try {
+      const user = userEvent.setup();
+      const loginTheme = within(container.querySelector("#login")!).getByRole(
+        "combobox", { name: "Theme" },
+      ) as HTMLSelectElement;
+      const appTheme = within(container.querySelector(".sidebar-actions")!).getByRole(
+        "combobox", { name: "Theme" },
+      ) as HTMLSelectElement;
+      expect(container.querySelector(".global-toolbar .theme-control")).toBeNull();
+      expect(loginTheme.value).toBe("system");
+      expect(appTheme.value).toBe("system");
+      const token = screen.getByLabelText("Operator token") as HTMLInputElement;
+      fireEvent.change(token, { target: { value: "unsaved-token" } });
+      const content = container.querySelector("#content")!;
+      const controllerChild = document.createElement("input");
+      controllerChild.value = "unsaved-controller-draft";
+      content.append(controllerChild);
+      const scope = container.querySelector("#project-scope")!;
+      const onScopeChange = vi.fn();
+      scope.addEventListener("change", onScopeChange);
+      const onSubmit = vi.fn((event: Event) => event.preventDefault());
+      container.querySelector("#login-form")!.addEventListener("submit", onSubmit);
+
+      await user.selectOptions(loginTheme, "dark");
+      expect(document.documentElement.dataset.theme).toBe("dark");
+      expect(appTheme.value).toBe("dark");
+      expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+      expect(events).toEqual([{ theme: "dark", preference: "dark" }]);
+      await user.selectOptions(appTheme, "light");
+      expect(loginTheme.value).toBe("light");
+      expect(document.documentElement.dataset.theme).toBe("light");
+      await user.selectOptions(loginTheme, "system");
+      expect(appTheme.value).toBe("system");
+      expect(events).toHaveLength(3);
+      expect(token.value).toBe("unsaved-token");
+      expect(container.querySelector("#content")).toBe(content);
+      expect(content.firstChild).toBe(controllerChild);
+      expect(controllerChild.value).toBe("unsaved-controller-draft");
+      expect(container.querySelector("#project-scope")).toBe(scope);
+      expect(onScopeChange).not.toHaveBeenCalled();
+      expect(onSubmit).not.toHaveBeenCalled();
+
+      act(() => window.dispatchEvent(new StorageEvent("storage", {
+        key: THEME_STORAGE_KEY, newValue: "dark", storageArea: localStorage,
+      })));
+      expect(loginTheme.value).toBe("dark");
+      expect(appTheme.value).toBe("dark");
+      const removeListener = vi.spyOn(document, "removeEventListener");
+      unmount();
+      expect(removeListener.mock.calls.filter(([type]) => type === THEME_CHANGE_EVENT)).toHaveLength(2);
+      removeListener.mockRestore();
+    } finally {
+      unmount();
+      disposeTheme();
+      document.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
+      localStorage.removeItem(THEME_STORAGE_KEY);
+      delete document.documentElement.dataset.theme;
+    }
   });
   it("composes variant buttons, slots, labeled fields and tap-accessible help", async () => {
     const user = userEvent.setup();

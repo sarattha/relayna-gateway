@@ -11500,11 +11500,11 @@ function composeRefs(...refs) {
 	};
 }
 function useComposedRefs(...refs) {
-	return import_react$38.useCallback(composeRefs(...refs), refs);
+	return import_react$39.useCallback(composeRefs(...refs), refs);
 }
-var import_react$38, __defProp$18, __name$18;
+var import_react$39, __defProp$18, __name$18;
 var init_dist$20 = __esmMin((() => {
-	import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$39 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$18 = Object.defineProperty;
 	__name$18 = (target, value) => __defProp$18(target, "name", {
 		value,
@@ -11518,13 +11518,13 @@ var init_dist$20 = __esmMin((() => {
 //#region node_modules/@radix-ui/react-slot/dist/index.mjs
 // @__NO_SIDE_EFFECTS__
 function createSlot(ownerName) {
-	const Slot2 = import_react$37.forwardRef((props, forwardedRef) => {
+	const Slot2 = import_react$38.forwardRef((props, forwardedRef) => {
 		let { children, ...slotProps } = props;
 		let slottableElement = null;
 		let hasSlottable = false;
 		const newChildren = [];
 		if (isLazyComponent(children) && typeof use === "function") children = use(children._payload);
-		import_react$37.Children.forEach(children, (maybeSlottable) => {
+		import_react$38.Children.forEach(children, (maybeSlottable) => {
 			if (isSlottable(maybeSlottable)) {
 				hasSlottable = true;
 				const slottable = maybeSlottable;
@@ -11534,8 +11534,8 @@ function createSlot(ownerName) {
 				newChildren.push(slottableElement?.props?.children);
 			} else newChildren.push(maybeSlottable);
 		});
-		if (slottableElement) slottableElement = import_react$37.cloneElement(slottableElement, void 0, newChildren);
-		else if (!hasSlottable && import_react$37.Children.count(children) === 1 && import_react$37.isValidElement(children)) slottableElement = children;
+		if (slottableElement) slottableElement = import_react$38.cloneElement(slottableElement, void 0, newChildren);
+		else if (!hasSlottable && import_react$38.Children.count(children) === 1 && import_react$38.isValidElement(children)) slottableElement = children;
 		const slottableElementRef = slottableElement ? getElementRef$1(slottableElement) : void 0;
 		const composedRef = useComposedRefs(forwardedRef, slottableElementRef);
 		if (!slottableElement) {
@@ -11543,8 +11543,8 @@ function createSlot(ownerName) {
 			return children;
 		}
 		const mergedProps = mergeProps(slotProps, slottableElement.props ?? {});
-		if (slottableElement.type !== import_react$37.Fragment) mergedProps.ref = forwardedRef ? composedRef : slottableElementRef;
-		return import_react$37.cloneElement(slottableElement, mergedProps);
+		if (slottableElement.type !== import_react$38.Fragment) mergedProps.ref = forwardedRef ? composedRef : slottableElementRef;
+		return import_react$38.cloneElement(slottableElement, mergedProps);
 	});
 	Slot2.displayName = `${ownerName}.Slot`;
 	return Slot2;
@@ -11589,7 +11589,7 @@ function getElementRef$1(element) {
 	return element.props.ref || element.ref;
 }
 function isSlottable(child) {
-	return import_react$37.isValidElement(child) && typeof child.type === "function" && "__radixId" in child.type && child.type.__radixId === SLOTTABLE_IDENTIFIER;
+	return import_react$38.isValidElement(child) && typeof child.type === "function" && "__radixId" in child.type && child.type.__radixId === SLOTTABLE_IDENTIFIER;
 }
 function isLazyComponent(element) {
 	return element != null && typeof element === "object" && "$$typeof" in element && element.$$typeof === REACT_LAZY_TYPE && "_payload" in element && isPromiseLike(element._payload);
@@ -11597,9 +11597,9 @@ function isLazyComponent(element) {
 function isPromiseLike(value) {
 	return typeof value === "object" && value !== null && "then" in value;
 }
-var import_react$37, __defProp$17, __name$17, Slot$1, SLOTTABLE_IDENTIFIER, getSlottableElementFromSlottable, REACT_LAZY_TYPE, createSlotError, createSlottableError, use;
+var import_react$38, __defProp$17, __name$17, Slot$1, SLOTTABLE_IDENTIFIER, getSlottableElementFromSlottable, REACT_LAZY_TYPE, createSlotError, createSlottableError, use;
 var init_dist$19 = __esmMin((() => {
-	import_react$37 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$20();
 	__defProp$17 = Object.defineProperty;
 	__name$17 = (target, value) => __defProp$17(target, "name", {
@@ -11613,10 +11613,10 @@ var init_dist$19 = __esmMin((() => {
 	getSlottableElementFromSlottable = /* @__PURE__ */ __name$17((slottable, child) => {
 		if ("child" in slottable.props) {
 			const child2 = slottable.props.child;
-			if (!import_react$37.isValidElement(child2)) return null;
-			return import_react$37.cloneElement(child2, void 0, slottable.props.children(child2.props.children));
+			if (!import_react$38.isValidElement(child2)) return null;
+			return import_react$38.cloneElement(child2, void 0, slottable.props.children(child2.props.children));
 		}
-		return import_react$37.isValidElement(child) ? child : null;
+		return import_react$38.isValidElement(child) ? child : null;
 	}, "getSlottableElementFromSlottable");
 	__name$17(mergeProps, "mergeProps");
 	__name$17(getElementRef$1, "getElementRef");
@@ -11630,7 +11630,7 @@ var init_dist$19 = __esmMin((() => {
 	createSlottableError = /* @__PURE__ */ __name$17((ownerName) => {
 		return `${ownerName} failed to slot onto its \`Slottable\`. Expected \`Slottable\` to receive a single React element child.`;
 	}, "createSlottableError");
-	use = import_react$37[" use ".trim().toString()];
+	use = import_react$38[" use ".trim().toString()];
 }));
 //#endregion
 //#region node_modules/@radix-ui/primitive/dist/index.mjs
@@ -11722,11 +11722,11 @@ var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 //#region node_modules/@radix-ui/react-context/dist/index.mjs
 // @__NO_SIDE_EFFECTS__
 function createContext2(rootComponentName, defaultContext) {
-	const Context = import_react$36.createContext(defaultContext);
+	const Context = import_react$37.createContext(defaultContext);
 	Context.displayName = rootComponentName + "Context";
 	const Provider = /* @__PURE__ */ __name$15((props) => {
 		const { children, ...context } = props;
-		const value = import_react$36.useMemo(() => context, Object.values(context));
+		const value = import_react$37.useMemo(() => context, Object.values(context));
 		return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(Context.Provider, {
 			value,
 			children
@@ -11735,7 +11735,7 @@ function createContext2(rootComponentName, defaultContext) {
 	Provider.displayName = rootComponentName + "Provider";
 	function useContext2(consumerName, options = {}) {
 		const { optional = false } = options;
-		const context = import_react$36.useContext(Context);
+		const context = import_react$37.useContext(Context);
 		if (context) return context;
 		if (defaultContext !== void 0) return defaultContext;
 		if (optional) return void 0;
@@ -11748,14 +11748,14 @@ function createContext2(rootComponentName, defaultContext) {
 function createContextScope(scopeName, createContextScopeDeps = []) {
 	let defaultContexts = [];
 	function createContext3(rootComponentName, defaultContext) {
-		const BaseContext = import_react$36.createContext(defaultContext);
+		const BaseContext = import_react$37.createContext(defaultContext);
 		BaseContext.displayName = rootComponentName + "Context";
 		const index = defaultContexts.length;
 		defaultContexts = [...defaultContexts, defaultContext];
 		const Provider = /* @__PURE__ */ __name$15((props) => {
 			const { scope, children, ...context } = props;
 			const Context = scope?.[scopeName]?.[index] || BaseContext;
-			const value = import_react$36.useMemo(() => context, Object.values(context));
+			const value = import_react$37.useMemo(() => context, Object.values(context));
 			return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(Context.Provider, {
 				value,
 				children
@@ -11765,7 +11765,7 @@ function createContextScope(scopeName, createContextScopeDeps = []) {
 		function useContext2(consumerName, scope, options = {}) {
 			const { optional = false } = options;
 			const Context = scope?.[scopeName]?.[index] || BaseContext;
-			const context = import_react$36.useContext(Context);
+			const context = import_react$37.useContext(Context);
 			if (context) return context;
 			if (defaultContext !== void 0) return defaultContext;
 			if (optional) return void 0;
@@ -11777,11 +11777,11 @@ function createContextScope(scopeName, createContextScopeDeps = []) {
 	__name$15(createContext3, "createContext");
 	const createScope = /* @__PURE__ */ __name$15(() => {
 		const scopeContexts = defaultContexts.map((defaultContext) => {
-			return import_react$36.createContext(defaultContext);
+			return import_react$37.createContext(defaultContext);
 		});
 		return /* @__PURE__ */ __name$15(function useScope(scope) {
 			const contexts = scope?.[scopeName] || scopeContexts;
-			return import_react$36.useMemo(() => ({ [`__scope${scopeName}`]: {
+			return import_react$37.useMemo(() => ({ [`__scope${scopeName}`]: {
 				...scope,
 				[scopeName]: contexts
 			} }), [scope, contexts]);
@@ -11806,15 +11806,15 @@ function composeContextScopes(...scopes) {
 					...currentScope
 				};
 			}, {});
-			return import_react$36.useMemo(() => ({ [`__scope${baseScope.scopeName}`]: nextScopes }), [nextScopes]);
+			return import_react$37.useMemo(() => ({ [`__scope${baseScope.scopeName}`]: nextScopes }), [nextScopes]);
 		}, "useComposedScopes");
 	}, "createScope");
 	createScope.scopeName = baseScope.scopeName;
 	return createScope;
 }
-var import_react$36, import_jsx_runtime$19, __defProp$15, __name$15;
+var import_react$37, import_jsx_runtime$19, __defProp$15, __name$15;
 var init_dist$17 = __esmMin((() => {
-	import_react$36 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$37 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_jsx_runtime$19 = require_jsx_runtime();
 	__defProp$15 = Object.defineProperty;
 	__name$15 = (target, value) => __defProp$15(target, "name", {
@@ -11827,30 +11827,30 @@ var init_dist$17 = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/@radix-ui/react-use-layout-effect/dist/index.mjs
-var import_react$35, useLayoutEffect2;
+var import_react$36, useLayoutEffect2;
 var init_dist$16 = __esmMin((() => {
-	import_react$35 = /* @__PURE__ */ __toESM(require_react(), 1);
-	useLayoutEffect2 = globalThis?.document ? import_react$35.useLayoutEffect : () => {};
+	import_react$36 = /* @__PURE__ */ __toESM(require_react(), 1);
+	useLayoutEffect2 = globalThis?.document ? import_react$36.useLayoutEffect : () => {};
 }));
 //#endregion
 //#region node_modules/@radix-ui/react-id/dist/index.mjs
 function useId$2(deterministicId) {
-	const [id, setId] = import_react$34.useState(useReactId());
+	const [id, setId] = import_react$35.useState(useReactId());
 	useLayoutEffect2(() => {
 		if (!deterministicId) setId((reactId) => reactId ?? String(count$3++));
 	}, [deterministicId]);
 	return deterministicId || (id ? `radix-${id}` : "");
 }
-var import_react$34, __defProp$14, __name$14, useReactId, count$3;
+var import_react$35, __defProp$14, __name$14, useReactId, count$3;
 var init_dist$15 = __esmMin((() => {
-	import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$35 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$16();
 	__defProp$14 = Object.defineProperty;
 	__name$14 = (target, value) => __defProp$14(target, "name", {
 		value,
 		configurable: true
 	});
-	useReactId = import_react$34[" useId ".trim().toString()] || (() => void 0);
+	useReactId = import_react$35[" useId ".trim().toString()] || (() => void 0);
 	count$3 = 0;
 	__name$14(useId$2, "useId");
 }));
@@ -11861,7 +11861,7 @@ var init_is_development_false = __esmMin((() => {}));
 //#region node_modules/@radix-ui/react-use-effect-event/dist/index.mjs
 function useEffectEvent(callback) {
 	if (typeof useReactEffectEvent === "function") return useReactEffectEvent(callback);
-	const ref = import_react$33.useRef(() => {
+	const ref = import_react$34.useRef(() => {
 		throw new Error("Cannot call an event handler while rendering.");
 	});
 	if (typeof useReactInsertionEffect === "function") useReactInsertionEffect(() => {
@@ -11870,19 +11870,19 @@ function useEffectEvent(callback) {
 	else useLayoutEffect2(() => {
 		ref.current = callback;
 	});
-	return import_react$33.useMemo(() => ((...args) => ref.current?.(...args)), []);
+	return import_react$34.useMemo(() => ((...args) => ref.current?.(...args)), []);
 }
-var import_react$33, __defProp$13, __name$13, useReactEffectEvent, useReactInsertionEffect;
+var import_react$34, __defProp$13, __name$13, useReactEffectEvent, useReactInsertionEffect;
 var init_dist$14 = __esmMin((() => {
 	init_dist$16();
-	import_react$33 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$13 = Object.defineProperty;
 	__name$13 = (target, value) => __defProp$13(target, "name", {
 		value,
 		configurable: true
 	});
-	useReactEffectEvent = import_react$33[" useEffectEvent ".trim().toString()];
-	useReactInsertionEffect = import_react$33[" useInsertionEffect ".trim().toString()];
+	useReactEffectEvent = import_react$34[" useEffectEvent ".trim().toString()];
+	useReactInsertionEffect = import_react$34[" useInsertionEffect ".trim().toString()];
 	__name$13(useEffectEvent, "useEffectEvent");
 }));
 //#endregion
@@ -11893,7 +11893,7 @@ function useControllableState({ prop, defaultProp, onChange = /* @__PURE__ */ __
 		onChange
 	});
 	const isControlled = prop !== void 0;
-	return [isControlled ? prop : uncontrolledProp, import_react$31.useCallback((nextValue) => {
+	return [isControlled ? prop : uncontrolledProp, import_react$32.useCallback((nextValue) => {
 		if (isControlled) {
 			const value2 = isFunction$1(nextValue) ? nextValue(prop) : nextValue;
 			if (value2 !== prop) onChangeRef.current?.(value2);
@@ -11906,13 +11906,13 @@ function useControllableState({ prop, defaultProp, onChange = /* @__PURE__ */ __
 	])];
 }
 function useUncontrolledState({ defaultProp, onChange }) {
-	const [value, setValue] = import_react$31.useState(defaultProp);
-	const prevValueRef = import_react$31.useRef(value);
-	const onChangeRef = import_react$31.useRef(onChange);
+	const [value, setValue] = import_react$32.useState(defaultProp);
+	const prevValueRef = import_react$32.useRef(value);
+	const onChangeRef = import_react$32.useRef(onChange);
 	useInsertionEffect(() => {
 		onChangeRef.current = onChange;
 	}, [onChange]);
-	import_react$31.useEffect(() => {
+	import_react$32.useEffect(() => {
 		if (prevValueRef.current !== value) {
 			onChangeRef.current?.(value);
 			prevValueRef.current = value;
@@ -11936,7 +11936,7 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 		state: defaultProp
 	}];
 	if (init) args.push(init);
-	const [internalState, dispatch] = import_react$32.useReducer((state2, action) => {
+	const [internalState, dispatch] = import_react$33.useReducer((state2, action) => {
 		if (action.type === SYNC_STATE) return {
 			...state2,
 			state: action.state
@@ -11946,8 +11946,8 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 		return next;
 	}, ...args);
 	const uncontrolledState = internalState.state;
-	const prevValueRef = import_react$32.useRef(uncontrolledState);
-	import_react$32.useEffect(() => {
+	const prevValueRef = import_react$33.useRef(uncontrolledState);
+	import_react$33.useEffect(() => {
 		if (prevValueRef.current !== uncontrolledState) {
 			prevValueRef.current = uncontrolledState;
 			if (!isControlled) onChange(uncontrolledState);
@@ -11957,14 +11957,14 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 		prevValueRef,
 		isControlled
 	]);
-	const state = import_react$32.useMemo(() => {
+	const state = import_react$33.useMemo(() => {
 		if (controlledState !== void 0) return {
 			...internalState,
 			state: controlledState
 		};
 		return internalState;
 	}, [internalState, controlledState]);
-	import_react$32.useEffect(() => {
+	import_react$33.useEffect(() => {
 		if (isControlled && !Object.is(controlledState, internalState.state)) dispatch({
 			type: SYNC_STATE,
 			state: controlledState
@@ -11976,19 +11976,19 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 	]);
 	return [state, dispatch];
 }
-var import_react$31, import_react$32, __defProp$12, __name$12, useInsertionEffect, SYNC_STATE;
+var import_react$32, import_react$33, __defProp$12, __name$12, useInsertionEffect, SYNC_STATE;
 var init_dist$13 = __esmMin((() => {
-	import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_is_development_false();
 	init_dist$16();
-	import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$33 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$14();
 	__defProp$12 = Object.defineProperty;
 	__name$12 = (target, value) => __defProp$12(target, "name", {
 		value,
 		configurable: true
 	});
-	useInsertionEffect = import_react$31[" useInsertionEffect ".trim().toString()] || useLayoutEffect2;
+	useInsertionEffect = import_react$32[" useInsertionEffect ".trim().toString()] || useLayoutEffect2;
 	__name$12(useControllableState, "useControllableState");
 	__name$12(useUncontrolledState, "useUncontrolledState");
 	__name$12(isFunction$1, "isFunction");
@@ -12000,9 +12000,9 @@ var init_dist$13 = __esmMin((() => {
 function dispatchDiscreteCustomEvent(target, event) {
 	if (target) import_react_dom$5.flushSync(() => target.dispatchEvent(event));
 }
-var import_react$30, import_react_dom$5, import_jsx_runtime$18, __defProp$11, __name$11, Primitive;
+var import_react$31, import_react_dom$5, import_jsx_runtime$18, __defProp$11, __name$11, Primitive;
 var init_dist$12 = __esmMin((() => {
-	import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react_dom$5 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
 	init_dist$19();
 	import_jsx_runtime$18 = require_jsx_runtime();
@@ -12031,7 +12031,7 @@ var init_dist$12 = __esmMin((() => {
 		"ul"
 	].reduce((primitive, node) => {
 		const Slot = /* @__PURE__ */ createSlot(`Primitive.${node}`);
-		const Node = import_react$30.forwardRef((props, forwardedRef) => {
+		const Node = import_react$31.forwardRef((props, forwardedRef) => {
 			const { asChild, ...primitiveProps } = props;
 			const Comp = asChild ? Slot : node;
 			if (typeof window !== "undefined") window[Symbol.for("radix-ui")] = true;
@@ -12051,15 +12051,15 @@ var init_dist$12 = __esmMin((() => {
 //#endregion
 //#region node_modules/@radix-ui/react-use-callback-ref/dist/index.mjs
 function useCallbackRef$1(callback) {
-	const callbackRef = import_react$29.useRef(callback);
-	import_react$29.useEffect(() => {
+	const callbackRef = import_react$30.useRef(callback);
+	import_react$30.useEffect(() => {
 		callbackRef.current = callback;
 	});
-	return import_react$29.useMemo(() => ((...args) => callbackRef.current?.(...args)), []);
+	return import_react$30.useMemo(() => ((...args) => callbackRef.current?.(...args)), []);
 }
-var import_react$29, __defProp$10, __name$10;
+var import_react$30, __defProp$10, __name$10;
 var init_dist$11 = __esmMin((() => {
-	import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$10 = Object.defineProperty;
 	__name$10 = (target, value) => __defProp$10(target, "name", {
 		value,
@@ -12070,9 +12070,9 @@ var init_dist$11 = __esmMin((() => {
 //#endregion
 //#region node_modules/@radix-ui/react-dismissable-layer/dist/index.mjs
 function useDismissableLayerSurface() {
-	const context = import_react$28.useContext(DismissableLayerContext);
-	const [node, setNode] = import_react$28.useState(null);
-	import_react$28.useEffect(() => {
+	const context = import_react$29.useContext(DismissableLayerContext);
+	const [node, setNode] = import_react$29.useState(null);
+	import_react$29.useEffect(() => {
 		if (!node) return;
 		context.dismissableSurfaces.add(node);
 		return () => {
@@ -12084,11 +12084,11 @@ function useDismissableLayerSurface() {
 function usePointerDownOutside(onPointerDownOutside, args) {
 	const { ownerDocument = globalThis?.document, deferPointerDownOutside = false, isDeferredPointerDownOutsideRef, dismissableSurfaces, shouldHandlePointerDownOutside = IS_TRUE } = args;
 	const handlePointerDownOutside = useCallbackRef$1(onPointerDownOutside);
-	const isPointerInsideReactTreeRef = import_react$28.useRef(false);
-	const isPointerDownOutsideRef = import_react$28.useRef(false);
-	const interceptedOutsideInteractionEventsRef = import_react$28.useRef(/* @__PURE__ */ new Map());
-	const handleClickRef = import_react$28.useRef(() => {});
-	import_react$28.useEffect(() => {
+	const isPointerInsideReactTreeRef = import_react$29.useRef(false);
+	const isPointerDownOutsideRef = import_react$29.useRef(false);
+	const interceptedOutsideInteractionEventsRef = import_react$29.useRef(/* @__PURE__ */ new Map());
+	const handleClickRef = import_react$29.useRef(() => {});
+	import_react$29.useEffect(() => {
 		function resetOutsideInteraction() {
 			isPointerDownOutsideRef.current = false;
 			isDeferredPointerDownOutsideRef.current = false;
@@ -12179,8 +12179,8 @@ function usePointerDownOutside(onPointerDownOutside, args) {
 }
 function useFocusOutside(onFocusOutside, ownerDocument = globalThis?.document) {
 	const handleFocusOutside = useCallbackRef$1(onFocusOutside);
-	const isFocusInsideReactTreeRef = import_react$28.useRef(false);
-	import_react$28.useEffect(() => {
+	const isFocusInsideReactTreeRef = import_react$29.useRef(false);
+	import_react$29.useEffect(() => {
 		const handleFocus = /* @__PURE__ */ __name$9((event) => {
 			if (event.target && !isFocusInsideReactTreeRef.current) handleAndDispatchCustomEvent(FOCUS_OUTSIDE, handleFocusOutside, { originalEvent: event }, { discrete: false });
 		}, "handleFocus");
@@ -12207,9 +12207,9 @@ function handleAndDispatchCustomEvent(name, handler, detail, { discrete }) {
 	if (discrete) dispatchDiscreteCustomEvent(target, event);
 	else target.dispatchEvent(event);
 }
-var import_react$28, import_jsx_runtime$17, __defProp$9, __name$9, CONTEXT_UPDATE, POINTER_DOWN_OUTSIDE, FOCUS_OUTSIDE, originalBodyPointerEvents, DismissableLayerContext, DismissableLayer, IS_TRUE;
+var import_react$29, import_jsx_runtime$17, __defProp$9, __name$9, CONTEXT_UPDATE, POINTER_DOWN_OUTSIDE, FOCUS_OUTSIDE, originalBodyPointerEvents, DismissableLayerContext, DismissableLayer, IS_TRUE;
 var init_dist$10 = __esmMin((() => {
-	import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$18();
 	init_dist$12();
 	init_dist$20();
@@ -12223,18 +12223,18 @@ var init_dist$10 = __esmMin((() => {
 	CONTEXT_UPDATE = "dismissableLayer.update";
 	POINTER_DOWN_OUTSIDE = "dismissableLayer.pointerDownOutside";
 	FOCUS_OUTSIDE = "dismissableLayer.focusOutside";
-	DismissableLayerContext = import_react$28.createContext({
+	DismissableLayerContext = import_react$29.createContext({
 		layers: /* @__PURE__ */ new Set(),
 		layersWithOutsidePointerEventsDisabled: /* @__PURE__ */ new Set(),
 		branches: /* @__PURE__ */ new Set(),
 		dismissableSurfaces: /* @__PURE__ */ new Set()
 	});
-	DismissableLayer = /* @__PURE__ */ import_react$28.forwardRef(/* @__PURE__ */ __name$9(function DismissableLayer2(props, forwardedRef) {
+	DismissableLayer = /* @__PURE__ */ import_react$29.forwardRef(/* @__PURE__ */ __name$9(function DismissableLayer2(props, forwardedRef) {
 		const { disableOutsidePointerEvents = false, deferPointerDownOutside = false, onEscapeKeyDown, onPointerDownOutside, onFocusOutside, onInteractOutside, onDismiss, ...layerProps } = props;
-		const context = import_react$28.useContext(DismissableLayerContext);
-		const [node, setNode] = import_react$28.useState(null);
+		const context = import_react$29.useContext(DismissableLayerContext);
+		const [node, setNode] = import_react$29.useState(null);
 		const ownerDocument = node?.ownerDocument ?? globalThis?.document;
-		const [, force] = import_react$28.useState({});
+		const [, force] = import_react$29.useState({});
 		const composedRefs = useComposedRefs(forwardedRef, setNode);
 		const layers = Array.from(context.layers);
 		const [highestLayerWithOutsidePointerEventsDisabled] = [...context.layersWithOutsidePointerEventsDisabled].slice(-1);
@@ -12242,7 +12242,7 @@ var init_dist$10 = __esmMin((() => {
 		const index = node ? layers.indexOf(node) : -1;
 		const isBodyPointerEventsDisabled = context.layersWithOutsidePointerEventsDisabled.size > 0;
 		const isPointerEventsEnabled = index >= highestLayerWithOutsidePointerEventsDisabledIndex;
-		const isDeferredPointerDownOutsideRef = import_react$28.useRef(false);
+		const isDeferredPointerDownOutsideRef = import_react$29.useRef(false);
 		const pointerDownOutside = usePointerDownOutside((event) => {
 			onPointerDownOutside?.(event);
 			onInteractOutside?.(event);
@@ -12252,7 +12252,7 @@ var init_dist$10 = __esmMin((() => {
 			deferPointerDownOutside,
 			isDeferredPointerDownOutsideRef,
 			dismissableSurfaces: context.dismissableSurfaces,
-			shouldHandlePointerDownOutside: import_react$28.useCallback((target) => {
+			shouldHandlePointerDownOutside: import_react$29.useCallback((target) => {
 				if (!(target instanceof Node)) return false;
 				const isPointerDownOnBranch = [...context.branches].some((branch) => branch.contains(target));
 				return isPointerEventsEnabled && !isPointerDownOnBranch;
@@ -12275,7 +12275,7 @@ var init_dist$10 = __esmMin((() => {
 				onDismiss();
 			}
 		});
-		import_react$28.useEffect(() => {
+		import_react$29.useEffect(() => {
 			if (!isHighestLayer) return;
 			ownerDocument.addEventListener("keydown", handleKeyDown, { capture: true });
 			return () => ownerDocument.removeEventListener("keydown", handleKeyDown, { capture: true });
@@ -12284,7 +12284,7 @@ var init_dist$10 = __esmMin((() => {
 			isHighestLayer,
 			handleKeyDown
 		]);
-		import_react$28.useEffect(() => {
+		import_react$29.useEffect(() => {
 			if (!node) return;
 			if (disableOutsidePointerEvents) {
 				if (context.layersWithOutsidePointerEventsDisabled.size === 0) {
@@ -12307,7 +12307,7 @@ var init_dist$10 = __esmMin((() => {
 			disableOutsidePointerEvents,
 			context
 		]);
-		import_react$28.useEffect(() => {
+		import_react$29.useEffect(() => {
 			return () => {
 				if (!node) return;
 				context.layers.delete(node);
@@ -12315,7 +12315,7 @@ var init_dist$10 = __esmMin((() => {
 				dispatchUpdate();
 			};
 		}, [node, context]);
-		import_react$28.useEffect(() => {
+		import_react$29.useEffect(() => {
 			const handleUpdate = /* @__PURE__ */ __name$9(() => force({}), "handleUpdate");
 			document.addEventListener(CONTEXT_UPDATE, handleUpdate);
 			return () => document.removeEventListener(CONTEXT_UPDATE, handleUpdate);
@@ -12409,9 +12409,9 @@ function arrayRemove(array, item) {
 function removeLinks(items) {
 	return items.filter((item) => item.tagName !== "A");
 }
-var import_react$27, import_jsx_runtime$16, __defProp$8, __name$8, AUTOFOCUS_ON_MOUNT, AUTOFOCUS_ON_UNMOUNT, EVENT_OPTIONS, FocusScope, focusScopesStack;
+var import_react$28, import_jsx_runtime$16, __defProp$8, __name$8, AUTOFOCUS_ON_MOUNT, AUTOFOCUS_ON_UNMOUNT, EVENT_OPTIONS, FocusScope, focusScopesStack;
 var init_dist$9 = __esmMin((() => {
-	import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$20();
 	init_dist$12();
 	init_dist$11();
@@ -12427,14 +12427,14 @@ var init_dist$9 = __esmMin((() => {
 		bubbles: false,
 		cancelable: true
 	};
-	FocusScope = /* @__PURE__ */ import_react$27.forwardRef(/* @__PURE__ */ __name$8(function FocusScope2(props, forwardedRef) {
+	FocusScope = /* @__PURE__ */ import_react$28.forwardRef(/* @__PURE__ */ __name$8(function FocusScope2(props, forwardedRef) {
 		const { loop = false, trapped = false, onMountAutoFocus: onMountAutoFocusProp, onUnmountAutoFocus: onUnmountAutoFocusProp, ...scopeProps } = props;
-		const [container, setContainer] = import_react$27.useState(null);
+		const [container, setContainer] = import_react$28.useState(null);
 		const onMountAutoFocus = useCallbackRef$1(onMountAutoFocusProp);
 		const onUnmountAutoFocus = useCallbackRef$1(onUnmountAutoFocusProp);
-		const lastFocusedElementRef = import_react$27.useRef(null);
+		const lastFocusedElementRef = import_react$28.useRef(null);
 		const composedRefs = useComposedRefs(forwardedRef, setContainer);
-		const focusScope = import_react$27.useRef({
+		const focusScope = import_react$28.useRef({
 			paused: false,
 			pause() {
 				this.paused = true;
@@ -12443,7 +12443,7 @@ var init_dist$9 = __esmMin((() => {
 				this.paused = false;
 			}
 		}).current;
-		import_react$27.useEffect(() => {
+		import_react$28.useEffect(() => {
 			if (trapped) {
 				let handleFocusIn2 = function(event) {
 					if (focusScope.paused || !container) return;
@@ -12480,7 +12480,7 @@ var init_dist$9 = __esmMin((() => {
 			container,
 			focusScope.paused
 		]);
-		import_react$27.useEffect(() => {
+		import_react$28.useEffect(() => {
 			if (container) {
 				focusScopesStack.add(focusScope);
 				const previouslyFocusedElement = document.activeElement;
@@ -12511,7 +12511,7 @@ var init_dist$9 = __esmMin((() => {
 			onUnmountAutoFocus,
 			focusScope
 		]);
-		const handleKeyDown = import_react$27.useCallback((event) => {
+		const handleKeyDown = import_react$28.useCallback((event) => {
 			if (!loop && !trapped) return;
 			if (focusScope.paused) return;
 			const isTabKey = event.key === "Tab" && !event.altKey && !event.ctrlKey && !event.metaKey;
@@ -12555,9 +12555,9 @@ var init_dist$9 = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/@radix-ui/react-portal/dist/index.mjs
-var import_react$26, import_react_dom$4, import_jsx_runtime$15, __defProp$7, __name$7, Portal$1;
+var import_react$27, import_react_dom$4, import_jsx_runtime$15, __defProp$7, __name$7, Portal$1;
 var init_dist$8 = __esmMin((() => {
-	import_react$26 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react_dom$4 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
 	init_dist$12();
 	init_dist$16();
@@ -12567,9 +12567,9 @@ var init_dist$8 = __esmMin((() => {
 		value,
 		configurable: true
 	});
-	Portal$1 = /* @__PURE__ */ import_react$26.forwardRef(/* @__PURE__ */ __name$7(function Portal2(props, forwardedRef) {
+	Portal$1 = /* @__PURE__ */ import_react$27.forwardRef(/* @__PURE__ */ __name$7(function Portal2(props, forwardedRef) {
 		const { container: containerProp, ...portalProps } = props;
-		const [mounted, setMounted] = import_react$26.useState(false);
+		const [mounted, setMounted] = import_react$27.useState(false);
 		useLayoutEffect2(() => setMounted(true), []);
 		const container = containerProp || mounted && globalThis?.document?.body;
 		return container ? import_react_dom$4.createPortal(/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Primitive.div, {
@@ -12581,16 +12581,16 @@ var init_dist$8 = __esmMin((() => {
 //#endregion
 //#region node_modules/@radix-ui/react-presence/dist/index.mjs
 function useStateMachine(initialState, machine) {
-	return import_react$25.useReducer((state, event) => {
+	return import_react$26.useReducer((state, event) => {
 		return machine[state][event] ?? state;
 	}, initialState);
 }
 function usePresence(present) {
-	const [node, setNode] = import_react$24.useState();
-	const stylesRef = import_react$24.useRef(null);
-	const prevPresentRef = import_react$24.useRef(present);
-	const prevAnimationNameRef = import_react$24.useRef("none");
-	const mountAnimationNameRef = import_react$24.useRef(void 0);
+	const [node, setNode] = import_react$25.useState();
+	const stylesRef = import_react$25.useRef(null);
+	const prevPresentRef = import_react$25.useRef(present);
+	const prevAnimationNameRef = import_react$25.useRef("none");
+	const mountAnimationNameRef = import_react$25.useRef(void 0);
 	const [state, send] = useStateMachine(present ? "mounted" : "unmounted", {
 		mounted: {
 			UNMOUNT: "unmounted",
@@ -12602,7 +12602,7 @@ function usePresence(present) {
 		},
 		unmounted: { MOUNT: "mounted" }
 	});
-	import_react$24.useEffect(() => {
+	import_react$25.useEffect(() => {
 		if (state === "mounted") {
 			prevAnimationNameRef.current = mountAnimationNameRef.current ?? getAnimationName(stylesRef.current);
 			mountAnimationNameRef.current = void 0;
@@ -12656,7 +12656,7 @@ function usePresence(present) {
 	}, [node, send]);
 	return {
 		isPresent: ["mounted", "unmountSuspended"].includes(state),
-		ref: import_react$24.useCallback((node2) => {
+		ref: import_react$25.useCallback((node2) => {
 			if (node2) {
 				const styles = getComputedStyle(node2);
 				stylesRef.current = styles;
@@ -12671,9 +12671,9 @@ function setRef(ref, value) {
 	else if (ref !== null && ref !== void 0) ref.current = value;
 }
 function useStableComposedRefs(...refs) {
-	const refsRef = import_react$24.useRef(refs);
+	const refsRef = import_react$25.useRef(refs);
 	refsRef.current = refs;
-	return import_react$24.useCallback((node) => {
+	return import_react$25.useCallback((node) => {
 		const currentRefs = refsRef.current;
 		let hasCleanup = false;
 		const cleanups = currentRefs.map((ref) => {
@@ -12702,11 +12702,11 @@ function getElementRef(element) {
 	if (mayWarn) return element.props.ref;
 	return element.props.ref || element.ref;
 }
-var import_react$24, import_react$25, __defProp$6, __name$6, Presence;
+var import_react$25, import_react$26, __defProp$6, __name$6, Presence;
 var init_dist$7 = __esmMin((() => {
-	import_react$24 = /* @__PURE__ */ __toESM(require_react(), 1);
-	init_dist$16();
 	import_react$25 = /* @__PURE__ */ __toESM(require_react(), 1);
+	init_dist$16();
+	import_react$26 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$6 = Object.defineProperty;
 	__name$6 = (target, value) => __defProp$6(target, "name", {
 		value,
@@ -12716,9 +12716,9 @@ var init_dist$7 = __esmMin((() => {
 	Presence = /* @__PURE__ */ __name$6((props) => {
 		const { present, children } = props;
 		const presence = usePresence(present);
-		const child = typeof children === "function" ? children({ present: presence.isPresent }) : import_react$24.Children.only(children);
+		const child = typeof children === "function" ? children({ present: presence.isPresent }) : import_react$25.Children.only(children);
 		const ref = useStableComposedRefs(presence.ref, getElementRef(child));
-		return typeof children === "function" || presence.isPresent ? import_react$24.cloneElement(child, { ref }) : null;
+		return typeof children === "function" || presence.isPresent ? import_react$25.cloneElement(child, { ref }) : null;
 	}, "Presence");
 	__name$6(usePresence, "usePresence");
 	__name$6(setRef, "setRef");
@@ -12733,7 +12733,7 @@ function FocusGuards(props) {
 	return props.children;
 }
 function useFocusGuards() {
-	import_react$23.useEffect(() => {
+	import_react$24.useEffect(() => {
 		if (!guards) guards = {
 			start: createFocusGuard(),
 			end: createFocusGuard()
@@ -12762,9 +12762,9 @@ function createFocusGuard() {
 	element.style.pointerEvents = "none";
 	return element;
 }
-var import_react$23, __defProp$5, __name$5, count$2, guards;
+var import_react$24, __defProp$5, __name$5, count$2, guards;
 var init_dist$6 = __esmMin((() => {
-	import_react$23 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$24 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$5 = Object.defineProperty;
 	__name$5 = (target, value) => __defProp$5(target, "name", {
 		value,
@@ -12855,7 +12855,7 @@ var init_assignRef = __esmMin((() => {}));
 * @returns {MutableRefObject}
 */
 function useCallbackRef(initialValue, callback) {
-	var ref = (0, import_react$22.useState)(function() {
+	var ref = (0, import_react$23.useState)(function() {
 		return {
 			value: initialValue,
 			callback,
@@ -12876,9 +12876,9 @@ function useCallbackRef(initialValue, callback) {
 	ref.callback = callback;
 	return ref.facade;
 }
-var import_react$22;
+var import_react$23;
 var init_useRef = __esmMin((() => {
-	import_react$22 = /* @__PURE__ */ __toESM(require_react());
+	import_react$23 = /* @__PURE__ */ __toESM(require_react());
 }));
 //#endregion
 //#region node_modules/use-callback-ref/dist/es2015/useMergeRef.js
@@ -12919,12 +12919,12 @@ function useMergeRefs(refs, defaultValue) {
 	}, [refs]);
 	return callbackRef;
 }
-var import_react$21, useIsomorphicLayoutEffect, currentValues;
+var import_react$22, useIsomorphicLayoutEffect, currentValues;
 var init_useMergeRef = __esmMin((() => {
-	import_react$21 = /* @__PURE__ */ __toESM(require_react());
+	import_react$22 = /* @__PURE__ */ __toESM(require_react());
 	init_assignRef();
 	init_useRef();
-	useIsomorphicLayoutEffect = typeof window !== "undefined" ? import_react$21.useLayoutEffect : import_react$21.useEffect;
+	useIsomorphicLayoutEffect = typeof window !== "undefined" ? import_react$22.useLayoutEffect : import_react$22.useEffect;
 	currentValues = /* @__PURE__ */ new WeakMap();
 }));
 //#endregion
@@ -13022,16 +13022,16 @@ function exportSidecar(medium, exported) {
 	medium.useMedium(exported);
 	return SideCar;
 }
-var import_react$20, SideCar;
+var import_react$21, SideCar;
 var init_exports = __esmMin((() => {
 	init_tslib_es6();
-	import_react$20 = /* @__PURE__ */ __toESM(require_react());
+	import_react$21 = /* @__PURE__ */ __toESM(require_react());
 	SideCar = function(_a) {
 		var sideCar = _a.sideCar, rest = __rest(_a, ["sideCar"]);
 		if (!sideCar) throw new Error("Sidecar: please provide `sideCar` property to import the right car");
 		var Target = sideCar.read();
 		if (!Target) throw new Error("Sidecar medium not found");
-		return import_react$20.createElement(Target, __assign({}, rest));
+		return import_react$21.createElement(Target, __assign({}, rest));
 	};
 	SideCar.isSideCarExport = true;
 }));
@@ -13051,17 +13051,17 @@ var init_medium = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/react-remove-scroll/dist/es2015/UI.js
-var import_react$19, nothing, RemoveScroll;
+var import_react$20, nothing, RemoveScroll;
 var init_UI = __esmMin((() => {
 	init_tslib_es6();
-	import_react$19 = /* @__PURE__ */ __toESM(require_react());
+	import_react$20 = /* @__PURE__ */ __toESM(require_react());
 	init_constants();
 	init_es2015$6();
 	init_medium();
 	nothing = function() {};
-	RemoveScroll = import_react$19.forwardRef(function(props, parentRef) {
-		var ref = import_react$19.useRef(null);
-		var _a = import_react$19.useState({
+	RemoveScroll = import_react$20.forwardRef(function(props, parentRef) {
+		var ref = import_react$20.useRef(null);
+		var _a = import_react$20.useState({
 			onScrollCapture: nothing,
 			onWheelCapture: nothing,
 			onTouchMoveCapture: nothing
@@ -13084,7 +13084,7 @@ var init_UI = __esmMin((() => {
 		var SideCar = sideCar;
 		var containerRef = useMergeRefs([ref, parentRef]);
 		var containerProps = __assign(__assign({}, rest), callbacks);
-		return import_react$19.createElement(import_react$19.Fragment, null, enabled && import_react$19.createElement(SideCar, {
+		return import_react$20.createElement(import_react$20.Fragment, null, enabled && import_react$20.createElement(SideCar, {
 			sideCar: effectCar,
 			removeScrollBar,
 			shards,
@@ -13095,7 +13095,7 @@ var init_UI = __esmMin((() => {
 			allowPinchZoom: !!allowPinchZoom,
 			lockRef: ref,
 			gapMode
-		}), forwardProps ? import_react$19.cloneElement(import_react$19.Children.only(children), __assign(__assign({}, containerProps), { ref: containerRef })) : import_react$19.createElement(Container, __assign({}, containerProps, {
+		}), forwardProps ? import_react$20.cloneElement(import_react$20.Children.only(children), __assign(__assign({}, containerProps), { ref: containerRef })) : import_react$20.createElement(Container, __assign({}, containerProps, {
 			className,
 			ref: containerRef
 		}), children));
@@ -13160,14 +13160,14 @@ var init_singleton = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/react-style-singleton/dist/es2015/hook.js
-var import_react$18, styleHookSingleton;
+var import_react$19, styleHookSingleton;
 var init_hook = __esmMin((() => {
-	import_react$18 = /* @__PURE__ */ __toESM(require_react());
+	import_react$19 = /* @__PURE__ */ __toESM(require_react());
 	init_singleton();
 	styleHookSingleton = function() {
 		var sheet = stylesheetSingleton();
 		return function(styles, isDynamic) {
-			import_react$18.useEffect(function() {
+			import_react$19.useEffect(function() {
 				sheet.add(styles);
 				return function() {
 					sheet.remove();
@@ -13238,9 +13238,9 @@ var init_utils = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/react-remove-scroll-bar/dist/es2015/component.js
-var import_react$17, Style, lockAttribute, getStyles, getCurrentUseCounter, useLockAttribute, RemoveScrollBar;
+var import_react$18, Style, lockAttribute, getStyles, getCurrentUseCounter, useLockAttribute, RemoveScrollBar;
 var init_component = __esmMin((() => {
-	import_react$17 = /* @__PURE__ */ __toESM(require_react());
+	import_react$18 = /* @__PURE__ */ __toESM(require_react());
 	init_es2015$3();
 	init_constants();
 	init_utils();
@@ -13260,7 +13260,7 @@ var init_component = __esmMin((() => {
 		return isFinite(counter) ? counter : 0;
 	};
 	useLockAttribute = function() {
-		import_react$17.useEffect(function() {
+		import_react$18.useEffect(function() {
 			document.body.setAttribute(lockAttribute, (getCurrentUseCounter() + 1).toString());
 			return function() {
 				var newCounter = getCurrentUseCounter() - 1;
@@ -13272,10 +13272,10 @@ var init_component = __esmMin((() => {
 	RemoveScrollBar = function(_a) {
 		var noRelative = _a.noRelative, noImportant = _a.noImportant, _b = _a.gapMode, gapMode = _b === void 0 ? "margin" : _b;
 		useLockAttribute();
-		var gap = import_react$17.useMemo(function() {
+		var gap = import_react$18.useMemo(function() {
 			return getGapWidth(gapMode);
 		}, [gapMode]);
-		return import_react$17.createElement(Style, { styles: getStyles(gap, !noRelative, gapMode, !noImportant ? "!important" : "") });
+		return import_react$18.createElement(Style, { styles: getStyles(gap, !noRelative, gapMode, !noImportant ? "!important" : "") });
 	};
 }));
 //#endregion
@@ -13389,16 +13389,16 @@ var init_handleScroll = __esmMin((() => {
 //#endregion
 //#region node_modules/react-remove-scroll/dist/es2015/SideEffect.js
 function RemoveScrollSideCar(props) {
-	var shouldPreventQueue = import_react$16.useRef([]);
-	var touchStartRef = import_react$16.useRef([0, 0]);
-	var activeAxis = import_react$16.useRef();
-	var id = import_react$16.useState(idCounter++)[0];
-	var Style = import_react$16.useState(styleSingleton)[0];
-	var lastProps = import_react$16.useRef(props);
-	import_react$16.useEffect(function() {
+	var shouldPreventQueue = import_react$17.useRef([]);
+	var touchStartRef = import_react$17.useRef([0, 0]);
+	var activeAxis = import_react$17.useRef();
+	var id = import_react$17.useState(idCounter++)[0];
+	var Style = import_react$17.useState(styleSingleton)[0];
+	var lastProps = import_react$17.useRef(props);
+	import_react$17.useEffect(function() {
 		lastProps.current = props;
 	}, [props]);
-	import_react$16.useEffect(function() {
+	import_react$17.useEffect(function() {
 		if (props.inert) {
 			document.body.classList.add("block-interactivity-".concat(id));
 			var allow_1 = __spreadArray([props.lockRef.current], (props.shards || []).map(extractRef), true).filter(Boolean);
@@ -13417,7 +13417,7 @@ function RemoveScrollSideCar(props) {
 		props.lockRef.current,
 		props.shards
 	]);
-	var shouldCancelEvent = import_react$16.useCallback(function(event, parent) {
+	var shouldCancelEvent = import_react$17.useCallback(function(event, parent) {
 		if ("touches" in event && event.touches.length === 2 || event.type === "wheel" && event.ctrlKey) return !lastProps.current.allowPinchZoom;
 		var touch = getTouchXY(event);
 		var touchStart = touchStartRef.current;
@@ -13443,7 +13443,7 @@ function RemoveScrollSideCar(props) {
 		var cancelingAxis = activeAxis.current || currentAxis;
 		return handleScroll(cancelingAxis, parent, event, cancelingAxis === "h" ? deltaX : deltaY, true);
 	}, []);
-	var shouldPrevent = import_react$16.useCallback(function(_event) {
+	var shouldPrevent = import_react$17.useCallback(function(_event) {
 		var event = _event;
 		if (!lockStack.length || lockStack[lockStack.length - 1] !== Style) return;
 		var delta = "deltaY" in event ? getDeltaXY(event) : getTouchXY(event);
@@ -13463,7 +13463,7 @@ function RemoveScrollSideCar(props) {
 			}
 		}
 	}, []);
-	var shouldCancel = import_react$16.useCallback(function(name, delta, target, should) {
+	var shouldCancel = import_react$17.useCallback(function(name, delta, target, should) {
 		var event = {
 			name,
 			delta,
@@ -13478,17 +13478,17 @@ function RemoveScrollSideCar(props) {
 			});
 		}, 1);
 	}, []);
-	var scrollTouchStart = import_react$16.useCallback(function(event) {
+	var scrollTouchStart = import_react$17.useCallback(function(event) {
 		touchStartRef.current = getTouchXY(event);
 		activeAxis.current = void 0;
 	}, []);
-	var scrollWheel = import_react$16.useCallback(function(event) {
+	var scrollWheel = import_react$17.useCallback(function(event) {
 		shouldCancel(event.type, getDeltaXY(event), event.target, shouldCancelEvent(event, props.lockRef.current));
 	}, []);
-	var scrollTouchMove = import_react$16.useCallback(function(event) {
+	var scrollTouchMove = import_react$17.useCallback(function(event) {
 		shouldCancel(event.type, getTouchXY(event), event.target, shouldCancelEvent(event, props.lockRef.current));
 	}, []);
-	import_react$16.useEffect(function() {
+	import_react$17.useEffect(function() {
 		lockStack.push(Style);
 		props.setCallbacks({
 			onScrollCapture: scrollWheel,
@@ -13508,7 +13508,7 @@ function RemoveScrollSideCar(props) {
 		};
 	}, []);
 	var removeScrollBar = props.removeScrollBar, inert = props.inert;
-	return import_react$16.createElement(import_react$16.Fragment, null, inert ? import_react$16.createElement(Style, { styles: generateStyle(id) }) : null, removeScrollBar ? import_react$16.createElement(RemoveScrollBar, {
+	return import_react$17.createElement(import_react$17.Fragment, null, inert ? import_react$17.createElement(Style, { styles: generateStyle(id) }) : null, removeScrollBar ? import_react$17.createElement(RemoveScrollBar, {
 		noRelative: props.noRelative,
 		gapMode: props.gapMode
 	}) : null);
@@ -13524,10 +13524,10 @@ function getOutermostShadowParent(node) {
 	}
 	return shadowParent;
 }
-var import_react$16, getTouchXY, getDeltaXY, extractRef, deltaCompare, generateStyle, idCounter, lockStack;
+var import_react$17, getTouchXY, getDeltaXY, extractRef, deltaCompare, generateStyle, idCounter, lockStack;
 var init_SideEffect = __esmMin((() => {
 	init_tslib_es6();
-	import_react$16 = /* @__PURE__ */ __toESM(require_react());
+	import_react$17 = /* @__PURE__ */ __toESM(require_react());
 	init_es2015$2();
 	init_es2015$3();
 	init_aggresiveCapture();
@@ -13561,14 +13561,14 @@ var init_sidecar = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/react-remove-scroll/dist/es2015/Combination.js
-var import_react$15, ReactRemoveScroll;
+var import_react$16, ReactRemoveScroll;
 var init_Combination = __esmMin((() => {
 	init_tslib_es6();
-	import_react$15 = /* @__PURE__ */ __toESM(require_react());
+	import_react$16 = /* @__PURE__ */ __toESM(require_react());
 	init_UI();
 	init_sidecar();
-	ReactRemoveScroll = import_react$15.forwardRef(function(props, ref) {
-		return import_react$15.createElement(RemoveScroll, __assign({}, props, {
+	ReactRemoveScroll = import_react$16.forwardRef(function(props, ref) {
+		return import_react$16.createElement(RemoveScroll, __assign({}, props, {
 			ref,
 			sideCar: sidecar_default
 		}));
@@ -13679,9 +13679,9 @@ var init_es2015 = __esmMin((() => {
 function getState(open) {
 	return open ? "open" : "closed";
 }
-var import_react$14, import_jsx_runtime$14, __defProp$4, __name$4, DIALOG_NAME, createDialogContext, createDialogScope, DialogProvider, useDialogContext, Dialog$1, PORTAL_NAME$1, PortalProvider$1, usePortalContext$1, DialogPortal, OVERLAY_NAME, DialogOverlay, Slot, DialogOverlayImpl, CONTENT_NAME$2, DialogContent, DialogContentModal, DialogContentNonModal, DialogContentImpl, TITLE_NAME, DialogTitle, DESCRIPTION_NAME, DialogDescription, CLOSE_NAME, DialogClose;
+var import_react$15, import_jsx_runtime$14, __defProp$4, __name$4, DIALOG_NAME, createDialogContext, createDialogScope, DialogProvider, useDialogContext, Dialog$1, PORTAL_NAME$1, PortalProvider$1, usePortalContext$1, DialogPortal, OVERLAY_NAME, DialogOverlay, Slot, DialogOverlayImpl, CONTENT_NAME$2, DialogContent, DialogContentModal, DialogContentNonModal, DialogContentImpl, TITLE_NAME, DialogTitle, DESCRIPTION_NAME, DialogDescription, CLOSE_NAME, DialogClose;
 var init_dist$5 = __esmMin((() => {
-	import_react$14 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$15 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$18();
 	init_dist$20();
 	init_dist$17();
@@ -13708,16 +13708,16 @@ var init_dist$5 = __esmMin((() => {
 	[DialogProvider, useDialogContext] = createDialogContext(DIALOG_NAME);
 	Dialog$1 = /* @__PURE__ */ __name$4((props) => {
 		const { __scopeDialog, children, open: openProp, defaultOpen, onOpenChange, modal = true } = props;
-		const triggerRef = import_react$14.useRef(null);
-		const contentRef = import_react$14.useRef(null);
+		const triggerRef = import_react$15.useRef(null);
+		const contentRef = import_react$15.useRef(null);
 		const [open, setOpen] = useControllableState({
 			prop: openProp,
 			defaultProp: defaultOpen ?? false,
 			onChange: onOpenChange,
 			caller: DIALOG_NAME
 		});
-		const [titleCount, setTitleCount] = import_react$14.useState(0);
-		const [descriptionCount, setDescriptionCount] = import_react$14.useState(0);
+		const [titleCount, setTitleCount] = import_react$15.useState(0);
+		const [descriptionCount, setDescriptionCount] = import_react$15.useState(0);
 		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DialogProvider, {
 			scope: __scopeDialog,
 			triggerRef,
@@ -13731,7 +13731,7 @@ var init_dist$5 = __esmMin((() => {
 			setDescriptionCount,
 			open,
 			onOpenChange: setOpen,
-			onOpenToggle: import_react$14.useCallback(() => setOpen((prevOpen) => !prevOpen), [setOpen]),
+			onOpenToggle: import_react$15.useCallback(() => setOpen((prevOpen) => !prevOpen), [setOpen]),
 			modal,
 			children
 		});
@@ -13744,7 +13744,7 @@ var init_dist$5 = __esmMin((() => {
 		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(PortalProvider$1, {
 			scope: __scopeDialog,
 			forceMount,
-			children: import_react$14.Children.map(children, (child) => /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Presence, {
+			children: import_react$15.Children.map(children, (child) => /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Presence, {
 				present: forceMount || context.open,
 				children: /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Portal$1, {
 					asChild: true,
@@ -13755,7 +13755,7 @@ var init_dist$5 = __esmMin((() => {
 		});
 	}, "DialogPortal");
 	OVERLAY_NAME = "DialogOverlay";
-	DialogOverlay = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlay2(props, forwardedRef) {
+	DialogOverlay = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlay2(props, forwardedRef) {
 		const portalContext = usePortalContext$1(OVERLAY_NAME, props.__scopeDialog);
 		const { forceMount = portalContext.forceMount, ...overlayProps } = props;
 		const context = useDialogContext(OVERLAY_NAME, props.__scopeDialog);
@@ -13768,7 +13768,7 @@ var init_dist$5 = __esmMin((() => {
 		}) : null;
 	}, "DialogOverlay"));
 	Slot = /* @__PURE__ */ createSlot("DialogOverlay.RemoveScroll");
-	DialogOverlayImpl = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlayImpl2(props, forwardedRef) {
+	DialogOverlayImpl = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlayImpl2(props, forwardedRef) {
 		const { __scopeDialog, ...overlayProps } = props;
 		const context = useDialogContext(OVERLAY_NAME, __scopeDialog);
 		const composedRefs = useComposedRefs(forwardedRef, useDismissableLayerSurface());
@@ -13788,7 +13788,7 @@ var init_dist$5 = __esmMin((() => {
 		});
 	}, "DialogOverlayImpl"));
 	CONTENT_NAME$2 = "DialogContent";
-	DialogContent = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogContent2(props, forwardedRef) {
+	DialogContent = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContent2(props, forwardedRef) {
 		const portalContext = usePortalContext$1(CONTENT_NAME$2, props.__scopeDialog);
 		const { forceMount = portalContext.forceMount, ...contentProps } = props;
 		const context = useDialogContext(CONTENT_NAME$2, props.__scopeDialog);
@@ -13803,11 +13803,11 @@ var init_dist$5 = __esmMin((() => {
 			})
 		});
 	}, "DialogContent"));
-	DialogContentModal = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogContentModal2(props, forwardedRef) {
+	DialogContentModal = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContentModal2(props, forwardedRef) {
 		const context = useDialogContext(CONTENT_NAME$2, props.__scopeDialog);
-		const contentRef = import_react$14.useRef(null);
+		const contentRef = import_react$15.useRef(null);
 		const composedRefs = useComposedRefs(forwardedRef, context.contentRef, contentRef);
-		import_react$14.useEffect(() => {
+		import_react$15.useEffect(() => {
 			const content = contentRef.current;
 			if (content) return hideOthers(content);
 		}, []);
@@ -13828,10 +13828,10 @@ var init_dist$5 = __esmMin((() => {
 			onFocusOutside: composeEventHandlers(props.onFocusOutside, (event) => event.preventDefault())
 		});
 	}, "DialogContentModal"));
-	DialogContentNonModal = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogContentNonModal2(props, forwardedRef) {
+	DialogContentNonModal = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContentNonModal2(props, forwardedRef) {
 		const context = useDialogContext(CONTENT_NAME$2, props.__scopeDialog);
-		const hasInteractedOutsideRef = import_react$14.useRef(false);
-		const hasPointerDownOutsideRef = import_react$14.useRef(false);
+		const hasInteractedOutsideRef = import_react$15.useRef(false);
+		const hasPointerDownOutsideRef = import_react$15.useRef(false);
 		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DialogContentImpl, {
 			...props,
 			ref: forwardedRef,
@@ -13858,7 +13858,7 @@ var init_dist$5 = __esmMin((() => {
 			}
 		});
 	}, "DialogContentNonModal"));
-	DialogContentImpl = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogContentImpl2(props, forwardedRef) {
+	DialogContentImpl = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContentImpl2(props, forwardedRef) {
 		const { __scopeDialog, trapFocus, onOpenAutoFocus, onCloseAutoFocus, ...contentProps } = props;
 		const context = useDialogContext(CONTENT_NAME$2, __scopeDialog);
 		useFocusGuards();
@@ -13882,7 +13882,7 @@ var init_dist$5 = __esmMin((() => {
 		}) });
 	}, "DialogContentImpl"));
 	TITLE_NAME = "DialogTitle";
-	DialogTitle = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogTitle2(props, forwardedRef) {
+	DialogTitle = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogTitle2(props, forwardedRef) {
 		const { __scopeDialog, ...titleProps } = props;
 		const context = useDialogContext(TITLE_NAME, __scopeDialog);
 		const { setTitleCount } = context;
@@ -13897,7 +13897,7 @@ var init_dist$5 = __esmMin((() => {
 		});
 	}, "DialogTitle"));
 	DESCRIPTION_NAME = "DialogDescription";
-	DialogDescription = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogDescription2(props, forwardedRef) {
+	DialogDescription = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogDescription2(props, forwardedRef) {
 		const { __scopeDialog, ...descriptionProps } = props;
 		const context = useDialogContext(DESCRIPTION_NAME, __scopeDialog);
 		const { setDescriptionCount } = context;
@@ -13912,7 +13912,7 @@ var init_dist$5 = __esmMin((() => {
 		});
 	}, "DialogDescription"));
 	CLOSE_NAME = "DialogClose";
-	DialogClose = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogClose2(props, forwardedRef) {
+	DialogClose = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogClose2(props, forwardedRef) {
 		const { __scopeDialog, ...closeProps } = props;
 		const context = useDialogContext(CLOSE_NAME, __scopeDialog);
 		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Primitive.button, {
@@ -15205,7 +15205,7 @@ function roundByDPR(element, value) {
 	return Math.round(value * dpr) / dpr;
 }
 function useLatestRef(value) {
-	const ref = import_react$12.useRef(value);
+	const ref = import_react$13.useRef(value);
 	index$1(() => {
 		ref.current = value;
 	});
@@ -15218,7 +15218,7 @@ function useLatestRef(value) {
 function useFloating(options) {
 	if (options === void 0) options = {};
 	const { placement = "bottom", strategy = "absolute", middleware = [], platform, elements: { reference: externalReference, floating: externalFloating } = {}, transform = true, whileElementsMounted, open } = options;
-	const [data, setData] = import_react$12.useState({
+	const [data, setData] = import_react$13.useState({
 		x: 0,
 		y: 0,
 		strategy,
@@ -15226,17 +15226,17 @@ function useFloating(options) {
 		middlewareData: {},
 		isPositioned: false
 	});
-	const [latestMiddleware, setLatestMiddleware] = import_react$12.useState(middleware);
+	const [latestMiddleware, setLatestMiddleware] = import_react$13.useState(middleware);
 	if (!deepEqual(latestMiddleware, middleware)) setLatestMiddleware(middleware);
-	const [_reference, _setReference] = import_react$12.useState(null);
-	const [_floating, _setFloating] = import_react$12.useState(null);
-	const setReference = import_react$12.useCallback((node) => {
+	const [_reference, _setReference] = import_react$13.useState(null);
+	const [_floating, _setFloating] = import_react$13.useState(null);
+	const setReference = import_react$13.useCallback((node) => {
 		if (node !== referenceRef.current) {
 			referenceRef.current = node;
 			_setReference(node);
 		}
 	}, []);
-	const setFloating = import_react$12.useCallback((node) => {
+	const setFloating = import_react$13.useCallback((node) => {
 		if (node !== floatingRef.current) {
 			floatingRef.current = node;
 			_setFloating(node);
@@ -15244,14 +15244,14 @@ function useFloating(options) {
 	}, []);
 	const referenceEl = externalReference || _reference;
 	const floatingEl = externalFloating || _floating;
-	const referenceRef = import_react$12.useRef(null);
-	const floatingRef = import_react$12.useRef(null);
-	const dataRef = import_react$12.useRef(data);
+	const referenceRef = import_react$13.useRef(null);
+	const floatingRef = import_react$13.useRef(null);
+	const dataRef = import_react$13.useRef(data);
 	const hasWhileElementsMounted = whileElementsMounted != null;
 	const whileElementsMountedRef = useLatestRef(whileElementsMounted);
 	const platformRef = useLatestRef(platform);
 	const openRef = useLatestRef(open);
-	const update = import_react$12.useCallback(() => {
+	const update = import_react$13.useCallback(() => {
 		if (!referenceRef.current || !floatingRef.current) return;
 		const config = {
 			placement,
@@ -15287,7 +15287,7 @@ function useFloating(options) {
 			}));
 		}
 	}, [open]);
-	const isMountedRef = import_react$12.useRef(false);
+	const isMountedRef = import_react$13.useRef(false);
 	index$1(() => {
 		isMountedRef.current = true;
 		return () => {
@@ -15308,17 +15308,17 @@ function useFloating(options) {
 		whileElementsMountedRef,
 		hasWhileElementsMounted
 	]);
-	const refs = import_react$12.useMemo(() => ({
+	const refs = import_react$13.useMemo(() => ({
 		reference: referenceRef,
 		floating: floatingRef,
 		setReference,
 		setFloating
 	}), [setReference, setFloating]);
-	const elements = import_react$12.useMemo(() => ({
+	const elements = import_react$13.useMemo(() => ({
 		reference: referenceEl,
 		floating: floatingEl
 	}), [referenceEl, floatingEl]);
-	const floatingStyles = import_react$12.useMemo(() => {
+	const floatingStyles = import_react$13.useMemo(() => {
 		const initialStyles = {
 			position: strategy,
 			left: 0,
@@ -15344,7 +15344,7 @@ function useFloating(options) {
 		data.x,
 		data.y
 	]);
-	return import_react$12.useMemo(() => ({
+	return import_react$13.useMemo(() => ({
 		...data,
 		update,
 		refs,
@@ -15358,13 +15358,13 @@ function useFloating(options) {
 		floatingStyles
 	]);
 }
-var import_react$12, import_react$13, import_react_dom$3, index$1, arrow$1, offset, shift, limitShift, flip, size, hide, arrow;
+var import_react$13, import_react$14, import_react_dom$3, index$1, arrow$1, offset, shift, limitShift, flip, size, hide, arrow;
 var init_floating_ui_react_dom = __esmMin((() => {
 	init_floating_ui_dom();
-	import_react$12 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react$13 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$14 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react_dom$3 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
-	index$1 = typeof document !== "undefined" ? import_react$13.useLayoutEffect : function noop() {};
+	index$1 = typeof document !== "undefined" ? import_react$14.useLayoutEffect : function noop() {};
 	arrow$1 = (options) => {
 		function isRef(value) {
 			return {}.hasOwnProperty.call(value, "current");
@@ -15447,7 +15447,7 @@ var init_floating_ui_react_dom = __esmMin((() => {
 //#endregion
 //#region node_modules/@radix-ui/react-use-size/dist/index.mjs
 function useSize(element) {
-	const [size, setSize] = import_react$11.useState(void 0);
+	const [size, setSize] = import_react$12.useState(void 0);
 	useLayoutEffect2(() => {
 		if (element) {
 			setSize({
@@ -15480,9 +15480,9 @@ function useSize(element) {
 	}, [element]);
 	return size;
 }
-var import_react$11, __defProp$3, __name$3;
+var import_react$12, __defProp$3, __name$3;
 var init_dist$4 = __esmMin((() => {
-	import_react$11 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$12 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$16();
 	__defProp$3 = Object.defineProperty;
 	__name$3 = (target, value) => __defProp$3(target, "name", {
@@ -15500,9 +15500,9 @@ function getSideAndAlignFromPlacement(placement) {
 	const [side, align = "center"] = placement.split("-");
 	return [side, align];
 }
-var import_react$10, import_jsx_runtime$13, __defProp$2, __name$2, POPPER_NAME, createPopperContext, createPopperScope, PopperProvider, usePopperContext, Popper, ANCHOR_NAME, PopperAnchor, CONTENT_NAME$1, PopperContentProvider, useContentContext, PopperContent, transformOrigin, Root2, Anchor, Content;
+var import_react$11, import_jsx_runtime$13, __defProp$2, __name$2, POPPER_NAME, createPopperContext, createPopperScope, PopperProvider, usePopperContext, Popper, ANCHOR_NAME, PopperAnchor, CONTENT_NAME$1, PopperContentProvider, useContentContext, PopperContent, transformOrigin, Root2, Anchor, Content;
 var init_dist$3 = __esmMin((() => {
-	import_react$10 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$11 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_floating_ui_react_dom();
 	init_dist$20();
 	init_dist$17();
@@ -15521,8 +15521,8 @@ var init_dist$3 = __esmMin((() => {
 	[PopperProvider, usePopperContext] = createPopperContext(POPPER_NAME);
 	Popper = /* @__PURE__ */ __name$2((props) => {
 		const { __scopePopper, children } = props;
-		const [anchor, setAnchor] = import_react$10.useState(null);
-		const [placementState, setPlacementState] = import_react$10.useState(void 0);
+		const [anchor, setAnchor] = import_react$11.useState(null);
+		const [placementState, setPlacementState] = import_react$11.useState(void 0);
 		return /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(PopperProvider, {
 			scope: __scopePopper,
 			anchor,
@@ -15533,17 +15533,17 @@ var init_dist$3 = __esmMin((() => {
 		});
 	}, "Popper");
 	ANCHOR_NAME = "PopperAnchor";
-	PopperAnchor = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name$2(function PopperAnchor2(props, forwardedRef) {
+	PopperAnchor = /* @__PURE__ */ import_react$11.forwardRef(/* @__PURE__ */ __name$2(function PopperAnchor2(props, forwardedRef) {
 		const { __scopePopper, virtualRef, ...anchorProps } = props;
 		const context = usePopperContext(ANCHOR_NAME, __scopePopper);
-		const ref = import_react$10.useRef(null);
+		const ref = import_react$11.useRef(null);
 		const onAnchorChange = context.onAnchorChange;
-		const composedRefs = useComposedRefs(forwardedRef, import_react$10.useCallback((node) => {
+		const composedRefs = useComposedRefs(forwardedRef, import_react$11.useCallback((node) => {
 			ref.current = node;
 			if (node) onAnchorChange(node);
 		}, [onAnchorChange]));
-		const anchorRef = import_react$10.useRef(null);
-		import_react$10.useEffect(() => {
+		const anchorRef = import_react$11.useRef(null);
+		import_react$11.useEffect(() => {
 			if (!virtualRef) return;
 			const previousAnchor = anchorRef.current;
 			anchorRef.current = virtualRef.current;
@@ -15561,12 +15561,12 @@ var init_dist$3 = __esmMin((() => {
 	}, "PopperAnchor"));
 	CONTENT_NAME$1 = "PopperContent";
 	[PopperContentProvider, useContentContext] = createPopperContext(CONTENT_NAME$1);
-	PopperContent = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name$2(function PopperContent2(props, forwardedRef) {
+	PopperContent = /* @__PURE__ */ import_react$11.forwardRef(/* @__PURE__ */ __name$2(function PopperContent2(props, forwardedRef) {
 		const { __scopePopper, side = "bottom", sideOffset = 0, align = "center", alignOffset = 0, arrowPadding = 0, avoidCollisions = true, collisionBoundary = [], collisionPadding: collisionPaddingProp = 0, sticky = "partial", hideWhenDetached = false, updatePositionStrategy = "optimized", onPlaced, ...contentProps } = props;
 		const context = usePopperContext(CONTENT_NAME$1, __scopePopper);
-		const [content, setContent] = import_react$10.useState(null);
+		const [content, setContent] = import_react$11.useState(null);
 		const composedRefs = useComposedRefs(forwardedRef, setContent);
-		const [arrow$4, setArrow] = import_react$10.useState(null);
+		const [arrow$4, setArrow] = import_react$11.useState(null);
 		const arrowSize = useSize(arrow$4);
 		const arrowWidth = arrowSize?.width ?? 0;
 		const arrowHeight = arrowSize?.height ?? 0;
@@ -15645,7 +15645,7 @@ var init_dist$3 = __esmMin((() => {
 		const arrowX = middlewareData.arrow?.x;
 		const arrowY = middlewareData.arrow?.y;
 		const cannotCenterArrow = middlewareData.arrow?.centerOffset !== 0;
-		const [contentZIndex, setContentZIndex] = import_react$10.useState();
+		const [contentZIndex, setContentZIndex] = import_react$11.useState();
 		useLayoutEffect2(() => {
 			if (content) setContentZIndex(window.getComputedStyle(content).zIndex);
 		}, [content]);
@@ -15730,9 +15730,9 @@ var init_dist$3 = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/@radix-ui/react-visually-hidden/dist/index.mjs
-var import_react$9, import_jsx_runtime$12, __defProp$1, __name$1, VISUALLY_HIDDEN_STYLES, VisuallyHidden, Root;
+var import_react$10, import_jsx_runtime$12, __defProp$1, __name$1, VISUALLY_HIDDEN_STYLES, VisuallyHidden, Root;
 var init_dist$2 = __esmMin((() => {
-	import_react$9 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$10 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$12();
 	import_jsx_runtime$12 = require_jsx_runtime();
 	__defProp$1 = Object.defineProperty;
@@ -15752,7 +15752,7 @@ var init_dist$2 = __esmMin((() => {
 		whiteSpace: "nowrap",
 		wordWrap: "normal"
 	});
-	VisuallyHidden = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name$1(function VisuallyHidden2(props, forwardedRef) {
+	VisuallyHidden = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name$1(function VisuallyHidden2(props, forwardedRef) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Primitive.span, {
 			...props,
 			ref: forwardedRef,
@@ -15894,9 +15894,9 @@ function getHullPresorted(points) {
 	if (upperHull.length === 1 && lowerHull.length === 1 && upperHull[0].x === lowerHull[0].x && upperHull[0].y === lowerHull[0].y) return upperHull;
 	else return upperHull.concat(lowerHull);
 }
-var import_react$8, import_jsx_runtime$11, __defProp, __name, createTooltipContext$1, createTooltipScope, usePopperScope, PROVIDER_NAME, DEFAULT_DELAY_DURATION, TOOLTIP_OPEN, TooltipProviderContextProvider, useTooltipProviderContext, TooltipProvider, TOOLTIP_NAME, TooltipContextProvider, useTooltipContext, Tooltip$1, TRIGGER_NAME, TooltipTrigger, PORTAL_NAME, PortalProvider, usePortalContext, TooltipPortal, CONTENT_NAME, TooltipContent, TooltipContentHoverable, Slottable, TooltipContentImpl, Provider, Root3, Trigger, Portal, Content2;
+var import_react$9, import_jsx_runtime$11, __defProp, __name, createTooltipContext$1, createTooltipScope, usePopperScope, PROVIDER_NAME, DEFAULT_DELAY_DURATION, TOOLTIP_OPEN, TooltipProviderContextProvider, useTooltipProviderContext, TooltipProvider, TOOLTIP_NAME, TooltipContextProvider, useTooltipContext, Tooltip$1, TRIGGER_NAME, TooltipTrigger, PORTAL_NAME, PortalProvider, usePortalContext, TooltipPortal, CONTENT_NAME, TooltipContent, TooltipContentHoverable, Slottable, TooltipContentImpl, Provider, Root3, Trigger, Portal, Content2;
 var init_dist$1 = __esmMin((() => {
-	import_react$8 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$9 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$18();
 	init_dist$20();
 	init_dist$17();
@@ -15924,10 +15924,10 @@ var init_dist$1 = __esmMin((() => {
 	[TooltipProviderContextProvider, useTooltipProviderContext] = createTooltipContext$1(PROVIDER_NAME);
 	TooltipProvider = /* @__PURE__ */ __name((props) => {
 		const { __scopeTooltip, delayDuration = DEFAULT_DELAY_DURATION, skipDelayDuration = 300, disableHoverableContent = false, children } = props;
-		const isOpenDelayedRef = import_react$8.useRef(true);
-		const isPointerInTransitRef = import_react$8.useRef(false);
-		const skipDelayTimerRef = import_react$8.useRef(0);
-		import_react$8.useEffect(() => {
+		const isOpenDelayedRef = import_react$9.useRef(true);
+		const isPointerInTransitRef = import_react$9.useRef(false);
+		const skipDelayTimerRef = import_react$9.useRef(0);
+		import_react$9.useEffect(() => {
 			const skipDelayTimer = skipDelayTimerRef.current;
 			return () => window.clearTimeout(skipDelayTimer);
 		}, []);
@@ -15935,18 +15935,18 @@ var init_dist$1 = __esmMin((() => {
 			scope: __scopeTooltip,
 			isOpenDelayedRef,
 			delayDuration,
-			onOpen: import_react$8.useCallback(() => {
+			onOpen: import_react$9.useCallback(() => {
 				if (skipDelayDuration <= 0) return;
 				window.clearTimeout(skipDelayTimerRef.current);
 				isOpenDelayedRef.current = false;
 			}, [skipDelayDuration]),
-			onClose: import_react$8.useCallback(() => {
+			onClose: import_react$9.useCallback(() => {
 				if (skipDelayDuration <= 0) return;
 				window.clearTimeout(skipDelayTimerRef.current);
 				skipDelayTimerRef.current = window.setTimeout(() => isOpenDelayedRef.current = true, skipDelayDuration);
 			}, [skipDelayDuration]),
 			isPointerInTransitRef,
-			onPointerInTransitChange: import_react$8.useCallback((inTransit) => {
+			onPointerInTransitChange: import_react$9.useCallback((inTransit) => {
 				isPointerInTransitRef.current = inTransit;
 			}, []),
 			disableHoverableContent,
@@ -15959,13 +15959,13 @@ var init_dist$1 = __esmMin((() => {
 		const { __scopeTooltip, children, open: openProp, defaultOpen, onOpenChange, disableHoverableContent: disableHoverableContentProp, delayDuration: delayDurationProp } = props;
 		const providerContext = useTooltipProviderContext(TOOLTIP_NAME, props.__scopeTooltip);
 		const popperScope = usePopperScope(__scopeTooltip);
-		const [trigger, setTrigger] = import_react$8.useState(null);
-		const [contentIdState, setContentId] = import_react$8.useState(void 0);
+		const [trigger, setTrigger] = import_react$9.useState(null);
+		const [contentIdState, setContentId] = import_react$9.useState(void 0);
 		const generatedContentId = useId$2();
-		const openTimerRef = import_react$8.useRef(0);
+		const openTimerRef = import_react$9.useRef(0);
 		const disableHoverableContent = disableHoverableContentProp ?? providerContext.disableHoverableContent;
 		const delayDuration = delayDurationProp ?? providerContext.delayDuration;
-		const wasOpenDelayedRef = import_react$8.useRef(false);
+		const wasOpenDelayedRef = import_react$9.useRef(false);
 		const [open, setOpen] = useControllableState({
 			prop: openProp,
 			defaultProp: defaultOpen ?? false,
@@ -15978,21 +15978,21 @@ var init_dist$1 = __esmMin((() => {
 			}, "onChange"),
 			caller: TOOLTIP_NAME
 		});
-		const stateAttribute = import_react$8.useMemo(() => {
+		const stateAttribute = import_react$9.useMemo(() => {
 			return open ? wasOpenDelayedRef.current ? "delayed-open" : "instant-open" : "closed";
 		}, [open]);
-		const handleOpen = import_react$8.useCallback(() => {
+		const handleOpen = import_react$9.useCallback(() => {
 			window.clearTimeout(openTimerRef.current);
 			openTimerRef.current = 0;
 			wasOpenDelayedRef.current = false;
 			setOpen(true);
 		}, [setOpen]);
-		const handleClose = import_react$8.useCallback(() => {
+		const handleClose = import_react$9.useCallback(() => {
 			window.clearTimeout(openTimerRef.current);
 			openTimerRef.current = 0;
 			setOpen(false);
 		}, [setOpen]);
-		const handleDelayedOpen = import_react$8.useCallback(() => {
+		const handleDelayedOpen = import_react$9.useCallback(() => {
 			window.clearTimeout(openTimerRef.current);
 			openTimerRef.current = window.setTimeout(() => {
 				wasOpenDelayedRef.current = true;
@@ -16000,7 +16000,7 @@ var init_dist$1 = __esmMin((() => {
 				openTimerRef.current = 0;
 			}, delayDuration);
 		}, [delayDuration, setOpen]);
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			return () => {
 				if (openTimerRef.current) {
 					window.clearTimeout(openTimerRef.current);
@@ -16019,7 +16019,7 @@ var init_dist$1 = __esmMin((() => {
 				stateAttribute,
 				trigger,
 				onTriggerChange: setTrigger,
-				onTriggerEnter: import_react$8.useCallback(() => {
+				onTriggerEnter: import_react$9.useCallback(() => {
 					if (providerContext.isOpenDelayedRef.current) handleDelayedOpen();
 					else handleOpen();
 				}, [
@@ -16027,7 +16027,7 @@ var init_dist$1 = __esmMin((() => {
 					handleDelayedOpen,
 					handleOpen
 				]),
-				onTriggerLeave: import_react$8.useCallback(() => {
+				onTriggerLeave: import_react$9.useCallback(() => {
 					if (disableHoverableContent) handleClose();
 					else {
 						window.clearTimeout(openTimerRef.current);
@@ -16042,16 +16042,16 @@ var init_dist$1 = __esmMin((() => {
 		});
 	}, "Tooltip");
 	TRIGGER_NAME = "TooltipTrigger";
-	TooltipTrigger = /* @__PURE__ */ import_react$8.forwardRef(/* @__PURE__ */ __name(function TooltipTrigger2(props, forwardedRef) {
+	TooltipTrigger = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipTrigger2(props, forwardedRef) {
 		const { __scopeTooltip, ...triggerProps } = props;
 		const context = useTooltipContext(TRIGGER_NAME, __scopeTooltip);
 		const providerContext = useTooltipProviderContext(TRIGGER_NAME, __scopeTooltip);
 		const popperScope = usePopperScope(__scopeTooltip);
-		const composedRefs = useComposedRefs(forwardedRef, import_react$8.useRef(null), context.onTriggerChange);
-		const isPointerDownRef = import_react$8.useRef(false);
-		const hasPointerMoveOpenedRef = import_react$8.useRef(false);
-		const handlePointerUp = import_react$8.useCallback(() => isPointerDownRef.current = false, []);
-		import_react$8.useEffect(() => {
+		const composedRefs = useComposedRefs(forwardedRef, import_react$9.useRef(null), context.onTriggerChange);
+		const isPointerDownRef = import_react$9.useRef(false);
+		const hasPointerMoveOpenedRef = import_react$9.useRef(false);
+		const handlePointerUp = import_react$9.useCallback(() => isPointerDownRef.current = false, []);
+		import_react$9.useEffect(() => {
 			return () => document.removeEventListener("pointerup", handlePointerUp);
 		}, [handlePointerUp]);
 		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Anchor, {
@@ -16105,7 +16105,7 @@ var init_dist$1 = __esmMin((() => {
 		});
 	}, "TooltipPortal");
 	CONTENT_NAME = "TooltipContent";
-	TooltipContent = /* @__PURE__ */ import_react$8.forwardRef(/* @__PURE__ */ __name(function TooltipContent2(props, forwardedRef) {
+	TooltipContent = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipContent2(props, forwardedRef) {
 		const portalContext = usePortalContext(CONTENT_NAME, props.__scopeTooltip);
 		const { forceMount = portalContext.forceMount, side = "top", ...contentProps } = props;
 		const context = useTooltipContext(CONTENT_NAME, props.__scopeTooltip);
@@ -16122,20 +16122,20 @@ var init_dist$1 = __esmMin((() => {
 			})
 		});
 	}, "TooltipContent"));
-	TooltipContentHoverable = /* @__PURE__ */ import_react$8.forwardRef(/* @__PURE__ */ __name(function TooltipContentHoverable2(props, forwardedRef) {
+	TooltipContentHoverable = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipContentHoverable2(props, forwardedRef) {
 		const context = useTooltipContext(CONTENT_NAME, props.__scopeTooltip);
 		const providerContext = useTooltipProviderContext(CONTENT_NAME, props.__scopeTooltip);
-		const ref = import_react$8.useRef(null);
+		const ref = import_react$9.useRef(null);
 		const composedRefs = useComposedRefs(forwardedRef, ref);
-		const [pointerGraceArea, setPointerGraceArea] = import_react$8.useState(null);
+		const [pointerGraceArea, setPointerGraceArea] = import_react$9.useState(null);
 		const { trigger, onClose } = context;
 		const content = ref.current;
 		const { onPointerInTransitChange } = providerContext;
-		const handleRemoveGraceArea = import_react$8.useCallback(() => {
+		const handleRemoveGraceArea = import_react$9.useCallback(() => {
 			setPointerGraceArea(null);
 			onPointerInTransitChange(false);
 		}, [onPointerInTransitChange]);
-		const handleCreateGraceArea = import_react$8.useCallback((event, hoverTarget) => {
+		const handleCreateGraceArea = import_react$9.useCallback((event, hoverTarget) => {
 			const currentTarget = event.currentTarget;
 			const exitPoint = {
 				x: event.clientX,
@@ -16147,10 +16147,10 @@ var init_dist$1 = __esmMin((() => {
 			setPointerGraceArea(graceArea);
 			onPointerInTransitChange(true);
 		}, [onPointerInTransitChange]);
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			return () => handleRemoveGraceArea();
 		}, [handleRemoveGraceArea]);
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			if (trigger && content) {
 				const handleTriggerLeave = /* @__PURE__ */ __name((event) => handleCreateGraceArea(event, content), "handleTriggerLeave");
 				const handleContentLeave = /* @__PURE__ */ __name((event) => handleCreateGraceArea(event, trigger), "handleContentLeave");
@@ -16167,7 +16167,7 @@ var init_dist$1 = __esmMin((() => {
 			handleCreateGraceArea,
 			handleRemoveGraceArea
 		]);
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			if (pointerGraceArea) {
 				const handleTrackPointerGrace = /* @__PURE__ */ __name((event) => {
 					const target = event.target;
@@ -16199,16 +16199,16 @@ var init_dist$1 = __esmMin((() => {
 		});
 	}, "TooltipContentHoverable"));
 	Slottable = /* @__PURE__ */ createSlottable("TooltipContent");
-	TooltipContentImpl = /* @__PURE__ */ import_react$8.forwardRef(/* @__PURE__ */ __name(function TooltipContentImpl2(props, forwardedRef) {
+	TooltipContentImpl = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipContentImpl2(props, forwardedRef) {
 		const { __scopeTooltip, children, "aria-label": ariaLabel, id: idProp, onEscapeKeyDown, onPointerDownOutside, ...contentProps } = props;
 		const context = useTooltipContext(CONTENT_NAME, __scopeTooltip);
 		const popperScope = usePopperScope(__scopeTooltip);
 		const { onClose } = context;
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			document.addEventListener(TOOLTIP_OPEN, onClose);
 			return () => document.removeEventListener(TOOLTIP_OPEN, onClose);
 		}, [onClose]);
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			if (context.trigger) {
 				const handleScroll = /* @__PURE__ */ __name((event) => {
 					if (event.target instanceof Node && event.target.contains(context.trigger)) onClose();
@@ -19771,7 +19771,7 @@ function cn(...values) {
 	return twMerge(clsx(values));
 }
 function Field({ label, help, children }) {
-	const id = import_react$7.useId();
+	const id = import_react$8.useId();
 	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 		className: "rg-field grid gap-2 text-xs font-medium text-muted-foreground",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
@@ -19783,11 +19783,11 @@ function Field({ label, help, children }) {
 				label,
 				children: help
 			})]
-		}), import_react$7.cloneElement(children, { id })]
+		}), import_react$8.cloneElement(children, { id })]
 	});
 }
 function CheckboxField({ label, help, ...props }) {
-	const id = import_react$7.useId();
+	const id = import_react$8.useId();
 	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 		className: "rg-check",
 		children: [
@@ -19808,7 +19808,7 @@ function CheckboxField({ label, help, ...props }) {
 	});
 }
 function Help({ label, children }) {
-	const [open, setOpen] = import_react$7.useState(false);
+	const [open, setOpen] = import_react$8.useState(false);
 	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Provider, {
 		delayDuration: 200,
 		children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Root3, {
@@ -19836,7 +19836,7 @@ function Help({ label, children }) {
 	});
 }
 function Dialog({ title, description, children, footer, onClose, restoreFocus, initialFocus }) {
-	const descriptionId = import_react$7.useId();
+	const descriptionId = import_react$8.useId();
 	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Dialog$1, {
 		open: true,
 		onOpenChange: onClose,
@@ -19885,9 +19885,9 @@ function Dialog({ title, description, children, footer, onClose, restoreFocus, i
 		})] })
 	});
 }
-var import_react$7, import_jsx_runtime$10, buttonVariants, Button, Input, NativeSelect;
+var import_react$8, import_jsx_runtime$10, buttonVariants, Button, Input, NativeSelect;
 var init_ui = __esmMin((() => {
-	import_react$7 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$8 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$19();
 	init_dist$5();
 	init_dist$1();
@@ -19914,7 +19914,7 @@ var init_ui = __esmMin((() => {
 			size: "default"
 		}
 	});
-	Button = import_react$7.forwardRef(({ className, variant, size, asChild, type = "button", ...props }, ref) => {
+	Button = import_react$8.forwardRef(({ className, variant, size, asChild, type = "button", ...props }, ref) => {
 		return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(asChild ? Slot$1 : "button", {
 			ref,
 			type,
@@ -19926,13 +19926,13 @@ var init_ui = __esmMin((() => {
 		});
 	});
 	Button.displayName = "Button";
-	Input = import_react$7.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("input", {
+	Input = import_react$8.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("input", {
 		ref,
 		className: cn("rg-input h-9 w-full rounded-md border border-input bg-background px-3 text-[13px] disabled:opacity-50", className),
 		...props
 	}));
 	Input.displayName = "Input";
-	NativeSelect = import_react$7.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("select", {
+	NativeSelect = import_react$8.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("select", {
 		ref,
 		className: cn("rg-input h-9 rounded-md border border-input bg-background px-3 text-[13px]", className),
 		...props
@@ -19940,10 +19940,123 @@ var init_ui = __esmMin((() => {
 	NativeSelect.displayName = "NativeSelect";
 }));
 //#endregion
-//#region crates/gateway-api/admin-ui/src/react/shell.tsx
+//#region crates/gateway-api/admin-ui/src/theme-preference.ts
 var import_client$7 = require_client();
 init_ui();
+var THEME_STORAGE_KEY = "relayna.theme";
+var THEME_CHANGE_EVENT = "relayna:theme-change";
+var preference = "system";
+var changePreference;
+var dispose;
+function validPreference(value) {
+	return value === "light" || value === "dark" || value === "system";
+}
+function getThemePreference() {
+	return preference;
+}
+function subscribeThemePreference(listener) {
+	document.addEventListener(THEME_CHANGE_EVENT, listener);
+	return () => document.removeEventListener(THEME_CHANGE_EVENT, listener);
+}
+function setThemePreference(value) {
+	if (validPreference(value)) changePreference?.(value);
+}
+/** Initialize before React and operational controllers; return listener cleanup. */
+function initializeThemePreference() {
+	dispose?.();
+	let media;
+	try {
+		media = window.matchMedia("(prefers-color-scheme: dark)");
+	} catch {}
+	let removeMediaListener;
+	function apply(value) {
+		const previousPreference = preference;
+		preference = value;
+		const theme = value === "system" ? media?.matches ? "dark" : "light" : value;
+		const previousTheme = document.documentElement.dataset.theme;
+		document.documentElement.dataset.theme = theme;
+		const query = media;
+		if (value === "system" && !removeMediaListener && query) {
+			if (typeof query.addEventListener === "function") {
+				query.addEventListener("change", onSystemChange);
+				removeMediaListener = () => query.removeEventListener("change", onSystemChange);
+			} else if (typeof query.addListener === "function") {
+				query.addListener(onSystemChange);
+				removeMediaListener = () => query.removeListener(onSystemChange);
+			}
+		} else if (value !== "system") {
+			removeMediaListener?.();
+			removeMediaListener = void 0;
+		}
+		if (previousTheme !== theme || previousPreference !== value) document.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: {
+			theme,
+			preference: value
+		} }));
+	}
+	function onSystemChange() {
+		if (preference === "system") apply("system");
+	}
+	function onStorage(event) {
+		if (event.key !== "relayna.theme" && event.key !== null) return;
+		try {
+			if (event.storageArea && event.storageArea !== window.localStorage) return;
+		} catch {}
+		apply(validPreference(event.newValue) ? event.newValue : "system");
+	}
+	const change = (value) => {
+		try {
+			window.localStorage.setItem(THEME_STORAGE_KEY, value);
+		} catch {}
+		apply(value);
+	};
+	changePreference = change;
+	let saved = null;
+	try {
+		saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+	} catch {}
+	apply(validPreference(saved) ? saved : "system");
+	window.addEventListener("storage", onStorage);
+	const cleanup = () => {
+		window.removeEventListener("storage", onStorage);
+		removeMediaListener?.();
+		removeMediaListener = void 0;
+		if (changePreference === change) {
+			changePreference = void 0;
+			dispose = void 0;
+		}
+	};
+	dispose = cleanup;
+	return cleanup;
+}
+//#endregion
+//#region crates/gateway-api/admin-ui/src/react/shell.tsx
+var import_react$7 = /* @__PURE__ */ __toESM(require_react(), 1);
 var import_jsx_runtime$9 = require_jsx_runtime();
+function ThemeSwitcher() {
+	const preference = (0, import_react$7.useSyncExternalStore)(subscribeThemePreference, getThemePreference, () => "system");
+	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("label", {
+		className: "theme-control",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Theme" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(NativeSelect, {
+			className: "theme-switcher",
+			value: preference,
+			onChange: (event) => setThemePreference(event.currentTarget.value),
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+					value: "light",
+					children: "Light"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+					value: "dark",
+					children: "Dark"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+					value: "system",
+					children: "System"
+				})
+			]
+		})]
+	});
+}
 /** Controller viewport children are deliberately outside React reconciliation. */
 function ConsoleShell() {
 	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [
@@ -20015,6 +20128,7 @@ function ConsoleShell() {
 				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 					className: "login-access-card",
 					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ThemeSwitcher, {}),
 						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 							className: "login-access-eyebrow",
 							children: "Organization access"
@@ -20316,6 +20430,7 @@ function ConsoleShell() {
 						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 							className: "sidebar-actions",
 							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ThemeSwitcher, {}),
 								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
 									id: "rotate-token",
 									className: "danger",
@@ -23187,6 +23302,36 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 var init_traffic = __esmMin((() => {}));
 //#endregion
 //#region crates/gateway-api/admin-ui/src/monitoring-visuals.ts
+function chartColor(lightColor, darkToken) {
+	return (context) => {
+		const document = context?.chart?.canvas?.ownerDocument ?? globalThis.document;
+		if (document?.documentElement?.dataset?.theme !== "dark") return lightColor;
+		return (document.defaultView?.getComputedStyle(document.documentElement))?.getPropertyValue(`--rg-chart-${darkToken}`).trim() || darkChartPalette[darkToken];
+	};
+}
+function installChartTheme(Chart, document = globalThis.document) {
+	if (!Chart || !document?.addEventListener) return () => {};
+	let documents = chartThemeInstallations.get(Chart);
+	if (!documents) {
+		documents = /* @__PURE__ */ new WeakMap();
+		chartThemeInstallations.set(Chart, documents);
+	}
+	if (documents.has(document)) return documents.get(document);
+	const refresh = () => {
+		for (const id of Object.keys(Chart.instances || {})) {
+			const chart = Chart.instances[id];
+			if (chart.canvas?.ownerDocument === document) chart.update?.("none");
+		}
+	};
+	document.addEventListener("relayna:theme-change", refresh);
+	const dispose = () => {
+		if (documents.get(document) !== dispose) return;
+		document.removeEventListener("relayna:theme-change", refresh);
+		documents.delete(document);
+	};
+	documents.set(document, dispose);
+	return dispose;
+}
 function monitorKpi(label, value, { esc, icon = "activity", detail = "", tone = "neutral" } = {}) {
 	return `<div class="monitor-kpi ${esc(tone)}"><div class="monitor-kpi-label"><i class="ti ti-${esc(icon)}" aria-hidden="true"></i><span>${esc(label)}</span></div><strong>${esc(value)}</strong>${detail ? `<small>${esc(detail)}</small>` : ""}</div>`;
 }
@@ -23234,7 +23379,7 @@ function monitorChartOptions({ horizontal = false, money = false } = {}) {
 				position: "bottom",
 				align: "start",
 				labels: {
-					color: monitorPalette.text,
+					color: chartColor(monitorPalette.text, "text"),
 					boxWidth: 10,
 					boxHeight: 10,
 					usePointStyle: true,
@@ -23244,17 +23389,23 @@ function monitorChartOptions({ horizontal = false, money = false } = {}) {
 				}
 			},
 			tooltip: {
-				backgroundColor: "#20373d",
+				backgroundColor: chartColor("#20373d", "tooltip-bg"),
+				titleColor: chartColor("#fff", "tooltip-text"),
+				bodyColor: chartColor("#fff", "tooltip-text"),
+				footerColor: chartColor("#fff", "tooltip-text"),
 				padding: 12,
 				cornerRadius: 7
 			}
 		},
 		scales: {
 			x: {
-				grid: { display: horizontal },
+				grid: {
+					display: horizontal,
+					color: chartColor("rgba(0,0,0,0.1)", "grid")
+				},
 				border: { display: false },
 				ticks: {
-					color: monitorPalette.text,
+					color: chartColor(monitorPalette.text, "text"),
 					maxTicksLimit: 6,
 					font: { size: 10 }
 				},
@@ -23263,12 +23414,12 @@ function monitorChartOptions({ horizontal = false, money = false } = {}) {
 			y: {
 				beginAtZero: true,
 				grid: {
-					color: "#edf0f2",
+					color: chartColor("#edf0f2", "grid"),
 					display: !horizontal
 				},
 				border: { display: false },
 				ticks: {
-					color: monitorPalette.text,
+					color: chartColor(monitorPalette.text, "text"),
 					font: { size: 10 },
 					...money ? { callback: (value) => `$${Number(value).toLocaleString()}` } : { precision: 0 }
 				}
@@ -23315,8 +23466,8 @@ function gatewayTrendConfig(history, { compact = false } = {}) {
 			datasets: [{
 				label: "Arrivals / s",
 				data: history.map((point) => point.rate),
-				borderColor: monitorPalette.teal,
-				backgroundColor: "#e7f3ef",
+				borderColor: chartColor(monitorPalette.teal, "teal"),
+				backgroundColor: chartColor("#e7f3ef", "fill"),
 				fill: true,
 				pointRadius: history.length === 1 ? 3 : 0,
 				borderWidth: 2,
@@ -23393,8 +23544,8 @@ function usageTrendConfigs(rows, interval = "hour") {
 		data: { datasets: [{
 			label: "Successes",
 			data: values("success_count"),
-			borderColor: monitorPalette.teal,
-			backgroundColor: "#e7f3ef",
+			borderColor: chartColor(monitorPalette.teal, "teal"),
+			backgroundColor: chartColor("#e7f3ef", "fill"),
 			fill: true,
 			pointRadius: 0,
 			tension: .2,
@@ -23403,8 +23554,8 @@ function usageTrendConfigs(rows, interval = "hour") {
 		}, {
 			label: "Failures",
 			data: values("failure_count"),
-			borderColor: monitorPalette.red,
-			backgroundColor: monitorPalette.red,
+			borderColor: chartColor(monitorPalette.red, "red"),
+			backgroundColor: chartColor(monitorPalette.red, "red"),
 			pointRadius: 0,
 			tension: .2,
 			borderWidth: 2,
@@ -23416,7 +23567,7 @@ function usageTrendConfigs(rows, interval = "hour") {
 		data: { datasets: [{
 			label: "Estimated cost (USD)",
 			data: values("estimated_cost_usd", sorted),
-			backgroundColor: monitorPalette.blue,
+			backgroundColor: chartColor(monitorPalette.blue, "blue"),
 			borderRadius: 3,
 			maxBarThickness: 24
 		}] },
@@ -23429,7 +23580,7 @@ function usageRanking(rows, label, esc) {
 	if (!maximum) return "";
 	return `<div class="monitor-ranking" aria-label="Top returned consumers by request count"><div class="monitor-section-heading"><h4>Top consumers</h4><span>Requests · returned groups</span></div>${ranked.map((row) => `<div class="monitor-ranking-row"><span title="${esc(label(row.name))}">${esc(label(row.name))}</span><div class="monitor-ranking-track" aria-hidden="true"><span style="width:${100 * row.summary.request_count / maximum}%"></span></div><strong>${esc(metricNumber(row.summary.request_count))}</strong></div>`).join("")}</div>`;
 }
-var monitorPalette, measured$1, metricNumber;
+var monitorPalette, darkChartPalette, chartThemeInstallations, measured$1, metricNumber;
 var init_monitoring_visuals = __esmMin((() => {
 	monitorPalette = {
 		teal: "#177264",
@@ -23440,6 +23591,20 @@ var init_monitoring_visuals = __esmMin((() => {
 		muted: "#e8edef",
 		text: "#63717a"
 	};
+	darkChartPalette = {
+		teal: "#8FD5B2",
+		blue: "#91B9F2",
+		violet: "#C2A5E8",
+		red: "#F08D99",
+		amber: "#EDC47A",
+		muted: "#263E34",
+		text: "#9EB6AA",
+		grid: "#2B4339",
+		fill: "#143C2D",
+		"tooltip-bg": "#213D31",
+		"tooltip-text": "#E5EFE9"
+	};
+	chartThemeInstallations = /* @__PURE__ */ new WeakMap();
 	measured$1 = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
 	metricNumber = (value) => measured$1(value) ? value.toLocaleString(void 0, { maximumFractionDigits: 2 }) : "—";
 }));
@@ -23651,7 +23816,7 @@ function gatewayLatencyConfig(runtime) {
 	options.scales.x.title = {
 		display: true,
 		text: "Milliseconds · upper bound",
-		color: monitorPalette.text,
+		color: options.scales.x.ticks.color,
 		font: { size: 10 }
 	};
 	options.plugins.tooltip.callbacks = { label: (context) => `${context.dataset.label}: ≤ ${context.raw} ms` };
@@ -23680,11 +23845,15 @@ function gatewayLatencyConfig(runtime) {
 			].map((percentile, index) => ({
 				label: `p${percentile}`,
 				data: keys.map((key) => runtime?.latency?.[key]?.sample_count > 0 && measured$1(runtime.latency[key][`p${percentile}_ms`]) ? runtime.latency[key][`p${percentile}_ms`] : null),
-				backgroundColor: [
+				backgroundColor: chartColor([
 					monitorPalette.teal,
 					monitorPalette.blue,
 					monitorPalette.violet
-				][index],
+				][index], [
+					"teal",
+					"blue",
+					"violet"
+				][index]),
 				borderRadius: 3,
 				maxBarThickness: 9
 			}))
@@ -39196,8 +39365,8 @@ function renderOverviewChart(rows) {
 				label: "Requests",
 				order: 1,
 				data: values("request_count"),
-				borderColor: "#087b60",
-				backgroundColor: "#e9f3ed",
+				borderColor: chartColor("#087b60", "teal"),
+				backgroundColor: chartColor("#e9f3ed", "fill"),
 				fill: true,
 				yAxisID: "y",
 				tension: .32,
@@ -39206,8 +39375,8 @@ function renderOverviewChart(rows) {
 			}, {
 				label: "Failures",
 				data: values("failure_count"),
-				borderColor: "#d9474f",
-				backgroundColor: "#d9474f",
+				borderColor: chartColor("#d9474f", "red"),
+				backgroundColor: chartColor("#d9474f", "red"),
 				yAxisID: "y",
 				tension: .32,
 				pointRadius: 0,
@@ -39230,7 +39399,7 @@ function renderOverviewChart(rows) {
 						boxWidth: 18,
 						boxHeight: 2,
 						usePointStyle: false,
-						color: "#536276",
+						color: chartColor("#536276", "text"),
 						font: {
 							size: 11,
 							weight: 600
@@ -39238,7 +39407,10 @@ function renderOverviewChart(rows) {
 					}
 				},
 				tooltip: {
-					backgroundColor: "#062f36",
+					backgroundColor: chartColor("#062f36", "tooltip-bg"),
+					titleColor: chartColor("#fff", "tooltip-text"),
+					bodyColor: chartColor("#fff", "tooltip-text"),
+					footerColor: chartColor("#fff", "tooltip-text"),
 					padding: 10,
 					titleFont: { size: 12 },
 					bodyFont: { size: 12 }
@@ -39247,17 +39419,19 @@ function renderOverviewChart(rows) {
 			scales: {
 				x: {
 					grid: { display: false },
+					border: { color: chartColor("rgba(0,0,0,0.1)", "grid") },
 					ticks: {
-						color: "#58736e",
+						color: chartColor("#58736e", "text"),
 						maxTicksLimit: 7,
 						font: { size: 10 }
 					}
 				},
 				y: {
 					beginAtZero: true,
-					grid: { color: "#dcebe7" },
+					grid: { color: chartColor("#dcebe7", "grid") },
+					border: { color: chartColor("rgba(0,0,0,0.1)", "grid") },
 					ticks: {
-						color: "#58736e",
+						color: chartColor("#58736e", "text"),
 						precision: 0,
 						font: { size: 10 }
 					}
@@ -43813,7 +43987,7 @@ function renderOwnerIncidentChart(rows, markers) {
 					const x = scales.x.getPixelForValue(observation.at);
 					if (x < chartArea.left || x > chartArea.right) return;
 					ctx.save();
-					ctx.strokeStyle = "#6b7280";
+					ctx.strokeStyle = chartColor("#6b7280", "text")({ chart });
 					ctx.setLineDash([4, 4]);
 					ctx.beginPath();
 					ctx.moveTo(x, chartArea.top);
@@ -43830,8 +44004,8 @@ function renderOwnerIncidentChart(rows, markers) {
 					x: point.at,
 					y: point.errorRate
 				})),
-				borderColor: "#c54c59",
-				backgroundColor: "#c54c59",
+				borderColor: chartColor("#c54c59", "red"),
+				backgroundColor: chartColor("#c54c59", "red"),
 				yAxisID: "errorRate",
 				tension: .2,
 				spanGaps: false,
@@ -43844,8 +44018,8 @@ function renderOwnerIncidentChart(rows, markers) {
 					x: point.at,
 					y: point.p95
 				})),
-				borderColor: "#177264",
-				backgroundColor: "#177264",
+				borderColor: chartColor("#177264", "teal"),
+				backgroundColor: chartColor("#177264", "teal"),
 				yAxisID: "latency",
 				tension: .2,
 				spanGaps: false,
@@ -43858,8 +44032,8 @@ function renderOwnerIncidentChart(rows, markers) {
 					x: observation.at,
 					y: 1
 				})),
-				borderColor: "#6b7280",
-				backgroundColor: "#6b7280",
+				borderColor: chartColor("#6b7280", "text"),
+				backgroundColor: chartColor("#6b7280", "text"),
 				yAxisID: "version",
 				showLine: false,
 				pointStyle: "triangle",
@@ -43883,7 +44057,7 @@ function renderOwnerIncidentChart(rows, markers) {
 					labels: {
 						boxWidth: 10,
 						usePointStyle: true,
-						color: "#63717a",
+						color: chartColor("#63717a", "text"),
 						font: {
 							size: 11,
 							weight: 600
@@ -43891,7 +44065,10 @@ function renderOwnerIncidentChart(rows, markers) {
 					}
 				},
 				tooltip: {
-					backgroundColor: "#062f36",
+					backgroundColor: chartColor("#062f36", "tooltip-bg"),
+					titleColor: chartColor("#fff", "tooltip-text"),
+					bodyColor: chartColor("#fff", "tooltip-text"),
+					footerColor: chartColor("#fff", "tooltip-text"),
 					callbacks: {
 						title(items) {
 							return items.length ? new Date(items[0].parsed.x).toLocaleString() : "";
@@ -43907,8 +44084,9 @@ function renderOwnerIncidentChart(rows, markers) {
 				x: {
 					type: "linear",
 					grid: { display: false },
+					border: { color: chartColor("rgba(0,0,0,0.1)", "grid") },
 					ticks: {
-						color: "#63717a",
+						color: chartColor("#63717a", "text"),
 						maxTicksLimit: 8,
 						callback: (value) => ownerChartLabel({ bucket: Number(value) }),
 						font: { size: 10 }
@@ -43917,9 +44095,10 @@ function renderOwnerIncidentChart(rows, markers) {
 				errorRate: {
 					beginAtZero: true,
 					suggestedMax: 100,
-					grid: { color: "#edf0f2" },
+					grid: { color: chartColor("#edf0f2", "grid") },
+					border: { color: chartColor("rgba(0,0,0,0.1)", "grid") },
 					ticks: {
-						color: "#8a3439",
+						color: chartColor("#8a3439", "red"),
 						callback: (value) => `${value}%`,
 						font: { size: 10 }
 					}
@@ -43927,9 +44106,13 @@ function renderOwnerIncidentChart(rows, markers) {
 				latency: {
 					beginAtZero: true,
 					position: "right",
-					grid: { drawOnChartArea: false },
+					grid: {
+						drawOnChartArea: false,
+						color: chartColor("rgba(0,0,0,0.1)", "grid")
+					},
+					border: { color: chartColor("rgba(0,0,0,0.1)", "grid") },
 					ticks: {
-						color: "#177264",
+						color: chartColor("#177264", "teal"),
 						callback: (value) => `${value} ms`,
 						font: { size: 10 }
 					}
@@ -44637,6 +44820,7 @@ var init_main = __esmMin((() => {
 	init_auto();
 	init_design_system();
 	tokenKey = "relayna_gateway_operator_token";
+	installChartTheme(auto_default);
 	installComponentGuidance();
 	viewIds = new Set(Object.keys(viewMeta));
 	ownerViewIds = /* @__PURE__ */ new Set([
@@ -44896,6 +45080,7 @@ var init_main = __esmMin((() => {
 //#region crates/gateway-api/admin-ui/src/entry.tsx
 var import_client = require_client();
 var import_react_dom = /* @__PURE__ */ __toESM(require_react_dom(), 1);
+initializeThemePreference();
 var root = (0, import_client.createRoot)(document.getElementById("root"));
 (0, import_react_dom.flushSync)(() => root.render(/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ConsoleShell, {})));
 __vitePreload(() => Promise.resolve().then(() => (init_main(), main_exports)), void 0);

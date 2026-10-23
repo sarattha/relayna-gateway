@@ -3,6 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      // Resolve before the static shell paints; keep in sync with theme-preference.ts.
+      (() => {
+        let preference = "system";
+        try {
+          const saved = localStorage.getItem("relayna.theme");
+          if (saved === "light" || saved === "dark") preference = saved;
+        } catch {}
+        let dark = false;
+        try {
+          dark = matchMedia("(prefers-color-scheme: dark)").matches;
+        } catch {}
+        document.documentElement.dataset.theme =
+          preference === "system" ? (dark ? "dark" : "light") : preference;
+      })();
+    </script>
     <title>Relayna Gateway Admin</title>
   </head>
   <body>

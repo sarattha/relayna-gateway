@@ -14,10 +14,17 @@ Design 4.0 upgrades the shared shell and every Admin/Owner page with consistent
 neutral surfaces, compact typography, table spacing, field labels and semantic
 status colors. The design version is separate from the gateway release version.
 
-The light sidebar uses elevated selected items and subtle lift-and-shadow
+The sidebar uses elevated selected items and subtle lift-and-shadow
 feedback on actionable controls. Keyboard focus remains visible, and reduced
 motion preferences remove movement. Read-only charts stay stable while their
 measurements update.
+
+Choose **Light**, **Dark** or **System** under **Theme** in the sidebar footer or
+on the sign-in screen. System follows the device appearance. The browser saves
+an explicit preference locally and applies it before the console paints. Dark
+mode uses deep green-gray surfaces and green accents; charts, status badges,
+forms and investigation dialogs follow the selected mode. Switching appearance
+keeps the current page, filters and unsaved form values.
 
 Every workspace leads with visual context. Catalogs compare service links,
 provider setup, transport capability and routing configuration. Governance pages

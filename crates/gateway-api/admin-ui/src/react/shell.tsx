@@ -1,4 +1,35 @@
+import { useSyncExternalStore } from "react";
 import { Button, Input, NativeSelect } from "../components/ui";
+import {
+  getThemePreference,
+  setThemePreference,
+  subscribeThemePreference,
+  type ThemePreference,
+} from "../theme-preference";
+
+function ThemeSwitcher() {
+  const preference = useSyncExternalStore(
+    subscribeThemePreference,
+    getThemePreference,
+    () => "system",
+  );
+  return (
+    <label className="theme-control">
+      <span>Theme</span>
+      <NativeSelect
+        className="theme-switcher"
+        value={preference}
+        onChange={(event) =>
+          setThemePreference(event.currentTarget.value as ThemePreference)
+        }
+      >
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="system">System</option>
+      </NativeSelect>
+    </label>
+  );
+}
 
 /** Controller viewport children are deliberately outside React reconciliation. */
 export function ConsoleShell() {
@@ -59,6 +90,7 @@ export function ConsoleShell() {
         </section>
         <section className="login-access-panel" aria-labelledby="login-title">
           <div className="login-access-card">
+            <ThemeSwitcher />
             <span className="login-access-eyebrow">Organization access</span>
             <h1 id="login-title">Welcome back</h1>
             <p className="login-copy">
@@ -243,6 +275,7 @@ export function ConsoleShell() {
             </section>
           </nav>
           <div className="sidebar-actions">
+            <ThemeSwitcher />
             <Button id="rotate-token" className="danger" data-break-glass-only>
               <i className="ti ti-refresh" aria-hidden="true"></i>
               <span>Rotate token</span>

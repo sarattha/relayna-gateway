@@ -43,3 +43,11 @@ Native progress bars represent known values; missing values remain unknown.
 Longer metric definitions use authored `data-help-tooltip` controls, enhanced
 by the same hover/focus/tap help system as forms and tables. Bind each trigger
 only once as content is inserted dynamically.
+
+Light and dark appearance share the same component geometry. The root
+`data-theme` attribute selects semantic colors; the dark palette uses green-gray
+surfaces, green actions and separate warning/error colors. Theme controls expose
+Light, Dark and System on the sign-in screen and in the sidebar footer. The
+browser stores only the chosen mode under `relayna.theme`. Charts listen for
+`relayna:theme-change` and update their existing instances without replacing
+page controllers or refetching measurements.

@@ -1,4 +1,4 @@
-import { appendGatewayObservation, capacityMeter, gatewayTrendConfig, measured, metricNumber, monitorChartOptions, monitorKpi, monitorPalette, mountMonitorChart, protocolMix } from "./monitoring-visuals";
+import { appendGatewayObservation, capacityMeter, chartColor, gatewayTrendConfig, measured, metricNumber, monitorChartOptions, monitorKpi, monitorPalette, mountMonitorChart, protocolMix } from "./monitoring-visuals";
 
 // Parent supplies an isolated content host and existing api/esc/attr/badge/table
 // helpers. Both mounts return a disposer; invoke it on navigation.
@@ -160,11 +160,11 @@ export function gatewayLatencyConfig(runtime) {
   const keys = ["http_success_duration", "ttfb", "ttft", "websocket_handshake"];
   const options = monitorChartOptions({ horizontal: true });
   options.indexAxis = "y";
-  options.scales.x.title = { display: true, text: "Milliseconds · upper bound", color: monitorPalette.text, font: { size: 10 } };
+  options.scales.x.title = { display: true, text: "Milliseconds · upper bound", color: options.scales.x.ticks.color, font: { size: 10 } };
   options.plugins.tooltip.callbacks = { label: context => `${context.dataset.label}: ≤ ${context.raw} ms` };
   const hasSamples = keys.some(key => runtime?.latency?.[key]?.sample_count > 0 && [50, 95, 99].some(percentile => measured(runtime.latency[key][`p${percentile}_ms`])));
   if (!hasSamples) { options.scales.x.display = false; options.scales.y.display = false; options.plugins.legend.display = false; }
-  return { type: "bar", data: { labels: ["HTTP success", "First body byte", "First content token", "WS handshake"], datasets: [50, 95, 99].map((percentile, index) => ({ label: `p${percentile}`, data: keys.map(key => runtime?.latency?.[key]?.sample_count > 0 && measured(runtime.latency[key][`p${percentile}_ms`]) ? runtime.latency[key][`p${percentile}_ms`] : null), backgroundColor: [monitorPalette.teal, monitorPalette.blue, monitorPalette.violet][index], borderRadius: 3, maxBarThickness: 9 })) }, options };
+  return { type: "bar", data: { labels: ["HTTP success", "First body byte", "First content token", "WS handshake"], datasets: [50, 95, 99].map((percentile, index) => ({ label: `p${percentile}`, data: keys.map(key => runtime?.latency?.[key]?.sample_count > 0 && measured(runtime.latency[key][`p${percentile}_ms`]) ? runtime.latency[key][`p${percentile}_ms`] : null), backgroundColor: chartColor([monitorPalette.teal, monitorPalette.blue, monitorPalette.violet][index], ["teal", "blue", "violet"][index]), borderRadius: 3, maxBarThickness: 9 })) }, options };
 }
 
 export function mountGatewayStatus({ content, api, esc, attr = esc, badge, table, compact = false, refreshMs = 2_000, initialWindowSeconds = 60, initialInstanceId = "all", Chart = null }) {

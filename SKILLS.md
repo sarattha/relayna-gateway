@@ -123,9 +123,10 @@ views need the same structure or status semantics.
 
 ### Visual Rules
 
-- Use the light sidebar and workspace shell, with a distinct Relayna brand mark,
-  elevated active navigation, and restrained hover shadows. Keep navigation
-  labels legible and avoid a large, flat color tint.
+- Support light and dark themes with a distinct Relayna brand mark, elevated
+  active navigation, and restrained hover shadows. Dark mode uses deep
+  green-gray surfaces with green action accents. Keep navigation labels legible
+  and preserve distinct success, warning, error and unknown states in both modes.
 - Group navigation by Monitor, Discover, and Govern.
 - Use compact panels and tables for operational workflows.
 - Use status badges and status colors consistently:

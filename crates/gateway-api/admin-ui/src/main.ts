@@ -9,7 +9,7 @@ import { profileFields, profilesFromForm, showProfileError, profileKeyOptions } 
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic, trafficDuration } from "./traffic";
 import { mountHealthGatewayStatus, mountTrafficGatewayStatus } from "./gateway-status";
-import { mountMonitorChart, usageChartsShell, usageRanking, usageSummaryView, usageTrendConfigs } from "./monitoring-visuals";
+import { chartColor, installChartTheme, mountMonitorChart, usageChartsShell, usageRanking, usageSummaryView, usageTrendConfigs } from "./monitoring-visuals";
 import { catalogCredentialState, catalogServiceTransport, projectCatalogInsights, providerCatalogInsights, serviceCatalogInsights, routeCatalogInsights } from "./catalog-visuals";
 import { keyGovernanceSnapshot, guardrailGovernanceSnapshot, memberAccessSnapshot, managedIdentitySnapshot, auditSampleSnapshot, settingsGovernanceSnapshot } from "./governance-visuals";
 import { ownerCatalogInsights, ownerDashboardInsights, ownerUsageDistribution, ownerRequestProfile, ownerIncidentSeries, ownerIncidentDescription } from "./owner-visuals";
@@ -36,6 +36,7 @@ import {
 } from "./design-system";
 
 const tokenKey = "relayna_gateway_operator_token";
+installChartTheme(Chart);
 installComponentGuidance();
 const viewIds = new Set(Object.keys(viewMeta));
 const ownerViewIds = new Set(["my-services", "service-dashboard", "my-projects", "project-dashboard"]);
@@ -909,8 +910,8 @@ function renderOverviewChart(rows) {
     data: {
       labels,
       datasets: [
-        { label: "Requests", order: 1, data: values("request_count"), borderColor: "#087b60", backgroundColor: "#e9f3ed", fill: true, yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
-        { label: "Failures", data: values("failure_count"), borderColor: "#d9474f", backgroundColor: "#d9474f", yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
+        { label: "Requests", order: 1, data: values("request_count"), borderColor: chartColor("#087b60", "teal"), backgroundColor: chartColor("#e9f3ed", "fill"), fill: true, yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
+        { label: "Failures", data: values("failure_count"), borderColor: chartColor("#d9474f", "red"), backgroundColor: chartColor("#d9474f", "red"), yAxisID: "y", tension: 0.32, pointRadius: 0, borderWidth: 2 },
       ],
     },
     options: {
@@ -919,12 +920,12 @@ function renderOverviewChart(rows) {
       responsive: true,
       interaction: { mode: "index", intersect: false },
       plugins: {
-        legend: { position: "top", align: "start", labels: { boxWidth: 18, boxHeight: 2, usePointStyle: false, color: "#536276", font: { size: 11, weight: 600 } } },
-        tooltip: { backgroundColor: "#062f36", padding: 10, titleFont: { size: 12 }, bodyFont: { size: 12 } },
+        legend: { position: "top", align: "start", labels: { boxWidth: 18, boxHeight: 2, usePointStyle: false, color: chartColor("#536276", "text"), font: { size: 11, weight: 600 } } },
+        tooltip: { backgroundColor: chartColor("#062f36", "tooltip-bg"), titleColor: chartColor("#fff", "tooltip-text"), bodyColor: chartColor("#fff", "tooltip-text"), footerColor: chartColor("#fff", "tooltip-text"), padding: 10, titleFont: { size: 12 }, bodyFont: { size: 12 } },
       },
       scales: {
-        x: { grid: { display: false }, ticks: { color: "#58736e", maxTicksLimit: 7, font: { size: 10 } } },
-        y: { beginAtZero: true, grid: { color: "#dcebe7" }, ticks: { color: "#58736e", precision: 0, font: { size: 10 } } },
+        x: { grid: { display: false }, border: { color: chartColor("rgba(0,0,0,0.1)", "grid") }, ticks: { color: chartColor("#58736e", "text"), maxTicksLimit: 7, font: { size: 10 } } },
+        y: { beginAtZero: true, grid: { color: chartColor("#dcebe7", "grid") }, border: { color: chartColor("rgba(0,0,0,0.1)", "grid") }, ticks: { color: chartColor("#58736e", "text"), precision: 0, font: { size: 10 } } },
       },
     },
   });
@@ -5224,7 +5225,7 @@ function renderOwnerIncidentChart(rows, markers) {
         const x = scales.x.getPixelForValue(observation.at);
         if (x < chartArea.left || x > chartArea.right) return;
         ctx.save();
-        ctx.strokeStyle = "#6b7280";
+        ctx.strokeStyle = chartColor("#6b7280", "text")({ chart });
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
         ctx.moveTo(x, chartArea.top);
@@ -5242,8 +5243,8 @@ function renderOwnerIncidentChart(rows, markers) {
         {
           label: "Error rate (%)",
           data: points.map(point => ({ x: point.at, y: point.errorRate })),
-          borderColor: "#c54c59",
-          backgroundColor: "#c54c59",
+          borderColor: chartColor("#c54c59", "red"),
+          backgroundColor: chartColor("#c54c59", "red"),
           yAxisID: "errorRate",
           tension: 0.2,
           spanGaps: false,
@@ -5253,8 +5254,8 @@ function renderOwnerIncidentChart(rows, markers) {
         {
           label: "P95 latency (ms)",
           data: points.map(point => ({ x: point.at, y: point.p95 })),
-          borderColor: "#177264",
-          backgroundColor: "#177264",
+          borderColor: chartColor("#177264", "teal"),
+          backgroundColor: chartColor("#177264", "teal"),
           yAxisID: "latency",
           tension: 0.2,
           spanGaps: false,
@@ -5264,8 +5265,8 @@ function renderOwnerIncidentChart(rows, markers) {
         {
           label: "Service version",
           data: observations.map(observation => ({ x: observation.at, y: 1 })),
-          borderColor: "#6b7280",
-          backgroundColor: "#6b7280",
+          borderColor: chartColor("#6b7280", "text"),
+          backgroundColor: chartColor("#6b7280", "text"),
           yAxisID: "version",
           showLine: false,
           pointStyle: "triangle",
@@ -5280,9 +5281,12 @@ function renderOwnerIncidentChart(rows, markers) {
       responsive: true,
       interaction: { mode: "nearest", axis: "x", intersect: false },
       plugins: {
-        legend: { position: "bottom", align: "start", labels: { boxWidth: 10, usePointStyle: true, color: "#63717a", font: { size: 11, weight: 600 } } },
+        legend: { position: "bottom", align: "start", labels: { boxWidth: 10, usePointStyle: true, color: chartColor("#63717a", "text"), font: { size: 11, weight: 600 } } },
         tooltip: {
-          backgroundColor: "#062f36",
+          backgroundColor: chartColor("#062f36", "tooltip-bg"),
+          titleColor: chartColor("#fff", "tooltip-text"),
+          bodyColor: chartColor("#fff", "tooltip-text"),
+          footerColor: chartColor("#fff", "tooltip-text"),
           callbacks: {
             title(items) { return items.length ? new Date(items[0].parsed.x).toLocaleString() : ""; },
             label(context) {
@@ -5296,9 +5300,9 @@ function renderOwnerIncidentChart(rows, markers) {
         },
       },
       scales: {
-        x: { type: "linear", grid: { display: false }, ticks: { color: "#63717a", maxTicksLimit: 8, callback: value => ownerChartLabel({ bucket: Number(value) }), font: { size: 10 } } },
-        errorRate: { beginAtZero: true, suggestedMax: 100, grid: { color: "#edf0f2" }, ticks: { color: "#8a3439", callback: (value) => `${value}%`, font: { size: 10 } } },
-        latency: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, ticks: { color: "#177264", callback: (value) => `${value} ms`, font: { size: 10 } } },
+        x: { type: "linear", grid: { display: false }, border: { color: chartColor("rgba(0,0,0,0.1)", "grid") }, ticks: { color: chartColor("#63717a", "text"), maxTicksLimit: 8, callback: value => ownerChartLabel({ bucket: Number(value) }), font: { size: 10 } } },
+        errorRate: { beginAtZero: true, suggestedMax: 100, grid: { color: chartColor("#edf0f2", "grid") }, border: { color: chartColor("rgba(0,0,0,0.1)", "grid") }, ticks: { color: chartColor("#8a3439", "red"), callback: (value) => `${value}%`, font: { size: 10 } } },
+        latency: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false, color: chartColor("rgba(0,0,0,0.1)", "grid") }, border: { color: chartColor("rgba(0,0,0,0.1)", "grid") }, ticks: { color: chartColor("#177264", "teal"), callback: (value) => `${value} ms`, font: { size: 10 } } },
         version: { display: false, min: 0, max: 1.08 },
       },
     },
