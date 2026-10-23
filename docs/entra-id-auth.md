@@ -383,7 +383,7 @@ For a full real-environment review with Postgres, Redis, Gateway, mock OIDC,
 mock Apigee, and mock upstreams:
 
 ```bash
-internal/test-reports/entra-front-door-real-env/run.sh
+tests/e2e/entra-front-door-real-env/run.sh
 ```
 
 The harness verifies success and failure cases for direct Entra JWT validation,

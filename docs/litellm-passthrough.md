@@ -536,7 +536,7 @@ cargo test -p gateway-proxy passthrough --all-features
 Real LiteLLM harness:
 
 ```bash
-bash internal/test-reports/litellm-real-passthrough/run.sh
+bash tests/e2e/litellm-real-passthrough/run.sh
 ```
 
 That harness starts PostgreSQL, Redis, Gateway, a real `litellm/litellm`

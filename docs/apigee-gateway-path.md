@@ -297,7 +297,7 @@ cargo test --workspace --all-features
 Real-environment harness:
 
 ```bash
-internal/test-reports/entra-front-door-real-env/run.sh
+tests/e2e/entra-front-door-real-env/run.sh
 ```
 
 The harness starts local Postgres, Redis, Gateway, mock OIDC/JWKS authority,

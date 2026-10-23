@@ -9,10 +9,9 @@ on:
       - "README.md"
       - "CHANGELOG.md"
       - "AGENTS.md"
-      - "PLANS.md"
+      - "CONTRIBUTING.md"
       - "docs/**"
       - "mkdocs.yml"
-      - "internal/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -37,7 +36,7 @@ jobs:
           grep -q "Relayna Gateway" README.md
           grep -q "docs/architecture.md" README.md
           grep -q "Relayna Gateway" AGENTS.md
-          grep -q "Relayna Gateway" PLANS.md
+          test -f docs/architecture.md
 
       - name: Set up Python
         uses: actions/setup-python@v5

@@ -22,7 +22,7 @@ uploads release their buffer slots while service responses are still pending,
 and the Debian image reclaims large allocations with a fixed glibc threshold.
 Two-pod, 5 MiB experiments include native amd64 validation. See
 [buffering and sizing](docs/operations.md#configuration),
-[benchmark results](internal/test-reports/body-admission-5mib/amd64/README.md), and
+[benchmark results](https://github.com/sarattha/relayna-gateway/blob/8903a62191d461f12c53d10108b1c880452945eb/internal/test-reports/body-admission-5mib/amd64/README.md), and
 [upgrade instructions](docs/deployment.md#upgrade-to-0147). Repeat the slot or
 resource-boundary experiments on native amd64 or Apple Silicon/arm64 with the
 [source benchmark CLI](benches/body-admission/README.md), including interactive

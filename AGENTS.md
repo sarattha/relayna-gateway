@@ -1,321 +1,92 @@
-# Contributor Guide
+# Relayna Gateway Contributor Guide
 
-This guide helps agents and contributors work in the Relayna Gateway
-repository. It covers the project layout, local workflows, and checks that must
-run before pushing a branch or opening a pull request.
+Relayna Gateway is the Rust control plane for AI traffic: authentication,
+policy, provider routing, metering, and Relayna runtime integration. Read
+`docs/architecture.md` and the relevant feature documentation before changing
+behavior or architecture.
 
-Location: `AGENTS.md` at the repository root.
+## Working rules
 
-Read `internal/design-manifesto.md` before making product, architecture,
-runtime, API, policy, usage, or operational changes. That file is the current
-MVP design source of truth.
+- Preserve unrelated local changes. Read affected files before editing and keep
+  each change focused on the requested outcome.
+- Keep gateway-core framework-agnostic. Pingora owns proxy traffic; Axum owns
+  control-plane APIs.
+- Add or update tests for behavior changes and update the corresponding public
+  documentation and examples.
+- Keep provider keys, LiteLLM credentials, internal service tokens, raw virtual
+  keys, and prompts out of logs, reports, screenshots, and committed fixtures.
+- Keep generated reports and screenshots under ignored `target/` or `output/`
+  directories. Retain release evidence outside the source tree and link it from
+  the versioned benchmark documentation.
 
-## Policies & Mandatory Rules
+## Required skills
 
-### Mandatory Skill Usage
+- Use `$karpathy` before writing, reviewing, or refactoring code. Keep assumptions
+  explicit, edits small, and verification tied to the request.
+- Use `$implementation-strategy` before changing runtime behavior, public APIs,
+  configuration, schemas, authentication, policy, usage, rate limits, budgets,
+  streaming, or provider/Relayna integration contracts.
+- Run `$code-change-verification` for Rust code, tests, integration fixtures,
+  migrations, packaging, or build/test configuration changes. Documentation and
+  repository metadata alone do not require the Rust stack.
+- Use `$pr-draft-summary` after substantive code, test, tooling, or behavior
+  documentation changes. Skip it for metadata/docs-only changes without behavior
+  impact, or when the user asks to omit it.
 
-#### `$karpathy`
+## Package ownership
 
-Use `$karpathy` when writing, reviewing, or refactoring code in this repository.
-It keeps work assumption-aware, simple, surgically scoped, and tied to explicit
-verification criteria.
+- `crates/gateway-api/`: Axum routing, middleware, errors, request IDs,
+  health/readiness, admin APIs, and graceful shutdown.
+- `crates/gateway-core/`: identity, policy, route resolution, rate limits,
+  budgets, usage construction, and pricing.
+- `crates/gateway-proxy/`: Pingora services, upstream requests, credential
+  stripping, streaming, cancellation, and provider errors.
+- `crates/gateway-store/`: PostgreSQL schemas and migrations, Redis counters,
+  persistence, and transaction boundaries.
+- `crates/gateway-telemetry/`: logs, traces, metrics, redaction, and correlation.
+- `tests/`: integration tests, browser/static UI checks, and reusable E2E
+  harnesses under `tests/e2e/`.
+- `benches/body-admission/`: release benchmark harness and methodology.
+- `docs/`: public architecture, configuration, operations, and release docs.
+- `.codex/`: repository skills and verification scripts.
 
-Apply it before implementation work so the plan, edits, and final handoff stay
-focused on the user's request. It does not replace `$implementation-strategy`,
-`$code-change-verification`, or `$pr-draft-summary`; use those skills when
-their trigger conditions apply.
+## Compatibility
 
-#### `$code-change-verification`
+Judge compatibility against the latest release tag, not unreleased branch
+changes. Prefer direct replacement for unreleased interfaces unless they define
+an explicitly supported durable external state boundary or the user requests a
+migration path.
 
-Run `$code-change-verification` before marking work complete when changes affect
-Rust runtime code, tests, migrations, packaging, or build/test behavior.
+Preserve released contracts or provide migration coverage for:
 
-Run it when you change:
-
-- `crates/` or any gateway Rust source.
-- `tests/`, `benches/`, or integration fixtures.
-- Database migrations, SQLx metadata, seed data, or schema files.
-- Build or test configuration such as `Cargo.toml`, `Cargo.lock`, `Makefile`,
-  `.cargo/`, Dockerfiles, or CI workflows.
-
-You can skip `$code-change-verification` for docs-only or repo-meta changes
-such as `docs/`, `README.md`, `CHANGELOG.md`, `AGENTS.md`, `PLANS.md`,
-`.codex/`, or `.github/`, unless a user explicitly asks to run the full
-verification stack.
-
-#### `$implementation-strategy`
-
-Before changing runtime code, exported APIs, external configuration, persisted
-schemas, wire protocols, route response shapes, authentication behavior,
-policy decisions, usage event shapes, rate limit behavior, budget behavior, or
-Relayna runtime integration contracts, use `$implementation-strategy` to decide
-the compatibility boundary and implementation shape.
-
-Judge compatibility against the latest release tag, not unreleased branch-local
-churn. Interfaces introduced or changed after the latest release tag may be
-rewritten directly unless they define a released or explicitly supported durable
-external state boundary, or the user explicitly asks for a migration path.
-
-#### `$pr-draft-summary`
-
-When a task finishes with moderate-or-larger changes, invoke
-`$pr-draft-summary` in the final handoff to generate the required PR summary
-block, branch suggestion, title, and draft description.
-
-Use this by default after runtime code, tests, gateway behavior, build/test
-configuration, or docs with behavior impact are changed. Skip it only for
-trivial conversation-only work, repo-meta/doc-only tasks without behavior
-impact, or when the user explicitly says not to include the PR draft block.
-
-### Admin UI 4.0 Design System
-
-Before changing the Admin UI, read `SKILLS.md` and apply the Admin UI 4.0
-Design System guidance. This applies to changes under
-`crates/gateway-api/admin-ui/`, generated static assets under
-`crates/gateway-api/src/static/admin-ui/`, admin UI tests, and operator-facing
-Admin UI documentation.
-
-Keep the Vite/TypeScript source package as the source of truth and regenerate
-the checked-in static assets with `npm run build:admin-ui`. Preserve the
-existing `/admin-ui`, `/admin-ui/app.js`, and `/admin-ui/app.css` asset
-contract unless a compatibility review explicitly changes it.
-
-### ExecPlans
-
-Use an ExecPlan when work is multi-step, spans several files, introduces a new
-feature, performs a refactor, changes gateway architecture, affects
-compatibility-sensitive behavior, or is likely to take more than about an hour.
-
-Start with the template and rules in `PLANS.md`. Keep the plan self-contained
-and update the living sections as work proceeds:
-
-- Progress
-- Surprises & Discoveries
-- Decision Log
-- Outcomes & Retrospective
-
-Call out compatibility risk early only when the change affects behavior shipped
-in the latest release tag or a released or explicitly supported durable
-external state boundary. Do not treat branch-local interface churn or unreleased
-post-tag changes as breaking by default; prefer direct replacement over
-compatibility layers in those cases.
-
-If the plan changes virtual key formats, route response shapes, PostgreSQL
-schemas, Redis key/value formats, streamed response behavior, provider
-credential handling, usage event shapes, admin API contracts, or Relayna runtime
-integration contracts, use `$implementation-strategy` before editing code and
-record the decision in the ExecPlan.
-
-If you intentionally skip an ExecPlan for complex work, note why in your
-response so reviewers understand the choice.
-
-### Mandatory Benchmarks for Every Version Bump
-
-Starting with **v0.1.49**, every version bump must include fresh body-admission
-benchmarks and a versioned results document, including patch, security, docs,
-and tooling releases. Benchmark the final release candidate runtime after committing version and
-runtime changes, before merging the version bump or creating the release tag.
-Changes to measured runtime/build inputs require another run. Results-only or
-documentation-only commits may follow without rerunning an unchanged runtime;
-record the measured runtime commit separately from those later commits.
-
-1. Use `scripts/bench-body-admission` and the protocol in
-   `benches/body-admission/README.md`. Run the full adaptive resource search for
-   **5, 10, 20, 40, 80 and 100 MiB JSON**, with at least **three fresh-pod
-   trials per confirmed setting**, two Gateway pods, and per-pod limits of **2 CPUs / 1 GiB memory /
-   512 MiB serialized-body budget**. A smoke/pilot run alone does not fulfill
-   this release requirement. For example, after setting the candidate version:
-
-   ```sh
-   scripts/bench-body-admission run --build \
-     --body-mib 5 10 20 40 80 100 --repetitions 3 \
-     --output target/release-benchmarks/vX.Y.Z
-   ```
-
-   An immutable candidate `--image` may replace `--build`. Record its source
-   commit and resolved image ID/digest. Measure a committed candidate and
-   ensure its runtime/build inputs match the final release candidate; record
-   any later results-only or documentation-only commits separately.
-2. Run natively on **amd64 or arm64**, including Apple Silicon. Record the
-   host/CPU model (or explicitly unavailable when the host does not expose it),
-   Docker resources, architecture, image and harness provenance.
-   Host, Docker, image and kind node architectures must match. Keep architecture,
-   hardware and offered-cohort differences explicit in comparisons.
-3. Retain raw observations, checkpoints, HTML/JSON/CSV reports, failed trials,
-   provenance and checksums in a version-attributable directory under
-   `internal/test-reports/`. Keep generated credentials and kubeconfigs out of
-   artifacts. Preserve earlier versions' evidence.
-4. Add **`docs/benchmarks/vX.Y.Z.md`**, link it from
-   `docs/benchmarks/index.md`, the MkDocs navigation and the version's release
-   documentation, and link the results in `CHANGELOG.md` and release notes.
-   Include commands/date, exact runtime/harness identity, architecture/hardware,
-   resource caps, request sizes, offered cohort, repetitions, observed slots,
-   peak RSS/cgroup memory and headroom, success latency p50/p95/p99, rejection
-   latency, elapsed time, verified successes, 503s, transport errors, OOMs and
-   restarts. Link the interactive HTML and raw JSON/CSV evidence. State missing
-   or censored measurements explicitly.
-5. Compare with the preceding version when conditions are comparable; explain
-   resource/latency regressions and hardware, cohort or methodology differences.
-   Distinguish a repeated adjacent resource edge from a finite tested lower
-   bound or an incomplete search. Observed edges require production headroom;
-   expected admission 503s and intentional resource-boundary OOMs remain results.
-6. Do not mark a version bump ready, merge it, tag it or publish its release
-   while benchmark execution or documentation is incomplete. Retain failure
-   reports, fix invalid/non-resource failures and rerun into a new directory.
-   Earlier-version measurements cannot substitute for a new version's run.
-
-The already completed immutable v0.1.49 resource study supplies the initial
-baseline in `docs/benchmarks/v0.1.49.md`. The per-version requirement begins
-there; older releases do not require retrospective reruns.
-
-### Preserve User Work
-
-The working tree may contain local changes that you did not make. Do not
-revert, overwrite, or reformat unrelated changes. Read the affected files first
-and make the smallest change that satisfies the task.
-
-### Pre-Push and PR Checks
-
-Before pushing a branch or creating a pull request, run formatting, linting, and
-tests for every Rust area touched by the change.
-
-For gateway Rust changes, run these commands from the repository root once the
-workspace exists:
-
-```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-```
-
-If the repository provides Makefile wrappers, prefer those wrappers only when
-they execute the same checks or a documented superset.
-
-The `$code-change-verification` script runs the gateway verification stack in
-fail-fast order. If a command fails, fix the issue and rerun the script so every
-required command passes in sequence.
-
-### Tests
-
-Add or update tests when changing behavior. Use focused commands while
-iterating, but finish with the relevant workspace command when practical:
-
-```bash
-cargo test --workspace --all-features
-```
-
-For policy, authentication, usage, and proxy behavior, favor tests that prove:
-
-- Invalid, expired, and disabled virtual keys are rejected.
-- Client credentials are stripped before upstream provider calls.
-- Internal provider credentials are never returned or logged.
-- Policy denials use stable status codes and error shapes.
-- Usage events are inserted for both success and failure.
-- Streaming paths do not buffer complete responses.
-- Release metadata and user-facing documentation match the implemented
-  behavior.
-
-### Compatibility
-
-Relayna Gateway is a public control plane for AI traffic. Treat these surfaces
-as compatibility-sensitive:
-
-- Public HTTP routes and response shapes.
-- Virtual key format and authentication behavior.
+- HTTP routes, status codes, response shapes, and correlation headers.
+- Virtual key formats, authentication, and policy decisions.
 - Environment variables and deployment configuration.
-- PostgreSQL schemas and migrations.
-- Redis key patterns, counters, TTLs, and budget state.
-- Usage event fields consumed by Relayna Studio.
-- Provider routing and LiteLLM passthrough semantics.
-- Relayna runtime integration APIs and task submission contracts.
-- Streaming behavior, cancellation handling, and correlation headers.
+- PostgreSQL schemas and usage event fields consumed by Relayna Studio.
+- Redis keys, counters, TTLs, rate limits, and budget state.
+- Provider routing, LiteLLM passthrough, and credential handling.
+- Relayna runtime APIs and task submission contracts.
+- Streaming and cancellation behavior.
 
-Use `$implementation-strategy` before editing compatibility-sensitive behavior.
-Prefer direct replacement for unreleased branch-local interfaces, and preserve
-compatibility or add migration coverage when a change crosses a released API,
-persisted data, or wire-protocol boundary.
+## Admin UI
 
-## Project Structure Guide
+Read `SKILLS.md` and apply the Admin UI 4.0 Design System before changing UI
+source, generated assets, UI tests, or operator-facing UI documentation.
 
-### Overview
+The Vite/TypeScript package at `crates/gateway-api/admin-ui/` is the source of
+truth. Regenerate checked-in assets at
+`crates/gateway-api/src/static/admin-ui/` with `npm run build:admin-ui`; do not
+edit them by hand. Preserve `/admin-ui`, `/admin-ui/app.js`, and
+`/admin-ui/app.css` unless compatibility review explicitly changes them.
 
-`relayna-gateway` is the Rust gateway and control plane for Relayna AI traffic.
-It validates Relayna virtual keys, enforces policy, forwards OpenAI-compatible
-requests to LiteLLM or direct providers, records usage, and integrates with the
-Relayna task runtime.
+Run `npm run build:admin-ui` and `npm test` after UI source changes, plus the
+Rust verification stack when required by the touched areas.
 
-Relayna itself remains the runtime/task execution layer. Relayna Gateway is the
-single public entry point for external clients, SDKs, Studio, and Relayna
-workers that need metered provider access.
+## Verification
 
-### Important Paths
-
-- `internal/design-manifesto.md`: MVP mission, architecture principles, and
-  phase checklist.
-- `SKILLS.md`: repository-local UI skill guidance, including the Admin UI 4.0
-  Design System rules for future frontend work.
-- `crates/gateway-api/`: Axum control API routes, middleware, errors, request
-  IDs, health/readiness, admin APIs, and graceful shutdown.
-- `crates/gateway-api/admin-ui/`: Vite/TypeScript Admin UI 4.0 source package.
-- `crates/gateway-core/`: Authentication, policy, routing, rate limits,
-  budgets, usage, and pricing logic.
-- `crates/gateway-proxy/`: Pingora proxy services for LiteLLM, direct provider,
-  streaming, and internal Relayna proxy adapters.
-- `crates/gateway-store/`: PostgreSQL, Redis, models, migrations, and schema
-  access.
-- `crates/gateway-telemetry/`: tracing, metrics, OpenTelemetry, and log
-  redaction helpers.
-- `tests/`: Integration tests and black-box gateway behavior tests.
-- `docs/benchmarks/`: per-version benchmark index and results, starting at v0.1.49.
-- `.github/`: CI, issue templates, PR templates, and Codex CI prompts.
-- `.codex/`: Repository-specific Codex skills and verification scripts.
-
-The initial MVP can start as one crate, but new code should keep module
-boundaries compatible with the split above.
-
-### Package Ownership
-
-- Gateway API owns axum control-plane routing, middleware ordering, structured
-  errors, request IDs, readiness, admin APIs, and graceful shutdown.
-- Gateway core owns identity, policy decisions, route resolution, budget/rate
-  limit checks, usage event construction, and pricing.
-- Gateway proxy owns Pingora proxy services, upstream request construction,
-  sensitive header stripping, LiteLLM credentials, streaming passthrough,
-  cancellation, and provider errors.
-- Gateway store owns durable schemas, migrations, key lookup, usage inserts,
-  Redis counters, and transaction boundaries.
-- Gateway telemetry owns structured logs, traces, metrics, redaction, and
-  correlation fields.
-
-## Operation Guide
-
-### Prerequisites
-
-- Rust stable toolchain.
-- `cargo`, `rustfmt`, and `clippy`.
-- PostgreSQL for key, policy, and usage persistence.
-- Redis for rate limit and budget counters.
-- LiteLLM or an OpenAI-compatible upstream for proxy behavior.
-- `make` only when the repository provides wrappers for the same commands.
-
-### Development Workflow
-
-1. Create a focused branch for the change.
-2. Read `internal/design-manifesto.md` and identify the affected phase.
-3. Sync or prepare local services when database, Redis, or provider behavior is
-   involved.
-4. Implement the change using the package ownership boundaries above.
-5. Add or update tests for behavioral changes.
-6. Run the relevant tests and mandatory pre-push/PR checks.
-7. For version bumps, complete the mandatory benchmarks and versioned results
-   documentation before marking the release ready.
-8. Keep commits small and use concise, imperative commit messages.
-9. When reporting substantial work as complete, use `$pr-draft-summary` unless
-   the documented skip cases apply.
-
-### Common Commands
-
-Rust workspace:
+Use `bash .codex/skills/code-change-verification/scripts/run.sh` for the required
+verification stack. It runs fail-fast; fix failures and rerun it so required
+checks pass in sequence. The Rust checks include:
 
 ```bash
 cargo fmt --all --check
@@ -323,54 +94,61 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-Useful focused commands:
+Use focused tests while iterating. Before pushing or opening a PR, finish the
+required checks for the affected areas. `make metadata-check` validates
+repository metadata; `make docs-check` builds public documentation strictly.
 
-```bash
-cargo test -p gateway-core
-cargo test -p gateway-proxy
-cargo test --test <integration_test_name>
-```
+Authentication, policy, usage, and proxy tests should cover rejected invalid,
+expired, and disabled keys; credential stripping and redaction; stable denial
+responses; usage on success and failure; and streaming without buffering whole
+responses.
 
-Docs and metadata changes usually do not require the full Rust verification
-stack unless they also change behavior, build/test configuration, or CI.
+## Release benchmarks
 
-### Pull Request & Commit Guidelines
+Starting with **v0.1.49**, every version bump requires fresh body-admission
+benchmarks and versioned results, including patch, security, docs, and tooling
+releases. Do not mark a release ready, merge its version bump, tag it, or publish
+it while execution or documentation is incomplete.
 
-- Use the template at `.github/PULL_REQUEST_TEMPLATE/pull_request_template.md`.
-- Include a concise summary, test plan, and linked issue when applicable.
-- Keep pull requests focused on one behavior change, fix, or documentation
-  update.
-- Use concise, imperative commit messages. Conventional prefixes such as
-  `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, and `chore:` are preferred
-  when they clarify the change.
-- Add or update tests for behavior changes when feasible.
-- Update docs for user-facing gateway, configuration, policy, usage,
-  deployment, or operational changes.
-- Mention compatibility or migration considerations when public routes,
-  persisted data, response shapes, usage events, config, Redis state, or
-  provider/Relayna integration contracts change.
-- Run the relevant formatting, linting, and tests before pushing or opening the
-  PR.
-- Use `$pr-draft-summary` after substantial code work to prepare a branch
-  suggestion, PR title, and draft description.
+- Follow `benches/body-admission/README.md` using `scripts/bench-body-admission`.
+  Run the full adaptive search for **5, 10, 20, 40, 80, and 100 MiB JSON**, with
+  at least **three fresh-pod trials per confirmed setting**, two Gateway pods,
+  and per-pod limits of **2 CPUs / 1 GiB memory / 512 MiB serialized-body
+  budget**. Smoke/pilot runs do not satisfy this requirement.
+- Measure the committed final candidate after version/runtime changes, using
+  `--build` or an immutable `--image`. Record the runtime commit, resolved image
+  ID/digest, and harness provenance. Runtime/build input changes require a new
+  run; later results-only or documentation-only commits may follow separately.
+- Run natively on amd64 or arm64, including Apple Silicon. Host, Docker, image,
+  and kind node architectures must match. Record host/CPU model (or explicitly
+  unavailable), Docker resources, architecture, hardware, and offered cohort.
+- Save local results under `target/release-benchmarks/vX.Y.Z`. Publish raw
+  observations, checkpoints, HTML/JSON/CSV reports, failed trials, provenance,
+  and checksums as durable version-attributable release assets or external
+  artifacts. Keep credentials and kubeconfigs out. Preserve earlier evidence;
+  historical reports remain accessible through pinned Git revisions.
+- Add `docs/benchmarks/vX.Y.Z.md`; link it from the benchmark index, MkDocs
+  navigation, release documentation, changelog, and release notes. Link the
+  interactive HTML and raw JSON/CSV evidence. Include commands/date, exact
+  runtime/harness identity, architecture/hardware, caps, sizes, offered cohort,
+  repetitions, slots, peak RSS/cgroup memory and headroom, success latency
+  p50/p95/p99, rejection latency, elapsed time, verified successes, 503s,
+  transport errors, OOMs, and restarts. State missing/censored measurements.
+- Compare preceding versions only when conditions are comparable; explain
+  regressions and hardware/cohort/method differences. Distinguish repeated
+  adjacent resource edges from finite lower bounds or incomplete searches.
+  Observed edges need production headroom; expected admission 503s and
+  intentional resource-boundary OOMs remain results. Retain failure reports,
+  fix invalid/non-resource failures, and rerun into a new directory.
 
-### Review Process & What Reviewers Look For
+The immutable baseline is documented in `docs/benchmarks/v0.1.49.md`. Older
+releases do not require retrospective reruns; earlier-version measurements do
+not substitute for a new version's run.
 
-- Checks pass for the affected workspace.
-- Tests cover new behavior, bug fixes, and compatibility boundaries.
-- Code follows package ownership and avoids unrelated refactors.
-- Public routes, response shapes, persisted data, and wire protocols preserve
-  compatibility unless the PR clearly explains the breaking change.
-- Secret handling prevents client access to provider keys, LiteLLM master keys,
-  LiteLLM virtual keys, and internal service tokens.
-- Error handling, retries, timeouts, cancellation, and async lifecycle behavior
-  are explicit where relevant.
-- Redis counters, budget keys, TTLs, and rate-limit semantics are intentional
-  and documented when user-visible.
-- PostgreSQL migrations are reversible or have clear rollout notes.
-- Observability changes avoid high-cardinality metrics labels and preserve
-  useful task, key, project, route, provider, and request diagnostics.
-- Streaming proxy paths do not buffer complete LLM responses.
-- Documentation and examples match the implemented behavior.
-- The PR description states what changed, why, how it was verified, and any
-  residual risk reviewers should consider.
+## Pull requests
+
+Use `.github/PULL_REQUEST_TEMPLATE/pull_request_template.md`. Explain the
+problem, resulting behavior, verification, compatibility/migration notes, and
+residual risks. Keep commits focused with concise imperative messages;
+conventional prefixes are welcome. Do not push or open a PR before the relevant
+checks pass.

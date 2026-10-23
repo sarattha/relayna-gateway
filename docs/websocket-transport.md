@@ -149,7 +149,7 @@ local HTTPS/WSS provider. Responses sockets exchanged delta/completed events,
 including two turns, aliases and model selection in the first frame. Luna stayed
 denied in both query and first-frame checks without contacting the provider.
 HTTP controls, spoofed alternate credentials and metadata-only Traffic accounting
-also passed. See the [sanitized report](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/litellm-websocket-custom-header/README.md).
+also passed. See the [sanitized report](https://github.com/sarattha/relayna-gateway/blob/8903a62191d461f12c53d10108b1c880452945eb/internal/test-reports/litellm-websocket-custom-header/README.md).
 
 On 2026-10-20, the official `docker.litellm.ai/berriai/litellm:latest` image
 contained LiteLLM v1.106.0. Seventeen local checks passed against the actual

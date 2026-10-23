@@ -1,9 +1,8 @@
 # Contributing
 
-Thanks for working on Relayna Gateway. This repository is being built around
-the Rust gateway design in `internal/design-manifesto.md`; read that file
-before changing behavior, architecture, APIs, configuration, storage, or
-operational workflows.
+Thanks for working on Relayna Gateway. Read [the architecture](docs/architecture.md)
+and the relevant feature documentation before changing behavior, APIs,
+configuration, storage, or operational workflows.
 
 ## Local setup
 
@@ -20,7 +19,7 @@ internal service tokens, raw Relayna virtual keys, or prompt payloads.
 
 ## Common commands
 
-Once `Cargo.toml` exists, run the standard Rust checks from the repository root:
+Run the standard Rust checks from the repository root:
 
 ```bash
 cargo fmt --all --check
@@ -37,22 +36,14 @@ make lint
 make test
 ```
 
-Before the first Rust workspace is added, the Makefile reports that Cargo checks
-are skipped. Do not rely on that skip for runtime, test, migration, packaging,
-or build changes once gateway code exists.
-
 ## Development workflow
 
-1. Keep changes focused and aligned with the manifesto phase being implemented.
+1. Keep changes focused and aligned with the documented architecture.
 2. Use the crate/module ownership described in `AGENTS.md`.
 3. Add or update tests when behavior changes.
 4. Update docs when public routes, configuration, policy, usage, deployment, or
    operational behavior changes.
 5. Run the relevant verification commands before opening a PR.
-
-Use an ExecPlan, following `PLANS.md`, for multi-step features, refactors,
-architecture changes, compatibility-sensitive changes, or work likely to take
-more than about an hour.
 
 ## Compatibility
 

@@ -1,4 +1,0 @@
-cf4f020e44aceb92ec926a3394ed73dff3c31223eb26f862eac92b76d3806d24  benches/body-admission/workload.mjs
-564c25aa58de00b2436cf3a16bde0ad8ea459c59a17eb634e571d332aee3aa13  benches/body-admission/mock.mjs
-1513dd1527b93afd2d86e4ce5432391e08de93d5a6aeeb615e79a3fd767d5638  benches/body-admission/run.py
-8f482fcfafa26fd14c4e510aac192141b8d153c2e395abeafabd52ecbf44a57a  benches/body-admission/capacity_sweep.py

@@ -35,7 +35,7 @@ rewritten-body capacity is checked before budget reservation. Native amd64
 validation passed the two-pod controlled matrix and separate burst sweep at
 8/16/24/32/64 slots. Defaults stay at eight slots and 512 MiB. See
 [operations](operations.md#configuration), [upgrade guidance](deployment.md#upgrade-to-0147),
-and the [native amd64 report](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/amd64/README.md).
+and the [native amd64 report](https://github.com/sarattha/relayna-gateway/blob/8903a62191d461f12c53d10108b1c880452945eb/internal/test-reports/body-admission-5mib/amd64/README.md).
 This patch also includes the WebPKI/root-data updates and WebSocket test timing
 fix merged after 0.1.46. No migration or new Redis format is introduced.
 

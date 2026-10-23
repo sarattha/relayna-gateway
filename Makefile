@@ -122,7 +122,6 @@ metadata-check: ## Validate repository metadata files
 	@grep -q "Relayna Gateway" README.md
 	@grep -q "docs/architecture.md" README.md
 	@grep -q "Relayna Gateway" AGENTS.md
-	@grep -q "Relayna Gateway" PLANS.md
 
 .PHONY: docs-check
 docs-check: ## Validate documentation anchors and optional MkDocs config

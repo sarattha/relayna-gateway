@@ -45,7 +45,7 @@ still consumes admission; upstream processing time after the upload is consumed
 does not. Complete-body policy, pricing, and guardrail checks still finish
 before buffered request bytes are forwarded. Guardrail expansion must fit the
 aggregate byte budget as well. These limits bound managed buffers, not total
-pod RSS or all in-flight connections. See the [native amd64 two-pod 5 MiB benchmark](https://github.com/sarattha/relayna-gateway/blob/main/internal/test-reports/body-admission-5mib/amd64/README.md)
+pod RSS or all in-flight connections. See the [native amd64 two-pod 5 MiB benchmark](https://github.com/sarattha/relayna-gateway/blob/8903a62191d461f12c53d10108b1c880452945eb/internal/test-reports/body-admission-5mib/amd64/README.md)
 for measured memory and timing at different concurrency limits. To repeat the
 resource search or a fixed-slot matrix on native amd64 or Apple Silicon/arm64,
 use the [source benchmark CLI](https://github.com/sarattha/relayna-gateway/blob/main/benches/body-admission/README.md).

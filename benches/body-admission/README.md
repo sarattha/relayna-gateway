@@ -145,11 +145,11 @@ complete with a verified body. Lost rejection responses remain client errors
 and are allowed only when exactly accounted for by server admission denials.
 The separate `clean` field additionally requires zero client errors. Neither
 latency nor rejection-response delivery silently defines the resource limit.
-See the [six-size native resource study](../../internal/test-reports/body-admission-size-capacity/amd64/README.md)
+See the [six-size native resource study](https://github.com/sarattha/relayna-gateway/blob/8903a62191d461f12c53d10108b1c880452945eb/internal/test-reports/body-admission-size-capacity/amd64/README.md)
 for measured boundaries and all retained observations.
 
 Existing ARM64 results remain separate. See the
-[original native amd64 confirmation](../../internal/test-reports/body-admission-5mib/amd64/README.md)
+[original native amd64 confirmation](https://github.com/sarattha/relayna-gateway/blob/8903a62191d461f12c53d10108b1c880452945eb/internal/test-reports/body-admission-5mib/amd64/README.md)
 for the earlier baseline/candidate comparison and original workload.
 
 ## Fixed-rate 5 MiB method

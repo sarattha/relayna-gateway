@@ -56,8 +56,7 @@ Do not ask the user for these. Run local Git commands.
 - Gateway telemetry: `crates/gateway-telemetry/`, tracing, metrics,
   OpenTelemetry, correlation, and redaction helpers.
 - Tests: `tests/`, `benches/`, or crate-local test modules.
-- Docs: `docs/`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `mkdocs.yml`,
-  and `internal/design-manifesto.md`.
+- Docs: `docs/`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, and `mkdocs.yml`.
 - Build/test config: `Cargo.toml`, `Cargo.lock`, `.cargo/`, `Makefile`,
   Dockerfiles, `.github/`, and `.codex/`.
 

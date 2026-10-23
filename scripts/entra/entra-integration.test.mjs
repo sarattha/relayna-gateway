@@ -14,16 +14,16 @@ const issuerScript = join(scriptDirectory, "development-oidc.mjs");
 const deploymentManifest = fileURLToPath(new URL("../../deploy/kubernetes/relayna-gateway.yaml", import.meta.url));
 const checkedInHarnesses = [
   [
-    "../../internal/test-reports/entra-front-door-real-env/docker-compose.yml",
-    "../../internal/test-reports/entra-front-door-real-env/mock-app/server.mjs",
+    "../../tests/e2e/entra-front-door-real-env/docker-compose.yml",
+    "../../tests/e2e/entra-front-door-real-env/mock-app/server.mjs",
   ],
   [
-    "../../internal/test-reports/front-door-penetration/docker-compose.yml",
-    "../../internal/test-reports/front-door-penetration/mock-provider/server.mjs",
+    "../../tests/e2e/front-door-penetration/docker-compose.yml",
+    "../../tests/e2e/front-door-penetration/mock-provider/server.mjs",
   ],
   [
-    "../../internal/test-reports/litellm-real-passthrough/docker-compose.yml",
-    "../../internal/test-reports/litellm-real-passthrough/mock-provider/server.mjs",
+    "../../tests/e2e/litellm-real-passthrough/docker-compose.yml",
+    "../../tests/e2e/litellm-real-passthrough/mock-provider/server.mjs",
   ],
 ].map(([compose, issuer]) => [
   fileURLToPath(new URL(compose, import.meta.url)),

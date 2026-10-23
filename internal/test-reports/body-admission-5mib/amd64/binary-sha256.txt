@@ -1,1 +1,0 @@
-320825a1c86ed07cb4e00760dbfc46dea4774e81edda5f651bdd1a7ecb0a3635  /usr/local/bin/relayna-gateway
