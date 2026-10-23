@@ -866,7 +866,7 @@ input[type="radio"] {
 .brand { padding: 0; gap: 10px; }
 .brand > .ti { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; color: #176b58; background: #e0efe9; border: 1px solid #d4e8df; border-radius: 11px; font-size: 25px; }
 .brand-title > small { color: var(--muted-foreground); font-size: 9px; letter-spacing: .06em; }
-.version-indicator { margin-top: 7px; border: 1px solid #d7e4df; background: #fff; color: #55776c; font-size: 9px; padding: 1px 6px; border-radius: 5px; }
+.version-indicator { display: inline-flex; align-items: center; justify-content: center; line-height: 1; margin-top: 7px; border: 1px solid #d7e4df; background: #fff; color: #55776c; font-size: 9px; padding: 1px 6px; border-radius: 5px; }
 .sidebar .nav-groups { padding: 4px 6px 12px; margin-inline: -4px; }
 .sidebar .nav.active > .ti { color: var(--primary); }
 .sidebar .nav-close { color: var(--muted-foreground); }

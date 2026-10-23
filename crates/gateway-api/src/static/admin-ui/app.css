@@ -6122,9 +6122,13 @@ input[type="checkbox"], input[type="radio"] {
   background: #fff;
   border: 1px solid #d7e4df;
   border-radius: 5px;
+  justify-content: center;
+  align-items: center;
   margin-top: 7px;
   padding: 1px 6px;
   font-size: 9px;
+  line-height: 1;
+  display: inline-flex;
 }
 
 .sidebar .nav-groups {
