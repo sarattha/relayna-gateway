@@ -11500,11 +11500,11 @@ function composeRefs(...refs) {
 	};
 }
 function useComposedRefs(...refs) {
-	return import_react$38.useCallback(composeRefs(...refs), refs);
+	return import_react$39.useCallback(composeRefs(...refs), refs);
 }
-var import_react$38, __defProp$18, __name$18;
+var import_react$39, __defProp$18, __name$18;
 var init_dist$20 = __esmMin((() => {
-	import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$39 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$18 = Object.defineProperty;
 	__name$18 = (target, value) => __defProp$18(target, "name", {
 		value,
@@ -11518,13 +11518,13 @@ var init_dist$20 = __esmMin((() => {
 //#region node_modules/@radix-ui/react-slot/dist/index.mjs
 // @__NO_SIDE_EFFECTS__
 function createSlot(ownerName) {
-	const Slot2 = import_react$37.forwardRef((props, forwardedRef) => {
+	const Slot2 = import_react$38.forwardRef((props, forwardedRef) => {
 		let { children, ...slotProps } = props;
 		let slottableElement = null;
 		let hasSlottable = false;
 		const newChildren = [];
 		if (isLazyComponent(children) && typeof use === "function") children = use(children._payload);
-		import_react$37.Children.forEach(children, (maybeSlottable) => {
+		import_react$38.Children.forEach(children, (maybeSlottable) => {
 			if (isSlottable(maybeSlottable)) {
 				hasSlottable = true;
 				const slottable = maybeSlottable;
@@ -11534,8 +11534,8 @@ function createSlot(ownerName) {
 				newChildren.push(slottableElement?.props?.children);
 			} else newChildren.push(maybeSlottable);
 		});
-		if (slottableElement) slottableElement = import_react$37.cloneElement(slottableElement, void 0, newChildren);
-		else if (!hasSlottable && import_react$37.Children.count(children) === 1 && import_react$37.isValidElement(children)) slottableElement = children;
+		if (slottableElement) slottableElement = import_react$38.cloneElement(slottableElement, void 0, newChildren);
+		else if (!hasSlottable && import_react$38.Children.count(children) === 1 && import_react$38.isValidElement(children)) slottableElement = children;
 		const slottableElementRef = slottableElement ? getElementRef$1(slottableElement) : void 0;
 		const composedRef = useComposedRefs(forwardedRef, slottableElementRef);
 		if (!slottableElement) {
@@ -11543,8 +11543,8 @@ function createSlot(ownerName) {
 			return children;
 		}
 		const mergedProps = mergeProps(slotProps, slottableElement.props ?? {});
-		if (slottableElement.type !== import_react$37.Fragment) mergedProps.ref = forwardedRef ? composedRef : slottableElementRef;
-		return import_react$37.cloneElement(slottableElement, mergedProps);
+		if (slottableElement.type !== import_react$38.Fragment) mergedProps.ref = forwardedRef ? composedRef : slottableElementRef;
+		return import_react$38.cloneElement(slottableElement, mergedProps);
 	});
 	Slot2.displayName = `${ownerName}.Slot`;
 	return Slot2;
@@ -11589,7 +11589,7 @@ function getElementRef$1(element) {
 	return element.props.ref || element.ref;
 }
 function isSlottable(child) {
-	return import_react$37.isValidElement(child) && typeof child.type === "function" && "__radixId" in child.type && child.type.__radixId === SLOTTABLE_IDENTIFIER;
+	return import_react$38.isValidElement(child) && typeof child.type === "function" && "__radixId" in child.type && child.type.__radixId === SLOTTABLE_IDENTIFIER;
 }
 function isLazyComponent(element) {
 	return element != null && typeof element === "object" && "$$typeof" in element && element.$$typeof === REACT_LAZY_TYPE && "_payload" in element && isPromiseLike(element._payload);
@@ -11597,9 +11597,9 @@ function isLazyComponent(element) {
 function isPromiseLike(value) {
 	return typeof value === "object" && value !== null && "then" in value;
 }
-var import_react$37, __defProp$17, __name$17, Slot$1, SLOTTABLE_IDENTIFIER, getSlottableElementFromSlottable, REACT_LAZY_TYPE, createSlotError, createSlottableError, use;
+var import_react$38, __defProp$17, __name$17, Slot$1, SLOTTABLE_IDENTIFIER, getSlottableElementFromSlottable, REACT_LAZY_TYPE, createSlotError, createSlottableError, use;
 var init_dist$19 = __esmMin((() => {
-	import_react$37 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$20();
 	__defProp$17 = Object.defineProperty;
 	__name$17 = (target, value) => __defProp$17(target, "name", {
@@ -11613,10 +11613,10 @@ var init_dist$19 = __esmMin((() => {
 	getSlottableElementFromSlottable = /* @__PURE__ */ __name$17((slottable, child) => {
 		if ("child" in slottable.props) {
 			const child2 = slottable.props.child;
-			if (!import_react$37.isValidElement(child2)) return null;
-			return import_react$37.cloneElement(child2, void 0, slottable.props.children(child2.props.children));
+			if (!import_react$38.isValidElement(child2)) return null;
+			return import_react$38.cloneElement(child2, void 0, slottable.props.children(child2.props.children));
 		}
-		return import_react$37.isValidElement(child) ? child : null;
+		return import_react$38.isValidElement(child) ? child : null;
 	}, "getSlottableElementFromSlottable");
 	__name$17(mergeProps, "mergeProps");
 	__name$17(getElementRef$1, "getElementRef");
@@ -11630,7 +11630,7 @@ var init_dist$19 = __esmMin((() => {
 	createSlottableError = /* @__PURE__ */ __name$17((ownerName) => {
 		return `${ownerName} failed to slot onto its \`Slottable\`. Expected \`Slottable\` to receive a single React element child.`;
 	}, "createSlottableError");
-	use = import_react$37[" use ".trim().toString()];
+	use = import_react$38[" use ".trim().toString()];
 }));
 //#endregion
 //#region node_modules/@radix-ui/primitive/dist/index.mjs
@@ -11722,11 +11722,11 @@ var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 //#region node_modules/@radix-ui/react-context/dist/index.mjs
 // @__NO_SIDE_EFFECTS__
 function createContext2(rootComponentName, defaultContext) {
-	const Context = import_react$36.createContext(defaultContext);
+	const Context = import_react$37.createContext(defaultContext);
 	Context.displayName = rootComponentName + "Context";
 	const Provider = /* @__PURE__ */ __name$15((props) => {
 		const { children, ...context } = props;
-		const value = import_react$36.useMemo(() => context, Object.values(context));
+		const value = import_react$37.useMemo(() => context, Object.values(context));
 		return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(Context.Provider, {
 			value,
 			children
@@ -11735,7 +11735,7 @@ function createContext2(rootComponentName, defaultContext) {
 	Provider.displayName = rootComponentName + "Provider";
 	function useContext2(consumerName, options = {}) {
 		const { optional = false } = options;
-		const context = import_react$36.useContext(Context);
+		const context = import_react$37.useContext(Context);
 		if (context) return context;
 		if (defaultContext !== void 0) return defaultContext;
 		if (optional) return void 0;
@@ -11748,14 +11748,14 @@ function createContext2(rootComponentName, defaultContext) {
 function createContextScope(scopeName, createContextScopeDeps = []) {
 	let defaultContexts = [];
 	function createContext3(rootComponentName, defaultContext) {
-		const BaseContext = import_react$36.createContext(defaultContext);
+		const BaseContext = import_react$37.createContext(defaultContext);
 		BaseContext.displayName = rootComponentName + "Context";
 		const index = defaultContexts.length;
 		defaultContexts = [...defaultContexts, defaultContext];
 		const Provider = /* @__PURE__ */ __name$15((props) => {
 			const { scope, children, ...context } = props;
 			const Context = scope?.[scopeName]?.[index] || BaseContext;
-			const value = import_react$36.useMemo(() => context, Object.values(context));
+			const value = import_react$37.useMemo(() => context, Object.values(context));
 			return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(Context.Provider, {
 				value,
 				children
@@ -11765,7 +11765,7 @@ function createContextScope(scopeName, createContextScopeDeps = []) {
 		function useContext2(consumerName, scope, options = {}) {
 			const { optional = false } = options;
 			const Context = scope?.[scopeName]?.[index] || BaseContext;
-			const context = import_react$36.useContext(Context);
+			const context = import_react$37.useContext(Context);
 			if (context) return context;
 			if (defaultContext !== void 0) return defaultContext;
 			if (optional) return void 0;
@@ -11777,11 +11777,11 @@ function createContextScope(scopeName, createContextScopeDeps = []) {
 	__name$15(createContext3, "createContext");
 	const createScope = /* @__PURE__ */ __name$15(() => {
 		const scopeContexts = defaultContexts.map((defaultContext) => {
-			return import_react$36.createContext(defaultContext);
+			return import_react$37.createContext(defaultContext);
 		});
 		return /* @__PURE__ */ __name$15(function useScope(scope) {
 			const contexts = scope?.[scopeName] || scopeContexts;
-			return import_react$36.useMemo(() => ({ [`__scope${scopeName}`]: {
+			return import_react$37.useMemo(() => ({ [`__scope${scopeName}`]: {
 				...scope,
 				[scopeName]: contexts
 			} }), [scope, contexts]);
@@ -11806,15 +11806,15 @@ function composeContextScopes(...scopes) {
 					...currentScope
 				};
 			}, {});
-			return import_react$36.useMemo(() => ({ [`__scope${baseScope.scopeName}`]: nextScopes }), [nextScopes]);
+			return import_react$37.useMemo(() => ({ [`__scope${baseScope.scopeName}`]: nextScopes }), [nextScopes]);
 		}, "useComposedScopes");
 	}, "createScope");
 	createScope.scopeName = baseScope.scopeName;
 	return createScope;
 }
-var import_react$36, import_jsx_runtime$19, __defProp$15, __name$15;
+var import_react$37, import_jsx_runtime$19, __defProp$15, __name$15;
 var init_dist$17 = __esmMin((() => {
-	import_react$36 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$37 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_jsx_runtime$19 = require_jsx_runtime();
 	__defProp$15 = Object.defineProperty;
 	__name$15 = (target, value) => __defProp$15(target, "name", {
@@ -11827,31 +11827,31 @@ var init_dist$17 = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/@radix-ui/react-use-layout-effect/dist/index.mjs
-var import_react$35, useLayoutEffect2;
+var import_react$36, useLayoutEffect2;
 var init_dist$16 = __esmMin((() => {
-	import_react$35 = /* @__PURE__ */ __toESM(require_react(), 1);
-	useLayoutEffect2 = globalThis?.document ? import_react$35.useLayoutEffect : () => {};
+	import_react$36 = /* @__PURE__ */ __toESM(require_react(), 1);
+	useLayoutEffect2 = globalThis?.document ? import_react$36.useLayoutEffect : () => {};
 }));
 //#endregion
 //#region node_modules/@radix-ui/react-id/dist/index.mjs
 function useId$2(deterministicId) {
-	const [id, setId] = import_react$34.useState(useReactId());
+	const [id, setId] = import_react$35.useState(useReactId());
 	useLayoutEffect2(() => {
-		if (!deterministicId) setId((reactId) => reactId ?? String(count$1++));
+		if (!deterministicId) setId((reactId) => reactId ?? String(count$3++));
 	}, [deterministicId]);
 	return deterministicId || (id ? `radix-${id}` : "");
 }
-var import_react$34, __defProp$14, __name$14, useReactId, count$1;
+var import_react$35, __defProp$14, __name$14, useReactId, count$3;
 var init_dist$15 = __esmMin((() => {
-	import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$35 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$16();
 	__defProp$14 = Object.defineProperty;
 	__name$14 = (target, value) => __defProp$14(target, "name", {
 		value,
 		configurable: true
 	});
-	useReactId = import_react$34[" useId ".trim().toString()] || (() => void 0);
-	count$1 = 0;
+	useReactId = import_react$35[" useId ".trim().toString()] || (() => void 0);
+	count$3 = 0;
 	__name$14(useId$2, "useId");
 }));
 //#endregion
@@ -11861,7 +11861,7 @@ var init_is_development_false = __esmMin((() => {}));
 //#region node_modules/@radix-ui/react-use-effect-event/dist/index.mjs
 function useEffectEvent(callback) {
 	if (typeof useReactEffectEvent === "function") return useReactEffectEvent(callback);
-	const ref = import_react$33.useRef(() => {
+	const ref = import_react$34.useRef(() => {
 		throw new Error("Cannot call an event handler while rendering.");
 	});
 	if (typeof useReactInsertionEffect === "function") useReactInsertionEffect(() => {
@@ -11870,19 +11870,19 @@ function useEffectEvent(callback) {
 	else useLayoutEffect2(() => {
 		ref.current = callback;
 	});
-	return import_react$33.useMemo(() => ((...args) => ref.current?.(...args)), []);
+	return import_react$34.useMemo(() => ((...args) => ref.current?.(...args)), []);
 }
-var import_react$33, __defProp$13, __name$13, useReactEffectEvent, useReactInsertionEffect;
+var import_react$34, __defProp$13, __name$13, useReactEffectEvent, useReactInsertionEffect;
 var init_dist$14 = __esmMin((() => {
 	init_dist$16();
-	import_react$33 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$13 = Object.defineProperty;
 	__name$13 = (target, value) => __defProp$13(target, "name", {
 		value,
 		configurable: true
 	});
-	useReactEffectEvent = import_react$33[" useEffectEvent ".trim().toString()];
-	useReactInsertionEffect = import_react$33[" useInsertionEffect ".trim().toString()];
+	useReactEffectEvent = import_react$34[" useEffectEvent ".trim().toString()];
+	useReactInsertionEffect = import_react$34[" useInsertionEffect ".trim().toString()];
 	__name$13(useEffectEvent, "useEffectEvent");
 }));
 //#endregion
@@ -11893,7 +11893,7 @@ function useControllableState({ prop, defaultProp, onChange = /* @__PURE__ */ __
 		onChange
 	});
 	const isControlled = prop !== void 0;
-	return [isControlled ? prop : uncontrolledProp, import_react$31.useCallback((nextValue) => {
+	return [isControlled ? prop : uncontrolledProp, import_react$32.useCallback((nextValue) => {
 		if (isControlled) {
 			const value2 = isFunction$1(nextValue) ? nextValue(prop) : nextValue;
 			if (value2 !== prop) onChangeRef.current?.(value2);
@@ -11906,13 +11906,13 @@ function useControllableState({ prop, defaultProp, onChange = /* @__PURE__ */ __
 	])];
 }
 function useUncontrolledState({ defaultProp, onChange }) {
-	const [value, setValue] = import_react$31.useState(defaultProp);
-	const prevValueRef = import_react$31.useRef(value);
-	const onChangeRef = import_react$31.useRef(onChange);
+	const [value, setValue] = import_react$32.useState(defaultProp);
+	const prevValueRef = import_react$32.useRef(value);
+	const onChangeRef = import_react$32.useRef(onChange);
 	useInsertionEffect(() => {
 		onChangeRef.current = onChange;
 	}, [onChange]);
-	import_react$31.useEffect(() => {
+	import_react$32.useEffect(() => {
 		if (prevValueRef.current !== value) {
 			onChangeRef.current?.(value);
 			prevValueRef.current = value;
@@ -11936,7 +11936,7 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 		state: defaultProp
 	}];
 	if (init) args.push(init);
-	const [internalState, dispatch] = import_react$32.useReducer((state2, action) => {
+	const [internalState, dispatch] = import_react$33.useReducer((state2, action) => {
 		if (action.type === SYNC_STATE) return {
 			...state2,
 			state: action.state
@@ -11946,8 +11946,8 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 		return next;
 	}, ...args);
 	const uncontrolledState = internalState.state;
-	const prevValueRef = import_react$32.useRef(uncontrolledState);
-	import_react$32.useEffect(() => {
+	const prevValueRef = import_react$33.useRef(uncontrolledState);
+	import_react$33.useEffect(() => {
 		if (prevValueRef.current !== uncontrolledState) {
 			prevValueRef.current = uncontrolledState;
 			if (!isControlled) onChange(uncontrolledState);
@@ -11957,14 +11957,14 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 		prevValueRef,
 		isControlled
 	]);
-	const state = import_react$32.useMemo(() => {
+	const state = import_react$33.useMemo(() => {
 		if (controlledState !== void 0) return {
 			...internalState,
 			state: controlledState
 		};
 		return internalState;
 	}, [internalState, controlledState]);
-	import_react$32.useEffect(() => {
+	import_react$33.useEffect(() => {
 		if (isControlled && !Object.is(controlledState, internalState.state)) dispatch({
 			type: SYNC_STATE,
 			state: controlledState
@@ -11976,19 +11976,19 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 	]);
 	return [state, dispatch];
 }
-var import_react$31, import_react$32, __defProp$12, __name$12, useInsertionEffect, SYNC_STATE;
+var import_react$32, import_react$33, __defProp$12, __name$12, useInsertionEffect, SYNC_STATE;
 var init_dist$13 = __esmMin((() => {
-	import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_is_development_false();
 	init_dist$16();
-	import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$33 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$14();
 	__defProp$12 = Object.defineProperty;
 	__name$12 = (target, value) => __defProp$12(target, "name", {
 		value,
 		configurable: true
 	});
-	useInsertionEffect = import_react$31[" useInsertionEffect ".trim().toString()] || useLayoutEffect2;
+	useInsertionEffect = import_react$32[" useInsertionEffect ".trim().toString()] || useLayoutEffect2;
 	__name$12(useControllableState, "useControllableState");
 	__name$12(useUncontrolledState, "useUncontrolledState");
 	__name$12(isFunction$1, "isFunction");
@@ -12000,9 +12000,9 @@ var init_dist$13 = __esmMin((() => {
 function dispatchDiscreteCustomEvent(target, event) {
 	if (target) import_react_dom$5.flushSync(() => target.dispatchEvent(event));
 }
-var import_react$30, import_react_dom$5, import_jsx_runtime$18, __defProp$11, __name$11, Primitive;
+var import_react$31, import_react_dom$5, import_jsx_runtime$18, __defProp$11, __name$11, Primitive;
 var init_dist$12 = __esmMin((() => {
-	import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react_dom$5 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
 	init_dist$19();
 	import_jsx_runtime$18 = require_jsx_runtime();
@@ -12031,7 +12031,7 @@ var init_dist$12 = __esmMin((() => {
 		"ul"
 	].reduce((primitive, node) => {
 		const Slot = /* @__PURE__ */ createSlot(`Primitive.${node}`);
-		const Node = import_react$30.forwardRef((props, forwardedRef) => {
+		const Node = import_react$31.forwardRef((props, forwardedRef) => {
 			const { asChild, ...primitiveProps } = props;
 			const Comp = asChild ? Slot : node;
 			if (typeof window !== "undefined") window[Symbol.for("radix-ui")] = true;
@@ -12051,15 +12051,15 @@ var init_dist$12 = __esmMin((() => {
 //#endregion
 //#region node_modules/@radix-ui/react-use-callback-ref/dist/index.mjs
 function useCallbackRef$1(callback) {
-	const callbackRef = import_react$29.useRef(callback);
-	import_react$29.useEffect(() => {
+	const callbackRef = import_react$30.useRef(callback);
+	import_react$30.useEffect(() => {
 		callbackRef.current = callback;
 	});
-	return import_react$29.useMemo(() => ((...args) => callbackRef.current?.(...args)), []);
+	return import_react$30.useMemo(() => ((...args) => callbackRef.current?.(...args)), []);
 }
-var import_react$29, __defProp$10, __name$10;
+var import_react$30, __defProp$10, __name$10;
 var init_dist$11 = __esmMin((() => {
-	import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$10 = Object.defineProperty;
 	__name$10 = (target, value) => __defProp$10(target, "name", {
 		value,
@@ -12070,9 +12070,9 @@ var init_dist$11 = __esmMin((() => {
 //#endregion
 //#region node_modules/@radix-ui/react-dismissable-layer/dist/index.mjs
 function useDismissableLayerSurface() {
-	const context = import_react$28.useContext(DismissableLayerContext);
-	const [node, setNode] = import_react$28.useState(null);
-	import_react$28.useEffect(() => {
+	const context = import_react$29.useContext(DismissableLayerContext);
+	const [node, setNode] = import_react$29.useState(null);
+	import_react$29.useEffect(() => {
 		if (!node) return;
 		context.dismissableSurfaces.add(node);
 		return () => {
@@ -12084,11 +12084,11 @@ function useDismissableLayerSurface() {
 function usePointerDownOutside(onPointerDownOutside, args) {
 	const { ownerDocument = globalThis?.document, deferPointerDownOutside = false, isDeferredPointerDownOutsideRef, dismissableSurfaces, shouldHandlePointerDownOutside = IS_TRUE } = args;
 	const handlePointerDownOutside = useCallbackRef$1(onPointerDownOutside);
-	const isPointerInsideReactTreeRef = import_react$28.useRef(false);
-	const isPointerDownOutsideRef = import_react$28.useRef(false);
-	const interceptedOutsideInteractionEventsRef = import_react$28.useRef(/* @__PURE__ */ new Map());
-	const handleClickRef = import_react$28.useRef(() => {});
-	import_react$28.useEffect(() => {
+	const isPointerInsideReactTreeRef = import_react$29.useRef(false);
+	const isPointerDownOutsideRef = import_react$29.useRef(false);
+	const interceptedOutsideInteractionEventsRef = import_react$29.useRef(/* @__PURE__ */ new Map());
+	const handleClickRef = import_react$29.useRef(() => {});
+	import_react$29.useEffect(() => {
 		function resetOutsideInteraction() {
 			isPointerDownOutsideRef.current = false;
 			isDeferredPointerDownOutsideRef.current = false;
@@ -12179,8 +12179,8 @@ function usePointerDownOutside(onPointerDownOutside, args) {
 }
 function useFocusOutside(onFocusOutside, ownerDocument = globalThis?.document) {
 	const handleFocusOutside = useCallbackRef$1(onFocusOutside);
-	const isFocusInsideReactTreeRef = import_react$28.useRef(false);
-	import_react$28.useEffect(() => {
+	const isFocusInsideReactTreeRef = import_react$29.useRef(false);
+	import_react$29.useEffect(() => {
 		const handleFocus = /* @__PURE__ */ __name$9((event) => {
 			if (event.target && !isFocusInsideReactTreeRef.current) handleAndDispatchCustomEvent(FOCUS_OUTSIDE, handleFocusOutside, { originalEvent: event }, { discrete: false });
 		}, "handleFocus");
@@ -12207,9 +12207,9 @@ function handleAndDispatchCustomEvent(name, handler, detail, { discrete }) {
 	if (discrete) dispatchDiscreteCustomEvent(target, event);
 	else target.dispatchEvent(event);
 }
-var import_react$28, import_jsx_runtime$17, __defProp$9, __name$9, CONTEXT_UPDATE, POINTER_DOWN_OUTSIDE, FOCUS_OUTSIDE, originalBodyPointerEvents, DismissableLayerContext, DismissableLayer, IS_TRUE;
+var import_react$29, import_jsx_runtime$17, __defProp$9, __name$9, CONTEXT_UPDATE, POINTER_DOWN_OUTSIDE, FOCUS_OUTSIDE, originalBodyPointerEvents, DismissableLayerContext, DismissableLayer, IS_TRUE;
 var init_dist$10 = __esmMin((() => {
-	import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$18();
 	init_dist$12();
 	init_dist$20();
@@ -12223,18 +12223,18 @@ var init_dist$10 = __esmMin((() => {
 	CONTEXT_UPDATE = "dismissableLayer.update";
 	POINTER_DOWN_OUTSIDE = "dismissableLayer.pointerDownOutside";
 	FOCUS_OUTSIDE = "dismissableLayer.focusOutside";
-	DismissableLayerContext = import_react$28.createContext({
+	DismissableLayerContext = import_react$29.createContext({
 		layers: /* @__PURE__ */ new Set(),
 		layersWithOutsidePointerEventsDisabled: /* @__PURE__ */ new Set(),
 		branches: /* @__PURE__ */ new Set(),
 		dismissableSurfaces: /* @__PURE__ */ new Set()
 	});
-	DismissableLayer = /* @__PURE__ */ import_react$28.forwardRef(/* @__PURE__ */ __name$9(function DismissableLayer2(props, forwardedRef) {
+	DismissableLayer = /* @__PURE__ */ import_react$29.forwardRef(/* @__PURE__ */ __name$9(function DismissableLayer2(props, forwardedRef) {
 		const { disableOutsidePointerEvents = false, deferPointerDownOutside = false, onEscapeKeyDown, onPointerDownOutside, onFocusOutside, onInteractOutside, onDismiss, ...layerProps } = props;
-		const context = import_react$28.useContext(DismissableLayerContext);
-		const [node, setNode] = import_react$28.useState(null);
+		const context = import_react$29.useContext(DismissableLayerContext);
+		const [node, setNode] = import_react$29.useState(null);
 		const ownerDocument = node?.ownerDocument ?? globalThis?.document;
-		const [, force] = import_react$28.useState({});
+		const [, force] = import_react$29.useState({});
 		const composedRefs = useComposedRefs(forwardedRef, setNode);
 		const layers = Array.from(context.layers);
 		const [highestLayerWithOutsidePointerEventsDisabled] = [...context.layersWithOutsidePointerEventsDisabled].slice(-1);
@@ -12242,7 +12242,7 @@ var init_dist$10 = __esmMin((() => {
 		const index = node ? layers.indexOf(node) : -1;
 		const isBodyPointerEventsDisabled = context.layersWithOutsidePointerEventsDisabled.size > 0;
 		const isPointerEventsEnabled = index >= highestLayerWithOutsidePointerEventsDisabledIndex;
-		const isDeferredPointerDownOutsideRef = import_react$28.useRef(false);
+		const isDeferredPointerDownOutsideRef = import_react$29.useRef(false);
 		const pointerDownOutside = usePointerDownOutside((event) => {
 			onPointerDownOutside?.(event);
 			onInteractOutside?.(event);
@@ -12252,7 +12252,7 @@ var init_dist$10 = __esmMin((() => {
 			deferPointerDownOutside,
 			isDeferredPointerDownOutsideRef,
 			dismissableSurfaces: context.dismissableSurfaces,
-			shouldHandlePointerDownOutside: import_react$28.useCallback((target) => {
+			shouldHandlePointerDownOutside: import_react$29.useCallback((target) => {
 				if (!(target instanceof Node)) return false;
 				const isPointerDownOnBranch = [...context.branches].some((branch) => branch.contains(target));
 				return isPointerEventsEnabled && !isPointerDownOnBranch;
@@ -12275,7 +12275,7 @@ var init_dist$10 = __esmMin((() => {
 				onDismiss();
 			}
 		});
-		import_react$28.useEffect(() => {
+		import_react$29.useEffect(() => {
 			if (!isHighestLayer) return;
 			ownerDocument.addEventListener("keydown", handleKeyDown, { capture: true });
 			return () => ownerDocument.removeEventListener("keydown", handleKeyDown, { capture: true });
@@ -12284,7 +12284,7 @@ var init_dist$10 = __esmMin((() => {
 			isHighestLayer,
 			handleKeyDown
 		]);
-		import_react$28.useEffect(() => {
+		import_react$29.useEffect(() => {
 			if (!node) return;
 			if (disableOutsidePointerEvents) {
 				if (context.layersWithOutsidePointerEventsDisabled.size === 0) {
@@ -12307,7 +12307,7 @@ var init_dist$10 = __esmMin((() => {
 			disableOutsidePointerEvents,
 			context
 		]);
-		import_react$28.useEffect(() => {
+		import_react$29.useEffect(() => {
 			return () => {
 				if (!node) return;
 				context.layers.delete(node);
@@ -12315,7 +12315,7 @@ var init_dist$10 = __esmMin((() => {
 				dispatchUpdate();
 			};
 		}, [node, context]);
-		import_react$28.useEffect(() => {
+		import_react$29.useEffect(() => {
 			const handleUpdate = /* @__PURE__ */ __name$9(() => force({}), "handleUpdate");
 			document.addEventListener(CONTEXT_UPDATE, handleUpdate);
 			return () => document.removeEventListener(CONTEXT_UPDATE, handleUpdate);
@@ -12409,9 +12409,9 @@ function arrayRemove(array, item) {
 function removeLinks(items) {
 	return items.filter((item) => item.tagName !== "A");
 }
-var import_react$27, import_jsx_runtime$16, __defProp$8, __name$8, AUTOFOCUS_ON_MOUNT, AUTOFOCUS_ON_UNMOUNT, EVENT_OPTIONS, FocusScope, focusScopesStack;
+var import_react$28, import_jsx_runtime$16, __defProp$8, __name$8, AUTOFOCUS_ON_MOUNT, AUTOFOCUS_ON_UNMOUNT, EVENT_OPTIONS, FocusScope, focusScopesStack;
 var init_dist$9 = __esmMin((() => {
-	import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$20();
 	init_dist$12();
 	init_dist$11();
@@ -12427,14 +12427,14 @@ var init_dist$9 = __esmMin((() => {
 		bubbles: false,
 		cancelable: true
 	};
-	FocusScope = /* @__PURE__ */ import_react$27.forwardRef(/* @__PURE__ */ __name$8(function FocusScope2(props, forwardedRef) {
+	FocusScope = /* @__PURE__ */ import_react$28.forwardRef(/* @__PURE__ */ __name$8(function FocusScope2(props, forwardedRef) {
 		const { loop = false, trapped = false, onMountAutoFocus: onMountAutoFocusProp, onUnmountAutoFocus: onUnmountAutoFocusProp, ...scopeProps } = props;
-		const [container, setContainer] = import_react$27.useState(null);
+		const [container, setContainer] = import_react$28.useState(null);
 		const onMountAutoFocus = useCallbackRef$1(onMountAutoFocusProp);
 		const onUnmountAutoFocus = useCallbackRef$1(onUnmountAutoFocusProp);
-		const lastFocusedElementRef = import_react$27.useRef(null);
+		const lastFocusedElementRef = import_react$28.useRef(null);
 		const composedRefs = useComposedRefs(forwardedRef, setContainer);
-		const focusScope = import_react$27.useRef({
+		const focusScope = import_react$28.useRef({
 			paused: false,
 			pause() {
 				this.paused = true;
@@ -12443,7 +12443,7 @@ var init_dist$9 = __esmMin((() => {
 				this.paused = false;
 			}
 		}).current;
-		import_react$27.useEffect(() => {
+		import_react$28.useEffect(() => {
 			if (trapped) {
 				let handleFocusIn2 = function(event) {
 					if (focusScope.paused || !container) return;
@@ -12480,7 +12480,7 @@ var init_dist$9 = __esmMin((() => {
 			container,
 			focusScope.paused
 		]);
-		import_react$27.useEffect(() => {
+		import_react$28.useEffect(() => {
 			if (container) {
 				focusScopesStack.add(focusScope);
 				const previouslyFocusedElement = document.activeElement;
@@ -12511,7 +12511,7 @@ var init_dist$9 = __esmMin((() => {
 			onUnmountAutoFocus,
 			focusScope
 		]);
-		const handleKeyDown = import_react$27.useCallback((event) => {
+		const handleKeyDown = import_react$28.useCallback((event) => {
 			if (!loop && !trapped) return;
 			if (focusScope.paused) return;
 			const isTabKey = event.key === "Tab" && !event.altKey && !event.ctrlKey && !event.metaKey;
@@ -12555,9 +12555,9 @@ var init_dist$9 = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/@radix-ui/react-portal/dist/index.mjs
-var import_react$26, import_react_dom$4, import_jsx_runtime$15, __defProp$7, __name$7, Portal$1;
+var import_react$27, import_react_dom$4, import_jsx_runtime$15, __defProp$7, __name$7, Portal$1;
 var init_dist$8 = __esmMin((() => {
-	import_react$26 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react_dom$4 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
 	init_dist$12();
 	init_dist$16();
@@ -12567,9 +12567,9 @@ var init_dist$8 = __esmMin((() => {
 		value,
 		configurable: true
 	});
-	Portal$1 = /* @__PURE__ */ import_react$26.forwardRef(/* @__PURE__ */ __name$7(function Portal2(props, forwardedRef) {
+	Portal$1 = /* @__PURE__ */ import_react$27.forwardRef(/* @__PURE__ */ __name$7(function Portal2(props, forwardedRef) {
 		const { container: containerProp, ...portalProps } = props;
-		const [mounted, setMounted] = import_react$26.useState(false);
+		const [mounted, setMounted] = import_react$27.useState(false);
 		useLayoutEffect2(() => setMounted(true), []);
 		const container = containerProp || mounted && globalThis?.document?.body;
 		return container ? import_react_dom$4.createPortal(/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Primitive.div, {
@@ -12581,16 +12581,16 @@ var init_dist$8 = __esmMin((() => {
 //#endregion
 //#region node_modules/@radix-ui/react-presence/dist/index.mjs
 function useStateMachine(initialState, machine) {
-	return import_react$25.useReducer((state, event) => {
+	return import_react$26.useReducer((state, event) => {
 		return machine[state][event] ?? state;
 	}, initialState);
 }
 function usePresence(present) {
-	const [node, setNode] = import_react$24.useState();
-	const stylesRef = import_react$24.useRef(null);
-	const prevPresentRef = import_react$24.useRef(present);
-	const prevAnimationNameRef = import_react$24.useRef("none");
-	const mountAnimationNameRef = import_react$24.useRef(void 0);
+	const [node, setNode] = import_react$25.useState();
+	const stylesRef = import_react$25.useRef(null);
+	const prevPresentRef = import_react$25.useRef(present);
+	const prevAnimationNameRef = import_react$25.useRef("none");
+	const mountAnimationNameRef = import_react$25.useRef(void 0);
 	const [state, send] = useStateMachine(present ? "mounted" : "unmounted", {
 		mounted: {
 			UNMOUNT: "unmounted",
@@ -12602,7 +12602,7 @@ function usePresence(present) {
 		},
 		unmounted: { MOUNT: "mounted" }
 	});
-	import_react$24.useEffect(() => {
+	import_react$25.useEffect(() => {
 		if (state === "mounted") {
 			prevAnimationNameRef.current = mountAnimationNameRef.current ?? getAnimationName(stylesRef.current);
 			mountAnimationNameRef.current = void 0;
@@ -12656,7 +12656,7 @@ function usePresence(present) {
 	}, [node, send]);
 	return {
 		isPresent: ["mounted", "unmountSuspended"].includes(state),
-		ref: import_react$24.useCallback((node2) => {
+		ref: import_react$25.useCallback((node2) => {
 			if (node2) {
 				const styles = getComputedStyle(node2);
 				stylesRef.current = styles;
@@ -12671,9 +12671,9 @@ function setRef(ref, value) {
 	else if (ref !== null && ref !== void 0) ref.current = value;
 }
 function useStableComposedRefs(...refs) {
-	const refsRef = import_react$24.useRef(refs);
+	const refsRef = import_react$25.useRef(refs);
 	refsRef.current = refs;
-	return import_react$24.useCallback((node) => {
+	return import_react$25.useCallback((node) => {
 		const currentRefs = refsRef.current;
 		let hasCleanup = false;
 		const cleanups = currentRefs.map((ref) => {
@@ -12702,11 +12702,11 @@ function getElementRef(element) {
 	if (mayWarn) return element.props.ref;
 	return element.props.ref || element.ref;
 }
-var import_react$24, import_react$25, __defProp$6, __name$6, Presence;
+var import_react$25, import_react$26, __defProp$6, __name$6, Presence;
 var init_dist$7 = __esmMin((() => {
-	import_react$24 = /* @__PURE__ */ __toESM(require_react(), 1);
-	init_dist$16();
 	import_react$25 = /* @__PURE__ */ __toESM(require_react(), 1);
+	init_dist$16();
+	import_react$26 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$6 = Object.defineProperty;
 	__name$6 = (target, value) => __defProp$6(target, "name", {
 		value,
@@ -12716,9 +12716,9 @@ var init_dist$7 = __esmMin((() => {
 	Presence = /* @__PURE__ */ __name$6((props) => {
 		const { present, children } = props;
 		const presence = usePresence(present);
-		const child = typeof children === "function" ? children({ present: presence.isPresent }) : import_react$24.Children.only(children);
+		const child = typeof children === "function" ? children({ present: presence.isPresent }) : import_react$25.Children.only(children);
 		const ref = useStableComposedRefs(presence.ref, getElementRef(child));
-		return typeof children === "function" || presence.isPresent ? import_react$24.cloneElement(child, { ref }) : null;
+		return typeof children === "function" || presence.isPresent ? import_react$25.cloneElement(child, { ref }) : null;
 	}, "Presence");
 	__name$6(usePresence, "usePresence");
 	__name$6(setRef, "setRef");
@@ -12733,7 +12733,7 @@ function FocusGuards(props) {
 	return props.children;
 }
 function useFocusGuards() {
-	import_react$23.useEffect(() => {
+	import_react$24.useEffect(() => {
 		if (!guards) guards = {
 			start: createFocusGuard(),
 			end: createFocusGuard()
@@ -12741,14 +12741,14 @@ function useFocusGuards() {
 		const { start, end } = guards;
 		if (document.body.firstElementChild !== start) document.body.insertAdjacentElement("afterbegin", start);
 		if (document.body.lastElementChild !== end) document.body.insertAdjacentElement("beforeend", end);
-		count++;
+		count$2++;
 		return () => {
-			if (count === 1) {
+			if (count$2 === 1) {
 				guards?.start.remove();
 				guards?.end.remove();
 				guards = null;
 			}
-			count = Math.max(0, count - 1);
+			count$2 = Math.max(0, count$2 - 1);
 		};
 	}, []);
 }
@@ -12762,15 +12762,15 @@ function createFocusGuard() {
 	element.style.pointerEvents = "none";
 	return element;
 }
-var import_react$23, __defProp$5, __name$5, count, guards;
+var import_react$24, __defProp$5, __name$5, count$2, guards;
 var init_dist$6 = __esmMin((() => {
-	import_react$23 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$24 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$5 = Object.defineProperty;
 	__name$5 = (target, value) => __defProp$5(target, "name", {
 		value,
 		configurable: true
 	});
-	count = 0;
+	count$2 = 0;
 	guards = null;
 	__name$5(FocusGuards, "FocusGuards");
 	__name$5(useFocusGuards, "useFocusGuards");
@@ -12855,7 +12855,7 @@ var init_assignRef = __esmMin((() => {}));
 * @returns {MutableRefObject}
 */
 function useCallbackRef(initialValue, callback) {
-	var ref = (0, import_react$22.useState)(function() {
+	var ref = (0, import_react$23.useState)(function() {
 		return {
 			value: initialValue,
 			callback,
@@ -12876,9 +12876,9 @@ function useCallbackRef(initialValue, callback) {
 	ref.callback = callback;
 	return ref.facade;
 }
-var import_react$22;
+var import_react$23;
 var init_useRef = __esmMin((() => {
-	import_react$22 = /* @__PURE__ */ __toESM(require_react());
+	import_react$23 = /* @__PURE__ */ __toESM(require_react());
 }));
 //#endregion
 //#region node_modules/use-callback-ref/dist/es2015/useMergeRef.js
@@ -12919,12 +12919,12 @@ function useMergeRefs(refs, defaultValue) {
 	}, [refs]);
 	return callbackRef;
 }
-var import_react$21, useIsomorphicLayoutEffect, currentValues;
+var import_react$22, useIsomorphicLayoutEffect, currentValues;
 var init_useMergeRef = __esmMin((() => {
-	import_react$21 = /* @__PURE__ */ __toESM(require_react());
+	import_react$22 = /* @__PURE__ */ __toESM(require_react());
 	init_assignRef();
 	init_useRef();
-	useIsomorphicLayoutEffect = typeof window !== "undefined" ? import_react$21.useLayoutEffect : import_react$21.useEffect;
+	useIsomorphicLayoutEffect = typeof window !== "undefined" ? import_react$22.useLayoutEffect : import_react$22.useEffect;
 	currentValues = /* @__PURE__ */ new WeakMap();
 }));
 //#endregion
@@ -13022,16 +13022,16 @@ function exportSidecar(medium, exported) {
 	medium.useMedium(exported);
 	return SideCar;
 }
-var import_react$20, SideCar;
+var import_react$21, SideCar;
 var init_exports = __esmMin((() => {
 	init_tslib_es6();
-	import_react$20 = /* @__PURE__ */ __toESM(require_react());
+	import_react$21 = /* @__PURE__ */ __toESM(require_react());
 	SideCar = function(_a) {
 		var sideCar = _a.sideCar, rest = __rest(_a, ["sideCar"]);
 		if (!sideCar) throw new Error("Sidecar: please provide `sideCar` property to import the right car");
 		var Target = sideCar.read();
 		if (!Target) throw new Error("Sidecar medium not found");
-		return import_react$20.createElement(Target, __assign({}, rest));
+		return import_react$21.createElement(Target, __assign({}, rest));
 	};
 	SideCar.isSideCarExport = true;
 }));
@@ -13051,17 +13051,17 @@ var init_medium = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/react-remove-scroll/dist/es2015/UI.js
-var import_react$19, nothing, RemoveScroll;
+var import_react$20, nothing, RemoveScroll;
 var init_UI = __esmMin((() => {
 	init_tslib_es6();
-	import_react$19 = /* @__PURE__ */ __toESM(require_react());
+	import_react$20 = /* @__PURE__ */ __toESM(require_react());
 	init_constants();
 	init_es2015$6();
 	init_medium();
 	nothing = function() {};
-	RemoveScroll = import_react$19.forwardRef(function(props, parentRef) {
-		var ref = import_react$19.useRef(null);
-		var _a = import_react$19.useState({
+	RemoveScroll = import_react$20.forwardRef(function(props, parentRef) {
+		var ref = import_react$20.useRef(null);
+		var _a = import_react$20.useState({
 			onScrollCapture: nothing,
 			onWheelCapture: nothing,
 			onTouchMoveCapture: nothing
@@ -13084,7 +13084,7 @@ var init_UI = __esmMin((() => {
 		var SideCar = sideCar;
 		var containerRef = useMergeRefs([ref, parentRef]);
 		var containerProps = __assign(__assign({}, rest), callbacks);
-		return import_react$19.createElement(import_react$19.Fragment, null, enabled && import_react$19.createElement(SideCar, {
+		return import_react$20.createElement(import_react$20.Fragment, null, enabled && import_react$20.createElement(SideCar, {
 			sideCar: effectCar,
 			removeScrollBar,
 			shards,
@@ -13095,7 +13095,7 @@ var init_UI = __esmMin((() => {
 			allowPinchZoom: !!allowPinchZoom,
 			lockRef: ref,
 			gapMode
-		}), forwardProps ? import_react$19.cloneElement(import_react$19.Children.only(children), __assign(__assign({}, containerProps), { ref: containerRef })) : import_react$19.createElement(Container, __assign({}, containerProps, {
+		}), forwardProps ? import_react$20.cloneElement(import_react$20.Children.only(children), __assign(__assign({}, containerProps), { ref: containerRef })) : import_react$20.createElement(Container, __assign({}, containerProps, {
 			className,
 			ref: containerRef
 		}), children));
@@ -13160,14 +13160,14 @@ var init_singleton = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/react-style-singleton/dist/es2015/hook.js
-var import_react$18, styleHookSingleton;
+var import_react$19, styleHookSingleton;
 var init_hook = __esmMin((() => {
-	import_react$18 = /* @__PURE__ */ __toESM(require_react());
+	import_react$19 = /* @__PURE__ */ __toESM(require_react());
 	init_singleton();
 	styleHookSingleton = function() {
 		var sheet = stylesheetSingleton();
 		return function(styles, isDynamic) {
-			import_react$18.useEffect(function() {
+			import_react$19.useEffect(function() {
 				sheet.add(styles);
 				return function() {
 					sheet.remove();
@@ -13238,9 +13238,9 @@ var init_utils = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/react-remove-scroll-bar/dist/es2015/component.js
-var import_react$17, Style, lockAttribute, getStyles, getCurrentUseCounter, useLockAttribute, RemoveScrollBar;
+var import_react$18, Style, lockAttribute, getStyles, getCurrentUseCounter, useLockAttribute, RemoveScrollBar;
 var init_component = __esmMin((() => {
-	import_react$17 = /* @__PURE__ */ __toESM(require_react());
+	import_react$18 = /* @__PURE__ */ __toESM(require_react());
 	init_es2015$3();
 	init_constants();
 	init_utils();
@@ -13260,7 +13260,7 @@ var init_component = __esmMin((() => {
 		return isFinite(counter) ? counter : 0;
 	};
 	useLockAttribute = function() {
-		import_react$17.useEffect(function() {
+		import_react$18.useEffect(function() {
 			document.body.setAttribute(lockAttribute, (getCurrentUseCounter() + 1).toString());
 			return function() {
 				var newCounter = getCurrentUseCounter() - 1;
@@ -13272,10 +13272,10 @@ var init_component = __esmMin((() => {
 	RemoveScrollBar = function(_a) {
 		var noRelative = _a.noRelative, noImportant = _a.noImportant, _b = _a.gapMode, gapMode = _b === void 0 ? "margin" : _b;
 		useLockAttribute();
-		var gap = import_react$17.useMemo(function() {
+		var gap = import_react$18.useMemo(function() {
 			return getGapWidth(gapMode);
 		}, [gapMode]);
-		return import_react$17.createElement(Style, { styles: getStyles(gap, !noRelative, gapMode, !noImportant ? "!important" : "") });
+		return import_react$18.createElement(Style, { styles: getStyles(gap, !noRelative, gapMode, !noImportant ? "!important" : "") });
 	};
 }));
 //#endregion
@@ -13389,16 +13389,16 @@ var init_handleScroll = __esmMin((() => {
 //#endregion
 //#region node_modules/react-remove-scroll/dist/es2015/SideEffect.js
 function RemoveScrollSideCar(props) {
-	var shouldPreventQueue = import_react$16.useRef([]);
-	var touchStartRef = import_react$16.useRef([0, 0]);
-	var activeAxis = import_react$16.useRef();
-	var id = import_react$16.useState(idCounter++)[0];
-	var Style = import_react$16.useState(styleSingleton)[0];
-	var lastProps = import_react$16.useRef(props);
-	import_react$16.useEffect(function() {
+	var shouldPreventQueue = import_react$17.useRef([]);
+	var touchStartRef = import_react$17.useRef([0, 0]);
+	var activeAxis = import_react$17.useRef();
+	var id = import_react$17.useState(idCounter++)[0];
+	var Style = import_react$17.useState(styleSingleton)[0];
+	var lastProps = import_react$17.useRef(props);
+	import_react$17.useEffect(function() {
 		lastProps.current = props;
 	}, [props]);
-	import_react$16.useEffect(function() {
+	import_react$17.useEffect(function() {
 		if (props.inert) {
 			document.body.classList.add("block-interactivity-".concat(id));
 			var allow_1 = __spreadArray([props.lockRef.current], (props.shards || []).map(extractRef), true).filter(Boolean);
@@ -13417,7 +13417,7 @@ function RemoveScrollSideCar(props) {
 		props.lockRef.current,
 		props.shards
 	]);
-	var shouldCancelEvent = import_react$16.useCallback(function(event, parent) {
+	var shouldCancelEvent = import_react$17.useCallback(function(event, parent) {
 		if ("touches" in event && event.touches.length === 2 || event.type === "wheel" && event.ctrlKey) return !lastProps.current.allowPinchZoom;
 		var touch = getTouchXY(event);
 		var touchStart = touchStartRef.current;
@@ -13443,7 +13443,7 @@ function RemoveScrollSideCar(props) {
 		var cancelingAxis = activeAxis.current || currentAxis;
 		return handleScroll(cancelingAxis, parent, event, cancelingAxis === "h" ? deltaX : deltaY, true);
 	}, []);
-	var shouldPrevent = import_react$16.useCallback(function(_event) {
+	var shouldPrevent = import_react$17.useCallback(function(_event) {
 		var event = _event;
 		if (!lockStack.length || lockStack[lockStack.length - 1] !== Style) return;
 		var delta = "deltaY" in event ? getDeltaXY(event) : getTouchXY(event);
@@ -13463,7 +13463,7 @@ function RemoveScrollSideCar(props) {
 			}
 		}
 	}, []);
-	var shouldCancel = import_react$16.useCallback(function(name, delta, target, should) {
+	var shouldCancel = import_react$17.useCallback(function(name, delta, target, should) {
 		var event = {
 			name,
 			delta,
@@ -13478,17 +13478,17 @@ function RemoveScrollSideCar(props) {
 			});
 		}, 1);
 	}, []);
-	var scrollTouchStart = import_react$16.useCallback(function(event) {
+	var scrollTouchStart = import_react$17.useCallback(function(event) {
 		touchStartRef.current = getTouchXY(event);
 		activeAxis.current = void 0;
 	}, []);
-	var scrollWheel = import_react$16.useCallback(function(event) {
+	var scrollWheel = import_react$17.useCallback(function(event) {
 		shouldCancel(event.type, getDeltaXY(event), event.target, shouldCancelEvent(event, props.lockRef.current));
 	}, []);
-	var scrollTouchMove = import_react$16.useCallback(function(event) {
+	var scrollTouchMove = import_react$17.useCallback(function(event) {
 		shouldCancel(event.type, getTouchXY(event), event.target, shouldCancelEvent(event, props.lockRef.current));
 	}, []);
-	import_react$16.useEffect(function() {
+	import_react$17.useEffect(function() {
 		lockStack.push(Style);
 		props.setCallbacks({
 			onScrollCapture: scrollWheel,
@@ -13508,7 +13508,7 @@ function RemoveScrollSideCar(props) {
 		};
 	}, []);
 	var removeScrollBar = props.removeScrollBar, inert = props.inert;
-	return import_react$16.createElement(import_react$16.Fragment, null, inert ? import_react$16.createElement(Style, { styles: generateStyle(id) }) : null, removeScrollBar ? import_react$16.createElement(RemoveScrollBar, {
+	return import_react$17.createElement(import_react$17.Fragment, null, inert ? import_react$17.createElement(Style, { styles: generateStyle(id) }) : null, removeScrollBar ? import_react$17.createElement(RemoveScrollBar, {
 		noRelative: props.noRelative,
 		gapMode: props.gapMode
 	}) : null);
@@ -13524,10 +13524,10 @@ function getOutermostShadowParent(node) {
 	}
 	return shadowParent;
 }
-var import_react$16, getTouchXY, getDeltaXY, extractRef, deltaCompare, generateStyle, idCounter, lockStack;
+var import_react$17, getTouchXY, getDeltaXY, extractRef, deltaCompare, generateStyle, idCounter, lockStack;
 var init_SideEffect = __esmMin((() => {
 	init_tslib_es6();
-	import_react$16 = /* @__PURE__ */ __toESM(require_react());
+	import_react$17 = /* @__PURE__ */ __toESM(require_react());
 	init_es2015$2();
 	init_es2015$3();
 	init_aggresiveCapture();
@@ -13561,14 +13561,14 @@ var init_sidecar = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/react-remove-scroll/dist/es2015/Combination.js
-var import_react$15, ReactRemoveScroll;
+var import_react$16, ReactRemoveScroll;
 var init_Combination = __esmMin((() => {
 	init_tslib_es6();
-	import_react$15 = /* @__PURE__ */ __toESM(require_react());
+	import_react$16 = /* @__PURE__ */ __toESM(require_react());
 	init_UI();
 	init_sidecar();
-	ReactRemoveScroll = import_react$15.forwardRef(function(props, ref) {
-		return import_react$15.createElement(RemoveScroll, __assign({}, props, {
+	ReactRemoveScroll = import_react$16.forwardRef(function(props, ref) {
+		return import_react$16.createElement(RemoveScroll, __assign({}, props, {
 			ref,
 			sideCar: sidecar_default
 		}));
@@ -13679,9 +13679,9 @@ var init_es2015 = __esmMin((() => {
 function getState(open) {
 	return open ? "open" : "closed";
 }
-var import_react$14, import_jsx_runtime$14, __defProp$4, __name$4, DIALOG_NAME, createDialogContext, createDialogScope, DialogProvider, useDialogContext, Dialog$1, PORTAL_NAME$1, PortalProvider$1, usePortalContext$1, DialogPortal, OVERLAY_NAME, DialogOverlay, Slot, DialogOverlayImpl, CONTENT_NAME$2, DialogContent, DialogContentModal, DialogContentNonModal, DialogContentImpl, TITLE_NAME, DialogTitle, DESCRIPTION_NAME, DialogDescription, CLOSE_NAME, DialogClose;
+var import_react$15, import_jsx_runtime$14, __defProp$4, __name$4, DIALOG_NAME, createDialogContext, createDialogScope, DialogProvider, useDialogContext, Dialog$1, PORTAL_NAME$1, PortalProvider$1, usePortalContext$1, DialogPortal, OVERLAY_NAME, DialogOverlay, Slot, DialogOverlayImpl, CONTENT_NAME$2, DialogContent, DialogContentModal, DialogContentNonModal, DialogContentImpl, TITLE_NAME, DialogTitle, DESCRIPTION_NAME, DialogDescription, CLOSE_NAME, DialogClose;
 var init_dist$5 = __esmMin((() => {
-	import_react$14 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$15 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$18();
 	init_dist$20();
 	init_dist$17();
@@ -13708,16 +13708,16 @@ var init_dist$5 = __esmMin((() => {
 	[DialogProvider, useDialogContext] = createDialogContext(DIALOG_NAME);
 	Dialog$1 = /* @__PURE__ */ __name$4((props) => {
 		const { __scopeDialog, children, open: openProp, defaultOpen, onOpenChange, modal = true } = props;
-		const triggerRef = import_react$14.useRef(null);
-		const contentRef = import_react$14.useRef(null);
+		const triggerRef = import_react$15.useRef(null);
+		const contentRef = import_react$15.useRef(null);
 		const [open, setOpen] = useControllableState({
 			prop: openProp,
 			defaultProp: defaultOpen ?? false,
 			onChange: onOpenChange,
 			caller: DIALOG_NAME
 		});
-		const [titleCount, setTitleCount] = import_react$14.useState(0);
-		const [descriptionCount, setDescriptionCount] = import_react$14.useState(0);
+		const [titleCount, setTitleCount] = import_react$15.useState(0);
+		const [descriptionCount, setDescriptionCount] = import_react$15.useState(0);
 		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DialogProvider, {
 			scope: __scopeDialog,
 			triggerRef,
@@ -13731,7 +13731,7 @@ var init_dist$5 = __esmMin((() => {
 			setDescriptionCount,
 			open,
 			onOpenChange: setOpen,
-			onOpenToggle: import_react$14.useCallback(() => setOpen((prevOpen) => !prevOpen), [setOpen]),
+			onOpenToggle: import_react$15.useCallback(() => setOpen((prevOpen) => !prevOpen), [setOpen]),
 			modal,
 			children
 		});
@@ -13744,7 +13744,7 @@ var init_dist$5 = __esmMin((() => {
 		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(PortalProvider$1, {
 			scope: __scopeDialog,
 			forceMount,
-			children: import_react$14.Children.map(children, (child) => /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Presence, {
+			children: import_react$15.Children.map(children, (child) => /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Presence, {
 				present: forceMount || context.open,
 				children: /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Portal$1, {
 					asChild: true,
@@ -13755,7 +13755,7 @@ var init_dist$5 = __esmMin((() => {
 		});
 	}, "DialogPortal");
 	OVERLAY_NAME = "DialogOverlay";
-	DialogOverlay = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlay2(props, forwardedRef) {
+	DialogOverlay = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlay2(props, forwardedRef) {
 		const portalContext = usePortalContext$1(OVERLAY_NAME, props.__scopeDialog);
 		const { forceMount = portalContext.forceMount, ...overlayProps } = props;
 		const context = useDialogContext(OVERLAY_NAME, props.__scopeDialog);
@@ -13768,7 +13768,7 @@ var init_dist$5 = __esmMin((() => {
 		}) : null;
 	}, "DialogOverlay"));
 	Slot = /* @__PURE__ */ createSlot("DialogOverlay.RemoveScroll");
-	DialogOverlayImpl = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlayImpl2(props, forwardedRef) {
+	DialogOverlayImpl = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlayImpl2(props, forwardedRef) {
 		const { __scopeDialog, ...overlayProps } = props;
 		const context = useDialogContext(OVERLAY_NAME, __scopeDialog);
 		const composedRefs = useComposedRefs(forwardedRef, useDismissableLayerSurface());
@@ -13788,7 +13788,7 @@ var init_dist$5 = __esmMin((() => {
 		});
 	}, "DialogOverlayImpl"));
 	CONTENT_NAME$2 = "DialogContent";
-	DialogContent = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogContent2(props, forwardedRef) {
+	DialogContent = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContent2(props, forwardedRef) {
 		const portalContext = usePortalContext$1(CONTENT_NAME$2, props.__scopeDialog);
 		const { forceMount = portalContext.forceMount, ...contentProps } = props;
 		const context = useDialogContext(CONTENT_NAME$2, props.__scopeDialog);
@@ -13803,11 +13803,11 @@ var init_dist$5 = __esmMin((() => {
 			})
 		});
 	}, "DialogContent"));
-	DialogContentModal = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogContentModal2(props, forwardedRef) {
+	DialogContentModal = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContentModal2(props, forwardedRef) {
 		const context = useDialogContext(CONTENT_NAME$2, props.__scopeDialog);
-		const contentRef = import_react$14.useRef(null);
+		const contentRef = import_react$15.useRef(null);
 		const composedRefs = useComposedRefs(forwardedRef, context.contentRef, contentRef);
-		import_react$14.useEffect(() => {
+		import_react$15.useEffect(() => {
 			const content = contentRef.current;
 			if (content) return hideOthers(content);
 		}, []);
@@ -13828,10 +13828,10 @@ var init_dist$5 = __esmMin((() => {
 			onFocusOutside: composeEventHandlers(props.onFocusOutside, (event) => event.preventDefault())
 		});
 	}, "DialogContentModal"));
-	DialogContentNonModal = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogContentNonModal2(props, forwardedRef) {
+	DialogContentNonModal = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContentNonModal2(props, forwardedRef) {
 		const context = useDialogContext(CONTENT_NAME$2, props.__scopeDialog);
-		const hasInteractedOutsideRef = import_react$14.useRef(false);
-		const hasPointerDownOutsideRef = import_react$14.useRef(false);
+		const hasInteractedOutsideRef = import_react$15.useRef(false);
+		const hasPointerDownOutsideRef = import_react$15.useRef(false);
 		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DialogContentImpl, {
 			...props,
 			ref: forwardedRef,
@@ -13858,7 +13858,7 @@ var init_dist$5 = __esmMin((() => {
 			}
 		});
 	}, "DialogContentNonModal"));
-	DialogContentImpl = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogContentImpl2(props, forwardedRef) {
+	DialogContentImpl = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContentImpl2(props, forwardedRef) {
 		const { __scopeDialog, trapFocus, onOpenAutoFocus, onCloseAutoFocus, ...contentProps } = props;
 		const context = useDialogContext(CONTENT_NAME$2, __scopeDialog);
 		useFocusGuards();
@@ -13882,7 +13882,7 @@ var init_dist$5 = __esmMin((() => {
 		}) });
 	}, "DialogContentImpl"));
 	TITLE_NAME = "DialogTitle";
-	DialogTitle = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogTitle2(props, forwardedRef) {
+	DialogTitle = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogTitle2(props, forwardedRef) {
 		const { __scopeDialog, ...titleProps } = props;
 		const context = useDialogContext(TITLE_NAME, __scopeDialog);
 		const { setTitleCount } = context;
@@ -13897,7 +13897,7 @@ var init_dist$5 = __esmMin((() => {
 		});
 	}, "DialogTitle"));
 	DESCRIPTION_NAME = "DialogDescription";
-	DialogDescription = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogDescription2(props, forwardedRef) {
+	DialogDescription = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogDescription2(props, forwardedRef) {
 		const { __scopeDialog, ...descriptionProps } = props;
 		const context = useDialogContext(DESCRIPTION_NAME, __scopeDialog);
 		const { setDescriptionCount } = context;
@@ -13912,7 +13912,7 @@ var init_dist$5 = __esmMin((() => {
 		});
 	}, "DialogDescription"));
 	CLOSE_NAME = "DialogClose";
-	DialogClose = /* @__PURE__ */ import_react$14.forwardRef(/* @__PURE__ */ __name$4(function DialogClose2(props, forwardedRef) {
+	DialogClose = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogClose2(props, forwardedRef) {
 		const { __scopeDialog, ...closeProps } = props;
 		const context = useDialogContext(CLOSE_NAME, __scopeDialog);
 		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Primitive.button, {
@@ -15205,7 +15205,7 @@ function roundByDPR(element, value) {
 	return Math.round(value * dpr) / dpr;
 }
 function useLatestRef(value) {
-	const ref = import_react$12.useRef(value);
+	const ref = import_react$13.useRef(value);
 	index$1(() => {
 		ref.current = value;
 	});
@@ -15218,7 +15218,7 @@ function useLatestRef(value) {
 function useFloating(options) {
 	if (options === void 0) options = {};
 	const { placement = "bottom", strategy = "absolute", middleware = [], platform, elements: { reference: externalReference, floating: externalFloating } = {}, transform = true, whileElementsMounted, open } = options;
-	const [data, setData] = import_react$12.useState({
+	const [data, setData] = import_react$13.useState({
 		x: 0,
 		y: 0,
 		strategy,
@@ -15226,17 +15226,17 @@ function useFloating(options) {
 		middlewareData: {},
 		isPositioned: false
 	});
-	const [latestMiddleware, setLatestMiddleware] = import_react$12.useState(middleware);
+	const [latestMiddleware, setLatestMiddleware] = import_react$13.useState(middleware);
 	if (!deepEqual(latestMiddleware, middleware)) setLatestMiddleware(middleware);
-	const [_reference, _setReference] = import_react$12.useState(null);
-	const [_floating, _setFloating] = import_react$12.useState(null);
-	const setReference = import_react$12.useCallback((node) => {
+	const [_reference, _setReference] = import_react$13.useState(null);
+	const [_floating, _setFloating] = import_react$13.useState(null);
+	const setReference = import_react$13.useCallback((node) => {
 		if (node !== referenceRef.current) {
 			referenceRef.current = node;
 			_setReference(node);
 		}
 	}, []);
-	const setFloating = import_react$12.useCallback((node) => {
+	const setFloating = import_react$13.useCallback((node) => {
 		if (node !== floatingRef.current) {
 			floatingRef.current = node;
 			_setFloating(node);
@@ -15244,14 +15244,14 @@ function useFloating(options) {
 	}, []);
 	const referenceEl = externalReference || _reference;
 	const floatingEl = externalFloating || _floating;
-	const referenceRef = import_react$12.useRef(null);
-	const floatingRef = import_react$12.useRef(null);
-	const dataRef = import_react$12.useRef(data);
+	const referenceRef = import_react$13.useRef(null);
+	const floatingRef = import_react$13.useRef(null);
+	const dataRef = import_react$13.useRef(data);
 	const hasWhileElementsMounted = whileElementsMounted != null;
 	const whileElementsMountedRef = useLatestRef(whileElementsMounted);
 	const platformRef = useLatestRef(platform);
 	const openRef = useLatestRef(open);
-	const update = import_react$12.useCallback(() => {
+	const update = import_react$13.useCallback(() => {
 		if (!referenceRef.current || !floatingRef.current) return;
 		const config = {
 			placement,
@@ -15287,7 +15287,7 @@ function useFloating(options) {
 			}));
 		}
 	}, [open]);
-	const isMountedRef = import_react$12.useRef(false);
+	const isMountedRef = import_react$13.useRef(false);
 	index$1(() => {
 		isMountedRef.current = true;
 		return () => {
@@ -15308,17 +15308,17 @@ function useFloating(options) {
 		whileElementsMountedRef,
 		hasWhileElementsMounted
 	]);
-	const refs = import_react$12.useMemo(() => ({
+	const refs = import_react$13.useMemo(() => ({
 		reference: referenceRef,
 		floating: floatingRef,
 		setReference,
 		setFloating
 	}), [setReference, setFloating]);
-	const elements = import_react$12.useMemo(() => ({
+	const elements = import_react$13.useMemo(() => ({
 		reference: referenceEl,
 		floating: floatingEl
 	}), [referenceEl, floatingEl]);
-	const floatingStyles = import_react$12.useMemo(() => {
+	const floatingStyles = import_react$13.useMemo(() => {
 		const initialStyles = {
 			position: strategy,
 			left: 0,
@@ -15344,7 +15344,7 @@ function useFloating(options) {
 		data.x,
 		data.y
 	]);
-	return import_react$12.useMemo(() => ({
+	return import_react$13.useMemo(() => ({
 		...data,
 		update,
 		refs,
@@ -15358,13 +15358,13 @@ function useFloating(options) {
 		floatingStyles
 	]);
 }
-var import_react$12, import_react$13, import_react_dom$3, index$1, arrow$1, offset, shift, limitShift, flip, size, hide, arrow;
+var import_react$13, import_react$14, import_react_dom$3, index$1, arrow$1, offset, shift, limitShift, flip, size, hide, arrow;
 var init_floating_ui_react_dom = __esmMin((() => {
 	init_floating_ui_dom();
-	import_react$12 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react$13 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$14 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react_dom$3 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
-	index$1 = typeof document !== "undefined" ? import_react$13.useLayoutEffect : function noop() {};
+	index$1 = typeof document !== "undefined" ? import_react$14.useLayoutEffect : function noop() {};
 	arrow$1 = (options) => {
 		function isRef(value) {
 			return {}.hasOwnProperty.call(value, "current");
@@ -15447,7 +15447,7 @@ var init_floating_ui_react_dom = __esmMin((() => {
 //#endregion
 //#region node_modules/@radix-ui/react-use-size/dist/index.mjs
 function useSize(element) {
-	const [size, setSize] = import_react$11.useState(void 0);
+	const [size, setSize] = import_react$12.useState(void 0);
 	useLayoutEffect2(() => {
 		if (element) {
 			setSize({
@@ -15480,9 +15480,9 @@ function useSize(element) {
 	}, [element]);
 	return size;
 }
-var import_react$11, __defProp$3, __name$3;
+var import_react$12, __defProp$3, __name$3;
 var init_dist$4 = __esmMin((() => {
-	import_react$11 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$12 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$16();
 	__defProp$3 = Object.defineProperty;
 	__name$3 = (target, value) => __defProp$3(target, "name", {
@@ -15500,9 +15500,9 @@ function getSideAndAlignFromPlacement(placement) {
 	const [side, align = "center"] = placement.split("-");
 	return [side, align];
 }
-var import_react$10, import_jsx_runtime$13, __defProp$2, __name$2, POPPER_NAME, createPopperContext, createPopperScope, PopperProvider, usePopperContext, Popper, ANCHOR_NAME, PopperAnchor, CONTENT_NAME$1, PopperContentProvider, useContentContext, PopperContent, transformOrigin, Root2, Anchor, Content;
+var import_react$11, import_jsx_runtime$13, __defProp$2, __name$2, POPPER_NAME, createPopperContext, createPopperScope, PopperProvider, usePopperContext, Popper, ANCHOR_NAME, PopperAnchor, CONTENT_NAME$1, PopperContentProvider, useContentContext, PopperContent, transformOrigin, Root2, Anchor, Content;
 var init_dist$3 = __esmMin((() => {
-	import_react$10 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$11 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_floating_ui_react_dom();
 	init_dist$20();
 	init_dist$17();
@@ -15521,8 +15521,8 @@ var init_dist$3 = __esmMin((() => {
 	[PopperProvider, usePopperContext] = createPopperContext(POPPER_NAME);
 	Popper = /* @__PURE__ */ __name$2((props) => {
 		const { __scopePopper, children } = props;
-		const [anchor, setAnchor] = import_react$10.useState(null);
-		const [placementState, setPlacementState] = import_react$10.useState(void 0);
+		const [anchor, setAnchor] = import_react$11.useState(null);
+		const [placementState, setPlacementState] = import_react$11.useState(void 0);
 		return /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(PopperProvider, {
 			scope: __scopePopper,
 			anchor,
@@ -15533,17 +15533,17 @@ var init_dist$3 = __esmMin((() => {
 		});
 	}, "Popper");
 	ANCHOR_NAME = "PopperAnchor";
-	PopperAnchor = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name$2(function PopperAnchor2(props, forwardedRef) {
+	PopperAnchor = /* @__PURE__ */ import_react$11.forwardRef(/* @__PURE__ */ __name$2(function PopperAnchor2(props, forwardedRef) {
 		const { __scopePopper, virtualRef, ...anchorProps } = props;
 		const context = usePopperContext(ANCHOR_NAME, __scopePopper);
-		const ref = import_react$10.useRef(null);
+		const ref = import_react$11.useRef(null);
 		const onAnchorChange = context.onAnchorChange;
-		const composedRefs = useComposedRefs(forwardedRef, import_react$10.useCallback((node) => {
+		const composedRefs = useComposedRefs(forwardedRef, import_react$11.useCallback((node) => {
 			ref.current = node;
 			if (node) onAnchorChange(node);
 		}, [onAnchorChange]));
-		const anchorRef = import_react$10.useRef(null);
-		import_react$10.useEffect(() => {
+		const anchorRef = import_react$11.useRef(null);
+		import_react$11.useEffect(() => {
 			if (!virtualRef) return;
 			const previousAnchor = anchorRef.current;
 			anchorRef.current = virtualRef.current;
@@ -15561,12 +15561,12 @@ var init_dist$3 = __esmMin((() => {
 	}, "PopperAnchor"));
 	CONTENT_NAME$1 = "PopperContent";
 	[PopperContentProvider, useContentContext] = createPopperContext(CONTENT_NAME$1);
-	PopperContent = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name$2(function PopperContent2(props, forwardedRef) {
+	PopperContent = /* @__PURE__ */ import_react$11.forwardRef(/* @__PURE__ */ __name$2(function PopperContent2(props, forwardedRef) {
 		const { __scopePopper, side = "bottom", sideOffset = 0, align = "center", alignOffset = 0, arrowPadding = 0, avoidCollisions = true, collisionBoundary = [], collisionPadding: collisionPaddingProp = 0, sticky = "partial", hideWhenDetached = false, updatePositionStrategy = "optimized", onPlaced, ...contentProps } = props;
 		const context = usePopperContext(CONTENT_NAME$1, __scopePopper);
-		const [content, setContent] = import_react$10.useState(null);
+		const [content, setContent] = import_react$11.useState(null);
 		const composedRefs = useComposedRefs(forwardedRef, setContent);
-		const [arrow$4, setArrow] = import_react$10.useState(null);
+		const [arrow$4, setArrow] = import_react$11.useState(null);
 		const arrowSize = useSize(arrow$4);
 		const arrowWidth = arrowSize?.width ?? 0;
 		const arrowHeight = arrowSize?.height ?? 0;
@@ -15645,7 +15645,7 @@ var init_dist$3 = __esmMin((() => {
 		const arrowX = middlewareData.arrow?.x;
 		const arrowY = middlewareData.arrow?.y;
 		const cannotCenterArrow = middlewareData.arrow?.centerOffset !== 0;
-		const [contentZIndex, setContentZIndex] = import_react$10.useState();
+		const [contentZIndex, setContentZIndex] = import_react$11.useState();
 		useLayoutEffect2(() => {
 			if (content) setContentZIndex(window.getComputedStyle(content).zIndex);
 		}, [content]);
@@ -15730,9 +15730,9 @@ var init_dist$3 = __esmMin((() => {
 }));
 //#endregion
 //#region node_modules/@radix-ui/react-visually-hidden/dist/index.mjs
-var import_react$9, import_jsx_runtime$12, __defProp$1, __name$1, VISUALLY_HIDDEN_STYLES, VisuallyHidden, Root;
+var import_react$10, import_jsx_runtime$12, __defProp$1, __name$1, VISUALLY_HIDDEN_STYLES, VisuallyHidden, Root;
 var init_dist$2 = __esmMin((() => {
-	import_react$9 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$10 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$12();
 	import_jsx_runtime$12 = require_jsx_runtime();
 	__defProp$1 = Object.defineProperty;
@@ -15752,7 +15752,7 @@ var init_dist$2 = __esmMin((() => {
 		whiteSpace: "nowrap",
 		wordWrap: "normal"
 	});
-	VisuallyHidden = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name$1(function VisuallyHidden2(props, forwardedRef) {
+	VisuallyHidden = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name$1(function VisuallyHidden2(props, forwardedRef) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Primitive.span, {
 			...props,
 			ref: forwardedRef,
@@ -15894,9 +15894,9 @@ function getHullPresorted(points) {
 	if (upperHull.length === 1 && lowerHull.length === 1 && upperHull[0].x === lowerHull[0].x && upperHull[0].y === lowerHull[0].y) return upperHull;
 	else return upperHull.concat(lowerHull);
 }
-var import_react$8, import_jsx_runtime$11, __defProp, __name, createTooltipContext$1, createTooltipScope, usePopperScope, PROVIDER_NAME, DEFAULT_DELAY_DURATION, TOOLTIP_OPEN, TooltipProviderContextProvider, useTooltipProviderContext, TooltipProvider, TOOLTIP_NAME, TooltipContextProvider, useTooltipContext, Tooltip$1, TRIGGER_NAME, TooltipTrigger, PORTAL_NAME, PortalProvider, usePortalContext, TooltipPortal, CONTENT_NAME, TooltipContent, TooltipContentHoverable, Slottable, TooltipContentImpl, Provider, Root3, Trigger, Portal, Content2;
+var import_react$9, import_jsx_runtime$11, __defProp, __name, createTooltipContext$1, createTooltipScope, usePopperScope, PROVIDER_NAME, DEFAULT_DELAY_DURATION, TOOLTIP_OPEN, TooltipProviderContextProvider, useTooltipProviderContext, TooltipProvider, TOOLTIP_NAME, TooltipContextProvider, useTooltipContext, Tooltip$1, TRIGGER_NAME, TooltipTrigger, PORTAL_NAME, PortalProvider, usePortalContext, TooltipPortal, CONTENT_NAME, TooltipContent, TooltipContentHoverable, Slottable, TooltipContentImpl, Provider, Root3, Trigger, Portal, Content2;
 var init_dist$1 = __esmMin((() => {
-	import_react$8 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$9 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$18();
 	init_dist$20();
 	init_dist$17();
@@ -15924,10 +15924,10 @@ var init_dist$1 = __esmMin((() => {
 	[TooltipProviderContextProvider, useTooltipProviderContext] = createTooltipContext$1(PROVIDER_NAME);
 	TooltipProvider = /* @__PURE__ */ __name((props) => {
 		const { __scopeTooltip, delayDuration = DEFAULT_DELAY_DURATION, skipDelayDuration = 300, disableHoverableContent = false, children } = props;
-		const isOpenDelayedRef = import_react$8.useRef(true);
-		const isPointerInTransitRef = import_react$8.useRef(false);
-		const skipDelayTimerRef = import_react$8.useRef(0);
-		import_react$8.useEffect(() => {
+		const isOpenDelayedRef = import_react$9.useRef(true);
+		const isPointerInTransitRef = import_react$9.useRef(false);
+		const skipDelayTimerRef = import_react$9.useRef(0);
+		import_react$9.useEffect(() => {
 			const skipDelayTimer = skipDelayTimerRef.current;
 			return () => window.clearTimeout(skipDelayTimer);
 		}, []);
@@ -15935,18 +15935,18 @@ var init_dist$1 = __esmMin((() => {
 			scope: __scopeTooltip,
 			isOpenDelayedRef,
 			delayDuration,
-			onOpen: import_react$8.useCallback(() => {
+			onOpen: import_react$9.useCallback(() => {
 				if (skipDelayDuration <= 0) return;
 				window.clearTimeout(skipDelayTimerRef.current);
 				isOpenDelayedRef.current = false;
 			}, [skipDelayDuration]),
-			onClose: import_react$8.useCallback(() => {
+			onClose: import_react$9.useCallback(() => {
 				if (skipDelayDuration <= 0) return;
 				window.clearTimeout(skipDelayTimerRef.current);
 				skipDelayTimerRef.current = window.setTimeout(() => isOpenDelayedRef.current = true, skipDelayDuration);
 			}, [skipDelayDuration]),
 			isPointerInTransitRef,
-			onPointerInTransitChange: import_react$8.useCallback((inTransit) => {
+			onPointerInTransitChange: import_react$9.useCallback((inTransit) => {
 				isPointerInTransitRef.current = inTransit;
 			}, []),
 			disableHoverableContent,
@@ -15959,13 +15959,13 @@ var init_dist$1 = __esmMin((() => {
 		const { __scopeTooltip, children, open: openProp, defaultOpen, onOpenChange, disableHoverableContent: disableHoverableContentProp, delayDuration: delayDurationProp } = props;
 		const providerContext = useTooltipProviderContext(TOOLTIP_NAME, props.__scopeTooltip);
 		const popperScope = usePopperScope(__scopeTooltip);
-		const [trigger, setTrigger] = import_react$8.useState(null);
-		const [contentIdState, setContentId] = import_react$8.useState(void 0);
+		const [trigger, setTrigger] = import_react$9.useState(null);
+		const [contentIdState, setContentId] = import_react$9.useState(void 0);
 		const generatedContentId = useId$2();
-		const openTimerRef = import_react$8.useRef(0);
+		const openTimerRef = import_react$9.useRef(0);
 		const disableHoverableContent = disableHoverableContentProp ?? providerContext.disableHoverableContent;
 		const delayDuration = delayDurationProp ?? providerContext.delayDuration;
-		const wasOpenDelayedRef = import_react$8.useRef(false);
+		const wasOpenDelayedRef = import_react$9.useRef(false);
 		const [open, setOpen] = useControllableState({
 			prop: openProp,
 			defaultProp: defaultOpen ?? false,
@@ -15978,21 +15978,21 @@ var init_dist$1 = __esmMin((() => {
 			}, "onChange"),
 			caller: TOOLTIP_NAME
 		});
-		const stateAttribute = import_react$8.useMemo(() => {
+		const stateAttribute = import_react$9.useMemo(() => {
 			return open ? wasOpenDelayedRef.current ? "delayed-open" : "instant-open" : "closed";
 		}, [open]);
-		const handleOpen = import_react$8.useCallback(() => {
+		const handleOpen = import_react$9.useCallback(() => {
 			window.clearTimeout(openTimerRef.current);
 			openTimerRef.current = 0;
 			wasOpenDelayedRef.current = false;
 			setOpen(true);
 		}, [setOpen]);
-		const handleClose = import_react$8.useCallback(() => {
+		const handleClose = import_react$9.useCallback(() => {
 			window.clearTimeout(openTimerRef.current);
 			openTimerRef.current = 0;
 			setOpen(false);
 		}, [setOpen]);
-		const handleDelayedOpen = import_react$8.useCallback(() => {
+		const handleDelayedOpen = import_react$9.useCallback(() => {
 			window.clearTimeout(openTimerRef.current);
 			openTimerRef.current = window.setTimeout(() => {
 				wasOpenDelayedRef.current = true;
@@ -16000,7 +16000,7 @@ var init_dist$1 = __esmMin((() => {
 				openTimerRef.current = 0;
 			}, delayDuration);
 		}, [delayDuration, setOpen]);
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			return () => {
 				if (openTimerRef.current) {
 					window.clearTimeout(openTimerRef.current);
@@ -16019,7 +16019,7 @@ var init_dist$1 = __esmMin((() => {
 				stateAttribute,
 				trigger,
 				onTriggerChange: setTrigger,
-				onTriggerEnter: import_react$8.useCallback(() => {
+				onTriggerEnter: import_react$9.useCallback(() => {
 					if (providerContext.isOpenDelayedRef.current) handleDelayedOpen();
 					else handleOpen();
 				}, [
@@ -16027,7 +16027,7 @@ var init_dist$1 = __esmMin((() => {
 					handleDelayedOpen,
 					handleOpen
 				]),
-				onTriggerLeave: import_react$8.useCallback(() => {
+				onTriggerLeave: import_react$9.useCallback(() => {
 					if (disableHoverableContent) handleClose();
 					else {
 						window.clearTimeout(openTimerRef.current);
@@ -16042,16 +16042,16 @@ var init_dist$1 = __esmMin((() => {
 		});
 	}, "Tooltip");
 	TRIGGER_NAME = "TooltipTrigger";
-	TooltipTrigger = /* @__PURE__ */ import_react$8.forwardRef(/* @__PURE__ */ __name(function TooltipTrigger2(props, forwardedRef) {
+	TooltipTrigger = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipTrigger2(props, forwardedRef) {
 		const { __scopeTooltip, ...triggerProps } = props;
 		const context = useTooltipContext(TRIGGER_NAME, __scopeTooltip);
 		const providerContext = useTooltipProviderContext(TRIGGER_NAME, __scopeTooltip);
 		const popperScope = usePopperScope(__scopeTooltip);
-		const composedRefs = useComposedRefs(forwardedRef, import_react$8.useRef(null), context.onTriggerChange);
-		const isPointerDownRef = import_react$8.useRef(false);
-		const hasPointerMoveOpenedRef = import_react$8.useRef(false);
-		const handlePointerUp = import_react$8.useCallback(() => isPointerDownRef.current = false, []);
-		import_react$8.useEffect(() => {
+		const composedRefs = useComposedRefs(forwardedRef, import_react$9.useRef(null), context.onTriggerChange);
+		const isPointerDownRef = import_react$9.useRef(false);
+		const hasPointerMoveOpenedRef = import_react$9.useRef(false);
+		const handlePointerUp = import_react$9.useCallback(() => isPointerDownRef.current = false, []);
+		import_react$9.useEffect(() => {
 			return () => document.removeEventListener("pointerup", handlePointerUp);
 		}, [handlePointerUp]);
 		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Anchor, {
@@ -16105,7 +16105,7 @@ var init_dist$1 = __esmMin((() => {
 		});
 	}, "TooltipPortal");
 	CONTENT_NAME = "TooltipContent";
-	TooltipContent = /* @__PURE__ */ import_react$8.forwardRef(/* @__PURE__ */ __name(function TooltipContent2(props, forwardedRef) {
+	TooltipContent = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipContent2(props, forwardedRef) {
 		const portalContext = usePortalContext(CONTENT_NAME, props.__scopeTooltip);
 		const { forceMount = portalContext.forceMount, side = "top", ...contentProps } = props;
 		const context = useTooltipContext(CONTENT_NAME, props.__scopeTooltip);
@@ -16122,20 +16122,20 @@ var init_dist$1 = __esmMin((() => {
 			})
 		});
 	}, "TooltipContent"));
-	TooltipContentHoverable = /* @__PURE__ */ import_react$8.forwardRef(/* @__PURE__ */ __name(function TooltipContentHoverable2(props, forwardedRef) {
+	TooltipContentHoverable = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipContentHoverable2(props, forwardedRef) {
 		const context = useTooltipContext(CONTENT_NAME, props.__scopeTooltip);
 		const providerContext = useTooltipProviderContext(CONTENT_NAME, props.__scopeTooltip);
-		const ref = import_react$8.useRef(null);
+		const ref = import_react$9.useRef(null);
 		const composedRefs = useComposedRefs(forwardedRef, ref);
-		const [pointerGraceArea, setPointerGraceArea] = import_react$8.useState(null);
+		const [pointerGraceArea, setPointerGraceArea] = import_react$9.useState(null);
 		const { trigger, onClose } = context;
 		const content = ref.current;
 		const { onPointerInTransitChange } = providerContext;
-		const handleRemoveGraceArea = import_react$8.useCallback(() => {
+		const handleRemoveGraceArea = import_react$9.useCallback(() => {
 			setPointerGraceArea(null);
 			onPointerInTransitChange(false);
 		}, [onPointerInTransitChange]);
-		const handleCreateGraceArea = import_react$8.useCallback((event, hoverTarget) => {
+		const handleCreateGraceArea = import_react$9.useCallback((event, hoverTarget) => {
 			const currentTarget = event.currentTarget;
 			const exitPoint = {
 				x: event.clientX,
@@ -16147,10 +16147,10 @@ var init_dist$1 = __esmMin((() => {
 			setPointerGraceArea(graceArea);
 			onPointerInTransitChange(true);
 		}, [onPointerInTransitChange]);
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			return () => handleRemoveGraceArea();
 		}, [handleRemoveGraceArea]);
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			if (trigger && content) {
 				const handleTriggerLeave = /* @__PURE__ */ __name((event) => handleCreateGraceArea(event, content), "handleTriggerLeave");
 				const handleContentLeave = /* @__PURE__ */ __name((event) => handleCreateGraceArea(event, trigger), "handleContentLeave");
@@ -16167,7 +16167,7 @@ var init_dist$1 = __esmMin((() => {
 			handleCreateGraceArea,
 			handleRemoveGraceArea
 		]);
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			if (pointerGraceArea) {
 				const handleTrackPointerGrace = /* @__PURE__ */ __name((event) => {
 					const target = event.target;
@@ -16199,16 +16199,16 @@ var init_dist$1 = __esmMin((() => {
 		});
 	}, "TooltipContentHoverable"));
 	Slottable = /* @__PURE__ */ createSlottable("TooltipContent");
-	TooltipContentImpl = /* @__PURE__ */ import_react$8.forwardRef(/* @__PURE__ */ __name(function TooltipContentImpl2(props, forwardedRef) {
+	TooltipContentImpl = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipContentImpl2(props, forwardedRef) {
 		const { __scopeTooltip, children, "aria-label": ariaLabel, id: idProp, onEscapeKeyDown, onPointerDownOutside, ...contentProps } = props;
 		const context = useTooltipContext(CONTENT_NAME, __scopeTooltip);
 		const popperScope = usePopperScope(__scopeTooltip);
 		const { onClose } = context;
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			document.addEventListener(TOOLTIP_OPEN, onClose);
 			return () => document.removeEventListener(TOOLTIP_OPEN, onClose);
 		}, [onClose]);
-		import_react$8.useEffect(() => {
+		import_react$9.useEffect(() => {
 			if (context.trigger) {
 				const handleScroll = /* @__PURE__ */ __name((event) => {
 					if (event.target instanceof Node && event.target.contains(context.trigger)) onClose();
@@ -19766,12 +19766,165 @@ var init_bundle_mjs = __esmMin((() => {
 	twMerge = /*#__PURE__*/ createTailwindMerge(getDefaultConfig);
 }));
 //#endregion
+//#region crates/gateway-api/admin-ui/src/design-system/components.ts
+function toneForStatus(value) {
+	const status = String(value ?? "").toLowerCase();
+	if ([
+		"ready",
+		"ok",
+		"healthy",
+		"enabled",
+		"configured",
+		"active",
+		"success",
+		"non-expiring",
+		"closed"
+	].includes(status)) return "good";
+	if ([
+		"missing",
+		"failed",
+		"failure",
+		"disabled",
+		"revoked",
+		"expired",
+		"timeout",
+		"unhealthy",
+		"open"
+	].includes(status)) return "bad";
+	if ([
+		"unknown",
+		"pending",
+		"fallback",
+		"opt-in",
+		"default",
+		"degraded",
+		"half_open",
+		"half-open"
+	].includes(status)) return "warn";
+	return "neutral";
+}
+function html(value) {
+	return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;");
+}
+function badge(label, tone = toneForStatus(label)) {
+	return `<span class="badge ${tone}">${html(label ?? "unknown")}</span>`;
+}
+function panel(title, body, meta = "") {
+	const icon = {
+		Projects: "folders",
+		"Registered services": "cube",
+		"Provider configuration": "server-2",
+		"Virtual keys": "key",
+		"Policy simulator": "test-pipe",
+		"Inherited policy layers": "stack-2",
+		"Audit events": "history",
+		"Current availability & circuit state": "heartbeat",
+		"Latest changes": "history",
+		"Project activity": "chart-bar",
+		"Service bindings": "link"
+	}[title];
+	return `<section class="panel">${title ? `<div class="panel-heading"><h3>${icon ? `<i class="ti ti-${icon}" aria-hidden="true"></i>` : ""}${html(title)}</h3>${meta ? `<span class="subtle">${html(meta)}</span>` : ""}</div>` : ""}${body}</section>`;
+}
+function metricTile(label, value, tone = "neutral") {
+	return `<section class="panel stat ${tone}"><span>${html(label)}</span><strong>${html(value)}</strong></section>`;
+}
+function emptyState(message) {
+	return `<div class="empty-state"><i class="ti ti-inbox" aria-hidden="true"></i><p>${html(message)}</p></div>`;
+}
+function tableWrap(tableMarkup) {
+	return `<div class="table-wrap">${tableMarkup}</div>`;
+}
+function actionGroup(actions) {
+	return `<div class="form-actions">${actions}</div>`;
+}
+function jsonBlock(value) {
+	return `<pre>${html(JSON.stringify(value ?? null, null, 2))}</pre>`;
+}
+var init_components = __esmMin((() => {}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/design-system/workflows.ts
+function workflowIcon(title) {
+	const name = title.toLowerCase();
+	if (/simulator/.test(name)) return "test-pipe";
+	if (/guardrail|safeguard/.test(name)) return "shield-check";
+	if (/identity|authentication|entra/.test(name)) return "fingerprint";
+	if (/policy|layer/.test(name)) return "stack-2";
+	if (/pricing|cost|budget/.test(name)) return "coin";
+	if (/key|credential/.test(name)) return "key";
+	if (/project/.test(name)) return "folders";
+	if (/provider|upstream|connection/.test(name)) return "server-2";
+	if (/socket|transport|stream/.test(name)) return "plug-connected";
+	if (/request|investigation|traffic/.test(name)) return "activity";
+	if (/route|access|limit/.test(name)) return "route";
+	if (/service|endpoint/.test(name)) return "cube";
+	if (/data|usage/.test(name)) return "chart-bar";
+	return "adjustments";
+}
+function drawerHeading(title, closeControl, titleId) {
+	const readOnly = /investigation|chart data|request details/i.test(title);
+	return `<div class="drawer-heading"><span class="drawer-mark" aria-hidden="true"><i class="ti ti-${workflowIcon(title)}"></i></span><div class="drawer-title"><span class="eyebrow">${readOnly ? "Inspect & analyze" : "Configure gateway"}</span><h3 id="${html(titleId)}">${html(title)}</h3></div>${closeControl}</div>`;
+}
+function prepareDrawerActions(body) {
+	for (const form of body.querySelectorAll("form")) {
+		if (form.closest("[data-react-ui]") || form.querySelector(":scope > .form-actions")) continue;
+		const buttons = [...form.querySelectorAll(":scope > button[type=\"submit\"], :scope > button:not([type])")];
+		if (!buttons.length) continue;
+		const actions = body.ownerDocument.createElement("div");
+		actions.className = "form-actions wide-field";
+		form.append(actions);
+		actions.append(...buttons);
+	}
+}
+function mountDrawerNavigation(dialog) {
+	const body = dialog.querySelector(".drawer-body");
+	if (!body) return () => {};
+	const sections = [...body.querySelectorAll(".form-section")];
+	if (sections.length < 2) return () => {};
+	const doc = dialog.ownerDocument;
+	const nav = doc.createElement("nav");
+	nav.className = "drawer-nav";
+	nav.setAttribute("aria-label", "Editor sections");
+	const buttons = sections.map((section, index) => {
+		const title = section.querySelector("summary strong")?.textContent || `Section ${index + 1}`;
+		const button = doc.createElement("button");
+		button.type = "button";
+		button.innerHTML = `<i class="ti ti-${workflowIcon(title)}" aria-hidden="true"></i><span>${html(title)}</span>`;
+		button.addEventListener("click", () => {
+			section.open = true;
+			body.scrollTo({ top: body.scrollTop + section.getBoundingClientRect().top - body.getBoundingClientRect().top - 16 });
+			section.querySelector("summary")?.focus({ preventScroll: true });
+			buttons.forEach((item) => item.removeAttribute("aria-current"));
+			button.setAttribute("aria-current", "location");
+		});
+		nav.append(button);
+		return button;
+	});
+	buttons[0].setAttribute("aria-current", "location");
+	const update = () => {
+		const top = body.getBoundingClientRect().top + 60;
+		const current = sections.reduce((index, section, next) => section.getBoundingClientRect().top <= top ? next : index, 0);
+		buttons.forEach((button, index) => {
+			if (index === current) button.setAttribute("aria-current", "location");
+			else button.removeAttribute("aria-current");
+		});
+	};
+	body.addEventListener("scroll", update, { passive: true });
+	body.before(nav);
+	return () => {
+		body.removeEventListener("scroll", update);
+		nav.remove();
+	};
+}
+var init_workflows = __esmMin((() => {
+	init_components();
+}));
+//#endregion
 //#region crates/gateway-api/admin-ui/src/components/ui/index.tsx
 function cn(...values) {
 	return twMerge(clsx(values));
 }
 function Field({ label, help, children }) {
-	const id = import_react$7.useId();
+	const id = import_react$8.useId();
 	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 		className: "rg-field grid gap-2 text-xs font-medium text-muted-foreground",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
@@ -19783,11 +19936,11 @@ function Field({ label, help, children }) {
 				label,
 				children: help
 			})]
-		}), import_react$7.cloneElement(children, { id })]
+		}), import_react$8.cloneElement(children, { id })]
 	});
 }
 function CheckboxField({ label, help, ...props }) {
-	const id = import_react$7.useId();
+	const id = import_react$8.useId();
 	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 		className: "rg-check",
 		children: [
@@ -19808,7 +19961,7 @@ function CheckboxField({ label, help, ...props }) {
 	});
 }
 function Help({ label, children }) {
-	const [open, setOpen] = import_react$7.useState(false);
+	const [open, setOpen] = import_react$8.useState(false);
 	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Provider, {
 		delayDuration: 200,
 		children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Root3, {
@@ -19835,8 +19988,8 @@ function Help({ label, children }) {
 		})
 	});
 }
-function Dialog({ title, description, children, footer, onClose, restoreFocus, initialFocus }) {
-	const descriptionId = import_react$7.useId();
+function Dialog({ title, description, children, footer, onClose, restoreFocus, initialFocus, layout = "modal" }) {
+	const descriptionId = import_react$8.useId();
 	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Dialog$1, {
 		open: true,
 		onOpenChange: onClose,
@@ -19848,33 +20001,48 @@ function Dialog({ title, description, children, footer, onClose, restoreFocus, i
 				}
 			},
 			"aria-describedby": description ? descriptionId : void 0,
-			className: "rg-dialog fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-32px)] w-[min(640px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-border bg-background shadow-xl",
+			"data-layout": layout,
+			className: cn("rg-dialog fixed z-50 flex flex-col border border-border bg-background shadow-xl", layout === "drawer" ? "right-0 top-0" : "left-1/2 top-1/2 max-h-[calc(100dvh-32px)] w-[min(640px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl"),
 			onCloseAutoFocus: (event) => {
 				event.preventDefault();
 				restoreFocus?.focus();
 			},
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("header", {
-					className: "flex items-start justify-between gap-4 border-b border-border px-5 py-4",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogTitle, {
-						className: "text-sm font-medium text-foreground",
-						children: title
-					}), description && /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogDescription, {
-						id: descriptionId,
-						className: "mt-1 text-xs text-muted-foreground",
-						children: description
-					})] }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogClose, {
-						asChild: true,
-						children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
-							variant: "ghost",
-							size: "icon",
-							"aria-label": "Close dialog",
-							children: "×"
+					className: "drawer-heading",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
+							className: "drawer-mark",
+							"aria-hidden": "true",
+							children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", { className: `ti ti-${workflowIcon(title)}` })
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
+							className: "drawer-title",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogTitle, {
+								className: "text-sm font-medium text-foreground",
+								children: title
+							}), description && /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogDescription, {
+								id: descriptionId,
+								className: "mt-1 text-xs text-muted-foreground",
+								children: description
+							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogClose, {
+							asChild: true,
+							children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
+								variant: "ghost",
+								size: "icon",
+								"aria-label": "Close dialog",
+								children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
+									className: "ti ti-x",
+									"aria-hidden": "true"
+								})
+							})
 						})
-					})]
+					]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("div", {
-					className: "min-h-0 overflow-y-auto px-5 py-4",
+					className: "rg-dialog-body min-h-0 overflow-y-auto px-5 py-4",
 					children
 				}),
 				footer && /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("footer", {
@@ -19885,15 +20053,16 @@ function Dialog({ title, description, children, footer, onClose, restoreFocus, i
 		})] })
 	});
 }
-var import_react$7, import_jsx_runtime$10, buttonVariants, Button, Input, NativeSelect;
+var import_react$8, import_jsx_runtime$10, buttonVariants, Button, Input, NativeSelect;
 var init_ui = __esmMin((() => {
-	import_react$7 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$8 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$19();
 	init_dist$5();
 	init_dist$1();
 	init_dist();
 	init_clsx();
 	init_bundle_mjs();
+	init_workflows();
 	import_jsx_runtime$10 = require_jsx_runtime();
 	buttonVariants = cva("rg-button inline-flex items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50", {
 		variants: {
@@ -19901,7 +20070,7 @@ var init_ui = __esmMin((() => {
 				default: "bg-primary text-primary-foreground hover:bg-primary/90",
 				outline: "border border-input bg-background hover:bg-muted",
 				ghost: "hover:bg-muted",
-				destructive: "bg-destructive text-white hover:bg-destructive/90"
+				destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90"
 			},
 			size: {
 				default: "h-9 px-3",
@@ -19914,7 +20083,7 @@ var init_ui = __esmMin((() => {
 			size: "default"
 		}
 	});
-	Button = import_react$7.forwardRef(({ className, variant, size, asChild, type = "button", ...props }, ref) => {
+	Button = import_react$8.forwardRef(({ className, variant, size, asChild, type = "button", ...props }, ref) => {
 		return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(asChild ? Slot$1 : "button", {
 			ref,
 			type,
@@ -19926,13 +20095,13 @@ var init_ui = __esmMin((() => {
 		});
 	});
 	Button.displayName = "Button";
-	Input = import_react$7.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("input", {
+	Input = import_react$8.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("input", {
 		ref,
 		className: cn("rg-input h-9 w-full rounded-md border border-input bg-background px-3 text-[13px] disabled:opacity-50", className),
 		...props
 	}));
 	Input.displayName = "Input";
-	NativeSelect = import_react$7.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("select", {
+	NativeSelect = import_react$8.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("select", {
 		ref,
 		className: cn("rg-input h-9 rounded-md border border-input bg-background px-3 text-[13px]", className),
 		...props
@@ -19940,10 +20109,231 @@ var init_ui = __esmMin((() => {
 	NativeSelect.displayName = "NativeSelect";
 }));
 //#endregion
-//#region crates/gateway-api/admin-ui/src/react/shell.tsx
+//#region crates/gateway-api/admin-ui/src/react/brand.tsx
 var import_client$7 = require_client();
 init_ui();
 var import_jsx_runtime$9 = require_jsx_runtime();
+/** Generated by scripts/sync-brand.mjs from the approved native SVG masters. */
+function RelaynaLogo() {
+	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("svg", {
+		className: "relayna-logo",
+		viewBox: "0 0 339.907 104",
+		role: "img",
+		"aria-label": "relayna Gateway",
+		focusable: "false",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("g", {
+				transform: "translate(0 2.5) scale(1.5)",
+				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("g", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+					fill: "var(--rg-brand-body)",
+					d: "M14.3132 3.0438C14.4418 3.0434 14.5705 3.0429 14.703 3.0426C15.134 3.0413 15.5648 3.0407 15.9958 3.0401C16.3048 3.0394 16.6139 3.0386 16.923 3.0378C17.9381 3.0353 18.9534 3.0339 19.9685 3.0325C20.3185 3.0321 20.6686 3.0316 21.0186 3.031C22.4753 3.0291 23.932 3.0273 25.3887 3.0262C27.4731 3.0246 29.5575 3.0216 31.6419 3.0162C33.1091 3.0126 34.5764 3.0108 36.0436 3.0103C36.9191 3.0099 37.7945 3.0088 38.6698 3.0058C39.4945 3.0029 40.3191 3.0023 41.1437 3.0034C41.445 3.0034 41.7462 3.0027 42.0475 3.001C44.0255 2.9908 45.9289 3.0431 47.7512 3.9027C47.9622 4.0014 48.1731 4.1002 48.3904 4.2018C50.7583 5.4035 52.2342 7.4679 53.2228 9.8728C53.7623 11.5911 53.963 13.3419 53.1348 14.9984C52.6044 15.7449 51.9815 16.1972 51.2054 16.6639C50.4132 17.147 50.0187 17.5556 49.7217 18.4467C49.7041 18.8562 49.6982 19.2662 49.6981 19.6761C49.6978 19.8015 49.6975 19.927 49.6972 20.0562C49.6966 20.4774 49.6971 20.8986 49.6978 21.3197C49.6975 21.6214 49.6971 21.923 49.6967 22.2246C49.6959 22.8745 49.6957 23.5244 49.696 24.1743C49.6962 25.2012 49.6949 26.2281 49.6933 27.2551C49.6888 30.1754 49.6866 33.0957 49.686 36.016C49.6856 37.6285 49.6839 39.2411 49.6808 40.8537C49.6789 41.8753 49.6786 42.8968 49.6797 43.9184C49.68 44.553 49.6786 45.1876 49.6769 45.8222C49.6764 46.1172 49.6765 46.4122 49.6773 46.7073C49.6784 47.1089 49.6771 47.5105 49.6753 47.9122C49.6752 48.1373 49.6751 48.3624 49.675 48.5944C49.6279 49.1297 49.6279 49.1297 49.2525 49.5989C49.0649 49.6927 49.0649 49.6927 48.5019 49.6927C48.0608 49.3398 47.7434 48.9935 47.3759 48.5667C46.8463 47.9861 46.3139 47.4082 45.7808 46.8308C44.3084 45.2362 44.3084 45.2362 43.8748 44.7372C43.439 44.2423 42.9874 43.763 42.5366 43.2817C42.1424 42.8588 41.7564 42.429 41.3707 41.9985C41.2802 41.9014 41.1898 41.8043 41.0965 41.7041C40.3577 40.9107 40.3577 40.9107 40.1509 40.4972C40.0889 40.4972 40.027 40.4972 39.9632 40.4972C40.057 40.2157 40.057 40.2157 40.3722 40.0365C40.5082 39.9697 40.6441 39.9031 40.7842 39.8344C44.0233 38.1582 45.7438 35.1638 46.9302 31.8353C47.3479 30.2389 47.5034 28.7269 47.5049 27.0792C47.5051 26.916 47.5052 26.753 47.5054 26.5848C47.4752 23.078 46.3619 19.7796 43.9041 17.2269C42.071 15.4856 39.7071 14.3117 37.1547 14.3036C36.9648 14.3028 36.7749 14.302 36.5791 14.3012C36.4753 14.301 36.4753 14.301 35.9495 14.3C35.7302 14.2992 35.511 14.2985 35.285 14.2976C34.5585 14.2953 33.8319 14.2938 33.1054 14.2924C32.855 14.2919 32.6047 14.2914 32.3544 14.2909C31.3133 14.2889 30.2721 14.2871 29.2311 14.2861C27.7397 14.2845 26.2484 14.2814 24.7572 14.276C23.7079 14.2725 22.6588 14.2706 21.6096 14.2701C20.9831 14.2697 20.3566 14.2684 19.7302 14.2656C19.0315 14.2626 18.333 14.2626 17.6344 14.2633C17.4269 14.2618 17.2196 14.2603 17.0059 14.2587C16.8154 14.2594 16.6249 14.2602 16.4286 14.261C16.2636 14.2607 16.0984 14.2604 15.9283 14.2601C15.2465 14.3469 14.7934 14.6224 14.3119 15.1039C13.7481 15.8824 13.7484 16.5249 13.7471 17.4559C13.7465 17.5937 13.7459 17.7316 13.7453 17.8736C13.7437 18.3362 13.7442 18.7988 13.7447 19.2614C13.744 19.5927 13.7432 19.9242 13.7422 20.2555C13.7402 21.1563 13.7399 22.057 13.7401 22.9576C13.7401 23.7091 13.7393 24.4607 13.7385 25.2123C13.7367 26.9852 13.7364 28.7581 13.7371 30.531C13.7377 32.3607 13.7356 34.1904 13.7321 36.0203C13.7292 37.5904 13.7282 39.1607 13.7284 40.731C13.7287 41.6691 13.7282 42.6073 13.7259 43.5454C13.7238 44.4276 13.7239 45.3098 13.7259 46.192C13.7262 46.5159 13.7257 46.8397 13.7244 47.1636C13.7226 47.6056 13.7238 48.0475 13.7257 48.4895C13.7257 48.7369 13.7256 48.9843 13.7255 49.2392C13.7992 50.0463 14.0026 50.5681 14.5757 51.1412C16.7843 52.7298 18.6832 51.7091 22.0413 51.757C22.0413 42.0651 22.0413 32.3732 22.0413 22.3876C35.9593 22.3876 35.9593 22.3876 37.7522 23.8303C39.0261 25.1215 39.5867 26.5589 39.6171 28.3518C39.6002 30.4345 38.6962 31.9118 37.2655 33.3425C35.8752 34.468 34.3189 34.6908 32.5897 34.6994C32.296 34.702 32.0024 34.7047 31.7087 34.7075C31.2467 34.7113 30.7846 34.7148 30.3226 34.7172C29.8761 34.7198 29.4295 34.7242 28.983 34.7287C28.9142 34.7289 28.9142 34.7289 28.5662 34.7296C27.2604 34.7453 26.6214 34.9665 25.7007 35.8994C25.1037 36.7279 25.0949 37.4212 25.1377 38.4329C25.3457 39.2065 25.6559 39.7019 26.1699 40.3095C26.3774 40.5614 26.5845 40.8137 26.7915 41.066C26.9056 41.2042 27.0196 41.3423 27.1372 41.4846C27.8446 42.3425 28.5473 43.2036 29.2312 44.0803C29.5628 44.5047 29.902 44.9199 30.2516 45.3295C30.6921 45.8456 31.1129 46.3745 31.53 46.9096C32.0183 47.5312 32.5199 48.142 33.0196 48.7544C33.6899 49.5756 34.3548 50.4 35.0076 51.235C35.2955 51.5996 35.588 51.9601 35.8815 52.32C36.4372 53.0018 36.9821 53.6912 37.5236 54.3843C38.0478 55.0538 38.574 55.7215 39.107 56.384C39.6238 57.0287 40.1275 57.6824 40.6258 58.3414C40.8452 58.6272 41.0742 58.9058 41.3061 59.1815C41.5583 59.5451 41.5583 59.5451 41.5583 60.2019C41.183 60.7649 41.183 60.7649 40.7138 60.9525C40.3422 60.9707 39.9699 60.977 39.5978 60.9776C39.3623 60.9784 39.1267 60.9792 38.8839 60.98C38.6219 60.9799 38.3598 60.9799 38.0977 60.9797C37.8224 60.9803 37.5471 60.981 37.2719 60.9817C36.5228 60.9833 35.7739 60.9838 35.0249 60.9839C34.5566 60.9841 34.0883 60.9844 33.62 60.9849C31.9848 60.9867 30.3497 60.9874 28.7146 60.9873C27.1929 60.9872 25.6712 60.9891 24.1494 60.9921C22.8417 60.9946 21.534 60.9956 20.2263 60.9955C19.4459 60.9954 18.6655 60.996 17.8851 60.9979C17.1498 60.9997 16.4146 60.9997 15.6792 60.9984C15.4106 60.9982 15.1418 60.9986 14.8732 60.9998C11.4288 61.0134 8.7039 60.2514 6.1837 57.7622C5.3621 56.7996 4.736 55.8156 4.2132 54.6658C4.1668 54.5729 4.1668 54.5729 3.9317 54.1028C3.8278 53.7448 3.7307 53.3849 3.6385 53.0237C3.5899 52.835 3.5413 52.6463 3.4912 52.4519C3.2812 51.5819 3.2612 50.758 3.2618 49.8684C3.2615 49.7124 3.2612 49.5564 3.2609 49.3956C3.2601 48.871 3.2599 48.3463 3.2598 47.8216C3.2593 47.4462 3.2589 47.0708 3.2584 46.6953C3.2572 45.6738 3.2565 44.6522 3.2561 43.6307C3.2559 42.9924 3.2555 42.3542 3.255 41.716C3.2538 39.7189 3.2529 37.722 3.2525 35.725C3.2521 33.42 3.2504 31.1149 3.2477 28.8099C3.2456 27.0284 3.2447 25.2468 3.2446 23.4652C3.2445 22.4011 3.2439 21.3372 3.2423 20.2731C3.2408 19.2716 3.2406 18.2701 3.2413 17.2685C3.2414 16.9015 3.241 16.5346 3.2401 16.1676C3.2389 15.6653 3.2394 15.163 3.2404 14.6607C3.2396 14.5166 3.2389 14.3727 3.2381 14.2242C3.2525 11.0522 4.4594 8.3409 6.6529 6.0609C8.8305 4.0392 11.3598 3.0505 14.3132 3.0438Z"
+				}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+					fill: "var(--rg-brand-relay)",
+					d: "M59.9494 15.444C60.4185 15.7255 60.4185 15.7255 60.7 16.1947C60.7278 16.6763 60.7388 17.1465 60.737 17.6282C60.7377 17.7767 60.7382 17.9253 60.7388 18.0784C60.7404 18.5782 60.7399 19.0782 60.7394 19.5781C60.7401 19.9356 60.7409 20.2932 60.7419 20.6507C60.7439 21.6235 60.7442 22.5963 60.744 23.5691C60.744 24.3804 60.7448 25.1917 60.7456 26.0029C60.7474 27.9165 60.7477 29.83 60.747 31.7435C60.7464 33.7194 60.7485 35.6953 60.752 37.6711C60.7549 39.3658 60.756 41.0606 60.7556 42.7553C60.7554 43.7682 60.756 44.7812 60.7582 45.7941C60.7604 46.7466 60.7602 47.699 60.7582 48.6514C60.7579 49.0014 60.7584 49.3513 60.7597 49.7013C60.7614 50.1784 60.7603 50.6552 60.7583 51.1323C60.7595 51.2714 60.7607 51.4106 60.7619 51.5538C60.7556 52.2818 60.7228 52.7941 60.2309 53.3521C59.7617 53.5398 59.7617 53.5398 59.1049 53.5398C58.7545 53.3397 58.7545 53.3397 58.3777 53.0589C58.2378 52.956 58.0978 52.853 57.9536 52.747C57.8071 52.637 57.6606 52.5271 57.5098 52.4138C57.2146 52.1967 56.9195 51.9798 56.6242 51.7628C56.4759 51.6531 56.3277 51.5434 56.1748 51.4305C55.736 51.1068 55.2951 50.7861 54.8532 50.4668C54.7158 50.3672 54.5785 50.2677 54.4371 50.1651C54.1784 49.9806 53.9173 49.7993 53.6534 49.6219C53.0261 49.197 52.6128 48.9063 52.349 48.1914C52.3015 47.6644 52.3015 47.6644 52.3007 47.0447C52.2995 46.8094 52.2983 46.5742 52.2971 46.3318C52.2977 46.0716 52.2983 45.8114 52.299 45.5512C52.2982 45.2769 52.2975 45.0025 52.2964 44.7281C52.2944 43.9833 52.2947 43.2385 52.2955 42.4936C52.296 41.872 52.2953 41.2503 52.2946 40.6286C52.293 39.1622 52.2934 37.6958 52.2949 36.2294C52.2965 34.7161 52.295 33.2028 52.2919 31.6894C52.2895 30.3904 52.2888 29.0913 52.2896 27.7922C52.2901 27.0162 52.2899 26.2403 52.2879 25.4644C52.2862 24.7348 52.2868 24.0054 52.289 23.2758C52.2895 23.008 52.2892 22.7402 52.288 22.4724C52.2865 22.107 52.2882 21.7417 52.2901 21.3762C52.2901 21.1717 52.2902 20.9672 52.2903 20.7564C52.3529 20.1945 52.4726 19.9197 52.8182 19.4788C53.1173 19.2424 53.1173 19.2424 53.475 19.0273C54.2436 18.552 55.0014 18.0637 55.7562 17.567C55.8736 17.4905 55.9909 17.414 56.1117 17.3351C56.6434 16.9883 57.1712 16.6384 57.6938 16.2779C57.7746 16.2226 57.7746 16.2226 58.1842 15.9425C58.2536 15.894 58.2536 15.894 58.6046 15.6482C59.0937 15.4025 59.4083 15.385 59.9494 15.444Z"
+				})] })
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+				fill: "var(--rg-brand-body)",
+				d: "M112 44.907V19.653L112.061 18.921L112.305 18.25L112.732 17.64L113.22 17.152L113.83 16.725L114.501 16.481L115.233 16.42L115.965 16.481L116.636 16.725L117.246 17.152L117.734 17.64L118.161 18.25L118.405 18.921L118.466 19.653V44.907L118.405 45.639L118.161 46.31L117.734 46.92L117.246 47.408L116.636 47.835L115.965 48.079L115.233 48.14L114.501 48.079L113.83 47.835L113.22 47.408L112.732 46.92L112.305 46.31L112.061 45.639ZM112 28.681V27.766L112.122 26.79L112.244 25.814L112.427 24.899L112.61 24.045L112.915 23.13L113.281 22.337L113.708 21.483L114.257 20.751L114.806 20.019L115.416 19.348L116.148 18.738L116.88 18.189L117.673 17.701L118.527 17.335L119.381 16.969L120.296 16.664L121.211 16.42L122.187 16.298L123.224 16.176L124.261 16.054H125.298H125.664H126.03L126.396 16.115H126.762L127.067 16.176L127.433 16.237L127.799 16.298L128.104 16.359L128.47 16.481L128.775 16.542L129.141 16.664L129.446 16.786L129.751 16.908L130.056 17.091L130.361 17.274L130.666 17.457L130.971 17.64L131.276 17.823L131.581 18.067L131.825 18.372L132.069 18.616L132.252 18.86L132.679 19.47L132.923 20.141L132.984 20.873L132.923 21.605L132.679 22.276L132.313 22.886L131.764 23.374L131.154 23.801L130.483 24.045L129.751 24.106L129.019 24.045L128.348 23.801L127.738 23.435L127.25 22.886H127.189H127.25H127.189L127.128 22.825H127.067L127.006 22.764H126.945L126.823 22.703H126.701L126.579 22.642H126.457L126.335 22.581H126.213H126.03L125.847 22.52H125.664H125.481H125.298H124.505L123.834 22.581L123.163 22.642L122.553 22.764L122.065 22.886L121.577 23.069L121.15 23.191L120.784 23.374L120.479 23.618L120.174 23.801L119.93 24.045L119.686 24.228L119.503 24.533L119.32 24.777L119.137 25.143L118.954 25.509L118.832 25.936L118.71 26.363L118.588 26.912L118.527 27.461L118.466 28.071V28.803L118.344 29.535L118.1 30.206L117.734 30.816L117.185 31.304L116.575 31.67L115.904 31.914L115.172 31.975L114.44 31.853L113.769 31.609L113.159 31.243L112.671 30.694L112.305 30.084L112.061 29.413ZM165.497 44.297 164.46 45.151 163.118 45.944 161.654 46.615 160.19 47.103 158.665 47.53 157.018 47.835 155.432 48.018 153.785 48.079 152.077 47.957 150.43 47.774 148.783 47.408 147.197 46.859 145.611 46.188 144.086 45.334 142.683 44.358 141.341 43.138 140.182 41.735 139.145 40.149 138.352 38.38 137.803 36.489 137.437 34.415 137.376 32.219 137.559 29.84 138.108 27.583 138.962 25.509 140.182 23.679 141.585 22.093 143.232 20.812 145.001 19.714 146.892 18.921 148.844 18.311 150.796 18.006 152.809 17.823 154.822 17.945 156.835 18.25 158.787 18.738 160.678 19.531 162.447 20.507 164.094 21.788 165.497 23.313 166.717 25.082 167.632 27.095 168.181 29.291 168.608 34.903H141.585L140.853 34.842L140.182 34.598L139.572 34.171L139.084 33.683L138.657 33.073L138.413 32.402L138.352 31.67L138.413 30.938L138.657 30.267L139.084 29.657L139.572 29.169L140.182 28.742L140.853 28.498L141.585 28.437H161.654L161.776 30.328L161.471 29.23L161.044 28.254L160.495 27.339L159.763 26.607L158.848 25.936L157.872 25.387L156.713 24.899L155.493 24.594L154.212 24.35H152.931L151.589 24.411L150.308 24.655L149.088 25.021L147.929 25.509L146.953 26.119L146.038 26.79L145.306 27.644L144.696 28.559L144.269 29.657L143.964 30.877L143.842 32.341L143.903 33.744L144.086 35.025L144.452 36.123L144.879 37.038L145.428 37.892L146.038 38.624L146.77 39.295L147.563 39.905L148.478 40.393L149.393 40.82L150.491 41.125L151.589 41.369L152.687 41.491L153.846 41.552H155.005L156.103 41.43L157.201 41.247L158.238 40.942L159.214 40.637L160.068 40.21L160.8 39.783L161.593 39.173L162.203 38.807L162.874 38.563L163.606 38.502L164.338 38.624L165.009 38.868L165.619 39.234L166.107 39.783L166.473 40.393L166.717 41.064L166.778 41.796L166.656 42.528L166.412 43.199L166.046 43.809ZM184.529 6.233V40.21V40.637V40.942L184.59 41.247L184.651 41.491V41.674L184.712 41.796V41.918H184.773H184.712V41.857L184.651 41.796L184.529 41.735L184.468 41.674H184.407L184.346 41.613L184.407 41.674H184.468H184.529H184.651H184.834L185.566 41.796L186.237 42.04L186.847 42.406L187.335 42.955L187.701 43.565L187.945 44.236L188.006 44.968L187.884 45.7L187.64 46.371L187.274 46.981L186.725 47.469L186.115 47.835L185.444 48.079L184.712 48.14H184.407H183.98L183.553 48.079L183.126 48.018L182.699 47.896L182.211 47.713L181.723 47.53L181.235 47.286L180.808 46.981L180.32 46.615L179.893 46.249L179.527 45.822L179.222 45.334L178.978 44.785L178.734 44.297L178.551 43.748L178.368 43.199L178.246 42.65L178.185 42.04L178.124 41.491L178.063 40.881V40.21V6.233L178.124 5.501L178.368 4.83L178.795 4.22L179.283 3.732L179.893 3.305L180.564 3.061L181.296 3L182.028 3.061L182.699 3.305L183.309 3.732L183.797 4.22L184.224 4.83L184.468 5.501ZM223.752 33.5 223.691 34.659 223.508 35.879 223.264 36.977 222.959 38.075 222.593 39.173 222.166 40.149 221.617 41.125 221.068 42.101 220.458 42.955 219.726 43.809 218.994 44.602 218.201 45.334 217.286 45.944 216.432 46.554 215.456 47.042 214.419 47.469 213.382 47.835 212.345 48.14 211.247 48.323 210.088 48.445 208.929 48.506 207.77 48.445 206.611 48.323 205.513 48.14 204.476 47.835 203.439 47.469 202.402 47.042 201.426 46.554 200.572 45.944 199.657 45.334 198.864 44.602 198.132 43.809 197.4 42.955 196.79 42.101 196.241 41.125 195.692 40.149 195.265 39.173 194.899 38.075 194.594 36.977 194.35 35.879 194.167 34.659 194.106 33.5 194.045 32.28 194.106 31.06 194.167 29.901 194.35 28.681 194.594 27.583 194.899 26.485 195.265 25.387 195.692 24.411 196.241 23.435 196.79 22.459 197.4 21.605 198.132 20.751 198.864 19.958 199.657 19.226 200.572 18.616 201.426 18.006 202.402 17.518 203.439 17.091 204.476 16.725 205.513 16.42 206.611 16.237 207.77 16.115 208.929 16.054 210.088 16.115 211.247 16.237 212.345 16.42 213.382 16.725 214.419 17.091 215.456 17.518 216.432 18.006 217.286 18.616 218.201 19.226 218.994 19.958 219.726 20.751 220.458 21.605 221.068 22.459 221.617 23.435 222.166 24.411 222.593 25.387 222.959 26.485 223.264 27.583 223.508 28.681 223.691 29.901 223.752 31.06 223.813 32.28ZM217.347 32.28V31.426L217.225 30.633L217.164 29.84L216.981 29.108L216.798 28.437L216.554 27.766L216.31 27.156L216.005 26.546L215.639 26.058L215.334 25.509L214.907 25.082L214.541 24.655L214.053 24.289L213.626 23.923L213.138 23.618L212.589 23.313L212.101 23.069L211.491 22.886L210.881 22.764L210.271 22.642L209.6 22.52H208.929H208.258L207.587 22.642L206.977 22.764L206.367 22.886L205.757 23.069L205.269 23.313L204.72 23.618L204.232 23.923L203.805 24.289L203.317 24.655L202.951 25.082L202.524 25.509L202.219 26.058L201.853 26.546L201.548 27.156L201.304 27.766L201.06 28.437L200.877 29.108L200.694 29.84L200.633 30.633L200.511 31.426V32.28V33.134L200.633 33.927L200.694 34.72L200.877 35.452L201.06 36.123L201.304 36.794L201.548 37.404L201.853 38.014L202.219 38.502L202.524 39.051L202.951 39.478L203.317 39.905L203.805 40.271L204.232 40.637L204.72 40.942L205.269 41.247L205.757 41.491L206.367 41.674L206.977 41.796L207.587 41.918L208.258 42.04H208.929H209.6L210.271 41.918L210.881 41.796L211.491 41.674L212.101 41.491L212.589 41.247L213.138 40.942L213.626 40.637L214.053 40.271L214.541 39.905L214.907 39.478L215.334 39.051L215.639 38.502L216.005 38.014L216.31 37.404L216.554 36.794L216.798 36.123L216.981 35.452L217.164 34.72L217.225 33.927L217.347 33.134ZM217.347 44.907V19.653L217.408 18.921L217.652 18.25L218.079 17.64L218.567 17.152L219.177 16.725L219.848 16.481L220.58 16.42L221.312 16.481L221.983 16.725L222.593 17.152L223.081 17.64L223.508 18.25L223.752 18.921L223.813 19.653V44.907L223.752 45.639L223.508 46.31L223.081 46.92L222.593 47.408L221.983 47.835L221.312 48.079L220.58 48.14L219.848 48.079L219.177 47.835L218.567 47.408L218.079 46.92L217.652 46.31L217.408 45.639ZM237.782 17.945 249.128 42.589 249.25 42.833 249.372 43.077 249.433 43.321 249.555 43.565 249.616 43.809 249.677 44.114 249.738 44.358 249.799 44.602 249.86 44.846 249.921 45.151 249.982 45.395V45.639V45.944L250.043 46.188V46.493V46.737V46.981L249.982 47.286V47.53L249.921 47.774V48.079L249.86 48.384L249.555 49.604L249.311 50.702L248.945 51.8L248.64 52.776L248.274 53.752L247.847 54.667L247.359 55.521L246.871 56.314L246.261 57.107L245.59 57.778L244.919 58.449L244.126 58.998L243.333 59.425L242.479 59.852L241.625 60.157L240.71 60.401L239.795 60.584L238.88 60.767L237.904 60.828L236.928 60.889L235.891 60.95H234.915L234.183 60.889L233.451 60.645L232.841 60.279L232.353 59.73L231.926 59.12L231.682 58.449L231.621 57.778L231.682 57.046L231.926 56.314L232.292 55.704L232.841 55.216L233.451 54.789L234.122 54.545L234.793 54.484H235.769L236.623 54.423H237.355L238.026 54.301L238.636 54.24L239.185 54.118L239.612 53.996L239.978 53.874L240.344 53.691L240.588 53.569L240.832 53.386L241.076 53.142L241.32 52.898L241.564 52.593L241.808 52.227L242.052 51.739L242.296 51.19L242.54 50.58L242.784 49.848L243.028 48.994L243.272 48.079L243.516 47.042V46.92L243.577 46.859V46.798V46.676V46.615V46.554V46.432V46.371V46.31L243.516 46.188V46.127V46.066V45.944L243.455 45.883V45.761V45.7L243.394 45.578L243.333 45.456V45.395L243.272 45.273V45.151L231.926 20.629L231.682 19.958L231.621 19.226L231.743 18.494L231.987 17.823L232.353 17.213L232.902 16.725L233.512 16.359L234.183 16.115L234.915 16.054L235.647 16.176L236.318 16.42L236.928 16.786L237.416 17.335ZM259.742 20.385 249.738 48.811 249.433 49.421 248.945 50.031 248.396 50.458 247.725 50.763 247.054 50.946H246.322L245.59 50.763L244.98 50.458L244.37 49.97L243.943 49.421L243.638 48.75L243.455 48.079V47.347L243.638 46.615L253.642 18.189L253.947 17.579L254.435 16.969L254.984 16.542L255.655 16.237L256.326 16.054H257.058L257.79 16.237L258.4 16.542L259.01 17.03L259.437 17.579L259.742 18.25L259.925 18.921V19.653ZM268.343 44.907V19.653L268.404 18.921L268.648 18.25L269.075 17.64L269.563 17.152L270.173 16.725L270.844 16.481L271.576 16.42L272.308 16.481L272.979 16.725L273.589 17.152L274.077 17.64L274.504 18.25L274.748 18.921L274.809 19.653V44.907L274.748 45.639L274.504 46.31L274.077 46.92L273.589 47.408L272.979 47.835L272.308 48.079L271.576 48.14L270.844 48.079L270.173 47.835L269.563 47.408L269.075 46.92L268.648 46.31L268.404 45.639ZM268.343 29.169V28.193L268.404 27.156L268.526 26.18L268.648 25.204L268.831 24.228L269.136 23.313L269.441 22.398L269.868 21.483L270.417 20.629L271.088 19.897L271.759 19.165L272.613 18.494L273.467 17.945L274.382 17.518L275.358 17.152L276.395 16.847L277.493 16.542L278.652 16.359L279.811 16.237L281.092 16.115L282.434 16.054H283.837H285.24L286.582 16.115L287.863 16.237L289.022 16.359L290.181 16.542L291.279 16.847L292.316 17.152L293.292 17.518L294.207 17.945L295.061 18.494L295.915 19.165L296.586 19.897L297.257 20.629L297.806 21.483L298.233 22.398L298.538 23.313L298.843 24.228L299.026 25.204L299.148 26.18L299.27 27.156L299.331 28.193V29.23V44.907L299.27 45.639L299.026 46.31L298.599 46.92L298.111 47.408L297.501 47.835L296.83 48.079L296.098 48.14L295.366 48.079L294.695 47.835L294.085 47.408L293.597 46.92L293.17 46.31L292.926 45.639L292.865 44.907V29.23V28.376L292.804 27.644L292.743 26.912L292.682 26.302L292.56 25.814L292.438 25.326L292.255 24.96L292.133 24.655L291.95 24.411L291.828 24.228L291.584 23.984L291.34 23.801L291.035 23.618L290.669 23.435L290.181 23.252L289.571 23.069L288.9 22.886L288.107 22.764L287.192 22.642L286.216 22.581L285.057 22.52H283.837H282.617L281.458 22.581L280.482 22.642L279.567 22.764L278.774 22.886L278.103 23.069L277.493 23.252L277.005 23.435L276.639 23.618L276.334 23.801L276.09 23.984L275.846 24.228L275.724 24.411L275.541 24.655L275.419 24.96L275.236 25.326L275.114 25.814L274.992 26.302L274.931 26.912L274.87 27.644L274.809 28.376V29.291L274.687 30.023L274.443 30.694L274.077 31.304L273.528 31.792L272.918 32.158L272.247 32.402L271.515 32.463L270.783 32.341L270.112 32.097L269.502 31.731L269.014 31.182L268.648 30.572L268.404 29.901ZM336.846 33.5 336.785 34.659 336.602 35.879 336.358 36.977 336.053 38.075 335.687 39.173 335.26 40.149 334.711 41.125 334.162 42.101 333.552 42.955 332.82 43.809 332.088 44.602 331.295 45.334 330.38 45.944 329.526 46.554 328.55 47.042 327.513 47.469 326.476 47.835 325.439 48.14 324.341 48.323 323.182 48.445 322.023 48.506 320.864 48.445 319.705 48.323 318.607 48.14 317.57 47.835 316.533 47.469 315.496 47.042 314.52 46.554 313.666 45.944 312.751 45.334 311.958 44.602 311.226 43.809 310.494 42.955 309.884 42.101 309.335 41.125 308.786 40.149 308.359 39.173 307.993 38.075 307.688 36.977 307.444 35.879 307.261 34.659 307.2 33.5 307.139 32.28 307.2 31.06 307.261 29.901 307.444 28.681 307.688 27.583 307.993 26.485 308.359 25.387 308.786 24.411 309.335 23.435 309.884 22.459 310.494 21.605 311.226 20.751 311.958 19.958 312.751 19.226 313.666 18.616 314.52 18.006 315.496 17.518 316.533 17.091 317.57 16.725 318.607 16.42 319.705 16.237 320.864 16.115 322.023 16.054 323.182 16.115 324.341 16.237 325.439 16.42 326.476 16.725 327.513 17.091 328.55 17.518 329.526 18.006 330.38 18.616 331.295 19.226 332.088 19.958 332.82 20.751 333.552 21.605 334.162 22.459 334.711 23.435 335.26 24.411 335.687 25.387 336.053 26.485 336.358 27.583 336.602 28.681 336.785 29.901 336.846 31.06 336.907 32.28ZM330.441 32.28V31.426L330.319 30.633L330.258 29.84L330.075 29.108L329.892 28.437L329.648 27.766L329.404 27.156L329.099 26.546L328.733 26.058L328.428 25.509L328.001 25.082L327.635 24.655L327.147 24.289L326.72 23.923L326.232 23.618L325.683 23.313L325.195 23.069L324.585 22.886L323.975 22.764L323.365 22.642L322.694 22.52H322.023H321.352L320.681 22.642L320.071 22.764L319.461 22.886L318.851 23.069L318.363 23.313L317.814 23.618L317.326 23.923L316.899 24.289L316.411 24.655L316.045 25.082L315.618 25.509L315.313 26.058L314.947 26.546L314.642 27.156L314.398 27.766L314.154 28.437L313.971 29.108L313.788 29.84L313.727 30.633L313.605 31.426V32.28V33.134L313.727 33.927L313.788 34.72L313.971 35.452L314.154 36.123L314.398 36.794L314.642 37.404L314.947 38.014L315.313 38.502L315.618 39.051L316.045 39.478L316.411 39.905L316.899 40.271L317.326 40.637L317.814 40.942L318.363 41.247L318.851 41.491L319.461 41.674L320.071 41.796L320.681 41.918L321.352 42.04H322.023H322.694L323.365 41.918L323.975 41.796L324.585 41.674L325.195 41.491L325.683 41.247L326.232 40.942L326.72 40.637L327.147 40.271L327.635 39.905L328.001 39.478L328.428 39.051L328.733 38.502L329.099 38.014L329.404 37.404L329.648 36.794L329.892 36.123L330.075 35.452L330.258 34.72L330.319 33.927L330.441 33.134ZM330.441 44.907V19.653L330.502 18.921L330.746 18.25L331.173 17.64L331.661 17.152L332.271 16.725L332.942 16.481L333.674 16.42L334.406 16.481L335.077 16.725L335.687 17.152L336.175 17.64L336.602 18.25L336.846 18.921L336.907 19.653V44.907L336.846 45.639L336.602 46.31L336.175 46.92L335.687 47.408L335.077 47.835L334.406 48.079L333.674 48.14L332.942 48.079L332.271 47.835L331.661 47.408L331.173 46.92L330.746 46.31L330.502 45.639Z"
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+				fill: "var(--rg-brand-body)",
+				d: "M125.804 77.151 125.398 76.745 124.992 76.426 124.47 76.136 123.919 75.875 123.281 75.643 122.614 75.498 121.889 75.382 121.164 75.353 120.439 75.382 119.714 75.498 118.989 75.672 118.264 75.904 117.597 76.252 116.959 76.658 116.379 77.151 115.828 77.731 115.364 78.398 114.929 79.181 114.581 80.08 114.32 81.124 114.146 82.284 114.088 83.56 114.175 84.836 114.378 85.967 114.726 86.953 115.161 87.823 115.712 88.577 116.35 89.215 117.017 89.766 117.771 90.201 118.583 90.549 119.395 90.781 120.236 90.926 121.077 90.955 121.918 90.897 122.701 90.752 123.426 90.491 124.093 90.172 124.702 89.737 125.195 89.244 125.601 88.693 125.92 88.026 126.094 87.301 126.181 86.402V85.358H121.657L121.425 85.329L121.193 85.242L121.019 85.126L120.845 84.952L120.729 84.778L120.642 84.546L120.613 84.314L120.642 84.082L120.729 83.85L120.845 83.676L121.019 83.502L121.193 83.386L121.425 83.299L121.657 83.27H128.269V86.518L128.182 87.649L127.892 88.751L127.399 89.766L126.79 90.607L126.036 91.361L125.166 91.97L124.238 92.434L123.223 92.753L122.179 92.985L121.106 93.043L120.033 93.014L118.931 92.84L117.858 92.521L116.843 92.086L115.857 91.506L114.929 90.781L114.088 89.911L113.392 88.896L112.812 87.765L112.377 86.489L112.087 85.097L112 83.56L112.058 82.081L112.261 80.689L112.58 79.442L113.015 78.311L113.566 77.296L114.204 76.397L114.929 75.614L115.741 74.976L116.582 74.425L117.481 73.99L118.38 73.671L119.308 73.439L120.236 73.294L121.193 73.265L122.092 73.323L122.991 73.439L123.861 73.642L124.673 73.903L125.456 74.28L126.152 74.686L126.79 75.179L127.312 75.701L127.457 75.875L127.544 76.078L127.602 76.31V76.542L127.544 76.774L127.428 76.977L127.283 77.18L127.109 77.325L126.906 77.412L126.674 77.47H126.442L126.21 77.412L126.007 77.296ZM146.539 87.04 146.51 87.62 146.423 88.171 146.307 88.722 146.162 89.244 145.959 89.766 145.756 90.259 145.524 90.723 145.234 91.158 144.944 91.593 144.625 91.97 144.248 92.347 143.871 92.666 143.465 92.985 143.03 93.246 142.595 93.478 142.102 93.71 141.609 93.855 141.116 94 140.594 94.087 140.043 94.145 139.492 94.174 138.941 94.145 138.39 94.087 137.868 94 137.375 93.855 136.882 93.71 136.389 93.478 135.954 93.246 135.519 92.985 135.113 92.666 134.736 92.347 134.359 91.97 134.04 91.593 133.75 91.158 133.46 90.723 133.228 90.259 133.025 89.766 132.822 89.244 132.677 88.722 132.561 88.171 132.474 87.62 132.445 87.04 132.416 86.46 132.445 85.88 132.474 85.3 132.561 84.749 132.677 84.198 132.822 83.676 133.025 83.154 133.228 82.661 133.46 82.197 133.75 81.762 134.04 81.327 134.359 80.95 134.736 80.573 135.113 80.254 135.519 79.935 135.954 79.674 136.389 79.442 136.882 79.21 137.375 79.065 137.868 78.92 138.39 78.833 138.941 78.775 139.492 78.746 140.043 78.775 140.594 78.833 141.116 78.92 141.609 79.065 142.102 79.21 142.595 79.442 143.03 79.674 143.465 79.935 143.871 80.254 144.248 80.573 144.625 80.95 144.944 81.327 145.234 81.762 145.524 82.197 145.756 82.661 145.959 83.154 146.162 83.676 146.307 84.198 146.423 84.749 146.51 85.3 146.539 85.88 146.568 86.46ZM144.48 86.46V85.996L144.422 85.532L144.364 85.097L144.277 84.691L144.161 84.285L144.016 83.908L143.871 83.56L143.697 83.241L143.494 82.922L143.291 82.632L143.059 82.342L142.827 82.11L142.566 81.878L142.276 81.675L141.986 81.472L141.667 81.298L141.348 81.182L141 81.066L140.652 80.95L140.275 80.892L139.898 80.863L139.492 80.834L139.086 80.863L138.709 80.892L138.332 80.95L137.984 81.066L137.636 81.182L137.317 81.298L136.998 81.472L136.708 81.675L136.418 81.878L136.157 82.11L135.925 82.342L135.693 82.632L135.49 82.922L135.287 83.241L135.113 83.56L134.968 83.908L134.823 84.285L134.707 84.691L134.62 85.097L134.562 85.532L134.504 85.996V86.46V86.924L134.562 87.388L134.62 87.823L134.707 88.229L134.823 88.635L134.968 89.012L135.113 89.36L135.287 89.679L135.49 89.998L135.693 90.288L135.925 90.578L136.157 90.81L136.418 91.042L136.708 91.245L136.998 91.448L137.317 91.622L137.636 91.738L137.984 91.854L138.332 91.97L138.709 92.028L139.086 92.057L139.492 92.086L139.898 92.057L140.275 92.028L140.652 91.97L141 91.854L141.348 91.738L141.667 91.622L141.986 91.448L142.276 91.245L142.566 91.042L142.827 90.81L143.059 90.578L143.291 90.288L143.494 89.998L143.697 89.679L143.871 89.36L144.016 89.012L144.161 88.635L144.277 88.229L144.364 87.823L144.422 87.388L144.48 86.924ZM144.48 92.956V79.964L144.509 79.732L144.596 79.5L144.712 79.326L144.886 79.152L145.06 79.036L145.292 78.949L145.524 78.92L145.756 78.949L145.988 79.036L146.162 79.152L146.336 79.326L146.452 79.5L146.539 79.732L146.568 79.964V92.956L146.539 93.188L146.452 93.42L146.336 93.594L146.162 93.768L145.988 93.884L145.756 93.971L145.524 94L145.292 93.971L145.06 93.884L144.886 93.768L144.712 93.594L144.596 93.42L144.509 93.188ZM155.036 76.194V89.65V89.969L155.065 90.259L155.094 90.52L155.152 90.723L155.21 90.897L155.268 91.042L155.326 91.187L155.384 91.274L155.442 91.361L155.529 91.448L155.616 91.506L155.732 91.564L155.848 91.622L156.022 91.68L156.196 91.738L156.399 91.796L156.631 91.825L156.892 91.854L157.182 91.883L157.472 91.912H157.82H158.168L158.4 91.941L158.632 92.028L158.835 92.144L158.98 92.318L159.125 92.521L159.183 92.724L159.212 92.956L159.183 93.188L159.096 93.42L158.98 93.623L158.806 93.768L158.603 93.913L158.4 93.971L158.168 94H157.791H157.414L157.037 93.971L156.689 93.942L156.341 93.884L155.993 93.826L155.674 93.768L155.355 93.681L155.036 93.565L154.746 93.42L154.456 93.246L154.166 93.014L153.934 92.782L153.702 92.521L153.499 92.231L153.354 91.912L153.209 91.593L153.122 91.216L153.035 90.868L152.977 90.491L152.948 90.085V89.65V76.194L152.977 75.962L153.064 75.73L153.18 75.556L153.354 75.382L153.528 75.266L153.76 75.179L153.992 75.15L154.224 75.179L154.456 75.266L154.63 75.382L154.804 75.556L154.92 75.73L155.007 75.962ZM150.657 80.776H158.429L158.661 80.805L158.893 80.892L159.067 81.008L159.241 81.182L159.357 81.356L159.444 81.588L159.473 81.82L159.444 82.052L159.357 82.284L159.241 82.458L159.067 82.632L158.893 82.748L158.661 82.835L158.429 82.864H150.657L150.425 82.835L150.193 82.748L150.019 82.632L149.845 82.458L149.729 82.284L149.642 82.052L149.613 81.82L149.642 81.588L149.729 81.356L149.845 81.182L150.019 81.008L150.193 80.892L150.425 80.805ZM175.916 92.289 175.394 92.666 174.785 93.014 174.118 93.304 173.422 93.536 172.697 93.739 171.914 93.855 171.131 93.913 170.319 93.942 169.507 93.884 168.695 93.768 167.912 93.594 167.1 93.362 166.346 93.043 165.621 92.637 164.925 92.144 164.287 91.593 163.707 90.955 163.243 90.201 162.837 89.389 162.547 88.49 162.402 87.504 162.344 86.431 162.431 85.3 162.692 84.256 163.098 83.299 163.678 82.458 164.345 81.733 165.099 81.095 165.94 80.602 166.839 80.225 167.767 79.964 168.724 79.79 169.71 79.732 170.667 79.761 171.624 79.906 172.552 80.167 173.451 80.515 174.292 80.979 175.075 81.559 175.742 82.284 176.293 83.096 176.728 84.024 176.989 85.068 177.163 87.214H163.852L163.62 87.185L163.388 87.098L163.214 86.982L163.04 86.808L162.924 86.634L162.837 86.402L162.808 86.17L162.837 85.938L162.924 85.706L163.04 85.532L163.214 85.358L163.388 85.242L163.62 85.155L163.852 85.126H174.901L174.93 85.387L174.756 84.72L174.466 84.111L174.118 83.589L173.683 83.125L173.161 82.748L172.552 82.4L171.914 82.139L171.189 81.965L170.464 81.849L169.71 81.82L168.985 81.849L168.231 81.994L167.535 82.197L166.897 82.487L166.288 82.835L165.766 83.241L165.302 83.734L164.954 84.285L164.664 84.923L164.49 85.648L164.432 86.489L164.461 87.272L164.606 87.997L164.78 88.606L165.07 89.186L165.389 89.679L165.766 90.114L166.23 90.52L166.723 90.839L167.245 91.158L167.825 91.39L168.434 91.564L169.072 91.709L169.71 91.796L170.377 91.854L171.015 91.825L171.653 91.767L172.262 91.68L172.842 91.535L173.364 91.361L173.857 91.158L174.263 90.926L174.64 90.607L174.843 90.491L175.075 90.433L175.307 90.404L175.539 90.433L175.771 90.52L175.945 90.636L176.119 90.81L176.235 91.013L176.293 91.245L176.322 91.477L176.293 91.709L176.206 91.941L176.09 92.115ZM182.644 79.471 186.53 91.912V91.941L186.559 91.97V91.999V91.97L186.53 91.941L186.472 91.883L186.385 91.825L186.269 91.738L186.095 91.68H185.921H185.747L185.573 91.738L185.457 91.796L185.399 91.854L185.341 91.883V91.912L185.312 91.941V91.912H185.341L185.37 91.854L185.399 91.825L191.054 80.312L196.709 91.796L196.738 91.854L196.767 91.883V91.912V91.883L196.709 91.854L196.651 91.796L196.535 91.738L196.39 91.68H196.216H196.042L195.868 91.738L195.752 91.796L195.665 91.883L195.607 91.941L195.578 91.97L195.607 91.941V91.912L199.464 79.471L199.551 79.268L199.696 79.065L199.87 78.92L200.073 78.804L200.305 78.746H200.537L200.769 78.804L200.972 78.891L201.175 79.036L201.32 79.21L201.436 79.413L201.494 79.645V79.877L201.436 80.109L197.579 92.608L197.521 92.753L197.463 92.869L197.405 92.985L197.347 93.101L197.26 93.217L197.173 93.333L197.057 93.449L196.883 93.565L196.709 93.681L196.477 93.739L196.216 93.768L195.984 93.739L195.752 93.681L195.578 93.594L195.433 93.478L195.288 93.391L195.201 93.275L195.114 93.159L195.027 93.043L194.969 92.956L194.911 92.84L194.853 92.724L191.054 83.85L187.255 92.695L187.226 92.811L187.168 92.927L187.081 93.043L187.023 93.13L186.936 93.246L186.849 93.362L186.733 93.478L186.588 93.565L186.385 93.681L186.153 93.739L185.921 93.768L185.66 93.739L185.428 93.681L185.225 93.565L185.08 93.449L184.964 93.333L184.877 93.188L184.79 93.072L184.732 92.985L184.674 92.869L184.616 92.753L184.558 92.608L180.672 80.109L180.614 79.877V79.645L180.672 79.413L180.788 79.21L180.933 79.036L181.136 78.891L181.339 78.804L181.571 78.746H181.803L182.035 78.804L182.238 78.92L182.412 79.065L182.557 79.268ZM219.039 87.04 219.01 87.62 218.923 88.171 218.807 88.722 218.662 89.244 218.459 89.766 218.256 90.259 218.024 90.723 217.734 91.158 217.444 91.593 217.125 91.97 216.748 92.347 216.371 92.666 215.965 92.985 215.53 93.246 215.095 93.478 214.602 93.71 214.109 93.855 213.616 94 213.094 94.087 212.543 94.145 211.992 94.174 211.441 94.145 210.89 94.087 210.368 94 209.875 93.855 209.382 93.71 208.889 93.478 208.454 93.246 208.019 92.985 207.613 92.666 207.236 92.347 206.859 91.97 206.54 91.593 206.25 91.158 205.96 90.723 205.728 90.259 205.525 89.766 205.322 89.244 205.177 88.722 205.061 88.171 204.974 87.62 204.945 87.04 204.916 86.46 204.945 85.88 204.974 85.3 205.061 84.749 205.177 84.198 205.322 83.676 205.525 83.154 205.728 82.661 205.96 82.197 206.25 81.762 206.54 81.327 206.859 80.95 207.236 80.573 207.613 80.254 208.019 79.935 208.454 79.674 208.889 79.442 209.382 79.21 209.875 79.065 210.368 78.92 210.89 78.833 211.441 78.775 211.992 78.746 212.543 78.775 213.094 78.833 213.616 78.92 214.109 79.065 214.602 79.21 215.095 79.442 215.53 79.674 215.965 79.935 216.371 80.254 216.748 80.573 217.125 80.95 217.444 81.327 217.734 81.762 218.024 82.197 218.256 82.661 218.459 83.154 218.662 83.676 218.807 84.198 218.923 84.749 219.01 85.3 219.039 85.88 219.068 86.46ZM216.98 86.46V85.996L216.922 85.532L216.864 85.097L216.777 84.691L216.661 84.285L216.516 83.908L216.371 83.56L216.197 83.241L215.994 82.922L215.791 82.632L215.559 82.342L215.327 82.11L215.066 81.878L214.776 81.675L214.486 81.472L214.167 81.298L213.848 81.182L213.5 81.066L213.152 80.95L212.775 80.892L212.398 80.863L211.992 80.834L211.586 80.863L211.209 80.892L210.832 80.95L210.484 81.066L210.136 81.182L209.817 81.298L209.498 81.472L209.208 81.675L208.918 81.878L208.657 82.11L208.425 82.342L208.193 82.632L207.99 82.922L207.787 83.241L207.613 83.56L207.468 83.908L207.323 84.285L207.207 84.691L207.12 85.097L207.062 85.532L207.004 85.996V86.46V86.924L207.062 87.388L207.12 87.823L207.207 88.229L207.323 88.635L207.468 89.012L207.613 89.36L207.787 89.679L207.99 89.998L208.193 90.288L208.425 90.578L208.657 90.81L208.918 91.042L209.208 91.245L209.498 91.448L209.817 91.622L210.136 91.738L210.484 91.854L210.832 91.97L211.209 92.028L211.586 92.057L211.992 92.086L212.398 92.057L212.775 92.028L213.152 91.97L213.5 91.854L213.848 91.738L214.167 91.622L214.486 91.448L214.776 91.245L215.066 91.042L215.327 90.81L215.559 90.578L215.791 90.288L215.994 89.998L216.197 89.679L216.371 89.36L216.516 89.012L216.661 88.635L216.777 88.229L216.864 87.823L216.922 87.388L216.98 86.924ZM216.98 92.956V79.964L217.009 79.732L217.096 79.5L217.212 79.326L217.386 79.152L217.56 79.036L217.792 78.949L218.024 78.92L218.256 78.949L218.488 79.036L218.662 79.152L218.836 79.326L218.952 79.5L219.039 79.732L219.068 79.964V92.956L219.039 93.188L218.952 93.42L218.836 93.594L218.662 93.768L218.488 93.884L218.256 93.971L218.024 94L217.792 93.971L217.56 93.884L217.386 93.768L217.212 93.594L217.096 93.42L217.009 93.188ZM224.752 79.326 230.668 91.535 230.726 91.651 230.755 91.767 230.784 91.883 230.842 91.97 230.871 92.086 230.9 92.202 230.929 92.318 230.958 92.434 230.987 92.521V92.637L231.016 92.753V92.869V92.985L231.045 93.101V93.217V93.333V93.449L231.016 93.536V93.652V93.768L230.987 93.884L230.958 94L230.842 94.58L230.697 95.102L230.552 95.595L230.407 96.059L230.233 96.523L230.059 96.929L229.856 97.335L229.653 97.712L229.392 98.06L229.131 98.379L228.841 98.698L228.522 98.959L228.203 99.191L227.826 99.423L227.449 99.597L227.043 99.742L226.637 99.858L226.202 99.945L225.767 100.003L225.303 100.061L224.81 100.09H224.346L224.114 100.061L223.882 100.003L223.679 99.887L223.505 99.713L223.389 99.51L223.302 99.307L223.273 99.075L223.302 98.843L223.36 98.611L223.476 98.408L223.65 98.234L223.853 98.118L224.056 98.031L224.288 98.002H224.752L225.158 97.973L225.506 97.944L225.854 97.886L226.144 97.828L226.405 97.741L226.666 97.654L226.869 97.567L227.072 97.451L227.246 97.306L227.42 97.161L227.565 97.016L227.739 96.813L227.884 96.61L228.029 96.349L228.174 96.059L228.29 95.74L228.435 95.392L228.551 94.986L228.696 94.551L228.812 94.087L228.928 93.594V93.536V93.507V93.449L228.957 93.391V93.333V93.275V93.246V93.188V93.13L228.928 93.072V93.014V92.956V92.927L228.899 92.869V92.811L228.87 92.753V92.695L228.841 92.637V92.579L228.812 92.521L228.783 92.463L228.754 92.405L222.896 80.254L222.809 80.022L222.78 79.79L222.809 79.558L222.896 79.326L223.012 79.152L223.186 78.978L223.36 78.862L223.592 78.775L223.824 78.746L224.056 78.775L224.288 78.862L224.462 78.978L224.636 79.152ZM236.178 80.167 230.929 94.174 230.813 94.377 230.668 94.551 230.465 94.696 230.262 94.783 230.03 94.841H229.798L229.566 94.783L229.363 94.667L229.189 94.522L229.044 94.319L228.957 94.116L228.899 93.884V93.652L228.957 93.42L234.206 79.413L234.322 79.21L234.467 79.036L234.67 78.891L234.873 78.804L235.105 78.746H235.337L235.569 78.804L235.772 78.92L235.946 79.065L236.091 79.268L236.178 79.471L236.236 79.703V79.935Z"
+			})
+		]
+	});
+}
+function NaturalConnectionRibbons() {
+	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("svg", {
+		className: "natural-connection-ribbons",
+		viewBox: "0 0 1600 600",
+		preserveAspectRatio: "none",
+		"aria-hidden": "true",
+		focusable: "false",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+				fill: "var(--rg-ribbon-1)",
+				d: "M1600 0 C1050 70 930 190 1070 310 C1170 430 920 530 800 600 H1600Z"
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+				fill: "var(--rg-ribbon-2)",
+				d: "M1600 170 C1110 180 1070 260 1200 350 C1280 430 1200 540 1120 600 H1600Z"
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+				fill: "var(--rg-ribbon-3)",
+				d: "M1600 390 C1290 340 1270 450 1310 600 H1600Z"
+			})
+		]
+	});
+}
+//#endregion
+//#region crates/gateway-api/admin-ui/src/brand-identity.ts
+var brandIdentity = {
+	"name": "relayna",
+	"system": "Natural Connection",
+	"palette": "Mulberry & Linen",
+	"version": "0.1.0",
+	"date": "2026-10-24",
+	"logo": {
+		"name": "Slim Leaf",
+		"lineage": "G3 / Swing Gate / refinement 3",
+		"clearSpace": "At least 0.25 × symbol height",
+		"smallVariantMaxPx": 24
+	},
+	"typeface": {
+		"family": "Relayna Round",
+		"version": "0.100",
+		"status": "Development draft",
+		"weights": [
+			300,
+			400,
+			500,
+			600,
+			700
+		],
+		"variableAxis": { "wght": [300, 700] },
+		"scripts": ["Latin", "Extended Latin"],
+		"wordmarkWeight": 600,
+		"descriptorWeight": 400
+	},
+	"taglines": {
+		"relayna": "Connect intelligence. Keep control",
+		"Gateway": "One gateway. Clear control.",
+		"SDK": "Build the connection",
+		"Studio": "Shape. Inspect. Iterate"
+	},
+	"anchors": {
+		"mulberry": "#653D60",
+		"rose": "#A87891",
+		"copper": "#D99E70",
+		"linen": "#F7F0E8",
+		"ink": "#2C1F2E",
+		"blossom": "#E7BEDA"
+	},
+	"principles": [
+		"Warm, rounded and approachable",
+		"Clear paths through complex information",
+		"Visual evidence with honest unknown states",
+		"One family across Gateway, SDK and Studio"
+	],
+	"status": "Initial reusable design-system package; font remains a development draft"
+};
+//#endregion
+//#region crates/gateway-api/admin-ui/src/theme-preference.ts
+var THEME_STORAGE_KEY = "relayna.theme";
+var THEME_CHANGE_EVENT = "relayna:theme-change";
+var preference = "system";
+var changePreference;
+var dispose;
+function validPreference(value) {
+	return value === "light" || value === "dark" || value === "system";
+}
+function getThemePreference() {
+	return preference;
+}
+function subscribeThemePreference(listener) {
+	document.addEventListener(THEME_CHANGE_EVENT, listener);
+	return () => document.removeEventListener(THEME_CHANGE_EVENT, listener);
+}
+function setThemePreference(value) {
+	if (validPreference(value)) changePreference?.(value);
+}
+/** Initialize before React and operational controllers; return listener cleanup. */
+function initializeThemePreference() {
+	dispose?.();
+	let media;
+	try {
+		media = window.matchMedia("(prefers-color-scheme: dark)");
+	} catch {}
+	let removeMediaListener;
+	function apply(value) {
+		const previousPreference = preference;
+		preference = value;
+		const theme = value === "system" ? media?.matches ? "dark" : "light" : value;
+		const previousTheme = document.documentElement.dataset.theme;
+		document.documentElement.dataset.theme = theme;
+		document.documentElement.dataset.rnTheme = theme;
+		const query = media;
+		if (value === "system" && !removeMediaListener && query) {
+			if (typeof query.addEventListener === "function") {
+				query.addEventListener("change", onSystemChange);
+				removeMediaListener = () => query.removeEventListener("change", onSystemChange);
+			} else if (typeof query.addListener === "function") {
+				query.addListener(onSystemChange);
+				removeMediaListener = () => query.removeListener(onSystemChange);
+			}
+		} else if (value !== "system") {
+			removeMediaListener?.();
+			removeMediaListener = void 0;
+		}
+		if (previousTheme !== theme || previousPreference !== value) document.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: {
+			theme,
+			preference: value
+		} }));
+	}
+	function onSystemChange() {
+		if (preference === "system") apply("system");
+	}
+	function onStorage(event) {
+		if (event.key !== "relayna.theme" && event.key !== null) return;
+		try {
+			if (event.storageArea && event.storageArea !== window.localStorage) return;
+		} catch {}
+		apply(validPreference(event.newValue) ? event.newValue : "system");
+	}
+	const change = (value) => {
+		try {
+			window.localStorage.setItem(THEME_STORAGE_KEY, value);
+		} catch {}
+		apply(value);
+	};
+	changePreference = change;
+	let saved = null;
+	try {
+		saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+	} catch {}
+	apply(validPreference(saved) ? saved : "system");
+	window.addEventListener("storage", onStorage);
+	const cleanup = () => {
+		window.removeEventListener("storage", onStorage);
+		removeMediaListener?.();
+		removeMediaListener = void 0;
+		if (changePreference === change) {
+			changePreference = void 0;
+			dispose = void 0;
+		}
+	};
+	dispose = cleanup;
+	return cleanup;
+}
+//#endregion
+//#region crates/gateway-api/admin-ui/src/react/shell.tsx
+var import_react$7 = /* @__PURE__ */ __toESM(require_react(), 1);
+function ThemeSwitcher() {
+	const preference = (0, import_react$7.useSyncExternalStore)(subscribeThemePreference, getThemePreference, () => "system");
+	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("label", {
+		className: "theme-control",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Theme" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(NativeSelect, {
+			className: "theme-switcher",
+			value: preference,
+			onChange: (event) => setThemePreference(event.currentTarget.value),
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+					value: "light",
+					children: "Light"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+					value: "dark",
+					children: "Dark"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+					value: "system",
+					children: "System"
+				})
+			]
+		})]
+	});
+}
 /** Controller viewport children are deliberately outside React reconciliation. */
 function ConsoleShell() {
 	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [
@@ -19959,27 +20349,20 @@ function ConsoleShell() {
 				className: "login-brand-panel",
 				"aria-label": "Relayna Gateway overview",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(NaturalConnectionRibbons, {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
 						className: "login-brand-lockup",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
-							className: "login-brand-icon",
-							"aria-hidden": "true",
-							children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", { className: "ti ti-route-alt-left" })
-						}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", { children: "Relayna" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", { children: "Gateway" })] })]
+						children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(RelaynaLogo, {})
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 						className: "login-brand-message",
 						children: [
 							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "login-brand-eyebrow",
-								children: "Internal AI gateway"
+								children: "Natural Connection"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("h1", { children: [
-								"Governed access.",
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-								"Operational clarity."
-							] }),
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", { children: "One secure control plane for AI service traffic, usage, incidents, and service ownership." }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("h1", { children: brandIdentity.taglines.Gateway }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", { children: brandIdentity.taglines.relayna }),
 							/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("ul", {
 								className: "login-capabilities",
 								"aria-label": "Gateway capabilities",
@@ -20006,7 +20389,7 @@ function ConsoleShell() {
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", {
 						className: "login-copyright",
-						children: "Relayna Gateway · Internal use only"
+						children: "relayna · Gateway / SDK / Studio"
 					})
 				]
 			}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("section", {
@@ -20015,6 +20398,7 @@ function ConsoleShell() {
 				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 					className: "login-access-card",
 					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ThemeSwitcher, {}),
 						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 							className: "login-access-eyebrow",
 							children: "Organization access"
@@ -20108,21 +20492,21 @@ function ConsoleShell() {
 							className: "sidebar-header",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 								className: "brand",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
-									className: "ti ti-route",
-									"aria-hidden": "true"
-								}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", {
-									className: "brand-title",
-									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", { children: "relayna" }),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", { children: "Gateway console · 4.0" }),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(RelaynaLogo, {}),
+									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+										className: "brand-meta",
+										children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 											className: "version-indicator",
 											"aria-label": "Current Relayna Gateway version",
 											children: "v0.1.49"
 										})
-									]
-								})]
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", {
+										className: "brand-tagline",
+										children: brandIdentity.taglines.Gateway
+									})
+								]
 							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Button, {
 								id: "nav-close",
 								className: "icon-button nav-close",
@@ -20316,6 +20700,7 @@ function ConsoleShell() {
 						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 							className: "sidebar-actions",
 							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ThemeSwitcher, {}),
 								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
 									id: "rotate-token",
 									className: "danger",
@@ -20626,6 +21011,13 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 function FoundryIdentityFields({ identity, credentialConfigured = false }) {
 	const [method, setMethod] = (0, import_react$6.useState)(identity?.method || "workload_identity");
 	return /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(import_jsx_runtime$8.Fragment, { children: [
+		/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+			className: "editor-section-heading",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("i", {
+				className: "ti ti-fingerprint",
+				"aria-hidden": "true"
+			}), "Azure identity"]
+		}),
 		/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
 			label: "Azure identity",
 			children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(NativeSelect, {
@@ -20740,6 +21132,7 @@ function FoundryEditor({ kind, record, providers, projects, onSave, onClose, res
 		}
 	};
 	return /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Dialog, {
+		layout: "drawer",
 		title: provider ? "Azure Foundry connection" : "Foundry service",
 		onClose: () => {
 			if (!busy) onClose();
@@ -20870,7 +21263,7 @@ function FoundryEditor({ kind, record, providers, projects, onSave, onClose, res
 					children: error
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
-					className: "flex gap-2 border-t border-border pt-4",
+					className: "editor-form-actions",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Button, {
 						type: "submit",
 						variant: "default",
@@ -20952,6 +21345,7 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 		}
 	};
 	return /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Dialog, {
+		layout: "drawer",
 		title: "Create provider",
 		description: "Choose a provider and configure its upstream connection.",
 		restoreFocus,
@@ -20966,6 +21360,13 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 					disabled: busy,
 					className: "grid min-w-0 gap-4",
 					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+							className: "editor-section-heading",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("i", {
+								className: "ti ti-server-2",
+								"aria-hidden": "true"
+							}), "Upstream connection"]
+						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
 							label: "Provider",
 							children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(NativeSelect, {
@@ -21019,6 +21420,13 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 						foundry ? /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(FoundryIdentityFields, {}) : /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
 							className: "grid gap-4",
 							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+									className: "editor-section-heading",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("i", {
+										className: "ti ti-key",
+										"aria-hidden": "true"
+									}), "Credential routing"]
+								}),
 								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
 									label: "Default credential (optional)",
 									help: "Write-only upstream credential. Leave blank if this provider does not require a shared credential.",
@@ -21073,7 +21481,7 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 					children: error
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
-					className: "flex gap-2 border-t border-border pt-4",
+					className: "editor-form-actions",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Button, {
 						type: "submit",
 						variant: "default",
@@ -21851,7 +22259,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
 				label: "Route authentication mode",
-				help: help.mode,
+				help: help$1.mode,
 				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(NativeSelect, {
 					name: "endpoint_entra_mode",
 					value: draft.mode,
@@ -21983,7 +22391,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 									children: [
 										/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
 											label: "Stable profile ID (optional)",
-											help: help.id,
+											help: help$1.id,
 											children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
 												name: `${profile.slot}.id`,
 												value: profile.id,
@@ -21995,7 +22403,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
 											label: "Profile name (required)",
-											help: help.name,
+											help: help$1.name,
 											children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
 												name: `${profile.slot}.name`,
 												value: profile.name,
@@ -22007,7 +22415,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
 											label: "Profile authentication",
-											help: help.type,
+											help: help$1.type,
 											children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(NativeSelect, {
 												"data-profile-type": true,
 												name: `${profile.slot}.type`,
@@ -22024,7 +22432,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(CheckboxField, {
 											label: "Enabled",
-											help: help.enabled,
+											help: help$1.enabled,
 											name: `${profile.slot}.enabled`,
 											checked: profile.enabled,
 											onChange: (event) => patch(profile.slot, { enabled: event.target.checked })
@@ -22162,7 +22570,7 @@ function EntraFields({ value, prefix, active, onChange }) {
 		children: [
 			/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
 				label: prefix === "endpoint" ? "Entra audience (required)" : "Profile audience (required)",
-				help: help.audience,
+				help: help$1.audience,
 				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
 					name: name("audience"),
 					value: value.audience,
@@ -22184,7 +22592,7 @@ function EntraFields({ value, prefix, active, onChange }) {
 					required_roles: "Roles (optional)",
 					allowed_groups: "Groups (optional)"
 				}[field],
-				help: help[field],
+				help: help$1[field],
 				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
 					name: name(field),
 					value: value[field].join(","),
@@ -22196,7 +22604,7 @@ function EntraFields({ value, prefix, active, onChange }) {
 			}, field)),
 			/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(CheckboxField, {
 				label: "Accept signed Apigee identity",
-				help: help.allow_apigee,
+				help: help$1.allow_apigee,
 				name: name("allow_apigee"),
 				checked: value.allow_apigee,
 				onChange: (event) => onChange({
@@ -22207,7 +22615,7 @@ function EntraFields({ value, prefix, active, onChange }) {
 		]
 	});
 }
-var import_react$1, import_jsx_runtime$2, blankEntra, help;
+var import_react$1, import_jsx_runtime$2, blankEntra, help$1;
 var init_identity_editor = __esmMin((() => {
 	import_react$1 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_ui();
@@ -22220,7 +22628,7 @@ var init_identity_editor = __esmMin((() => {
 		allowed_groups: [],
 		allow_apigee: false
 	});
-	help = {
+	help$1 = {
 		mode: "Choose how this route determines authentication requirements. Gateway setting inherits Settings; Require Entra uses one audience policy; No Entra retains the route’s credential checks. Use authentication profiles selects a profile by its assigned Relayna key. Saved profiles cannot be removed by switching route modes.",
 		id: "Optional. Leave blank to generate an ID from the profile name plus a random suffix when saving. Custom IDs use 1–64 letters, numbers, hyphens or underscores and must be unique on this route. Saved IDs are preserved when left blank or when the name changes.",
 		name: "Required display name, up to 120 UTF-8 bytes. Unique on this route ignoring case. Renaming preserves key assignments.",
@@ -22431,28 +22839,28 @@ function profileRow(profile = {}, bindings = []) {
 	const keys = bindings.filter((binding) => binding.profile_id === profile.id).map((binding) => binding.key_id);
 	return `<fieldset class="authentication-profile form-grid" data-profile-row>
     <legend>Authentication profile</legend><input type="hidden" name="profile_slot" value="${id}">
-    <input type="hidden" name="${id}.original_id" value="${escape(profile.id)}">
-    <label>Stable profile ID (optional)<input placeholder="Generated from profile name on save" name="${id}.id" value="${escape(profile.id)}" maxlength="64" pattern="(?:[A-Za-z0-9_]|-)+"></label>
-    <label>Profile name (required)<input required placeholder="Internal automation" name="${id}.name" value="${escape(profile.name)}" maxlength="120"></label>
+    <input type="hidden" name="${id}.original_id" value="${escape$1(profile.id)}">
+    <label>Stable profile ID (optional)<input placeholder="Generated from profile name on save" name="${id}.id" value="${escape$1(profile.id)}" maxlength="64" pattern="(?:[A-Za-z0-9_]|-)+"></label>
+    <label>Profile name (required)<input required placeholder="Internal automation" name="${id}.name" value="${escape$1(profile.name)}" maxlength="120"></label>
     <label>Profile authentication<select data-profile-type name="${id}.type"><option value="entra_and_relayna_key">Entra + Relayna key</option><option value="relayna_key_only" ${profile.type === "relayna_key_only" ? "selected" : ""}>Relayna key only</option></select></label>
     <label class="check"><input type="checkbox" name="${id}.enabled" ${profile.enabled !== false ? "checked" : ""}> Enabled</label>
     <div class="wide-field form-grid" data-profile-entra ${keyOnly ? "hidden" : ""}>
-    <label>Profile audience (required)<input ${keyOnly ? "disabled" : "required"} name="${id}.audience" value="${escape(entra.audience)}" placeholder="api://employees"></label>
+    <label>Profile audience (required)<input ${keyOnly ? "disabled" : "required"} name="${id}.audience" value="${escape$1(entra.audience)}" placeholder="api://employees"></label>
     ${[
 		"required_scopes",
 		"required_roles",
 		"allowed_groups"
-	].map((name) => `<label>${escape({
+	].map((name) => `<label>${escape$1({
 		required_scopes: "Scopes (optional)",
 		required_roles: "Roles (optional)",
 		allowed_groups: "Groups (optional)"
-	}[name])}<input ${keyOnly ? "disabled" : ""} name="${id}.${name}" value="${escape((entra[name] || []).join(", "))}"></label>`).join("")}
+	}[name])}<input ${keyOnly ? "disabled" : ""} name="${id}.${name}" value="${escape$1((entra[name] || []).join(", "))}"></label>`).join("")}
     <label class="check"><input type="checkbox" ${keyOnly ? "disabled" : ""} name="${id}.allow_apigee" ${entra.allow_apigee ? "checked" : ""}> Accept signed Apigee identity</label></div>
     <p class="help wide-field" data-profile-key-only ${keyOnly ? "" : "hidden"}>Authenticates the assigned Relayna key. No Entra JWT, audience or claims are used.</p>
     <section class="wide-field profile-key-picker" data-key-picker>
-      <input type="hidden" name="${id}.keys" data-profile-keys value="${escape(keys.join(","))}">
+      <input type="hidden" name="${id}.keys" data-profile-keys value="${escape$1(keys.join(","))}">
       <div class="panel-heading"><span class="profile-key-label">Assigned keys</span><button type="button" data-open-keys aria-haspopup="dialog">Select keys</button></div>
-      <div data-selected-keys>${keys.map((key) => `<div class="profile-key-item"><code>${escape(key)}</code></div>`).join("") || "<p class=\"help\">No keys assigned.</p>"}</div>
+      <div data-selected-keys>${keys.map((key) => `<div class="profile-key-item"><code>${escape$1(key)}</code></div>`).join("") || "<p class=\"help\">No keys assigned.</p>"}</div>
     </section>
     <button type="button" data-remove-profile>Remove unbound profile</button>
   </fieldset>`;
@@ -22589,9 +22997,9 @@ function showProfileError(root, message) {
 	notice.scrollIntoView({ block: "nearest" });
 	return true;
 }
-var escape, slot;
+var escape$1, slot;
 var init_auth_profiles = __esmMin((() => {
-	escape = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;").replaceAll("'", "&#039;");
+	escape$1 = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;").replaceAll("'", "&#039;");
 	slot = 0;
 }));
 //#endregion
@@ -22681,51 +23089,109 @@ function parseTrafficFrames(buffer) {
 	};
 }
 function mergeTrafficRows(rows, batch, limit = 200) {
+	const terminalIds = new Set(rows.filter((row) => row.completed).map((row) => row.id));
 	const merged = new Map(batch.gap ? [] : rows.map((row) => [row.id, row]));
-	for (const row of batch.rows) merged.set(row.id, row);
+	for (const row of batch.rows) {
+		if (terminalIds.has(row.id) && !row.completed) continue;
+		if (row.completed) terminalIds.add(row.id);
+		merged.set(row.id, row);
+	}
+	if (batch.active) {
+		const completed = [...merged.values()].filter((row) => row.completed);
+		return [...batch.active.rows.filter((row) => !terminalIds.has(row.id)).map((row) => {
+			const full = merged.get(row.id);
+			if (!full || full.summary_only || !row.summary_only) return row;
+			return {
+				...full,
+				...row,
+				summary_only: false,
+				timeline: full.timeline,
+				upstream_timings: full.upstream_timings,
+				usage: full.usage,
+				debug_bundle: full.debug_bundle,
+				recording_failures: [.../* @__PURE__ */ new Set([...full.recording_failures || [], ...row.recording_failures || []])],
+				diagnostics: {
+					...full.diagnostics,
+					...row.diagnostics,
+					authentication_profile: full.diagnostics.authentication_profile,
+					entra: full.diagnostics.entra
+				}
+			};
+		}), ...completed.sort((a, b) => (b.completed_at || b.started_at).localeCompare(a.completed_at || a.started_at)).slice(0, limit)];
+	}
 	return [...merged.values()].sort((a, b) => b.started_at.localeCompare(a.started_at) || b.id.localeCompare(a.id)).slice(0, limit);
 }
-function matchesTraffic(row, filters) {
-	return (!filters.request_id || row.request_id.includes(filters.request_id)) && (!filters.service || row.service === filters.service) && (!filters.project_id || row.project_id === filters.project_id) && (!filters.key_id || row.key_id === filters.key_id) && (!filters.failure_code || row.diagnostics.failure_code === filters.failure_code) && (!filters.status || String(row.client_status) === filters.status) && (filters.outcome !== "failures" || Boolean(row.diagnostics.failure_code)) && (filters.outcome !== "active" || !row.completed);
+function trafficProtocol(row) {
+	return row.diagnostics?.protocol || (row.diagnostics?.websocket ? "websocket" : "unknown");
 }
-function mountTraffic({ content, api, headers, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, refreshWebSocketMetrics, initialFilters = {}, onFilters = () => {} }) {
+function trafficDuration(milliseconds) {
+	if (!Number.isFinite(milliseconds)) return "—";
+	const seconds = Math.max(0, milliseconds) / 1e3;
+	if (seconds < 1) return `${Math.round(Math.max(0, milliseconds))} ms`;
+	if (seconds < 60) return `${seconds.toFixed(1)} s`;
+	if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
+	return `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60 % 60)}m`;
+}
+function matchesTraffic(row, filters) {
+	return (!filters.request_id || row.request_id.includes(filters.request_id)) && (!filters.service || row.service === filters.service) && (!filters.project_id || row.project_id === filters.project_id) && (!filters.key_id || row.key_id === filters.key_id) && (!filters.failure_code || row.diagnostics.failure_code === filters.failure_code) && (!filters.status || String(row.client_status) === filters.status) && (!filters.protocol || trafficProtocol(row) === filters.protocol) && (filters.outcome !== "failures" || Boolean(row.diagnostics.failure_code)) && (filters.outcome !== "active" || !row.completed) && (filters.outcome !== "completed" || row.completed);
+}
+function mountTraffic({ content, api, headers, esc, attr, table, badge, time, routingModeLabel, mountDialog, investigationView, bindInvestigationActions, refreshWebSocketMetrics, initialFilters = {}, initialMode = "active", onFilters = () => {} }) {
 	let rows = [], cursor = null, instance = "Connecting", selected = null, filters = { ...initialFilters };
-	let mode = "live", paused = false, disposed = false, controller = null, reconnect = null;
+	let mode = initialMode, paused = false, disposed = false, controller = null, reconnect = null;
 	let warning = "", historyCursor = null, historyGeneration = 0, connectionGeneration = 0;
+	let activeGeneration = 0, activeTimer = null, cluster = null, activeCursor = null, historyWindow = null;
+	let historyTimer = null, historyAtNewest = true, activeAtNewest = true;
+	let activeStale = false;
+	let selectedInstance = "all";
 	content.innerHTML = `
-    <section class="panel">
-      <div class="panel-heading"><h3>Traffic monitor</h3><div class="actions traffic-source-actions">
-        <label>Traffic source<select id="traffic-mode" aria-label="Traffic source" aria-describedby="traffic-source-help"><option value="live">Live instance</option><option value="history">Saved history · all instances</option></select></label>
+    <section class="panel traffic-explorer">
+      <div class="panel-heading"><h3>Traffic explorer</h3><div class="actions traffic-source-actions">
+        <label>Traffic view<select id="traffic-mode" aria-label="Traffic view" aria-describedby="traffic-source-help"><option value="active">Active · all instances</option><option value="history">Recent completed · all instances</option><option value="legacy">Saved history by arrival · all instances</option><option value="live">Live journal · one instance</option></select></label>
+        <label id="traffic-instance-label">Gateway instance<select id="traffic-instance"><option value="all">All instances</option></select></label>
         <button id="traffic-pause" type="button">Pause</button></div></div>
-      <p id="traffic-connection" role="status" aria-live="polite">Connecting…</p>
-      <p id="traffic-source-help" class="help">Live view retains up to 200 recent requests from one gateway process. Saved history includes completed records across instances; its default window is 24 hours. Unknown routes are hidden to avoid capturing sensitive paths.</p>
+      <p id="traffic-connection" class="monitor-connection" role="status" aria-live="polite">Connecting…</p>
+      <p id="traffic-source-help" class="sr-only">Browse active sessions, recent completions, saved history or one process’s live journal.</p>
       <div id="traffic-warning" class="notice hidden" role="status"></div>
-      <form id="traffic-filters"><div class="form-grid">
-        <label>Request ID<input name="request_id" maxlength="128" placeholder="Client correlation ID"></label>
-        <label>Service<input name="service" maxlength="256" placeholder="Exact service name"></label>
-        <label>Project ID<input name="project_id" placeholder="Exact project UUID"></label>
-        <label>Key ID<input name="key_id" placeholder="Exact key UUID"></label>
-        <label>Client HTTP status<input name="status" type="number" min="100" max="599" placeholder="503"></label>
-        <label>Failure reason<input name="failure_code" maxlength="80" placeholder="control_state_unavailable"></label>
-        <label>Outcome<select name="outcome"><option value="all">All requests</option><option value="failures">Failures only</option><option value="active">Active only · live</option></select></label>
-        <label>History from<input name="from" type="datetime-local"></label>
-        <label>History to<input name="to" type="datetime-local"></label>
-        </div><div class="form-actions"><button type="submit">Apply filters</button></div>
+      <div id="traffic-protocols" class="traffic-protocol-tabs" role="group" aria-label="Protocol partition">
+        <button type="button" data-traffic-protocol="" aria-pressed="true"><i class="ti ti-arrows-exchange" aria-hidden="true"></i>All protocols</button>
+        <button type="button" data-traffic-protocol="http" aria-pressed="false"><i class="ti ti-world" aria-hidden="true"></i>HTTP / SSE</button>
+        <button type="button" data-traffic-protocol="websocket" aria-pressed="false"><i class="ti ti-plug-connected" aria-hidden="true"></i>WebSocket</button>
+      </div>
+      <form id="traffic-filters">
+        <div class="traffic-quick-filters"><label>Request ID<input name="request_id" maxlength="128" placeholder="Search correlation ID"></label>
+          <label>Service<input name="service" maxlength="256" placeholder="Exact service name"></label>
+          <label>Outcome<select name="outcome"><option value="all">All requests</option><option value="failures">Failures only</option><option value="active">Active only</option><option value="completed">Completed only</option></select></label>
+          <button type="submit"><i class="ti ti-filter" aria-hidden="true"></i> Apply filters</button></div>
+        <details class="monitor-details traffic-advanced-filters"><summary><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>Advanced filters</summary><div class="form-grid">
+          <label>Project ID<input name="project_id" placeholder="Exact project UUID"></label>
+          <label>Key ID<input name="key_id" placeholder="Exact key UUID"></label>
+          <label>Client HTTP status<input name="status" type="number" min="100" max="599" placeholder="e.g. 503"></label>
+          <label>Failure reason<input name="failure_code" maxlength="80" placeholder="Exact failure code"></label>
+          <label>Protocol partition<select name="protocol"><option value="">All protocols</option><option value="http">HTTP / SSE</option><option value="websocket">WebSocket</option><option value="unknown">Not recorded</option></select></label>
+          <label>Window from<input name="from" type="datetime-local"></label><label>Window to<input name="to" type="datetime-local"></label>
+        </div></details>
       </form>
     </section>
     <section class="panel"><div class="panel-heading"><h3>Requests</h3><div id="traffic-pages" class="actions hidden"><button id="traffic-newest">Newest</button><button id="traffic-older">Older</button></div></div>
-      <p id="traffic-summary" class="help"></p><div id="traffic-failure-groups" class="actions"></div><div id="traffic-rows"></div></section>
+      <p id="traffic-summary" class="sr-only"></p><div id="traffic-counts" class="traffic-result-summary"></div><div id="traffic-failure-groups" class="actions"></div><div id="traffic-rows"></div>
+      <details class="monitor-details"><summary><i class="ti ti-info-circle" aria-hidden="true"></i>Sources & retention</summary><ul class="monitor-definitions"><li>Active HTTP/SSE and WebSocket sessions have independent retention budgets. Counts can exceed displayed rows.</li><li>Recent completed requests use completion time, default to 30 minutes, and refresh every five seconds on Newest.</li><li>Older pages and fixed end-time windows stay frozen. Saved history by arrival includes legacy records and defaults to 24 hours.</li><li>The live journal covers one process. Inspect a request for routing, timing, failure and recording details. Recording failures may only be available in live records or gateway logs.</li></ul></details>
+    </section>
     <section id="traffic-detail" class="panel hidden" tabindex="-1"></section>`;
 	let detailBackdrop = null, closeDetail = null, renderedDetailRow = null;
 	const element = (id) => content.querySelector(`#${id}`) || detailBackdrop?.querySelector(`#${id}`);
+	element("traffic-mode").value = mode;
+	element("traffic-pages").classList.toggle("hidden", mode === "live");
+	element("traffic-instance-label").classList.toggle("hidden", mode !== "active");
 	for (const [name, value] of Object.entries(filters)) {
 		const field = element("traffic-filters").elements.namedItem(name);
 		if (field) field.value = value;
 	}
 	const label = (value) => (value || "unknown").replaceAll("_", " ");
+	const isHistory = () => mode === "history" || mode === "legacy";
+	const staleRow = (row) => mode === "active" && (activeStale || cluster?.unavailable || cluster?.instances?.some((item) => item.instance_id === row.instance_id && item.stale));
 	function connection(message) {
 		if (disposed) return;
-		const value = `${message} · ${mode === "live" ? `Instance ${instance}` : "All instances"}`;
+		const value = `${message} · ${mode === "live" ? `Instance ${instance}` : selectedInstance === "all" || isHistory() ? "All instances" : `Instance ${selectedInstance}`}`;
 		if (element("traffic-connection").textContent !== value) element("traffic-connection").textContent = value;
 	}
 	function render() {
@@ -22735,7 +23201,11 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		const visible = rows.filter((row) => matchesTraffic(row, filters));
 		const groups = /* @__PURE__ */ new Map();
 		for (const row of visible) if (row.diagnostics.failure_code) groups.set(row.diagnostics.failure_code, (groups.get(row.diagnostics.failure_code) || 0) + 1);
-		element("traffic-summary").textContent = `${visible.length} displayed · ${visible.filter((row) => !row.completed).length} active in retained records · ${[...groups].map(([reason, count]) => `${label(reason)}: ${count}`).join(" · ") || "No failures in displayed records"}`;
+		const activeCounts = mode === "active" && !cluster?.unavailable && cluster?.counts;
+		const countText = activeCounts ? `${cluster.partial ? "Known" : "Exact"} active before filters: HTTP/SSE ${activeCounts.http ?? "unknown"} · WebSocket ${activeCounts.websocket ?? "unknown"}` : mode === "active" ? "Current counts unknown" : isHistory() ? "Saved page · counts cover displayed rows" : `${visible.filter((row) => !row.completed).length} active in retained records`;
+		element("traffic-summary").textContent = `${visible.length} displayed · ${countText} · ${[...groups].map(([reason, count]) => `${label(reason)}: ${count}`).join(" · ") || "No failures in displayed records"}`;
+		element("traffic-counts").innerHTML = `<span><strong>${visible.length}</strong> displayed</span><span>${esc(countText)}</span><span class="${groups.size ? "bad" : ""}"><i class="ti ti-${groups.size ? "alert-circle" : "circle-check"}" aria-hidden="true"></i> ${groups.size ? `${[...groups.values()].reduce((a, b) => a + b, 0)} failures on this page` : "No failures on this page"}</span>`;
+		element("traffic-protocols").querySelectorAll("[data-traffic-protocol]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.trafficProtocol === (filters.protocol || ""))));
 		if (filters.failure_code && !groups.has(filters.failure_code)) groups.set(filters.failure_code, 0);
 		const focusedReason = element("traffic-failure-groups").contains(document.activeElement) ? document.activeElement?.dataset?.trafficReason : null;
 		element("traffic-failure-groups").innerHTML = [...groups].map(([reason, count]) => `<button type="button" data-traffic-reason="${attr(reason)}" aria-pressed="${filters.failure_code === reason}">${esc(label(reason))}: ${count}</button>`).join("") + (filters.failure_code ? `<span class="help">Click the selected reason again to clear its filter.</span>` : "");
@@ -22746,39 +23216,27 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			};
 			onFilters(filters);
 			element("traffic-filters").elements.namedItem("failure_code").value = filters.failure_code;
-			if (mode === "history") history();
-			else render();
+			refresh();
 		}));
 		if (focusedReason) ([...element("traffic-failure-groups").querySelectorAll("[data-traffic-reason]")].find((button) => button.dataset.trafficReason === focusedReason) || element("traffic-filters").elements.namedItem("failure_code")).focus({ preventScroll: true });
-		element("traffic-rows").innerHTML = table([
-			"Arrived",
-			"Request",
-			"Protocol / transfer",
-			"Endpoint / service",
-			"Routing mode",
-			"Stage / outcome",
-			"Client HTTP",
-			"Upstream HTTP",
-			"Attempts",
-			"Elapsed",
-			"Failure reason",
-			"Recording",
+		const tableMarkup = table([
+			mode === "history" ? "Completed / arrived" : "Arrived",
+			"Request / service",
+			"Protocol",
+			"Status / outcome",
+			"Client / upstream",
+			"Duration",
 			"Details"
 		], visible.map((row) => [
-			time(row.started_at),
-			`<code>${esc(row.request_id)}</code>`,
-			row.diagnostics.websocket ? `${badge("WS", "neutral")}<div class="subtle">↑ ${esc(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc(row.diagnostics.websocket.upstream_bytes)} B</div>` : badge(row.diagnostics?.protocol === "http" ? "HTTP" : "Not recorded", "neutral"),
-			`${esc(row.method)} ${esc(row.endpoint || "Unresolved route")}<br><span class="subtle">${esc(row.service || row.provider || "Not selected")}</span>`,
-			badge(routingModeLabel(row.diagnostics), "neutral"),
-			badge(label(row.completed ? row.diagnostics.outcome : row.stage), row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "warn"),
-			esc(row.client_status ?? "—"),
-			esc(row.diagnostics.upstream_status ?? "—"),
-			esc(row.attempts),
-			`<span data-traffic-elapsed="${attr(row.id)}">${esc(row.completed ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)))} ms</span>`,
-			esc(label(row.diagnostics.failure_code || "none")),
-			row.recording_failures.length ? badge("Recording failed", "bad") : esc(row.completed ? "No reported failure" : "In progress"),
-			`<button type="button" data-traffic-id="${attr(row.id)}">Inspect</button>`
+			`<span class="traffic-clock">${mode === "history" ? `${row.completed_at ? time(row.completed_at) : "Completion not recorded"}<div class="subtle">Arrived ${time(row.started_at)}</div>` : time(row.started_at)}</span>`,
+			`<div class="traffic-request-cell"><code title="${attr(row.request_id)}">${esc(row.request_id)}</code><small>${esc(row.method)} ${esc(row.service || row.provider || "Unresolved route")}</small></div>`,
+			trafficProtocol(row) === "websocket" ? badge("WS", "neutral") + (row.diagnostics.websocket ? `<div class="subtle">↑ ${esc(row.diagnostics.websocket.client_bytes)} B · ↓ ${esc(row.diagnostics.websocket.upstream_bytes)} B</div>` : "") : badge(trafficProtocol(row) === "http" ? row.streaming ? "HTTP / SSE" : "HTTP" : "Not recorded", "neutral"),
+			badge(staleRow(row) ? `Last known ${label(row.stage)} · stale` : label(row.completed ? row.diagnostics.outcome : row.stage), staleRow(row) ? "neutral" : row.diagnostics.failure_code ? "bad" : row.completed ? "good" : "neutral") + (row.diagnostics.failure_code ? `<div class="subtle">${esc(label(row.diagnostics.failure_code))}</div>` : "") + (row.recording_failures?.length ? `<div>${badge("Recording failed", "bad")}</div>` : ""),
+			`<span class="traffic-request-http">${esc(row.client_status ?? "—")}<small>Upstream ${esc(row.diagnostics.upstream_status ?? "—")}</small></span>`,
+			`<span title="${attr(`${row.elapsed_ms} ms`)}" data-traffic-elapsed="${attr(row.id)}">${esc(trafficDuration(row.completed || staleRow(row) ? row.elapsed_ms : Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at))))}${staleRow(row) ? " · last observed" : ""}</span>`,
+			`<button type="button" class="icon-button" data-traffic-id="${attr(row.id)}" aria-label="Inspect request ${attr(row.request_id)}" title="Inspect request"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>`
 		]));
+		element("traffic-rows").innerHTML = visible.length ? tableMarkup : `<div class="monitor-empty"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>${mode === "active" ? "No matching active requests. New sessions appear automatically." : "No matching requests in this window."}</span></div>`;
 		element("traffic-rows").querySelectorAll("[data-traffic-id]").forEach((button) => button.addEventListener("click", () => {
 			selected = button.dataset.trafficId;
 			openDetail();
@@ -22790,7 +23248,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			const detail = element("traffic-detail");
 			detailBackdrop = document.createElement("section");
 			detailBackdrop.className = "modal-backdrop drawer-backdrop";
-			detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="traffic-investigation-title"><div class="drawer-heading"><h3 id="traffic-investigation-title">Request investigation</h3><button type="button" id="traffic-close" aria-label="Close Request investigation">Close</button></div><div class="drawer-body"></div></div>`;
+			detailBackdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="traffic-investigation-title"><div class="drawer-heading"><span class="drawer-mark" aria-hidden="true"><i class="ti ti-activity"></i></span><div class="drawer-title"><span class="eyebrow">Inspect & analyze</span><h3 id="traffic-investigation-title">Request investigation</h3></div><button type="button" class="icon-button" id="traffic-close" aria-label="Close Request investigation"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="drawer-body"></div></div>`;
 			detailBackdrop.querySelector(".drawer-body").appendChild(detail);
 			document.body.appendChild(detailBackdrop);
 			closeDetail = mountDialog(detailBackdrop, {
@@ -22821,7 +23279,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		const copyFocus = detail.contains(document.activeElement) ? document.activeElement?.dataset?.investigationCopy : null;
 		const rawFocus = document.activeElement === detail.querySelector("[data-investigation-section=raw] > summary");
 		const rawOpen = detail.querySelector("[data-investigation-section=raw]")?.open;
-		detail.innerHTML = investigationView({ traffic: row });
+		detail.innerHTML = (row.summary_only ? `<p class="notice">Active summary. Full investigation details are available from retained lifecycle updates or saved history after completion.</p>` : "") + investigationView({ traffic: row });
 		if (rawOpen) detail.querySelector("[data-investigation-section=raw]").open = true;
 		bindInvestigationActions(detail, row.request_id);
 		if (copyFocus) [...detail.querySelectorAll("[data-investigation-copy]")].find((button) => button.dataset.investigationCopy === copyFocus)?.focus({ preventScroll: true });
@@ -22829,9 +23287,98 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 	}
 	function stopConnection() {
 		connectionGeneration++;
+		activeGeneration++;
+		historyGeneration++;
 		controller?.abort();
 		controller = null;
 		clearTimeout(reconnect);
+		clearTimeout(activeTimer);
+		clearTimeout(historyTimer);
+	}
+	function refresh() {
+		if (isHistory()) history();
+		else if (mode === "active") active();
+		else {
+			stopConnection();
+			cursor = null;
+			render();
+			connect();
+		}
+	}
+	async function active(older = false, polling = false) {
+		if (disposed || paused || mode !== "active") return;
+		const before = older ? activeCursor : null;
+		if (older && !before) return;
+		clearTimeout(activeTimer);
+		activeAtNewest = !older;
+		const generation = ++activeGeneration;
+		element("traffic-older").disabled = true;
+		element("traffic-newest").disabled = true;
+		if (!polling) {
+			if (!older) {
+				rows = [];
+				cluster = null;
+				activeCursor = null;
+			}
+			selected = null;
+			render();
+			connection("Loading active traffic");
+		}
+		try {
+			const query = new URLSearchParams({
+				limit: "100",
+				instance_id: selectedInstance
+			});
+			for (const key of [
+				"request_id",
+				"service",
+				"project_id",
+				"key_id",
+				"status",
+				"failure_code",
+				"protocol"
+			]) if (filters[key]) query.set(key, filters[key]);
+			if (filters.outcome === "failures") query.set("failures_only", "true");
+			if (before) {
+				query.set("before", before.started_at);
+				query.set("before_id", before.id);
+			}
+			const result = await api(`/admin-ui/admin/traffic/cluster?${query}`);
+			if (disposed || paused || mode !== "active" || generation !== activeGeneration) return;
+			cluster = result;
+			activeStale = false;
+			rows = filters.outcome === "completed" ? [] : result.rows || [];
+			activeCursor = result.has_more && result.before && result.before_id ? {
+				started_at: result.before,
+				id: result.before_id
+			} : null;
+			element("traffic-older").disabled = !activeCursor;
+			const knownInstances = result.instances || [];
+			const options = `<option value="all">All instances</option>` + knownInstances.map((item) => `<option value="${attr(item.instance_id)}">${esc(item.instance_id)}${item.stale ? " · stale" : ""}</option>`).join("") + (selectedInstance !== "all" && !knownInstances.some((item) => item.instance_id === selectedInstance) ? `<option value="${attr(selectedInstance)}">${esc(selectedInstance)} · unavailable</option>` : "");
+			const selector = element("traffic-instance");
+			if (selector.innerHTML !== options) selector.innerHTML = options;
+			selector.value = selectedInstance;
+			warning = result.unavailable ? "Active traffic unavailable. Counts and coverage are unknown; retrying." : [
+				result.partial ? "Cluster coverage is partial; displayed rows may be stale. Stale or unavailable instances are excluded from current counts." : "",
+				result.truncated ? "Active summary retention is saturated. Counts are independent of retained rows; filtered counts may be unknown." : "",
+				result.has_more ? "More matching active summaries are available. Select a protocol or narrower filter, or use Older when available." : ""
+			].filter(Boolean).join(" ");
+			connection(result.unavailable ? "Active traffic unavailable" : `Active traffic · sampled ${time(result.sampled_at)}`);
+			render();
+		} catch (error) {
+			if (!disposed && mode === "active" && generation === activeGeneration) {
+				cluster = null;
+				activeStale = true;
+				warning = `Active traffic unavailable: ${error.message}. Displayed rows are stale; current counts are unknown.`;
+				connection("Active traffic unavailable · retrying");
+				render();
+			}
+		} finally {
+			if (!disposed && !paused && mode === "active" && generation === activeGeneration) {
+				element("traffic-newest").disabled = false;
+				if (!older) activeTimer = setTimeout(() => active(false, true), 2e3);
+			}
+		}
 	}
 	async function connect() {
 		if (disposed || paused || mode !== "live") return;
@@ -22841,7 +23388,18 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		let watchdog = setTimeout(() => attempt.abort(), 12e3);
 		let reader;
 		try {
-			const response = await fetch("/admin-ui/admin/traffic/live", {
+			const query = new URLSearchParams({ snapshot: "true" });
+			for (const key of [
+				"request_id",
+				"service",
+				"project_id",
+				"key_id",
+				"status",
+				"failure_code",
+				"protocol"
+			]) if (filters[key]) query.set(key, filters[key]);
+			if (filters.outcome === "failures") query.set("failures_only", "true");
+			const response = await fetch(`/admin-ui/admin/traffic/live?${query}`, {
 				headers: {
 					...headers(),
 					...cursor ? { "last-event-id": cursor } : {}
@@ -22869,7 +23427,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 					cursor = batch.cursor;
 					rows = mergeTrafficRows(rows, batch);
 					connection("Live");
-					if (batch.rows.length || batch.gap) render();
+					if (batch.rows.length || batch.gap || batch.active) render();
 				}
 			}
 			if (!disposed && !paused && mode === "live" && generation === connectionGeneration) connection("Reconnecting for authorization refresh");
@@ -22881,51 +23439,71 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			if (!disposed && !paused && mode === "live" && generation === connectionGeneration) reconnect = setTimeout(connect, 1500);
 		}
 	}
-	async function history(older = false) {
+	async function history(older = false, polling = false) {
+		if (disposed || !isHistory() || polling && paused) return;
 		const before = older ? historyCursor : null;
 		if (older && !before) return;
-		historyCursor = null;
+		clearTimeout(historyTimer);
+		historyAtNewest = !older;
+		if (!polling && !older) historyCursor = null;
 		element("traffic-older").disabled = true;
 		element("traffic-newest").disabled = true;
 		const generation = ++historyGeneration;
-		rows = [];
-		selected = null;
-		render();
-		connection("Loading saved history");
+		if (!polling) {
+			if (!older) rows = [];
+			selected = null;
+			render();
+			connection("Loading saved history");
+		}
 		try {
-			const query = new URLSearchParams({ limit: "100" });
+			const query = new URLSearchParams({
+				limit: "100",
+				time_basis: mode === "legacy" ? "started" : "completed"
+			});
 			for (const key of [
 				"request_id",
 				"service",
 				"project_id",
 				"key_id",
 				"status",
-				"failure_code"
+				"failure_code",
+				"protocol"
 			]) if (filters[key]) query.set(key, filters[key]);
 			if (filters.outcome === "active") throw new Error("Active requests are available in Live instance mode.");
 			if (filters.outcome === "failures") query.set("failures_only", "true");
-			for (const key of ["from", "to"]) if (filters[key]) query.set(key, new Date(filters[key]).toISOString());
+			if (!older || !historyWindow) {
+				const end = filters.to ? new Date(filters.to) : /* @__PURE__ */ new Date();
+				historyWindow = {
+					from: filters.from ? new Date(filters.from).toISOString() : (/* @__PURE__ */ new Date(end.getTime() - (mode === "legacy" ? 1440 : 30) * 60 * 1e3)).toISOString(),
+					to: end.toISOString()
+				};
+			}
+			for (const key of ["from", "to"]) query.set(key, historyWindow[key]);
 			if (before) {
-				query.set("before", before.started_at);
+				query.set("before", mode === "legacy" ? before.started_at : before.completed_at || before.started_at);
 				query.set("before_id", before.id);
 			}
 			const result = await api(`/admin-ui/admin/traffic/history?${query}`);
-			if (disposed || mode !== "history" || generation !== historyGeneration) return;
+			if (disposed || !isHistory() || generation !== historyGeneration) return;
 			rows = result;
 			historyCursor = rows.at(-1);
-			selected = null;
+			if (!polling) selected = null;
 			element("traffic-older").disabled = result.length < 100;
-			warning = "Saved history contains records successfully written to the database. Recording failures and in-flight requests may only be available in live records or gateway logs.";
-			connection("Saved history");
+			warning = "";
+			connection(`Saved history${paused ? " · paused" : mode === "legacy" ? " by arrival" : historyAtNewest && !filters.to ? " · newest refreshes every five seconds" : " · frozen window"}`);
 			render();
 		} catch (error) {
-			if (!disposed && generation === historyGeneration) {
-				warning = `History unavailable: ${error.message}`;
+			if (!disposed && isHistory() && generation === historyGeneration) {
+				warning = `History unavailable: ${error.message}${polling ? ". Displayed rows are stale; retrying." : ""}`;
+				if (polling || older) element("traffic-older").disabled = !historyCursor || rows.length < 100;
 				connection("History unavailable");
 				render();
 			}
 		} finally {
-			if (!disposed && mode === "history" && generation === historyGeneration) element("traffic-newest").disabled = false;
+			if (!disposed && isHistory() && generation === historyGeneration) {
+				element("traffic-newest").disabled = false;
+				if (mode === "history" && historyAtNewest && !filters.to && !paused) historyTimer = setTimeout(() => history(false, true), 5e3);
+			}
 		}
 	}
 	element("traffic-filters").addEventListener("submit", (event) => {
@@ -22938,8 +23516,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 			const field = event.currentTarget.elements.namedItem(name);
 			if (field) field.value = value;
 		}
-		if (mode === "history") history();
-		else render();
+		refresh();
 	});
 	element("traffic-mode").addEventListener("change", (event) => {
 		mode = event.target.value;
@@ -22948,16 +23525,18 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		rows = [];
 		selected = null;
 		warning = "";
-		element("traffic-pages").classList.toggle("hidden", mode !== "history");
-		element("traffic-pause").disabled = mode === "history";
-		if (mode === "history") history();
-		else {
-			cursor = null;
-			paused = false;
-			element("traffic-pause").textContent = "Pause";
-			render();
-			connect();
-		}
+		cluster = null;
+		element("traffic-pages").classList.toggle("hidden", mode === "live");
+		element("traffic-instance-label").classList.toggle("hidden", mode !== "active");
+		element("traffic-pause").disabled = false;
+		cursor = null;
+		paused = false;
+		element("traffic-pause").textContent = "Pause";
+		refresh();
+	});
+	element("traffic-instance").addEventListener("change", (event) => {
+		selectedInstance = event.target.value;
+		active();
 	});
 	element("traffic-pause").addEventListener("click", () => {
 		paused = !paused;
@@ -22965,21 +23544,46 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 		if (paused) {
 			stopConnection();
 			connection("Paused · updates are not being received");
+		} else if (mode === "active") {
+			if (activeAtNewest) active();
+			else {
+				element("traffic-older").disabled = !activeCursor;
+				element("traffic-newest").disabled = false;
+				connection("Active traffic · older page remains frozen");
+			}
+		} else if (isHistory()) {
+			if (historyAtNewest) history(false, true);
+			else {
+				element("traffic-older").disabled = !historyCursor || rows.length < 100;
+				element("traffic-newest").disabled = false;
+				connection("Saved history · older page remains frozen");
+			}
 		} else connect();
 	});
-	element("traffic-newest").addEventListener("click", () => history());
-	element("traffic-older").addEventListener("click", () => history(true));
+	element("traffic-protocols").querySelectorAll("[data-traffic-protocol]").forEach((button) => button.addEventListener("click", () => {
+		filters = {
+			...filters,
+			protocol: button.dataset.trafficProtocol
+		};
+		element("traffic-filters").elements.namedItem("protocol").value = filters.protocol;
+		onFilters(filters);
+		refresh();
+	}));
+	element("traffic-newest").addEventListener("click", () => mode === "active" ? active() : history());
+	element("traffic-older").addEventListener("click", () => mode === "active" ? active(true) : history(true));
 	const elapsedTimer = setInterval(() => {
-		if (disposed || paused || mode !== "live") return;
-		refreshWebSocketMetrics?.(element("traffic-detail"));
+		if (disposed || paused || isHistory()) return;
+		if (!staleRow(rows.find((row) => row.id === selected) || {})) refreshWebSocketMetrics?.(element("traffic-detail"));
 		for (const row of rows) {
-			if (row.completed) continue;
+			if (row.completed || staleRow(row)) continue;
 			const cell = content.querySelector(`[data-traffic-elapsed="${row.id}"]`);
-			if (cell) cell.textContent = `${Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at))} ms`;
+			if (cell) cell.textContent = trafficDuration(Math.max(row.elapsed_ms, Date.now() - Date.parse(row.started_at)));
 		}
 	}, 1e3);
 	render();
-	connect();
+	if (mode === "active") active();
+	else if (isHistory()) history();
+	else connect();
 	return () => {
 		closeDetail?.();
 		disposed = true;
@@ -22990,7 +23594,1546 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 }
 var init_traffic = __esmMin((() => {}));
 //#endregion
+//#region crates/gateway-api/admin-ui/src/monitoring-visuals.ts
+function chartColor(lightColor, darkToken) {
+	return (context) => {
+		const document = context?.chart?.canvas?.ownerDocument ?? globalThis.document;
+		if (document?.documentElement?.dataset?.theme !== "dark") return lightColor;
+		return (document.defaultView?.getComputedStyle(document.documentElement))?.getPropertyValue(`--rg-chart-${darkToken}`).trim() || darkChartPalette[darkToken];
+	};
+}
+function installChartTheme(Chart, document = globalThis.document) {
+	if (!Chart || !document?.addEventListener) return () => {};
+	let documents = chartThemeInstallations.get(Chart);
+	if (!documents) {
+		documents = /* @__PURE__ */ new WeakMap();
+		chartThemeInstallations.set(Chart, documents);
+	}
+	if (documents.has(document)) return documents.get(document);
+	if (Chart.defaults?.font) Chart.defaults.font.family = "\"Relayna Round\", ui-rounded, system-ui, sans-serif";
+	let active = true;
+	const refresh = () => {
+		for (const id of Object.keys(Chart.instances || {})) {
+			const chart = Chart.instances[id];
+			if (chart.canvas?.ownerDocument === document) chart.update?.("none");
+		}
+	};
+	document.addEventListener("relayna:theme-change", refresh);
+	document.fonts?.ready.then(() => {
+		if (active) refresh();
+	});
+	const dispose = () => {
+		if (documents.get(document) !== dispose) return;
+		active = false;
+		document.removeEventListener("relayna:theme-change", refresh);
+		documents.delete(document);
+	};
+	documents.set(document, dispose);
+	return dispose;
+}
+function monitorKpi(label, value, { esc, icon = "activity", detail = "", tone = "neutral" } = {}) {
+	return `<div class="monitor-kpi ${esc(tone)}"><div class="monitor-kpi-label"><i class="ti ti-${esc(icon)}" aria-hidden="true"></i><span>${esc(label)}</span></div><strong>${esc(value)}</strong>${detail ? `<small>${esc(detail)}</small>` : ""}</div>`;
+}
+function capacityMeter(label, used, free, maximum, format, esc) {
+	const known = [
+		used,
+		free,
+		maximum
+	].every(measured$1) && maximum > 0;
+	const percent = known ? Math.min(100, used / maximum * 100) : null;
+	return `<div class="monitor-capacity"><div class="monitor-capacity-heading"><span>${esc(label)}</span><strong>${known ? esc(`${format(used)} / ${format(maximum)}`) : "Unknown"}</strong></div>
+    ${known ? `<progress max="${maximum}" value="${Math.min(used, maximum)}" aria-label="${esc(`${label}: ${format(used)} occupied of ${format(maximum)}`)}" class="${percent >= 90 ? "is-high" : percent >= 70 ? "is-elevated" : ""}"></progress>` : `<div class="monitor-meter-unknown" aria-hidden="true"></div>`}
+    <div class="monitor-capacity-foot"><span>${known ? `${esc(format(free))} free / ${esc(format(maximum))}` : "Capacity unavailable"}</span><span>${known ? `${percent.toFixed(0)}% used` : "—"}</span></div></div>`;
+}
+function protocolMix(active, esc) {
+	const values = [
+		active?.http,
+		active?.sse,
+		active?.websocket
+	];
+	const total = values.every(measured$1) ? values.reduce((a, b) => a + b, 0) : 0;
+	const labels = [
+		"HTTP",
+		"SSE",
+		"WebSocket"
+	], colors = [
+		"teal",
+		"blue",
+		"violet"
+	];
+	return `<div class="monitor-protocol-mix"><div class="monitor-protocol-bar" role="img" aria-label="${esc(labels.map((label, i) => `${label}: ${metricNumber(values[i])}`).join(", "))}">${total ? values.map((value, i) => `<span class="${colors[i]}" style="width:${100 * value / total}%"></span>`).join("") : `<span class="idle" style="width:100%"></span>`}</div><div class="monitor-legend">${labels.map((label, i) => `<span><i class="monitor-dot ${colors[i]}" aria-hidden="true"></i>${label}<strong>${esc(metricNumber(values[i]))}</strong></span>`).join("")}</div></div>`;
+}
+function monitorChartOptions({ horizontal = false, money = false } = {}) {
+	return {
+		responsive: true,
+		maintainAspectRatio: false,
+		animation: false,
+		interaction: {
+			mode: "index",
+			intersect: false
+		},
+		plugins: {
+			legend: {
+				display: true,
+				position: "bottom",
+				align: "start",
+				labels: {
+					color: chartColor(monitorPalette.text, "text"),
+					boxWidth: 10,
+					boxHeight: 10,
+					usePointStyle: true,
+					pointStyle: "circle",
+					padding: 18,
+					font: { size: 11 }
+				}
+			},
+			tooltip: {
+				backgroundColor: chartColor("#2C1F2E", "tooltip-bg"),
+				titleColor: chartColor("#fff", "tooltip-text"),
+				bodyColor: chartColor("#fff", "tooltip-text"),
+				footerColor: chartColor("#fff", "tooltip-text"),
+				padding: 12,
+				cornerRadius: 7
+			}
+		},
+		scales: {
+			x: {
+				grid: {
+					display: horizontal,
+					color: chartColor("#DFD0D9", "grid")
+				},
+				border: { display: false },
+				ticks: {
+					color: chartColor(monitorPalette.text, "text"),
+					maxTicksLimit: 6,
+					font: { size: 10 }
+				},
+				...horizontal ? { beginAtZero: true } : {}
+			},
+			y: {
+				beginAtZero: true,
+				grid: {
+					color: chartColor("#DFD0D9", "grid"),
+					display: !horizontal
+				},
+				border: { display: false },
+				ticks: {
+					color: chartColor(monitorPalette.text, "text"),
+					font: { size: 10 },
+					...money ? { callback: (value) => `$${Number(value).toLocaleString()}` } : { precision: 0 }
+				}
+			}
+		}
+	};
+}
+function mountMonitorChart(Chart, canvas, config) {
+	return Chart && canvas?.getContext ? new Chart(canvas, config) : null;
+}
+function appendGatewayObservation(history, selection, sampledAt) {
+	if (!Number.isFinite(sampledAt) || history.at(-1)?.at >= sampledAt) return history;
+	const current = selection.runtime && !selection.stale && !selection.failed;
+	const next = [...history];
+	if (next.length && sampledAt - next.at(-1).at > 1e4) next.push({
+		at: sampledAt - 1,
+		rate: null,
+		p95: null
+	});
+	next.push({
+		at: sampledAt,
+		rate: current && measured$1(selection.arrivalsPerSecond) ? selection.arrivalsPerSecond : null,
+		p95: current && selection.runtime.latency?.http_success_duration?.sample_count > 0 && measured$1(selection.runtime.latency.http_success_duration.p95_ms) ? selection.runtime.latency.http_success_duration.p95_ms : null
+	});
+	return next.slice(-90);
+}
+function gatewayTrendConfig(history, { compact = false } = {}) {
+	const options = monitorChartOptions();
+	options.plugins.legend.display = !compact;
+	options.scales.x.ticks.maxTicksLimit = 5;
+	if (compact || !history.some((point) => point.rate !== null)) {
+		options.scales.x.display = false;
+		options.scales.y.display = false;
+	}
+	if (!history.some((point) => point.rate !== null)) options.plugins.legend.display = false;
+	return {
+		type: "line",
+		data: {
+			labels: history.map((point) => new Date(point.at).toLocaleTimeString([], {
+				hour: "2-digit",
+				minute: "2-digit",
+				second: "2-digit"
+			})),
+			datasets: [{
+				label: "Arrivals / s",
+				data: history.map((point) => point.rate),
+				borderColor: chartColor(monitorPalette.teal, "teal"),
+				backgroundColor: chartColor("#EFE4E9", "fill"),
+				fill: true,
+				pointRadius: history.length === 1 ? 3 : 0,
+				borderWidth: 2,
+				tension: .2,
+				spanGaps: false
+			}]
+		},
+		options
+	};
+}
+function usageSummaryView(summary, { esc, money }) {
+	const success = measured$1(summary.request_count) && summary.request_count > 0 && measured$1(summary.success_count) ? 100 * summary.success_count / summary.request_count : null;
+	return `<div class="monitor-kpis usage-kpis">
+    ${monitorKpi("Requests", metricNumber(summary.request_count), {
+		esc,
+		icon: "arrows-exchange",
+		detail: "Recorded in this period"
+	})}
+    ${monitorKpi("Estimated cost", measured$1(summary.estimated_cost_usd) ? money(summary.estimated_cost_usd) : "—", {
+		esc,
+		icon: "coin",
+		detail: "Reporting estimate · USD"
+	})}
+    ${monitorKpi("Success rate", success === null ? "—" : `${success.toFixed(2)}%`, {
+		esc,
+		icon: "circle-check",
+		detail: `${metricNumber(summary.failure_count)} failures`,
+		tone: summary.failure_count > 0 ? "warn" : "good"
+	})}
+    ${monitorKpi("Average latency", measured$1(summary.average_latency_ms) ? `${Math.round(summary.average_latency_ms).toLocaleString()} ms` : "—", {
+		esc,
+		icon: "clock",
+		detail: "Recorded request duration"
+	})}
+  </div><div class="monitor-signal-strip"><span><i class="ti ti-alert-circle" aria-hidden="true"></i>Failures <strong>${esc(metricNumber(summary.failure_count))}</strong></span><span><i class="ti ti-stack-2" aria-hidden="true"></i>Tokens <strong>${esc(metricNumber(summary.total_tokens))}</strong></span><span><i class="ti ti-route-alt-left" aria-hidden="true"></i>Fallbacks <strong>${measured$1(summary.fallback_rate) ? `${(summary.fallback_rate * 100).toFixed(1)}%` : "—"}</strong></span><span><i class="ti ti-shield-check" aria-hidden="true"></i>Guardrail blocks <strong>${esc(metricNumber(summary.guardrail_block_count))}</strong></span></div>`;
+}
+function usageChartsShell() {
+	return `<div class="monitor-chart-grid usage-chart-grid" data-usage-visuals aria-busy="true">
+    <figure class="monitor-figure"><figcaption><div><h3>Request volume</h3><span>Successes and failures over time</span></div><button type="button" class="monitor-data-link" data-usage-chart-data aria-label="View request trend data"><i class="ti ti-table" aria-hidden="true"></i>Data</button></figcaption><div class="monitor-chart" data-usage-volume-host><p class="monitor-chart-placeholder">Loading request trend…</p></div></figure>
+    <figure class="monitor-figure"><figcaption><div><h3>Cost over time</h3><span>Estimated spend · USD</span></div><button type="button" class="monitor-data-link" data-usage-chart-data aria-label="View cost trend data"><i class="ti ti-table" aria-hidden="true"></i>Data</button></figcaption><div class="monitor-chart" data-usage-cost-host><p class="monitor-chart-placeholder">Loading cost trend…</p></div></figure>
+  </div>`;
+}
+function usageTrendConfigs(rows, interval = "hour") {
+	const sorted = [...rows].map((row) => ({
+		at: Date.parse(row.bucket_start || row.bucket || row.name),
+		summary: row.summary || row
+	})).filter((row) => Number.isFinite(row.at)).sort((a, b) => a.at - b.at);
+	const intervalMs = interval === "day" ? 864e5 : 36e5;
+	const points = [];
+	for (const row of sorted) {
+		if (points.length && row.at - points.at(-1).at > intervalMs * 1.5) points.push({
+			at: row.at - 1,
+			summary: {}
+		});
+		points.push(row);
+	}
+	const values = (key, series = points) => series.map((row) => ({
+		x: row.at,
+		y: measured$1(row.summary[key]) ? row.summary[key] : null
+	}));
+	const options = (money) => {
+		const result = monitorChartOptions({ money });
+		result.scales.x.type = "linear";
+		result.scales.x.ticks.callback = (value) => new Date(value).toLocaleString([], {
+			month: "short",
+			day: "numeric",
+			hour: "2-digit"
+		});
+		result.plugins.tooltip.callbacks = { title: (items) => items.length ? new Date(items[0].parsed.x).toLocaleString() : "" };
+		return result;
+	};
+	return [{
+		type: "line",
+		data: { datasets: [{
+			label: "Successes",
+			data: values("success_count"),
+			borderColor: chartColor(monitorPalette.teal, "teal"),
+			backgroundColor: chartColor("#EFE4E9", "fill"),
+			fill: true,
+			pointRadius: 0,
+			tension: .2,
+			borderWidth: 2,
+			spanGaps: false
+		}, {
+			label: "Failures",
+			data: values("failure_count"),
+			borderColor: chartColor(monitorPalette.red, "red"),
+			backgroundColor: chartColor(monitorPalette.red, "red"),
+			pointRadius: 0,
+			tension: .2,
+			borderWidth: 2,
+			spanGaps: false
+		}] },
+		options: options(false)
+	}, {
+		type: "bar",
+		data: { datasets: [{
+			label: "Estimated cost (USD)",
+			data: values("estimated_cost_usd", sorted),
+			backgroundColor: chartColor(monitorPalette.blue, "blue"),
+			borderRadius: 3,
+			maxBarThickness: 24
+		}] },
+		options: options(true)
+	}];
+}
+function usageRanking(rows, label, esc) {
+	const ranked = rows.filter((row) => measured$1(row.summary?.request_count)).sort((a, b) => b.summary.request_count - a.summary.request_count).slice(0, 8);
+	const maximum = ranked[0]?.summary.request_count;
+	if (!maximum) return "";
+	return `<div class="monitor-ranking" aria-label="Top returned consumers by request count"><div class="monitor-section-heading"><h4>Top consumers</h4><span>Requests · returned groups</span></div>${ranked.map((row) => `<div class="monitor-ranking-row"><span title="${esc(label(row.name))}">${esc(label(row.name))}</span><div class="monitor-ranking-track" aria-hidden="true"><span style="width:${100 * row.summary.request_count / maximum}%"></span></div><strong>${esc(metricNumber(row.summary.request_count))}</strong></div>`).join("")}</div>`;
+}
+var monitorPalette, darkChartPalette, chartThemeInstallations, measured$1, metricNumber;
+var init_monitoring_visuals = __esmMin((() => {
+	monitorPalette = {
+		teal: "#653D60",
+		blue: "#426B9B",
+		violet: "#7F5CA5",
+		red: "#A53D64",
+		amber: "#A45B28",
+		muted: "#EADAE5",
+		text: "#6E5B6A"
+	};
+	darkChartPalette = {
+		teal: "#E7BEDA",
+		blue: "#9EBFED",
+		violet: "#B9A5EB",
+		red: "#F09AB8",
+		amber: "#E6AC7A",
+		muted: "#402D42",
+		text: "#C3ADBF",
+		grid: "#5A4259",
+		fill: "#3B2A3D",
+		"tooltip-bg": "#F7F0E8",
+		"tooltip-text": "#2C1F2E"
+	};
+	chartThemeInstallations = /* @__PURE__ */ new WeakMap();
+	measured$1 = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+	metricNumber = (value) => measured$1(value) ? value.toLocaleString(void 0, { maximumFractionDigits: 2 }) : "—";
+}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/gateway-status.ts
+function gatewayStatusPath(instanceId = "all", windowSeconds = 60) {
+	return `/admin-ui/admin/gateway/status?${new URLSearchParams({
+		instance_id: String(instanceId),
+		window_seconds: String(WINDOWS.includes(Number(windowSeconds)) ? windowSeconds : 60)
+	})}`;
+}
+function staleSample(sample, now) {
+	const sampled = Date.parse(sample?.sampled_at);
+	return sample?.stale === true || !Number.isFinite(sampled) || Math.abs(now - sampled) > STALE_AFTER_MS;
+}
+function selectGatewayStatus(response, { instanceId = "all", windowSeconds = 60, now = Date.now(), failed = false } = {}) {
+	const instances = Array.isArray(response?.instances) ? response.instances.slice(0, 128) : [];
+	const selected = instances.find((row) => row.instance_id === instanceId);
+	const fresh = instances.filter((row) => !staleSample(row, now));
+	let runtime = instanceId === "all" ? response?.aggregate : selected?.runtime;
+	if (runtime?.window_seconds !== windowSeconds || runtime?.schema_version !== 1) runtime = null;
+	const stale = instanceId === "all" ? instances.length > 0 && fresh.length === 0 : Boolean(selected && staleSample(selected, now));
+	const compatibleRates = (instanceId === "all" ? fresh : selected && !stale ? [selected] : []).filter((row) => row.runtime?.schema_version === 1 && row.runtime?.window_seconds === windowSeconds);
+	const arrivalsPerSecond = compatibleRates.length > 0 && compatibleRates.every((row) => number(row.runtime?.counters?.started) && row.runtime?.observed_seconds > 0) ? compatibleRates.reduce((sum, row) => sum + row.runtime.counters.started / row.runtime.observed_seconds, 0) : null;
+	let label = "Current snapshot", tone = "neutral", message = "";
+	if (failed) {
+		label = "Refresh failed";
+		tone = "bad";
+		message = "Gateway status could not be refreshed. Values shown are the last received snapshot.";
+	} else if (response?.unavailable) {
+		label = "Unavailable";
+		tone = "bad";
+		message = runtime ? "Cluster collection is unavailable. Only reporting instances are included; missing measurements are unknown." : "Gateway status is unavailable. Missing measurements are unknown.";
+	} else if (stale) {
+		label = "Stale snapshot";
+		tone = "warn";
+		message = "These measurements are stale. Current traffic and capacity are unknown.";
+	} else if (response?.partial || fresh.length !== instances.length || runtime?.incompatible_instances > 0) {
+		label = "Partial snapshot";
+		tone = "warn";
+		message = "Only reporting instances are included. Missing or stale instances do not count as zero activity.";
+	} else if (!runtime) {
+		label = "Unknown";
+		message = response ? "No compatible runtime snapshot is available for this selection." : "Waiting for a gateway runtime snapshot.";
+	}
+	return {
+		runtime,
+		instances,
+		freshCount: fresh.length,
+		arrivalsPerSecond,
+		stale,
+		failed,
+		label,
+		tone,
+		message
+	};
+}
+function gatewayQuantile(histogram, percentile) {
+	if (!histogram || !number(histogram.sample_count)) return "Unknown";
+	if (histogram.sample_count === 0) return "No samples";
+	const value = histogram[`p${percentile}_ms`];
+	return number(value) ? `≤ ${value.toLocaleString(void 0, { maximumFractionDigits: 3 })} ms` : "Above histogram range";
+}
+function bytes(value) {
+	if (!number(value)) return "Unknown";
+	if (value < 1024) return `${value.toLocaleString()} B`;
+	if (value < 1048576) return `${(value / 1024).toLocaleString(void 0, { maximumFractionDigits: 1 })} KiB`;
+	return `${(value / 1048576).toLocaleString(void 0, { maximumFractionDigits: 1 })} MiB`;
+}
+function gatewayCpuUtilization(current, previous, instanceId = "all") {
+	const before = new Map((previous?.instances || []).map((row) => [row.instance_id, row]));
+	const selected = (current?.instances || []).filter((row) => instanceId === "all" || row.instance_id === instanceId);
+	if (!selected.length) return null;
+	let usedCores = 0, limitCores = 0;
+	for (const row of selected) {
+		const old = before.get(row.instance_id);
+		const process = row.runtime?.process, prior = old?.runtime?.process;
+		const elapsed = row.runtime?.sampled_at_unix_ms - old?.runtime?.sampled_at_unix_ms;
+		if (!number(process?.cgroup_cpu_usage_usec) || !number(prior?.cgroup_cpu_usage_usec)) return null;
+		const delta = process.cgroup_cpu_usage_usec - prior.cgroup_cpu_usage_usec;
+		if (staleSample(row, Date.now()) || !number(delta) || !(elapsed > 0) || !number(process?.cgroup_cpu_limit_cores) || process.cgroup_cpu_limit_cores === 0) return null;
+		usedCores += delta / (elapsed * 1e3);
+		limitCores += process.cgroup_cpu_limit_cores;
+	}
+	return limitCores > 0 ? 100 * usedCores / limitCores : null;
+}
+function gatewayStatusView(selection, { esc, badge, table }, { compact = false, windowSeconds = 60, hasTrend = false } = {}) {
+	const runtime = selection.runtime, active = runtime?.active, latency = runtime?.latency, capacity = runtime?.body_capacity;
+	const notice = `<div data-gateway-part="notice">${selection.message ? `<p class="notice inline" data-kind="${selection.tone}" role="status">${esc(selection.message)}</p>` : ""}</div>`;
+	const activeTotal = [
+		active?.http,
+		active?.sse,
+		active?.websocket
+	].every(number) ? active.http + active.sse + active.websocket : null;
+	const completed = runtime?.counters?.completed, failures = runtime?.counters?.failed;
+	const latencySeries = [
+		"http_success_duration",
+		"ttfb",
+		"ttft",
+		"websocket_handshake"
+	].map((key) => latency?.[key]);
+	const latencyEmpty = latencySeries.some((histogram) => histogram?.sample_count > 0 && [
+		50,
+		95,
+		99
+	].some((percentile) => number(histogram[`p${percentile}_ms`]))) ? "" : latencySeries.some((histogram) => histogram?.sample_count > 0) ? "Samples exceed the chart range" : latencySeries.some((histogram) => number(histogram?.sample_count)) ? "No latency samples in this window" : "Latency unavailable";
+	const rate = number(selection.arrivalsPerSecond) ? selection.arrivalsPerSecond.toLocaleString(void 0, { maximumFractionDigits: 2 }) : "—";
+	const scope = `<div class="monitor-scope-line" data-gateway-part="scope">${badge(selection.label, selection.tone)}<span><i class="ti ti-server" aria-hidden="true"></i> ${esc(count$1(runtime?.instance_count))} reporting instances</span><span>${esc(count$1(completed))} completed · ${esc(windowLabel$1(windowSeconds))}</span></div>`;
+	const kpis = `<div class="monitor-kpis" data-gateway-part="kpis">
+    ${monitorKpi("Arrivals / second", rate, {
+		esc,
+		icon: "activity",
+		detail: `Rolling ${windowLabel$1(windowSeconds)}`
+	})}
+    ${monitorKpi("In flight", metricNumber(activeTotal), {
+		esc,
+		icon: "arrows-exchange",
+		detail: "HTTP · SSE · WebSocket"
+	})}
+    ${monitorKpi("HTTP success p95", gatewayQuantile(latency?.http_success_duration, 95), {
+		esc,
+		icon: "clock",
+		detail: "Completed HTTP + SSE"
+	})}
+    ${compact ? monitorKpi("Body slots occupied", capacity ? `${count$1(capacity.used_requests)} / ${count$1(capacity.max_requests)}` : "—", {
+		esc,
+		icon: "stack-2",
+		detail: capacity ? `${bytes(capacity.free_bytes)} buffer space free` : "Capacity unavailable"
+	}) : monitorKpi("Failed requests", metricNumber(failures), {
+		esc,
+		icon: "alert-circle",
+		detail: number(completed) && completed > 0 && number(failures) ? `${(100 * failures / completed).toFixed(2)}% of completed requests` : "No completed samples",
+		tone: failures > 0 ? "bad" : "neutral"
+	})}
+  </div>`;
+	if (compact) return `${scope}${notice}${kpis}<div class="monitor-compact-footer"><div data-gateway-part="protocols">${protocolMix(active, esc)}</div><div class="monitor-mini-trend"><canvas data-gateway-chart="trend" role="img" aria-label="Arrival rate observations since this page opened"></canvas></div></div>`;
+	const latencyRows = [
+		["HTTP + SSE · all outcomes", "http_duration"],
+		["HTTP + SSE · successes", "http_success_duration"],
+		["HTTP + SSE · upstream duration", "upstream_duration"],
+		["HTTP + SSE · first body byte", "ttfb"],
+		["SSE · first content token", "ttft"],
+		["WebSocket · handshake", "websocket_handshake"],
+		["WebSocket · session only", "websocket_session"],
+		["Body admission · decision", "admission_decision"],
+		["Body admission · rejected decision", "admission_rejection"],
+		["Body lease · retention", "body_retention"]
+	].map(([label, key]) => [
+		esc(label),
+		count$1(latency?.[key]?.sample_count),
+		...[
+			50,
+			95,
+			99
+		].map((percentile) => esc(gatewayQuantile(latency?.[key], percentile)))
+	]);
+	const process = runtime?.process;
+	const processRows = [
+		["CPU since preceding sample", number(selection.cpuUtilization) ? `${selection.cpuUtilization.toFixed(1)}% of cgroup CPU limit` : "Unknown"],
+		["Process RSS", bytes(process?.rss_bytes)],
+		["Cgroup memory in use / limit", `${bytes(process?.cgroup_memory_current_bytes)} / ${bytes(process?.cgroup_memory_limit_bytes)}`],
+		["Cgroup CPU limit", number(process?.cgroup_cpu_limit_cores) ? `${count$1(process.cgroup_cpu_limit_cores)} cores` : "Unknown"],
+		["Cgroup CPU used", number(process?.cgroup_cpu_usage_usec) ? `${(process.cgroup_cpu_usage_usec / 1e6).toLocaleString()} s` : "Unknown"],
+		["Cgroup throttled periods / periods", `${count$1(process?.cgroup_cpu_throttled_periods)} / ${count$1(process?.cgroup_cpu_periods)}`],
+		["Cgroup throttled time", number(process?.cgroup_cpu_throttled_usec) ? `${(process.cgroup_cpu_throttled_usec / 1e6).toLocaleString()} s` : "Unknown"],
+		["Cgroup OOM events / kills", `${count$1(process?.cgroup_oom_events)} / ${count$1(process?.cgroup_oom_kills)}`],
+		["Restarts", count$1(process?.restarts)]
+	].map(([label, value]) => [esc(label), esc(value)]);
+	const dependency = (label, ready) => `<span class="monitor-dependency ${ready === true ? "good" : ready === false ? "bad" : "neutral"}"><i class="ti ti-${ready === true ? "circle-check" : ready === false ? "alert-circle" : "minus"}" aria-hidden="true"></i>${esc(label)}<small>${ready === true ? "Ready" : ready === false ? "Unavailable" : "Unknown"}</small></span>`;
+	const instances = (selection.instances || []).map((row) => {
+		const stale = staleSample(row, Date.now()), d = stale ? {} : row.dependencies;
+		return `<div class="monitor-instance"><div><i class="ti ti-server" aria-hidden="true"></i><code title="${esc(row.instance_id)}">${esc(String(row.instance_id).slice(0, 8))}</code>${badge(stale ? "Stale" : "Reporting", stale ? "warn" : "neutral")}</div><div class="monitor-dependencies">${dependency("PostgreSQL", d?.postgres_ready)}${dependency("Redis", d?.redis_ready)}${dependency("Publisher", d?.publication_failed === false ? true : d?.publication_failed === true ? false : null)}</div><small class="monitor-instance-meta">Primary pool: ${esc(count$1(d?.postgres_pool_idle))} idle / ${esc(count$1(d?.postgres_pool_connections))} open</small></div>`;
+	}).join("");
+	const recording = runtime?.recording_failures, denials = runtime?.admission_denials;
+	const recordingSignals = [
+		["Usage", recording?.usage_events],
+		["Debug bundles", recording?.debug_bundles],
+		["Traffic", recording?.request_traffic]
+	].map(([label, value]) => `<span class="${value > 0 ? "bad" : ""}">${esc(label)}<strong>${esc(count$1(value))}</strong></span>`).join("");
+	return `${scope}${notice}${kpis}
+    <div class="monitor-dashboard-grid">
+      <figure class="monitor-figure"><figcaption><h3>Live request rate</h3><span>Browser observations · since opened</span></figcaption><div class="monitor-chart"><canvas data-gateway-chart="trend" role="img" aria-label="Observed arrival rate, ${esc(rate)} requests per second in the latest sample"></canvas><div class="monitor-chart-empty" data-gateway-part="trend-empty">${hasTrend ? "" : "<i class=\"ti ti-chart-line\" aria-hidden=\"true\"></i><span>Waiting for live observations</span>"}</div></div></figure>
+      <div class="monitor-resource-panel" data-gateway-part="capacity"><div class="monitor-section-heading"><h3>Buffer capacity</h3><i class="ti ti-stack-2" aria-hidden="true"></i></div>${capacityMeter("Request slots", capacity?.used_requests, capacity?.free_requests, capacity?.max_requests, count$1, esc)}${capacityMeter("Serialized body bytes", capacity?.used_bytes, capacity?.free_bytes, capacity?.max_bytes, bytes, esc)}<div class="monitor-section-heading"><h4>Active protocols</h4><span>${esc(metricNumber(activeTotal))} in flight</span></div>${protocolMix(active, esc)}</div>
+      <figure class="monitor-figure"><figcaption><h3>Response latency</h3><span>Histogram upper bounds · milliseconds</span></figcaption><div class="monitor-chart monitor-latency-chart"><canvas data-gateway-chart="latency" role="img" aria-label="Compare p50, p95 and p99 for successful HTTP, first byte, first token and WebSocket handshake. Exact displayed values are in Latency distribution below."></canvas><div class="monitor-chart-empty" data-gateway-part="latency-empty">${latencyEmpty ? `<i class="ti ti-clock" aria-hidden="true"></i><span>${esc(latencyEmpty)}</span>` : ""}</div></div></figure>
+      <div class="monitor-resource-panel" data-gateway-part="dependencies"><div class="monitor-section-heading"><h3>Fleet & dependencies</h3><i class="ti ti-topology-star-3" aria-hidden="true"></i></div>${instances || `<div class="monitor-empty"><i class="ti ti-server-off" aria-hidden="true"></i><span>No reporting instances</span></div>`}<div class="monitor-section-heading"><h4>Recording failures</h4><span>${esc(windowLabel$1(windowSeconds))}</span></div><div class="monitor-recording-signals">${recordingSignals}</div></div>
+    </div>
+    <details class="monitor-details" data-gateway-detail="latency"><summary><i class="ti ti-chart-bar" aria-hidden="true"></i>Latency distribution & metric definitions</summary>
+      <p class="help">Quantiles are histogram bucket upper bounds, merged across reporting instances. HTTP success includes completed SSE. WebSocket session duration is separate from handshake latency.</p><div class="table-wrap">${table([
+		"Measurement",
+		"Samples",
+		"p50",
+		"p95",
+		"p99"
+	], latencyRows)}</div></details>
+    <details class="monitor-details" data-gateway-detail="runtime"><summary><i class="ti ti-cpu" aria-hidden="true"></i>Process, container & admission diagnostics</summary>
+      <p class="help">Unsupported platform measurements are Unknown. Cgroup counters can include other processes in the same container.</p><div class="table-wrap">${table(["Measurement", "Value"], processRows)}</div>
+      <div class="monitor-signal-strip"><span>Slot denials <strong>${esc(count$1(denials?.concurrency))}</strong></span><span>Byte denials <strong>${esc(count$1(denials?.bytes))}</strong></span><span>Other denials <strong>${esc(count$1(denials?.other))}</strong></span></div></details>
+    <details class="monitor-details" data-gateway-detail="definitions"><summary><i class="ti ti-info-circle" aria-hidden="true"></i>How to read this dashboard</summary><ul class="monitor-definitions"><li>Request rate uses each instance’s observed window. Counts include rejected and unattributed traffic.</li><li>Live trends are bounded observations collected while this page is open. Gaps mean missing observations.</li><li>Body meters measure retained managed buffers, not total container memory. No admission queue is used.</li><li>Process uptime: ${runtime?.uptime_seconds == null ? "unavailable for a cluster aggregate" : `${esc(count$1(runtime.uptime_seconds))} s`}. Observed window: ${esc(count$1(runtime?.observed_seconds))} s.</li><li>Dependency probes run every five seconds. PostgreSQL pool counts describe the primary pool; Usage has its own four-connection pool.</li></ul></details>`;
+}
+function gatewayLatencyConfig(runtime) {
+	const keys = [
+		"http_success_duration",
+		"ttfb",
+		"ttft",
+		"websocket_handshake"
+	];
+	const options = monitorChartOptions({ horizontal: true });
+	options.indexAxis = "y";
+	options.scales.x.title = {
+		display: true,
+		text: "Milliseconds · upper bound",
+		color: options.scales.x.ticks.color,
+		font: { size: 10 }
+	};
+	options.plugins.tooltip.callbacks = { label: (context) => `${context.dataset.label}: ≤ ${context.raw} ms` };
+	if (!keys.some((key) => runtime?.latency?.[key]?.sample_count > 0 && [
+		50,
+		95,
+		99
+	].some((percentile) => measured$1(runtime.latency[key][`p${percentile}_ms`])))) {
+		options.scales.x.display = false;
+		options.scales.y.display = false;
+		options.plugins.legend.display = false;
+	}
+	return {
+		type: "bar",
+		data: {
+			labels: [
+				"HTTP success",
+				"First body byte",
+				"First content token",
+				"WS handshake"
+			],
+			datasets: [
+				50,
+				95,
+				99
+			].map((percentile, index) => ({
+				label: `p${percentile}`,
+				data: keys.map((key) => runtime?.latency?.[key]?.sample_count > 0 && measured$1(runtime.latency[key][`p${percentile}_ms`]) ? runtime.latency[key][`p${percentile}_ms`] : null),
+				backgroundColor: chartColor([
+					monitorPalette.teal,
+					monitorPalette.blue,
+					monitorPalette.violet
+				][index], [
+					"teal",
+					"blue",
+					"violet"
+				][index]),
+				borderRadius: 3,
+				maxBarThickness: 9
+			}))
+		},
+		options
+	};
+}
+function mountGatewayStatus({ content, api, esc, attr = esc, badge, table, compact = false, refreshMs = 2e3, initialWindowSeconds = 60, initialInstanceId = "all", Chart = null }) {
+	let windowSeconds = WINDOWS.includes(Number(initialWindowSeconds)) ? Number(initialWindowSeconds) : 60;
+	let instanceId = String(initialInstanceId), response = null, previousResponse = null, failed = false, disposed = false;
+	let generation = 0, controller = null;
+	let observations = [], charts = [];
+	content.innerHTML = `<section class="panel monitor-runtime${compact ? " is-compact" : ""}">
+    <div class="monitor-toolbar"><h3><i class="ti ti-activity-heartbeat" aria-hidden="true"></i>Gateway pulse</h3><div class="actions gateway-status-controls">
+      <label>Window<select data-gateway-window>${WINDOWS.map((seconds) => `<option value="${seconds}"${seconds === windowSeconds ? " selected" : ""}>${windowLabel$1(seconds)}</option>`).join("")}</select></label>
+      <label>Instance<select data-gateway-instance><option value="all">All reporting instances</option></select></label>
+      <button type="button" data-gateway-refresh><i class="ti ti-refresh" aria-hidden="true"></i><span>Refresh</span></button>
+    </div></div>
+    <div data-gateway-status role="region" aria-label="Gateway runtime status"></div>
+  </section>`;
+	const windowControl = content.querySelector("[data-gateway-window]");
+	const instanceControl = content.querySelector("[data-gateway-instance]");
+	const refreshControl = content.querySelector("[data-gateway-refresh]");
+	const statusHost = content.querySelector("[data-gateway-status]");
+	const knownInstances = /* @__PURE__ */ new Map();
+	function render() {
+		if (disposed) return;
+		const selection = selectGatewayStatus(response, {
+			instanceId,
+			windowSeconds,
+			failed
+		});
+		selection.cpuUtilization = gatewayCpuUtilization(response, previousResponse, instanceId);
+		for (const row of selection.instances) if (typeof row.instance_id === "string" && row.instance_id.length <= 128) knownInstances.set(row.instance_id, row);
+		if (knownInstances.size > 128) for (const id of knownInstances.keys()) {
+			if (knownInstances.size <= 128) break;
+			if (id !== instanceId) knownInstances.delete(id);
+		}
+		if (instanceId !== "all" && !knownInstances.has(instanceId)) knownInstances.set(instanceId, {
+			instance_id: instanceId,
+			stale: true
+		});
+		const options = `<option value="all">All reporting instances</option>` + [...knownInstances.values()].map((row) => `<option value="${attr(row.instance_id)}">${esc(row.instance_id)}${staleSample(row, Date.now()) ? " · stale" : ""}</option>`).join("");
+		if (instanceControl.innerHTML !== options) instanceControl.innerHTML = options;
+		instanceControl.value = instanceId;
+		const openDetails = [...statusHost.querySelectorAll?.("details[open][data-gateway-detail]") || []].map((node) => node.dataset.gatewayDetail);
+		const focusedDetail = statusHost.querySelector?.("details[data-gateway-detail] > summary:focus")?.parentElement.dataset.gatewayDetail;
+		const previousCharts = new Map(charts.map((chart) => [chart.canvas.dataset.gatewayChart, chart]));
+		charts = [];
+		const markup = gatewayStatusView(selection, {
+			esc,
+			badge,
+			table
+		}, {
+			compact,
+			windowSeconds,
+			hasTrend: observations.some((point) => point.rate !== null)
+		});
+		const nextFrame = statusHost.ownerDocument?.createElement("div");
+		if (nextFrame) nextFrame.innerHTML = markup;
+		if (nextFrame && statusHost.querySelector("[data-gateway-part=\"scope\"]")) {
+			for (const part of nextFrame.querySelectorAll("[data-gateway-part]")) {
+				const current = statusHost.querySelector(`[data-gateway-part="${part.dataset.gatewayPart}"]`);
+				if (current) current.innerHTML = part.innerHTML;
+			}
+			for (const detail of nextFrame.querySelectorAll("[data-gateway-detail]")) {
+				const current = statusHost.querySelector(`[data-gateway-detail="${detail.dataset.gatewayDetail}"]`);
+				if (current) current.innerHTML = detail.innerHTML;
+			}
+		} else statusHost.innerHTML = markup;
+		for (const name of openDetails) {
+			const node = statusHost.querySelector?.(`[data-gateway-detail="${name}"]`);
+			if (node) node.open = true;
+		}
+		if (focusedDetail) statusHost.querySelector?.(`[data-gateway-detail="${focusedDetail}"] > summary`)?.focus({ preventScroll: true });
+		const configs = [["trend", gatewayTrendConfig(observations, { compact })]];
+		if (!compact) configs.push(["latency", gatewayLatencyConfig(selection.runtime)]);
+		for (const [key, config] of configs) {
+			const canvas = statusHost.querySelector?.(`[data-gateway-chart="${key}"]`);
+			const previous = previousCharts.get(key);
+			if (previous && canvas) {
+				const nextLabel = nextFrame?.querySelector(`[data-gateway-chart="${key}"]`)?.getAttribute("aria-label");
+				if (nextLabel) previous.canvas.setAttribute("aria-label", nextLabel);
+				previous.data = config.data;
+				previous.options = config.options;
+				previous.update("none");
+				charts.push(previous);
+				previousCharts.delete(key);
+			} else {
+				const chart = mountMonitorChart(Chart, canvas, config);
+				if (chart) charts.push(chart);
+			}
+		}
+		previousCharts.forEach((chart) => chart.destroy());
+	}
+	async function refresh() {
+		if (disposed) return;
+		const current = ++generation;
+		controller?.abort();
+		controller = new AbortController();
+		refreshControl.disabled = true;
+		statusHost.setAttribute("aria-busy", "true");
+		try {
+			const next = await api(gatewayStatusPath(instanceId, windowSeconds), { signal: controller.signal });
+			if (disposed || current !== generation) return;
+			previousResponse = response;
+			response = next;
+			failed = false;
+			observations = appendGatewayObservation(observations, selectGatewayStatus(response, {
+				instanceId,
+				windowSeconds
+			}), Date.parse(response.sampled_at));
+		} catch (error) {
+			if (disposed || current !== generation) return;
+			failed = true;
+		} finally {
+			if (!disposed && current === generation) {
+				refreshControl.disabled = false;
+				statusHost.setAttribute("aria-busy", "false");
+				render();
+			}
+		}
+	}
+	const changeWindow = () => {
+		windowSeconds = Number(windowControl.value);
+		observations = [];
+		render();
+		refresh();
+	};
+	const changeInstance = () => {
+		instanceId = instanceControl.value;
+		observations = [];
+		render();
+		refresh();
+	};
+	const clickRefresh = () => {
+		refresh();
+	};
+	windowControl.addEventListener("change", changeWindow);
+	instanceControl.addEventListener("change", changeInstance);
+	refreshControl.addEventListener("click", clickRefresh);
+	render();
+	refresh();
+	const interval = refreshMs > 0 ? setInterval(() => {
+		render();
+		refresh();
+	}, Math.max(1e3, refreshMs)) : null;
+	const dispose = () => {
+		disposed = true;
+		++generation;
+		controller?.abort();
+		charts.forEach((chart) => chart?.destroy());
+		charts = [];
+		if (interval !== null) clearInterval(interval);
+		windowControl.removeEventListener("change", changeWindow);
+		instanceControl.removeEventListener("change", changeInstance);
+		refreshControl.removeEventListener("click", clickRefresh);
+	};
+	return dispose;
+}
+function mountHealthGatewayStatus(options) {
+	return mountGatewayStatus({
+		...options,
+		compact: false
+	});
+}
+function mountTrafficGatewayStatus(options) {
+	return mountGatewayStatus({
+		...options,
+		compact: true
+	});
+}
+var WINDOWS, STALE_AFTER_MS, number, count$1, windowLabel$1;
+var init_gateway_status = __esmMin((() => {
+	init_monitoring_visuals();
+	WINDOWS = [
+		60,
+		300,
+		900
+	];
+	STALE_AFTER_MS = 5e3;
+	number = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+	count$1 = (value) => number(value) ? value.toLocaleString() : "Unknown";
+	windowLabel$1 = (seconds) => `${seconds / 60} min`;
+}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/catalog-visuals.ts
+function catalogCredentialState(row) {
+	if (row.provider === "azure-foundry" && ["workload_identity", "managed_identity"].includes(row.foundry?.method)) return {
+		label: "Azure identity",
+		tone: "neutral",
+		configured: true
+	};
+	if (row.credential_configured === true) return {
+		label: "configured",
+		tone: "good",
+		configured: true
+	};
+	if (row.credential_configured === false) return {
+		label: "missing",
+		tone: "bad",
+		configured: false
+	};
+	return {
+		label: "unknown",
+		tone: "neutral",
+		configured: null
+	};
+}
+function catalogServiceTransport(service) {
+	if (!Array.isArray(service.allowed_methods)) return "unknown";
+	if (service.foundry || !service.allowed_methods.includes("GET")) return "http";
+	const accessa = service.access?.accessa;
+	if (accessa) return accessa.app && service.route_pattern === `/app/${accessa.app}/channel/${accessa.channel}/v1/*` ? "accessa-websocket" : "http";
+	return service.access?.websocket ? "websocket" : "http";
+}
+function projectCatalogInsights(projects, services) {
+	const unknownLinks = projects.some((project) => !Array.isArray(project.service_names));
+	const links = new Set(projects.flatMap((project) => Array.isArray(project.service_names) ? project.service_names : []));
+	const registered = new Map(services.map((service) => [service.name, service]));
+	const linkedServices = [...links].map((name) => registered.get(name));
+	const unknownEnablement = linkedServices.some((service) => !service || typeof service.enabled !== "boolean");
+	const unresolved = linkedServices.filter((service) => !service).length;
+	return {
+		items: [
+			{
+				label: "Distinct linked services",
+				value: unknownLinks ? null : links.size,
+				icon: "apps",
+				detail: unknownLinks ? "Some project service selections are unavailable" : "Saved project service selections"
+			},
+			{
+				label: "Enabled linked services",
+				value: unknownLinks || unknownEnablement ? null : linkedServices.filter((service) => service.enabled).length,
+				icon: "circle-check",
+				detail: unknownLinks || unknownEnablement ? "Some links or registrations are unavailable" : "Configuration state; no live probe"
+			},
+			{
+				label: "Links outside inventory",
+				value: unknownLinks ? null : unresolved,
+				icon: "link",
+				tone: unresolved ? "warn" : "neutral",
+				detail: "Distinct names absent from the loaded service list"
+			}
+		],
+		distribution: projects.length ? [
+			{
+				label: "With service links",
+				value: projects.filter((project) => Array.isArray(project.service_names) && project.service_names.length > 0).length,
+				tone: "good"
+			},
+			{
+				label: "Without service links",
+				value: projects.filter((project) => Array.isArray(project.service_names) && project.service_names.length === 0).length,
+				tone: "neutral"
+			},
+			{
+				label: "Links unknown",
+				value: projects.filter((project) => !Array.isArray(project.service_names)).length,
+				tone: "neutral"
+			}
+		] : [],
+		caption: "Projects in the current scope. Service links govern project-owned keys; they do not measure traffic."
+	};
+}
+function providerCatalogInsights(providers, mappings, passthrough) {
+	const configuredMappings = (scope) => {
+		const scoped = mappings.filter((mapping) => mapping.scope === scope);
+		return scoped.some((mapping) => typeof mapping.enabled !== "boolean" || mapping.enabled && typeof mapping.credential_configured !== "boolean") ? null : scoped.filter((mapping) => mapping.enabled && mapping.credential_configured).length;
+	};
+	const classified = providers.map((provider) => ({
+		enabled: provider.enabled,
+		credential: catalogCredentialState(provider).configured
+	}));
+	return {
+		items: [
+			{
+				label: "Key credential mappings",
+				value: configuredMappings("key"),
+				icon: "key",
+				detail: "Enabled mappings with a stored credential"
+			},
+			{
+				label: "Project credential mappings",
+				value: configuredMappings("project"),
+				icon: "folder",
+				detail: "Enabled mappings with a stored credential"
+			},
+			{
+				label: "Wildcard ingress",
+				value: passthrough?.enabled === true ? "Enabled" : passthrough?.enabled === false ? "Disabled" : null,
+				icon: "arrows-split",
+				tone: passthrough?.enabled === true ? "warn" : "neutral",
+				detail: passthrough?.enabled === true ? passthrough.authentication_mode === "litellm_bearer" ? "Caller LiteLLM key · allowlists still apply" : "Gateway authentication · allowlists still apply" : "Fallback forwarding configuration"
+			}
+		],
+		distribution: providers.length ? [
+			{
+				label: "Enabled · auth configured",
+				value: classified.filter((row) => row.enabled === true && row.credential === true).length,
+				tone: "good"
+			},
+			{
+				label: "Enabled · credential missing",
+				value: classified.filter((row) => row.enabled === true && row.credential === false).length,
+				tone: "bad"
+			},
+			{
+				label: "Disabled",
+				value: classified.filter((row) => row.enabled === false).length,
+				tone: "bad"
+			},
+			{
+				label: "Configuration unknown",
+				value: classified.filter((row) => typeof row.enabled !== "boolean" || row.enabled === true && row.credential === null).length,
+				tone: "neutral"
+			}
+		] : [],
+		caption: "Saved provider setup. Azure identity configuration and stored credentials do not confirm a working connection."
+	};
+}
+function serviceCatalogInsights(services, projects) {
+	const linkedNames = new Set(projects.flatMap((project) => Array.isArray(project.service_names) ? project.service_names : []));
+	const transport = services.map(catalogServiceTransport);
+	const unknownProjects = projects.some((project) => !Array.isArray(project.service_names));
+	const reviewStates = [
+		"incomplete",
+		"stale",
+		"failed"
+	];
+	return {
+		items: [
+			{
+				label: "Enabled registrations",
+				value: services.some((service) => typeof service.enabled !== "boolean") ? null : `${services.filter((service) => service.enabled).length} / ${services.length}`,
+				icon: "circle-check",
+				detail: "Saved enablement; availability is shown in Health"
+			},
+			{
+				label: "Linked from projects",
+				value: unknownProjects ? null : services.filter((service) => linkedNames.has(service.name)).length,
+				icon: "folders",
+				detail: unknownProjects ? "Some project service selections are unavailable" : "Services selected by at least one project"
+			},
+			{
+				label: "WebSocket configured",
+				value: transport.includes("unknown") ? null : transport.filter((protocol) => protocol === "websocket" || protocol === "accessa-websocket").length,
+				icon: "plug-connected",
+				detail: "Includes Accessa run sockets; SSE uses HTTP"
+			}
+		],
+		distribution: services.length ? [
+			{
+				label: "Local",
+				value: services.filter((service) => service.sync_status === "local").length,
+				tone: "neutral"
+			},
+			{
+				label: "Synced",
+				value: services.filter((service) => service.sync_status === "synced").length,
+				tone: "good"
+			},
+			{
+				label: "Review sync",
+				value: services.filter((service) => reviewStates.includes(service.sync_status)).length,
+				tone: "warn",
+				detail: "Incomplete, stale or failed"
+			},
+			{
+				label: "Sync unknown",
+				value: services.filter((service) => ![
+					"local",
+					"synced",
+					...reviewStates
+				].includes(service.sync_status)).length,
+				tone: "neutral"
+			}
+		] : [],
+		caption: "Saved registration sync state, independent of upstream health and enabled state."
+	};
+}
+function routeCatalogInsights(openaiRoutes, anthropicRoutes, services, identities) {
+	const canonical = [...openaiRoutes, ...anthropicRoutes];
+	const transport = services.map(catalogServiceTransport);
+	return {
+		items: [
+			{
+				label: "Registered service routes",
+				value: services.length,
+				icon: "apps",
+				detail: "Matched before canonical provider APIs"
+			},
+			{
+				label: "Endpoint identity settings",
+				value: identities.length,
+				icon: "shield-lock",
+				detail: "Canonical and additional route identity records"
+			},
+			{
+				label: "WebSocket configured",
+				value: transport.includes("unknown") ? null : transport.filter((protocol) => protocol === "websocket" || protocol === "accessa-websocket").length + identities.filter((identity) => identity.access?.websocket).length,
+				icon: "plug-connected",
+				detail: "Saved opt-ins; methods, forwarding mode and identity still apply"
+			}
+		],
+		distribution: canonical.length ? [
+			{
+				label: "Enabled · Gateway managed",
+				value: canonical.filter((route) => route.enabled === true && route.mode === "managed_by_gateway").length,
+				tone: "good"
+			},
+			{
+				label: "Enabled · direct LiteLLM",
+				value: canonical.filter((route) => route.enabled === true && route.mode === "direct_litellm_passthrough").length,
+				tone: "warn"
+			},
+			{
+				label: "Disabled",
+				value: canonical.filter((route) => route.enabled === false).length,
+				tone: "bad"
+			},
+			{
+				label: "Configuration unknown",
+				value: canonical.filter((route) => typeof route.enabled !== "boolean" || route.enabled === true && !["managed_by_gateway", "direct_litellm_passthrough"].includes(route.mode)).length,
+				tone: "neutral"
+			}
+		] : [],
+		caption: "Canonical OpenAI-compatible and Anthropic route settings. Aliases share their canonical policy.",
+		steps: [
+			{
+				label: "Control plane",
+				icon: "lock"
+			},
+			{
+				label: "Registered services",
+				icon: "apps",
+				value: services.length
+			},
+			{
+				label: "Canonical APIs",
+				icon: "route",
+				value: canonical.length
+			},
+			{
+				label: "LiteLLM fallback",
+				icon: "arrows-split"
+			}
+		]
+	};
+}
+var init_catalog_visuals = __esmMin((() => {}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/governance-visuals.ts
+function keyGovernanceSnapshot(keys, layers, now = Date.now()) {
+	const states = keys.map((key) => keyLifecycle(key, now));
+	const active = keys.filter((key, index) => ["active", "non-expiring"].includes(states[index]));
+	const rotationDue = active.filter((key) => key.rotation_due_at && Date.parse(key.rotation_due_at) <= now).length;
+	const explicitGuardrails = keys.filter((key) => [
+		"mandatory_guardrails",
+		"optional_guardrails",
+		"forbidden_guardrails"
+	].some((field) => key.guardrail_policy?.[field]?.length)).length;
+	return {
+		insights: [
+			{
+				label: "Active lifecycle",
+				value: active.length,
+				icon: "key",
+				tone: "good",
+				detail: "Enabled, unrevoked and unexpired; policy still applies"
+			},
+			{
+				label: "Rotation due",
+				value: rotationDue,
+				icon: "rotate-clockwise",
+				tone: rotationDue ? "warn" : "neutral",
+				detail: "Active keys past their configured rotation date"
+			},
+			{
+				label: "Explicit guardrail rules",
+				value: `${explicitGuardrails} / ${keys.length}`,
+				icon: "shield-check",
+				detail: "Direct key rules; inherited rules may add safeguards"
+			}
+		],
+		lifecycle: [
+			[
+				"active",
+				"Expiring active",
+				"good"
+			],
+			[
+				"non-expiring",
+				"Non-expiring",
+				"good"
+			],
+			[
+				"expired",
+				"Expired",
+				"bad"
+			],
+			[
+				"disabled",
+				"Disabled",
+				"bad"
+			],
+			[
+				"revoked",
+				"Revoked",
+				"bad"
+			]
+		].map(([state, label, tone]) => ({
+			label,
+			value: states.filter((value) => value === state).length,
+			tone
+		})),
+		layers: [
+			"global",
+			"project",
+			"team",
+			"route",
+			"model"
+		].map((kind) => ({
+			label: `${kind[0].toUpperCase()}${kind.slice(1)}`,
+			icon: kind === "global" ? "world" : kind === "project" ? "folder" : kind === "team" ? "users" : kind === "route" ? "route" : "cpu",
+			value: layers.filter((layer) => layer.kind === kind).length
+		}))
+	};
+}
+function guardrailGovernanceSnapshot(catalog, executions) {
+	const enabled = catalog.filter((row) => row.enabled);
+	return {
+		insights: [
+			{
+				label: "Enabled safeguards",
+				value: `${enabled.length} / ${catalog.length}`,
+				icon: "shield-check",
+				detail: "Catalog configuration; key policy determines application"
+			},
+			{
+				label: "Enabled defaults",
+				value: enabled.filter((row) => row.default_on).length,
+				icon: "adjustments",
+				detail: "Default-on definitions, when allowed by key policy"
+			},
+			{
+				label: "Streaming capable",
+				value: enabled.filter((row) => row.modes?.includes("during_call")).length,
+				icon: "wave-sine",
+				detail: "Enabled definitions supporting during-call checks"
+			}
+		],
+		actions: [
+			"allow",
+			"modify",
+			"warn",
+			"block"
+		].map((action) => ({
+			label: action[0].toUpperCase() + action.slice(1),
+			value: executions.filter((row) => row.action === action).length,
+			tone: action === "allow" ? "good" : action === "block" || action === "warn" ? "warn" : "neutral"
+		})),
+		stages: [
+			{
+				label: "Before provider",
+				icon: "arrow-right",
+				value: enabled.filter((row) => row.modes?.includes("pre_call")).length
+			},
+			{
+				label: "After provider",
+				icon: "arrow-back",
+				value: enabled.filter((row) => row.modes?.includes("post_call")).length
+			},
+			{
+				label: "During stream",
+				icon: "wave-sine",
+				value: enabled.filter((row) => row.modes?.includes("during_call")).length
+			}
+		]
+	};
+}
+function memberAccessSnapshot(items) {
+	const active = items.filter((item) => item.member.status === "active");
+	const serviceAssignments = items.reduce((total, item) => total + (item.service_memberships?.length || 0), 0);
+	const projectAssignments = items.reduce((total, item) => total + (item.project_memberships?.length || 0), 0);
+	return {
+		insights: [
+			{
+				label: "Awaiting approval",
+				value: items.filter((item) => item.member.status === "pending").length,
+				icon: "clock",
+				tone: "warn",
+				detail: "Sign-in alone does not grant portal access"
+			},
+			{
+				label: "Active administrators",
+				value: active.filter((item) => item.member.roles?.includes("admin")).length,
+				icon: "user-shield",
+				detail: "Active members with the administrator role"
+			},
+			{
+				label: "Exact assignments",
+				value: serviceAssignments + projectAssignments,
+				icon: "hierarchy",
+				detail: `${serviceAssignments} service · ${projectAssignments} project memberships, including inactive members`
+			}
+		],
+		statuses: [
+			{
+				label: "Active",
+				value: active.length,
+				tone: "good"
+			},
+			{
+				label: "Pending",
+				value: items.filter((item) => item.member.status === "pending").length,
+				tone: "warn"
+			},
+			{
+				label: "Blocked",
+				value: items.filter((item) => item.member.status === "blocked").length,
+				tone: "bad"
+			}
+		]
+	};
+}
+function managedIdentitySnapshot(services, projects) {
+	const bindings = [...services, ...projects];
+	return {
+		insights: [
+			{
+				label: "Enabled bindings",
+				value: `${bindings.filter((row) => row.enabled).length} / ${bindings.length}`,
+				icon: "fingerprint",
+				detail: "Exact resource bindings; token trust checks still apply"
+			},
+			{
+				label: "Workload principals",
+				value: new Set(bindings.map((row) => JSON.stringify([row.tenant_id, row.client_id]))).size,
+				icon: "users",
+				detail: "Distinct tenant / client pairs across all bindings"
+			},
+			{
+				label: "Object-restricted",
+				value: bindings.filter((row) => row.object_id).length,
+				icon: "lock",
+				detail: "Bindings requiring an additional exact object ID match"
+			}
+		],
+		resources: [
+			{
+				label: "Enabled service",
+				value: services.filter((row) => row.enabled).length,
+				tone: "good"
+			},
+			{
+				label: "Disabled service",
+				value: services.filter((row) => !row.enabled).length,
+				tone: "bad"
+			},
+			{
+				label: "Enabled project",
+				value: projects.filter((row) => row.enabled).length,
+				tone: "good"
+			},
+			{
+				label: "Disabled project",
+				value: projects.filter((row) => !row.enabled).length,
+				tone: "bad"
+			}
+		]
+	};
+}
+function auditSampleSnapshot(rows) {
+	const actions = /* @__PURE__ */ new Map();
+	for (const row of rows) actions.set(row.action || "Unspecified", (actions.get(row.action || "Unspecified") || 0) + 1);
+	const ranked = [...actions].sort(([leftLabel, left], [rightLabel, right]) => right - left || leftLabel.localeCompare(rightLabel));
+	const visible = ranked.slice(0, 5).map(([label, value]) => ({
+		label,
+		value
+	}));
+	if (ranked.length > 5) visible.push({
+		label: "Other actions",
+		value: ranked.slice(5).reduce((total, [, value]) => total + value, 0)
+	});
+	return {
+		insights: [
+			{
+				label: "Returned events",
+				value: rows.length,
+				icon: "list-details",
+				detail: "Loaded sample; filters and limit apply"
+			},
+			{
+				label: "Distinct actors",
+				value: new Set(rows.map((row) => row.actor_member_id ? `member:${row.actor_member_id}` : row.actor_token_id ? `token:${row.actor_token_id}` : "system")).size,
+				icon: "users",
+				detail: "Members, operator tokens and system actors in sample"
+			},
+			{
+				label: "Request correlation",
+				value: `${rows.filter((row) => row.request_id).length} / ${rows.length}`,
+				icon: "link",
+				detail: "Returned events with a recorded request ID"
+			}
+		],
+		actions: visible
+	};
+}
+function settingsGovernanceSnapshot(studio, auth) {
+	return { insights: [
+		{
+			label: "Studio origin",
+			value: studio.base_url ? "Configured" : "Unset",
+			icon: "plug-connected",
+			detail: `Source: ${studio.source || "unknown"} · use Test connection to verify`
+		},
+		{
+			label: "Studio token",
+			value: studio.token_configured ? "Configured" : "Not configured",
+			icon: "lock",
+			detail: "Optional write-only credential; value is never returned"
+		},
+		{
+			label: "Entra verification",
+			value: auth.unverified_bearer_enabled ? "Paused" : auth.entra.enabled ? "Enabled" : "Disabled",
+			icon: "shield-check",
+			tone: auth.unverified_bearer_enabled ? "warn" : "neutral",
+			detail: `Configured state · source: ${auth.source || "unknown"}`
+		},
+		{
+			label: "Apigee trust",
+			value: auth.apigee.trusted_header_enabled ? "Enabled" : "Disabled",
+			icon: "route",
+			detail: auth.apigee.secret_configured ? "Shared secret configured" : "Shared secret not configured"
+		}
+	] };
+}
+var init_governance_visuals = __esmMin((() => {
+	init_monitoring();
+}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/design-system/insights.ts
+function insightStrip(items, { label = "At a glance" } = {}) {
+	return `<div class="insight-strip" role="list" aria-label="${escape(label)}"><span class="insight-eyebrow" aria-hidden="true">${escape(label)}</span>${items.map((item) => `<div class="insight-metric ${tone(item.tone)}" role="listitem"><span class="insight-icon" aria-hidden="true"><i class="ti ti-${icon(item.icon)}"></i></span><div><span class="insight-label"><span>${escape(item.label)}</span>${help(item.label, item.detail)}</span><strong>${escape(valueText(item.value))}</strong>${item.detail ? `<small class="sr-only">${escape(item.detail)}</small>` : ""}</div></div>`).join("")}</div>`;
+}
+function distributionBars(title, items, { caption = "", empty = "No observations available" } = {}) {
+	const maximum = Math.max(1, ...items.map((item) => known(item.value) ? item.value : 0));
+	return `<figure class="insight-distribution"><figcaption><h3>${escape(title)}</h3>${help(title, caption)}${caption ? `<span class="sr-only">${escape(caption)}</span>` : ""}</figcaption>${items.length ? `<div class="insight-bars">${items.map((item) => `<div class="insight-bar ${tone(item.tone)}"><div><span>${escape(item.label)}${help(item.label, item.detail)}</span><strong>${known(item.value) ? escape(valueText(item.value)) : "Unknown"}</strong></div>${known(item.value) ? `<progress max="${maximum}" value="${item.value}" aria-label="${escape(`${item.label}: ${valueText(item.value)}`)}"></progress>` : "<span class=\"insight-unknown\" aria-label=\"Unknown measurement\"></span>"}${item.detail ? `<small class="sr-only">${escape(item.detail)}</small>` : ""}</div>`).join("")}</div>` : `<p class="insight-empty"><i class="ti ti-chart-bar-off" aria-hidden="true"></i>${escape(empty)}</p>`}</figure>`;
+}
+function flowSummary(title, steps, caption = "") {
+	return `<div class="insight-flow"><div class="insight-flow-heading"><h4>${escape(title)}</h4>${help(title, caption)}${caption ? `<span class="sr-only">${escape(caption)}</span>` : ""}</div><ol>${steps.map((step, index) => `<li><span class="insight-flow-symbol" aria-hidden="true"><i class="ti ti-${icon(step.icon)}"></i></span><span><strong>${escape(step.label)}</strong>${step.value != null ? `<small>${escape(valueText(step.value))}</small>` : ""}</span>${index < steps.length - 1 ? "<i class=\"ti ti-chevron-right insight-flow-arrow\" aria-hidden=\"true\"></i>" : ""}</li>`).join("")}</ol></div>`;
+}
+var escape, known, tone, icon, valueText, help;
+var init_insights = __esmMin((() => {
+	escape = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;");
+	known = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+	tone = (value) => [
+		"good",
+		"bad",
+		"warn",
+		"neutral"
+	].includes(value) ? value : "neutral";
+	icon = (value) => /^[a-z0-9-]+$/.test(value || "") ? value : "chart-dots";
+	valueText = (value) => value == null || typeof value === "number" && !Number.isFinite(value) ? "—" : typeof value === "number" ? value.toLocaleString(void 0, { maximumFractionDigits: 2 }) : String(value);
+	help = (label, detail) => detail ? `<button type="button" class="help-trigger insight-help" aria-label="About ${escape(label)}" data-help-tooltip="${escape(detail)}"><i class="ti ti-info-circle" aria-hidden="true"></i></button>` : "";
+}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/owner-visuals.ts
+function ownerCatalogInsights(items, kind) {
+	const projects = kind === "projects";
+	let metrics;
+	let distribution;
+	if (projects) {
+		const known = items.filter((item) => totalLinks(item.project) !== null);
+		const services = new Set(known.flatMap((item) => item.project.service_names));
+		const unlinked = known.filter((item) => totalLinks(item.project) === 0).length;
+		metrics = [
+			{
+				label: "Assigned projects",
+				value: items.length,
+				icon: "folders",
+				detail: "Exact project memberships"
+			},
+			{
+				label: "Known linked services",
+				value: known.length ? services.size : items.length ? null : 0,
+				icon: "affiliate",
+				detail: `${known.length} of ${items.length} project link lists loaded · distinct service names`
+			},
+			{
+				label: "Known unlinked projects",
+				value: known.length ? unlinked : items.length ? null : 0,
+				icon: "link-off",
+				tone: unlinked ? "warn" : "neutral",
+				detail: `${known.length} of ${items.length} project link lists loaded. Link configuration does not define recorded usage scope.`
+			}
+		];
+		const ranked = [...items].sort((a, b) => (totalLinks(b.project) ?? -1) - (totalLinks(a.project) ?? -1)).slice(0, 5);
+		distribution = distributionBars("Configured service links", ranked.map((item) => ({
+			label: item.project.name,
+			value: totalLinks(item.project)
+		})), {
+			caption: `Top ${ranked.length} of ${items.length} assigned projects · links, not request attribution`,
+			empty: "No project assignments"
+		});
+	} else {
+		const catalogs = items.filter((item) => Array.isArray(item.service?.openapi_endpoints));
+		const catalogued = catalogs.filter((item) => item.service.openapi_endpoints.length > 0).length;
+		const transports = items.map((item) => catalogServiceTransport(item.service || {}));
+		const knownTransports = transports.filter((transport) => transport !== "unknown");
+		const sockets = transports.filter((transport) => transport === "websocket" || transport === "accessa-websocket").length;
+		metrics = [
+			{
+				label: "Assigned services",
+				value: items.length,
+				icon: "server",
+				detail: "Exact service memberships"
+			},
+			{
+				label: "OpenAPI coverage",
+				value: catalogs.length ? `${catalogued} / ${catalogs.length}` : null,
+				icon: "api",
+				detail: "Services with imported operations · loaded catalogs"
+			},
+			{
+				label: "WebSocket configured",
+				value: knownTransports.length ? `${sockets} / ${knownTransports.length}` : null,
+				icon: "plug-connected",
+				detail: `${knownTransports.length} of ${items.length} transport definitions loaded · GET and the exact route must support the opt-in; not availability`
+			}
+		];
+		const roles = /* @__PURE__ */ new Map();
+		for (const item of items) {
+			const label = item.role === "owner" ? "Owner" : item.role === "viewer" ? "Viewer" : "Other / not recorded";
+			roles.set(label, (roles.get(label) || 0) + 1);
+		}
+		distribution = distributionBars("Assignment roles", [...roles].map(([label, value]) => ({
+			label,
+			value
+		})), {
+			caption: "Read-only dashboards · assigned services only",
+			empty: "No service assignments"
+		});
+	}
+	return `<section class="page-insights page-insights-grid" aria-label="${projects ? "Project" : "Service"} access summary">${insightStrip(metrics, { label: "Assigned resource coverage" })}${distribution}</section>`;
+}
+function ownerDashboardInsights(dashboard, { money, range }) {
+	const summary = dashboard.summary || {};
+	const requests = count(summary.request_count);
+	const failures = count(summary.failure_count);
+	const errorRate = requests > 0 && failures !== null && failures <= requests ? `${(100 * failures / requests).toFixed(1)}%` : null;
+	const metrics = [
+		{
+			label: "Requests",
+			value: requests,
+			icon: "arrows-exchange",
+			detail: windowLabel(range)
+		},
+		{
+			label: "Recorded failure rate",
+			value: errorRate,
+			icon: "alert-triangle",
+			tone: failures > 0 ? "bad" : "neutral",
+			detail: requests === 0 ? "No requests in this window" : failures === null ? "Failure count unavailable" : `${failures.toLocaleString()} failed requests`
+		},
+		{
+			label: "P95 latency",
+			value: requests > 0 && measured(summary.p95_latency_ms) ? `${Math.round(summary.p95_latency_ms).toLocaleString()} ms` : null,
+			icon: "stopwatch",
+			detail: requests === 0 ? "No latency samples" : "Recorded request duration"
+		},
+		{
+			label: "Estimated cost",
+			value: measured(summary.estimated_cost_usd) ? money(summary.estimated_cost_usd) : null,
+			icon: "currency-dollar",
+			detail: "USD · recorded estimates"
+		}
+	];
+	const signals = [
+		["Policy denials", summary.policy_denial_count],
+		["Rate limits", summary.rate_limit_denial_count],
+		["Budget denials", summary.budget_denial_count],
+		["Guardrail blocks", summary.guardrail_block_count],
+		["Fallbacks", summary.fallback_count]
+	].map(([label, value]) => ({
+		label,
+		value: count(value),
+		tone: value > 0 ? "warn" : "neutral"
+	}));
+	return `<section class="page-insights page-insights-grid" aria-label="Scoped usage summary">${insightStrip(metrics, { label: "Selected window · all outcomes" })}${distributionBars("Governance signals", signals, { caption: "Selected window · categories may overlap · log filters apply below" })}</section>`;
+}
+function ownerUsageDistribution(title, rows) {
+	const ranked = [...rows].sort((a, b) => (count(b.summary?.request_count) ?? -1) - (count(a.summary?.request_count) ?? -1)).slice(0, 5);
+	return distributionBars(title, ranked.map((row) => ({
+		label: row.name || "Not recorded",
+		value: count(row.summary?.request_count),
+		detail: measured(row.summary?.failure_count) ? `${row.summary.failure_count.toLocaleString()} failures` : "Failure count unavailable",
+		tone: row.summary?.failure_count > 0 ? "warn" : "neutral"
+	})), {
+		caption: `Requests · top ${ranked.length} of ${rows.length} returned groups`,
+		empty: "No usage groups returned for this window"
+	});
+}
+function ownerRequestProfile(rows, hasMore = false) {
+	const groups = /* @__PURE__ */ new Map();
+	for (const row of rows) {
+		const protocol = row.diagnostics?.protocol || (row.diagnostics?.websocket ? "websocket" : "");
+		const label = protocol === "http" ? "HTTP / SSE" : protocol === "websocket" ? "WebSocket" : protocol === "sse" ? "SSE" : protocol ? "Other recorded protocol" : "Not recorded";
+		groups.set(label, (groups.get(label) || 0) + 1);
+	}
+	return distributionBars("Protocols in loaded page", [...groups].map(([label, value]) => ({
+		label,
+		value
+	})), {
+		caption: `${rows.length} request rows · current log filters${hasMore ? " · more pages available" : ""} · not live connections`,
+		empty: "No request rows loaded for these filters"
+	});
+}
+function ownerIncidentSeries(rows, markers, interval = "day") {
+	const intervalMs = interval === "hour" ? 36e5 : 864e5;
+	const sorted = rows.map((row) => ({
+		at: Date.parse(row.bucket_start || row.bucket || row.name),
+		summary: row.summary || {}
+	})).filter((row) => Number.isFinite(row.at)).sort((a, b) => a.at - b.at);
+	const points = [];
+	for (const row of sorted) {
+		if (points.length && row.at - points.at(-1).at > intervalMs * 1.5) points.push({
+			at: points.at(-1).at + intervalMs,
+			errorRate: null,
+			p95: null
+		});
+		const requests = count(row.summary.request_count);
+		const failures = count(row.summary.failure_count);
+		points.push({
+			at: row.at,
+			errorRate: requests > 0 && failures !== null && failures <= requests ? failures / requests * 100 : null,
+			p95: requests > 0 && measured(row.summary.p95_latency_ms) ? row.summary.p95_latency_ms : null
+		});
+	}
+	return {
+		points,
+		observations: markers.map((marker) => ({
+			at: Date.parse(marker.first_observed_at),
+			version: marker.service_version
+		})).filter((marker) => Number.isFinite(marker.at) && sorted.some((row) => marker.at >= row.at && marker.at < row.at + intervalMs)).sort((a, b) => a.at - b.at)
+	};
+}
+function ownerIncidentDescription(rows, markers) {
+	const sorted = [...rows].filter((row) => Number.isFinite(Date.parse(row.bucket_start || row.bucket || row.name))).sort((a, b) => Date.parse(a.bucket_start || a.bucket || a.name) - Date.parse(b.bucket_start || b.bucket || b.name));
+	if (!sorted.length) return "No recorded usage buckets for this window. Missing samples are not zero measurements.";
+	const latest = sorted.at(-1).summary || {};
+	const requests = count(latest.request_count);
+	const failures = count(latest.failure_count);
+	return `Latest recorded bucket: ${requests > 0 && failures !== null && failures <= requests ? `${(100 * failures / requests).toFixed(1)}% errors` : requests === 0 ? "no requests; error rate unavailable" : "error rate unavailable"}; ${requests > 0 && measured(latest.p95_latency_ms) ? `${Math.round(latest.p95_latency_ms)} ms P95 latency` : "P95 latency unavailable"}. ${markers.length ? `${markers.length} version observations; markers show first Gateway observation, not deployment time.` : "No version transitions observed."} Missing buckets remain gaps.`;
+}
+var measured, count, totalLinks, windowLabel;
+var init_owner_visuals = __esmMin((() => {
+	init_insights();
+	init_catalog_visuals();
+	measured = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+	count = (value) => measured(value) ? value : null;
+	totalLinks = (project) => Array.isArray(project?.service_names) ? project.service_names.length : null;
+	windowLabel = (range) => range === "6h" ? "Last 6 hours" : range === "24h" ? "Last 24 hours" : "Last 7 days";
+}));
+//#endregion
 //#region crates/gateway-api/admin-ui/src/design-system/guidance-content.ts
+/** Essential units and neutral/zero behavior stay beside the control. */
+function fieldSummary(name, context) {
+	if (context === "policy" && policyEssentials[name]) return policyEssentials[name];
+	if (["service", "configuration"].includes(context)) return {
+		timeout_ms: "Milliseconds. Must be greater than 0.",
+		max_body_bytes: "Bytes. Must be greater than 0; 1 MiB = 1,048,576 B.",
+		max_request_body_bytes: "Bytes. Must be greater than 0; 1 MiB = 1,048,576 B.",
+		max_response_body_bytes: "Bytes. Must be greater than 0; 1 MiB = 1,048,576 B.",
+		upstream_base_url: "HTTP(S) URL. Never include credentials.",
+		credential: "Write-only. On edits, blank keeps the saved credential.",
+		health_check_path: "Relative path. Blank omits the active health check.",
+		fallback_services: "Registered service names, in fallback order."
+	}[name];
+}
 function fieldGuidance(name, context) {
 	if (context === "profile") return profile[name.split(".").at(-1)] || shared[name];
 	if (context === "owner") {
@@ -23005,9 +25148,11 @@ function fieldGuidance(name, context) {
 			service: "Exact registered service name. Blank includes every service, including requests without a selected service.",
 			failure_code: "Exact recorded failure code, such as control_state_unavailable. Blank includes every reason and requests without a failure. Click a reason chip to apply or clear it.",
 			status: "Client HTTP status, such as 503. A 200 can still be an interrupted stream; inspect its outcome.",
-			outcome: "Failures selects recorded failure reasons. Active means unfinished requests and is available only in live mode.",
-			from: "Saved-history start in local time. Blank defaults to the last 24 hours. Ignored in live mode.",
-			to: "Saved-history end in local time, including this instant. Blank has no upper bound. Ignored in live mode."
+			outcome: "Failures selects recorded failure reasons. Active shows unfinished requests in the selected observation scope.",
+			protocol: "Separate HTTP requests and WebSocket sessions. Legacy records without a captured protocol remain Unknown.",
+			instance_id: "Select one gateway process or all reporting instances. Stale or missing publishers make coverage partial.",
+			from: "History start in local time. Recent completions defaults to the last 30 minutes; legacy arrival history defaults to the last 24 hours. Ignored for active requests.",
+			to: "History end in local time, including this instant. A fixed end freezes the recent page. Ignored for active requests."
 		};
 		if (traffic[name]) return traffic[name];
 	}
@@ -23029,9 +25174,26 @@ function fieldGuidance(name, context) {
 	if (name !== "guardrail_override_names" && name.startsWith("guardrail_override_")) return "JSON object overriding this guardrail's configuration for this key. It must match the guardrail's config schema.";
 	return shared[name];
 }
-var layerLimit, policy, profile, shared, filterText, termGuidance;
+var layerLimit, policyEssentials, policy, profile, shared, filterText, termGuidance;
 var init_guidance_content = __esmMin((() => {
 	layerLimit = " Blank adds no limit at this policy layer; inherited limits still apply.";
+	policyEssentials = {
+		allowed_routes: "Comma-separated patterns. Blank adds no restriction.",
+		allowed_models: "Exact model names. Blank adds no restriction.",
+		rpm_limit: "Requests/min. 0 blocks; blank inherits.",
+		tpm_limit: "Estimated tokens/min. 0 gives no token allowance; blank inherits.",
+		daily_budget_usd: "USD/day. 0 blocks; blank inherits.",
+		monthly_budget_usd: "USD/month. 0 blocks; blank inherits.",
+		max_requests_per_day: "Requests/UTC day. 0 blocks; blank inherits.",
+		max_tokens_per_day: "Daily token threshold. 0 blocks; blank inherits.",
+		max_cost_per_request: "USD/request. 0 allows only zero-cost estimates; blank inherits.",
+		max_input_tokens_per_request: "Input tokens/request. 0 allows no positive count; blank inherits.",
+		max_output_tokens_per_request: "Output tokens/request. 0 allows no positive count; blank inherits.",
+		max_request_body_bytes: "Bytes. 0 allows only an empty body; blank inherits.",
+		max_response_body_bytes: "Bytes. 0 allows only an empty body; blank inherits.",
+		allowed_hours_utc: "UTC hours 0–23. 0 is midnight; blank adds no restriction.",
+		unused_key_auto_disable_after_days: "Inactive days. 0 is immediately eligible; blank adds no rule."
+	};
 	policy = {
 		allowed_routes: "Comma-separated gateway routes allowed by this layer. Blank adds no route restriction; other layers still apply.",
 		allowed_models: "Comma-separated exact model names. Blank adds no model restriction; other layers still apply.",
@@ -23227,7 +25389,13 @@ var init_guidance_content = __esmMin((() => {
 		"Attempt": "Upstream attempt number. 0 is gateway processing before the first upstream attempt; 1 is the first attempt.",
 		"Trace ID": "Distributed tracing identifier, when recorded. Use it to correlate gateway activity with other instrumented services.",
 		"Task / run": "Relayna task and execution run identifiers recorded with this request. Not recorded means the request supplied no retained linkage.",
-		"Gateway instance": "Gateway process that observed this request. Live Traffic is limited to one instance; saved history spans instances.",
+		"Gateway instance": "Gateway process that observed this request. Active Traffic can combine reporting instances; the live journal observes one process. Saved history spans instances.",
+		"Body slots": "Occupied and vacant slots for retained managed buffers. A slot can remain occupied after forwarding while a buffer reference is retained; it does not count every active connection.",
+		"Body bytes": "Occupied and vacant managed buffer bytes within the effective admission limit. This excludes other process memory; compare container memory headroom separately.",
+		"Arrivals / second": "Sum of reporting instances' request arrival rates, each divided by its own observed seconds in the rolling window. Includes denied and unattributed proxy requests and remains independent of Usage persistence.",
+		"HTTP success": "Successful completed HTTP request duration, including downstream delivery. An interrupted stream does not become successful because its headers reported HTTP 200.",
+		"WebSocket · handshake": "Time to establish or reject a WebSocket upgrade. Open-session duration has its own distribution and is not HTTP request latency.",
+		"WebSocket · session only": "Observed WebSocket session lifetime at termination. This does not measure individual application turns or message success.",
 		"Service version": "Version reported by the upstream service and retained by the gateway. Not recorded does not identify a deployment version.",
 		"DNS": "Hostname resolution time, including the OS resolver/cache. IP literals need no DNS; missing data is not a measured zero.",
 		"TCP connect": "New TCP connection setup, excluding DNS and TLS. A reused connection has no new connect measurement.",
@@ -23279,6 +25447,7 @@ function contextFor(control) {
 * controls, changing values, or rebinding their submit/change handlers. */
 function installComponentGuidance(doc = document) {
 	const seen = /* @__PURE__ */ new WeakSet();
+	const tooltipTriggers = /* @__PURE__ */ new WeakSet();
 	let sequence = 0;
 	let active = null;
 	let hideTimer;
@@ -23331,6 +25500,8 @@ function installComponentGuidance(doc = document) {
 		tip.addEventListener("pointerleave", scheduleHide);
 	};
 	const bindTooltip = (trigger) => {
+		if (tooltipTriggers.has(trigger)) return;
+		tooltipTriggers.add(trigger);
 		trigger.addEventListener("pointerenter", (event) => {
 			if (event.pointerType !== "touch") show(trigger);
 		});
@@ -23369,7 +25540,9 @@ function installComponentGuidance(doc = document) {
 		if (seen.has(control) || control.closest("[data-react-ui]")) return;
 		seen.add(control);
 		if (control.hasAttribute("aria-describedby") || control.type === "checkbox" && !control.closest("label.check")) return;
-		const explanation = fieldGuidance(control.dataset.guidanceName || control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id, contextFor(control));
+		const name = control.dataset.guidanceName || control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
+		const explanation = fieldGuidance(name, contextFor(control));
+		const compact = fieldSummary(name, contextFor(control));
 		const label = control.closest("label");
 		if (!explanation || !label) return;
 		const labelCopy = label.cloneNode(true);
@@ -23379,15 +25552,15 @@ function installComponentGuidance(doc = document) {
 		const help = doc.createElement("small");
 		help.id = `component-field-help-${++sequence}`;
 		help.className = "field-hint";
-		help.textContent = explanation;
+		help.textContent = compact || explanation;
 		control.setAttribute("aria-describedby", help.id);
 		label.append(help);
-		if ([
+		if (compact || [
 			"profile",
 			"identity",
 			"traffic"
 		].includes(contextFor(control)) || control.dataset.guidanceName || control.type === "checkbox") {
-			help.hidden = true;
+			help.hidden = !compact;
 			const trigger = doc.createElement("button");
 			trigger.type = "button";
 			trigger.className = "help-trigger";
@@ -23408,13 +25581,13 @@ function installComponentGuidance(doc = document) {
 		root.querySelectorAll(controls).forEach((node) => addField(node));
 		if (root.matches(terms)) addTerm(root);
 		root.querySelectorAll(terms).forEach((node) => addTerm(node));
-		const icons = "button.icon-button[aria-label], #command-trigger";
+		const icons = "button.icon-button[aria-label], #command-trigger, button[data-help-tooltip]";
 		const buttons = [...root.querySelectorAll(icons)];
 		if (root.matches(icons)) buttons.push(root);
 		for (const button of buttons) {
 			if (seen.has(button)) continue;
 			seen.add(button);
-			button.dataset.helpTooltip = button.id === "command-trigger" ? "Search available pages. Keyboard shortcut: Command/Ctrl + K." : button.getAttribute("aria-label") || "";
+			if (!button.dataset.helpTooltip) button.dataset.helpTooltip = button.id === "command-trigger" ? "Search available pages. Keyboard shortcut: Command/Ctrl + K." : button.getAttribute("aria-label") || "";
 			bindTooltip(button);
 		}
 	};
@@ -23457,6 +25630,58 @@ var init_guidance = __esmMin((() => {
 	init_guidance_content();
 	controls = "input:not([type=\"hidden\"]), select, textarea";
 	terms = "th, .stat > span:first-child, .posture-fact > span:first-child, .investigation-metrics > div > span:first-child, .investigation-facts dt";
+}));
+//#endregion
+//#region crates/gateway-api/admin-ui/src/policy-visuals.ts
+function policyLayerCards(rows, guardrailSummary, formatTime = (value) => String(value || "Not recorded")) {
+	if (!rows.length) return "<div class=\"monitor-empty\"><i class=\"ti ti-stack-2\" aria-hidden=\"true\"></i><span>No inherited layers configured. Direct key policy still applies.</span></div>";
+	return `<div class="policy-layer-list" role="list" aria-label="Saved policy layers">${rows.map((layer) => {
+		const policy = layer.policy || {}, [icon, label] = Object.hasOwn(kinds, layer.kind) ? kinds[layer.kind] : ["stack-2", String(layer.kind || "Unknown")];
+		const explicit = Object.entries(fields).filter(([name]) => policy[name] != null);
+		const limits = explicit.filter(([name]) => typeof policy[name] === "number").length;
+		const guardrails = layer.guardrail_policy || {};
+		const guardrailNames = [
+			["Mandatory", "mandatory_guardrails"],
+			["Optional", "optional_guardrails"],
+			["Forbidden", "forbidden_guardrails"]
+		].filter(([, key]) => Array.isArray(guardrails[key]) && guardrails[key].length).map(([title, key]) => `<div><span>${title}</span>${guardrails[key].map((name) => `<code class="badge neutral">${html(name)}</code>`).join("")}</div>`).join("");
+		return `<article class="policy-layer-card" role="listitem"><div class="policy-layer-heading"><span class="drawer-mark" aria-hidden="true"><i class="ti ti-${icon}"></i></span><div><h4>${html(label)} <span class="badge neutral">v${html(policy.policy_version ?? 1)}</span></h4><code>${html(layer.scope_id || (layer.kind === "global" ? "Gateway-wide" : "Scope not recorded"))}</code></div><button type="button" class="danger" data-policy-layer-action="delete" data-layer-id="${html(layer.id)}" aria-label="Delete ${html(label)} policy layer">Delete</button></div>
+      <div class="policy-layer-signals"><span><i class="ti ti-route" aria-hidden="true"></i>${Array.isArray(policy.allowed_routes) && policy.allowed_routes.length ? `${policy.allowed_routes.length} route patterns` : "No added route restriction"}</span><span><i class="ti ti-adjustments" aria-hidden="true"></i>${limits} numeric limits</span></div>
+      <details class="catalog-disclosure"><summary><i class="ti ti-list-details" aria-hidden="true"></i> Rules & safeguards <i class="ti ti-chevron-down" aria-hidden="true"></i></summary><dl class="policy-rule-list">${explicit.map(([name, title]) => `<div><dt>${html(title)}</dt><dd>${html(value(policy[name]))}</dd></div>`).join("") || "<div><dt>Policy</dt><dd>No explicit constraints recorded</dd></div>"}</dl><div class="policy-layer-guardrails"><h5>Guardrails</h5>${guardrailSummary(layer.guardrail_policy)}${guardrailNames}</div><p class="subtle">Updated ${html(formatTime(layer.updated_at))}</p></details></article>`;
+	}).join("")}</div>`;
+}
+var kinds, fields, value;
+var init_policy_visuals = __esmMin((() => {
+	init_components();
+	kinds = {
+		global: ["world", "Global"],
+		project: ["folder", "Project"],
+		team: ["users", "Team"],
+		route: ["route", "Route"],
+		model: ["sparkles", "Model"]
+	};
+	fields = {
+		allowed_routes: "Route patterns",
+		allowed_models: "Models",
+		allowed_providers: "Providers",
+		allowed_services: "Services",
+		rpm_limit: "Requests / minute",
+		tpm_limit: "Estimated tokens / minute",
+		daily_budget_usd: "Daily budget · USD",
+		monthly_budget_usd: "Monthly budget · USD",
+		max_requests_per_day: "Requests / UTC day",
+		max_tokens_per_day: "Daily token threshold",
+		max_cost_per_request: "Estimated USD / request",
+		max_input_tokens_per_request: "Input tokens / request",
+		max_output_tokens_per_request: "Output tokens / request",
+		allowed_hours_utc: "Allowed UTC hours",
+		unused_key_auto_disable_after_days: "Inactive days before disable",
+		max_request_body_bytes: "Request body · bytes",
+		max_response_body_bytes: "Response body · bytes",
+		allow_streaming: "Streaming",
+		allow_tools: "Tool calls"
+	};
+	value = (item) => Array.isArray(item) ? item.length ? item.join(", ") : "No added restriction" : typeof item === "boolean" ? item ? "Permitted at this layer" : "Denied at this layer" : String(item);
 }));
 //#endregion
 //#region crates/gateway-api/admin-ui/src/investigation.ts
@@ -36524,158 +38749,95 @@ var init_view_meta = __esmMin((() => {
 		overview: {
 			title: "Overview",
 			domain: "Monitor",
-			summary: "Gateway posture, traffic, and service availability."
+			summary: "See gateway demand, operational health, and what needs attention."
 		},
 		traffic: {
 			title: "Traffic",
 			domain: "Monitor",
-			summary: "Live requests, upstream attempts, failure reasons, and saved diagnostics."
+			summary: "Inspect live sessions and recent requests across your gateway."
 		},
 		health: {
 			title: "Health",
 			domain: "Monitor",
-			summary: "Provider checks, circuit state, import versions, and debug bundles."
+			summary: "Understand gateway demand, capacity, latency, and service health."
 		},
 		usage: {
 			title: "Usage & cost",
 			domain: "Monitor",
-			summary: "Cost, tokens, denials, fallbacks, guardrail blocks, task drilldowns, and exports."
+			summary: "Explore request trends, costs, and the projects driving them."
 		},
 		providers: {
 			title: "Providers",
 			domain: "Discover",
-			summary: "Upstream provider configuration, write-only credentials, and enabled state."
+			summary: "Review provider connections and authentication coverage."
 		},
 		services: {
 			title: "Services",
 			domain: "Discover",
-			summary: "Relayna service catalog, route patterns, Studio imports, sync, and lifecycle controls."
+			summary: "Explore registered services, transport options, and project coverage."
 		},
 		routes: {
 			title: "Routes",
 			domain: "Discover",
-			summary: "OpenAI-compatible routes and registered service route exposure."
+			summary: "Understand route families, forwarding modes, and service exposure."
 		},
 		projects: {
 			title: "Projects",
 			domain: "Discover",
-			summary: "Project ownership and service access boundaries for virtual keys."
+			summary: "Manage project boundaries and the services they can access."
 		},
 		keys: {
 			title: "Virtual keys",
 			domain: "Govern",
-			summary: "Virtual key lifecycle, policy layers, simulations, scopes, and guardrail policy."
+			summary: "Review key lifecycle, access policies, and safeguards."
 		},
 		guardrails: {
 			title: "Policies & guardrails",
 			domain: "Govern",
-			summary: "Catalog controls, execution summaries, and sanitized guardrail events."
+			summary: "Understand safeguard coverage and recent guardrail decisions."
 		},
 		audit: {
 			title: "Audit log",
 			domain: "Govern",
-			summary: "Operator actions, request metadata, targets, and redacted change snapshots."
+			summary: "Trace changes, actors, and related requests."
 		},
 		settings: {
 			title: "Settings",
 			domain: "Govern",
-			summary: "Studio connection settings, integration token controls, and release posture references."
+			summary: "Review integrations, identity trust, and gateway configuration."
 		},
 		members: {
 			title: "People & identities",
 			domain: "Govern",
-			summary: "Approve portal members and assign exact Owner or Viewer service access."
+			summary: "Review approvals and manage exact resource access."
 		},
 		"managed-identities": {
 			title: "Managed identities",
 			domain: "Govern",
-			summary: "Bind audience- and app-role-authorized workloads to exact registered services."
+			summary: "Review workload principals and their exact resource bindings."
 		},
 		"my-services": {
 			title: "My services",
 			domain: "Discover",
-			summary: "Registered services for which you have Owner or Viewer access."
+			summary: "Explore the services assigned to you and their configurations."
 		},
 		"service-dashboard": {
 			title: "Service dashboard",
 			domain: "Monitor",
-			summary: "Scoped usage, errors, request logs, endpoints, providers, and models for one service."
+			summary: "Understand demand, incidents, and requests for this service."
 		},
 		"my-projects": {
 			title: "My projects",
 			domain: "Discover",
-			summary: "Projects for which you have Owner or Viewer access."
+			summary: "Explore your project assignments and service relationships."
 		},
 		"project-dashboard": {
 			title: "Project dashboard",
 			domain: "Monitor",
-			summary: "Scoped usage, errors, request logs, services, endpoints, and providers for one project."
+			summary: "Understand demand, costs, and requests recorded for this project."
 		}
 	};
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/design-system/components.ts
-function toneForStatus(value) {
-	const status = String(value ?? "").toLowerCase();
-	if ([
-		"ready",
-		"ok",
-		"healthy",
-		"enabled",
-		"configured",
-		"active",
-		"success",
-		"non-expiring",
-		"closed"
-	].includes(status)) return "good";
-	if ([
-		"missing",
-		"failed",
-		"failure",
-		"disabled",
-		"revoked",
-		"expired",
-		"timeout",
-		"unhealthy",
-		"open"
-	].includes(status)) return "bad";
-	if ([
-		"unknown",
-		"pending",
-		"fallback",
-		"opt-in",
-		"default",
-		"degraded",
-		"half_open",
-		"half-open"
-	].includes(status)) return "warn";
-	return "neutral";
-}
-function html(value) {
-	return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;");
-}
-function badge(label, tone = toneForStatus(label)) {
-	return `<span class="badge ${tone}">${html(label ?? "unknown")}</span>`;
-}
-function panel(title, body, meta = "") {
-	return `<section class="panel">${title ? `<div class="panel-heading"><h3>${html(title)}</h3>${meta ? `<span class="subtle">${html(meta)}</span>` : ""}</div>` : ""}${body}</section>`;
-}
-function metricTile(label, value, tone = "neutral") {
-	return `<section class="panel stat ${tone}"><span>${html(label)}</span><strong>${html(value)}</strong></section>`;
-}
-function emptyState(message) {
-	return `<div class="empty-state"><p>${html(message)}</p></div>`;
-}
-function tableWrap(tableMarkup) {
-	return `<div class="table-wrap">${tableMarkup}</div>`;
-}
-function actionGroup(actions) {
-	return `<div class="form-actions">${actions}</div>`;
-}
-function jsonBlock(value) {
-	return `<pre>${html(JSON.stringify(value ?? null, null, 2))}</pre>`;
-}
-var init_components = __esmMin((() => {}));
 //#endregion
 //#region crates/gateway-api/admin-ui/src/design-system/templates.ts
 function filterPanel(title, formMarkup) {
@@ -36724,6 +38886,8 @@ var init_design_system$1 = __esmMin((() => {
 	init_components();
 	init_templates();
 	init_view_meta();
+	init_insights();
+	init_workflows();
 }));
 //#endregion
 //#region crates/gateway-api/admin-ui/src/design-system.ts
@@ -37183,6 +39347,8 @@ function showCommandPalette() {
 	});
 }
 async function signOut() {
+	stopGatewayStatus?.();
+	stopGatewayStatus = null;
 	stopTraffic?.();
 	stopTraffic = null;
 	let logoutUrl = null;
@@ -37206,6 +39372,8 @@ async function refresh({ focus = false } = {}) {
 	renderGeneration += 1;
 	const generation = ++viewGeneration;
 	const view = state.view;
+	stopGatewayStatus?.();
+	stopGatewayStatus = null;
 	closeContentDrawer?.();
 	viewController.abort();
 	viewController = new AbortController();
@@ -37215,6 +39383,7 @@ async function refresh({ focus = false } = {}) {
 	setNotice("");
 	destroyOverviewChart();
 	destroyOwnerDashboardChart();
+	usageLoad?.charts?.forEach((chart) => chart?.destroy());
 	if (state.view !== "service-dashboard" && state.view !== "project-dashboard") ownerDashboardGeneration += 1;
 	applyViewChrome(view);
 	document.querySelector("#page-actions").replaceChildren();
@@ -37257,6 +39426,18 @@ async function refresh({ focus = false } = {}) {
 					project_id: state.projectScope
 				},
 				onFilters: applyTrafficFilters
+			});
+			const gatewayHost = document.createElement("div");
+			gatewayHost.style.minWidth = "0";
+			content.prepend(gatewayHost);
+			stopGatewayStatus = mountTrafficGatewayStatus({
+				content: gatewayHost,
+				api,
+				esc,
+				attr,
+				badge,
+				table,
+				Chart: auto_default
 			});
 		}
 		if (view === "usage") await usage();
@@ -37315,12 +39496,32 @@ async function overview() {
 	content.innerHTML = `
     ${monitoringIssues(issues)}
     <div class="readiness-banner ${readyState ? "good" : "bad"}" role="status"><i class="ti ${readyState ? "ti-circle-check" : "ti-alert-triangle"}" aria-hidden="true"></i><span><strong>Gateway ${esc(ready.status.replaceAll("_", " "))}.</strong> ${ready.detail ? esc(ready.detail) : "Current readiness · gateway-wide"}</span><button type="button" class="link-button" data-overview-nav="health">View health →</button></div>
-    <div class="overview-metrics">
-      ${overviewFact("Requests", summary.request_count?.toLocaleString() ?? "—", overviewWindowLabel())}
-      ${overviewFact("Success rate", summary.request_count ? percent(1 - summary.failure_count / summary.request_count) : "—", `${summary.failure_count ?? "Unknown"} failed requests`)}
-      ${overviewFact("Average latency", summary.average_latency_ms == null ? "—" : `${Math.round(summary.average_latency_ms)} ms`, "Across recorded requests")}
-      ${overviewFact("Estimated cost", summary.estimated_cost_usd == null ? "—" : money(summary.estimated_cost_usd), "Usage estimate · USD")}
-    </div>
+    <section class="page-insights" aria-label="Gateway activity summary">
+      ${insightStrip([
+		{
+			label: "Requests",
+			value: summary.request_count,
+			icon: "arrows-exchange"
+		},
+		{
+			label: "Success rate",
+			value: summary.request_count > 0 && typeof summary.failure_count === "number" ? percent(1 - summary.failure_count / summary.request_count) : null,
+			icon: "circle-check",
+			detail: `${summary.failure_count ?? "Unknown"} recorded failures`
+		},
+		{
+			label: "Average latency",
+			value: summary.average_latency_ms == null ? null : `${Math.round(summary.average_latency_ms)} ms`,
+			icon: "clock"
+		},
+		{
+			label: "Estimated cost",
+			value: summary.estimated_cost_usd == null ? null : money(summary.estimated_cost_usd),
+			icon: "coin",
+			detail: "Recorded reporting estimate · USD"
+		}
+	], { label: `${scopeLabel()} · ${overviewWindowLabel()}` })}
+    </section>
     <div class="overview-insights">
       <section class="panel chart-panel">
         <div class="panel-heading chart-heading"><div><h3>Request volume</h3><span class="subtle">${esc(scopeLabel())} · ${esc(overviewWindowLabel())}</span></div></div>
@@ -37331,7 +39532,15 @@ async function overview() {
         <div class="panel-heading"><h3>Gateway attention</h3><span class="badge warn">${issues.some((issue) => issue.startsWith("provider-health:") && issue.endsWith("unavailable")) ? "Unavailable" : `${risks.length} elevated rates`}</span></div>
         <p class="help">${esc(overviewWindowLabel())} · minimum 20 requests · elevated at 5%</p>
         <div class="attention-list">${issues.some((issue) => issue.startsWith("provider-health:") && issue.endsWith("unavailable")) ? emptyState("Reliability observations are unavailable.") : risks.length ? risks.slice(0, 3).map(overviewRiskRow).join("") : emptyState("No elevated rates in the recorded sample.")}</div>
-        <p class="help">${issues.some((issue) => issue.startsWith("keys:") && issue.endsWith("unavailable")) ? "Key inventory is unavailable." : `${activeKeys} active keys in ${esc(scopeLabel())}. ${scopedKeys.filter((key) => keyLifecycle(key) === "expired").length} expired.`}</p>
+        ${distributionBars("Key lifecycle", [{
+		label: "Active",
+		value: issues.some((issue) => issue.startsWith("keys:") && issue.endsWith("unavailable")) ? null : activeKeys,
+		tone: "good"
+	}, {
+		label: "Expired",
+		value: issues.some((issue) => issue.startsWith("keys:") && issue.endsWith("unavailable")) ? null : scopedKeys.filter((key) => keyLifecycle(key) === "expired").length,
+		tone: "bad"
+	}], { caption: `Saved key lifecycle in ${scopeLabel()}; an active key still requires policy approval.` })}
         <button type="button" class="link-button" data-overview-nav="keys">Review virtual keys →</button>
       </section>
     </div>
@@ -37359,6 +39568,7 @@ async function overview() {
 }
 function overviewProjectActivity(projectUsage, projectsRows, issues) {
 	const unavailable = issues.some((issue) => issue.startsWith("by-project:") && issue.endsWith("unavailable"));
+	const maximum = Math.max(1, ...projectUsage.map((row) => Number.isFinite(row.summary.request_count) ? row.summary.request_count : 0));
 	return `    <section class="panel">
       <div class="panel-heading"><div><h3>Project activity</h3><span class="subtle">${esc(overviewWindowLabel())} · ${unavailable ? "Activity unavailable" : `top ${projectUsage.length} recorded projects`} · ${esc(scopeLabel())}</span></div></div>
       ${unavailable ? emptyState("Project activity is unavailable. Retry sources to load it.") : table([
@@ -37369,7 +39579,7 @@ function overviewProjectActivity(projectUsage, projectsRows, issues) {
 		"Explore"
 	], projectUsage.map((row) => [
 		esc(projectsRows.find((project) => project.id === row.name)?.name || row.name),
-		esc(row.summary.request_count),
+		!Number.isFinite(row.summary.request_count) ? "Unknown" : `<div class="request-rank"><strong>${esc(row.summary.request_count)}</strong><progress max="${maximum}" value="${attr(row.summary.request_count)}" aria-label="${attr(`${projectsRows.find((project) => project.id === row.name)?.name || row.name}: ${row.summary.request_count} requests`)}"></progress></div>`,
 		esc(row.summary.failure_count),
 		money(row.summary.estimated_cost_usd),
 		`<button type="button" data-overview-project="${attr(row.name)}">View usage</button>`
@@ -37400,9 +39610,6 @@ function overviewWindowLabel() {
 	if (state.overviewWindow === "30d") return "Last 30 days";
 	if (state.overviewWindow === "24h") return "Last 24 hours";
 	return "Last 7 days";
-}
-function overviewFact(label, value, detail, tone = "") {
-	return `<div class="posture-fact ${tone}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)}</small></div>`;
 }
 function overviewRisks(rows) {
 	return rows.map((row) => ({
@@ -37467,8 +39674,8 @@ function renderOverviewChart(rows) {
 				label: "Requests",
 				order: 1,
 				data: values("request_count"),
-				borderColor: "#087b60",
-				backgroundColor: "#e9f3ed",
+				borderColor: chartColor("#653D60", "teal"),
+				backgroundColor: chartColor("#EFE4E9", "fill"),
 				fill: true,
 				yAxisID: "y",
 				tension: .32,
@@ -37477,8 +39684,8 @@ function renderOverviewChart(rows) {
 			}, {
 				label: "Failures",
 				data: values("failure_count"),
-				borderColor: "#d9474f",
-				backgroundColor: "#d9474f",
+				borderColor: chartColor("#A53D64", "red"),
+				backgroundColor: chartColor("#A53D64", "red"),
 				yAxisID: "y",
 				tension: .32,
 				pointRadius: 0,
@@ -37501,7 +39708,7 @@ function renderOverviewChart(rows) {
 						boxWidth: 18,
 						boxHeight: 2,
 						usePointStyle: false,
-						color: "#536276",
+						color: chartColor("#6E5B6A", "text"),
 						font: {
 							size: 11,
 							weight: 600
@@ -37509,7 +39716,10 @@ function renderOverviewChart(rows) {
 					}
 				},
 				tooltip: {
-					backgroundColor: "#062f36",
+					backgroundColor: chartColor("#2C1F2E", "tooltip-bg"),
+					titleColor: chartColor("#fff", "tooltip-text"),
+					bodyColor: chartColor("#fff", "tooltip-text"),
+					footerColor: chartColor("#fff", "tooltip-text"),
 					padding: 10,
 					titleFont: { size: 12 },
 					bodyFont: { size: 12 }
@@ -37518,17 +39728,19 @@ function renderOverviewChart(rows) {
 			scales: {
 				x: {
 					grid: { display: false },
+					border: { color: chartColor("#DFD0D9", "grid") },
 					ticks: {
-						color: "#58736e",
+						color: chartColor("#6E5B6A", "text"),
 						maxTicksLimit: 7,
 						font: { size: 10 }
 					}
 				},
 				y: {
 					beginAtZero: true,
-					grid: { color: "#dcebe7" },
+					grid: { color: chartColor("#DFD0D9", "grid") },
+					border: { color: chartColor("#DFD0D9", "grid") },
 					ticks: {
-						color: "#58736e",
+						color: chartColor("#6E5B6A", "text"),
 						precision: 0,
 						font: { size: 10 }
 					}
@@ -37556,7 +39768,17 @@ async function projects() {
 	if (renderId !== renderGeneration) return;
 	[state.projects, state.services] = loaded;
 	if (renderId !== renderGeneration) return;
+	const insights = projectCatalogInsights(state.projectScope ? state.projects.filter((project) => project.id === state.projectScope) : state.projects, state.services);
 	content.innerHTML = `
+    <section class="page-insights" aria-label="Project service coverage">
+      <div class="page-insights-grid">
+        ${insightStrip(insights.items, { label: "Service relationships" })}
+        ${distributionBars("Project link coverage", insights.distribution, {
+		caption: insights.caption,
+		empty: "No projects in this scope."
+	})}
+      </div>
+    </section>
     <section class="panel">
       <div class="panel-heading"><h3>Create project</h3></div>
       <form id="project-form" class="form-grid">
@@ -37578,6 +39800,7 @@ async function projects() {
 		button.addEventListener("click", handleAsync(projectAction));
 	});
 	organizeView("projects");
+	content.prepend(content.querySelector(".page-insights"));
 }
 function projectTable(rows) {
 	return table([
@@ -37587,9 +39810,9 @@ function projectTable(rows) {
 		"Updated",
 		"Actions"
 	], rows.map((row) => [
-		esc(row.name),
+		`<strong><i class="ti ti-folder" aria-hidden="true"></i> ${esc(row.name)}</strong>`,
 		`<code>${esc(row.id)}</code>`,
-		projectServiceForm(row),
+		`<details class="catalog-disclosure"><summary aria-label="Manage service access for project ${attr(row.name)}"><i class="ti ti-link" aria-hidden="true"></i> ${Array.isArray(row.service_names) ? `${row.service_names.length} service${row.service_names.length === 1 ? "" : "s"}` : "Links unknown"}<i class="ti ti-chevron-down" aria-hidden="true"></i></summary>${projectServiceForm(row)}</details>`,
 		time(row.updated_at),
 		`<div class="actions">
         <button data-project-action="usage" data-project-id="${attr(row.id)}" aria-label="View usage for project ${attr(row.name)}">Usage</button>
@@ -37659,8 +39882,18 @@ async function keys() {
 	if (renderId !== renderGeneration) return;
 	[state.keys, state.projects, state.services, state.guardrails, state.policyLayers] = loaded;
 	const editing = state.keys.find((key) => key.id === state.editingKeyId);
+	const visual = keyGovernanceSnapshot(state.projectScope ? state.keys.filter((key) => key.project_id === state.projectScope) : state.keys, state.policyLayers);
 	if (renderId !== renderGeneration) return;
 	content.innerHTML = `
+    <section class="page-insights" aria-label="Virtual key governance summary">
+      <div class="page-insights-grid">
+        ${insightStrip(visual.insights, { label: "Key configuration in selected project scope" })}
+        ${distributionBars("Key lifecycle", visual.lifecycle, {
+		caption: "Loaded keys · selected project scope",
+		empty: "No keys in this scope."
+	})}
+      </div>
+    </section>
     <div class="split">
       <section class="panel">
         <div class="panel-heading">
@@ -37697,6 +39930,9 @@ async function keys() {
         <h3>Inherited policy layers</h3>
         <span class="subtle">${state.policyLayers.length} configured</span>
       </div>
+      ${flowSummary("Applicable layers combine", visual.layers, "Gateway-wide saved configuration. Matching layers combine with direct key policy and retain stricter constraints; use the simulator to inspect an exact request.")}
+      <p class="policy-inheritance-note"><i class="ti ti-shield-lock" aria-hidden="true"></i> A blank field adds no restriction at that layer. Other applicable policies still apply.</p>
+      ${policyLayerTable(state.policyLayers)}
       <form id="policy-layer-form" class="form-grid">
         ${formSection("Layer identity", "Set the inheritance level and exact scope.", `
           <label>Layer<select name="kind">
@@ -37714,7 +39950,6 @@ async function keys() {
           <button type="submit" class="primary">Save layer</button>
         </div>
       </form>
-      ${policyLayerTable(state.policyLayers)}
     </section>
     <section class="panel">
       <div class="panel-heading">
@@ -37775,24 +40010,32 @@ async function keys() {
 function policyFields(key = null, neutral = false) {
 	const policy = key?.policy || {};
 	return `
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-route" aria-hidden="true"></i> Routing access</legend><div class="form-grid">
     <label>Routes<input name="allowed_routes" value="${attr(listValue(policy.allowed_routes, neutral ? "" : "/v1/chat/completions,/v1/responses"))}"></label>
     <label>Models<input name="allowed_models" value="${attr(listValue(policy.allowed_models, ""))}" placeholder="gpt-4o-mini"></label>
     <div class="field"><span>Providers</span>${providerPolicySelect(policy.allowed_providers, neutral)}<small class="field-hint">Allowed provider adapters. No selection adds no restriction at this layer; inherited policies still apply.</small></div>
+    </div></fieldset>
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-gauge" aria-hidden="true"></i> Throughput & budgets</legend><div class="form-grid">
     <label>RPM limit<input name="rpm_limit" type="number" min="0" value="${attr(policy.rpm_limit ?? "")}"></label>
     <label>TPM limit<input name="tpm_limit" type="number" min="0" value="${attr(policy.tpm_limit ?? "")}"></label>
     <label>Daily budget<input name="daily_budget_usd" type="number" min="0" step="any" value="${attr(policy.daily_budget_usd ?? "")}"></label>
     <label>Monthly budget<input name="monthly_budget_usd" type="number" min="0" step="any" value="${attr(policy.monthly_budget_usd ?? "")}"></label>
     <label>Max daily requests<input name="max_requests_per_day" type="number" min="0" value="${attr(policy.max_requests_per_day ?? "")}"></label>
     <label>Max daily tokens<input name="max_tokens_per_day" type="number" min="0" value="${attr(policy.max_tokens_per_day ?? "")}"></label>
+    </div></fieldset>
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-adjustments" aria-hidden="true"></i> Per-request limits</legend><div class="form-grid">
     <label>Max cost/request<input name="max_cost_per_request" type="number" min="0" step="any" value="${attr(policy.max_cost_per_request ?? "")}"></label>
     <label>Max input tokens<input name="max_input_tokens_per_request" type="number" min="0" value="${attr(policy.max_input_tokens_per_request ?? "")}"></label>
     <label>Max output tokens<input name="max_output_tokens_per_request" type="number" min="0" value="${attr(policy.max_output_tokens_per_request ?? "")}"></label>
-    <label>Allowed UTC hours<input name="allowed_hours_utc" value="${attr(listValue(policy.allowed_hours_utc, ""))}" placeholder="0,8,17"></label>
-    <label>Stale disable days<input name="unused_key_auto_disable_after_days" type="number" min="0" value="${attr(policy.unused_key_auto_disable_after_days ?? "")}"></label>
     <label>Max request bytes<input name="max_request_body_bytes" type="number" min="0" value="${attr(policy.max_request_body_bytes ?? "")}"></label>
     <label>Max response bytes<input name="max_response_body_bytes" type="number" min="0" value="${attr(policy.max_response_body_bytes ?? "")}"></label>
+    </div></fieldset>
+    <fieldset class="policy-field-group wide-field"><legend><i class="ti ti-clock" aria-hidden="true"></i> Availability & features</legend><div class="form-grid">
+    <label>Allowed UTC hours<input name="allowed_hours_utc" value="${attr(listValue(policy.allowed_hours_utc, ""))}" placeholder="0,8,17"></label>
+    <label>Stale disable days<input name="unused_key_auto_disable_after_days" type="number" min="0" value="${attr(policy.unused_key_auto_disable_after_days ?? "")}"></label>
     <label class="check"><input name="allow_streaming" type="checkbox" ${policy.allow_streaming || neutral ? "checked" : ""}> Allow streaming</label>
     <label class="check"><input name="allow_tools" type="checkbox" ${policy.allow_tools || neutral ? "checked" : ""}> Allow tools</label>
+    </div></fieldset>
   `;
 }
 function guardrailPolicyFields(key = null) {
@@ -37881,7 +40124,7 @@ function keyTable(rows) {
 		"Updated",
 		"Actions"
 	], rows.map((key) => [
-		`${key.name ? `<span>${esc(key.name)}</span><br>` : ""}<code>${esc(key.key_prefix)}</code>`,
+		`<strong><i class="ti ti-key" aria-hidden="true"></i> ${key.name ? esc(key.name) : "Virtual key"}</strong><div class="subtle"><code>${esc(key.key_prefix)}</code></div>`,
 		keyOwnerLabel(key),
 		esc(listValue(key.service_names, "derived")),
 		keyStatus(key),
@@ -37892,27 +40135,7 @@ function keyTable(rows) {
 	]));
 }
 function policyLayerTable(rows) {
-	return table([
-		"Layer",
-		"Scope",
-		"Version",
-		"Policy",
-		"Guardrails",
-		"Updated",
-		"Actions"
-	], rows.map((layer) => [
-		badge(layer.kind),
-		`<code>${esc(layer.scope_id || "all")}</code>`,
-		esc(layer.policy?.policy_version ?? "1"),
-		keyPolicySummary({
-			policy: layer.policy,
-			rotation_due_at: null,
-			last_used_at: null
-		}),
-		guardrailPolicySummary(layer.guardrail_policy),
-		time(layer.updated_at),
-		`<button type="button" class="danger" data-policy-layer-action="delete" data-layer-id="${attr(layer.id)}">Delete</button>`
-	]));
+	return policyLayerCards(rows, guardrailPolicySummary, time);
 }
 function keyLifecycleActions(key) {
 	const keyLabel = attr(key.name ? `${key.name} (${key.key_prefix})` : key.key_prefix);
@@ -38100,7 +40323,7 @@ async function audit() {
     <div class="form-actions"><button class="primary">Apply</button></div>
   `;
 	if (renderId !== renderGeneration) return;
-	content.innerHTML = auditLogTemplate(formMarkup, "<div id=\"audit-results\"></div>");
+	content.innerHTML = `<section class="page-insights" id="audit-insights" aria-label="Audit sample analysis" aria-busy="true"><p class="subtle">Loading audit sample…</p></section>${auditLogTemplate(formMarkup, "<div id=\"audit-results\"></div>")}`;
 	document.querySelector("[data-filter-form]").addEventListener("submit", handleAsync(loadAuditEvents));
 	await loadAuditEvents();
 	organizeView("audit");
@@ -38120,9 +40343,29 @@ async function loadAuditEvents(event) {
 		const value = form.get(key);
 		if (value) query.set(key, value);
 	}
-	state.auditEvents = await api(`/admin-ui/admin/audit-events?${query}`);
+	const insights = document.querySelector("#audit-insights");
+	insights?.setAttribute("aria-busy", "true");
+	try {
+		state.auditEvents = await api(`/admin-ui/admin/audit-events?${query}`);
+	} catch (error) {
+		if (insights?.isConnected) {
+			insights.innerHTML = "<p class=\"subtle\" role=\"status\">Audit sample unavailable. Any previous results below may reflect earlier filters.</p>";
+			insights.setAttribute("aria-busy", "false");
+		}
+		throw error;
+	}
 	const results = document.querySelector("#audit-results");
-	if (results) results.innerHTML = auditEventTable(state.auditEvents);
+	if (results) {
+		const visual = auditSampleSnapshot(state.auditEvents);
+		if (insights?.isConnected) {
+			insights.innerHTML = `<div class="page-insights-grid">${insightStrip(visual.insights, { label: "Loaded audit sample" })}${distributionBars("Actions in sample", visual.actions, {
+				caption: "Returned events only · filtered and limited, not a lifetime total",
+				empty: "No events match this sample."
+			})}</div>`;
+			insights.setAttribute("aria-busy", "false");
+		}
+		results.innerHTML = auditEventTable(state.auditEvents);
+	}
 }
 function auditEventTable(rows) {
 	return table([
@@ -38137,12 +40380,12 @@ function auditEventTable(rows) {
 	], rows.map((row) => [
 		time(row.created_at),
 		`<code>${esc(row.actor_member_id ? `member:${row.actor_member_id}` : row.actor_token_id ? `token:${row.actor_token_id}` : "system")}</code>`,
-		badge(row.action),
+		`<span class="audit-action"><i class="ti ti-list-details" aria-hidden="true"></i>${badge(row.action)}</span>`,
 		`<strong>${esc(row.target_type)}</strong><div class="subtle"><code>${esc(row.target_id || "")}</code></div>`,
 		`<code>${esc(row.request_id || "")}</code>`,
 		esc(row.ip || ""),
 		esc(row.user_agent || ""),
-		`<details><summary>Before/after</summary>${jsonBlock({
+		`<details><summary><i class="ti ti-arrows-diff" aria-hidden="true"></i> Before/after</summary>${jsonBlock({
 			before: row.before,
 			after: row.after
 		})}</details>`
@@ -38259,13 +40502,25 @@ async function providers() {
 	if (renderId !== renderGeneration) return;
 	[state.providers, state.litellmCredentialMappings, state.litellmPassthroughSettings, state.keys, state.projects] = loaded;
 	if (renderId !== renderGeneration) return;
+	const insights = providerCatalogInsights(state.providers, state.litellmCredentialMappings, state.litellmPassthroughSettings);
 	content.innerHTML = `
+    <section class="page-insights" aria-label="Provider authentication coverage">
+      <div class="page-insights-grid">
+        ${insightStrip(insights.items, { label: "Credential routing" })}
+        ${distributionBars("Provider setup", insights.distribution, {
+		caption: insights.caption,
+		empty: "No provider connections registered."
+	})}
+      </div>
+    </section>
     <section class="panel">
       <div class="panel-heading"><h3>Provider configuration</h3><span class="subtle">${state.providers.length} total</span></div>
       ${providerTable(state.providers)}
     </section>
     <section class="panel">
       <div class="panel-heading"><h3>LiteLLM credential mappings</h3><span class="subtle">${state.litellmCredentialMappings.length} total</span></div>
+      ${litellmCredentialMappingTable(state.litellmCredentialMappings)}
+      <details class="catalog-disclosure"><summary><i class="ti ti-key" aria-hidden="true"></i> Create or replace a credential mapping</summary>
       <form id="litellm-credential-form" class="form-grid">
         <label>Scope<select name="scope" data-litellm-mapping-scope>${option("key", "key")}${option("project", "")}</select></label>
         <label>Key<select name="key_target_id" data-litellm-key-target>${keyOptions()}</select></label>
@@ -38274,11 +40529,11 @@ async function providers() {
         <label class="check"><input name="enabled" type="checkbox" checked> Enabled</label>
         <div class="form-actions"><button class="primary">Save mapping</button></div>
       </form>
-      ${litellmCredentialMappingTable(state.litellmCredentialMappings)}
+      </details>
     </section>
     <section class="panel">
       <div class="panel-heading"><h3>LiteLLM passthrough</h3><span class="subtle">single ingress mode</span></div>
-      ${litellmPassthroughForm(state.litellmPassthroughSettings)}
+      <details class="catalog-disclosure"><summary><i class="ti ti-arrows-split" aria-hidden="true"></i> Configure wildcard ingress</summary>${litellmPassthroughForm(state.litellmPassthroughSettings)}</details>
     </section>
   `;
 	document.querySelectorAll("[data-foundry-provider]").forEach((button) => button.addEventListener("click", handleAsync(() => openFoundryEditor("provider", state.providers.find((p) => p.id === button.dataset.foundryProvider), button))));
@@ -38304,6 +40559,7 @@ async function providers() {
 		button.addEventListener("click", handleAsync(liteLlmCredentialMappingAction));
 	});
 	organizeView("providers");
+	content.prepend(content.querySelector(".page-insights"));
 	const createButton = document.createElement("button");
 	createButton.type = "button";
 	createButton.className = "primary";
@@ -38359,11 +40615,11 @@ function providerTable(rows) {
 		"Updated",
 		"Actions"
 	], rows.map((row) => [
-		`<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.provider)}</div>`,
+		`<strong><i class="ti ti-cloud" aria-hidden="true"></i> ${esc(row.name)}</strong><div class="subtle">${esc(row.provider)}</div>`,
 		`<code>${esc(row.base_url)}</code>`,
-		row.enabled ? "<span class=\"badge good\">enabled</span>" : "<span class=\"badge bad\">disabled</span>",
-		row.credential_configured || row.foundry && row.foundry.method !== "client_secret" ? "<span class=\"badge good\">configured</span>" : "<span class=\"badge bad\">missing</span>",
-		providerAuthSettingsForm(row),
+		badge(row.enabled === true ? "enabled" : row.enabled === false ? "disabled" : "unknown", row.enabled === true ? "good" : row.enabled === false ? "bad" : "neutral"),
+		badge(catalogCredentialState(row).label, catalogCredentialState(row).tone),
+		row.provider === "litellm" ? `<details class="catalog-disclosure"><summary><i class="ti ti-shield-lock" aria-hidden="true"></i> Credential settings</summary>${providerAuthSettingsForm(row)}</details>` : providerAuthSettingsForm(row),
 		time(row.updated_at),
 		`<div class="actions">
         <button data-provider-action="${row.enabled ? "disable" : "enable"}" data-provider-id="${attr(row.id)}" aria-label="${row.enabled ? "Disable" : "Enable"} provider ${attr(row.name)}">${row.enabled ? "Disable" : "Enable"}</button>
@@ -38398,10 +40654,10 @@ function litellmCredentialMappingTable(rows) {
 		"Updated",
 		"Actions"
 	], rows.map((row) => [
-		esc(row.scope),
+		`<span class="badge neutral"><i class="ti ti-${row.scope === "project" ? "folder" : "key"}" aria-hidden="true"></i> ${esc(row.scope)}</span>`,
 		`<strong>${esc(row.target_label || mappingTargetName(row))}</strong><div class="subtle"><code>${esc(row.target_id)}</code></div>`,
-		row.enabled ? "<span class=\"badge good\">enabled</span>" : "<span class=\"badge bad\">disabled</span>",
-		row.credential_configured ? "<span class=\"badge good\">configured</span>" : "<span class=\"badge bad\">missing</span>",
+		badge(row.enabled === true ? "enabled" : row.enabled === false ? "disabled" : "unknown", row.enabled === true ? "good" : row.enabled === false ? "bad" : "neutral"),
+		badge(catalogCredentialState(row).label, catalogCredentialState(row).tone),
 		time(row.updated_at),
 		`<div class="actions">
         <button data-litellm-mapping-action="${row.enabled ? "disable" : "enable"}" data-mapping-id="${attr(row.id)}" aria-label="${row.enabled ? "Disable" : "Enable"} LiteLLM mapping for ${attr(row.target_label || mappingTargetName(row))}">${row.enabled ? "Disable" : "Enable"}</button>
@@ -38513,9 +40769,20 @@ async function routes() {
 	if (renderId !== renderGeneration) return;
 	[state.openaiRoutes, state.anthropicRoutes, state.services, state.routeIdentities] = loaded;
 	if (renderId !== renderGeneration) return;
+	const insights = routeCatalogInsights(state.openaiRoutes, state.anthropicRoutes, state.services, state.routeIdentities);
 	content.innerHTML = `
+    <section class="page-insights" aria-label="Route configuration and precedence">
+      <div class="page-insights-grid">
+        ${insightStrip(insights.items, { label: "Routing configuration" })}
+        ${distributionBars("Canonical forwarding modes", insights.distribution, {
+		caption: insights.caption,
+		empty: "No canonical route settings loaded."
+	})}
+      </div>
+      ${flowSummary("Route precedence", insights.steps, "Control-plane routes are reserved. LiteLLM fallback applies only when configured and allowed.")}
+    </section>
     <section class="panel"><div class="panel-heading"><h3>Additional endpoint identity</h3></div>
-      <p class="field-hint">Choose authentication requirements for each endpoint. Aliases share the canonical route policy; registered services use their own saved identity settings.</p>
+      <p class="field-hint">Per-endpoint requirements. Registered services use their own saved identity settings.</p>
       ${table([
 		"Route",
 		"Protocol",
@@ -38564,6 +40831,7 @@ async function routes() {
 	});
 	document.querySelectorAll("[data-route-identity]").forEach((button) => button.addEventListener("click", editRouteIdentity));
 	organizeView("routes");
+	content.prepend(content.querySelector(".page-insights"));
 }
 function routeFamilyLogo(family) {
 	const label = family === "anthropic" ? "A" : "OA";
@@ -38582,14 +40850,14 @@ function providerRouteTable(rows, family) {
 		"Updated",
 		"Actions"
 	], rows.map((row) => [
-		`<strong>${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
+		`<strong><i class="ti ti-route" aria-hidden="true"></i> ${esc(row.route_id)}</strong><div class="subtle"><code>${esc(row.route)}</code></div>`,
 		row.route === "/v1/responses" && row.mode === "direct_litellm_passthrough" && state.routeIdentities.some((setting) => setting.route === row.route && setting.access?.websocket) ? "<span class=\"badge\">HTTP + WS</span><div class=\"subtle\">Caller-owned LiteLLM keys only</div>" : "<span class=\"badge\">HTTP</span>",
 		routeIdentityControl(row.route),
-		row.enabled ? "<span class=\"badge good\">enabled</span>" : "<span class=\"badge bad\">disabled</span>",
+		badge(row.enabled === true ? "enabled" : row.enabled === false ? "disabled" : "unknown", row.enabled === true ? "good" : row.enabled === false ? "bad" : "neutral"),
 		modeForm(row),
 		time(row.updated_at),
 		`<div class="actions">
-        <button ${actionAttr}="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}">${row.enabled ? "Disable" : "Enable"}</button>
+        <button ${actionAttr}="${row.enabled ? "disable" : "enable"}" data-route-id="${attr(row.route_id)}" aria-label="${row.enabled ? "Disable" : "Enable"} route ${attr(row.route)}">${row.enabled ? "Disable" : "Enable"}</button>
       </div>`
 	]));
 }
@@ -38624,9 +40892,9 @@ function serviceRouteTable(rows) {
 		"Health check",
 		"Credential"
 	], rows.map((row) => [
-		`<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
+		`<strong class="service-name"><i class="ti ti-apps" aria-hidden="true"></i><span>${esc(row.name)}</span></strong><div class="subtle">${esc(row.source)}</div>`,
 		`<code>${esc(row.route_pattern)}</code>`,
-		serviceProtocolSummary(row),
+		`<i class="ti ti-plug-connected" aria-hidden="true"></i> ${serviceProtocolSummary(row)}`,
 		endpointIdentityBadge(row.access),
 		serviceBadges(row),
 		esc(listValue(row.allowed_methods, "none")),
@@ -38875,7 +41143,17 @@ async function services() {
 	[state.services, state.projects] = loaded;
 	const editing = state.services.find((service) => service.name === state.editingServiceName);
 	if (renderId !== renderGeneration) return;
+	const insights = serviceCatalogInsights(state.services, state.projects);
 	content.innerHTML = `
+    <section class="page-insights" aria-label="Service registration coverage">
+      <div class="page-insights-grid">
+        ${insightStrip(insights.items, { label: "Service relationships and transport" })}
+        ${distributionBars("Registration sync state", insights.distribution, {
+		caption: insights.caption,
+		empty: "No services registered."
+	})}
+      </div>
+    </section>
     <div class="service-stack">
       <section class="panel">
         <div class="panel-heading">
@@ -38921,7 +41199,7 @@ async function services() {
     </div>
     <section class="panel">
       <div class="panel-heading"><h3>Registered services</h3><span class="subtle">${state.services.length} total</span></div>
-      <p class="field-hint">Enable WebSocket transport for services that accept upgrades. Accessa bindings restrict WS to their GET run path. SSE uses HTTP.</p>
+      <p class="field-hint">Protocol shows configured transport. Accessa WebSockets use the GET run path; SSE uses HTTP.</p>
       ${serviceTable(state.services)}
     </section>
     <datalist id="service-routes">${serviceRouteOptions()}</datalist>
@@ -38956,6 +41234,7 @@ async function services() {
 	});
 	prepareProfileKeys(content);
 	organizeView("services");
+	content.prepend(content.querySelector(".page-insights"));
 }
 function normalizedPriceDecimal(value) {
 	const [mantissa, exponent = "0"] = String(value).toLowerCase().split("e");
@@ -39269,16 +41548,29 @@ async function settings() {
 	const loaded = await Promise.all([api("/admin-ui/admin/studio/connection"), api("/admin-ui/admin/auth/front-door")]);
 	if (renderId !== renderGeneration) return;
 	[state.studioConnection, state.authSettings] = loaded;
+	const visual = settingsGovernanceSnapshot(state.studioConnection, state.authSettings);
 	if (renderId !== renderGeneration) return;
 	content.innerHTML = `
-    <div class="grid stats">
-      ${stat("Studio source", state.studioConnection.source)}
-      ${stat("Token", state.studioConnection.token_configured ? "Configured" : "Not configured")}
-      ${stat("Base URL", state.studioConnection.base_url || "Unset")}
-      ${stat("Auth source", state.authSettings.source)}
-      ${stat("Entra ID", state.authSettings.unverified_bearer_enabled ? "Verification paused" : state.authSettings.entra.enabled ? "Enabled" : "Disabled")}
-      ${stat("Apigee", state.authSettings.apigee.trusted_header_enabled ? "Enabled" : "Disabled")}
-    </div>
+    <section class="page-insights" aria-label="Saved integration and trust configuration">
+      ${insightStrip(visual.insights, { label: "Saved configuration · connection health is not measured here" })}
+      ${flowSummary("Identity configuration boundaries", [
+		{
+			label: "Shared trust settings",
+			icon: "shield-check",
+			value: state.authSettings.source || "Unknown source"
+		},
+		{
+			label: "Endpoint identity policy",
+			icon: "route",
+			value: "Per route or service"
+		},
+		{
+			label: "Virtual key governance",
+			icon: "key",
+			value: "Access and limits"
+		}
+	], "Request identity depends on endpoint policy and forwarding mode. Shared configuration alone does not grant access.")}
+    </section>
     <section class="panel">
       <div class="panel-heading"><h3>Studio connection</h3><span class="subtle">${esc(state.studioConnection.updated_at ? time(state.studioConnection.updated_at) : "fallback or unset")}</span></div>
       <form id="studio-connection-form" class="form-grid">
@@ -39652,10 +41944,10 @@ function serviceTable(rows) {
 		"Cost",
 		"Actions"
 	], rows.map((row) => [
-		`<strong>${esc(row.name)}</strong><div class="subtle">${esc(row.source)}</div>`,
+		`<strong class="service-name"><i class="ti ti-apps" aria-hidden="true"></i><span>${esc(row.name)}</span></strong><div class="subtle">${esc(row.source)}</div>`,
 		serviceBadges(row),
 		`<code>${esc(row.route_pattern)}</code>`,
-		serviceProtocolSummary(row),
+		`<i class="ti ti-plug-connected" aria-hidden="true"></i> ${serviceProtocolSummary(row)}`,
 		endpointIdentityBadge(row.access),
 		esc(row.foundry ? `Azure Foundry · ${row.foundry.mode === "registered_agent" ? row.foundry.agent_name : "Responses passthrough"}` : row.upstream_base_url || "missing"),
 		esc(row.foundry ? "Not probed" : healthCheckLabel(row)),
@@ -39670,24 +41962,24 @@ function serviceTable(rows) {
 	]));
 }
 function serviceBadges(row) {
-	return `${row.enabled ? "<span class=\"badge good\">enabled</span>" : "<span class=\"badge bad\">disabled</span>"} ${row.sync_status === "synced" || row.sync_status === "local" ? `<span class="badge good">${esc(row.sync_status)}</span>` : `<span class="badge bad">${esc(row.sync_status)}</span>`}`;
+	const stateBadge = badge(row.enabled === true ? "enabled" : row.enabled === false ? "disabled" : "unknown", row.enabled === true ? "good" : row.enabled === false ? "bad" : "neutral");
+	const syncTone = row.sync_status === "synced" || row.sync_status === "local" ? "good" : row.sync_status === "failed" ? "bad" : row.sync_status === "stale" || row.sync_status === "incomplete" ? "warn" : "neutral";
+	return `${stateBadge} ${badge(row.sync_status || "sync unknown", syncTone)}`;
 }
 function healthCheckLabel(row) {
 	return row.health_check_path ? `${row.health_check_method || "GET"} ${row.health_check_path}` : "upstream root";
 }
 async function usage() {
 	const renderId = ++renderGeneration;
-	const loaded = await Promise.all([
+	const inventories = Promise.allSettled([
 		api("/admin-ui/admin/projects"),
 		api("/admin-ui/admin/services"),
 		api("/admin-ui/admin/keys")
 	]);
-	if (renderId !== renderGeneration) return;
-	[state.projects, state.services, state.keys] = loaded;
-	if (renderId !== renderGeneration) return;
 	content.innerHTML = `
     <section class="panel">
       <div class="panel-heading"><h3>Usage filters</h3></div>
+      <div data-usage-inventory-status role="status"></div>
       <form id="usage-form" class="form-grid">
         ${formSection("Primary filters", "Start with ownership, service, status, and time range.", `
         <label>Project<select name="project_id"><option value="">All</option>${projectOptions()}</select></label>
@@ -39697,7 +41989,7 @@ async function usage() {
         <label>Status<select name="status"><option value="">All</option><option value="success">Success</option><option value="failure">Failure</option></select></label>
         <label>Status code<input name="status_code" type="number" min="100" max="599" placeholder="500"></label>
         <label>Time range<select name="time_preset">
-          <option value="">All time</option>
+          <option value="all_time">All time</option>
           <option value="last_1h">Last 1h</option>
           <option value="last_6h">Last 6h</option>
           <option value="last_24h">Last 24h</option>
@@ -39769,7 +42061,7 @@ async function usage() {
           <button type="button" data-usage-export-action="copy-url">Copy URL</button>
           <button type="button" data-usage-export-action="copy-curl">Copy curl</button>
         </div>
-        <div id="usage-export-help" class="help">Leave both dates blank to use the Usage time filter. Entering either date replaces that range; a blank start or end means no limit on that side. Other Usage filters still apply. All rows needs both a start and end (here or in Usage) and supports Download only.</div>
+        <div id="usage-export-help" class="help">Leave both dates blank to use the Usage time filter. Entering either date replaces that range; a blank start or end means no limit on that side. Other Usage filters still apply. All rows needs both a start and end (here or in Usage). Downloads stream to disk; Copy URL and Copy curl use the same streaming endpoint.</div>
       </form>
     </section>
     <section class="panel">
@@ -39784,17 +42076,22 @@ async function usage() {
       </form>
       <div id="task-usage-result"></div>
     </section>
-    <section class="panel"><div class="panel-heading"><h3>Usage breakdown</h3></div><div id="usage-results"></div></section>
+    <section class="panel usage-analysis"><div class="panel-heading"><h3>Usage analysis</h3><span class="subtle">Recorded requests & cost</span></div><div id="usage-results"></div></section>
   `;
 	const usageForm = document.querySelector("#usage-form");
 	for (const [name, value] of Object.entries({
+		time_preset: "last_24h",
 		...state.usageFilters,
 		project_id: state.projectScope
 	})) {
 		const field = usageForm.elements.namedItem(name);
-		if (field) field.value = value;
+		if (!field) continue;
+		const selected = name === "time_preset" && value === "" ? "all_time" : value;
+		if (field.tagName === "SELECT" && selected && ![...field.options].some((option) => option.value === selected)) field.add(new Option(selected, selected));
+		field.value = selected;
 	}
 	document.querySelector("#usage-form").addEventListener("submit", handleAsync(applyUsageFilters));
+	bindUsageSuggestions(usageForm);
 	document.querySelector("#task-usage-form").addEventListener("submit", handleAsync(loadTaskUsage));
 	document.querySelectorAll("[data-usage-export-action]").forEach((button) => {
 		button.addEventListener("click", handleAsync(usageExportAction));
@@ -39802,93 +42099,333 @@ async function usage() {
 	document.querySelector("#usage-export-form [name=export_limit]")?.addEventListener("change", syncUsageExportControls);
 	syncUsageExportControls();
 	organizeView("usage");
+	inventories.then((loaded) => {
+		if (renderId !== renderGeneration || usageForm !== document.querySelector("#usage-form")) return;
+		const fields = [
+			[
+				"projects",
+				"project_id",
+				projectOptions
+			],
+			[
+				"services",
+				"service",
+				serviceOptions
+			],
+			[
+				"keys",
+				"key_id",
+				keyOptions
+			]
+		];
+		const failed = [];
+		loaded.forEach((result, index) => {
+			const [inventory, name, options] = fields[index];
+			if (result.status !== "fulfilled") {
+				failed.push(inventory);
+				return;
+			}
+			state[inventory] = result.value;
+			const field = usageForm.elements.namedItem(name);
+			const selected = field.value;
+			field.innerHTML = `<option value="">All</option>${options()}`;
+			if (selected && ![...field.options].some((option) => option.value === selected)) field.add(new Option(selected, selected));
+			field.value = selected;
+		});
+		document.querySelector("[data-usage-inventory-status]").textContent = failed.length ? `Filter labels unavailable: ${failed.join(", ")}. Usage queries remain available.` : "";
+	});
 	await loadUsage();
 }
 async function loadUsage(event) {
 	event?.preventDefault();
+	usageLoad?.controllers.forEach((controller) => controller.abort());
+	usageLoad?.charts?.forEach((chart) => chart?.destroy());
 	const generation = ++usageGeneration;
 	const root = document.querySelector("#usage-results");
-	if (root) {
-		root.innerHTML = emptyState("Loading usage for the applied filters…");
-		root.setAttribute("aria-busy", "true");
-	}
+	if (!root) return;
 	const query = usageQueryFromForm(event?.target);
-	const filterQuery = usageFilterValuesQueryFromForm(event?.target);
 	const pageSize = usagePageSize();
-	query.set("offset", String(state.usagePagination.eventsOffset));
 	query.set("timeseries_limit", String(pageSize));
-	query.set("timeseries_offset", String(state.usagePagination.timeseriesOffset));
 	query.set("service_timeseries_limit", String(pageSize));
-	query.set("service_timeseries_offset", String(state.usagePagination.serviceTimeseriesOffset));
-	let loaded;
-	try {
-		loaded = await Promise.all([
-			api(`/admin-ui/admin/usage/dashboard?${query}`),
-			api(`/admin-ui/admin/usage/events?${query}`),
-			api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=route`),
-			api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=endpoint`),
-			api(`/admin-ui/admin/usage/filter-values?${filterQuery}&field=model`)
-		]);
-	} catch (error) {
-		if (generation !== usageGeneration || root !== document.querySelector("#usage-results") || error.name === "AbortError") return;
-		if (root) {
-			root.setAttribute("aria-busy", "false");
-			root.innerHTML = `<div class="notice" role="alert">Usage could not load: ${esc(error.message)} <button type="button" data-retry-usage>Retry</button></div>`;
-			root.querySelector("[data-retry-usage]").addEventListener("click", handleAsync(() => loadUsage()));
-		}
-		return;
-	}
-	const [dashboard, events, routeOptions, endpointOptions, modelOptions] = loaded;
-	if (generation !== usageGeneration || root !== document.querySelector("#usage-results")) return;
-	root?.setAttribute("aria-busy", "false");
-	const summary = dashboard.summary;
-	updateUsageDatalists(routeOptions.values, endpointOptions.values, modelOptions.values);
-	const results = document.querySelector("#usage-results");
-	if (!results) return;
-	results.innerHTML = `
-    <p class="applied-filters">Applied filters: ${esc([...query].filter(([key]) => ![
+	state.usagePagination.eventsOffset = 0;
+	usageLoad = {
+		generation,
+		root,
+		query,
+		controllers: /* @__PURE__ */ new Map(),
+		loaded: /* @__PURE__ */ new Set(),
+		queue: [],
+		active: 0,
+		eventCursors: ["start"],
+		eventIndex: 0,
+		eventsPage: null,
+		charts: []
+	};
+	const sections = [
+		["project-key-services", "Project → Virtual key → Service"],
+		["projects", "Projects"],
+		["keys", "Keys"],
+		["services", "Services"],
+		["endpoints", "Endpoints"],
+		["providers", "Providers"],
+		["models", "Models"],
+		["tasks", "Tasks"],
+		["events", "Recent requests"],
+		["timeseries", "Timeseries"],
+		["service-timeseries", "Service timeseries"],
+		["unused-keys", "Unused keys"]
+	];
+	root.innerHTML = `
+    <div class="monitor-filter-chips" aria-label="Applied usage filters"><span><i class="ti ti-calendar" aria-hidden="true"></i>${query.get("from") && query.get("to") ? `${esc(new Date(query.get("from")).toLocaleDateString())} – ${esc(new Date(query.get("to")).toLocaleDateString())}` : "All time"}</span><span><i class="ti ti-folder" aria-hidden="true"></i>${esc(query.get("project_id") ? usageProjectName(query.get("project_id")) : "All projects")}</span>${[...query].filter(([key]) => ![
+		"from",
+		"to",
+		"project_id",
 		"offset",
 		"limit",
 		"timeseries_limit",
-		"timeseries_offset",
 		"service_timeseries_limit",
-		"service_timeseries_offset",
 		"breakdown_limit",
 		"sort_by",
 		"interval"
-	].includes(key)).map(([key, value]) => `${key}: ${value}`).join(" · ") || "All recorded usage")}</p>
-    <div class="grid stats">
-      ${stat("Requests", summary.request_count)}
-      ${stat("Failures", summary.failure_count)}
-      ${stat("Cost", money(summary.estimated_cost_usd))}
-      ${stat("Avg latency", summary.average_latency_ms == null ? "n/a" : `${Math.round(summary.average_latency_ms)} ms`)}
-      ${stat("Fallback rate", percent(summary.fallback_rate))}
-      ${stat("Expensive", summary.expensive_request_count || 0)}
-      ${stat("Guardrail blocks", summary.guardrail_block_count || 0)}
-    </div>
+	].includes(key)).map(([key, value]) => `<span>${esc(key.replaceAll("_", " "))}<strong>${esc(value)}</strong></span>`).join("")}</div>
+    <div data-usage-summary aria-busy="true">${emptyState("Loading usage summary…")}</div>
+    ${usageChartsShell()}
     ${query.get("key_id") ? `<p><button type="button" data-usage-litellm-spend>View LiteLLM reported spend</button> <span class="help">Current mapped-key counter · independent of date filters</span></p>` : ""}
-    <h4>Project → Virtual key → Service</h4>
-    ${usageProjectKeyServiceHierarchy(dashboard.breakdowns.project_key_services || [])}
-    <h4>Projects</h4>${usageBreakdownTable(dashboard.breakdowns.projects, projectName)}
-    <h4>Keys</h4>${usageBreakdownTable(dashboard.breakdowns.keys, keyName)}
-    <h4>Services</h4>${usageBreakdownTable(dashboard.breakdowns.services)}
-    <h4>Endpoints</h4>${usageBreakdownTable(dashboard.breakdowns.endpoints || [])}
-    <h4>Providers</h4>${usageBreakdownTable(dashboard.breakdowns.providers)}
-    <h4>Models</h4>${usageBreakdownTable(dashboard.breakdowns.models)}
-    <h4>Tasks</h4>${usageBreakdownTable(dashboard.breakdowns.tasks)}
-    ${usagePagedTable("Recent requests", "events", usageEventsTable(events.rows), events, events.rows.length)}
-    ${usagePagedTable("Timeseries", "timeseries", usageTimeseriesTable(dashboard.timeseries), dashboard.timeseries_page, dashboard.timeseries.length)}
-    ${usagePagedTable("Service timeseries", "service-timeseries", usageServiceTimeseriesTable(dashboard.service_timeseries || []), dashboard.service_timeseries_page, (dashboard.service_timeseries || []).length)}
-    <h4>Unused keys</h4>${unusedKeysTable(dashboard.unused_keys)}
+    ${sections.map(([section, title]) => `<h4>${esc(title)}</h4><div data-usage-section="${attr(section)}">${emptyState("Select this section to load it.")}</div>`).join("")}
   `;
-	results.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
-	tabulateUsage(results);
-	results.querySelectorAll("[data-debug-request]").forEach((button) => {
-		button.addEventListener("click", handleAsync(openDebugRequest));
+	root.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
+	tabulateUsage(root);
+	loadUsageVisuals();
+	await Promise.allSettled([loadUsageSummary(), loadUsageSection("events")]);
+}
+function usageRequestCurrent(load) {
+	return usageLoad === load && load.root === document.querySelector("#usage-results");
+}
+function usageRequestController(load, section) {
+	load.controllers.get(section)?.abort();
+	const controller = new AbortController();
+	load.controllers.set(section, controller);
+	return controller;
+}
+async function loadUsageSummary() {
+	const load = usageLoad;
+	if (!load || !usageRequestCurrent(load)) return;
+	const host = load.root.querySelector("[data-usage-summary]");
+	const controller = usageRequestController(load, "summary");
+	host.setAttribute("aria-busy", "true");
+	try {
+		const summary = await api(`/admin-ui/admin/usage/summary?${load.query}`, { signal: controller.signal });
+		if (!usageRequestCurrent(load) || controller.signal.aborted) return;
+		host.innerHTML = usageSummaryView(summary, {
+			esc,
+			money
+		});
+	} catch (error) {
+		if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
+		host.innerHTML = `<div class="notice" role="alert">Usage summary unavailable: ${esc(error.message)} <button type="button" data-retry-usage-summary>Retry summary</button></div>`;
+		host.querySelector("[data-retry-usage-summary]").addEventListener("click", handleAsync(loadUsageSummary));
+	} finally {
+		if (usageRequestCurrent(load) && !controller.signal.aborted) host.setAttribute("aria-busy", "false");
+	}
+}
+async function loadUsageVisuals() {
+	const load = usageLoad;
+	if (!load || !usageRequestCurrent(load)) return;
+	const host = load.root.querySelector("[data-usage-visuals]");
+	if (!host) return;
+	const controller = usageRequestController(load, "visualization");
+	host.querySelectorAll("[data-usage-chart-data]").forEach((button) => {
+		button.disabled = true;
+		button.onclick = () => showContentDrawer(`Chart data · ${load.chartInterval === "day" ? "daily" : "hourly"} buckets`, usageTimeseriesTable(load.chartRows || []), () => {}, button);
 	});
-	results.querySelectorAll("[data-usage-page-section]").forEach((button) => {
-		button.addEventListener("click", handleAsync(changeUsagePage));
+	const query = new URLSearchParams(load.query);
+	const span = Date.parse(query.get("to")) - Date.parse(query.get("from"));
+	if (!query.get("from") || !query.get("to") || !(span > 0)) {
+		host.innerHTML = "<div class=\"monitor-empty\"><i class=\"ti ti-calendar-stats\" aria-hidden=\"true\"></i><span>Choose a bounded time range to visualize trends.</span></div>";
+		host.setAttribute("aria-busy", "false");
+		return;
+	}
+	query.set("interval", span > 6048e5 ? "day" : "hour");
+	query.set("timeseries_limit", "168");
+	query.set("timeseries_offset", "0");
+	host.setAttribute("aria-busy", "true");
+	load.visualizationActive = true;
+	try {
+		const data = await api(`/admin-ui/admin/usage/sections/timeseries?${query}`, { signal: controller.signal });
+		if (!usageRequestCurrent(load) || controller.signal.aborted) return;
+		const rows = data.rows || [];
+		load.chartRows = rows;
+		load.chartInterval = query.get("interval");
+		host.querySelectorAll("[data-usage-chart-data]").forEach((button) => {
+			button.disabled = !rows.length;
+		});
+		const configs = usageTrendConfigs(rows, query.get("interval"));
+		for (const [index, key] of ["volume", "cost"].entries()) {
+			const target = host.querySelector(`[data-usage-${key}-host]`);
+			if (!target) continue;
+			if (!rows.length) {
+				target.innerHTML = "<div class=\"monitor-empty\"><i class=\"ti ti-chart-line\" aria-hidden=\"true\"></i><span>No recorded usage in this period</span></div>";
+				continue;
+			}
+			target.innerHTML = `<canvas role="img" aria-label="${key === "volume" ? "Successful and failed requests" : "Estimated cost in USD"} over ${rows.length} returned ${query.get("interval")} buckets"></canvas>`;
+			const chart = mountMonitorChart(auto_default, target.querySelector("canvas"), configs[index]);
+			if (chart) load.charts.push(chart);
+			const description = target.previousElementSibling.querySelector("span");
+			description.textContent = `${query.get("interval") === "hour" ? "Hourly" : "Daily"} · ${rows.length} buckets${data.page?.has_more ? " · first page of this range" : ""}`;
+		}
+	} catch (error) {
+		if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
+		host.innerHTML = `<div class="notice" role="status">Charts unavailable: ${esc(error.message)} <button type="button" data-retry-usage-charts>Retry charts</button></div>`;
+		host.querySelector("[data-retry-usage-charts]").addEventListener("click", handleAsync(() => {
+			host.innerHTML = usageChartsShell().replace(/^<div[^>]*>|<\/div>$/g, "");
+			return loadUsageVisuals();
+		}));
+	} finally {
+		if (usageRequestCurrent(load)) {
+			load.visualizationActive = false;
+			if (!controller.signal.aborted) host.setAttribute("aria-busy", "false");
+			drainUsageSections(load);
+		}
+	}
+}
+function loadVisibleUsageSections(root) {
+	const load = usageLoad;
+	if (!load || load.root !== root) return;
+	root.querySelectorAll("[data-usage-section]").forEach((host) => {
+		const section = host.dataset.usageSection;
+		if (!host.closest(".breakdown-section")?.hidden && !load.loaded.has(section) && !load.controllers.has(section) && !load.queue.includes(section)) load.queue.push(section);
 	});
+	drainUsageSections(load);
+}
+function drainUsageSections(load) {
+	if (!usageRequestCurrent(load)) return;
+	while (load.active + (load.visualizationActive ? 1 : 0) < 3 && load.queue.length) {
+		const section = load.queue.shift();
+		if (load.loaded.has(section) || load.controllers.has(section)) continue;
+		load.active += 1;
+		loadUsageSection(section).finally(() => {
+			load.active -= 1;
+			drainUsageSections(load);
+		});
+	}
+}
+async function loadUsageSection(section, force = false) {
+	const load = usageLoad;
+	if (!load || !usageRequestCurrent(load) || !force && load.controllers.has(section)) return;
+	const host = load.root.querySelector(`[data-usage-section="${section}"]`);
+	if (!host) return;
+	const controller = usageRequestController(load, section);
+	host.setAttribute("aria-busy", "true");
+	host.innerHTML = emptyState("Loading this usage section…");
+	const query = new URLSearchParams(load.query);
+	query.set("timeseries_offset", String(state.usagePagination.timeseriesOffset));
+	query.set("service_timeseries_offset", String(state.usagePagination.serviceTimeseriesOffset));
+	if (section === "events") {
+		if (![
+			"cost",
+			"latency",
+			"tokens",
+			"status_code"
+		].includes(query.get("sort_by"))) {
+			query.set("cursor", load.eventCursors[load.eventIndex] || "start");
+			query.set("offset", "0");
+		} else query.set("offset", String(state.usagePagination.eventsOffset));
+	}
+	try {
+		const data = await api(`${section === "events" ? "/admin-ui/admin/usage/events" : `/admin-ui/admin/usage/sections/${section}`}?${query}`, { signal: controller.signal });
+		if (!usageRequestCurrent(load) || controller.signal.aborted) return;
+		load.loaded.add(section);
+		if (section === "events") {
+			load.eventsPage = data;
+			if (load.eventIndex === 0 && data.snapshot_cursor) load.eventCursors[0] = data.snapshot_cursor;
+			host.innerHTML = usagePagedTable("Recent requests", section, usageEventsTable(data.rows || []), {
+				...data,
+				offset: state.usagePagination.eventsOffset
+			}, (data.rows || []).length);
+		} else if (section === "timeseries" || section === "service-timeseries") {
+			const rows = data.rows || [];
+			host.innerHTML = usagePagedTable(section === "timeseries" ? "Timeseries" : "Service timeseries", section, section === "timeseries" ? usageTimeseriesTable(rows) : usageServiceTimeseriesTable(rows), data.page, rows.length);
+		} else if (section === "project-key-services") host.innerHTML = usageProjectKeyServiceHierarchy(data.rows || []);
+		else if (section === "unused-keys") host.innerHTML = unusedKeysTable(data.rows || []);
+		else {
+			const label = section === "projects" ? usageProjectName : section === "keys" ? usageKeyName : (value) => value;
+			host.innerHTML = usageRanking(data.rows || [], label, esc) + usageBreakdownTable(data.rows || [], label);
+		}
+		if ([
+			"events",
+			"timeseries",
+			"service-timeseries"
+		].includes(section)) host.previousElementSibling.hidden = true;
+		host.querySelectorAll("[data-debug-request]").forEach((button) => button.addEventListener("click", handleAsync(openDebugRequest)));
+		host.querySelectorAll("[data-usage-page-section]").forEach((button) => button.addEventListener("click", handleAsync(changeUsagePage)));
+	} catch (error) {
+		if (!usageRequestCurrent(load) || controller.signal.aborted || error.name === "AbortError") return;
+		host.innerHTML = `<div class="notice" role="alert">This Usage section is unavailable: ${esc(error.message)} <button type="button" data-retry-usage-section>Retry section</button></div>`;
+		host.querySelector("[data-retry-usage-section]").addEventListener("click", handleAsync(() => loadUsageSection(section, true)));
+	} finally {
+		if (usageRequestCurrent(load) && !controller.signal.aborted) host.setAttribute("aria-busy", "false");
+	}
+}
+function bindUsageSuggestions(form) {
+	for (const field of [
+		"route",
+		"endpoint",
+		"model"
+	]) {
+		const input = form.elements.namedItem(field);
+		let timer;
+		let controller;
+		const load = async () => {
+			if (form !== document.querySelector("#usage-form")) return;
+			controller?.abort();
+			const current = controller = new AbortController();
+			const status = input.parentElement.querySelector("[data-usage-suggestion-status]") || document.createElement("small");
+			status.dataset.usageSuggestionStatus = field;
+			status.setAttribute("role", "status");
+			input.parentElement.append(status);
+			try {
+				const filterQuery = usageFilterValuesQueryFromForm(form);
+				filterQuery.delete(field);
+				filterQuery.set("field", field);
+				filterQuery.set("q", input.value.trim());
+				filterQuery.set("limit", "20");
+				const data = await api(`/admin-ui/admin/usage/filter-values?${filterQuery}`, { signal: current.signal });
+				if (current.signal.aborted || form !== document.querySelector("#usage-form")) return;
+				document.querySelector(`#usage-${field}-options`).innerHTML = (data.values || []).map((value) => `<option value="${attr(value)}"></option>`).join("");
+				status.textContent = "";
+			} catch (error) {
+				if (!current.signal.aborted && error.name !== "AbortError") status.textContent = "Suggestions unavailable. Exact values can still be entered.";
+			}
+		};
+		input.addEventListener("focus", () => {
+			clearTimeout(timer);
+			load();
+		});
+		input.addEventListener("input", () => {
+			controller?.abort();
+			clearTimeout(timer);
+			timer = setTimeout(load, 250);
+		});
+		form.addEventListener("change", () => {
+			controller?.abort();
+			clearTimeout(timer);
+		});
+	}
+}
+function usageIdentifierLabels() {
+	if (!usageLabelCache || usageLabelCache.projects !== state.projects || usageLabelCache.keys !== state.keys) usageLabelCache = {
+		projects: state.projects,
+		keys: state.keys,
+		projectNames: new Map(state.projects.map((project) => [project.id, project.name])),
+		keyNames: new Map(state.keys.map((key) => [key.id, key.name ? `${key.name} (${key.key_prefix})` : key.key_prefix]))
+	};
+	return usageLabelCache;
+}
+function usageProjectName(projectId) {
+	return projectId && projectId !== "individual" ? usageIdentifierLabels().projectNames.get(projectId) || projectId : "Individual";
+}
+function usageKeyName(keyId) {
+	return usageIdentifierLabels().keyNames.get(keyId) || keyId;
 }
 async function applyUsageFilters(event) {
 	event.preventDefault();
@@ -39918,12 +42455,19 @@ function usagePageSize() {
 async function changeUsagePage(event) {
 	const section = event.currentTarget.dataset.usagePageSection;
 	const direction = event.currentTarget.dataset.usagePageDirection;
-	const pageSize = usagePageSize();
 	const key = usagePaginationKey(section);
-	if (!key) return;
+	if (!key || !usageLoad) return;
+	const limitKey = section === "timeseries" ? "timeseries_limit" : section === "service-timeseries" ? "service_timeseries_limit" : "limit";
+	const pageSize = Number(section === "events" && usageLoad.eventsPage?.limit || usageLoad.query.get(limitKey) || 50);
+	if (section === "events") {
+		if (direction === "next") {
+			usageLoad.eventCursors[usageLoad.eventIndex + 1] = usageLoad.eventsPage?.next_cursor;
+			usageLoad.eventIndex += 1;
+		} else usageLoad.eventIndex = Math.max(0, usageLoad.eventIndex - 1);
+	}
 	const current = state.usagePagination[key];
 	state.usagePagination[key] = direction === "next" ? current + pageSize : Math.max(0, current - pageSize);
-	await loadUsage();
+	await loadUsageSection(section, true);
 }
 function usagePaginationKey(section) {
 	if (section === "events") return "eventsOffset";
@@ -39992,30 +42536,9 @@ function usageFilterValuesQueryFromForm(formElement = document.querySelector("#u
 	if (range.to) query.set("to", range.to);
 	return query;
 }
-function updateUsageDatalists(routes = [], endpoints = [], models = []) {
-	const routeDefaults = [
-		"/v1/chat/completions",
-		"/v1/responses",
-		"/v1/embeddings",
-		"/v1/rerank",
-		"/v1/messages",
-		"/summary",
-		"/translation",
-		"/ocr",
-		"/embeddings",
-		"/services/*",
-		"/providers/openai/*"
-	];
-	const routeList = document.querySelector("#usage-route-options");
-	const endpointList = document.querySelector("#usage-endpoint-options");
-	const modelList = document.querySelector("#usage-model-options");
-	if (routeList) routeList.innerHTML = [.../* @__PURE__ */ new Set([...routeDefaults, ...routes])].map((value) => `<option value="${attr(value)}"></option>`).join("");
-	if (endpointList) endpointList.innerHTML = [...new Set(endpoints)].map((value) => `<option value="${attr(value)}"></option>`).join("");
-	if (modelList) modelList.innerHTML = [...new Set(models)].map((value) => `<option value="${attr(value)}"></option>`).join("");
-}
 function usageDateRange(form) {
 	const preset = form.get("time_preset");
-	if (!preset) return {};
+	if (!preset || preset === "all_time") return {};
 	const now = /* @__PURE__ */ new Date();
 	if (preset === "custom") {
 		const fromInput = form.get("from");
@@ -40063,9 +42586,13 @@ async function usageExportAction(event) {
 	const format = exportForm ? new FormData(exportForm).get("export_format") || "csv" : "csv";
 	const { query, allRows } = usageExportQuery();
 	if (allRows) {
-		if (action !== "download") throw new Error("All rows is available for Download only. Preview, URL, and curl exports remain limited to one request.");
-		await downloadAllUsageExport(format, query);
-		return;
+		if (action === "preview") throw new Error("Preview is limited to one bounded page. Choose a maximum row count.");
+		if (!query.get("from") || !query.get("to")) throw new Error("All rows requires a bounded start and end time.");
+		query.set("stream", "true");
+		if (action === "download") {
+			await downloadAllUsageExport(format, query);
+			return;
+		}
 	}
 	const path = usageExportPath(format, query);
 	if (action === "copy-url") {
@@ -40102,7 +42629,8 @@ function usageExportQuery() {
 	if (data) {
 		const exportLimit = data.get("export_limit");
 		allRows = exportLimit === "all";
-		query.set("limit", allRows ? String(usageExportBatchSize) : exportLimit || "1000");
+		if (allRows) query.delete("limit");
+		else query.set("limit", exportLimit || "1000");
 		query.set("offset", allRows ? "0" : data.get("export_offset") || "0");
 		if (exportRange) {
 			query.delete("from");
@@ -40143,81 +42671,38 @@ function syncUsageExportControls() {
 	const allRows = new FormData(form).get("export_limit") === "all";
 	form.querySelector("[name=export_offset]").disabled = allRows;
 	form.querySelectorAll("[data-usage-export-action]").forEach((button) => {
-		button.disabled = allRows && button.dataset.usageExportAction !== "download";
+		button.disabled = allRows && button.dataset.usageExportAction === "preview";
 	});
 }
 async function downloadAllUsageExport(format, baseQuery) {
 	if (!baseQuery.get("from") || !baseQuery.get("to")) throw new Error("All rows requires a bounded start and end time. Set Export from and Export to, or apply a bounded Usage time filter.");
-	const parts = [];
-	let csvHeader = "";
-	let jsonStarted = false;
-	let rowCount = 0;
-	let offset = 0;
-	while (true) {
-		const query = new URLSearchParams(baseQuery);
-		query.set("limit", String(usageExportBatchSize));
-		query.set("offset", String(offset));
-		const response = await fetchWithTimeout(usageExportPath(format, query), { headers: usageExportHeaders() });
-		if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-		let pageRows;
-		if (format === "json") {
-			const page = await response.json();
-			const rows = Array.isArray(page.rows) ? page.rows : [];
-			if (!jsonStarted) {
-				parts.push(`{"summary":${JSON.stringify(page.summary)},"rows":[`);
-				jsonStarted = true;
-			}
-			if (rows.length) {
-				if (rowCount) parts.push(",");
-				parts.push(rows.map((row) => JSON.stringify(row)).join(","));
-			}
-			pageRows = rows.length;
-		} else {
-			const page = splitUsageCsvPage(await response.text());
-			if (!csvHeader) {
-				csvHeader = page.header;
-				parts.push(csvHeader);
-			} else if (page.header !== csvHeader) throw new Error("Usage export columns changed while the download was running.");
-			parts.push(page.body);
-			pageRows = countCsvRecords(page.body);
+	const query = new URLSearchParams(baseQuery);
+	query.set("stream", "true");
+	query.delete("offset");
+	const path = usageExportPath(format, query);
+	const filename = `relayna-usage-${(/* @__PURE__ */ new Date()).toISOString().replaceAll(":", "-")}.${format}`;
+	if (!window.showSaveFilePicker) throw new Error("This browser cannot stream downloads to disk. Use Copy curl for All rows, or choose a bounded row count.");
+	const writable = await (await window.showSaveFilePicker({ suggestedName: filename })).createWritable();
+	const controller = new AbortController();
+	const abort = () => controller.abort();
+	viewController.signal.addEventListener("abort", abort, { once: true });
+	try {
+		const response = await fetch(path, {
+			headers: usageExportHeaders(),
+			signal: controller.signal
+		});
+		if (!response.ok || !response.body) {
+			await writable.abort();
+			throw new Error(`Usage export unavailable: ${response.status} ${response.statusText}`);
 		}
-		rowCount += pageRows;
-		if (pageRows < usageExportBatchSize) break;
-		offset += pageRows;
+		await response.body.pipeTo(writable, { signal: controller.signal });
+		setNotice("Usage export saved.", "success");
+	} catch (error) {
+		await writable.abort().catch(() => {});
+		throw error;
+	} finally {
+		viewController.signal.removeEventListener("abort", abort);
 	}
-	if (format === "json") parts.push(jsonStarted ? "]}" : "{\"summary\":null,\"rows\":[]}");
-	downloadUsageExport(parts, format);
-	setNotice(`Downloaded ${rowCount.toLocaleString()} usage rows.`, "success");
-}
-function splitUsageCsvPage(csv) {
-	const headerEnd = csv.indexOf("\n");
-	if (headerEnd === -1) return {
-		header: csv,
-		body: ""
-	};
-	return {
-		header: csv.slice(0, headerEnd + 1),
-		body: csv.slice(headerEnd + 1)
-	};
-}
-function countCsvRecords(csv) {
-	if (!csv) return 0;
-	let rows = 0;
-	let quoted = false;
-	for (let index = 0; index < csv.length; index += 1) if (csv[index] === "\"") {
-		if (quoted && csv[index + 1] === "\"") index += 1;
-		else quoted = !quoted;
-	} else if (csv[index] === "\n" && !quoted) rows += 1;
-	return rows + (csv.endsWith("\n") ? 0 : 1);
-}
-function downloadUsageExport(parts, format) {
-	const blob = new Blob(parts, { type: format === "json" ? "application/json" : "text/csv;charset=utf-8" });
-	const url = URL.createObjectURL(blob);
-	const anchor = document.createElement("a");
-	anchor.href = url;
-	anchor.download = `relayna-usage-${(/* @__PURE__ */ new Date()).toISOString()}.${format}`;
-	anchor.click();
-	URL.revokeObjectURL(url);
 }
 async function loadTaskUsage(event) {
 	event.preventDefault();
@@ -40265,11 +42750,11 @@ function usageProjectKeyServiceHierarchy(rows) {
     <div class="help">Showing ${rows.length} top project, key, and service combinations using the selected sort and limit.</div>
     ${[...projects.entries()].map(([projectId, keys], projectIndex) => `
       <details class="usage-hierarchy-project" data-usage-project="${attr(projectId || "individual")}" ${projectIndex === 0 ? "open" : ""}>
-        <summary><span><strong>${esc(projectName(projectId))}</strong><small>${keys.size} virtual ${keys.size === 1 ? "key" : "keys"}</small></span><span>${[...keys.values()].reduce((count, services) => count + services.length, 0)} combinations</span></summary>
+        <summary><span><strong>${esc(usageProjectName(projectId))}</strong><small>${keys.size} virtual ${keys.size === 1 ? "key" : "keys"}</small></span><span>${[...keys.values()].reduce((count, services) => count + services.length, 0)} combinations</span></summary>
         <div class="usage-hierarchy-keys">
           ${[...keys.entries()].map(([keyId, services], keyIndex) => `
             <details class="usage-hierarchy-key" data-usage-key="${attr(keyId)}" ${projectIndex === 0 && keyIndex === 0 ? "open" : ""}>
-              <summary><span><strong><code>${esc(keyName(keyId))}</code></strong><small>${services.length} ${services.length === 1 ? "service" : "services"}</small></span></summary>
+              <summary><span><strong><code>${esc(usageKeyName(keyId))}</code></strong><small>${services.length} ${services.length === 1 ? "service" : "services"}</small></span></summary>
               ${usageProjectKeyServiceTable(services)}
             </details>`).join("")}
         </div>
@@ -40314,6 +42799,23 @@ function usagePagedTable(title, section, tableMarkup, page = {}, rowCount = 0) {
   `;
 }
 function usageEventsTable(rows, { ownerService = null, ownerProject = null } = {}) {
+	if (!ownerService && !ownerProject) return table([
+		"Created",
+		"Request / service",
+		"Model / provider",
+		"Outcome",
+		"Latency",
+		"Tokens / cost",
+		"Details"
+	], rows.map((row) => [
+		time(row.created_at),
+		`<div class="traffic-request-cell"><code title="${attr(row.request_id)}">${esc(row.request_id)}</code><small>${esc(row.service_name || row.route || "Not recorded")} ${row.diagnostics?.websocket ? badge("WS", "neutral") : row.diagnostics?.protocol === "http" ? badge("HTTP", "neutral") : ""}</small></div>`,
+		`<span>${esc(row.model || "—")}</span><div class="subtle">${esc(row.provider || "Not recorded")}</div>`,
+		`${badge(row.status, row.status === "success" ? "good" : "bad")}<div class="subtle">HTTP ${esc(row.status_code)}</div>`,
+		esc(trafficDuration(row.latency_ms)),
+		`${esc(usageValue(row.diagnostics, row.total_tokens))} tokens<div class="subtle">${esc(usageValue(row.diagnostics, row.estimated_cost_usd, money))}</div>`,
+		`<button type="button" class="icon-button" aria-label="Inspect request ${attr(row.request_id)}" title="Inspect request" data-nav="health" data-debug-request="${attr(row.request_id)}" data-debug-usage="${attr(JSON.stringify(investigationUsageSnapshot(row)))}"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>`
+	]));
 	return table([
 		"Created",
 		"Request",
@@ -40400,7 +42902,7 @@ function unusedKeysTable(rows) {
 		"Last used"
 	], rows.map((row) => [
 		`<code>${esc(row.key_prefix)}</code>`,
-		esc(projectName(row.project_id || "")),
+		esc(usageProjectName(row.project_id || "")),
 		time(row.created_at),
 		row.last_used_at ? time(row.last_used_at) : "never"
 	]));
@@ -40450,10 +42952,26 @@ function usageServiceTimeseriesTable(rows) {
 }
 async function health() {
 	const renderId = ++renderGeneration;
+	const gatewayHost = document.createElement("div");
+	gatewayHost.style.minWidth = "0";
+	content.replaceChildren(gatewayHost);
+	stopGatewayStatus = mountHealthGatewayStatus({
+		content: gatewayHost,
+		api,
+		esc,
+		attr,
+		badge,
+		table,
+		Chart: auto_default
+	});
 	const issues = [];
+	const recentWindow = new URLSearchParams({
+		from: (/* @__PURE__ */ new Date(Date.now() - 864e5)).toISOString(),
+		to: (/* @__PURE__ */ new Date()).toISOString()
+	});
 	const [ready, rows, healthState, importVersions] = await Promise.all([
 		readiness(),
-		monitoringPanel("/admin-ui/admin/provider-health", [], issues),
+		monitoringPanel(`/admin-ui/admin/provider-health?${recentWindow}`, [], issues),
 		monitoringPanel("/admin-ui/admin/provider-health/state", [], issues),
 		monitoringPanel("/admin-ui/admin/services/import/versions", [], issues)
 	]);
@@ -40466,14 +42984,9 @@ async function health() {
 	if (renderId !== renderGeneration) return;
 	content.innerHTML = `
     ${monitoringIssues(issues)}
-    <div class="grid stats">
-      ${stat("Gateway", ready.status)}
-      ${stat("Routes observed", rows.length)}
-      ${stat("Error rate", errorRate)}
-      ${stat("Fallbacks", fallbackCount)}
-    </div>
     <section class="panel">
-      <div class="panel-heading"><h3>Recorded reliability</h3><span class="subtle">All recorded usage · minimum 20 requests · elevated at 5%</span></div>
+      <div class="panel-heading"><h3>Recorded reliability</h3><span class="subtle">Last 24 hours · minimum 20 requests · elevated at 5%</span></div>
+      <div class="monitor-history-summary">${stat("Gateway", ready.status)}${stat("Routes observed", rows.length)}${stat("Error rate", errorRate)}${stat("Fallbacks", fallbackCount)}</div>
       ${healthTable(rows)}
     </section>
     <section class="panel">
@@ -40540,6 +43053,7 @@ async function health() {
 	document.querySelectorAll("[data-import-rollback]").forEach((button) => {
 		button.addEventListener("click", handleAsync(rollbackImportVersion));
 	});
+	content.prepend(gatewayHost);
 	organizeView("health");
 	content.querySelector("[data-retry-monitoring]")?.addEventListener("click", () => refresh());
 }
@@ -40704,7 +43218,7 @@ async function rollbackImportVersion(event) {
 }
 function formSection(title, description, body, open = false) {
 	return `<details class="form-section wide-field" ${open ? "open" : ""}>
-    <summary><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><i class="ti ti-chevron-down" aria-hidden="true"></i></summary>
+    <summary><span class="form-section-symbol" aria-hidden="true"><i class="ti ti-${workflowIcon(title)}"></i></span><span class="form-section-copy"><strong>${esc(title)}</strong><small>${esc(description)}</small></span><i class="ti ti-chevron-down" aria-hidden="true"></i></summary>
     <div class="form-section-grid">${body}</div>
   </details>`;
 }
@@ -40761,8 +43275,19 @@ async function guardrails() {
 		api("/admin-ui/admin/guardrails/summary")
 	]);
 	const selected = state.guardrails.guardrails.find((guardrail) => guardrail.name === state.editingGuardrailName);
+	const visual = guardrailGovernanceSnapshot(state.guardrails.guardrails, state.guardrailExecutions.executions);
 	if (renderId !== renderGeneration) return;
 	content.innerHTML = `
+    <section class="page-insights" aria-label="Guardrail configuration and execution sample">
+      <div class="page-insights-grid">
+        ${insightStrip(visual.insights, { label: "Catalog policy coverage" })}
+        ${distributionBars("Recent execution actions", visual.actions, {
+		caption: `${state.guardrailExecutions.executions.length} returned executions · maximum 50, not a lifetime total`,
+		empty: "No execution samples returned."
+	})}
+      </div>
+      ${flowSummary("Enabled definitions by execution stage", visual.stages, "A guardrail can support several stages. These counts describe catalog capability; applied key policy and request mode determine what runs.")}
+    </section>
     <div class="split guardrail-workspace">
       <section class="panel">
         <div class="panel-heading">
@@ -40779,11 +43304,11 @@ async function guardrails() {
       </section>
     </div>
     <section class="panel">
-      <div class="panel-heading"><h3>Summary</h3></div>
+      <div class="panel-heading"><h3>Recorded execution summary</h3><span class="subtle">Returned aggregate groups</span></div>
       ${guardrailSummaryTable(state.guardrailSummary.summary)}
     </section>
     <section class="panel">
-      <div class="panel-heading"><h3>Recent executions</h3></div>
+      <div class="panel-heading"><h3>Recent executions</h3><span class="subtle">Latest returned sample · up to 50 executions</span></div>
       ${guardrailExecutionTable(state.guardrailExecutions.executions)}
     </section>
   `;
@@ -40817,11 +43342,11 @@ function guardrailCatalogTable(rows) {
 		"Token",
 		"Actions"
 	], rows.map((row) => [
-		`<code>${esc(row.name)}</code><div class="subtle">${esc(row.description)}</div>`,
-		esc(row.provider_kind),
-		esc(listValue(row.modes, "")),
+		`<i class="ti ti-shield-check" aria-hidden="true"></i> <code>${esc(row.name)}</code><div class="subtle">${esc(row.description)}</div>`,
+		badge(row.provider_kind),
+		(row.modes || []).map((mode) => badge(mode === "pre_call" ? "Pre-call" : mode === "post_call" ? "Post-call" : mode === "during_call" ? "Streaming" : mode)).join(" "),
 		row.default_on ? "<span class=\"badge good\">default</span>" : "<span class=\"badge\">opt-in</span>",
-		esc(row.failure_policy),
+		badge(row.failure_policy, row.failure_policy === "fail_open" || row.failure_policy === "dry_run" ? "warn" : "neutral"),
 		row.enabled ? "<span class=\"badge good\">enabled</span>" : "<span class=\"badge bad\">disabled</span>",
 		row.endpoint_configured ? "<span class=\"badge good\">configured</span>" : "<span class=\"badge\">built-in</span>",
 		row.token_configured ? "<span class=\"badge good\">configured</span>" : "<span class=\"badge\">none</span>",
@@ -40938,9 +43463,9 @@ function guardrailSummaryTable(rows) {
 		"Total latency"
 	], rows.map((row) => [
 		esc(row.guardrail_name),
-		esc(row.mode),
-		esc(row.action),
-		esc(row.failure_policy),
+		badge(row.mode),
+		badge(row.action, row.action === "allow" ? "good" : row.action === "warn" || row.action === "block" ? "warn" : "neutral"),
+		badge(row.failure_policy, row.failure_policy === "fail_open" || row.failure_policy === "dry_run" ? "warn" : "neutral"),
 		row.count,
 		`${esc(row.total_latency_ms)} ms`
 	]));
@@ -40960,8 +43485,8 @@ function guardrailExecutionTable(rows) {
 		`<code>${esc(row.request_id)}</code>`,
 		row.key_id ? `<code>${esc(row.key_id)}</code>` : "",
 		esc(row.guardrail_name),
-		esc(row.mode),
-		esc(row.action),
+		badge(row.mode),
+		badge(row.action, row.action === "allow" ? "good" : row.action === "warn" || row.action === "block" ? "warn" : "neutral"),
 		`${esc(row.latency_ms)} ms`,
 		esc(row.reason || "")
 	]));
@@ -40999,11 +43524,11 @@ function editRouteIdentity(event) {
 	const route = event.currentTarget.dataset.routeIdentity;
 	const setting = state.routeIdentities.find((item) => item.route === route);
 	const backdrop = document.createElement("section");
-	backdrop.className = "modal-backdrop";
+	backdrop.className = "modal-backdrop drawer-backdrop";
 	const titleId = `dialog-title-${++dialogCounter}`;
-	backdrop.innerHTML = `<div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
-    <h3 id="${titleId}">Endpoint identity · ${esc(route)}</h3>
-    <form class="modal-form"><div class="modal-scroll form-grid">${endpointIdentityFields(setting.access)}${["/litellm/*", "/v1/responses"].includes(route) ? websocketTransportFields(setting.access, true) : ""}</div>
+	backdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+    ${drawerHeading(`Endpoint identity · ${route}`, "<button type=\"button\" class=\"icon-button\" data-close-identity aria-label=\"Close endpoint identity\"><i class=\"ti ti-x\" aria-hidden=\"true\"></i></button>", titleId)}
+    <form class="modal-form"><div class="modal-scroll drawer-body form-grid">${endpointIdentityFields(setting.access)}${["/litellm/*", "/v1/responses"].includes(route) ? websocketTransportFields(setting.access, true) : ""}</div>
       <div class="form-actions"><button class="primary">Save identity</button><button type="button" data-close-modal>Cancel</button></div>
     </form></div>`;
 	document.body.appendChild(backdrop);
@@ -41014,6 +43539,9 @@ function editRouteIdentity(event) {
 		dismissible: false
 	});
 	backdrop.querySelector("[data-close-modal]").addEventListener("click", () => {
+		if (!saving) close();
+	});
+	backdrop.querySelector("[data-close-identity]").addEventListener("click", () => {
 		if (!saving) close();
 	});
 	backdrop.addEventListener("keydown", (keyEvent) => {
@@ -41366,8 +43894,18 @@ async function members() {
 	]);
 	if (renderId !== renderGeneration) return;
 	[state.members, state.services, state.projects] = loaded;
+	const visual = memberAccessSnapshot(state.members);
 	if (renderId !== renderGeneration) return;
 	content.innerHTML = `
+    <section class="page-insights" aria-label="Portal approval and access summary">
+      <div class="page-insights-grid">
+        ${insightStrip(visual.insights, { label: "Gateway-wide portal access configuration" })}
+        ${distributionBars("Member approval state", visual.statuses, {
+		caption: "Loaded members · assignments alone do not activate a pending or blocked member",
+		empty: "No portal members yet."
+	})}
+      </div>
+    </section>
     <section class="panel">
       <div class="panel-heading"><div><h3>Portal members</h3><p>Entra proves identity. Relayna approval and exact service membership grant access.</p></div><span class="badge">${state.members.length} members</span></div>
       <div class="member-grid">${state.members.map(memberAccessCard).join("") || emptyState("No one has signed in through Entra yet.")}</div>
@@ -41388,13 +43926,16 @@ function memberAccessCard(item) {
       <div><h4>${esc(member.display_name || member.email || member.object_id)}</h4><p>${esc(member.email || member.object_id)}</p></div>
       ${badge(member.status, member.status === "active" ? "good" : member.status === "blocked" ? "bad" : "warn")}
     </div>
-    <div class="member-meta"><span>${admin ? "Admin" : "Member"}</span><span>Last sign-in ${time(member.last_sign_in_at)}</span></div>
+    <div class="member-meta"><span><i class="ti ti-${admin ? "user-shield" : "user"}" aria-hidden="true"></i> ${admin ? "Admin role" : "Member role"}</span><span><i class="ti ti-clock" aria-hidden="true"></i> Last sign-in ${time(member.last_sign_in_at)}</span></div>
+    <div class="member-meta"><span><i class="ti ti-hierarchy" aria-hidden="true"></i> ${item.service_memberships?.length || 0} service · ${item.project_memberships?.length || 0} project assignments</span></div>
     <div class="actions">
       <button data-member-status="active" data-member-id="${attr(member.id)}">Approve</button>
       <button data-member-status="blocked" data-member-id="${attr(member.id)}" class="danger">Block</button>
       <button data-member-admin="${admin ? "false" : "true"}" data-member-id="${attr(member.id)}">${admin ? "Remove admin" : "Make admin"}</button>
     </div>
-    <h5>Service access</h5>
+    <details class="catalog-disclosure member-access-details">
+    <summary><i class="ti ti-adjustments" aria-hidden="true"></i> Manage resource access <i class="ti ti-chevron-down" aria-hidden="true"></i></summary>
+    <h5><i class="ti ti-server" aria-hidden="true"></i> Service access</h5>
     ${item.service_memberships?.length ? table([
 		"Service",
 		"Role",
@@ -41409,7 +43950,7 @@ function memberAccessCard(item) {
       <label>Role<select name="role">${option("viewer", "viewer")}${option("owner", "")}</select></label>
       <button type="submit">Assign</button>
     </form>
-    <h5>Project access</h5>
+    <h5><i class="ti ti-folder" aria-hidden="true"></i> Project access</h5>
     ${item.project_memberships?.length ? table([
 		"Project",
 		"Role",
@@ -41424,6 +43965,7 @@ function memberAccessCard(item) {
       <label>Role<select name="role">${option("viewer", "viewer")}${option("owner", "")}</select></label>
       <button type="submit">Assign</button>
     </form>
+    </details>
   </article>`;
 }
 async function updateMemberStatus(event) {
@@ -41488,8 +44030,35 @@ async function managedIdentities() {
 	]);
 	if (renderId !== renderGeneration) return;
 	[state.managedIdentities, state.managedIdentityProjects, state.services, state.projects] = loaded;
+	const visual = managedIdentitySnapshot(state.managedIdentities, state.managedIdentityProjects);
 	if (renderId !== renderGeneration) return;
 	content.innerHTML = `
+    <section class="page-insights" aria-label="Workload identity binding summary">
+      <div class="page-insights-grid">
+        ${insightStrip(visual.insights, { label: "Gateway-wide workload access configuration" })}
+        ${distributionBars("Exact resource bindings", visual.resources, {
+		caption: "Bindings can share a workload principal; enabled does not bypass token validation",
+		empty: "No workload bindings registered."
+	})}
+      </div>
+      ${flowSummary("Workload monitoring authorization", [
+		{
+			label: "Tenant and audience",
+			icon: "fingerprint",
+			value: "Verified token"
+		},
+		{
+			label: "Required application role",
+			icon: "user-shield",
+			value: "Per binding"
+		},
+		{
+			label: "Enabled exact binding",
+			icon: "lock",
+			value: "Service or project"
+		}
+	], "All checks must pass. An optional object ID further narrows a binding; one binding never grants access to other resources.")}
+    </section>
     <section class="panel">
       <div class="panel-heading"><div><h3>Register managed identity</h3><p>A token must have the monitoring audience, required app role, and this exact service binding.</p></div></div>
       <form id="managed-identity-form" class="form-grid">
@@ -41540,9 +44109,9 @@ function managedIdentityProjectTable(rows) {
 		"Status",
 		"Actions"
 	], rows.map((row) => [
-		`<strong>${esc(row.display_name)}</strong>${row.object_id ? `<div class="subtle"><code>${esc(row.object_id)}</code></div>` : ""}`,
+		`<i class="ti ti-fingerprint" aria-hidden="true"></i> <strong>${esc(row.display_name)}</strong>${row.object_id ? `<div class="subtle">Exact object: <code>${esc(row.object_id)}</code></div>` : "<div class=\"subtle\">Tenant and client match</div>"}`,
 		`<code>${esc(row.tenant_id)}</code><div class="subtle"><code>${esc(row.client_id)}</code></div>`,
-		esc(projectName(row.project_id)),
+		`<i class="ti ti-folder" aria-hidden="true"></i> ${esc(projectName(row.project_id))}`,
 		`<code>${esc(row.required_role)}</code>`,
 		badge(row.enabled ? "enabled" : "disabled", row.enabled ? "good" : "bad"),
 		`<div class="actions"><button data-managed-project-toggle data-identity-id="${attr(row.id)}" data-enabled="${row.enabled ? "false" : "true"}">${row.enabled ? "Disable" : "Enable"}</button><button class="danger" data-managed-project-delete data-identity-id="${attr(row.id)}">Delete</button></div>`
@@ -41558,9 +44127,9 @@ function managedIdentityTable(rows) {
 		"Status",
 		"Actions"
 	], rows.map((row) => [
-		`<strong>${esc(row.display_name)}</strong>${row.object_id ? `<div class="subtle"><code>${esc(row.object_id)}</code></div>` : ""}`,
+		`<i class="ti ti-fingerprint" aria-hidden="true"></i> <strong>${esc(row.display_name)}</strong>${row.object_id ? `<div class="subtle">Exact object: <code>${esc(row.object_id)}</code></div>` : "<div class=\"subtle\">Tenant and client match</div>"}`,
 		`<code>${esc(row.tenant_id)}</code><div class="subtle"><code>${esc(row.client_id)}</code></div>`,
-		esc(row.service_name),
+		`<i class="ti ti-server" aria-hidden="true"></i> ${esc(row.service_name)}`,
 		`<code>${esc(row.required_role)}</code>`,
 		badge(row.enabled ? "enabled" : "disabled", row.enabled ? "good" : "bad"),
 		`<div class="actions"><button data-managed-toggle data-identity-id="${attr(row.id)}" data-enabled="${row.enabled ? "false" : "true"}">${row.enabled ? "Disable" : "Enable"}</button><button class="danger" data-managed-delete data-identity-id="${attr(row.id)}">Delete</button></div>`
@@ -41633,10 +44202,11 @@ async function myServices() {
 	state.ownerServices = await api("/owner/v1/services");
 	if (!state.selectedOwnerService && state.ownerServices.length) state.selectedOwnerService = state.ownerServices[0].service.name;
 	if (renderId !== renderGeneration) return;
-	content.innerHTML = `<section class="panel">
-    <div class="panel-heading"><div><h3>My registered services</h3><p>Only Relayna assignments shown here are available through the dashboard and owner API.</p></div><span class="badge">${state.ownerServices.length}</span></div>
-    <div class="owner-service-grid">${state.ownerServices.map(ownerServiceCard).join("") || emptyState("No service access has been assigned to this member.")}</div>
-  </section>`;
+	content.innerHTML = `${ownerCatalogInsights(state.ownerServices, "services")}
+    <section class="panel">
+      <div class="panel-heading"><div><h3><i class="ti ti-server" aria-hidden="true"></i> My registered services</h3><p>Open a dashboard for an assigned service. Configuration does not indicate live health.</p></div><span class="badge">${state.ownerServices.length} assigned</span></div>
+      <div class="owner-service-grid">${state.ownerServices.map(ownerServiceCard).join("") || emptyState("No service access has been assigned to this member.")}</div>
+    </section>`;
 	content.querySelectorAll("[data-open-owner-service]").forEach((button) => button.addEventListener("click", () => {
 		state.selectedOwnerService = button.dataset.openOwnerService;
 		navigateToView("service-dashboard");
@@ -41645,10 +44215,15 @@ async function myServices() {
 }
 function ownerServiceCard(item) {
 	const service = item.service;
+	const operations = Array.isArray(service.openapi_endpoints) ? service.openapi_endpoints.length : null;
+	const transport = catalogServiceTransport(service);
+	const websocket = transport === "unknown" ? "Transport not recorded" : transport === "http" ? "HTTP transport" : "WebSocket configured";
 	return `<article class="owner-service-card">
-    <div><span class="eyebrow">${esc(item.role)}</span><h3>${esc(service.name)}</h3><p><code>${esc(service.route_pattern)}</code></p></div>
-    <div class="member-meta"><span>${service.enabled ? "Active" : "Disabled"}</span><span>${esc(service.allowed_methods?.join(", ") || "")}</span></div>
-    <button class="primary" data-open-owner-service="${attr(service.name)}">Open dashboard</button>
+    <div class="member-card-heading"><i class="ti ti-box" aria-hidden="true"></i>${badge(item.role, "neutral")}</div>
+    <div><h3>${esc(service.name)}</h3><p><code>${esc(service.route_pattern)}</code></p></div>
+    <div class="member-meta">${badge(service.enabled === true ? "Enabled" : service.enabled === false ? "Disabled" : "Status unavailable", service.enabled === true ? "good" : service.enabled === false ? "bad" : "neutral")}<span><i class="ti ti-route" aria-hidden="true"></i> ${esc(service.allowed_methods?.join(", ") || "Methods not recorded")}</span></div>
+    <div class="member-meta"><span><i class="ti ti-api" aria-hidden="true"></i> ${operations == null ? "Catalog unavailable" : `${operations} catalog operations`}</span><span><i class="ti ti-plug-connected" aria-hidden="true"></i> ${websocket}</span></div>
+    <button class="primary" data-open-owner-service="${attr(service.name)}" aria-label="Open dashboard for ${attr(service.name)}">Open dashboard <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button>
   </article>`;
 }
 async function myProjects() {
@@ -41656,10 +44231,11 @@ async function myProjects() {
 	state.ownerProjects = await api("/owner/v1/projects");
 	if (!state.selectedOwnerProject && state.ownerProjects.length) state.selectedOwnerProject = state.ownerProjects[0].project.id;
 	if (renderId !== renderGeneration) return;
-	content.innerHTML = `<section class="panel">
-    <div class="panel-heading"><div><h3>My projects</h3><p>Only exact Relayna project assignments shown here are available through the dashboard and owner API.</p></div><span class="badge">${state.ownerProjects.length}</span></div>
-    <div class="owner-service-grid">${state.ownerProjects.map(ownerProjectCard).join("") || emptyState("No project access has been assigned to this member.")}</div>
-  </section>`;
+	content.innerHTML = `${ownerCatalogInsights(state.ownerProjects, "projects")}
+    <section class="panel">
+      <div class="panel-heading"><div><h3><i class="ti ti-folders" aria-hidden="true"></i> My projects</h3><p>Monitoring follows each request's recorded project ID, independently of configured service links.</p></div><span class="badge">${state.ownerProjects.length} assigned</span></div>
+      <div class="owner-service-grid">${state.ownerProjects.map(ownerProjectCard).join("") || emptyState("No project access has been assigned to this member.")}</div>
+    </section>`;
 	content.querySelectorAll("[data-open-owner-project]").forEach((button) => button.addEventListener("click", () => {
 		state.selectedOwnerProject = button.dataset.openOwnerProject;
 		navigateToView("project-dashboard");
@@ -41668,10 +44244,13 @@ async function myProjects() {
 }
 function ownerProjectCard(item) {
 	const project = item.project;
+	const services = Array.isArray(project.service_names) ? project.service_names : null;
 	return `<article class="owner-service-card">
-    <div><span class="eyebrow">${esc(item.role)}</span><h3>${esc(project.name)}</h3><p><code>${esc(project.id)}</code></p></div>
-    <div class="member-meta"><span>${project.service_names?.length || 0} linked services</span></div>
-    <button class="primary" data-open-owner-project="${attr(project.id)}">Open dashboard</button>
+    <div class="member-card-heading"><i class="ti ti-folder" aria-hidden="true"></i>${badge(item.role, "neutral")}</div>
+    <div><h3>${esc(project.name)}</h3><p><code>${esc(project.id)}</code></p></div>
+    <div class="member-meta"><span><i class="ti ti-affiliate" aria-hidden="true"></i> ${services ? `${services.length} configured service links` : "Service links unavailable"}</span></div>
+    <div class="member-meta">${services?.length ? services.slice(0, 3).map((name) => badge(name, "neutral")).join("") + (services.length > 3 ? `<span>+${services.length - 3} more</span>` : "") : `<span>${services ? "No service links configured" : "Link configuration not recorded"}</span>`}</div>
+    <button class="primary" data-open-owner-project="${attr(project.id)}" aria-label="Open dashboard for ${attr(project.name)}">Open dashboard <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button>
   </article>`;
 }
 function ownerDashboardRange() {
@@ -41682,14 +44261,7 @@ function ownerDashboardRange() {
 	};
 }
 function ownerIncidentSummary(rows, markers) {
-	if (!rows.length) return "No service usage data is available for this period.";
-	const latest = rows[rows.length - 1].summary || {};
-	const requests = Number(latest.request_count || 0);
-	const failures = Number(latest.failure_count || 0);
-	const errorRate = requests ? failures / requests * 100 : 0;
-	const p95 = latest.p95_latency_ms == null ? "no P95 latency data" : `${Math.round(latest.p95_latency_ms)} milliseconds P95 latency`;
-	const versions = markers.length ? ` Observed version transitions: ${markers.map((marker) => marker.service_version).join(", ")}.` : " No service version transitions were observed.";
-	return `Latest bucket: ${errorRate.toFixed(1)} percent errors and ${p95}.${versions}`;
+	return ownerIncidentDescription(rows, markers);
 }
 function ownerChartLabel(row) {
 	const hourly = ["6h", "24h"].includes(state.ownerDashboardFilters.range);
@@ -41702,98 +44274,91 @@ function ownerChartLabel(row) {
 function renderOwnerIncidentChart(rows, markers) {
 	const canvas = document.querySelector("#owner-incident-chart");
 	if (!(canvas instanceof HTMLCanvasElement)) return;
-	const labels = rows.map(ownerChartLabel);
-	const bucketTimes = rows.map((row) => new Date(row.bucket_start || row.bucket || row.name).getTime());
-	const markerLabels = Array.from({ length: rows.length }, () => []);
-	for (const marker of markers) {
-		if (!rows.length) break;
-		const observed = new Date(marker.first_observed_at).getTime();
-		let index = 0;
-		for (let candidate = 0; candidate < bucketTimes.length; candidate += 1) {
-			if (bucketTimes[candidate] > observed) break;
-			index = candidate;
-		}
-		markerLabels[index].push(marker.service_version);
-	}
-	const p95 = rows.map((row) => row.summary?.p95_latency_ms == null ? null : Number(row.summary.p95_latency_ms));
+	destroyOwnerDashboardChart();
+	const { points, observations } = ownerIncidentSeries(rows, markers, ["6h", "24h"].includes(state.ownerDashboardFilters.range) ? "hour" : "day");
+	if (!points.length) return;
 	ownerDashboardChart = new auto_default(canvas, {
 		type: "line",
 		plugins: [{
 			id: "service-version-markers",
 			afterDatasetsDraw(chart) {
+				if (!chart.isDatasetVisible(2)) return;
 				const { ctx, chartArea, scales } = chart;
-				markerLabels.forEach((versions, index) => {
-					if (!versions.length) return;
-					const x = scales.x.getPixelForValue(index);
+				observations.forEach((observation) => {
+					const x = scales.x.getPixelForValue(observation.at);
+					if (x < chartArea.left || x > chartArea.right) return;
 					ctx.save();
-					ctx.strokeStyle = "#6b7280";
+					ctx.strokeStyle = chartColor("#6E5B6A", "text")({ chart });
 					ctx.setLineDash([4, 4]);
 					ctx.beginPath();
 					ctx.moveTo(x, chartArea.top);
 					ctx.lineTo(x, chartArea.bottom);
 					ctx.stroke();
-					ctx.fillStyle = "#36534d";
-					ctx.font = "600 10px Inter, sans-serif";
-					ctx.fillText(versions.join(" → "), Math.min(x + 5, chartArea.right - 96), chartArea.top + 12);
 					ctx.restore();
 				});
 			}
 		}],
-		data: {
-			labels,
-			datasets: [
-				{
-					label: "Error rate (%)",
-					data: rows.map((row) => {
-						const summary = row.summary || {};
-						const requests = Number(summary.request_count || 0);
-						return requests ? Number(summary.failure_count || 0) / requests * 100 : 0;
-					}),
-					borderColor: "#d9474f",
-					backgroundColor: "#d9474f",
-					yAxisID: "errorRate",
-					tension: .28,
-					pointRadius: 2,
-					borderWidth: 2
-				},
-				{
-					label: "P95 latency (ms)",
-					data: p95,
-					borderColor: "#087b60",
-					backgroundColor: "#087b60",
-					yAxisID: "latency",
-					tension: .28,
-					pointRadius: 2,
-					borderWidth: 2
-				},
-				{
-					label: "Service version",
-					data: markerLabels.map((versions, index) => versions.length ? p95[index] ?? 0 : null),
-					borderColor: "#6b7280",
-					backgroundColor: "#6b7280",
-					yAxisID: "latency",
-					showLine: false,
-					pointStyle: "triangle",
-					pointRadius: markerLabels.map((versions) => versions.length ? 6 : 0),
-					markerLabels
-				}
-			]
-		},
+		data: { datasets: [
+			{
+				label: "Error rate (%)",
+				data: points.map((point) => ({
+					x: point.at,
+					y: point.errorRate
+				})),
+				borderColor: chartColor("#A53D64", "red"),
+				backgroundColor: chartColor("#A53D64", "red"),
+				yAxisID: "errorRate",
+				tension: .2,
+				spanGaps: false,
+				pointRadius: 2,
+				borderWidth: 2
+			},
+			{
+				label: "P95 latency (ms)",
+				data: points.map((point) => ({
+					x: point.at,
+					y: point.p95
+				})),
+				borderColor: chartColor("#653D60", "teal"),
+				backgroundColor: chartColor("#653D60", "teal"),
+				yAxisID: "latency",
+				tension: .2,
+				spanGaps: false,
+				pointRadius: 2,
+				borderWidth: 2
+			},
+			{
+				label: "Service version",
+				data: observations.map((observation) => ({
+					x: observation.at,
+					y: 1
+				})),
+				borderColor: chartColor("#6E5B6A", "text"),
+				backgroundColor: chartColor("#6E5B6A", "text"),
+				yAxisID: "version",
+				showLine: false,
+				pointStyle: "triangle",
+				pointRadius: 5,
+				observations
+			}
+		] },
 		options: {
 			animation: false,
 			maintainAspectRatio: false,
 			responsive: true,
 			interaction: {
-				mode: "index",
+				mode: "nearest",
+				axis: "x",
 				intersect: false
 			},
 			plugins: {
 				legend: {
-					position: "top",
+					position: "bottom",
 					align: "start",
 					labels: {
-						boxWidth: 18,
-						color: "#536276",
+						boxWidth: 10,
+						usePointStyle: true,
+						color: chartColor("#6E5B6A", "text"),
 						font: {
 							size: 11,
 							weight: 600
@@ -41801,28 +44366,40 @@ function renderOwnerIncidentChart(rows, markers) {
 					}
 				},
 				tooltip: {
-					backgroundColor: "#062f36",
-					callbacks: { label(context) {
-						if (context.dataset.label === "Service version") return (context.dataset.markerLabels?.[context.dataIndex] || []).map((version) => `Version ${version} first observed by Gateway`);
-						return `${context.dataset.label}: ${context.formattedValue}`;
-					} }
+					backgroundColor: chartColor("#2C1F2E", "tooltip-bg"),
+					titleColor: chartColor("#fff", "tooltip-text"),
+					bodyColor: chartColor("#fff", "tooltip-text"),
+					footerColor: chartColor("#fff", "tooltip-text"),
+					callbacks: {
+						title(items) {
+							return items.length ? new Date(items[0].parsed.x).toLocaleString() : "";
+						},
+						label(context) {
+							if (context.dataset.label === "Service version") return `Version ${context.dataset.observations?.[context.dataIndex]?.version} first observed by Gateway`;
+							return `${context.dataset.label}: ${Number(context.parsed.y).toLocaleString(void 0, { maximumFractionDigits: 2 })}`;
+						}
+					}
 				}
 			},
 			scales: {
 				x: {
+					type: "linear",
 					grid: { display: false },
+					border: { color: chartColor("#DFD0D9", "grid") },
 					ticks: {
-						color: "#58736e",
+						color: chartColor("#6E5B6A", "text"),
 						maxTicksLimit: 8,
+						callback: (value) => ownerChartLabel({ bucket: Number(value) }),
 						font: { size: 10 }
 					}
 				},
 				errorRate: {
 					beginAtZero: true,
 					suggestedMax: 100,
-					grid: { color: "#dcebe7" },
+					grid: { color: chartColor("#DFD0D9", "grid") },
+					border: { color: chartColor("#DFD0D9", "grid") },
 					ticks: {
-						color: "#8a3439",
+						color: chartColor("#A53D64", "red"),
 						callback: (value) => `${value}%`,
 						font: { size: 10 }
 					}
@@ -41830,12 +44407,21 @@ function renderOwnerIncidentChart(rows, markers) {
 				latency: {
 					beginAtZero: true,
 					position: "right",
-					grid: { drawOnChartArea: false },
+					grid: {
+						drawOnChartArea: false,
+						color: chartColor("#DFD0D9", "grid")
+					},
+					border: { color: chartColor("#DFD0D9", "grid") },
 					ticks: {
-						color: "#087b60",
+						color: chartColor("#653D60", "teal"),
 						callback: (value) => `${value} ms`,
 						font: { size: 10 }
 					}
+				},
+				version: {
+					display: false,
+					min: 0,
+					max: 1.08
 				}
 			}
 		}
@@ -41868,16 +44454,38 @@ async function openOwnerRequestDetails(event) {
 	const titleId = `dialog-title-${++dialogCounter}`;
 	backdrop.innerHTML = `
     <div class="modal owner-request-drawer" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
-      <div class="owner-request-heading">
-        <div><span class="eyebrow">Sanitized request details</span><h3 id="${titleId}">${esc(requestId)}</h3></div>
-        <button type="button" data-close-owner-request aria-label="Close request details">Close</button>
-      </div>
-      <div class="modal-scroll owner-request-content">
+      ${drawerHeading("Request details", "<button type=\"button\" class=\"icon-button\" data-close-owner-request aria-label=\"Close request details\"><i class=\"ti ti-x\" aria-hidden=\"true\"></i></button>", titleId)}
+      <div class="modal-scroll drawer-body owner-request-content">
+        <div class="investigation-identity"><code>${esc(requestId)}</code>${badge(details.request.status, details.request.status === "success" ? "good" : "bad")}</div>
+        ${insightStrip([
+		{
+			label: "Latency",
+			value: details.request.latency_ms == null ? null : `${details.request.latency_ms} ms`,
+			icon: "clock"
+		},
+		{
+			label: "Recorded tokens",
+			value: details.request.total_tokens ?? null,
+			icon: "coins"
+		},
+		{
+			label: "Estimated cost",
+			value: details.request.estimated_cost_usd == null ? null : money(details.request.estimated_cost_usd),
+			icon: "coin"
+		}
+	], { label: "Recorded request" })}
+        <dl class="investigation-facts">
+          <div><dt>Route</dt><dd><code>${esc(details.request.route || "Not recorded")}</code></dd></div>
+          <div><dt>Provider</dt><dd>${esc(details.request.provider || "Not recorded")}</dd></div>
+          <div><dt>HTTP status</dt><dd>${esc(details.request.status_code ?? "Not recorded")}</dd></div>
+          <div><dt>Service version</dt><dd>${esc(details.request.service_version || "Not recorded")}</dd></div>
+        </dl>
+        <details class="catalog-disclosure"><summary><i class="ti ti-list-details" aria-hidden="true"></i> Request metadata</summary>
         ${table(["Field", "Value"], ownerRequestDetailsRows(details.request))}
-        <section class="owner-debug-section">
-          <h4>Debug bundle</h4>
+        </details>
+        <details class="catalog-disclosure owner-debug-section"><summary><i class="ti ti-code" aria-hidden="true"></i> Debug bundle</summary>
           ${details.debug_bundle ? jsonBlock(details.debug_bundle) : emptyState("Usage metadata is available, but no proxy debug bundle was captured for this request.")}
-        </section>
+        </details>
       </div>
     </div>`;
 	document.body.appendChild(backdrop);
@@ -41932,28 +44540,28 @@ async function serviceDashboard() {
 	const eventStart = events.rows?.length ? events.offset + 1 : 0;
 	const eventEnd = events.rows?.length ? events.offset + events.rows.length : 0;
 	content.innerHTML = `
+    ${ownerDashboardInsights(dashboard, {
+		money,
+		range: state.ownerDashboardFilters.range
+	})}
     <section class="owner-dashboard-toolbar">
       <label>Service<select id="owner-service-select">${state.ownerServices.map((item) => option(item.service.name, serviceName)).join("")}</select></label>
       <span class="badge">${esc(dashboard.role)}</span>
-      <code>GET /owner/v1/services/${esc(serviceName)}/dashboard</code>
-    </section>
-    <section class="metric-strip">
-      ${metricTile("Requests", dashboard.summary.request_count)}
-      ${metricTile("Failures", dashboard.summary.failure_count)}
-      ${metricTile("P95 latency", dashboard.summary.p95_latency_ms == null ? "n/a" : `${Number(dashboard.summary.p95_latency_ms).toFixed(0)} ms`)}
-      ${metricTile("Estimated cost", money(dashboard.summary.estimated_cost_usd))}
+      <span class="subtle"><i class="ti ti-lock" aria-hidden="true"></i> Exact service scope · read only</span>
     </section>
     <section class="panel owner-incident-panel">
-      <div class="panel-heading"><div><h3>Incident signals</h3><p>Error rate and P95 latency with service-version observations.</p></div></div>
-      <p class="sr-only">${esc(ownerIncidentSummary(dashboard.timeseries || [], dashboard.version_markers || []))}</p>
-      <div class="owner-incident-chart-wrap"><canvas id="owner-incident-chart" role="img" aria-label="Service error rate and P95 latency over time with version transition markers"></canvas></div>
+      <div class="panel-heading"><div><h3><i class="ti ti-chart-line" aria-hidden="true"></i> Incident signals</h3><p>Recorded error rate and P95 latency · selected window, all outcomes.</p></div></div>
+      <p class="help" id="owner-incident-summary">${esc(ownerIncidentSummary(dashboard.timeseries || [], dashboard.version_markers || []))}</p>
+      ${dashboard.timeseries?.length ? `<div class="owner-incident-chart-wrap"><canvas id="owner-incident-chart" role="img" aria-label="Service error rate and P95 latency over time with version transition markers" aria-describedby="owner-incident-summary"></canvas></div>` : emptyState("No recorded request buckets in this window.")}
+      ${dashboard.version_markers?.length ? `<details class="monitor-details"><summary><i class="ti ti-flag" aria-hidden="true"></i> Version observations (${dashboard.version_markers.length})</summary>${table(["Version", "First Gateway observation"], dashboard.version_markers.map((marker) => [esc(marker.service_version), time(marker.first_observed_at)]))}</details>` : ""}
     </section>
     <section class="owner-dashboard-grid">
-      ${panel("Endpoint usage", usageBreakdownTable(dashboard.endpoints || []))}
-      ${panel("Provider usage", usageBreakdownTable(dashboard.providers || []))}
+      ${panel("", `${ownerUsageDistribution("Endpoint usage", dashboard.endpoints || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Endpoint usage table</summary>${usageBreakdownTable(dashboard.endpoints || [])}</details>`)}
+      ${panel("", `${ownerUsageDistribution("Provider usage", dashboard.providers || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Provider usage table</summary>${usageBreakdownTable(dashboard.providers || [])}</details>`)}
+      ${panel("", `${ownerUsageDistribution("Model usage", dashboard.models || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Model usage table</summary>${usageBreakdownTable(dashboard.models || [])}</details>`)}
     </section>
     <section class="panel owner-request-panel">
-      <div class="panel-heading"><div><h3>Request logs</h3><p>Inspect every scoped request outcome without exposing payloads or credentials.</p></div></div>
+      <div class="panel-heading"><div><h3><i class="ti ti-list-search" aria-hidden="true"></i> Request logs</h3><p>Sanitized outcomes for this service. Outcome and status filters apply to this log only.</p></div></div>
       <div class="owner-request-filters" role="group" aria-label="Request log filters">
         <label>Time range<select id="owner-range-select">
           ${option("6h", state.ownerDashboardFilters.range, "Last 6 hours")}
@@ -41970,6 +44578,7 @@ async function serviceDashboard() {
           ${statusCodes.map((code) => option(code, state.ownerDashboardFilters.statusCode, code)).join("")}
         </select></label>
       </div>
+      <details class="monitor-details"><summary><i class="ti ti-chart-bar" aria-hidden="true"></i> Protocols in this request page</summary>${ownerRequestProfile(events.rows || [], events.has_more)}</details>
       <div class="table-pager owner-request-pager" aria-label="Request logs pagination">
         <span>Showing ${eventStart}-${eventEnd}</span>
         <button type="button" data-owner-page="previous" ${events.offset <= 0 ? "disabled" : ""}>Previous</button>
@@ -42048,30 +44657,29 @@ async function projectDashboard() {
 	const eventStart = events.rows?.length ? events.offset + 1 : 0;
 	const eventEnd = events.rows?.length ? events.offset + events.rows.length : 0;
 	content.innerHTML = `
+    ${ownerDashboardInsights(dashboard, {
+		money,
+		range: state.ownerDashboardFilters.range
+	})}
     <section class="owner-dashboard-toolbar">
       <label>Project<select id="owner-project-select">${state.ownerProjects.map((item) => option(item.project.id, projectId, item.project.name)).join("")}</select></label>
       <span class="badge">${esc(dashboard.role)}</span>
-      <code>GET /owner/v1/projects/${esc(projectId)}/dashboard</code>
-    </section>
-    <section class="metric-strip">
-      ${metricTile("Requests", dashboard.summary.request_count)}
-      ${metricTile("Failures", dashboard.summary.failure_count)}
-      ${metricTile("P95 latency", dashboard.summary.p95_latency_ms == null ? "n/a" : `${Number(dashboard.summary.p95_latency_ms).toFixed(0)} ms`)}
-      ${metricTile("Estimated cost", money(dashboard.summary.estimated_cost_usd))}
+      <span class="subtle"><i class="ti ti-lock" aria-hidden="true"></i> Exact project scope · read only</span>
     </section>
     <section class="panel owner-incident-panel">
-      <div class="panel-heading"><div><h3>Project incident signals</h3><p>Error rate and P95 latency for requests attributed to this exact project.</p></div></div>
-      <p class="sr-only">${esc(ownerIncidentSummary(dashboard.timeseries || [], dashboard.version_markers || []))}</p>
-      <div class="owner-incident-chart-wrap"><canvas id="owner-incident-chart" role="img" aria-label="Project error rate and P95 latency over time"></canvas></div>
+      <div class="panel-heading"><div><h3><i class="ti ti-chart-line" aria-hidden="true"></i> Project incident signals</h3><p>Recorded project attribution · selected window, all outcomes.</p></div></div>
+      <p class="help" id="owner-incident-summary">${esc(ownerIncidentSummary(dashboard.timeseries || [], dashboard.version_markers || []))}</p>
+      ${dashboard.timeseries?.length ? `<div class="owner-incident-chart-wrap"><canvas id="owner-incident-chart" role="img" aria-label="Project error rate and P95 latency over time with version observations" aria-describedby="owner-incident-summary"></canvas></div>` : emptyState("No recorded request buckets in this window.")}
+      ${dashboard.version_markers?.length ? `<details class="monitor-details"><summary><i class="ti ti-flag" aria-hidden="true"></i> Version observations (${dashboard.version_markers.length})</summary>${table(["Version", "First Gateway observation"], dashboard.version_markers.map((marker) => [esc(marker.service_version), time(marker.first_observed_at)]))}</details>` : ""}
     </section>
     <section class="owner-dashboard-grid">
-      ${panel("Service usage", usageBreakdownTable(dashboard.services || []))}
-      ${panel("Endpoint usage", usageBreakdownTable(dashboard.endpoints || []))}
-      ${panel("Provider usage", usageBreakdownTable(dashboard.providers || []))}
-      ${panel("Model usage", usageBreakdownTable(dashboard.models || []))}
+      ${panel("", `${ownerUsageDistribution("Service usage", dashboard.services || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Service usage table</summary>${usageBreakdownTable(dashboard.services || [])}</details>`)}
+      ${panel("", `${ownerUsageDistribution("Endpoint usage", dashboard.endpoints || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Endpoint usage table</summary>${usageBreakdownTable(dashboard.endpoints || [])}</details>`)}
+      ${panel("", `${ownerUsageDistribution("Provider usage", dashboard.providers || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Provider usage table</summary>${usageBreakdownTable(dashboard.providers || [])}</details>`)}
+      ${panel("", `${ownerUsageDistribution("Model usage", dashboard.models || [])}<details class="monitor-details"><summary><i class="ti ti-table" aria-hidden="true"></i> Model usage table</summary>${usageBreakdownTable(dashboard.models || [])}</details>`)}
     </section>
     <section class="panel owner-request-panel">
-      <div class="panel-heading"><div><h3>Project request logs</h3><p>Inspect scoped request outcomes without exposing payloads or credentials.</p></div></div>
+      <div class="panel-heading"><div><h3><i class="ti ti-list-search" aria-hidden="true"></i> Project request logs</h3><p>Sanitized outcomes attributed to this project. Outcome and status filters apply to this log only.</p></div></div>
       <div class="owner-request-filters" role="group" aria-label="Project request log filters">
         <label>Time range<select id="owner-range-select">
           ${option("6h", state.ownerDashboardFilters.range, "Last 6 hours")}
@@ -42088,6 +44696,7 @@ async function projectDashboard() {
           ${statusCodes.map((code) => option(code, state.ownerDashboardFilters.statusCode, code)).join("")}
         </select></label>
       </div>
+      <details class="monitor-details"><summary><i class="ti ti-chart-bar" aria-hidden="true"></i> Protocols in this request page</summary>${ownerRequestProfile(events.rows || [], events.has_more)}</details>
       <div class="table-pager owner-request-pager" aria-label="Project request logs pagination">
         <span>Showing ${eventStart}-${eventEnd}</span>
         <button type="button" data-owner-page="previous" ${events.offset <= 0 ? "disabled" : ""}>Previous</button>
@@ -42245,14 +44854,18 @@ function showContentDrawer(title, markupOrNode, onClose = () => {}, restoreFocus
 	const backdrop = document.createElement("section");
 	backdrop.className = "modal-backdrop drawer-backdrop";
 	const id = `drawer-title-${++dialogCounter}`;
-	backdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="${id}"><div class="drawer-heading"><h3 id="${id}">${esc(title)}</h3><button type="button" data-drawer-close aria-label="Close ${attr(title)}">Close</button></div><div class="drawer-body"></div></div>`;
+	backdrop.innerHTML = `<div class="modal resource-drawer" role="dialog" aria-modal="true" aria-labelledby="${id}">${drawerHeading(title, `<button type="button" class="icon-button" data-drawer-close aria-label="Close ${attr(title)}"><i class="ti ti-x" aria-hidden="true"></i></button>`, id)}<div class="drawer-body"></div></div>`;
 	const body = backdrop.querySelector(".drawer-body");
 	if (markupOrNode instanceof Node) body.appendChild(markupOrNode);
 	else body.innerHTML = markupOrNode;
+	prepareDrawerActions(body);
 	document.body.appendChild(backdrop);
+	const disposeNavigation = mountDrawerNavigation(backdrop.querySelector(".resource-drawer"));
 	const close = mountDialog(backdrop, {
 		restoreFocus,
+		initialFocus: body.querySelector("input:not([type=\"hidden\"]), select, textarea") ? ".drawer-body input:not([type=\"hidden\"]), .drawer-body select, .drawer-body textarea" : "[data-drawer-close]",
 		onClose: () => {
+			disposeNavigation();
 			closeContentDrawer = null;
 			onClose();
 		}
@@ -42260,6 +44873,17 @@ function showContentDrawer(title, markupOrNode, onClose = () => {}, restoreFocus
 	closeContentDrawer = close;
 	backdrop.querySelector("[data-drawer-close]").addEventListener("click", () => close());
 	return close;
+}
+function addFormDrawerAction(form, title, label, actions) {
+	const placeholder = document.createElement("div");
+	placeholder.hidden = true;
+	form.before(placeholder);
+	placeholder.append(form);
+	const button = document.createElement("button");
+	button.type = "button";
+	button.innerHTML = `<i class="ti ti-${workflowIcon(title)}" aria-hidden="true"></i> ${esc(label)}`;
+	actions.append(button);
+	button.addEventListener("click", () => showContentDrawer(title, form, () => placeholder.append(form), button));
 }
 function organizeView(view) {
 	closeContentDrawer?.();
@@ -42321,9 +44945,25 @@ function organizeView(view) {
 		if (count) count.textContent = `${scoped.length} in ${scopeLabel()}`;
 		if (!scoped.length && state.projectScope) inventory.insertAdjacentHTML("beforeend", emptyState(`No ${view === "keys" ? "virtual keys" : "projects"} in ${scopeLabel()}.`));
 	}
-	if (view === "keys") for (const title of ["Inherited policy layers", "Policy simulator"]) {
-		const panel = [...content.querySelectorAll(".panel")].find((item) => item.querySelector("h3")?.textContent === title);
-		if (panel) disclosePanel(panel, title);
+	if (view === "keys") {
+		const form = content.querySelector("#policy-layer-form");
+		addFormDrawerAction(form, "Create or replace policy layer", "Create or replace layer", form.closest(".panel").querySelector(".panel-heading"));
+		for (const title of ["Inherited policy layers", "Policy simulator"]) {
+			const panel = [...content.querySelectorAll(".panel")].find((item) => item.querySelector("h3")?.textContent === title);
+			if (panel) disclosePanel(panel, title);
+		}
+	}
+	if (view === "providers") {
+		for (const form of content.querySelectorAll("[data-provider-config-form]")) {
+			const disclosure = form.closest("details");
+			addFormDrawerAction(form, `Credential settings · ${form.closest("tr")?.querySelector("td strong")?.textContent || "Provider"}`, "Configure credentials", disclosure.parentElement);
+			disclosure.hidden = true;
+		}
+		for (const [id, title] of [["litellm-credential-form", "Create or replace credential mapping"], ["litellm-passthrough-form", "Configure wildcard ingress"]]) {
+			const form = content.querySelector(`#${id}`), disclosure = form.closest("details");
+			addFormDrawerAction(form, title, title, disclosure.parentElement);
+			disclosure.hidden = true;
+		}
 	}
 	if (view === "usage") {
 		const results = content.querySelector("#usage-results")?.closest(".panel");
@@ -42361,6 +45001,12 @@ function organizeView(view) {
 		const panel = content.querySelector(`#${formId}`)?.closest(".panel");
 		if (panel) disclosePanel(panel, panel.querySelector("h3").textContent);
 	}
+	const visualSummary = content.querySelector(".page-insights");
+	if (visualSummary) {
+		const identityTabs = content.querySelector(":scope > .result-tabs[aria-label=\"People and identities pages\"]");
+		if (identityTabs) identityTabs.after(visualSummary);
+		else content.prepend(visualSummary);
+	}
 	const editForm = content.querySelector(view === "keys" ? "#key-edit-form" : view === "services" ? "#service-edit-form" : "#no-edit-form");
 	if (editForm) {
 		const panel = editForm.closest(".panel");
@@ -42384,7 +45030,9 @@ function disclosePanel(panel, title) {
 	const details = document.createElement("details");
 	details.className = "workflow-disclosure";
 	const summary = document.createElement("summary");
-	summary.textContent = title;
+	summary.innerHTML = `<span class="workflow-symbol" aria-hidden="true"><i class="ti ti-${workflowIcon(title)}"></i></span><span>${esc(title)}</span><i class="ti ti-chevron-down" aria-hidden="true"></i>`;
+	const heading = panel.querySelector(".panel-heading h3");
+	if (heading?.textContent === title) heading.classList.add("sr-only");
 	details.appendChild(summary);
 	panel.before(details);
 	details.appendChild(panel);
@@ -42414,7 +45062,7 @@ function tabulateUsage(root) {
 	nav.setAttribute("aria-label", "Usage breakdown");
 	headings[0].before(nav);
 	const hint = document.createElement("p");
-	hint.className = "help";
+	hint.className = "sr-only";
 	nav.after(hint);
 	const sections = headings.map((heading) => {
 		const section = document.createElement("section");
@@ -42443,6 +45091,7 @@ function tabulateUsage(root) {
 			button.setAttribute("aria-pressed", String(index === chosen));
 		});
 		hint.textContent = chosen < 0 ? "Showing all breakdowns. Select a breakdown to focus on it." : "Click the selected breakdown again to show all breakdowns.";
+		if (typeof loadVisibleUsageSections === "function") loadVisibleUsageSections(root);
 	};
 	sections.forEach(({ button }, index) => button.addEventListener("click", () => select(state.usageTab === button.textContent ? -1 : index)));
 	select(state.usageTab === null ? -1 : Math.max(0, sections.findIndex(({ button }) => button.textContent === state.usageTab)));
@@ -42504,7 +45153,7 @@ function prepareProfileKeys(root) {
 		});
 	});
 }
-var tokenKey, viewIds, ownerViewIds, state, login, app, content, requestTimeoutMs, usageExportBatchSize, noticeTimer, dialogCounter, dialogInertRoots, overviewChart, ownerDashboardChart, ownerDashboardGeneration, stopTraffic, viewGeneration, viewController, usageGeneration, renderGeneration, pendingWrites, monitoringCache, closeContentDrawer, scopedViews;
+var tokenKey, viewIds, ownerViewIds, state, login, app, content, requestTimeoutMs, noticeTimer, dialogCounter, dialogInertRoots, overviewChart, ownerDashboardChart, ownerDashboardGeneration, stopTraffic, stopGatewayStatus, viewGeneration, viewController, usageGeneration, usageLoad, usageLabelCache, renderGeneration, pendingWrites, monitoringCache, closeContentDrawer, scopedViews;
 var init_main = __esmMin((() => {
 	init_provider_create();
 	init_foundry_check();
@@ -42516,12 +45165,19 @@ var init_main = __esmMin((() => {
 	init_auth_profiles();
 	init_monitoring();
 	init_traffic();
+	init_gateway_status();
+	init_monitoring_visuals();
+	init_catalog_visuals();
+	init_governance_visuals();
+	init_owner_visuals();
 	init_guidance();
+	init_policy_visuals();
 	init_investigation();
 	init_tabler_icons_min();
 	init_auto();
 	init_design_system();
 	tokenKey = "relayna_gateway_operator_token";
+	installChartTheme(auto_default);
 	installComponentGuidance();
 	viewIds = new Set(Object.keys(viewMeta));
 	ownerViewIds = /* @__PURE__ */ new Set([
@@ -42588,7 +45244,6 @@ var init_main = __esmMin((() => {
 	app = document.querySelector("#app");
 	content = document.querySelector("#content");
 	requestTimeoutMs = 8e3;
-	usageExportBatchSize = 1e4;
 	noticeTimer = null;
 	dialogCounter = 0;
 	dialogInertRoots = /* @__PURE__ */ new Map();
@@ -42596,9 +45251,12 @@ var init_main = __esmMin((() => {
 	ownerDashboardChart = null;
 	ownerDashboardGeneration = 0;
 	stopTraffic = null;
+	stopGatewayStatus = null;
 	viewGeneration = 0;
 	viewController = new AbortController();
 	usageGeneration = 0;
+	usageLoad = null;
+	usageLabelCache = null;
 	renderGeneration = 0;
 	pendingWrites = 0;
 	monitoringCache = /* @__PURE__ */ new Map();
@@ -42779,6 +45437,7 @@ var init_main = __esmMin((() => {
 //#region crates/gateway-api/admin-ui/src/entry.tsx
 var import_client = require_client();
 var import_react_dom = /* @__PURE__ */ __toESM(require_react_dom(), 1);
+initializeThemePreference();
 var root = (0, import_client.createRoot)(document.getElementById("root"));
 (0, import_react_dom.flushSync)(() => root.render(/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ConsoleShell, {})));
 __vitePreload(() => Promise.resolve().then(() => (init_main(), main_exports)), void 0);

@@ -15,6 +15,7 @@ use tokio::time::{self, Duration};
 fn main() -> anyhow::Result<()> {
     let config = Config::from_env().context("load gateway configuration")?;
     gateway_telemetry::init(&config.log_level, config.entra_auth_debug);
+    gateway_telemetry::runtime::init_runtime_monitoring();
     if config.entra_auth_debug {
         gateway_telemetry::authorization_debug(
             "configuration",
@@ -127,6 +128,8 @@ fn main() -> anyhow::Result<()> {
         .transpose()
         .context("create owner Entra verifier")?
         .map(Arc::new);
+    let monitoring_redis = redis.clone();
+    let monitoring_store = store.clone();
     let app = app::router_with_identity(
         store.clone(),
         redis,
@@ -161,6 +164,7 @@ fn main() -> anyhow::Result<()> {
             tracing::info!(addr = %listener.local_addr().unwrap_or(control_bind_addr), "gateway control API listening");
             // Dropping the task set stops both reconcilers with the control API.
             let mut reconcilers = tokio::task::JoinSet::new();
+            reconcilers.spawn(app::run_gateway_monitoring(monitoring_redis, monitoring_store));
             reconcilers.spawn(run_budget_counter_reconciler(
                 reconciler_store,
                 reconciler_redis,

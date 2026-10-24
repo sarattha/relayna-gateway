@@ -300,8 +300,11 @@ impl<S, R> RelaynaPingoraProxy<S, R> {
 
 #[derive(Debug)]
 pub struct PingoraContext {
+    runtime_request: Option<gateway_telemetry::RuntimeRequest>,
+    traffic_lease: Option<traffic::TrafficActiveLease>,
     access: gateway_core::EndpointAccess,
     socket: bool,
+    socket_requested: bool,
     socket_upgraded: bool,
     socket_lease: Option<ConnectionLease>,
     socket_request_frames: Option<FrameLimit>,
@@ -397,8 +400,11 @@ where
 
     fn new_ctx(&self) -> Self::CTX {
         Self::CTX {
+            runtime_request: None,
+            traffic_lease: None,
             access: Default::default(),
             socket: false,
+            socket_requested: false,
             socket_upgraded: false,
             socket_lease: None,
             socket_request_frames: None,
@@ -485,6 +491,11 @@ where
         session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<()> {
+        ctx.runtime_request = Some(gateway_telemetry::runtime_request_started(
+            gateway_telemetry::RuntimeTransport::Http,
+        ));
+        ctx.traffic_lease = Some(traffic::monitor().active_lease(&ctx.traffic));
+        ctx.socket_requested = websocket::upgrade_requested(session.req_header());
         ctx.request_id =
             traffic::correlation_id(header_value(session.req_header(), "x-request-id"));
         ctx.traffic.request_id = ctx.request_id.clone();
@@ -2479,6 +2490,9 @@ where
                 .map(|response| response.status.as_u16()),
             error,
         );
+        // Observe the terminal outcome before any best-effort database awaits.
+        finish_runtime_traffic(ctx);
+        drop(ctx.traffic_lease.take());
         async {
             let Some(route) = ctx.route else {
                 return;
@@ -4349,9 +4363,12 @@ fn default_proxy_failure_status(error: &PingoraError) -> u16 {
 #[cfg(test)]
 fn new_pingora_context_for_tests() -> PingoraContext {
     PingoraContext {
+        runtime_request: None,
+        traffic_lease: None,
         foundry: None,
         access: Default::default(),
         socket: false,
+        socket_requested: false,
         socket_upgraded: false,
         socket_lease: None,
         socket_request_frames: None,
@@ -4477,7 +4494,23 @@ fn finish_attempt_timing(ctx: &mut PingoraContext) {
 }
 
 fn update_routing_diagnostics(ctx: &mut PingoraContext) {
-    ctx.traffic.diagnostics.protocol = Some(if ctx.socket { "websocket" } else { "http" }.into());
+    ctx.traffic.diagnostics.protocol = Some(
+        if ctx.socket || ctx.socket_requested {
+            "websocket"
+        } else {
+            "http"
+        }
+        .into(),
+    );
+    if let Some(runtime) = &mut ctx.runtime_request {
+        runtime.set_transport(if ctx.socket || ctx.socket_requested {
+            gateway_telemetry::RuntimeTransport::WebSocket
+        } else if ctx.is_streaming {
+            gateway_telemetry::RuntimeTransport::Sse
+        } else {
+            gateway_telemetry::RuntimeTransport::Http
+        });
+    }
     ctx.traffic.diagnostics.routing_mode = if ctx.litellm_passthrough {
         Some("litellm_passthrough".into())
     } else if ctx.route_match.is_some() {
@@ -4516,7 +4549,7 @@ fn websocket_activity(ctx: &mut PingoraContext, upstream: bool, bytes: usize) {
         .opened_at
         .map_or(0, |start| (now - start).num_milliseconds().max(0) as u64);
     ctx.traffic.elapsed_ms = elapsed_ms(ctx);
-    gateway_core::traffic::monitor().publish_socket_progress(ctx.traffic.clone());
+    gateway_core::traffic::monitor().publish_socket_progress(&ctx.traffic);
 }
 
 fn traffic_step(ctx: &mut PingoraContext, stage: &str) {
@@ -4629,6 +4662,35 @@ fn traffic_attempt_error(ctx: &mut PingoraContext, error: &PingoraError) {
     );
 }
 
+fn finish_runtime_traffic(ctx: &mut PingoraContext) {
+    update_routing_diagnostics(ctx);
+    let Some(mut runtime) = ctx.runtime_request.take() else {
+        return;
+    };
+    let timing = ctx.traffic.upstream_timings.last();
+    let duration = |value: Option<i64>| value.and_then(|value| u64::try_from(value).ok());
+    let milestone = |value: Option<i64>| {
+        duration(timing.and_then(|timing| {
+            value.and_then(|value| timing.started_elapsed_ms.checked_add(value))
+        }))
+    };
+    runtime.finish(gateway_telemetry::RuntimeOutcome {
+        success: ctx.traffic.diagnostics.outcome.as_deref() == Some("completed"),
+        rejected: ctx.traffic.attempts == 0 && ctx.traffic.diagnostics.failure_code.is_some(),
+        attributed: ctx.key.is_some(),
+        upstream_duration_ms: duration(timing.and_then(|timing| timing.total_ms)),
+        ttfb_ms: milestone(timing.and_then(|timing| timing.first_body_byte_ms)),
+        ttft_ms: milestone(timing.and_then(|timing| timing.first_token_ms)),
+        websocket_handshake_ms: milestone(timing.and_then(|timing| timing.response_headers_ms)),
+        websocket_session_ms: ctx
+            .traffic
+            .diagnostics
+            .websocket
+            .as_ref()
+            .and_then(|socket| socket.opened_at.map(|_| socket.duration_ms)),
+    });
+}
+
 fn finish_traffic(
     ctx: &mut PingoraContext,
     client_status: Option<u16>,
@@ -4683,6 +4745,7 @@ fn finish_traffic(
         ));
     }
     ctx.traffic.completed = true;
+    ctx.traffic.completed_at = Some(Utc::now());
     ctx.traffic.diagnostics.outcome = Some(
         if ctx.traffic.diagnostics.failure_code.is_some() {
             if ctx.traffic.streaming && client_status.is_some_and(|code| code < 400) {
@@ -7245,6 +7308,33 @@ mod tests {
 #[cfg(test)]
 mod traffic_regressions {
     use super::*;
+
+    #[test]
+    fn rejected_socket_attempt_is_classified_and_runtime_finishes_before_recording() {
+        let before = gateway_telemetry::runtime_snapshot(60).totals;
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.runtime_request = Some(gateway_telemetry::runtime_request_started(
+            gateway_telemetry::RuntimeTransport::Http,
+        ));
+        // A disallowed/malformed upgrade never becomes an admitted socket.
+        ctx.socket_requested = true;
+        traffic_step(&mut ctx, "routing");
+        assert!(!ctx.socket);
+        assert_eq!(ctx.traffic.protocol(), "websocket");
+        finish_traffic(&mut ctx, Some(400), None);
+        assert_eq!(ctx.traffic.diagnostics.outcome.as_deref(), Some("failed"));
+        assert!(ctx.traffic.completed_at.is_some());
+        finish_runtime_traffic(&mut ctx);
+        assert!(ctx.runtime_request.is_none());
+        // Recording happens afterward and can neither prevent nor repeat finish.
+        ctx.traffic.recording_failed("request_traffic");
+        finish_runtime_traffic(&mut ctx);
+        let after = gateway_telemetry::runtime_snapshot(60).totals;
+        assert!(after.completed > before.completed);
+        assert!(after.websocket_completed > before.websocket_completed);
+        assert!(after.rejected > before.rejected);
+        assert!(after.unattributed > before.unattributed);
+    }
 
     #[test]
     fn terminal_capture_needs_neither_route_nor_key() {

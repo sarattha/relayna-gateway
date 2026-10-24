@@ -14,13 +14,24 @@ theme:
     - search.suggest
     - content.code.copy
     - content.code.annotate
+  logo: assets/brand/logos/mark-small-white.svg
+  favicon: assets/brand/favicon.ico
   palette:
-    scheme: default
-    primary: white
-    accent: teal
-  font:
-    text: Manrope
-    code: JetBrains Mono
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  font: false
 nav:
   - Overview: index.md
   - Architecture: architecture.md
@@ -28,7 +39,9 @@ nav:
   - Redis Keys: redis.md
   - Getting Started: getting-started.md
   - Admin Portal: admin-portal.md
+  - Brand and Design System: brand.md
   - Traffic Monitor: operations/traffic-monitor.md
+  - Gateway Monitoring and Usage: operations/gateway-monitoring.md
   - Authentication Profiles: operations/authentication-profiles.md
   - Entra Portal and Service-owner Monitoring: operations/entra-portal-and-owner-monitoring.md
   - Entra Integration Requirements: operations/entra-integration-requirements.md
@@ -52,6 +65,7 @@ nav:
   - Releases: releases.md
 markdown_extensions:
   - admonition
+  - attr_list
   - toc:
       permalink: true
   - pymdownx.superfences:

@@ -366,6 +366,7 @@ operator visibility.
 | Request fields | `request_id`, `trace_id`, `route`, `model`, `provider`, `service_name`, nullable validated `service_version`, nullable `http_method`, nullable query-free `endpoint_path`, nullable `endpoint_template`, `task_id`, `run_id`, and `fallback_count`. |
 | Accounting fields | `status`, `status_code`, `latency_ms`, `input_tokens`, `output_tokens`, `total_tokens`, and `estimated_cost`. |
 | Historical pricing | Nullable `pricing_rule_fingerprint` proves the original named selector for recalculation; legacy rows without proof stay unchanged. Nullable `budget_estimated_cost` preserves the original committed charge when reporting cost is explicitly recalculated. Budget readers use it when present; otherwise they use `estimated_cost`. A preserved zero remains zero even if the new report cost is positive. |
+| Insertion visibility | Nullable `ingestion_xid xid8` preserves the full insertion transaction ID across repricing. New inserts receive a default; historical rows remain null without backfill. Cursor reads also apply insertion visibility to guardrail enrichment. |
 | Indexes | Lookup indexes cover key, project, request ID, trace ID, provider, service, model, task, run, status, and expensive-request time-series queries. A partial service-endpoint index combines service, method, a bounded MD5 digest of `COALESCE(endpoint_template, endpoint_path)`, status code, and time; exact queries also compare the full effective endpoint. |
 | Required data | Written for successful and failed request paths. Preserve this table for billing, diagnostics, budget counter rehydration, usage exports, and Relayna Studio usage views. |
 
@@ -394,6 +395,15 @@ failure indexes support history queries; repeated writes update the same
 internal diagnostic ID. Retention is operator-managed. See
 [Traffic Monitor](operations/traffic-monitor.md) for bounds, deletion examples and
 database-outage behavior.
+
+Additive nullable `completed_at` and `protocol` columns support completion-time
+and protocol history. New writers set completion time at the terminal lifecycle
+boundary. Older rows remain readable through start-time history; a missing end
+timestamp is unknown. Completion/project/key/service indexes support bounded
+history pages. Usage adds chronological indexes with a unique event-ID tie
+breaker and a correlated guardrail-identity index. See
+[Gateway monitoring and Usage](operations/gateway-monitoring.md) for cursor,
+export, and analytics-connection semantics.
 
 The same release adds `usage_events.diagnostics jsonb NOT NULL DEFAULT '{}'`,
 holding optional failure stage/code/source, outcome, upstream status and instance

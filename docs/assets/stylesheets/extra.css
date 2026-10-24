@@ -1,13 +1,37 @@
-:root {
-  --md-primary-fg-color: #ffffff;
-  --md-accent-fg-color: #1f766d;
-}
+@import "../brand/tokens.css";
+@import "../brand/material-tokens.css";
 
-.md-header,
-.md-tabs {
-  color: #172033;
+@font-face {
+  font-family: "Relayna Round";
+  src: url("../brand/fonts/RelaynaRound-0.100.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
 }
-
-.md-typeset code {
-  font-size: 0.9em;
+:root, [data-md-color-scheme] {
+  --md-text-font: "Relayna Round";
+  --md-code-font: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --md-primary-fg-color: var(--rn-primitive-mulberry);
+  --md-primary-bg-color: var(--rn-primitive-linen);
+  --md-accent-fg-color: var(--rn-color-action);
+  --md-default-bg-color: var(--rn-color-canvas);
+  --md-default-fg-color: var(--rn-color-text);
+  --md-default-fg-color--light: var(--rn-color-text-muted);
+  --md-default-fg-color--lighter: var(--rn-color-border-control);
+  --md-code-bg-color: var(--rn-color-surface-subtle);
+  --md-code-fg-color: var(--rn-color-text);
+  --md-typeset-a-color: var(--rn-color-link);
 }
+body { font-family: var(--rn-font-family-sans); font-synthesis: none; }
+.md-header, .md-tabs { color: var(--rn-primitive-linen); }
+.md-typeset code { font-size: .9em; }
+.md-typeset h1, .md-typeset h2, .md-typeset h3 { font-weight: 600; letter-spacing: normal; }
+.md-typeset table:not([class]) { background: var(--rn-color-surface); border-color: var(--rn-color-border); border-radius: 12px; }
+.md-typeset a:focus-visible { outline: 3px solid var(--rn-color-focus); outline-offset: 3px; }
+.brand-banner { margin-bottom: 1.5rem; }
+.brand-banner img, img.brand-family-board { display: block; width: 100%; height: auto; border-radius: 20px; }
+.brand-banner .brand-dark, img.brand-family-board.brand-dark { display: none; }
+[data-md-color-scheme="slate"] .brand-banner .brand-light { display: none; }
+[data-md-color-scheme="slate"] .brand-banner .brand-dark { display: block; }
+[data-md-color-scheme="slate"] img.brand-family-board.brand-light { display: none; }
+[data-md-color-scheme="slate"] img.brand-family-board.brand-dark { display: block; }

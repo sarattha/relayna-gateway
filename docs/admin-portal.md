@@ -11,8 +11,50 @@ features, see [Current Feature Highlights](current-features.md).
 ## Design 4.0
 
 Design 4.0 upgrades the shared shell and every Admin/Owner page with consistent
-neutral surfaces, compact typography, table spacing, field labels and semantic
-status colors. The design version is separate from the gateway release version.
+Mulberry & Linen surfaces, original Relayna Round typography, table spacing, field labels and semantic
+status colors. The design version is separate from the gateway release version. The approved Natural Connection identity, Slim Leaf logo family and exact taglines come from the [shared brand snapshot](brand.md).
+
+The sidebar uses elevated selected items and subtle lift-and-shadow
+feedback on actionable controls. Keyboard focus remains visible, and reduced
+motion preferences remove movement. Read-only charts stay stable while their
+measurements update.
+
+Metric values share aligned rows when captions wrap. On narrow screens,
+headings and action groups stack, while status messages keep their own space
+above the measurements. Wide result tables retain horizontal scrolling.
+
+Choose **Light**, **Dark** or **System** under **Theme** in the sidebar footer or
+on the sign-in screen. System follows the device appearance. The browser saves
+an explicit preference locally and applies it before the console paints. Dark
+mode uses Ink and plum surfaces with Blossom actions; charts, status badges,
+forms and investigation dialogs follow the selected mode. Switching appearance
+keeps the current page, filters and unsaved form values.
+
+Every workspace leads with visual context. Catalogs compare service links,
+provider setup, transport capability and routing configuration. Governance pages
+show key lifecycle, safeguard stages, exact access bindings and sampled audit
+actions. Owner catalogs and dashboards use the same visual language within
+their assigned resources. Configuration coverage does not imply a healthy
+connection; returned-page counts do not imply lifetime totals. Missing data
+remains unknown, independently of a measured zero.
+
+Information icons reveal secondary definitions on hover, keyboard focus or tap.
+Detailed configuration, sanitized snapshots and request investigations remain
+available through disclosures and drawers. Essential field labels, units,
+credential handling and confirmation steps remain beside their controls.
+
+Action drawers share icon-led headings and compact section navigation. Section
+links open and scroll to the original form controls; moving between sections or
+closing and reopening a creation drawer preserves its draft. Essential units,
+blank values and zero-limit behavior remain visible, with fuller definitions in
+contextual help. Provider, Foundry and route-identity editors use the same visual
+language, while request drawers lead with recorded signals and expandable detail.
+
+Under **Virtual keys → Inherited policy layers**, review the saved layer scopes
+and expand **Rules & safeguards** for their constraints and last update. Choose
+**Create or replace layer** to open the layer editor. The scope diagram describes
+saved configuration; applicable layers combine with direct key policy and retain
+stricter constraints. Use the policy simulator to inspect an exact request.
 
 React owns the shell, authentication and route-assignment editors, and provider
 creation and Foundry dialogs. Existing operational controllers
@@ -26,6 +68,13 @@ shows no results; selected keys remain visible.
 Run `npm run typecheck:admin-ui` for strict checks of the React components and
 `npm run test:react:coverage` for mounted interaction coverage, alongside
 `npm test` for existing operational regressions. CI checks both suites.
+
+For a local visual tour without a Gateway or credentials, build the assets and
+run `node tests/fixtures/admin-ui-design-preview.mjs --port 18464`, then open
+`http://127.0.0.1:18464/admin-ui`. The loopback-only preview covers Admin and
+Owner workspaces with explicitly synthetic, frozen data. `/fixture` lists its
+session controls and limitations. Writes return 405; its charts and status
+indicators are design examples, not health or performance evidence.
 
 ## Configure authentication profiles
 
@@ -215,7 +264,8 @@ What to check: after saving, the provider row should show `enabled` and
 
 #### LiteLLM custom header and virtual-key mapping
 
-LiteLLM provider rows also control how Gateway authenticates to LiteLLM. Leave
+LiteLLM provider rows also control how Gateway authenticates to LiteLLM.
+Open **Configure credentials** in the provider row to edit these settings. Leave
 `Credential mode` as `authorization_bearer` when LiteLLM expects
 `Authorization: Bearer <key>`. Choose `custom_header` when production LiteLLM
 or an API gateway in front of LiteLLM expects a different header, such as

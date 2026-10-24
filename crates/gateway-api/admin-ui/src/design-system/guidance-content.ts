@@ -1,6 +1,39 @@
 // Reviewed explanations of existing behavior. Context matters: a policy's zero
 // limit differs from a filter's zero minimum or a health counter's zero count.
 const layerLimit = " Blank adds no limit at this policy layer; inherited limits still apply.";
+const policyEssentials: Record<string, string> = {
+  allowed_routes: "Comma-separated patterns. Blank adds no restriction.",
+  allowed_models: "Exact model names. Blank adds no restriction.",
+  rpm_limit: "Requests/min. 0 blocks; blank inherits.",
+  tpm_limit: "Estimated tokens/min. 0 gives no token allowance; blank inherits.",
+  daily_budget_usd: "USD/day. 0 blocks; blank inherits.",
+  monthly_budget_usd: "USD/month. 0 blocks; blank inherits.",
+  max_requests_per_day: "Requests/UTC day. 0 blocks; blank inherits.",
+  max_tokens_per_day: "Daily token threshold. 0 blocks; blank inherits.",
+  max_cost_per_request: "USD/request. 0 allows only zero-cost estimates; blank inherits.",
+  max_input_tokens_per_request: "Input tokens/request. 0 allows no positive count; blank inherits.",
+  max_output_tokens_per_request: "Output tokens/request. 0 allows no positive count; blank inherits.",
+  max_request_body_bytes: "Bytes. 0 allows only an empty body; blank inherits.",
+  max_response_body_bytes: "Bytes. 0 allows only an empty body; blank inherits.",
+  allowed_hours_utc: "UTC hours 0–23. 0 is midnight; blank adds no restriction.",
+  unused_key_auto_disable_after_days: "Inactive days. 0 is immediately eligible; blank adds no rule.",
+};
+
+/** Essential units and neutral/zero behavior stay beside the control. */
+export function fieldSummary(name: string, context: string): string | undefined {
+  if (context === "policy" && policyEssentials[name]) return policyEssentials[name];
+  if (["service", "configuration"].includes(context)) return {
+    timeout_ms: "Milliseconds. Must be greater than 0.",
+    max_body_bytes: "Bytes. Must be greater than 0; 1 MiB = 1,048,576 B.",
+    max_request_body_bytes: "Bytes. Must be greater than 0; 1 MiB = 1,048,576 B.",
+    max_response_body_bytes: "Bytes. Must be greater than 0; 1 MiB = 1,048,576 B.",
+    upstream_base_url: "HTTP(S) URL. Never include credentials.",
+    credential: "Write-only. On edits, blank keeps the saved credential.",
+    health_check_path: "Relative path. Blank omits the active health check.",
+    fallback_services: "Registered service names, in fallback order.",
+  }[name];
+  return undefined;
+}
 const policy: Record<string, string> = {
   allowed_routes: "Comma-separated gateway routes allowed by this layer. Blank adds no route restriction; other layers still apply.",
   allowed_models: "Comma-separated exact model names. Blank adds no model restriction; other layers still apply.",
@@ -183,9 +216,11 @@ export function fieldGuidance(name: string, context: string): string | undefined
       service: "Exact registered service name. Blank includes every service, including requests without a selected service.",
       failure_code: "Exact recorded failure code, such as control_state_unavailable. Blank includes every reason and requests without a failure. Click a reason chip to apply or clear it.",
       status: "Client HTTP status, such as 503. A 200 can still be an interrupted stream; inspect its outcome.",
-      outcome: "Failures selects recorded failure reasons. Active means unfinished requests and is available only in live mode.",
-      from: "Saved-history start in local time. Blank defaults to the last 24 hours. Ignored in live mode.",
-      to: "Saved-history end in local time, including this instant. Blank has no upper bound. Ignored in live mode.",
+      outcome: "Failures selects recorded failure reasons. Active shows unfinished requests in the selected observation scope.",
+      protocol: "Separate HTTP requests and WebSocket sessions. Legacy records without a captured protocol remain Unknown.",
+      instance_id: "Select one gateway process or all reporting instances. Stale or missing publishers make coverage partial.",
+      from: "History start in local time. Recent completions defaults to the last 30 minutes; legacy arrival history defaults to the last 24 hours. Ignored for active requests.",
+      to: "History end in local time, including this instant. A fixed end freezes the recent page. Ignored for active requests.",
     };
     if (traffic[name]) return traffic[name];
   }
@@ -232,7 +267,13 @@ export const termGuidance: Record<string, string> = {
   "Attempt": "Upstream attempt number. 0 is gateway processing before the first upstream attempt; 1 is the first attempt.",
   "Trace ID": "Distributed tracing identifier, when recorded. Use it to correlate gateway activity with other instrumented services.",
   "Task / run": "Relayna task and execution run identifiers recorded with this request. Not recorded means the request supplied no retained linkage.",
-  "Gateway instance": "Gateway process that observed this request. Live Traffic is limited to one instance; saved history spans instances.",
+  "Gateway instance": "Gateway process that observed this request. Active Traffic can combine reporting instances; the live journal observes one process. Saved history spans instances.",
+  "Body slots": "Occupied and vacant slots for retained managed buffers. A slot can remain occupied after forwarding while a buffer reference is retained; it does not count every active connection.",
+  "Body bytes": "Occupied and vacant managed buffer bytes within the effective admission limit. This excludes other process memory; compare container memory headroom separately.",
+  "Arrivals / second": "Sum of reporting instances' request arrival rates, each divided by its own observed seconds in the rolling window. Includes denied and unattributed proxy requests and remains independent of Usage persistence.",
+  "HTTP success": "Successful completed HTTP request duration, including downstream delivery. An interrupted stream does not become successful because its headers reported HTTP 200.",
+  "WebSocket · handshake": "Time to establish or reject a WebSocket upgrade. Open-session duration has its own distribution and is not HTTP request latency.",
+  "WebSocket · session only": "Observed WebSocket session lifetime at termination. This does not measure individual application turns or message success.",
   "Service version": "Version reported by the upstream service and retained by the gateway. Not recorded does not identify a deployment version.",
   "DNS": "Hostname resolution time, including the OS resolver/cache. IP literals need no DNS; missing data is not a measured zero.",
   "TCP connect": "New TCP connection setup, excluding DNS and TLS. A reused connection has no new connect measurement.",

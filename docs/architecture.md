@@ -150,6 +150,8 @@ Redis is the fast mutable state layer:
 - Daily and monthly budget counters.
 - In-flight budget reservation keys.
 - Readiness checks used by `/admin-ui/readyz`.
+- Bounded, expiring per-process monitoring snapshots for cluster observation;
+  this state is independent of proxy admission and durable Usage accounting.
 
 PostgreSQL remains the durable usage ledger. On startup and periodic
 reconciliation, Gateway can rebuild current daily and monthly Redis budget

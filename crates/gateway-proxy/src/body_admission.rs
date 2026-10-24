@@ -4,6 +4,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use std::time::Instant;
 
 pub const DEFAULT_MAX_BUFFERED_REQUESTS: usize = 8;
 pub const DEFAULT_MAX_INFLIGHT_BUFFER_BYTES: usize = 512 * 1024 * 1024;
@@ -25,6 +26,7 @@ pub struct BodyAdmissionController {
 pub struct BodyAdmissionLease {
     state: Arc<BodyAdmissionState>,
     reserved_bytes: usize,
+    admitted_at: Instant,
 }
 
 struct AdmittedBody {
@@ -44,6 +46,7 @@ impl BodyAdmissionController {
         if max_requests == 0 || max_bytes == 0 {
             return Err(GatewayError::InvalidConfiguration);
         }
+        gateway_telemetry::runtime::configure_body_capacity(max_requests, max_bytes);
         Ok(Self {
             state: Arc::new(BodyAdmissionState {
                 max_requests,
@@ -55,16 +58,20 @@ impl BodyAdmissionController {
     }
 
     pub fn try_acquire(&self) -> GatewayResult<BodyAdmissionLease> {
+        let started = Instant::now();
         increment_bounded(&self.state.active_requests, 1, self.state.max_requests).map_err(
             |_| {
+                gateway_telemetry::runtime::record_body_admission_decision(started.elapsed(), true);
                 gateway_telemetry::record_body_admission_rejection("concurrency");
                 GatewayError::GatewayOverloaded
             },
         )?;
+        gateway_telemetry::runtime::record_body_admission_decision(started.elapsed(), false);
         gateway_telemetry::buffered_request_started();
         Ok(BodyAdmissionLease {
             state: Arc::clone(&self.state),
             reserved_bytes: 0,
+            admitted_at: Instant::now(),
         })
     }
 
@@ -83,6 +90,17 @@ impl BodyAdmissionController {
     pub fn max_bytes(&self) -> usize {
         self.state.max_bytes
     }
+
+    /// Instantaneous counters are sampled independently; admission still uses
+    /// the same atomic bounds and never queues requests.
+    pub fn capacity_snapshot(&self) -> gateway_telemetry::runtime::BodyCapacitySnapshot {
+        gateway_telemetry::runtime::BodyCapacitySnapshot::new(
+            self.max_requests(),
+            self.active_requests(),
+            self.max_bytes(),
+            self.active_bytes(),
+        )
+    }
 }
 
 impl Default for BodyAdmissionController {
@@ -100,15 +118,18 @@ impl BodyAdmissionLease {
         if additional_bytes == 0 {
             return Ok(());
         }
+        let started = Instant::now();
         increment_bounded(
             &self.state.active_bytes,
             additional_bytes,
             self.state.max_bytes,
         )
         .map_err(|_| {
+            gateway_telemetry::runtime::record_body_admission_decision(started.elapsed(), true);
             gateway_telemetry::record_body_admission_rejection("bytes");
             GatewayError::GatewayOverloaded
         })?;
+        gateway_telemetry::runtime::record_body_admission_decision(started.elapsed(), false);
         self.reserved_bytes = self.reserved_bytes.saturating_add(additional_bytes);
         gateway_telemetry::buffered_bytes_added(additional_bytes);
         Ok(())
@@ -137,6 +158,7 @@ impl Drop for BodyAdmissionLease {
         }
         self.state.active_requests.fetch_sub(1, Ordering::Relaxed);
         gateway_telemetry::buffered_request_finished();
+        gateway_telemetry::runtime::record_body_retention(self.admitted_at.elapsed());
     }
 }
 
@@ -164,6 +186,25 @@ mod tests {
 
         assert_eq!(controller.max_requests(), 8);
         assert_eq!(controller.max_bytes(), 536_870_912);
+    }
+
+    #[test]
+    fn capacity_reports_effective_limits_and_releases_failed_reservations() {
+        let controller = BodyAdmissionController::new(2, 10).unwrap();
+        let mut lease = controller.try_acquire().unwrap();
+        lease.try_reserve(6).unwrap();
+        let snapshot = controller.capacity_snapshot();
+        assert_eq!(snapshot.max_requests, 2);
+        assert_eq!(snapshot.used_requests, 1);
+        assert_eq!(snapshot.free_requests, 1);
+        assert_eq!(snapshot.max_bytes, 10);
+        assert_eq!(snapshot.used_bytes, 6);
+        assert_eq!(snapshot.free_bytes, 4);
+        assert!(lease.try_reserve(5).is_err());
+        assert_eq!(controller.capacity_snapshot(), snapshot);
+        drop(lease);
+        assert_eq!(controller.capacity_snapshot().free_requests, 2);
+        assert_eq!(controller.capacity_snapshot().free_bytes, 10);
     }
 
     #[test]

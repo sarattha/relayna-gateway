@@ -81,6 +81,9 @@ pub enum StoreError {
 #[derive(Clone)]
 pub struct PostgresStore {
     pool: PgPool,
+    // Usage cannot retain all authentication/write connections while PostgreSQL
+    // finishes a cancelled client query. This pool never executes mutations.
+    usage_pool: PgPool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -97,11 +100,31 @@ impl PostgresStore {
             .connect(database_url)
             .await?;
         MIGRATOR.run(&pool).await?;
-        Ok(Self { pool })
+        Ok(Self::new(pool))
     }
 
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        let usage_pool = PgPoolOptions::new()
+            .max_connections(4)
+            .acquire_timeout(std::time::Duration::from_secs(2))
+            .after_connect(|connection, _| {
+                Box::pin(async move {
+                    // A server-enforced deadline remains effective if the HTTP
+                    // future is dropped. It applies only to this dedicated pool.
+                    sqlx::query("SET statement_timeout = '15s'")
+                        .execute(&mut *connection)
+                        .await?;
+                    // Time/project selectivity varies widely between Usage
+                    // reads. A cached generic plan can turn a 30-day ledger
+                    // scan into a lossy bitmap scan after five executions.
+                    sqlx::query("SET plan_cache_mode = force_custom_plan")
+                        .execute(connection)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect_lazy_with(pool.connect_options().as_ref().clone());
+        Self { pool, usage_pool }
     }
 
     pub fn pool(&self) -> &PgPool {
@@ -4607,11 +4630,30 @@ impl UsageQueryStore for PostgresStore {
                 COALESCE(SUM(estimated_cost), 0)::double precision,
                 COALESCE(SUM(latency_ms), 0)::bigint,
                 percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::double precision,
-                COALESCE(SUM(fallback_count), 0)::bigint
-            FROM usage_events
+                COALESCE(SUM(fallback_count), 0)::bigint,
+                COUNT(*) FILTER (WHERE status_code = 403)::bigint,
+                COUNT(*) FILTER (WHERE status_code = 429)::bigint,
+                COUNT(*) FILTER (WHERE status_code = 402)::bigint,
+                COUNT(*) FILTER (WHERE estimated_cost >=
             "#,
         );
+        if let Some(min_cost_usd) = query.min_cost_usd {
+            builder.push_bind(min_cost_usd.max(0.0));
+        } else {
+            // Keep the fixed default numeric: a float8 parameter converts each
+            // numeric(20,8) cost to float8. At 1.0 its eight-decimal precision
+            // gives the same comparison without that per-event conversion.
+            builder.push("1.0");
+        }
+        builder.push(")::bigint FROM usage_events");
         append_usage_filters(&mut builder, &query);
+        if let Some(cursor) = query.cursor.as_deref().filter(|value| *value != "start") {
+            append_usage_snapshot(
+                &mut builder,
+                &UsageCursor::decode(cursor)?.snapshot,
+                "usage_events",
+            );
+        }
         let mut summary = builder
             .build_query_as::<(
                 i64,
@@ -4624,12 +4666,43 @@ impl UsageQueryStore for PostgresStore {
                 i64,
                 Option<f64>,
                 i64,
+                i64,
+                i64,
+                i64,
+                i64,
             )>()
-            .fetch_one(&self.pool)
+            .fetch_one(&self.usage_pool)
             .await
-            .map(summary_from_row)
+            .map(
+                |(
+                    requests,
+                    successes,
+                    failures,
+                    input,
+                    output,
+                    tokens,
+                    cost,
+                    latency,
+                    p95,
+                    fallbacks,
+                    policy,
+                    rate,
+                    budget,
+                    expensive,
+                )| {
+                    let mut summary = summary_from_row((
+                        requests, successes, failures, input, output, tokens, cost, latency, p95,
+                        fallbacks,
+                    ));
+                    summary.policy_denial_count = policy;
+                    summary.rate_limit_denial_count = rate;
+                    summary.budget_denial_count = budget;
+                    summary.expensive_request_count = expensive;
+                    summary
+                },
+            )
             .map_err(|_| GatewayError::StoreUnavailable)?;
-        enrich_usage_summary(&self.pool, &query, &mut summary).await?;
+        enrich_usage_summary(&self.usage_pool, &query, &mut summary).await?;
         Ok(summary)
     }
 
@@ -4637,7 +4710,7 @@ impl UsageQueryStore for PostgresStore {
         &self,
         query: UsageQuery,
     ) -> GatewayResult<Vec<UsageTimeseriesPoint>> {
-        usage_timeseries_page(&self.pool, query)
+        usage_timeseries_page(&self.usage_pool, query)
             .await
             .map(|page| page.rows)
     }
@@ -4708,7 +4781,7 @@ impl UsageQueryStore for PostgresStore {
                 Option<f64>,
                 i64,
             )>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.usage_pool)
             .await
             .map(|rows| {
                 rows.into_iter()
@@ -4754,106 +4827,64 @@ impl UsageQueryStore for PostgresStore {
 
     async fn usage_export(&self, query: UsageQuery) -> GatewayResult<UsageExport> {
         let summary = self.usage_summary(query.clone()).await?;
-        let mut builder = QueryBuilder::<Postgres>::new(
-            r#"
-            SELECT
-                u.request_id,
-                u.key_id,
-                u.project_id,
-                u.route,
-                u.model,
-                u.provider,
-                u.status,
-                u.status_code,
-                u.latency_ms,
-                COALESCE(u.input_tokens, 0)::bigint AS input_tokens,
-                COALESCE(u.output_tokens, 0)::bigint AS output_tokens,
-                COALESCE(u.total_tokens, 0)::bigint AS total_tokens,
-                u.estimated_cost::double precision AS estimated_cost_usd,
-                u.cost_source,
-                u.cost_mode,
-                u.pricing_rule_name,
-                u.service_name,
-                u.service_version,
-                u.http_method,
-                u.endpoint_path,
-                u.endpoint_template,
-                u.task_id,
-                u.run_id,
-                u.trace_id,
-                u.diagnostics,
-                u.fallback_count,
-                COALESCE(g.guardrail_action_count, 0)::bigint AS guardrail_action_count,
-                u.created_at
-            FROM usage_events u
-            LEFT JOIN (
-                SELECT request_id, key_id, project_id,
-                       COUNT(*)::bigint AS guardrail_action_count
-                FROM guardrail_execution_events
-                GROUP BY request_id, key_id, project_id
-            ) g ON g.request_id = u.request_id
-               AND g.key_id IS NOT DISTINCT FROM u.key_id
-               AND g.project_id IS NOT DISTINCT FROM u.project_id
-            "#,
-        );
-        append_usage_filters_with_alias(&mut builder, &query, "u");
-        append_usage_export_order(&mut builder);
-        builder.push(" LIMIT ");
-        builder.push_bind(query.limit.unwrap_or(1_000).clamp(1, 10_000));
-        builder.push(" OFFSET ");
-        builder.push_bind(query.offset.unwrap_or_default().max(0));
-
-        let rows = builder
-            .build()
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|_| GatewayError::StoreUnavailable)?
-            .into_iter()
-            .map(|row| {
-                Ok(UsageExportRow {
-                    diagnostics: row
-                        .try_get::<sqlx::types::Json<gateway_core::traffic::RequestDiagnostics>, _>(
-                            "diagnostics",
-                        )?
-                        .0,
-                    request_id: row.try_get("request_id")?,
-                    key_id: row.try_get("key_id")?,
-                    project_id: row.try_get("project_id")?,
-                    route: row.try_get("route")?,
-                    model: row.try_get("model")?,
-                    provider: row.try_get("provider")?,
-                    status: row.try_get("status")?,
-                    status_code: row.try_get("status_code")?,
-                    latency_ms: row.try_get("latency_ms")?,
-                    input_tokens: row.try_get("input_tokens")?,
-                    output_tokens: row.try_get("output_tokens")?,
-                    total_tokens: row.try_get("total_tokens")?,
-                    estimated_cost_usd: row.try_get("estimated_cost_usd")?,
-                    cost_source: row.try_get("cost_source")?,
-                    cost_mode: row.try_get("cost_mode")?,
-                    pricing_rule_name: row.try_get("pricing_rule_name")?,
-                    service_name: row.try_get("service_name")?,
-                    service_version: row.try_get("service_version")?,
-                    http_method: row.try_get("http_method")?,
-                    endpoint_path: row.try_get("endpoint_path")?,
-                    endpoint_template: row.try_get("endpoint_template")?,
-                    task_id: row.try_get("task_id")?,
-                    run_id: row.try_get("run_id")?,
-                    trace_id: row.try_get("trace_id")?,
-                    fallback_count: row.try_get("fallback_count")?,
-                    guardrail_action_count: row.try_get("guardrail_action_count")?,
-                    created_at: row.try_get("created_at")?,
-                })
-            })
-            .collect::<Result<Vec<_>, sqlx::Error>>()
-            .map_err(|_| GatewayError::StoreUnavailable)?;
-
+        let rows = self.usage_export_page(query).await?.rows;
         Ok(UsageExport { summary, rows })
     }
 
+    async fn usage_export_page(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage> {
+        usage_rows_page(&self.usage_pool, query, true).await
+    }
+
+    async fn usage_section(
+        &self,
+        mut query: UsageQuery,
+        section: gateway_core::observability::UsageSectionKind,
+    ) -> GatewayResult<gateway_core::observability::UsageSection> {
+        use gateway_core::observability::{UsageSection, UsageSectionKind};
+        match section {
+            UsageSectionKind::Timeseries => {
+                query.timeseries_limit = Some(query.timeseries_limit.unwrap_or(50));
+                let page = usage_timeseries_page(&self.usage_pool, query).await?;
+                Ok(UsageSection::Timeseries {
+                    rows: page.rows,
+                    page: page.page,
+                })
+            }
+            UsageSectionKind::ServiceTimeseries => {
+                query.service_timeseries_limit = Some(query.service_timeseries_limit.unwrap_or(50));
+                let page = usage_service_timeseries(&self.usage_pool, query).await?;
+                Ok(UsageSection::ServiceTimeseries {
+                    rows: page.rows,
+                    page: page.page,
+                })
+            }
+            UsageSectionKind::ProjectKeyServices => Ok(UsageSection::ProjectKeyServices {
+                rows: usage_project_key_services(&self.usage_pool, &query).await?,
+            }),
+            UsageSectionKind::UnusedKeys => Ok(UsageSection::UnusedKeys {
+                rows: self.unused_keys(query).await?,
+            }),
+            _ => {
+                let dimension = match section {
+                    UsageSectionKind::Projects => UsageBreakdownDimension::Project,
+                    UsageSectionKind::Keys => UsageBreakdownDimension::Key,
+                    UsageSectionKind::Services => UsageBreakdownDimension::Service,
+                    UsageSectionKind::Endpoints => UsageBreakdownDimension::Endpoint,
+                    UsageSectionKind::Providers => UsageBreakdownDimension::Provider,
+                    UsageSectionKind::Models => UsageBreakdownDimension::Model,
+                    UsageSectionKind::Tasks => UsageBreakdownDimension::Task,
+                    _ => unreachable!("non-breakdown sections handled above"),
+                };
+                Ok(UsageSection::Breakdown {
+                    rows: self.usage_breakdown(query, dimension).await?,
+                })
+            }
+        }
+    }
+
     async fn usage_dashboard(&self, query: UsageQuery) -> GatewayResult<UsageDashboard> {
-        let timeseries = usage_timeseries_page(&self.pool, query.clone()).await?;
-        let service_timeseries = usage_service_timeseries(&self.pool, query.clone()).await?;
+        let timeseries = usage_timeseries_page(&self.usage_pool, query.clone()).await?;
+        let service_timeseries = usage_service_timeseries(&self.usage_pool, query.clone()).await?;
         Ok(UsageDashboard {
             summary: self.usage_summary(query.clone()).await?,
             breakdowns: UsageDashboardBreakdowns {
@@ -4866,7 +4897,7 @@ impl UsageQueryStore for PostgresStore {
                 services: self
                     .usage_breakdown(query.clone(), UsageBreakdownDimension::Service)
                     .await?,
-                project_key_services: usage_project_key_services(&self.pool, &query).await?,
+                project_key_services: usage_project_key_services(&self.usage_pool, &query).await?,
                 endpoints: self
                     .usage_breakdown(query.clone(), UsageBreakdownDimension::Endpoint)
                     .await?,
@@ -4889,72 +4920,7 @@ impl UsageQueryStore for PostgresStore {
     }
 
     async fn usage_events(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage> {
-        let limit = query.limit.unwrap_or(50).clamp(1, 500);
-        let offset = query.offset.unwrap_or_default().max(0);
-        let mut builder = QueryBuilder::<Postgres>::new(
-            r#"
-            SELECT
-                u.request_id,
-                u.key_id,
-                u.project_id,
-                u.route,
-                u.model,
-                u.provider,
-                u.status,
-                u.status_code,
-                u.latency_ms,
-                COALESCE(u.input_tokens, 0)::bigint AS input_tokens,
-                COALESCE(u.output_tokens, 0)::bigint AS output_tokens,
-                COALESCE(u.total_tokens, 0)::bigint AS total_tokens,
-                u.estimated_cost::double precision AS estimated_cost_usd,
-                u.cost_source,
-                u.cost_mode,
-                u.pricing_rule_name,
-                u.service_name,
-                u.service_version,
-                u.http_method,
-                u.endpoint_path,
-                u.endpoint_template,
-                u.task_id,
-                u.run_id,
-                u.trace_id,
-                u.diagnostics,
-                u.fallback_count,
-                COALESCE(g.guardrail_action_count, 0)::bigint AS guardrail_action_count,
-                u.created_at
-            FROM usage_events u
-            LEFT JOIN (
-                SELECT request_id, key_id, project_id,
-                       COUNT(*)::bigint AS guardrail_action_count
-                FROM guardrail_execution_events
-                GROUP BY request_id, key_id, project_id
-            ) g ON g.request_id = u.request_id
-               AND g.key_id IS NOT DISTINCT FROM u.key_id
-               AND g.project_id IS NOT DISTINCT FROM u.project_id
-            "#,
-        );
-        append_usage_filters_with_alias(&mut builder, &query, "u");
-        builder.push(" ORDER BY ");
-        builder.push(usage_event_sort_column(query.sort_by.as_deref()));
-        builder.push(if usage_sort_desc(query.sort_order.as_deref()) {
-            " DESC, u.request_id ASC"
-        } else {
-            " ASC, u.request_id ASC"
-        });
-        builder.push(" LIMIT ");
-        builder.push_bind(limit + 1);
-        builder.push(" OFFSET ");
-        builder.push_bind(offset);
-
-        let mut rows = usage_export_rows_from_query(&self.pool, builder).await?;
-        let has_more = rows.len() > limit as usize;
-        rows.truncate(limit as usize);
-        Ok(UsageEventsPage {
-            rows,
-            limit,
-            offset,
-            has_more,
-        })
+        usage_rows_page(&self.usage_pool, query, false).await
     }
 
     async fn usage_status_codes(&self, query: UsageQuery) -> GatewayResult<Vec<i32>> {
@@ -4964,7 +4930,7 @@ impl UsageQueryStore for PostgresStore {
         builder.push(" ORDER BY status_code ASC");
         builder
             .build_query_scalar::<i32>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.usage_pool)
             .await
             .map_err(|_| GatewayError::StoreUnavailable)
     }
@@ -5007,7 +4973,7 @@ impl UsageQueryStore for PostgresStore {
         );
         builder
             .build_query_as::<(String, chrono::DateTime<chrono::Utc>)>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.usage_pool)
             .await
             .map(|rows| {
                 rows.into_iter()
@@ -5041,13 +5007,18 @@ impl UsageQueryStore for PostgresStore {
             builder.push(" AND ");
             builder.push(column);
             builder.push(" ILIKE ");
-            builder.push_bind(format!("{q}%"));
+            builder.push_bind(format!(
+                "{}%",
+                q.replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_")
+            ));
         }
         builder.push(" ORDER BY value ASC LIMIT ");
         builder.push_bind(limit);
         let values = builder
             .build_query_scalar::<String>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.usage_pool)
             .await
             .map_err(|_| GatewayError::StoreUnavailable)?;
         Ok(UsageFilterValues {
@@ -5074,7 +5045,7 @@ impl UsageQueryStore for PostgresStore {
 
         builder
             .build_query_as::<(String, i64, i64, i64, i64, i64)>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.usage_pool)
             .await
             .map(|rows| {
                 rows.into_iter()
@@ -5131,7 +5102,7 @@ impl UsageQueryStore for PostgresStore {
 
         builder
             .build()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.usage_pool)
             .await
             .map_err(|_| GatewayError::StoreUnavailable)?
             .into_iter()
@@ -6745,10 +6716,250 @@ fn append_usage_export_order(builder: &mut QueryBuilder<'_, Postgres>) {
     builder.push(" ORDER BY u.created_at ASC, u.request_id ASC, u.id ASC");
 }
 
+// This cursor describes visibility, not merely an event-time cutoff. A request
+// completing later can carry an older created_at; it must not enter an existing
+// traversal. pg_visible_in_snapshot also excludes inserts still uncommitted at
+// the first page. No transaction/connection is retained between pages.
+struct UsageCursor {
+    snapshot: String,
+    descending: bool,
+    after: Option<(chrono::DateTime<chrono::Utc>, String, Uuid)>,
+}
+
+impl UsageCursor {
+    fn decode(value: &str) -> GatewayResult<Self> {
+        if value.len() > 65_536 {
+            return Err(GatewayError::InvalidUsageQuery);
+        }
+        let decode = || -> Option<Self> {
+            let value: serde_json::Value = serde_json::from_str(value).ok()?;
+            if value["v"].as_u64()? != 1 {
+                return None;
+            }
+            let snapshot = value["snapshot"].as_str()?.to_owned();
+            let parts = snapshot.split(':').collect::<Vec<_>>();
+            if parts.len() != 3 {
+                return None;
+            }
+            let xmin = parts[0].parse::<u64>().ok()?;
+            let xmax = parts[1].parse::<u64>().ok()?;
+            if xmin > xmax {
+                return None;
+            }
+            let mut previous = None;
+            if !parts[2].is_empty() {
+                for xid in parts[2].split(',') {
+                    let xid = xid.parse::<u64>().ok()?;
+                    if xid < xmin || xid >= xmax || previous.is_some_and(|last| last >= xid) {
+                        return None;
+                    }
+                    previous = Some(xid);
+                }
+            }
+            let after = if value["after"].is_null() {
+                None
+            } else {
+                Some((
+                    value["after"]["at"].as_str()?.parse().ok()?,
+                    value["after"]["request_id"].as_str()?.to_owned(),
+                    value["after"]["id"].as_str()?.parse().ok()?,
+                ))
+            };
+            Some(Self {
+                snapshot,
+                descending: value["descending"].as_bool()?,
+                after,
+            })
+        };
+        decode().ok_or(GatewayError::InvalidUsageQuery)
+    }
+
+    fn encode(&self) -> String {
+        let after = self.after.as_ref().map(|(at, request_id, id)| {
+            serde_json::json!({
+                "at": at, "request_id": request_id, "id": id,
+            })
+        });
+        serde_json::json!({ "v": 1, "snapshot": self.snapshot, "descending": self.descending, "after": after }).to_string()
+    }
+}
+
+fn append_usage_snapshot(builder: &mut QueryBuilder<'_, Postgres>, snapshot: &str, alias: &str) {
+    // Historical NULL markers predate the migration. New markers retain the
+    // full insertion XID across epoch wrap and later reporting-cost updates.
+    builder.push(format!(
+        " AND ({alias}.ingestion_xid IS NULL OR pg_visible_in_snapshot({alias}.ingestion_xid, "
+    ));
+    builder.push_bind(snapshot.to_owned());
+    builder.push("::pg_snapshot))");
+}
+
+fn usage_rows_page_query<'a>(
+    query: &'a UsageQuery,
+    export: bool,
+    cursor: Option<&'a UsageCursor>,
+    limit: i64,
+    offset: i64,
+) -> QueryBuilder<'a, Postgres> {
+    let descending = !export && usage_sort_desc(query.sort_order.as_deref());
+    let mut builder =
+        QueryBuilder::<Postgres>::new("WITH page AS MATERIALIZED (SELECT u.* FROM usage_events u");
+    append_usage_filters_with_alias(&mut builder, query, "u");
+    if let Some(cursor) = cursor {
+        append_usage_snapshot(&mut builder, &cursor.snapshot, "u");
+        if let Some((at, request_id, id)) = cursor.after.as_ref() {
+            if descending {
+                // Event time desc, request ID asc, UUID asc: reverse only the
+                // first component to preserve the released chronological sort.
+                builder.push(" AND u.created_at <= ");
+                builder.push_bind(*at);
+                builder.push(" AND (u.created_at < ");
+                builder.push_bind(*at);
+                builder.push(" OR (u.created_at = ");
+                builder.push_bind(*at);
+                builder.push(" AND (u.request_id, u.id) > (");
+                builder.push_bind(request_id);
+                builder.push(", ");
+                builder.push_bind(*id);
+                builder.push(")))");
+            } else {
+                builder.push(" AND (u.created_at, u.request_id, u.id) > (");
+                builder.push_bind(*at);
+                builder.push(", ");
+                builder.push_bind(request_id);
+                builder.push(", ");
+                builder.push_bind(*id);
+                builder.push(")");
+            }
+        }
+    }
+    if export {
+        append_usage_export_order(&mut builder);
+    } else {
+        builder.push(" ORDER BY ");
+        builder.push(usage_event_sort_column(query.sort_by.as_deref()));
+        builder.push(if descending {
+            " DESC, u.request_id ASC, u.id ASC"
+        } else {
+            " ASC, u.request_id ASC, u.id ASC"
+        });
+    }
+    builder.push(" LIMIT ");
+    builder.push_bind(limit + 1);
+    builder.push(" OFFSET ");
+    builder.push_bind(offset);
+    builder.push(
+        r#") SELECT u.id, u.request_id, u.key_id, u.project_id, u.route, u.model, u.provider,
+        u.status, u.status_code, u.latency_ms,
+        COALESCE(u.input_tokens, 0)::bigint AS input_tokens,
+        COALESCE(u.output_tokens, 0)::bigint AS output_tokens,
+        COALESCE(u.total_tokens, 0)::bigint AS total_tokens,
+        u.estimated_cost::double precision AS estimated_cost_usd,
+        u.cost_source, u.cost_mode, u.pricing_rule_name, u.service_name, u.service_version,
+        u.http_method, u.endpoint_path, u.endpoint_template, u.task_id, u.run_id, u.trace_id,
+        u.diagnostics, u.fallback_count, u.created_at,
+        (SELECT COUNT(*)::bigint FROM guardrail_execution_events g
+         WHERE g.request_id = u.request_id
+           AND g.key_id IS NOT DISTINCT FROM u.key_id
+           AND g.project_id IS NOT DISTINCT FROM u.project_id"#,
+    );
+    if let Some(cursor) = cursor {
+        append_usage_snapshot(&mut builder, &cursor.snapshot, "g");
+    }
+    builder.push(") AS guardrail_action_count FROM page u");
+    if export {
+        append_usage_export_order(&mut builder);
+    } else {
+        builder.push(" ORDER BY ");
+        builder.push(usage_event_sort_column(query.sort_by.as_deref()));
+        builder.push(if descending {
+            " DESC, u.request_id ASC, u.id ASC"
+        } else {
+            " ASC, u.request_id ASC, u.id ASC"
+        });
+    }
+    builder
+}
+
+async fn usage_rows_page(
+    pool: &PgPool,
+    query: UsageQuery,
+    export: bool,
+) -> GatewayResult<UsageEventsPage> {
+    let limit = if export {
+        query.limit.unwrap_or(1_000).clamp(1, 10_000)
+    } else {
+        query.limit.unwrap_or(50).clamp(1, 500)
+    };
+    let mut offset = query.offset.unwrap_or_default().max(0);
+    let descending = !export && usage_sort_desc(query.sort_order.as_deref());
+    let mut cursor = match query.cursor.as_deref() {
+        None => None,
+        Some("start") => {
+            if !export && usage_event_sort_column(query.sort_by.as_deref()) != "u.created_at" {
+                return Err(GatewayError::InvalidUsageQuery);
+            }
+            Some(UsageCursor {
+                snapshot: sqlx::query_scalar::<_, String>("SELECT pg_current_snapshot()::text")
+                    .fetch_one(pool)
+                    .await
+                    .map_err(|_| GatewayError::StoreUnavailable)?,
+                descending,
+                after: None,
+            })
+        }
+        Some(value) => {
+            let cursor = UsageCursor::decode(value)?;
+            if cursor.descending != descending
+                || (!export && usage_event_sort_column(query.sort_by.as_deref()) != "u.created_at")
+            {
+                return Err(GatewayError::InvalidUsageQuery);
+            }
+            Some(cursor)
+        }
+    };
+    if cursor.is_some() {
+        if offset != 0 {
+            return Err(GatewayError::InvalidUsageQuery);
+        }
+        offset = 0;
+    }
+    let snapshot_cursor = cursor.as_ref().map(|cursor| {
+        UsageCursor {
+            snapshot: cursor.snapshot.clone(),
+            descending: cursor.descending,
+            after: None,
+        }
+        .encode()
+    });
+    let builder = usage_rows_page_query(&query, export, cursor.as_ref(), limit, offset);
+    let mut rows = usage_export_rows_from_query(pool, builder).await?;
+    let has_more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    let next_cursor = if has_more {
+        cursor.as_mut().and_then(|cursor| {
+            rows.last().map(|(id, row)| {
+                cursor.after = Some((row.created_at, row.request_id.clone(), *id));
+                cursor.encode()
+            })
+        })
+    } else {
+        None
+    };
+    Ok(UsageEventsPage {
+        rows: rows.into_iter().map(|(_, row)| row).collect(),
+        limit,
+        offset,
+        has_more,
+        next_cursor,
+        snapshot_cursor,
+    })
+}
+
 async fn usage_export_rows_from_query(
     pool: &PgPool,
     mut builder: QueryBuilder<'_, Postgres>,
-) -> GatewayResult<Vec<UsageExportRow>> {
+) -> GatewayResult<Vec<(Uuid, UsageExportRow)>> {
     builder
         .build()
         .fetch_all(pool)
@@ -6756,40 +6967,43 @@ async fn usage_export_rows_from_query(
         .map_err(|_| GatewayError::StoreUnavailable)?
         .into_iter()
         .map(|row| {
-            Ok(UsageExportRow {
-                diagnostics: row
-                    .try_get::<sqlx::types::Json<gateway_core::traffic::RequestDiagnostics>, _>(
-                        "diagnostics",
-                    )?
-                    .0,
-                request_id: row.try_get("request_id")?,
-                key_id: row.try_get("key_id")?,
-                project_id: row.try_get("project_id")?,
-                route: row.try_get("route")?,
-                model: row.try_get("model")?,
-                provider: row.try_get("provider")?,
-                status: row.try_get("status")?,
-                status_code: row.try_get("status_code")?,
-                latency_ms: row.try_get("latency_ms")?,
-                input_tokens: row.try_get("input_tokens")?,
-                output_tokens: row.try_get("output_tokens")?,
-                total_tokens: row.try_get("total_tokens")?,
-                estimated_cost_usd: row.try_get("estimated_cost_usd")?,
-                cost_source: row.try_get("cost_source")?,
-                cost_mode: row.try_get("cost_mode")?,
-                pricing_rule_name: row.try_get("pricing_rule_name")?,
-                service_name: row.try_get("service_name")?,
-                service_version: row.try_get("service_version")?,
-                http_method: row.try_get("http_method")?,
-                endpoint_path: row.try_get("endpoint_path")?,
-                endpoint_template: row.try_get("endpoint_template")?,
-                task_id: row.try_get("task_id")?,
-                run_id: row.try_get("run_id")?,
-                trace_id: row.try_get("trace_id")?,
-                fallback_count: row.try_get("fallback_count")?,
-                guardrail_action_count: row.try_get("guardrail_action_count")?,
-                created_at: row.try_get("created_at")?,
-            })
+            Ok((
+                row.try_get("id")?,
+                UsageExportRow {
+                    diagnostics: row
+                        .try_get::<sqlx::types::Json<gateway_core::traffic::RequestDiagnostics>, _>(
+                            "diagnostics",
+                        )?
+                        .0,
+                    request_id: row.try_get("request_id")?,
+                    key_id: row.try_get("key_id")?,
+                    project_id: row.try_get("project_id")?,
+                    route: row.try_get("route")?,
+                    model: row.try_get("model")?,
+                    provider: row.try_get("provider")?,
+                    status: row.try_get("status")?,
+                    status_code: row.try_get("status_code")?,
+                    latency_ms: row.try_get("latency_ms")?,
+                    input_tokens: row.try_get("input_tokens")?,
+                    output_tokens: row.try_get("output_tokens")?,
+                    total_tokens: row.try_get("total_tokens")?,
+                    estimated_cost_usd: row.try_get("estimated_cost_usd")?,
+                    cost_source: row.try_get("cost_source")?,
+                    cost_mode: row.try_get("cost_mode")?,
+                    pricing_rule_name: row.try_get("pricing_rule_name")?,
+                    service_name: row.try_get("service_name")?,
+                    service_version: row.try_get("service_version")?,
+                    http_method: row.try_get("http_method")?,
+                    endpoint_path: row.try_get("endpoint_path")?,
+                    endpoint_template: row.try_get("endpoint_template")?,
+                    task_id: row.try_get("task_id")?,
+                    run_id: row.try_get("run_id")?,
+                    trace_id: row.try_get("trace_id")?,
+                    fallback_count: row.try_get("fallback_count")?,
+                    guardrail_action_count: row.try_get("guardrail_action_count")?,
+                    created_at: row.try_get("created_at")?,
+                },
+            ))
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()
         .map_err(|_| GatewayError::StoreUnavailable)
@@ -7110,33 +7324,6 @@ async fn enrich_usage_summary(
     query: &UsageQuery,
     summary: &mut UsageSummary,
 ) -> GatewayResult<()> {
-    let mut builder = QueryBuilder::<Postgres>::new(
-        r#"
-        SELECT
-            COUNT(*) FILTER (WHERE status_code = 403)::bigint,
-            COUNT(*) FILTER (WHERE status_code = 429)::bigint,
-            COUNT(*) FILTER (WHERE status_code = 402)::bigint,
-            COUNT(*) FILTER (WHERE estimated_cost >=
-        "#,
-    );
-    builder.push_bind(query.min_cost_usd.unwrap_or(1.0).max(0.0));
-    builder.push(
-        r#")::bigint
-        FROM usage_events
-        "#,
-    );
-    append_usage_filters(&mut builder, query);
-    let (
-        policy_denial_count,
-        rate_limit_denial_count,
-        budget_denial_count,
-        expensive_request_count,
-    ) = builder
-        .build_query_as::<(i64, i64, i64, i64)>()
-        .fetch_one(pool)
-        .await
-        .map_err(|_| GatewayError::StoreUnavailable)?;
-
     let mut guardrail_builder = QueryBuilder::<Postgres>::new(
         r#"
         SELECT COUNT(DISTINCT u.request_id)::bigint
@@ -7148,6 +7335,11 @@ async fn enrich_usage_summary(
         "#,
     );
     append_usage_filters_with_alias(&mut guardrail_builder, query, "u");
+    if let Some(cursor) = query.cursor.as_deref().filter(|value| *value != "start") {
+        let cursor = UsageCursor::decode(cursor)?;
+        append_usage_snapshot(&mut guardrail_builder, &cursor.snapshot, "u");
+        append_usage_snapshot(&mut guardrail_builder, &cursor.snapshot, "g");
+    }
     guardrail_builder.push(" AND g.action = 'block'");
     summary.guardrail_block_count = guardrail_builder
         .build_query_scalar::<i64>()
@@ -7155,10 +7347,6 @@ async fn enrich_usage_summary(
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?;
 
-    summary.policy_denial_count = policy_denial_count;
-    summary.rate_limit_denial_count = rate_limit_denial_count;
-    summary.budget_denial_count = budget_denial_count;
-    summary.expensive_request_count = expensive_request_count;
     Ok(())
 }
 
@@ -8360,12 +8548,14 @@ impl gateway_core::traffic::TrafficStore for PostgresStore {
         &self,
         request: &gateway_core::traffic::TrafficRequest,
     ) -> GatewayResult<()> {
-        sqlx::query("INSERT INTO request_traffic (id, instance_id, request_id, started_at, project_id, key_id, service, client_status, failed, record) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO UPDATE SET record = EXCLUDED.record, failed = EXCLUDED.failed, client_status = EXCLUDED.client_status")
+        sqlx::query("INSERT INTO request_traffic (id, instance_id, request_id, started_at, project_id, key_id, service, client_status, failed, record, completed_at, protocol) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO UPDATE SET record = EXCLUDED.record, failed = EXCLUDED.failed, client_status = EXCLUDED.client_status, completed_at = EXCLUDED.completed_at, protocol = EXCLUDED.protocol")
             .bind(request.id).bind(&request.instance_id).bind(&request.request_id)
             .bind(request.started_at).bind(request.project_id).bind(request.key_id)
             .bind(&request.service).bind(request.client_status.map(i32::from))
             .bind(request.diagnostics.failure_code.is_some())
-            .bind(sqlx::types::Json(request)).execute(&self.pool).await
+            .bind(sqlx::types::Json(request)).bind(request.completed_at)
+            .bind((request.protocol() != "unknown").then_some(request.protocol()))
+            .execute(&self.pool).await
             .map_err(|_| GatewayError::StoreUnavailable)?;
         Ok(())
     }
@@ -8375,6 +8565,12 @@ impl gateway_core::traffic::TrafficStore for PostgresStore {
         query: gateway_core::traffic::TrafficQuery,
     ) -> GatewayResult<Vec<gateway_core::traffic::TrafficRequest>> {
         query.validate()?;
+        let completed_time = query.time_basis.as_deref() == Some("completed");
+        let time_column = if completed_time {
+            "completed_at"
+        } else {
+            "started_at"
+        };
         let mut sql =
             QueryBuilder::<Postgres>::new("SELECT record FROM request_traffic WHERE TRUE");
         if let Some(value) = query.id {
@@ -8392,6 +8588,22 @@ impl gateway_core::traffic::TrafficStore for PostgresStore {
         if let Some(value) = query.key_id {
             sql.push(" AND key_id = ").push_bind(value);
         }
+        if let Some(value) = query.protocol {
+            let legacy_protocol = "CASE WHEN record #>> '{diagnostics,protocol}' IN ('http','websocket') THEN record #>> '{diagnostics,protocol}' WHEN jsonb_typeof(record #> '{diagnostics,websocket}') = 'object' THEN 'websocket' ELSE NULL END";
+            if value == "unknown" {
+                sql.push(" AND protocol IS NULL AND (")
+                    .push(legacy_protocol)
+                    .push(") IS NULL");
+            } else {
+                sql.push(" AND (protocol = ")
+                    .push_bind(value.clone())
+                    .push(" OR (protocol IS NULL AND (")
+                    .push(legacy_protocol)
+                    .push(") = ")
+                    .push_bind(value)
+                    .push("))");
+            }
+        }
         if let Some(value) = query.status {
             sql.push(" AND client_status = ")
                 .push_bind(i32::from(value));
@@ -8405,23 +8617,36 @@ impl gateway_core::traffic::TrafficStore for PostgresStore {
         }
         // Default lookback bounds ordinary queries; operators can specify a range.
         if query.id.is_none() || query.from.is_some() {
-            sql.push(" AND started_at >= ").push_bind(
-                query
-                    .from
-                    .unwrap_or_else(|| chrono::Utc::now() - chrono::Duration::days(1)),
-            );
+            sql.push(" AND ")
+                .push(time_column)
+                .push(" >= ")
+                .push_bind(query.from.unwrap_or_else(|| {
+                    chrono::Utc::now()
+                        - if completed_time {
+                            chrono::Duration::minutes(30)
+                        } else {
+                            chrono::Duration::days(1)
+                        }
+                }));
         }
         if let Some(value) = query.to {
-            sql.push(" AND started_at <= ").push_bind(value);
+            sql.push(" AND ")
+                .push(time_column)
+                .push(" <= ")
+                .push_bind(value);
         }
         if let Some((time, id)) = query.before.zip(query.before_id) {
-            sql.push(" AND (started_at, id) < (")
+            sql.push(" AND (")
+                .push(time_column)
+                .push(", id) < (")
                 .push_bind(time)
                 .push(",")
                 .push_bind(id)
                 .push(")");
         }
-        sql.push(" ORDER BY started_at DESC, id DESC LIMIT ")
+        sql.push(" ORDER BY ")
+            .push(time_column)
+            .push(" DESC, id DESC LIMIT ")
             .push_bind(query.limit.unwrap_or(100));
         let rows = sql
             .build()
@@ -8513,6 +8738,171 @@ mod tests {
             .build()
             .sql()
             .ends_with("ORDER BY u.created_at ASC, u.request_id ASC, u.id ASC"));
+    }
+
+    #[tokio::test]
+    async fn usage_pool_bounds_server_work_without_reserving_primary_connections() {
+        let Ok(url) = std::env::var("DATABASE_URL") else {
+            return;
+        };
+        let store = PostgresStore::connect(&url).await.unwrap();
+        let before: String = sqlx::query_scalar("SHOW statement_timeout")
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+        let primary_plan_mode: String = sqlx::query_scalar("SHOW plan_cache_mode")
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+        let mut leases = Vec::new();
+        for _ in 0..4 {
+            let mut connection = store.usage_pool.acquire().await.unwrap();
+            let timeout: String = sqlx::query_scalar("SHOW statement_timeout")
+                .fetch_one(&mut *connection)
+                .await
+                .unwrap();
+            assert_eq!(timeout, "15s");
+            let plan_mode: String = sqlx::query_scalar("SHOW plan_cache_mode")
+                .fetch_one(&mut *connection)
+                .await
+                .unwrap();
+            assert_eq!(plan_mode, "force_custom_plan");
+            // Cross PostgreSQL's five-custom-plan decision point on every
+            // analytics connection, without depending on timing or table size.
+            for value in 0..6_i64 {
+                let actual: i64 = sqlx::query_scalar("SELECT $1::bigint AS usage_plan_probe")
+                    .bind(value)
+                    .fetch_one(&mut *connection)
+                    .await
+                    .unwrap();
+                assert_eq!(actual, value);
+            }
+            let (generic, custom): (i64, i64) = sqlx::query_as(
+                "SELECT generic_plans, custom_plans FROM pg_prepared_statements WHERE statement = 'SELECT $1::bigint AS usage_plan_probe'",
+            )
+            .fetch_one(&mut *connection)
+            .await
+            .unwrap();
+            assert_eq!((generic, custom), (0, 6));
+            leases.push(connection);
+        }
+        assert!(store.usage_pool.try_acquire().is_none());
+        let after: String = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            sqlx::query_scalar("SHOW statement_timeout").fetch_one(store.pool()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            before, after,
+            "Usage must not alter primary connection deadlines"
+        );
+        let after_plan_mode: String = sqlx::query_scalar("SHOW plan_cache_mode")
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+        assert_eq!(primary_plan_mode, after_plan_mode);
+        // Exercise the same PostgreSQL timeout setting with a short local test
+        // override; SQL cancellation must be enforced by the server itself.
+        sqlx::query("BEGIN").execute(&mut *leases[0]).await.unwrap();
+        sqlx::query("SET LOCAL statement_timeout = '25ms'")
+            .execute(&mut *leases[0])
+            .await
+            .unwrap();
+        let error = sqlx::query("SELECT pg_sleep(1)")
+            .execute(&mut *leases[0])
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error
+                .as_database_error()
+                .and_then(|error| error.code())
+                .as_deref(),
+            Some("57014")
+        );
+        sqlx::query("ROLLBACK")
+            .execute(&mut *leases[0])
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn usage_query_plan_bounds_guardrail_work_to_the_selected_page() {
+        use sqlx::Execute;
+        let Ok(url) = std::env::var("DATABASE_URL") else {
+            return;
+        };
+        let store = PostgresStore::connect(&url).await.expect("test PostgreSQL");
+        let mut connection = store.pool().acquire().await.unwrap();
+        // Session-local tables keep the scale observation isolated from other
+        // integration lanes and use the same columns/index orders as production.
+        sqlx::raw_sql("CREATE TEMP TABLE usage_events (LIKE public.usage_events INCLUDING DEFAULTS); CREATE TEMP TABLE guardrail_execution_events (LIKE public.guardrail_execution_events INCLUDING DEFAULTS); CREATE INDEX ON usage_events (created_at DESC, request_id ASC, id ASC); CREATE INDEX ON guardrail_execution_events (request_id,key_id,project_id);")
+            .execute(&mut *connection).await.unwrap();
+        sqlx::query("INSERT INTO usage_events (request_id,key_id,project_id,route,provider,status,status_code,latency_ms,created_at) SELECT 'scale-'||n, '00000000-0000-0000-0000-000000000001'::uuid, '00000000-0000-0000-0000-000000000002'::uuid, '/v1/messages','litellm','success',200,10,now()-n*interval '1 millisecond' FROM generate_series(1,100000) n")
+            .execute(&mut *connection).await.unwrap();
+        sqlx::query("INSERT INTO guardrail_execution_events (request_id,key_id,project_id,guardrail_name,mode,action,failure_policy,latency_ms) SELECT request_id,key_id,project_id,'test','enforce','allow','closed',1 FROM usage_events CROSS JOIN generate_series(1,3)")
+            .execute(&mut *connection).await.unwrap();
+        sqlx::raw_sql("ANALYZE usage_events; ANALYZE guardrail_execution_events;")
+            .execute(&mut *connection)
+            .await
+            .unwrap();
+        let query = UsageQuery::default();
+        let mut builder = usage_rows_page_query(&query, false, None, 50, 0);
+        let mut statement = builder.build();
+        let sql = format!(
+            "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {}",
+            statement.sql()
+        );
+        let arguments = statement.take_arguments().unwrap().unwrap();
+        let plan: serde_json::Value = sqlx::query_scalar_with(&sql, arguments)
+            .fetch_one(&mut *connection)
+            .await
+            .unwrap();
+        fn nodes<'a>(node: &'a serde_json::Value, result: &mut Vec<&'a serde_json::Value>) {
+            result.push(node);
+            if let Some(children) = node["Plans"].as_array() {
+                for child in children {
+                    nodes(child, result);
+                }
+            }
+        }
+        let mut all = Vec::new();
+        nodes(&plan[0]["Plan"], &mut all);
+        let scans = all
+            .iter()
+            .filter(|node| node["Relation Name"] == "guardrail_execution_events")
+            .collect::<Vec<_>>();
+        assert!(!scans.is_empty());
+        for scan in scans {
+            assert!(
+                scan["Actual Loops"].as_u64().unwrap() <= 51,
+                "guardrail work escaped the bounded page: {scan}"
+            );
+            assert!(
+                scan["Actual Rows"].as_u64().unwrap() <= 3,
+                "guardrail work scanned the ledger: {scan}"
+            );
+            assert_ne!(scan["Node Type"], "Seq Scan");
+        }
+        assert!(all.iter().any(
+            |node| node["Relation Name"] == "usage_events" && node["Node Type"] == "Index Scan"
+        ));
+        eprintln!(
+            "Usage page plan: 100000 events / 300000 guardrail actions, 50+1 rows; execution={} ms",
+            plan[0]["Execution Time"]
+        );
+        let evidence = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/monitoring-usage-query-plan.json");
+        std::fs::write(evidence, serde_json::to_vec_pretty(&serde_json::json!({"events":100000,"guardrail_actions":300000,"page_limit":50,"sql":sql,"plan":plan})).unwrap()).unwrap();
+        // TEMP tables persist on pooled connections, so remove them before the
+        // connection can return to another test/query.
+        sqlx::raw_sql(
+            "DROP TABLE pg_temp.guardrail_execution_events; DROP TABLE pg_temp.usage_events;",
+        )
+        .execute(&mut *connection)
+        .await
+        .unwrap();
     }
 
     #[test]
