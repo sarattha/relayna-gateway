@@ -3,7 +3,7 @@ export const brandIdentity = {
   "name": "relayna",
   "system": "Natural Connection",
   "palette": "Mulberry & Linen",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "date": "2026-10-25",
   "logo": {
     "name": "Slim Leaf",
@@ -13,7 +13,7 @@ export const brandIdentity = {
   },
   "typeface": {
     "family": "Relayna Portico",
-    "version": "0.100",
+    "version": "0.101",
     "status": "Development draft",
     "weights": [
       300,
@@ -38,7 +38,8 @@ export const brandIdentity = {
       "normal",
       "italic"
     ],
-    "lineage": "Owner-selected F3 Portico; original six-glyph study expanded into Latin and extended Latin"
+    "lineage": "Owner-selected F3 Portico; original six-glyph study expanded into Latin and extended Latin",
+    "construction": "F3 filled contours, straight-sided bowls, flat terminals, optical stem zones; double-storey a in upright and italic"
   },
   "taglines": {
     "relayna": "Connected work. Clear direction.",
@@ -60,7 +61,7 @@ export const brandIdentity = {
     "Visual evidence with honest unknown states",
     "One family across Gateway, SDK and Studio"
   ],
-  "status": "Selected Portico typography for Relayna and Gateway; Round retained for SDK and Studio. Both original families are development version 0.100.",
+  "status": "Corrected F3 architecture throughout Portico 0.101 for Relayna/Gateway; Round 0.100 retained for SDK/Studio.",
   "campaign": {
     "name": "Open Signal",
     "selectedBannerDirections": {

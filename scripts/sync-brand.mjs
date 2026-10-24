@@ -28,8 +28,8 @@ await copy("source/pictograms.json", "pictograms.json");
 await copy("dist/tokens/resolved.json", "tokens.json");
 await copy("dist/tokens/design-tokens.json", "design-tokens.json");
 await copy("dist/css/tokens.css", "tokens.css");
-await copy("dist/fonts/RelaynaPortico-Variable.woff2", "fonts/RelaynaPortico-0.100.woff2");
-await copy("dist/fonts/RelaynaPortico-VariableItalic.woff2", "fonts/RelaynaPortico-Italic-0.100.woff2");
+await copy("dist/fonts/RelaynaPortico-Variable.woff2", "fonts/RelaynaPortico-0.101.woff2");
+await copy("dist/fonts/RelaynaPortico-VariableItalic.woff2", "fonts/RelaynaPortico-Italic-0.101.woff2");
 for (const name of await readdir(path.join(source, "dist/assets/logos"))) await copy(`dist/assets/logos/${name}`, `logos/${name}`);
 for (const folder of ["pictograms", "illustrations"]) {
   for (const name of await readdir(path.join(source, "dist/assets", folder))) {

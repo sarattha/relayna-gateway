@@ -4,6 +4,9 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+- Correct the original Portico companion alphabet to follow F3’s straight-sided construction at body sizes. Adopt font 0.101/design-system 0.2.1 with fresh asset URLs, firmer Regular stems and double-storey italic a; preserve the selected Semibold wordmark.
+
+
 - Adopt the owner-selected original Relayna Portico family throughout Gateway: parent/Gateway wordmarks, UI, chart labels, documentation and banners. Self-host upright/italic variable faces with Latin and extended Latin coverage; shared design-system 0.2.0 retains Round for SDK/Studio.
 
 - Adopt the selected Open Signal banners and product pictograms from design-system 0.1.1, including Studio Runtime pulse. Update family taglines to RT1 / GT4 / DT8 / ST4 and use matching signal artwork on sign-in.

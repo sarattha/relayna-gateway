@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "source": "@relayna/design-system",
   "selection": {
     "system": "Natural Connection",
@@ -8,7 +8,7 @@
   },
   "files": [
     {
-      "sha256": "1ac2dd1c211fb16c842e33a7cff58e87e228e9fff1c3d96946ece49b4b766edd",
+      "sha256": "cce183a4984ac546cc4c0dce89ded1baba1ae0419661decef451755f63e055aa",
       "path": "identity.json"
     },
     {
@@ -16,7 +16,7 @@
       "path": "pictograms.json"
     },
     {
-      "sha256": "82e46263c7c2a8e01a7bca4be311cdf235a49fdf7cf58e790095cefceafd3e42",
+      "sha256": "fb0b88e6eed1245980c21ae9b1c69486e0cb8d3f9d5694ff641c6b6208598e4f",
       "path": "tokens.json"
     },
     {
@@ -28,12 +28,12 @@
       "path": "tokens.css"
     },
     {
-      "sha256": "3e87fe2562e4a859c910bb549eca279da72e06f2018c2368b20bb82f6e23f6dc",
-      "path": "fonts/RelaynaPortico-0.100.woff2"
+      "sha256": "1321f7482d48f1e04ef8b896a44b81cc9af8937eff01c8349446d7aeecf8a20e",
+      "path": "fonts/RelaynaPortico-0.101.woff2"
     },
     {
-      "sha256": "b7a93807b9d8c7099d1e2263b9614a9660c22e553586e62e449cc913c37c0656",
-      "path": "fonts/RelaynaPortico-Italic-0.100.woff2"
+      "sha256": "4efe5e5cdf0037745bee04449332e0f69c5e95222ba13cfb0f41b1ce6dd5d5ea",
+      "path": "fonts/RelaynaPortico-Italic-0.101.woff2"
     },
     {
       "sha256": "d45a671abc7ceb8fedceb5ba4d392711e40819019baffe075daf83c879448aa6",
@@ -80,19 +80,19 @@
       "path": "logos/relayna-dark.svg"
     },
     {
-      "sha256": "75207e5861aa74a6fd9f86e2ba27adfe183868fcfe74b8a0d5ca66c62172281c",
+      "sha256": "e98be83dd7ceb1e4499c180a0defe3394987e16e836f352a61052e8385871f16",
       "path": "logos/relayna-gateway-dark.svg"
     },
     {
-      "sha256": "957be6501c2b952a19617c9975905f2e44cc721f14ef2bb6e1022af43b699e3f",
+      "sha256": "41bfa13894fe4df39cf456322321c5c25888b53d503f571919a0398293b60d50",
       "path": "logos/relayna-gateway-light.svg"
     },
     {
-      "sha256": "ef8afe65409e1d72727c4e8f4a1e9e5a62aa93957bbbd7e44a27942d99324c44",
+      "sha256": "2b3224c5361a013395a9935d05425b8d9cde0d4f1f9b104ece6be9230600520c",
       "path": "logos/relayna-gateway-mono.svg"
     },
     {
-      "sha256": "46e8ad8bb0649990e8d8c9fd01ef052a63806e1983ae397e20f6f7595b986f2b",
+      "sha256": "a74add6916e17760aeec3dba3ffb76ff19df65bbe522e558deae99c2e6b28aa9",
       "path": "logos/relayna-gateway-white.svg"
     },
     {
@@ -236,27 +236,27 @@
       "path": "illustrations/relayna-studio-open-signal-light.svg"
     },
     {
-      "sha256": "e15caca1fdcb59b323a2fc795b486429804431da29fd1fe2991b6adafc8cd0b9",
+      "sha256": "eab6f723c8403c77fc218acfae91d7017c79930c68f800d6d7a19bd9e9835dc2",
       "path": "banners/natural-connection-family-dark.svg"
     },
     {
-      "sha256": "8f97be2218492325240f9fb74d10005d90472db5d72d1b46647028f0b1387066",
+      "sha256": "8df6352c389ee47db9694e459713afa08258066f489c2e8b41da50243c1dfbe0",
       "path": "banners/natural-connection-family-light.svg"
     },
     {
-      "sha256": "c8b101ded8d5b77f6c1a765a586ab399bfdbe4a74423c73950379bdd45ba1a3a",
+      "sha256": "e576882caef15930391b836c92062de5b01b5a0709eed89c25cdcc25a27c31d0",
       "path": "banners/open-signal-family-dark.svg"
     },
     {
-      "sha256": "da489800a3afd86e5a54f18a64d8133352d3658d00ff4a84f83d039836df9c04",
+      "sha256": "599ab224d5578912bb82141a695237c9db7021f83079151bbedacc9c96d0c4f3",
       "path": "banners/open-signal-family-light.svg"
     },
     {
-      "sha256": "fec09d975810f31eea6577781f0b9cbffc5c9add449de367a66aedcc2d2db2dd",
+      "sha256": "7b48e01ddee354b5b91284ce51692d7e46870bb22aaeab42213c12d932294fe4",
       "path": "banners/relayna-gateway-wide-dark.svg"
     },
     {
-      "sha256": "c081bee2c345e1ae965bd7c9cf67ea0862d24616c5188c3da348804d10f969db",
+      "sha256": "204a9222b40e1eb9d830b15490226a0a3ffe3ae94e52f90b127affa1b60d2279",
       "path": "banners/relayna-gateway-wide-light.svg"
     },
     {
@@ -276,11 +276,11 @@
       "path": "banners/relayna-studio-wide-light.svg"
     },
     {
-      "sha256": "570571c9799047f5025ac0d6f9e26682ab2125fa250dc43831d9720605792004",
+      "sha256": "5403870270f09bd5b403bc9e678b20c0158c890ed760399ed075cb6fa49235ec",
       "path": "banners/relayna-wide-dark.svg"
     },
     {
-      "sha256": "a90e29cd0bfa84641b97103eb58d910412f55f58007ba93c858f28ad1e2fd616",
+      "sha256": "7fae6548bd8bd1219fac88950dc4265de90a8d79fd1643f5868ac973ba07576b",
       "path": "banners/relayna-wide-light.svg"
     },
     {

@@ -5728,13 +5728,13 @@ async fn admin_ui_asset(Path(path): Path<String>) -> Response {
             "image/svg+xml",
             include_str!("static/admin-ui/microsoft-sign-in.svg"),
         ),
-        "admin-ui-RelaynaPortico-0.100.woff2" => static_binary_response(
+        "admin-ui-RelaynaPortico-0.101.woff2" => static_binary_response(
             "font/woff2",
-            include_bytes!("static/admin-ui/admin-ui-RelaynaPortico-0.100.woff2"),
+            include_bytes!("static/admin-ui/admin-ui-RelaynaPortico-0.101.woff2"),
         ),
-        "admin-ui-RelaynaPortico-Italic-0.100.woff2" => static_binary_response(
+        "admin-ui-RelaynaPortico-Italic-0.101.woff2" => static_binary_response(
             "font/woff2",
-            include_bytes!("static/admin-ui/admin-ui-RelaynaPortico-Italic-0.100.woff2"),
+            include_bytes!("static/admin-ui/admin-ui-RelaynaPortico-Italic-0.101.woff2"),
         ),
         "favicon.ico" => static_binary_response(
             "image/x-icon",
@@ -14883,8 +14883,8 @@ mod tests {
         );
 
         for (path, content_type) in [
-            ("admin-ui-RelaynaPortico-0.100.woff2", "font/woff2"),
-            ("admin-ui-RelaynaPortico-Italic-0.100.woff2", "font/woff2"),
+            ("admin-ui-RelaynaPortico-0.101.woff2", "font/woff2"),
+            ("admin-ui-RelaynaPortico-Italic-0.101.woff2", "font/woff2"),
             ("favicon.ico", "image/x-icon"),
             ("admin-ui-tabler-icons.woff2", "font/woff2"),
             ("admin-ui-tabler-icons.woff", "font/woff"),

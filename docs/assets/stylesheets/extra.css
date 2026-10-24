@@ -3,14 +3,14 @@
 
 @font-face {
   font-family: "Relayna Portico";
-  src: url("../brand/fonts/RelaynaPortico-0.100.woff2") format("woff2");
+  src: url("../brand/fonts/RelaynaPortico-0.101.woff2") format("woff2");
   font-weight: 300 700;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: "Relayna Portico";
-  src: url("../brand/fonts/RelaynaPortico-Italic-0.100.woff2") format("woff2");
+  src: url("../brand/fonts/RelaynaPortico-Italic-0.101.woff2") format("woff2");
   font-weight: 300 700;
   font-style: italic;
   font-display: swap;

@@ -48,7 +48,7 @@ The approved banner direction is **Open Signal**. Wide banners are 1600 × 600; 
 
 ## Open Signal product artwork
 
-The owner selected **RT1 / GT4 / DT8 / ST4** and Studio **C — Runtime pulse** in design-system **0.2.0**. These supporting pictograms complement the Slim Leaf master:
+The owner selected **RT1 / GT4 / DT8 / ST4** and Studio **C — Runtime pulse** in design-system **0.2.1**. These supporting pictograms complement the Slim Leaf master:
 
 | Product | Symbol | Meaning |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ Portico supplies five weights (300–700), matching italic styles, and two varia
 
 The selected six F3 glyph contours and spacing are preserved at TrueType font-unit precision in the actual Semibold font. The new companion glyphs are original drawings; the shared composition infrastructure comes from the original Relayna font tooling, not a commercial font. The reusable design-system source includes ten editable UFO masters, two designspaces, build scripts and verification evidence.
 
-Portico **0.100** is the first complete development family. Automated font checks cover 191 invariants and 32,670 FreeType rasterizations plus shaping and variable/static agreement. Manual hinting, independent type-designer review, Thai/Greek/Cyrillic alphabets and complete native-platform certification are not claimed. [Asset provenance](assets/brand/NOTICE.txt) records the source and usage status.
+Portico **0.101** is the corrected development family. Automated font checks cover 204 invariants and 32,670 FreeType rasterizations plus shaping and variable/static agreement. Manual hinting, independent type-designer review, Thai/Greek/Cyrillic alphabets and complete native-platform certification are not claimed. [Asset provenance](assets/brand/NOTICE.txt) records the source and usage status.
 
 ## Updating the snapshot
 
@@ -90,3 +90,5 @@ npm run test:react:coverage
 The sync script verifies source checksums and copies a portable snapshot under `docs/assets/brand/`. It generates the UI's native SVG components and identity constants from the exact selected artwork. Normal Gateway builds read committed files only. A future font version needs a corresponding versioned embedded-asset route so immutable browser caches cannot retain a different font under the same name.
 
 Verify all Admin and Owner views, sign-in/access states, tables and action drawers at desktop and mobile widths in both themes. Use the GET-only synthetic fixture from the [Admin Portal guide](admin-portal.md); keep production data and credentials out of captures.
+
+Portico 0.101 corrects the companion alphabet to follow F3 at body sizes: straight-sided bowls, firmer Regular stems, structured counters and a double-storey italic a. The 0.100 draft carried too much rounded construction into the remaining alphabet. The selected Semibold wordmark is preserved; versioned font URLs prevent stale draft reuse.

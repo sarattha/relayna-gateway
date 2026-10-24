@@ -105,7 +105,7 @@ Gateway belongs to one Relayna family, using the **Slim Leaf** gateway symbol, o
 
 [Brand and design-system guide](docs/brand.md) · [Logo family](docs/assets/brand/banners/natural-connection-family-light.svg) · [Dark family board](docs/assets/brand/banners/natural-connection-family-dark.svg) · [Gateway logo](docs/assets/brand/logos/relayna-gateway-light.svg)
 
-The approved **Open Signal** banners and supporting product pictograms accompany the Slim Leaf logo family. Studio uses **Runtime pulse** for its operational-control-plane role. The versioned design-system **0.2.0** snapshot is committed with this repo; builds need no external design-system checkout or remote font service. Portico is the parent/Gateway face; Round remains the SDK/Studio companion. Both are 0.100 development families. See the [brand guide](docs/brand.md) for source, usage and current limits.
+The approved **Open Signal** banners and supporting product pictograms accompany the Slim Leaf logo family. Studio uses **Runtime pulse** for its operational-control-plane role. The versioned design-system **0.2.1** snapshot is committed with this repo; builds need no external design-system checkout or remote font service. Portico is the parent/Gateway face; Round remains the SDK/Studio companion. Portico is at development version 0.101; Round remains 0.100. See the [brand guide](docs/brand.md) for source, usage and current limits.
 
 ## Repository map
 
