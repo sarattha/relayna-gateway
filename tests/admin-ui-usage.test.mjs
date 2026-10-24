@@ -19,7 +19,7 @@ function harness(respond) {
   const dom = new JSDOM('<main id="content"></main>');
   const state = { projects: [], keys: [], services: [], projectScope: "", usageFilters: {}, usageTab: "Recent requests", usagePagination: { eventsOffset: 0, timeseriesOffset: 0, serviceTimeseriesOffset: 0 } };
   const calls = [];
-  const names = ["usage", "loadUsage", "usageRequestCurrent", "usageRequestController", "loadUsageSummary", "loadUsageVisuals", "loadVisibleUsageSections", "drainUsageSections", "loadUsageSection", "bindUsageSuggestions", "usageIdentifierLabels", "usageProjectName", "usageKeyName", "usageQueryFromForm", "usageFilterValuesQueryFromForm", "usageDateRange", "usagePageSize", "usagePaginationKey", "changeUsagePage", "usagePagedTable", "tabulateUsage"];
+  const names = ["usage", "loadUsage", "usageRequestCurrent", "usageRequestController", "loadUsageSummary", "loadUsageVisuals", "loadVisibleUsageSections", "readUsage", "drainUsageReads", "loadUsageSection", "bindUsageSuggestions", "usageIdentifierLabels", "usageProjectName", "usageKeyName", "usageQueryFromForm", "usageFilterValuesQueryFromForm", "usageDateRange", "usagePageSize", "usagePaginationKey", "changeUsagePage", "usagePagedTable", "tabulateUsage"];
   const api = async (path, options = {}) => {
     calls.push({ path, options });
     if (["projects", "keys", "services"].some(name => path === `/admin-ui/admin/${name}`)) return [];
@@ -40,7 +40,7 @@ function harness(respond) {
     const usageBreakdownTable=rows=>JSON.stringify(rows), usageTimeseriesTable=usageBreakdownTable, usageServiceTimeseriesTable=usageBreakdownTable;
     const usageProjectKeyServiceHierarchy=usageBreakdownTable, unusedKeysTable=usageBreakdownTable;
     ${names.map(extract).join("\n")}
-    return {usage,loadUsage,loadUsageSummary,usageQueryFromForm,usageIdentifierLabels,usageProjectName,usageKeyName};
+    return {usage,loadUsage,loadUsageSummary,loadUsageSection,usageQueryFromForm,usageIdentifierLabels,usageProjectName,usageKeyName};
   `)(dom.window.document, dom.window.FormData, dom.window.Option, state, api, visuals);
   return { dom, document: dom.window.document, state, calls, ui };
 }
@@ -208,6 +208,52 @@ console.log('ok - chart failures preserve Usage results, bounded chart retries r
   h.dom.window.close();
 }
 console.log('ok - explicit all time and saved project/key filters survive progressive inventories; Show all bounds section concurrency');
+
+{
+  const flights = new Set();
+  let maximum = 0, aborted = 0;
+  const h = harness((path, {signal}) => new Promise((resolve, reject) => {
+    const flight = { path, finish(error) {
+      if (!flights.delete(flight)) return;
+      signal.removeEventListener('abort', cancel);
+      if (error) reject(error);
+      else resolve(path.includes('/summary?') ? {request_count:0} : {rows:[],has_more:false,limit:50,page:{limit:50,offset:0,has_more:false}});
+    } };
+    const cancel = () => { aborted += 1; flight.finish(new DOMException('Cancelled', 'AbortError')); };
+    signal.addEventListener('abort', cancel, {once:true});
+    flights.add(flight);
+    maximum = Math.max(maximum, flights.size);
+  }));
+  h.state.usageTab = null;
+  const initial = h.ui.usage();
+  await tick();
+  assert.equal(flights.size, 3, 'restored Show all shares the initial analytics budget');
+  assert.ok(h.calls.slice(-3).some(call => call.path.includes('/summary?')));
+  assert.ok(h.calls.slice(-3).some(call => call.path.includes('/events?')));
+  assert.ok(h.calls.slice(-3).some(call => call.path.includes('/sections/timeseries?')));
+  const input = h.document.querySelector('[name=route]');
+  input.value = '/v1/'; input.focus();
+  const summaryRetry = h.ui.loadUsageSummary();
+  const eventsRetry = h.ui.loadUsageSection('events', true);
+  await tick();
+  assert.equal(maximum, 3, 'summary retries, events, charts, sections and suggestions use one budget');
+  const oldCallCount = h.calls.length;
+  const reapplied = h.ui.loadUsage();
+  await tick();
+  assert.ok(aborted > 0, 'reapply aborts previous in-flight reads');
+  for (let attempt = 0; flights.size && attempt < 100; attempt += 1) {
+    [...flights][0].finish();
+    await tick();
+  }
+  await Promise.all([initial, summaryRetry, eventsRetry, reapplied]);
+  assert.equal(flights.size, 0);
+  assert.equal(maximum, 3);
+  assert.equal(h.calls.filter(call => call.path.includes('/filter-values?')).length, 0, 'the superseded queued suggestion never starts');
+  assert.ok(h.calls.slice(oldCallCount).every(call => new URL(call.path, 'http://test').searchParams.get('route') === '/v1/'), 'superseded queued breakdowns never start with the old filters');
+  assert.doesNotMatch(h.document.querySelector('#usage-results').textContent, /unavailable/);
+  h.dom.window.close();
+}
+console.log('ok - restored Show all, critical retries, charts and suggestions share one budget; reapply cancels queued work');
 
 {
   const slow = deferred();

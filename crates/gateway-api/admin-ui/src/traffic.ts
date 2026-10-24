@@ -52,7 +52,7 @@ export function trafficDuration(milliseconds) {
   return `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60 % 60)}m`;
 }
 
-export function matchesTraffic(row, filters) {
+export function matchesTraffic(row, filters, timeField = "started_at") {
   return (!filters.request_id || row.request_id.includes(filters.request_id))
     && (!filters.service || row.service === filters.service)
     && (!filters.project_id || row.project_id === filters.project_id)
@@ -60,6 +60,8 @@ export function matchesTraffic(row, filters) {
     && (!filters.failure_code || row.diagnostics.failure_code === filters.failure_code)
     && (!filters.status || String(row.client_status) === filters.status)
     && (!filters.protocol || trafficProtocol(row) === filters.protocol)
+    && (!timeField || !filters.from || Date.parse(row[timeField]) >= Date.parse(filters.from))
+    && (!timeField || !filters.to || Date.parse(row[timeField]) <= Date.parse(filters.to))
     && (filters.outcome !== "failures" || Boolean(row.diagnostics.failure_code))
     && (filters.outcome !== "active" || !row.completed)
     && (filters.outcome !== "completed" || row.completed);
@@ -98,13 +100,13 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
           <label>Client HTTP status<input name="status" type="number" min="100" max="599" placeholder="e.g. 503"></label>
           <label>Failure reason<input name="failure_code" maxlength="80" placeholder="Exact failure code"></label>
           <label>Protocol partition<select name="protocol"><option value="">All protocols</option><option value="http">HTTP / SSE</option><option value="websocket">WebSocket</option><option value="unknown">Not recorded</option></select></label>
-          <label>Window from<input name="from" type="datetime-local"></label><label>Window to<input name="to" type="datetime-local"></label>
-        </div></details>
+          <label>Window from<input name="from" type="datetime-local" aria-describedby="traffic-window-help"></label><label>Window to<input name="to" type="datetime-local" aria-describedby="traffic-window-help"></label>
+        </div><p id="traffic-window-help" class="help"></p></details>
       </form>
     </section>
     <section class="panel"><div class="panel-heading"><h3>Requests</h3><div id="traffic-pages" class="actions hidden"><button id="traffic-newest">Newest</button><button id="traffic-older">Older</button></div></div>
       <p id="traffic-summary" class="sr-only"></p><div id="traffic-counts" class="traffic-result-summary"></div><div id="traffic-failure-groups" class="actions"></div><div id="traffic-rows"></div>
-      <details class="monitor-details"><summary><i class="ti ti-info-circle" aria-hidden="true"></i>Sources & retention</summary><ul class="monitor-definitions"><li>Active HTTP/SSE and WebSocket sessions have independent retention budgets. Counts can exceed displayed rows.</li><li>Recent completed requests use completion time, default to 30 minutes, and refresh every five seconds on Newest.</li><li>Older pages and fixed end-time windows stay frozen. Saved history by arrival includes legacy records and defaults to 24 hours.</li><li>The live journal covers one process. Inspect a request for routing, timing, failure and recording details. Recording failures may only be available in live records or gateway logs.</li></ul></details>
+      <details class="monitor-details"><summary><i class="ti ti-info-circle" aria-hidden="true"></i>Sources & retention</summary><ul class="monitor-definitions"><li>Active HTTP/SSE and WebSocket sessions have independent retention budgets. Counts can exceed displayed rows.</li><li>Recent completed requests use completion time, default to 30 minutes, and refresh every five seconds on Newest.</li><li>Older pages stay frozen; fixed end-time windows freeze completed history. Saved history by arrival includes legacy records and defaults to 24 hours.</li><li>The live journal covers one process. Inspect a request for routing, timing, failure and recording details. Recording failures may only be available in live records or gateway logs.</li></ul></details>
     </section>
     <section id="traffic-detail" class="panel hidden" tabindex="-1"></section>`;
   let detailBackdrop = null, closeDetail = null, renderedDetailRow = null;
@@ -128,7 +130,14 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     if (disposed) return;
     element("traffic-warning").classList.toggle("hidden", !warning);
     element("traffic-warning").textContent = warning;
-    const visible = rows.filter((row) => matchesTraffic(row, filters));
+    element("traffic-window-help").textContent = mode === "history"
+      ? "Window filters use completion time. Blank dates show the most recent 30 minutes."
+      : mode === "active" || mode === "live"
+        ? "Window filters use request start time. Leave both blank to include old open sessions."
+        : "Window filters use request start time. Blank dates show the most recent 24 hours.";
+    // History already applies its selected time basis on the server. Local
+    // journal/active rows use request start time without hiding old completions.
+    const visible = rows.filter((row) => matchesTraffic(row, filters, isHistory() ? null : "started_at"));
     const groups = new Map();
     for (const row of visible) if (row.diagnostics.failure_code) groups.set(row.diagnostics.failure_code, (groups.get(row.diagnostics.failure_code) || 0) + 1);
     const activeCounts = mode === "active" && !cluster?.unavailable && cluster?.counts;
@@ -219,6 +228,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     try {
       const query = new URLSearchParams({ limit: "100", instance_id: selectedInstance });
       for (const key of ["request_id", "service", "project_id", "key_id", "status", "failure_code", "protocol"]) if (filters[key]) query.set(key, filters[key]);
+      for (const key of ["from", "to"]) if (filters[key]) query.set(key, new Date(filters[key]).toISOString());
       if (filters.outcome === "failures") query.set("failures_only", "true");
       if (before) { query.set("before", before.started_at); query.set("before_id", before.id); }
       const result = await api(`/admin-ui/admin/traffic/cluster?${query}`);
@@ -262,6 +272,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     try {
       const query = new URLSearchParams({ snapshot: "true" });
       for (const key of ["request_id", "service", "project_id", "key_id", "status", "failure_code", "protocol"]) if (filters[key]) query.set(key, filters[key]);
+      for (const key of ["from", "to"]) if (filters[key]) query.set(key, new Date(filters[key]).toISOString());
       if (filters.outcome === "failures") query.set("failures_only", "true");
       const response = await fetch(`/admin-ui/admin/traffic/live?${query}`, { headers: { ...headers(), ...(cursor ? { "last-event-id": cursor } : {}) }, signal: attempt.signal, cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}; check admin access and gateway health`);
@@ -304,7 +315,7 @@ export function mountTraffic({ content, api, headers, esc, attr, table, badge, t
     try {
       const query = new URLSearchParams({ limit: "100", time_basis: mode === "legacy" ? "started" : "completed" });
       for (const key of ["request_id", "service", "project_id", "key_id", "status", "failure_code", "protocol"]) if (filters[key]) query.set(key, filters[key]);
-      if (filters.outcome === "active") throw new Error("Active requests are available in Live instance mode.");
+      if (filters.outcome === "active") throw new Error("Active requests are available in Active traffic mode.");
       if (filters.outcome === "failures") query.set("failures_only", "true");
       if (!older || !historyWindow) {
         const end = filters.to ? new Date(filters.to) : new Date();

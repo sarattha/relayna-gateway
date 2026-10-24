@@ -35,6 +35,10 @@ All notable changes to Relayna Gateway are documented in this file.
   apply the insertion boundary to guardrail counts and retain legacy rows.
 - Preserve detailed active investigations and older pages across Pause/Resume;
   mark stale, missing and incompatible fleet observations explicitly.
+- Keep all Usage page reads within one three-request browser budget, prioritizing
+  summary/events before optional Show all sections and cancelling superseded work.
+- Apply explicit Active Traffic windows to request start time across loading,
+  pagination and polling; preserve unbounded visibility of old open sessions.
 - Parse bounded Usage suggestions with numeric/boolean filters, classify
   response-detected event streams as SSE, and complete terminal monitoring
   before Accessa Redis cleanup.

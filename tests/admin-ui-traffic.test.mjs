@@ -9,6 +9,11 @@ const streamFailure = make("1", { streaming: true, diagnostics: { failure_code: 
 assert.equal(matchesTraffic(streamFailure, { outcome: "failures" }), true);
 assert.equal(matchesTraffic(streamFailure, { outcome: "active" }), false);
 assert.equal(matchesTraffic(streamFailure, { status: "503" }), false);
+const endedOldSocket = make("2", {started_at:"2026-10-01T00:00:00Z",completed_at:"2026-10-23T09:30:00Z"});
+const completionWindow = {from:"2026-10-23T09:00:00Z",to:"2026-10-23T10:00:00Z"};
+assert.equal(matchesTraffic(endedOldSocket, completionWindow), false, 'active/arrival windows use request start time');
+assert.equal(matchesTraffic(endedOldSocket, completionWindow, 'completed_at'), true, 'recent completion windows retain newly closed old sessions');
+assert.equal(matchesTraffic(endedOldSocket, {}), true, 'no active window hides no old sessions');
 const event = `event: traffic\nid: instance:1\ndata: ${JSON.stringify({ cursor: "instance:1", rows: [streamFailure] })}\n\n`;
 for (let split = 0; split < event.length; split++) {
   const first = parseTrafficFrames(event.slice(0, split));
@@ -140,7 +145,7 @@ try {
   assert.equal(query.get('failures_only'),'true');assert.equal(query.get('from'),new Date(from).toISOString());assert.equal(query.get('to'),new Date(to).toISOString());
   assert.equal(rendered.length,1);
   await apply({outcome:'all'});assert.equal(calls.at(-1).searchParams.has('failures_only'),false);
-  const callCount=calls.length;await apply({outcome:'active'});assert.equal(calls.length,callCount);assert.match(node('traffic-warning').textContent,/Active requests.*Live/);
+  const callCount=calls.length;await apply({outcome:'active'});assert.equal(calls.length,callCount);assert.match(node('traffic-warning').textContent,/Active requests.*Active traffic/);
   await apply({from:'invalid-date'});assert.match(node('traffic-warning').textContent,/History unavailable/);assert.equal(node('traffic-older').disabled,true);
   await apply({});assert.equal(calls.at(-1).searchParams.get('time_basis'),'completed');
   assert.equal(Date.parse(calls.at(-1).searchParams.get('to'))-Date.parse(calls.at(-1).searchParams.get('from')),30*60*1000);
@@ -225,6 +230,8 @@ try {
   await flush();
   assert.equal(clusterCalls[0].pathname,'/admin-ui/admin/traffic/cluster');
   assert.equal(clusterCalls[0].searchParams.get('instance_id'),'all');
+  assert.equal(clusterCalls[0].searchParams.has('from'),false);
+  assert.equal(clusterCalls[0].searchParams.has('to'),false);
   assert.equal(clusterRows.length,2,'old quiet sockets and HTTP streams are discoverable');
   assert.match(cn('traffic-summary').textContent,/Exact active before filters: HTTP\/SSE 2000 · WebSocket 10/);
   assert.match(cn('traffic-warning').textContent,/saturated/);
@@ -269,10 +276,34 @@ try {
   assert.equal(clusterCalls.at(-1).searchParams.get('instance_id'),'pod-a');
   clusterControls.set('protocol',{value:'websocket'});
   clusterControls.set('from',{value:'2026-10-23T09:00'});
+  clusterControls.set('to',{value:'2026-10-23T10:00'});
+  const activeFrom=new Date('2026-10-23T09:00').toISOString(), activeTo=new Date('2026-10-23T10:00').toISOString();
+  const windowSocket={...quietSocket,id:'window-socket',request_id:'window-socket',started_at:new Date(Date.parse(activeFrom)+30*60*1000).toISOString()};
+  clusterResult={...newestClusterResult,rows:[quietSocket,windowSocket],before:windowSocket.started_at,before_id:windowSocket.id};
+  const assertActiveWindow=()=>{
+    assert.equal(clusterCalls.at(-1).searchParams.get('from'),activeFrom);
+    assert.equal(clusterCalls.at(-1).searchParams.get('to'),activeTo);
+  };
   cn('traffic-filters').handlers.submit({preventDefault(){},currentTarget:cn('traffic-filters')});await flush();
   assert.equal(clusterCalls.at(-1).searchParams.get('protocol'),'websocket');
-  assert.equal(clusterCalls.at(-1).searchParams.has('from'),false,'completed-time filters must not hide old active connections');
+  assertActiveWindow();
   assert.equal(clusterRows.length,1);
+  assert.match(cn('traffic-window-help').textContent,/request start time/);
+  [...clusterTimers.values()][0]();await flush();assertActiveWindow();
+  cn('traffic-older').handlers.click();await flush();assertActiveWindow();
+  assert.equal(clusterCalls.at(-1).searchParams.get('before'),windowSocket.started_at);
+  cn('traffic-newest').handlers.click();await flush();assertActiveWindow();
+  clusterControls.get('to').value='';
+  cn('traffic-filters').handlers.submit({preventDefault(){},currentTarget:cn('traffic-filters')});await flush();
+  assert.equal(clusterCalls.at(-1).searchParams.get('from'),activeFrom);
+  assert.equal(clusterCalls.at(-1).searchParams.has('to'),false);
+  clusterControls.get('from').value='';clusterControls.get('to').value='2026-10-23T10:00';
+  cn('traffic-filters').handlers.submit({preventDefault(){},currentTarget:cn('traffic-filters')});await flush();
+  assert.equal(clusterCalls.at(-1).searchParams.has('from'),false);
+  assert.equal(clusterCalls.at(-1).searchParams.get('to'),activeTo);
+  clusterControls.get('to').value='';clusterResult=newestClusterResult;
+  cn('traffic-filters').handlers.submit({preventDefault(){},currentTarget:cn('traffic-filters')});await flush();
+  assert.equal(clusterRows.length,1,'clearing explicit windows restores old open sockets');
   clusterResult={...clusterResult,partial:true,instances:[{instance_id:'pod-a',stale:true}],counts:{http:0,websocket:0}};
   cn('traffic-newest').handlers.click();await flush();
   assert.match(cn('traffic-summary').textContent,/Known active/);

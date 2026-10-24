@@ -3231,10 +3231,12 @@ async function loadUsage(event) {
     ${sections.map(([section, title]) => `<h4>${esc(title)}</h4><div data-usage-section="${attr(section)}">${emptyState("Select this section to load it.")}</div>`).join("")}
   `;
   root.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
-  tabulateUsage(root);
   // Summary and rows settle independently. Neither failure replaces the other.
+  // Reserve their places before restored Show all tabs enqueue optional reads.
+  const primaryReads = [loadUsageSummary(), loadUsageSection("events")];
   void loadUsageVisuals();
-  await Promise.allSettled([loadUsageSummary(), loadUsageSection("events")]);
+  tabulateUsage(root);
+  await Promise.allSettled(primaryReads);
 }
 
 function usageRequestCurrent(load) {
@@ -3248,6 +3250,38 @@ function usageRequestController(load, section) {
   return controller;
 }
 
+function readUsage(load, path, controller, priority = false) {
+  return new Promise((resolve, reject) => {
+    const cancel = () => {
+      const index = load.queue.indexOf(job);
+      if (index >= 0) load.queue.splice(index, 1);
+      controller.signal.removeEventListener("abort", cancel);
+      reject(new DOMException("Usage read cancelled", "AbortError"));
+    };
+    const job = { cancel, async run() {
+      controller.signal.removeEventListener("abort", cancel);
+      if (controller.signal.aborted || !usageRequestCurrent(load)) { cancel(); return; }
+      load.active += 1;
+      try { resolve(await api(path, { signal: controller.signal })); }
+      catch (error) { reject(error); }
+      finally { load.active -= 1; drainUsageReads(load); }
+    } };
+    if (controller.signal.aborted || !usageRequestCurrent(load)) { cancel(); return; }
+    controller.signal.addEventListener("abort", cancel, { once: true });
+    if (priority) load.queue.unshift(job);
+    else load.queue.push(job);
+    drainUsageReads(load);
+  });
+}
+
+function drainUsageReads(load) {
+  if (!usageRequestCurrent(load)) {
+    load.queue.splice(0).forEach(job => job.cancel());
+    return;
+  }
+  while (load.active < 3 && load.queue.length) void load.queue.shift().run();
+}
+
 async function loadUsageSummary() {
   const load = usageLoad;
   if (!load || !usageRequestCurrent(load)) return;
@@ -3255,7 +3289,7 @@ async function loadUsageSummary() {
   const controller = usageRequestController(load, "summary");
   host.setAttribute("aria-busy", "true");
   try {
-    const summary = await api(`/admin-ui/admin/usage/summary?${load.query}`, { signal: controller.signal });
+    const summary = await readUsage(load, `/admin-ui/admin/usage/summary?${load.query}`, controller, true);
     if (!usageRequestCurrent(load) || controller.signal.aborted) return;
     host.innerHTML = usageSummaryView(summary, { esc, money });
   } catch (error) {
@@ -3288,9 +3322,8 @@ async function loadUsageVisuals() {
   query.set("timeseries_limit", "168");
   query.set("timeseries_offset", "0");
   host.setAttribute("aria-busy", "true");
-  load.visualizationActive = true;
   try {
-    const data = await api(`/admin-ui/admin/usage/sections/timeseries?${query}`, { signal: controller.signal });
+    const data = await readUsage(load, `/admin-ui/admin/usage/sections/timeseries?${query}`, controller);
     if (!usageRequestCurrent(load) || controller.signal.aborted) return;
     const rows = data.rows || [];
     load.chartRows = rows;
@@ -3313,9 +3346,7 @@ async function loadUsageVisuals() {
     host.querySelector("[data-retry-usage-charts]").addEventListener("click", handleAsync(() => { host.innerHTML = usageChartsShell().replace(/^<div[^>]*>|<\/div>$/g, ""); return loadUsageVisuals(); }));
   } finally {
     if (usageRequestCurrent(load)) {
-      load.visualizationActive = false;
       if (!controller.signal.aborted) host.setAttribute("aria-busy", "false");
-      drainUsageSections(load);
     }
   }
 }
@@ -3325,19 +3356,8 @@ function loadVisibleUsageSections(root) {
   if (!load || load.root !== root) return;
   root.querySelectorAll("[data-usage-section]").forEach((host) => {
     const section = host.dataset.usageSection;
-    if (!host.closest(".breakdown-section")?.hidden && !load.loaded.has(section) && !load.controllers.has(section) && !load.queue.includes(section)) load.queue.push(section);
+    if (!host.closest(".breakdown-section")?.hidden && !load.loaded.has(section) && !load.controllers.has(section)) void loadUsageSection(section);
   });
-  drainUsageSections(load);
-}
-
-function drainUsageSections(load) {
-  if (!usageRequestCurrent(load)) return;
-  while (load.active + (load.visualizationActive ? 1 : 0) < 3 && load.queue.length) {
-    const section = load.queue.shift();
-    if (load.loaded.has(section) || load.controllers.has(section)) continue;
-    load.active += 1;
-    loadUsageSection(section).finally(() => { load.active -= 1; drainUsageSections(load); });
-  }
 }
 
 async function loadUsageSection(section, force = false) {
@@ -3358,7 +3378,7 @@ async function loadUsageSection(section, force = false) {
   }
   try {
     const path = section === "events" ? "/admin-ui/admin/usage/events" : `/admin-ui/admin/usage/sections/${section}`;
-    const data = await api(`${path}?${query}`, { signal: controller.signal });
+    const data = await readUsage(load, `${path}?${query}`, controller, section === "events");
     if (!usageRequestCurrent(load) || controller.signal.aborted) return;
     load.loaded.add(section);
     if (section === "events") {
@@ -3393,8 +3413,10 @@ function bindUsageSuggestions(form) {
     let controller;
     const load = async () => {
       if (form !== document.querySelector("#usage-form")) return;
+      const usage = usageLoad;
+      if (!usage || !usageRequestCurrent(usage)) return;
       controller?.abort();
-      const current = controller = new AbortController();
+      const current = controller = usageRequestController(usage, `suggestion-${field}`);
       const status = input.parentElement.querySelector("[data-usage-suggestion-status]") || document.createElement("small");
       status.dataset.usageSuggestionStatus = field;
       status.setAttribute("role", "status");
@@ -3405,7 +3427,7 @@ function bindUsageSuggestions(form) {
         filterQuery.set("field", field);
         filterQuery.set("q", input.value.trim());
         filterQuery.set("limit", "20");
-        const data = await api(`/admin-ui/admin/usage/filter-values?${filterQuery}`, { signal: current.signal });
+        const data = await readUsage(usage, `/admin-ui/admin/usage/filter-values?${filterQuery}`, current, true);
         if (current.signal.aborted || form !== document.querySelector("#usage-form")) return;
         document.querySelector(`#usage-${field}-options`).innerHTML = (data.values || []).map((value) => `<option value="${attr(value)}"></option>`).join("");
         status.textContent = "";

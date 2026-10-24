@@ -13,6 +13,16 @@ again to clear that reason while preserving other filters. The selected reason
 remains removable even with zero matching records. **Pause** freezes the live display;
 **Resume** reconnects and reports missed updates.
 
+## Window filters
+
+In **Active** and the **Live journal**, Window from / to apply to request start
+time. Leave both blank to include old open sessions. Explicit bounds are sent
+as ISO timestamps on Active loads, Older/Newest navigation and polling; journal
+rows use the same start-time filtering. In **Recent completed**, bounds apply to
+completion time, so an old session closed within the window stays discoverable.
+**Saved history by arrival** retains request start-time browsing. Older pages
+stay frozen; a fixed end time freezes completed-history refresh.
+
 ## Request investigation
 
 The **Routing mode** column distinguishes gateway-managed requests from LiteLLM

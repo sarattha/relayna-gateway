@@ -36,6 +36,13 @@ returned breakdown groups; the underlying table remains available.
 Suggestions use a bounded prefix search after focus or typing. Event pagination
 does not reload summary or other tabs.
 
+Summary, recent-event pages, charts, breakdowns and suggestions share a
+three-request browser budget. Summary and recent events reserve their places
+before a restored Show all selection queues optional sections. Retries and
+pagination use the same budget; applying new filters cancels superseded queued
+and in-flight reads. Other viewers still share the server's bounded analytics
+capacity and can receive explicit overload responses.
+
 The existing dashboard API remains available with its released response shape.
 New section reads use `/admin-ui/admin/usage/sections/{section}` for `projects`,
 `keys`, `services`, `endpoints`, `providers`, `models`, `tasks`,
