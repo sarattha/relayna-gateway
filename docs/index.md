@@ -1,4 +1,11 @@
+<div class="brand-banner">
+  <img class="brand-light" src="assets/brand/banners/relayna-gateway-wide-light.svg" alt="relayna Gateway — One gateway. Clear control.">
+  <img class="brand-dark" src="assets/brand/banners/relayna-gateway-wide-dark.svg" alt="relayna Gateway — One gateway. Clear control.">
+</div>
+
 # Relayna Gateway
+
+**One gateway. Clear control.**
 
 Relayna Gateway is the Rust control plane and proxy for Relayna AI traffic. It gives external clients, SDKs, Studio, and Relayna workers a single governed API surface for model access instead of exposing provider credentials directly.
 
@@ -25,6 +32,8 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - LiteLLM or another OpenAI-compatible upstream.
 - A secure operator workflow for the first bootstrap token, either seeded from
   `GATEWAY_ADMIN_TOKEN` on a fresh database or generated and printed once.
+
+See [Natural Connection](brand.md) for the shared logo family, Mulberry & Linen colors and original Relayna Round typography.
 
 ## Documentation Map
 

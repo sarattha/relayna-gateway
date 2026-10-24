@@ -524,13 +524,13 @@ describe("shared console and accessibility", () => {
     const { container } = render(<ConsoleShell />);
     expect(container.querySelectorAll("[data-view]")).toHaveLength(18);
     expect(screen.getByLabelText("Operator token")).toBeTruthy();
-    expect(screen.getByText("AI control plane")).toBeTruthy();
-    const marks = container.querySelectorAll("svg.relayna-mark");
-    expect(marks).toHaveLength(2);
-    expect(marks[0].innerHTML).toBe(marks[1].innerHTML);
-    expect([...marks].every((mark) => mark.getAttribute("aria-hidden") === "true" && mark.getAttribute("focusable") === "false")).toBe(true);
-    expect(container.querySelector(".login-brand-lockup strong")?.textContent).toBe("relayna");
-    expect(container.querySelector(".brand-title strong")?.textContent).toBe("relayna");
+    expect(screen.getAllByText("One gateway. Clear control.")).toHaveLength(2);
+    expect(screen.getByText("Connect intelligence. Keep control")).toBeTruthy();
+    const logos = container.querySelectorAll("svg.relayna-logo");
+    expect(logos).toHaveLength(2);
+    expect(logos[0].innerHTML).toBe(logos[1].innerHTML);
+    expect([...logos].every((logo) => logo.getAttribute("role") === "img" && logo.getAttribute("aria-label") === "relayna Gateway" && logo.getAttribute("focusable") === "false")).toBe(true);
+    expect(container.querySelector(".natural-connection-ribbons")?.getAttribute("aria-hidden")).toBe("true");
     expect(
       container.querySelector("#entra-sign-in")?.getAttribute("href"),
     ).toBe("/admin-ui/auth/login");

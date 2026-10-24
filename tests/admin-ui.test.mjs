@@ -5,6 +5,8 @@ import "./admin-ui-owner-visuals.test.mjs";
 import "./admin-ui-global-visuals.test.mjs";
 import "./admin-ui-workflows.test.mjs";
 import "./admin-ui-theme.test.mjs";
+import "./admin-ui-brand.test.mjs";
+import "./admin-ui-docs-brand.test.mjs";
 import "./admin-ui-dark-theme.test.mjs";
 import "./admin-ui-chart-theme.test.mjs";
 import "./admin-ui-design-preview.test.mjs";
@@ -81,7 +83,7 @@ test("portal uses Entra BFF sessions and preserves explicit break-glass access",
   assert.match(microsoftSignInSvg, /fill="#f25022"[\s\S]*fill="#00a4ef"[\s\S]*fill="#7fba00"[\s\S]*fill="#ffb900"/);
   assert.match(html, /class="break-glass-login"/);
   assert.match(html, /id="access-state-sign-out"[^>]*>Sign out and switch account/);
-  assert.match(html, /Governed access\.[\s\S]*Operational clarity\./);
+  assert.match(html, /One gateway\. Clear control\./);
   assert.match(html, /Your identity tokens stay server-side/);
   assert.match(css, /\.login-primary img[\s\S]*width: 215px[\s\S]*height: auto/);
   assert.match(css, /\.login-primary \{[\s\S]*width: 100%[\s\S]*justify-content: center/);

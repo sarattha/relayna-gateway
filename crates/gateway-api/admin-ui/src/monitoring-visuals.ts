@@ -1,7 +1,7 @@
 // Shared visual primitives. Chart.js is supplied by the page controller so every
 // chart has an explicit owner and can be destroyed on navigation.
-export const monitorPalette = { teal: "#177264", blue: "#4275c5", violet: "#8c65b9", red: "#c54c59", amber: "#b77924", muted: "#e8edef", text: "#63717a" };
-const darkChartPalette = { teal: "#8FD5B2", blue: "#91B9F2", violet: "#C2A5E8", red: "#F08D99", amber: "#EDC47A", muted: "#263E34", text: "#9EB6AA", grid: "#2B4339", fill: "#143C2D", "tooltip-bg": "#213D31", "tooltip-text": "#E5EFE9" };
+export const monitorPalette = { teal: "#653D60", blue: "#426B9B", violet: "#7F5CA5", red: "#A53D64", amber: "#A45B28", muted: "#EADAE5", text: "#6E5B6A" };
+const darkChartPalette = { teal: "#E7BEDA", blue: "#9EBFED", violet: "#B9A5EB", red: "#F09AB8", amber: "#E6AC7A", muted: "#402D42", text: "#C3ADBF", grid: "#5A4259", fill: "#3B2A3D", "tooltip-bg": "#F7F0E8", "tooltip-text": "#2C1F2E" };
 const chartThemeInstallations = new WeakMap();
 
 // Chart.js resolves scriptable colors again on update, preserving the original
@@ -20,6 +20,8 @@ export function installChartTheme(Chart, document = globalThis.document) {
   let documents = chartThemeInstallations.get(Chart);
   if (!documents) { documents = new WeakMap(); chartThemeInstallations.set(Chart, documents); }
   if (documents.has(document)) return documents.get(document);
+  if (Chart.defaults?.font) Chart.defaults.font.family = '"Relayna Round", ui-rounded, system-ui, sans-serif';
+  let active = true;
   const refresh = () => {
     // Chart.js removes destroyed charts from this registry. Keeping no chart
     // collection here also avoids retaining canvases after navigation.
@@ -29,8 +31,10 @@ export function installChartTheme(Chart, document = globalThis.document) {
     }
   };
   document.addEventListener("relayna:theme-change", refresh);
+  document.fonts?.ready.then(() => { if (active) refresh(); });
   const dispose = () => {
     if (documents.get(document) !== dispose) return;
+    active = false;
     document.removeEventListener("relayna:theme-change", refresh);
     documents.delete(document);
   };
@@ -66,11 +70,11 @@ export function monitorChartOptions({ horizontal = false, money = false } = {}) 
     interaction: { mode: "index", intersect: false },
     plugins: {
       legend: { display: true, position: "bottom", align: "start", labels: { color: chartColor(monitorPalette.text, "text"), boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: "circle", padding: 18, font: { size: 11 } } },
-      tooltip: { backgroundColor: chartColor("#20373d", "tooltip-bg"), titleColor: chartColor("#fff", "tooltip-text"), bodyColor: chartColor("#fff", "tooltip-text"), footerColor: chartColor("#fff", "tooltip-text"), padding: 12, cornerRadius: 7 },
+      tooltip: { backgroundColor: chartColor("#2C1F2E", "tooltip-bg"), titleColor: chartColor("#fff", "tooltip-text"), bodyColor: chartColor("#fff", "tooltip-text"), footerColor: chartColor("#fff", "tooltip-text"), padding: 12, cornerRadius: 7 },
     },
     scales: {
-      x: { grid: { display: horizontal, color: chartColor("rgba(0,0,0,0.1)", "grid") }, border: { display: false }, ticks: { color: chartColor(monitorPalette.text, "text"), maxTicksLimit: 6, font: { size: 10 } }, ...(horizontal ? { beginAtZero: true } : {}) },
-      y: { beginAtZero: true, grid: { color: chartColor("#edf0f2", "grid"), display: !horizontal }, border: { display: false }, ticks: { color: chartColor(monitorPalette.text, "text"), font: { size: 10 }, ...(money ? { callback: value => `$${Number(value).toLocaleString()}` } : { precision: 0 }) } },
+      x: { grid: { display: horizontal, color: chartColor("#DFD0D9", "grid") }, border: { display: false }, ticks: { color: chartColor(monitorPalette.text, "text"), maxTicksLimit: 6, font: { size: 10 } }, ...(horizontal ? { beginAtZero: true } : {}) },
+      y: { beginAtZero: true, grid: { color: chartColor("#DFD0D9", "grid"), display: !horizontal }, border: { display: false }, ticks: { color: chartColor(monitorPalette.text, "text"), font: { size: 10 }, ...(money ? { callback: value => `$${Number(value).toLocaleString()}` } : { precision: 0 }) } },
     },
   };
 }
@@ -99,7 +103,7 @@ export function gatewayTrendConfig(history, { compact = false } = {}) {
   if (!history.some(point => point.rate !== null)) options.plugins.legend.display = false;
   return { type: "line", data: {
     labels: history.map(point => new Date(point.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })),
-    datasets: [{ label: "Arrivals / s", data: history.map(point => point.rate), borderColor: chartColor(monitorPalette.teal, "teal"), backgroundColor: chartColor("#e7f3ef", "fill"), fill: true, pointRadius: history.length === 1 ? 3 : 0, borderWidth: 2, tension: 0.2, spanGaps: false }],
+    datasets: [{ label: "Arrivals / s", data: history.map(point => point.rate), borderColor: chartColor(monitorPalette.teal, "teal"), backgroundColor: chartColor("#EFE4E9", "fill"), fill: true, pointRadius: history.length === 1 ? 3 : 0, borderWidth: 2, tension: 0.2, spanGaps: false }],
   }, options };
 }
 
@@ -138,7 +142,7 @@ export function usageTrendConfigs(rows, interval = "hour") {
   };
   return [
     { type: "line", data: { datasets: [
-      { label: "Successes", data: values("success_count"), borderColor: chartColor(monitorPalette.teal, "teal"), backgroundColor: chartColor("#e7f3ef", "fill"), fill: true, pointRadius: 0, tension: 0.2, borderWidth: 2, spanGaps: false },
+      { label: "Successes", data: values("success_count"), borderColor: chartColor(monitorPalette.teal, "teal"), backgroundColor: chartColor("#EFE4E9", "fill"), fill: true, pointRadius: 0, tension: 0.2, borderWidth: 2, spanGaps: false },
       { label: "Failures", data: values("failure_count"), borderColor: chartColor(monitorPalette.red, "red"), backgroundColor: chartColor(monitorPalette.red, "red"), pointRadius: 0, tension: 0.2, borderWidth: 2, spanGaps: false },
     ] }, options: options(false) },
     // Artificial line-gap markers would reduce the bar width to one millisecond.

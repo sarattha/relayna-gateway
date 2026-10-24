@@ -1,0 +1,183 @@
+{
+  "version": "0.1.0",
+  "source": "@relayna/design-system",
+  "selection": {
+    "system": "Natural Connection",
+    "palette": "Mulberry & Linen",
+    "logo": "Slim Leaf"
+  },
+  "files": [
+    {
+      "sha256": "0eb0b48d927dd87a0eaa0456c414cc1759c6fe1d1599e0e89ab482501adcdbc1",
+      "path": "identity.json"
+    },
+    {
+      "sha256": "4c90cf2e726e4364df3e872b2fe1d1640aea1395a89b59ad5b7d12568ff671fc",
+      "path": "tokens.json"
+    },
+    {
+      "sha256": "5721aa1c8e0172319a06b6e013a2cd300f6abdc3c83dbfb0fec5766aca2609f2",
+      "path": "design-tokens.json"
+    },
+    {
+      "sha256": "627436ee3e83ef989421422755490909737824a639d4b169bcfc772d7ecb7503",
+      "path": "tokens.css"
+    },
+    {
+      "sha256": "d848189921682ece1065404e1241e81e090e7658aca8ff6a453a03f1668b8e28",
+      "path": "fonts/RelaynaRound-0.100.woff2"
+    },
+    {
+      "sha256": "d45a671abc7ceb8fedceb5ba4d392711e40819019baffe075daf83c879448aa6",
+      "path": "logos/mark-current-color.svg"
+    },
+    {
+      "sha256": "6812dd3cdcfa00d8e504915b4803c32650a1db28cccd12a7a4167ba58b33b525",
+      "path": "logos/mark-dark.svg"
+    },
+    {
+      "sha256": "1c2a3641fd312301c26cb7c7ed500f9d665b573cbc2f3eb1ef2f9cb475d9964e",
+      "path": "logos/mark-light.svg"
+    },
+    {
+      "sha256": "af2b1c0374747386e4b8daaf16d81b1b1d5d540e89e29601292b08f65b0eb7cb",
+      "path": "logos/mark-mono.svg"
+    },
+    {
+      "sha256": "4202d321a7bf2010431449f32eead26b58ab8124b2abbcd68ef6e9945b23ad98",
+      "path": "logos/mark-small-current-color.svg"
+    },
+    {
+      "sha256": "5f6e0dd65e19fb72b5fa34eef99acd232c2067b6af3dfd2b12b4985327468c1a",
+      "path": "logos/mark-small-dark.svg"
+    },
+    {
+      "sha256": "51b40fdd7058cd630ebe46eaa4a41e797288b69a0ffd712695c89081101f319e",
+      "path": "logos/mark-small-light.svg"
+    },
+    {
+      "sha256": "38133a1fa9f024576602b3eefa332e36c7ea7c1d4a7d2adda2113f124fe3ceba",
+      "path": "logos/mark-small-mono.svg"
+    },
+    {
+      "sha256": "0e93141d789c2e81634ebf61108f9b7933e1bc91114525fe87efe01a51ab977b",
+      "path": "logos/mark-small-white.svg"
+    },
+    {
+      "sha256": "af8e77909cdf73ef1e2aeef1e199fb249c70d0e42c5897f4512f9d35ba00ba6b",
+      "path": "logos/mark-white.svg"
+    },
+    {
+      "sha256": "5e3c2b6d196008c540a6ebc86ce14771d83f2f39f7f4054950c053ddad628bfe",
+      "path": "logos/relayna-dark.svg"
+    },
+    {
+      "sha256": "534aa9471904e6d5edc2e4334df4cc3f88536ec08efd41d30664deb5b739c157",
+      "path": "logos/relayna-gateway-dark.svg"
+    },
+    {
+      "sha256": "814ff5bdcee6395b49a7b8a2ae17750b593947dfc28a4ed47f66ef5261a89471",
+      "path": "logos/relayna-gateway-light.svg"
+    },
+    {
+      "sha256": "7856e0453f8de95522cb03e2d1600cd8e1fc17d86faf902dce1c5f8801e0b6f6",
+      "path": "logos/relayna-gateway-mono.svg"
+    },
+    {
+      "sha256": "60c00b7fe49d9dfc83c527ce9eadd91c5bc0abdac5f250983597dcd2736c26e3",
+      "path": "logos/relayna-gateway-white.svg"
+    },
+    {
+      "sha256": "5cd7ead08137b29650af5dfba25f06354818c8a93147577580e8662990bce5cc",
+      "path": "logos/relayna-light.svg"
+    },
+    {
+      "sha256": "fc75b71206f33efafe038045c41f182c5611ab9cdd088f233c37e98427feea0d",
+      "path": "logos/relayna-mono.svg"
+    },
+    {
+      "sha256": "8383a3802f3a86e4da887d973f89b1457f8781f240153101ab536c450c9119f9",
+      "path": "logos/relayna-sdk-dark.svg"
+    },
+    {
+      "sha256": "aecb463ff0ff8ee072d6f24526e8513bb05545b7266afc39888c9b9e6304d8ec",
+      "path": "logos/relayna-sdk-light.svg"
+    },
+    {
+      "sha256": "e57c1a4c586131791152a8f769b01d4942a0794607ff35b3de2045aef6a20276",
+      "path": "logos/relayna-sdk-mono.svg"
+    },
+    {
+      "sha256": "4b622fe67d98463f17e45612b0c111d96b80daf69bd1eeea81993063bac7d953",
+      "path": "logos/relayna-sdk-white.svg"
+    },
+    {
+      "sha256": "5932cb3fc7557a38d50197288934af22483fcaeb2f60295a484fd61ad9530089",
+      "path": "logos/relayna-studio-dark.svg"
+    },
+    {
+      "sha256": "82cfcc70d21ae02ae57bc77656cfc9e3976090b28c335d08018d88487352e1ca",
+      "path": "logos/relayna-studio-light.svg"
+    },
+    {
+      "sha256": "493959c34b22ccf075e9dbc6b3d3f643b3570b110b4688d49e48089a03c75080",
+      "path": "logos/relayna-studio-mono.svg"
+    },
+    {
+      "sha256": "9a51374f4587a5c7b301052b8c88c22ffa92177991c073f69666280492096762",
+      "path": "logos/relayna-studio-white.svg"
+    },
+    {
+      "sha256": "fac650b1f6a077724f95c13f6613ef2e7847d15ad2b7c59d39f6fbd549135fbd",
+      "path": "logos/relayna-white.svg"
+    },
+    {
+      "sha256": "e153a854bcd986d365a0e9702ed64e57e0e79fedf6c17b454112aa9d5ab958cd",
+      "path": "banners/natural-connection-family-dark.svg"
+    },
+    {
+      "sha256": "9ad6f605c33b762606c01b3de12ee4eda77bb2aa1ef1270008d5aba7a51145dd",
+      "path": "banners/natural-connection-family-light.svg"
+    },
+    {
+      "sha256": "f58379cfa8c4dd5fb43a218679110dd2530a78c1b105b2976bdc79a0903a858e",
+      "path": "banners/relayna-gateway-wide-dark.svg"
+    },
+    {
+      "sha256": "c59c4fbd80d9f91ee5407c4986b4a1bc1284711e383c6c44c9ee1ff63bf58505",
+      "path": "banners/relayna-gateway-wide-light.svg"
+    },
+    {
+      "sha256": "2a863b0ae1148b7bbe2d2acffb61930b57409e23d5c754e860f60516c985cd64",
+      "path": "banners/relayna-sdk-wide-dark.svg"
+    },
+    {
+      "sha256": "dd21add5a6f1fff774e959372dd33a120e2960af376e82057ab42994610446be",
+      "path": "banners/relayna-sdk-wide-light.svg"
+    },
+    {
+      "sha256": "1fe8e1bd64b51e610ab60b911a992e22ecf911e8a82e7263a29544781657bc7b",
+      "path": "banners/relayna-studio-wide-dark.svg"
+    },
+    {
+      "sha256": "f20630a738795205d7607fc4eb0a7464307b4c4bf51b38bb45335a0c106f27d6",
+      "path": "banners/relayna-studio-wide-light.svg"
+    },
+    {
+      "sha256": "c66447e49c2a1e34cb8ad351aa5444d9eda4231d339d951ede6b3ccd9797215c",
+      "path": "banners/relayna-wide-dark.svg"
+    },
+    {
+      "sha256": "924f7ced73a218c4298d3a7cdc1ab9ea1ace5cbd3f224fffd6b4418ea1b49b09",
+      "path": "banners/relayna-wide-light.svg"
+    },
+    {
+      "sha256": "945fb33731cfbf5d156ea46476ef1c0c067793daeced35c7061915479ff223fa",
+      "path": "favicon.ico"
+    },
+    {
+      "sha256": "413e00780960701de181019854f37fb094b22da07a260577bab2f302a43da953",
+      "path": "material-tokens.css"
+    }
+  ]
+}

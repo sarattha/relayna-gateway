@@ -6,6 +6,11 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Added
 
+- Apply the shared Natural Connection identity across Admin, Owner and access
+  screens: Slim Leaf logo lockups, original Relayna Round typography, and
+  Mulberry & Linen themes for controls, charts and action drawers. Add the
+  versioned logo/banner/token snapshot, rebuild the GitHub overview, and align
+  the documentation site's light/dark appearance. See [brand guidance](docs/brand.md).
 - Add progressive, bounded Usage loading, cursor history and streaming exports;
   independent active HTTP/WebSocket tracking, completion-time Traffic history,
   and live per-instance/cluster capacity and latency observations. See

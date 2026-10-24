@@ -43,6 +43,7 @@ export function initializeThemePreference(): () => void {
       value === "system" ? (media?.matches ? "dark" : "light") : value;
     const previousTheme = document.documentElement.dataset.theme;
     document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.rnTheme = theme;
 
     const query = media;
     if (value === "system" && !removeMediaListener && query) {

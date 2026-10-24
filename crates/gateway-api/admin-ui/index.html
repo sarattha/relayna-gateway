@@ -15,11 +15,15 @@
         try {
           dark = matchMedia("(prefers-color-scheme: dark)").matches;
         } catch {}
-        document.documentElement.dataset.theme =
-          preference === "system" ? (dark ? "dark" : "light") : preference;
+        const theme = preference === "system" ? (dark ? "dark" : "light") : preference;
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.rnTheme = theme;
       })();
     </script>
     <title>Relayna Gateway Admin</title>
+    <meta name="description" content="One gateway. Clear control. Monitor and govern AI traffic with Relayna Gateway." />
+    <meta name="theme-color" content="#653D60" />
+    <link rel="icon" href="/admin-ui/favicon.ico" />
   </head>
   <body>
     <div id="root"><!--app-shell--></div>

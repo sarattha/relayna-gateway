@@ -124,8 +124,9 @@ views need the same structure or status semantics.
 ### Visual Rules
 
 - Support light and dark themes with a distinct Relayna brand mark, elevated
-  active navigation, and restrained hover shadows. Dark mode uses deep
-  green-gray surfaces with green action accents. Keep navigation labels legible
+  active navigation, and restrained hover shadows. Use the approved Natural Connection / Mulberry & Linen snapshot under
+  `docs/assets/brand/`, original Relayna Round typography and Slim Leaf logo.
+  Dark mode uses Ink/plum surfaces and Blossom action accents. Keep navigation labels legible
   and preserve distinct success, warning, error and unknown states in both modes.
 - Group navigation by Monitor, Discover, and Govern.
 - Use compact panels and tables for operational workflows.

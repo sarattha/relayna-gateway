@@ -1,33 +1,30 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const css = readFileSync(new URL("../crates/gateway-api/admin-ui/src/theme.css", import.meta.url), "utf8");
-const dark = css.match(/:root\[data-theme="dark"\]\s*\{([^}]+)\}/)[1];
-const tokens = Object.fromEntries([...dark.matchAll(/(--[\w-]+):\s*(#[0-9a-f]{6});/gi)].map(([, key, value]) => [key, value]));
+const source = JSON.parse(readFileSync(new URL("../docs/assets/brand/tokens.json", import.meta.url)));
+const aliases = readFileSync(new URL("../crates/gateway-api/admin-ui/src/design-system/tokens.css", import.meta.url), "utf8");
+const mapping = Object.fromEntries([...aliases.matchAll(/(--[\w-]+): var\(--rn-([\w-]+)\);/g)].map(([, key, role]) => [key, role]));
 function luminance(hex) {
-  const rgb = hex.slice(1).match(/../g).map(channel => parseInt(channel, 16) / 255)
-    .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
-  return rgb.reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+  return hex.slice(1).match(/../g).map(c => parseInt(c, 16) / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4).reduce((sum, c, i) => sum + c * [.2126, .7152, .0722][i], 0);
 }
-function contrast(foreground, background) {
-  const [low, high] = [luminance(foreground), luminance(background)].sort((a, b) => a - b);
-  return (high + 0.05) / (low + 0.05);
+function contrast(a, b) {
+  const [lo, hi] = [luminance(a), luminance(b)].sort((a, b) => a - b);
+  return (hi + .05) / (lo + .05);
 }
-for (const [foreground, background, minimum] of [
-  ["--foreground", "--background", 7],
-  ["--muted-foreground", "--muted", 4.5],
-  ["--primary", "--background", 4.5],
-  ["--rg-status-good", "--rg-status-good-bg", 4.5],
-  ["--rg-status-bad", "--rg-status-bad-bg", 4.5],
-  ["--rg-status-warn", "--rg-status-warn-bg", 4.5],
-  ["--rg-chart-text", "--background", 4.5],
-  ["--rg-chart-teal", "--background", 3],
-  ["--rg-chart-blue", "--background", 3],
-  ["--rg-chart-violet", "--background", 3],
-  ["--rg-chart-red", "--background", 3],
-]) {
-  assert.ok(contrast(tokens[foreground], tokens[background]) >= minimum, `${foreground} on ${background} must meet ${minimum}:1`);
+for (const mode of ["light", "dark"]) {
+  const tokens = Object.fromEntries(Object.entries(mapping).map(([key, role]) => [key, source.themes[mode][role]]));
+  for (const [foreground, background, minimum] of [
+    ["--foreground", "--background", 7], ["--muted-foreground", "--muted", 4.5],
+    ["--primary", "--background", 4.5], ["--primary-foreground", "--rg-color-control", 4.5],
+    ["--rg-color-accent-strong", "--rg-color-bg", 4.5],
+    ["--rg-status-good", "--rg-status-good-bg", 4.5], ["--rg-status-bad", "--rg-status-bad-bg", 4.5],
+    ["--rg-status-warn", "--rg-status-warn-bg", 4.5], ["--rg-chart-text", "--background", 4.5],
+    ["--rg-chart-teal", "--background", 3], ["--rg-chart-blue", "--background", 3],
+    ["--rg-chart-violet", "--background", 3], ["--rg-chart-red", "--background", 3],
+    ["--rg-color-border-strong", "--background", 3],
+  ]) {
+    assert.ok(tokens[foreground] && tokens[background], `${mode}: unresolved role`);
+    assert.ok(contrast(tokens[foreground], tokens[background]) >= minimum, `${mode}: ${foreground}/${background} >= ${minimum}:1`);
+  }
 }
-assert.ok(contrast("#F1F8F3", tokens["--rg-color-control"]) >= 4.5, "primary button labels must remain readable on dark green");
-assert.ok(contrast(tokens["--rg-color-border-strong"], "#0E1B16") >= 3, "input boundaries must remain visible");
-console.log("ok - dark green palette preserves readable text, semantic statuses, input boundaries and chart series");
+console.log("ok - Mulberry & Linen light/dark adapters preserve text, action, status, control and chart contrast");

@@ -1,0 +1,37 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import crypto from "node:crypto";
+import { JSDOM } from "jsdom";
+const read = name => readFileSync(new URL(`../${name}`, import.meta.url));
+const assets = "docs/assets/brand/";
+const manifest = JSON.parse(read(assets + "manifest.json"));
+const checksums = Object.fromEntries(manifest.files.map(({ path, sha256 }) => [path, sha256]));
+const identity = JSON.parse(read(assets + "identity.json"));
+assert.equal(identity.system, "Natural Connection");
+assert.equal(identity.palette, "Mulberry & Linen");
+assert.deepEqual(identity.anchors, { mulberry: "#653D60", rose: "#A87891", copper: "#D99E70", linen: "#F7F0E8", ink: "#2C1F2E", blossom: "#E7BEDA" });
+assert.deepEqual(identity.taglines, { relayna: "Connect intelligence. Keep control", Gateway: "One gateway. Clear control.", SDK: "Build the connection", Studio: "Shape. Inspect. Iterate" });
+for (const [file, digest] of Object.entries(checksums)) assert.equal(crypto.createHash("sha256").update(read(assets + file)).digest("hex"), digest, file);
+assert.equal(read("crates/gateway-api/admin-ui/src/design-system/brand-tokens.css").toString(), read(assets + "tokens.css").toString());
+assert.equal(crypto.createHash("sha256").update(read("crates/gateway-api/src/static/admin-ui/admin-ui-RelaynaRound-0.100.woff2")).digest("hex"), checksums["fonts/RelaynaRound-0.100.woff2"]);
+const doc = new JSDOM(read("crates/gateway-api/src/static/admin-ui/index.html").toString()).window.document;
+const master = new JSDOM(read(assets + "logos/relayna-gateway-light.svg").toString(), { contentType: "image/svg+xml" }).window.document;
+const geometry = root => [...root.querySelectorAll("path")].map(path => path.getAttribute("d"));
+const transforms = root => [...root.querySelectorAll("g[transform]")].map(group => group.getAttribute("transform"));
+assert.equal(doc.querySelectorAll(".relayna-logo").length, 2);
+for (const logo of doc.querySelectorAll(".relayna-logo")) {
+  assert.deepEqual(geometry(logo), geometry(master));
+  assert.deepEqual(transforms(logo), transforms(master));
+  assert.equal(logo.getAttribute("viewBox"), master.documentElement.getAttribute("viewBox"));
+  assert.equal(logo.getAttribute("aria-label"), "relayna Gateway");
+}
+assert.equal(doc.querySelector(".login-brand-message h1").textContent, identity.taglines.Gateway);
+assert.equal(doc.querySelector(".brand-tagline").textContent, identity.taglines.Gateway);
+assert.match(doc.querySelector(".login-brand-message p").textContent, /Connect intelligence\. Keep control/);
+assert.equal(doc.querySelector('link[rel="icon"]').getAttribute("href"), "/admin-ui/favicon.ico");
+const css = read("crates/gateway-api/src/static/admin-ui/app.css").toString();
+assert.match(css, /font-family: "?Relayna Round/);
+assert.match(css, /admin-ui-RelaynaRound-0\.100\.woff2/);
+assert.match(css, /font-weight: 300 700/);
+assert.match(css, /--rg-brand-body: var\(--rn-color-brand-frame\)/);
+console.log("ok - approved logo geometry, exact taglines, font bytes, favicon and portable CI snapshot agree");

@@ -118,10 +118,10 @@ const light = charts.map(chart => ({
   tooltip: chart.tooltip.options.backgroundColor,
   ticks: Object.values(chart.scales).filter(scale => scale.options.display).map(scale => scale.options.ticks.color),
 }));
-assert.equal(overview.getDatasetMeta(0).dataset.options.borderColor, "#087b60");
-assert.equal(overview.getDatasetMeta(0).dataset.options.backgroundColor, "#e9f3ed");
-assert.equal(owner.getDatasetMeta(0).dataset.options.borderColor, "#c54c59");
-assert.equal(usage[1].getDatasetMeta(0).data[0].options.backgroundColor, "#4275c5");
+assert.equal(overview.getDatasetMeta(0).dataset.options.borderColor, "#653D60");
+assert.equal(overview.getDatasetMeta(0).dataset.options.backgroundColor, "#EFE4E9");
+assert.equal(owner.getDatasetMeta(0).dataset.options.borderColor, "#A53D64");
+assert.equal(usage[1].getDatasetMeta(0).data[0].options.backgroundColor, "#426B9B");
 const updates = new Map();
 for (const chart of charts) {
   const update = chart.update.bind(chart);
@@ -135,24 +135,24 @@ try {
     assert.equal(chart.data.datasets, data[index].datasets);
     assert.equal(JSON.stringify(chart.data), data[index].values, "datasets, sparse gaps and observations remain untouched");
     assert.equal(chart.config.options, data[index].options, "theme updates keep option and callback identity");
-    assert.equal(chart.legend.options.labels.color, "#9EB6AA");
-    assert.equal(chart.tooltip.options.backgroundColor, "#213D31");
-    for (const key of ["titleColor", "bodyColor", "footerColor"]) assert.equal(chart.tooltip.options[key], "#E5EFE9");
+    assert.equal(chart.legend.options.labels.color, "#C3ADBF");
+    assert.equal(chart.tooltip.options.backgroundColor, "#F7F0E8");
+    for (const key of ["titleColor", "bodyColor", "footerColor"]) assert.equal(chart.tooltip.options[key], "#2C1F2E");
     for (const scale of Object.values(chart.scales).filter(scale => scale.options.display)) {
-      assert.ok(["#9EB6AA", "#F08D99", "#8FD5B2"].includes(scale.options.ticks.color));
-      if (scale.options.grid.display) assert.equal(scale.options.grid.color, "#2B4339");
-      if (scale.options.border.display) assert.equal(scale.options.border.color, "#2B4339");
+      assert.ok(["#C3ADBF", "#F09AB8", "#E7BEDA"].includes(scale.options.ticks.color));
+      if (scale.options.grid.display) assert.equal(scale.options.grid.color, "#5A4259");
+      if (scale.options.border.display) assert.equal(scale.options.border.color, "#5A4259");
     }
   }
-  assert.equal(overview.getDatasetMeta(0).dataset.options.backgroundColor, "#143C2D");
-  assert.equal(overview.getDatasetMeta(0).dataset.options.borderColor, "#8FD5B2");
-  assert.equal(overview.getDatasetMeta(1).dataset.options.borderColor, "#F08D99");
-  assert.deepEqual(latency.data.datasets.map((_, index) => latency.getDatasetMeta(index).data[0].options.backgroundColor), ["#8FD5B2", "#91B9F2", "#C2A5E8"]);
-  assert.equal(latency.scales.x.options.title.color, "#9EB6AA");
-  assert.equal(usage[1].getDatasetMeta(0).data[0].options.backgroundColor, "#91B9F2");
-  assert.equal(owner.getDatasetMeta(0).dataset.options.borderColor, "#F08D99");
-  assert.equal(owner.getDatasetMeta(1).dataset.options.borderColor, "#8FD5B2");
-  assert.ok(contexts.get(owner.canvas).strokeColors.includes("#9EB6AA"), "service version markers recolor with their points");
+  assert.equal(overview.getDatasetMeta(0).dataset.options.backgroundColor, "#3B2A3D");
+  assert.equal(overview.getDatasetMeta(0).dataset.options.borderColor, "#E7BEDA");
+  assert.equal(overview.getDatasetMeta(1).dataset.options.borderColor, "#F09AB8");
+  assert.deepEqual(latency.data.datasets.map((_, index) => latency.getDatasetMeta(index).data[0].options.backgroundColor), ["#E7BEDA", "#9EBFED", "#B9A5EB"]);
+  assert.equal(latency.scales.x.options.title.color, "#C3ADBF");
+  assert.equal(usage[1].getDatasetMeta(0).data[0].options.backgroundColor, "#9EBFED");
+  assert.equal(owner.getDatasetMeta(0).dataset.options.borderColor, "#F09AB8");
+  assert.equal(owner.getDatasetMeta(1).dataset.options.borderColor, "#E7BEDA");
+  assert.ok(contexts.get(owner.canvas).strokeColors.includes("#C3ADBF"), "service version markers recolor with their points");
   assert.equal(overview.isDatasetVisible(1), false, "legend visibility survives theme changes");
   assert.deepEqual(overview.getActiveElements().map(({ datasetIndex, index }) => ({ datasetIndex, index })), active);
   assert.equal(overview.tooltip.getActiveElements()[0].datasetIndex, 0);

@@ -11,8 +11,8 @@ features, see [Current Feature Highlights](current-features.md).
 ## Design 4.0
 
 Design 4.0 upgrades the shared shell and every Admin/Owner page with consistent
-neutral surfaces, compact typography, table spacing, field labels and semantic
-status colors. The design version is separate from the gateway release version.
+Mulberry & Linen surfaces, original Relayna Round typography, table spacing, field labels and semantic
+status colors. The design version is separate from the gateway release version. The approved Natural Connection identity, Slim Leaf logo family and exact taglines come from the [shared brand snapshot](brand.md).
 
 The sidebar uses elevated selected items and subtle lift-and-shadow
 feedback on actionable controls. Keyboard focus remains visible, and reduced
@@ -26,7 +26,7 @@ above the measurements. Wide result tables retain horizontal scrolling.
 Choose **Light**, **Dark** or **System** under **Theme** in the sidebar footer or
 on the sign-in screen. System follows the device appearance. The browser saves
 an explicit preference locally and applies it before the console paints. Dark
-mode uses deep green-gray surfaces and green accents; charts, status badges,
+mode uses Ink and plum surfaces with Blossom actions; charts, status badges,
 forms and investigation dialogs follow the selected mode. Switching appearance
 keeps the current page, filters and unsaved form values.
 
