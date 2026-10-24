@@ -275,15 +275,15 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn key_verification_leaves_the_request_executor_responsive() {
-        let raw = "rk_live_1234567890abcdef";
+        let raw = format!("{RELAYNA_KEY_PREFIX}{}", Uuid::new_v4().simple());
         let lookup = MemoryLookup {
-            value: Arc::new(Mutex::new(Some(stored(raw)))),
+            value: Arc::new(Mutex::new(Some(stored(&raw)))),
         };
         let authenticator = Authenticator::new(lookup);
         let requests = async {
             for _ in 0..4 {
                 authenticator
-                    .authenticate_raw_key(Some(raw), Utc::now())
+                    .authenticate_raw_key(Some(&raw), Utc::now())
                     .await
                     .expect("authenticated");
             }
@@ -307,12 +307,14 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_wrong_key_secret() {
+        let raw = format!("{RELAYNA_KEY_PREFIX}{}", Uuid::new_v4().simple());
+        let wrong_secret = format!("{raw}_wrong");
         let lookup = MemoryLookup {
-            value: Arc::new(Mutex::new(Some(stored("rk_live_1234567890abcdef")))),
+            value: Arc::new(Mutex::new(Some(stored(&raw)))),
         };
         assert_eq!(
             Authenticator::new(lookup)
-                .authenticate_raw_key(Some("rk_live_1234567890abcdeg"), Utc::now())
+                .authenticate_raw_key(Some(&wrong_secret), Utc::now())
                 .await
                 .unwrap_err(),
             GatewayError::InvalidVirtualKey
