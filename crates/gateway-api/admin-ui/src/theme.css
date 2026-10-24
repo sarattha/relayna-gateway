@@ -3,10 +3,18 @@
 @import "./app.css" layer(legacy);
 
 @font-face {
-  font-family: "Relayna Round";
-  src: url("../../../../docs/assets/brand/fonts/RelaynaRound-0.100.woff2") format("woff2");
+  font-family: "Relayna Portico";
+  src: url("../../../../docs/assets/brand/fonts/RelaynaPortico-0.100.woff2") format("woff2");
   font-weight: 300 700;
   font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Relayna Portico";
+  src: url("../../../../docs/assets/brand/fonts/RelaynaPortico-Italic-0.100.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: italic;
   font-display: swap;
 }
 

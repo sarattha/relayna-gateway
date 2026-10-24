@@ -20,7 +20,7 @@ export function installChartTheme(Chart, document = globalThis.document) {
   let documents = chartThemeInstallations.get(Chart);
   if (!documents) { documents = new WeakMap(); chartThemeInstallations.set(Chart, documents); }
   if (documents.has(document)) return documents.get(document);
-  if (Chart.defaults?.font) Chart.defaults.font.family = '"Relayna Round", ui-rounded, system-ui, sans-serif';
+  if (Chart.defaults?.font) Chart.defaults.font.family = '"Relayna Portico", system-ui, sans-serif';
   let active = true;
   const refresh = () => {
     // Chart.js removes destroyed charts from this registry. Keeping no chart

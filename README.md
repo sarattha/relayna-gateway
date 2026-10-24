@@ -89,7 +89,7 @@ Provider keys, operator tokens, virtual keys, Studio credentials and request pro
 
 The Relayna SDK supplies service-side task, status and workflow plumbing. Relayna Studio provides centralized operational visibility, task investigation and assessments.
 
-Gateway belongs to one Relayna family, using the **Slim Leaf** gateway symbol, original **Relayna Round** typography and **Mulberry & Linen** colors in light and dark modes.
+Gateway belongs to one Relayna family, using the **Slim Leaf** gateway symbol, original **Relayna Portico** typography and **Mulberry & Linen** colors in light and dark modes.
 
 | Identity | Tagline |
 | --- | --- |
@@ -105,7 +105,7 @@ Gateway belongs to one Relayna family, using the **Slim Leaf** gateway symbol, o
 
 [Brand and design-system guide](docs/brand.md) · [Logo family](docs/assets/brand/banners/natural-connection-family-light.svg) · [Dark family board](docs/assets/brand/banners/natural-connection-family-dark.svg) · [Gateway logo](docs/assets/brand/logos/relayna-gateway-light.svg)
 
-The approved **Open Signal** banners and supporting product pictograms accompany the Slim Leaf logo family. Studio uses **Runtime pulse** for its operational-control-plane role. The versioned design-system **0.1.1** snapshot is committed with this repo; builds need no external design-system checkout or remote font service. Relayna Round remains a 0.100 development draft. See the [brand guide](docs/brand.md) for source, usage and current limits.
+The approved **Open Signal** banners and supporting product pictograms accompany the Slim Leaf logo family. Studio uses **Runtime pulse** for its operational-control-plane role. The versioned design-system **0.2.0** snapshot is committed with this repo; builds need no external design-system checkout or remote font service. Portico is the parent/Gateway face; Round remains the SDK/Studio companion. Both are 0.100 development families. See the [brand guide](docs/brand.md) for source, usage and current limits.
 
 ## Repository map
 

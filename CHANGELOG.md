@@ -4,12 +4,14 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+- Adopt the owner-selected original Relayna Portico family throughout Gateway: parent/Gateway wordmarks, UI, chart labels, documentation and banners. Self-host upright/italic variable faces with Latin and extended Latin coverage; shared design-system 0.2.0 retains Round for SDK/Studio.
+
 - Adopt the selected Open Signal banners and product pictograms from design-system 0.1.1, including Studio Runtime pulse. Update family taglines to RT1 / GT4 / DT8 / ST4 and use matching signal artwork on sign-in.
 
 ### Added
 
 - Apply the shared Natural Connection identity across Admin, Owner and access
-  screens: Slim Leaf logo lockups, original Relayna Round typography, and
+  screens: Slim Leaf logo lockups, original Relayna Portico typography, and
   Mulberry & Linen themes for controls, charts and action drawers. Add the
   versioned logo/banner/token snapshot, rebuild the GitHub overview, and align
   the documentation site's light/dark appearance. See [brand guidance](docs/brand.md).

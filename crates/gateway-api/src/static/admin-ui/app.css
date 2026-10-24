@@ -370,7 +370,7 @@
     --rn-primitive-chart-night-copper: #e6ac7a;
     --rn-primitive-chart-night-blue: #9ebfed;
     --rn-primitive-chart-night-rose: #f09ab8;
-    --rn-font-family-sans: "Relayna Round", ui-rounded, system-ui, sans-serif;
+    --rn-font-family-sans: "Relayna Portico", system-ui, sans-serif;
     --rn-font-family-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
     --rn-font-weight-light: 300;
     --rn-font-weight-regular: 400;
@@ -416,6 +416,7 @@
     --rn-motion-lift: -2px;
     --rn-z-index-menu: 20;
     --rn-z-index-sticky: 10;
+    --rn-font-family-round: "Relayna Round", ui-rounded, system-ui, sans-serif;
   }
 
   :root, [data-rn-theme="light"] {
@@ -4632,6 +4633,10 @@
     text-transform: lowercase;
   }
 
+  .italic {
+    font-style: italic;
+  }
+
   .shadow-lg {
     --tw-shadow: 0 10px 15px -3px var(--tw-shadow-color, #0000001a), 0 4px 6px -4px var(--tw-shadow-color, #0000001a);
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
@@ -4710,10 +4715,18 @@
 }
 
 @font-face {
-  font-family: Relayna Round;
-  src: url("/admin-ui/admin-ui-RelaynaRound-0.100.woff2") format("woff2");
+  font-family: Relayna Portico;
+  src: url("/admin-ui/admin-ui-RelaynaPortico-0.100.woff2") format("woff2");
   font-weight: 300 700;
   font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Relayna Portico;
+  src: url("/admin-ui/admin-ui-RelaynaPortico-Italic-0.100.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: italic;
   font-display: swap;
 }
 

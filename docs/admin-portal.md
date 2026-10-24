@@ -11,7 +11,7 @@ features, see [Current Feature Highlights](current-features.md).
 ## Design 4.0
 
 Design 4.0 upgrades the shared shell and every Admin/Owner page with consistent
-Mulberry & Linen surfaces, original Relayna Round typography, table spacing, field labels and semantic
+Mulberry & Linen surfaces, original Relayna Portico typography, table spacing, field labels and semantic
 status colors. The design version is separate from the gateway release version. The approved Natural Connection identity, Slim Leaf logo family and exact taglines come from the [shared brand snapshot](brand.md).
 
 The sidebar uses elevated selected items and subtle lift-and-shadow

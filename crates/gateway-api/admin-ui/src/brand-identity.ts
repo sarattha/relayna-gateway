@@ -3,8 +3,8 @@ export const brandIdentity = {
   "name": "relayna",
   "system": "Natural Connection",
   "palette": "Mulberry & Linen",
-  "version": "0.1.1",
-  "date": "2026-10-24",
+  "version": "0.2.0",
+  "date": "2026-10-25",
   "logo": {
     "name": "Slim Leaf",
     "lineage": "G3 / Swing Gate / refinement 3",
@@ -12,7 +12,7 @@ export const brandIdentity = {
     "smallVariantMaxPx": 24
   },
   "typeface": {
-    "family": "Relayna Round",
+    "family": "Relayna Portico",
     "version": "0.100",
     "status": "Development draft",
     "weights": [
@@ -33,7 +33,12 @@ export const brandIdentity = {
       "Extended Latin"
     ],
     "wordmarkWeight": 600,
-    "descriptorWeight": 400
+    "descriptorWeight": 400,
+    "styles": [
+      "normal",
+      "italic"
+    ],
+    "lineage": "Owner-selected F3 Portico; original six-glyph study expanded into Latin and extended Latin"
   },
   "taglines": {
     "relayna": "Connected work. Clear direction.",
@@ -55,7 +60,7 @@ export const brandIdentity = {
     "Visual evidence with honest unknown states",
     "One family across Gateway, SDK and Studio"
   ],
-  "status": "Approved Open Signal campaign and copy; original Relayna Round 0.100 remains a development draft.",
+  "status": "Selected Portico typography for Relayna and Gateway; Round retained for SDK and Studio. Both original families are development version 0.100.",
   "campaign": {
     "name": "Open Signal",
     "selectedBannerDirections": {
@@ -78,5 +83,26 @@ export const brandIdentity = {
     "Gateway": "Governed access, routing and visibility for AI and service traffic.",
     "SDK": "Service-side task publishing, worker/runtime plumbing, status delivery and workflow transport.",
     "Studio": "Central operational control plane for service registry, task search, execution graphs, monitoring, failure investigation, retries and assessments."
+  },
+  "typefaceAssignments": {
+    "relayna": "Relayna Portico",
+    "Gateway": "Relayna Portico",
+    "SDK": "Relayna Round",
+    "Studio": "Relayna Round"
+  },
+  "secondaryTypeface": {
+    "family": "Relayna Round",
+    "version": "0.100",
+    "status": "Development draft",
+    "weights": [
+      300,
+      400,
+      500,
+      600,
+      700
+    ],
+    "styles": [
+      "normal"
+    ]
   }
 } as const;

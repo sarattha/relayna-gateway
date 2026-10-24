@@ -1,6 +1,6 @@
 # Natural Connection
 
-Relayna Gateway uses the shared **Natural Connection** identity: warm, rounded and composed. The selected **Slim Leaf** gateway symbol, original **Relayna Round** typography and **Mulberry & Linen** palette belong to one family across Gateway, SDK and Studio.
+Relayna Gateway uses the shared **Natural Connection** identity: warm and composed. The selected **Slim Leaf** symbol and **Mulberry & Linen** palette connect the family. Parent Relayna and Gateway use original **Relayna Portico** typography; SDK and Studio retain **Relayna Round**.
 
 ![Natural Connection: relayna and the Gateway, SDK and Studio logo family](assets/brand/banners/natural-connection-family-light.svg){ .brand-family-board .brand-light }
 
@@ -48,7 +48,7 @@ The approved banner direction is **Open Signal**. Wide banners are 1600 × 600; 
 
 ## Open Signal product artwork
 
-The owner selected **RT1 / GT4 / DT8 / ST4** and Studio **C — Runtime pulse** in design-system **0.1.1**. These supporting pictograms complement the Slim Leaf master:
+The owner selected **RT1 / GT4 / DT8 / ST4** and Studio **C — Runtime pulse** in design-system **0.2.0**. These supporting pictograms complement the Slim Leaf master:
 
 | Product | Symbol | Meaning |
 | --- | --- | --- |
@@ -67,9 +67,13 @@ Studio is Relayna's operational control plane: service registry, task search, ex
 
 ## Typography
 
-Relayna Round provides five upright weights and a variable 300–700 axis. It includes Latin, extended Latin and Vietnamese accented Latin coverage. Semibold 600 sets the fixed wordmark; product descriptors use Regular 400. The UI self-hosts the original variable WOFF2; code and identifiers retain a system monospace stack. Charts use the same rounded face and repaint after the font loads without replacing data or canvas elements.
+**Relayna Portico** is the owner's selected F3 architectural family for Gateway and the parent Relayna identity. SDK and Studio retain **Relayna Round** as the warmer companion. The Slim Leaf symbol, palette, taglines and Runtime pulse artwork retain their approved geometry and values.
 
-The typeface remains a **0.100 development draft**. No italics, manual hinting, Thai alphabet or complete native-platform font QA is claimed. Urbane Rounded was a mood reference; no proprietary font files or outlines are shipped. [Asset provenance](assets/brand/NOTICE.txt) records the source and current font status.
+Portico supplies five weights (300–700), matching italic styles, and two variable faces. Each style has 759 glyphs / 726 encoded characters: Latin, extended Latin, Vietnamese accented Latin, combining marks, punctuation, math and currencies. Semibold 600 sets the outlined wordmark; Regular 400 sets the Gateway descriptor. UI text, chart labels and this documentation self-host the original variable WOFF2 faces. Code and identifiers retain the system monospace stack. Tabular figures align metrics; italic text uses the supplied italic binary.
+
+The selected six F3 glyph contours and spacing are preserved at TrueType font-unit precision in the actual Semibold font. The new companion glyphs are original drawings; the shared composition infrastructure comes from the original Relayna font tooling, not a commercial font. The reusable design-system source includes ten editable UFO masters, two designspaces, build scripts and verification evidence.
+
+Portico **0.100** is the first complete development family. Automated font checks cover 191 invariants and 32,670 FreeType rasterizations plus shaping and variable/static agreement. Manual hinting, independent type-designer review, Thai/Greek/Cyrillic alphabets and complete native-platform certification are not claimed. [Asset provenance](assets/brand/NOTICE.txt) records the source and usage status.
 
 ## Updating the snapshot
 

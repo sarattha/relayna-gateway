@@ -1,15 +1,17 @@
 Relayna Natural Connection — Mulberry & Linen
-Snapshot: @relayna/design-system 0.1.1, 24 October 2026.
+Snapshot: @relayna/design-system 0.2.0, 25 October 2026.
 Campaign: Open Signal; selected Studio pictogram: Runtime pulse.
 Selected symbol: G3 / Swing Gate / refinement 3 — Slim Leaf.
 
 These original Relayna identity assets are included for Gateway at the project
 owner's request. Logo geometry comes from the selected native traced master.
-Lettering is outlined from the original Relayna Round family; no Urbane font
-binary, outline or proprietary metrics are included.
+Parent/Gateway lettering uses the original Relayna Portico family, expanded from
+owner-selected F3 Bezier drawings. SDK/Studio lettering retains Relayna Round.
+No third-party font binary, outline or proprietary metrics are included.
 
-Relayna Round 0.100 is a development draft with upright Latin/extended-Latin
-coverage. Manual hinting, italics and broader native-platform QA remain open.
+Portico 0.100 supplies five weights with matching italics and two variable
+faces, with Latin/extended-Latin coverage. It is a complete development family;
+manual hinting and complete native-platform font QA remain open.
 A separate public distribution license for the typeface/brand has not been
 selected in the source design-system project. This provenance notice does not
 replace the repository's software license or select a new brand/font license.

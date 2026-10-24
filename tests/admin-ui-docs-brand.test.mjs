@@ -31,7 +31,7 @@ await new Promise(resolve => setImmediate(resolve));
 assert.equal(themes[0].theme, "base");
 assert.equal(themes[0].securityLevel, "strict");
 assert.equal(themes[0].themeVariables.primaryTextColor, "#2C1F2E");
-assert.match(themes[0].themeVariables.fontFamily, /Relayna Round/);
+assert.match(themes[0].themeVariables.fontFamily, /Relayna Portico/);
 colors.text = "#F7F0E8";
 window.document.body.dataset.mdColorScheme = "slate";
 await new Promise(resolve => setImmediate(resolve));

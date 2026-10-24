@@ -684,8 +684,7 @@
     "font-family-sans": {
       "$type": "fontFamily",
       "$value": [
-        "Relayna Round",
-        "ui-rounded",
+        "Relayna Portico",
         "system-ui",
         "sans-serif"
       ]
@@ -976,6 +975,15 @@
     "z-index-sticky": {
       "$type": "number",
       "$value": 10
+    },
+    "font-family-round": {
+      "$type": "fontFamily",
+      "$value": [
+        "Relayna Round",
+        "ui-rounded",
+        "system-ui",
+        "sans-serif"
+      ]
     }
   },
   "themes": {

@@ -33,7 +33,7 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - A secure operator workflow for the first bootstrap token, either seeded from
   `GATEWAY_ADMIN_TOKEN` on a fresh database or generated and printed once.
 
-See [Natural Connection](brand.md) for the shared logo family, Mulberry & Linen colors and original Relayna Round typography.
+See [Natural Connection](brand.md) for the shared logo family, Mulberry & Linen colors and original Relayna Portico typography.
 
 ## Documentation Map
 

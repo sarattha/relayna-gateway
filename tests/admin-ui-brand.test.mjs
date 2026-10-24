@@ -13,7 +13,12 @@ assert.deepEqual(identity.anchors, { mulberry: "#653D60", rose: "#A87891", coppe
 assert.deepEqual(identity.taglines, { relayna: "Connected work. Clear direction.", Gateway: "Route intelligence. Keep control.", SDK: "Your logic. Connected execution.", Studio: "Make distributed work visible." });
 for (const [file, digest] of Object.entries(checksums)) assert.equal(crypto.createHash("sha256").update(read(assets + file)).digest("hex"), digest, file);
 assert.equal(read("crates/gateway-api/admin-ui/src/design-system/brand-tokens.css").toString(), read(assets + "tokens.css").toString());
-assert.equal(crypto.createHash("sha256").update(read("crates/gateway-api/src/static/admin-ui/admin-ui-RelaynaRound-0.100.woff2")).digest("hex"), checksums["fonts/RelaynaRound-0.100.woff2"]);
+for (const face of ["RelaynaPortico-0.100", "RelaynaPortico-Italic-0.100"]) {
+  assert.equal(crypto.createHash("sha256").update(read(`crates/gateway-api/src/static/admin-ui/admin-ui-${face}.woff2`)).digest("hex"), checksums[`fonts/${face}.woff2`]);
+}
+assert.equal(identity.typeface.family, "Relayna Portico");
+assert.deepEqual(identity.typeface.styles, ["normal", "italic"]);
+assert.deepEqual(identity.typefaceAssignments, { relayna: "Relayna Portico", Gateway: "Relayna Portico", SDK: "Relayna Round", Studio: "Relayna Round" });
 const doc = new JSDOM(read("crates/gateway-api/src/static/admin-ui/index.html").toString()).window.document;
 const master = new JSDOM(read(assets + "logos/relayna-gateway-light.svg").toString(), { contentType: "image/svg+xml" }).window.document;
 const geometry = root => [...root.querySelectorAll("path")].map(path => path.getAttribute("d"));
@@ -30,12 +35,14 @@ assert.equal(doc.querySelector(".brand-tagline").textContent, identity.taglines.
 assert.match(doc.querySelector(".login-brand-message p").textContent, /Connected work\. Clear direction\./);
 assert.equal(doc.querySelector('link[rel="icon"]').getAttribute("href"), "/admin-ui/favicon.ico");
 const css = read("crates/gateway-api/src/static/admin-ui/app.css").toString();
-assert.match(css, /font-family: "?Relayna Round/);
-assert.match(css, /admin-ui-RelaynaRound-0\.100\.woff2/);
+assert.match(css, /font-family: "?Relayna Portico/);
+assert.match(css, /admin-ui-RelaynaPortico-0\.100\.woff2/);
 assert.match(css, /font-weight: 300 700/);
+assert.match(css, /admin-ui-RelaynaPortico-Italic-0\.100\.woff2/);
+assert.match(css, /font-style: italic/);
 assert.match(css, /--rg-brand-body: var\(--rn-color-brand-frame\)/);
 
-assert.equal(identity.version, "0.1.1");
+assert.equal(identity.version, "0.2.0");
 assert.equal(identity.campaign.name, "Open Signal");
 assert.equal(identity.campaign.studioPictogram, "Runtime pulse");
 assert.deepEqual(identity.campaign.selectedTaglineIds, { relayna: "RT1", Gateway: "GT4", SDK: "DT8", Studio: "ST4" });
