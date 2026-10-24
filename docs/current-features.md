@@ -8,9 +8,9 @@ partial cluster observations. See [Gateway monitoring and scalable Usage](operat
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.49` feature set.
+This page summarizes the **v1.0.0** feature set. Start with the [current console tour](v1.0.0.md), including the approved Natural Connection identity, Portico typography and all three operational workspaces.
 
-New in 0.1.49: build/test tooling requires patched Node.js 24.x/26.x versions
+Retained from 0.1.49: build/test tooling requires patched Node.js 24.x/26.x versions
 for CVE-2026-111497. Local, test-harness, and benchmark helpers use Node.js
 22.23.4. See [tooling setup](getting-started.md#install-tools) and
 [upgrade instructions](deployment.md#upgrade-to-0149).

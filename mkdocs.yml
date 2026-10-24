@@ -34,6 +34,7 @@ theme:
   font: false
 nav:
   - Overview: index.md
+  - 1.0 Console Tour: v1.0.0.md
   - Architecture: architecture.md
   - Database: database.md
   - Redis Keys: redis.md
@@ -61,6 +62,7 @@ nav:
   - Security Exceptions: security-exceptions.md
   - Benchmarks:
       - Release benchmark history: benchmarks/index.md
+      - v1.0.0 candidate: benchmarks/v1.0.0.md
       - v0.1.49 results: benchmarks/v0.1.49.md
   - Releases: releases.md
 markdown_extensions:

@@ -5132,11 +5132,25 @@ async fn usage_events(
     .await
 }
 
+#[derive(Deserialize)]
+struct UsageFilterSelectionQuery {
+    field: String,
+    q: Option<String>,
+}
+
 async fn usage_filter_values(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(query): Query<UsageFilterValuesQuery>,
+    Query(usage): Query<UsageQuery>,
+    Query(selection): Query<UsageFilterSelectionQuery>,
 ) -> Response {
+    // Parse flat query values directly so numeric and boolean Usage filters
+    // retain serde_urlencoded's conversions instead of flatten's string buffer.
+    let query = UsageFilterValuesQuery {
+        field: selection.field,
+        q: selection.q,
+        usage,
+    };
     usage_read_query(headers, &state, |store| async move {
         store.usage_filter_values(query).await
     })
@@ -14260,6 +14274,53 @@ mod tests {
                 assert_eq!(text.matches("request_id,key_id,").count(), 1);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn usage_suggestions_parse_numeric_boolean_and_scoped_filters() {
+        let store = default_store();
+        let project = Uuid::new_v4();
+        let mut event = test_usage_event_for_project("suggestions", project);
+        event.model = Some("gpt-scoped".into());
+        event.route = Route::ChatCompletions;
+        event.endpoint_template = Some("/shared".into());
+        event.status_code = 200;
+        let mut other = event.clone();
+        other.project_id = Some(Uuid::new_v4());
+        other.model = Some("gpt-other-project".into());
+        store.events.lock().unwrap().extend([event, other]);
+        let app = router_with_state(test_state(store));
+        for (field, prefix, expected) in [
+            ("model", "gpt", "gpt-scoped"),
+            ("route", "/v1", "/v1/chat/completions"),
+            ("endpoint", "/sha", "/shared"),
+        ] {
+            let path = format!(
+                "/admin-ui/admin/usage/filter-values?field={field}&q={prefix}&limit=20&offset=0&status_code=200&stream=false&project_id={project}"
+            );
+            assert_eq!(
+                admin_get(app.clone(), &path, None).await.status(),
+                StatusCode::UNAUTHORIZED
+            );
+            let response = admin_get(app.clone(), &path, Some(TEST_OPERATOR_TOKEN)).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(value["field"], field);
+            assert_eq!(value["values"], serde_json::json!([expected]));
+        }
+        assert_eq!(
+            admin_get(
+                app,
+                "/admin-ui/admin/usage/filter-values?field=model&q=gpt&limit=invalid",
+                Some(TEST_OPERATOR_TOKEN)
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
     }
 
     #[tokio::test]

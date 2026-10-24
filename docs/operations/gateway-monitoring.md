@@ -1,5 +1,7 @@
 # Gateway monitoring and scalable Usage
 
+See the [illustrated v1.0 console tour](../v1.0.0.md#monitor-from-fleet-pressure-to-one-request) for the current Health, Traffic and Usage screens in both themes.
+
 **Monitor → Health** includes a live Gateway section; **Monitor → Traffic**
 includes a compact capacity strip. Select a process or all reporting instances,
 and a one-, five-, or fifteen-minute window. Measurements refresh every two

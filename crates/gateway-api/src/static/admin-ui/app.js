@@ -20636,7 +20636,7 @@ function ConsoleShell() {
 										children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 											className: "version-indicator",
 											"aria-label": "Current Relayna Gateway version",
-											children: "v0.1.49"
+											children: "v1.0.0"
 										})
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", {
@@ -41756,7 +41756,7 @@ async function settings() {
     <section class="panel">
       <div class="panel-heading"><h3>Security and release posture</h3><span class="subtle">Static operator references</span></div>
       <div class="kv">
-        <div><strong>Release target</strong><span>${badge("v0.1.49")}</span></div>
+        <div><strong>Release target</strong><span>${badge("v1.0.0")}</span></div>
         <div><strong>Admin contracts</strong><span>Preserve <code>/admin-ui</code> and <code>/admin-ui/admin/*</code> unless an implementation strategy changes the boundary.</span></div>
         <div><strong>Supply-chain exceptions</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/docs/security-exceptions.md" target="_blank" rel="noreferrer">docs/security-exceptions.md</a></span></div>
         <div><strong>Release metadata</strong><span><a href="https://github.com/sarattha/relayna-gateway/blob/main/scripts/validate-release-metadata.py" target="_blank" rel="noreferrer">validate-release-metadata.py</a></span></div>
@@ -43089,6 +43089,8 @@ function usageServiceTimeseriesTable(rows) {
 }
 async function health() {
 	const renderId = ++renderGeneration;
+	stopGatewayStatus?.();
+	stopGatewayStatus = null;
 	const gatewayHost = document.createElement("div");
 	gatewayHost.style.minWidth = "0";
 	content.replaceChildren(gatewayHost);

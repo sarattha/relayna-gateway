@@ -4,9 +4,9 @@ Monitor → Traffic shows live request timelines, failure reasons and saved hist
 
 The admin portal is a static operator console embedded in `gateway-api`. It is served from the control listener at `/admin-ui` and calls the same `/admin-ui/admin/*` APIs used by automation.
 
-For a current-branch tour of the current Admin UI 4.0 redesign and
-related governance, provider intelligence, usage analytics, and supply-chain
-features, see [Current Feature Highlights](current-features.md).
+For current v1.0.0 screenshots and a question-led walkthrough, see the
+[console tour](v1.0.0.md). [Current Feature Highlights](current-features.md)
+covers governance, provider intelligence, usage and supply-chain features.
 
 ## Design 4.0
 
@@ -153,7 +153,10 @@ drawer. Owner details remain exact-resource scoped and contain only sanitized
 usage metadata plus an optional redacted debug bundle. Project dashboards scope
 usage by persisted project attribution and add service-level breakdowns.
 
-![Admin UI 4.0 Overview with synthetic local traffic](assets/screenshots/admin-ui-4/overview.jpg)
+The [v1.0 console tour](v1.0.0.md) shows the current Portico/Mulberry & Linen
+interface in both themes. Step-by-step screenshots later in this guide retain
+historical captures where labeled; control names and instructions describe
+the current workflow.
 
 On narrow screens, the same Monitor, Discover, and Govern structure moves into
 an accessible drawer without removing operator workflows. The identity form

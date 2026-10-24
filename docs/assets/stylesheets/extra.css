@@ -42,3 +42,11 @@ body { font-family: var(--rn-font-family-sans); font-synthesis: none; }
 [data-md-color-scheme="slate"] .brand-banner .brand-dark { display: block; }
 [data-md-color-scheme="slate"] img.brand-family-board.brand-light { display: none; }
 [data-md-color-scheme="slate"] img.brand-family-board.brand-dark { display: block; }
+
+/* Versioned console captures follow the same semantic theme as the guide. */
+.console-capture { margin: 1.5rem 0; }
+.console-capture img { display: block; width: 100%; height: auto; border: 1px solid var(--rn-color-border); border-radius: 12px; }
+.console-capture .capture-dark { display: none; }
+[data-md-color-scheme="slate"] .console-capture .capture-light { display: none; }
+[data-md-color-scheme="slate"] .console-capture .capture-dark { display: block; }
+.console-capture figcaption { color: var(--rn-color-text-muted); font-size: .75rem; margin-top: .5rem; text-align: start; }

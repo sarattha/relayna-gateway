@@ -11,6 +11,8 @@ Relayna Gateway is the Rust control plane and proxy for Relayna AI traffic. It g
 
 The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-compatible traffic to LiteLLM or direct providers, records usage events, and exposes an operator admin portal from the same binary.
 
+[Explore the 1.0 console](v1.0.0.md) · [Upgrade safely](deployment.md#upgrade-to-100) · [Release evidence](benchmarks/v1.0.0.md)
+
 ## What Runs
 
 - Proxy listener for OpenAI-compatible traffic, including `POST /v1/chat/completions` and `POST /v1/responses`.
@@ -47,7 +49,7 @@ See [Natural Connection](brand.md) for the shared logo family, Mulberry & Linen 
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
 - [OpenAPI Service Pricing](openapi-service-pricing.md) explains registered
   service discovery, endpoint billing, multipart selectors, and budget rules.
-- [Current Feature Highlights](current-features.md) summarizes the `v0.1.49`
+- [Current Feature Highlights](current-features.md) summarizes the `v1.0.0`
   feature set, including Admin UI screenshots.
 - [Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md)
   covers browser OIDC, member approval, service assignments, managed

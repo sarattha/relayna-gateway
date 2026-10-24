@@ -4,33 +4,64 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
-- Correct the original Portico companion alphabet to follow F3’s straight-sided construction at body sizes. Adopt font 0.101/design-system 0.2.1 with fresh asset URLs, firmer Regular stems and double-storey italic a; preserve the selected Semibold wordmark.
-
-
-- Adopt the owner-selected original Relayna Portico family throughout Gateway: parent/Gateway wordmarks, UI, chart labels, documentation and banners. Self-host upright/italic variable faces with Latin and extended Latin coverage; shared design-system 0.2.0 retains Round for SDK/Studio.
-
-- Adopt the selected Open Signal banners and product pictograms from design-system 0.1.1, including Studio Runtime pulse. Update family taglines to RT1 / GT4 / DT8 / ST4 and use matching signal artwork on sign-in.
+## 1.0.0 - 2026-10-25
 
 ### Added
 
-- Apply the shared Natural Connection identity across Admin, Owner and access
-  screens: Slim Leaf logo lockups, original Relayna Portico typography, and
-  Mulberry & Linen themes for controls, charts and action drawers. Add the
-  versioned logo/banner/token snapshot, rebuild the GitHub overview, and align
-  the documentation site's light/dark appearance. See [brand guidance](docs/brand.md).
-- Add progressive, bounded Usage loading, cursor history and streaming exports;
-  independent active HTTP/WebSocket tracking, completion-time Traffic history,
-  and live per-instance/cluster capacity and latency observations. See
-  [Gateway monitoring](docs/operations/gateway-monitoring.md).
-- Add a source-controlled body-admission benchmark CLI for native amd64 and
-  arm64, including Apple Silicon. Run fixed slot sweeps or adaptive resource
-  searches for 5–100 MiB JSON against two pods, each with 2 CPUs / 1 GiB and
-  a 512 MiB body budget. Completed, failed and interrupted runs retain
-  interactive HTML, JSON and CSV reports with memory, timing and failure
-  evidence. See the [benchmark guide](benches/body-admission/README.md).
-- Require a full benchmark run and versioned results documentation for every
-  version bump starting with v0.1.49; publish the initial
-  [release benchmark history](docs/benchmarks/index.md).
+- Scale all-project Usage with a visible 24-hour default, independent summary
+  and event loading, lazy breakdowns, prefix suggestions, snapshot cursors,
+  page-first guardrail enrichment, and bounded-memory exports.
+- Separate active HTTP/SSE requests and WebSocket sessions from recent
+  completions. Add completion-time history, protocol filters, bounded active
+  registries, and explicit saturation and reconnect coverage.
+- Monitor per-instance and fleet request rates, protocol counts, body-buffer
+  occupancy/vacancy, admission and recording failures, rolling latency
+  distributions, and nullable process diagnostics without requiring a collector.
+- Apply the Natural Connection design system to every Admin and Owner page,
+  access screen, action drawer and policy-layer view: Slim Leaf logos, selected
+  Open Signal banners/taglines, Mulberry & Linen light/dark themes, charts,
+  configuration diagrams, accessible help and responsive layouts.
+- Adopt the original F3 Portico 0.101 family for Relayna/Gateway with self-hosted
+  upright/italic variable fonts. SDK/Studio retain Round. See [brand guidance](https://sarattha.github.io/relayna-gateway/brand/).
+- Add the native two-pod adaptive body-admission CLI with retained HTML, JSON,
+  CSV, failed trials and immutable runtime/harness provenance.
+
+### Fixed
+
+- Keep PostgreSQL analytics separate from forwarding queries and use
+  parameter-specific plans. Preserve native historical percentiles and default
+  numeric cost-threshold semantics.
+- Preserve cursor membership through transaction-ID epochs and repricing;
+  apply the insertion boundary to guardrail counts and retain legacy rows.
+- Preserve detailed active investigations and older pages across Pause/Resume;
+  mark stale, missing and incompatible fleet observations explicitly.
+- Parse bounded Usage suggestions with numeric/boolean filters, classify
+  response-detected event streams as SSE, and complete terminal monitoring
+  before Accessa Redis cleanup.
+- Release the previous Health pulse poller, requests and charts before direct
+  Health rerenders, including repeated checks and debug-bundle actions.
+- Upgrade Tokio to the patched LTS version for RUSTSEC-2026-0386.
+
+### Compatibility and upgrade
+
+- The major version marks the expanded operational console and brand system.
+  Released v0.1.49 HTTP/authentication, provider, streaming, Usage and accounting
+  contracts remain supported; existing Admin UI asset paths remain stable.
+- Apply three additive migrations for chronological indexes, Traffic completion
+  and protocol fields, and immutable insertion markers. No historical backfill
+  or ledger rewrite is performed. Schedule index-build I/O and locks.
+- Budget up to 14 PostgreSQL connections per store/replica (10 primary + 4
+  analytics). Redis observation keys expire independently of admission/budgets.
+  Body-admission defaults remain eight slots and 512 MiB per process.
+- Follow the [1.0 upgrade guide](https://sarattha.github.io/relayna-gateway/deployment/#upgrade-to-100),
+  [console tour](https://sarattha.github.io/relayna-gateway/v1.0.0/), and [monitoring guide](https://sarattha.github.io/relayna-gateway/operations/gateway-monitoring/).
+
+### Release validation
+
+- The versioned candidate remains subject to the full verification stack,
+  final-head CI/reviews, fresh six-size [v1.0.0 benchmarks](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.0/),
+  24-hour mixed-protocol soak and controlled forwarding-latency comparison.
+  Completion and exact evidence will be recorded before merge/tag/publication.
 
 ## 0.1.49 - 2026-10-22
 

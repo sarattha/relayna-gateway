@@ -249,6 +249,7 @@ class Soak:
         self.metrics = [{"rss_start": None, "rss_peak": None, "capacity_peak": 0},
                         {"rss_start": None, "rss_peak": None, "capacity_peak": 0}]
         self.progress = [0, 0]
+        self.sample_lock = asyncio.Lock()
         self.checkpoints = []
         self.samples = 0
         self.fleet = Counter()
@@ -415,6 +416,10 @@ class Soak:
             await asyncio.sleep(.1)
 
     async def sample(self, phase):
+        async with self.sample_lock:
+            return await self._sample(phase)
+
+    async def _sample(self, phase):
         statuses = await asyncio.gather(*(self.admin(i, "gateway/status?instance_id=all&window_seconds=60") for i in range(2)))
         selected = await asyncio.gather(*(self.admin(0, "traffic/cluster?instance_id=" + instance
             + "&project_id=" + self.project["id"] + "&limit=200") for instance in self.instances))
@@ -512,6 +517,41 @@ class Soak:
             await asyncio.sleep(.5)
         raise ProtocolError("terminal_record_missing")
 
+    async def renew_sockets(self, sockets, terminal):
+        # Keep HTTP/SSE load and journal observers running. Serialize sampling
+        # across this explicit make-before-break transition, then validate the
+        # replacements through publication. This is not failure reconnection.
+        async with self.sample_lock:
+            for index, previous in enumerate(sockets):
+                request_id = f"soak-{self.run_id}-renewed-{index}-{self.counts[index]['socket_renewals'] + 1}"
+                replacement = None
+                try:
+                    replacement = await asyncio.wait_for(websocket(
+                        self.args.proxy[index], self.prefix + "/ws", self.key, request_id), 10)
+                    await probe(replacement, 0)
+                    await close_socket(previous)
+                    row = await self.terminal(self.socket_ids[index])
+                    self.check_private(row)
+                    diagnostics = row["diagnostics"]
+                    if (not row.get("completed_at")
+                            or diagnostics.get("instance_id") != self.instances[index]
+                            or diagnostics.get("outcome") != "completed"
+                            or not diagnostics.get("websocket", {}).get("client_frames")):
+                        raise ProtocolError("renewed_socket_terminal_invalid")
+                    terminal.append({"kind": "websocket_renewed", "request_id": self.socket_ids[index],
+                        "client_status": row.get("client_status"), "completed_at": row["completed_at"],
+                        "diagnostics": diagnostics})
+                    sockets[index] = replacement
+                    replacement = None
+                    self.socket_ids[index] = request_id
+                    self.progress[index] = 0
+                    self.counts[index]["socket_renewals"] += 1
+                finally:
+                    if replacement is not None:
+                        await close_socket(replacement)
+            await asyncio.sleep(2)
+            await self._sample("load")
+
     async def run(self):
         upstream = Upstream(self.credential, self.args.http_delay_ms / 1000)
         server = await asyncio.start_server(upstream.handle, "127.0.0.1", 0, limit=MAX_RESPONSE)
@@ -523,6 +563,7 @@ class Soak:
             "platform": platform.platform(), "architecture": platform.machine(),
             "requested_seconds": self.args.seconds, "http_rate_total": self.args.http_rate,
             "workers_per_instance": self.args.workers, "rss_growth_limit_mib": self.args.max_rss_growth_mib,
+            "socket_renew_seconds": self.args.socket_renew_seconds,
             "gateway_pids": self.args.gateway_pid,
             "concurrent_load_note": self.args.concurrent_load_note,
             "limitations": ["Synthetic loopback upstream; no real provider inference or ingress/TLS.",
@@ -558,8 +599,12 @@ class Soak:
             tasks += [asyncio.create_task(self.poll())]
             load_start = time.monotonic()
             next_probe = load_start + min(self.args.quiet_seconds, self.args.seconds * .75)
+            next_renewal = load_start + self.args.socket_renew_seconds
             while time.monotonic() - load_start < self.args.seconds:
                 await asyncio.sleep(min(1, max(.01, load_start + self.args.seconds - time.monotonic())))
+                if time.monotonic() >= next_renewal:
+                    await self.renew_sockets(sockets, terminal)
+                    next_renewal = time.monotonic() + self.args.socket_renew_seconds
                 if time.monotonic() >= next_probe:
                     before = list(self.progress)
                     checkpoint = {"elapsed_load_seconds": round(time.monotonic() - load_start, 3),
@@ -694,6 +739,8 @@ def main():
     parser.add_argument("--http-rate", type=float, default=20)
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--quiet-seconds", type=int, default=240)
+    parser.add_argument("--socket-renew-seconds", type=int, default=82800,
+                        help="explicit make-before-break renewal before the 24-hour session cap (default: 23 hours)")
     parser.add_argument("--poll-seconds", type=float, default=2)
     parser.add_argument("--sse-interval", type=float, default=2)
     parser.add_argument("--http-delay-ms", type=int, default=50)
@@ -713,6 +760,7 @@ def main():
         parser.error("two distinct proxy/control pairs are required")
     if not (30 <= args.seconds <= 86400 and 1 <= args.http_rate <= 200 and 1 <= args.workers <= 16
             and 5 <= args.quiet_seconds <= 300 and .5 <= args.poll_seconds <= 10
+            and 60 <= args.socket_renew_seconds <= 82800
             and .1 <= args.sse_interval <= 30 and 0 <= args.http_delay_ms <= 1000
             and 0 <= args.min_http_per_instance <= 10000000 and 1 <= args.max_rss_growth_mib <= 4096):
         parser.error("duration, load, or observation settings outside bounded test limits")

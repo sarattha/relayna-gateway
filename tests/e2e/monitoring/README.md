@@ -59,6 +59,7 @@ in evidence. Only the operator token comes from the mode-0600 file.
 After the candidate processes have restarted, resolve their **current** PIDs:
 
 ```bash
+PYTHONPYCACHEPREFIX=target/python-cache python3 tests/e2e/monitoring/test_soak.py
 PYTHONPYCACHEPREFIX=target/python-cache python3 -m py_compile tests/e2e/monitoring/soak.py
 python3 tests/e2e/monitoring/soak.py --help
 python3 tests/e2e/monitoring/soak.py \
@@ -131,12 +132,20 @@ commit separately when publishing evidence; the Git checkout may contain
 uncommitted code and is not proof of the running binary's identity.
 
 For a future 24-hour run, use `--seconds 86400` and a new evidence directory.
-The same sockets are probed after each configured quiet interval (240 seconds
-by default), within the registered-service idle timeout. Workers, observer
-buffers, request/response sizes, and retained report state remain bounded;
-the incremental evidence file grows with the selected duration. The synthetic
-service's session-age limit is 24 hours, so near-boundary closure or expiry is a
-reported failure rather than hidden reconnection. This harness does not inject
+Each socket is probed after every configured quiet interval (240 seconds by
+default), within the registered-service idle timeout. The runtime's session-age
+limit remains 24 hours. At 23 hours the harness explicitly opens and probes a
+replacement before closing the old socket, validates the retired terminal row,
+and checks replacement publication. HTTP/SSE load and journal observers continue
+through this transition. Renewals and retired outcomes are recorded; unexpected
+expiry or transport failure is still a failure, with no automatic recovery.
+A 24-hour soak therefore covers continuous mixed traffic across an explicit
+session renewal, not one socket beyond its configured maximum age. For a short
+renewal smoke, use `--socket-renew-seconds 120 --quiet-seconds 30` with a run
+longer than 120 seconds. Sampling is serialized briefly across renewal while
+the protocol workers continue. Workers, observer buffers, request/response sizes,
+and retained report state remain bounded; the incremental evidence file grows
+with the selected duration. This harness does not inject
 internal late callbacks after cancellation, exhaust the 2,048-row registry, or
 inject dependency outages; focused Rust tests cover those independent paths.
 Passing five or ten minutes does **not** establish a 24-hour soak, a memory-leak

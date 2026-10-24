@@ -138,8 +138,8 @@ The Rust verification helper runs formatting, workspace Clippy/tests and the req
 
 ## Releases and performance evidence
 
-[v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
+[v1.0.0 validation](docs/benchmarks/v1.0.0.md) · [v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
 
-Version 0.1.49 patches the Node.js build/test toolchain and helper containers for CVE-2026-111497. Version 0.1.48 fixes caller-owned LiteLLM WebSockets with custom credential headers. Consult the deployment guide before upgrading; credential modes, accounting writers and historical reporting have version-specific notes.
+Version **1.0.0** brings scalable all-project Usage, protocol-aware Traffic, live gateway capacity, and the Natural Connection console with original Portico typography. Follow the [console tour](docs/v1.0.0.md) and [1.0 upgrade guide](docs/deployment.md#upgrade-to-100) for migrations, PostgreSQL connection sizing, and rollout. The major version preserves the released v0.1.49 proxy and accounting contracts.
 
 New versions require fresh native body-admission benchmarks. Short synthetic UI or protocol checks do not establish production capacity; use the [benchmark methodology](benches/body-admission/README.md) and retain failed as well as completed observations.

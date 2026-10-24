@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { JSDOM } from "jsdom";
 import "./admin-ui-monitoring-visuals.test.mjs";
 
 let source = readFileSync(new URL("../crates/gateway-api/admin-ui/src/gateway-status.ts", import.meta.url), "utf8");
@@ -156,3 +157,65 @@ try {
   globalThis.clearInterval = originalClearInterval;
 }
 console.log("ok - gateway snapshot windows, stale/partial/unknown states, quantile samples, escaping, cancellation and teardown");
+
+// Health actions rerender the controller directly, bypassing refresh()'s
+// navigation cleanup. Exercise the real pulse mount through that controller.
+const mainSource = readFileSync(new URL("../crates/gateway-api/admin-ui/src/main.ts", import.meta.url), "utf8");
+const healthStart = mainSource.indexOf("async function health() {");
+const healthSource = mainSource.slice(healthStart, mainSource.indexOf("\nfunction healthTable(", healthStart));
+const dom = new JSDOM('<main id="content"></main>');
+const intervals = new Map(), liveCharts = new Set(), signals = [];
+let intervalId = 0, statusReads = 0;
+class PulseChart {
+  constructor(canvas, config) { this.canvas = canvas; this.data = config.data; this.options = config.options; liveCharts.add(this); }
+  update() {}
+  destroy() { liveCharts.delete(this); }
+}
+globalThis.setInterval = (callback) => { const id = ++intervalId; intervals.set(id, callback); return id; };
+globalThis.clearInterval = (id) => { intervals.delete(id); };
+const noOp = () => {};
+const controllerHelpers = {
+  ...helpers, Chart: PulseChart, state: {}, readiness: async () => ({ status: "ready" }),
+  monitoringPanel: async () => [], monitoringIssues: () => "", stat: () => "",
+  healthTable: () => "", healthStateTable: () => "", serviceImportVersionsTable: () => "",
+  debugBundleView: () => "", handleAsync: (fn) => fn, runHealthChecks: noOp,
+  saveProviderHealthState: noOp, fillProviderHealthStateForm: noOp, loadDebugBundle: noOp,
+  bindInvestigationActions: noOp, rollbackImportVersion: noOp, organizeView: noOp, refresh: noOp,
+};
+const controllerNames = Object.keys(controllerHelpers);
+const healthController = new Function("document", "content", "mountHealthGatewayStatus", "api", ...controllerNames, `
+  let renderGeneration = 0, stopGatewayStatus = null;
+  ${healthSource}
+  return { health, leave() { ++renderGeneration; stopGatewayStatus?.(); stopGatewayStatus = null; } };
+`)(dom.window.document, dom.window.document.querySelector("main"), mountHealthGatewayStatus, async (_path, options) => {
+  ++statusReads; signals.push(options.signal); return envelope;
+}, ...controllerNames.map(name => controllerHelpers[name]));
+try {
+  await healthController.health();
+  await tick();
+  assert.equal(intervals.size, 1);
+  assert.ok(liveCharts.size > 0);
+  const firstCharts = [...liveCharts];
+  await healthController.health();
+  await tick();
+  assert.equal(intervals.size, 1, "direct Health rerender replaces the previous poller");
+  assert.equal(signals[0].aborted, true, "rerender aborts the previous pulse request");
+  assert.ok(firstCharts.every(chart => !liveCharts.has(chart)), "rerender destroys detached charts");
+  const readsBeforeTick = statusReads;
+  for (const callback of intervals.values()) callback();
+  await tick();
+  assert.equal(statusReads, readsBeforeTick + 1, "only the current mount polls");
+  await Promise.all([healthController.health(), healthController.health()]);
+  await tick();
+  assert.equal(intervals.size, 1, "overlapping Health renders retain a single pulse owner");
+  healthController.leave();
+  assert.equal(intervals.size, 0, "navigation releases every pulse poller");
+  assert.equal(liveCharts.size, 0, "navigation releases every chart");
+  assert.ok(signals.every(signal => signal.aborted));
+} finally {
+  healthController.leave();
+  globalThis.setInterval = originalSetInterval;
+  globalThis.clearInterval = originalClearInterval;
+  dom.window.close();
+}
+console.log("ok - repeated and overlapping Health renders dispose pulse polling, requests and charts before navigation");

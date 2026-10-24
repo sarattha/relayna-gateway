@@ -2476,11 +2476,6 @@ where
         error: Option<&pingora_core::Error>,
         ctx: &mut Self::CTX,
     ) {
-        if let Some(token) = ctx.admission_token.take() {
-            if let Ok(key) = session_store_key(&token) {
-                let _ = self.control_state.accessa_delete(&key).await;
-            }
-        }
         ctx.socket_lease.take();
         gateway_telemetry::request_finished();
         finish_traffic(
@@ -2490,9 +2485,16 @@ where
                 .map(|response| response.status.as_u16()),
             error,
         );
-        // Observe the terminal outcome before any best-effort database awaits.
+        // Finish observation and release active leases before any external
+        // cleanup. An unavailable Accessa session store must not extend activity.
         finish_runtime_traffic(ctx);
         drop(ctx.traffic_lease.take());
+        let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
+        if let Some(token) = ctx.admission_token.take() {
+            if let Ok(key) = session_store_key(&token) {
+                let _ = self.control_state.accessa_delete(&key).await;
+            }
+        }
         async {
             let Some(route) = ctx.route else {
                 return;
@@ -2520,7 +2522,6 @@ where
             } else {
                 response_usage_tokens(ctx)
             };
-            let latency_ms = i64::try_from(ctx.started.elapsed().as_millis()).unwrap_or(i64::MAX);
             let provider = provider_for_usage(ctx);
             let event = UsageEvent::new(
                 &ctx.request_id,
@@ -4505,7 +4506,7 @@ fn update_routing_diagnostics(ctx: &mut PingoraContext) {
     if let Some(runtime) = &mut ctx.runtime_request {
         runtime.set_transport(if ctx.socket || ctx.socket_requested {
             gateway_telemetry::RuntimeTransport::WebSocket
-        } else if ctx.is_streaming {
+        } else if ctx.is_streaming || ctx.traffic.streaming {
             gateway_telemetry::RuntimeTransport::Sse
         } else {
             gateway_telemetry::RuntimeTransport::Http
@@ -5948,6 +5949,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn terminal_observation_precedes_blocked_accessa_cleanup() {
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let control_state = Arc::new(MemoryControlState::default());
+        *control_state.delete_barrier.lock().unwrap() = Some(barrier.clone());
+        let limits = Arc::new(ConnectionLimits::default());
+        let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
+            connection_limits: limits.clone(),
+            store: Arc::new(MemoryUsageStore::default()),
+            control_state,
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "test-key")
+                .unwrap(),
+            auth_runtime: default_auth_runtime_for_tests(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let _client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        let mut session = Session::new_h1(Box::new(
+            pingora_core::protocols::l4::stream::Stream::from(server),
+        ));
+        let mut ctx = new_pingora_context_for_tests();
+        let key = Uuid::new_v4();
+        ctx.socket = true;
+        ctx.socket_lease = Some(limits.acquire("cleanup-test", key, 1, 1).unwrap());
+        ctx.admission_token = Some(Uuid::new_v4().to_string());
+        ctx.runtime_request = Some(gateway_telemetry::runtime_request_started(
+            gateway_telemetry::RuntimeTransport::WebSocket,
+        ));
+        traffic_step(&mut ctx, "upstream_response");
+        ctx.traffic_lease = Some(traffic::monitor().active_lease(&ctx.traffic));
+        let id = ctx.traffic.id;
+        gateway_telemetry::request_started();
+        let mut logging = Box::pin(proxy.logging(&mut session, None, &mut ctx));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), logging.as_mut())
+                .await
+                .is_err()
+        );
+        let terminal = traffic::monitor()
+            .batch(None)
+            .rows
+            .into_iter()
+            .find(|row| row.id == id)
+            .expect("terminal observation is published before cleanup finishes");
+        assert!(terminal.completed);
+        assert!(terminal.completed_at.is_some());
+        assert!(traffic::monitor()
+            .active_snapshot(&Default::default())
+            .rows
+            .iter()
+            .all(|row| row.id != id));
+        let recovered = limits.acquire("cleanup-test", key, 1, 1).unwrap();
+        drop(recovered);
+        barrier.wait().await;
+        logging.await;
+        assert!(ctx.runtime_request.is_none());
+        assert!(ctx.traffic_lease.is_none());
+        assert!(ctx.socket_lease.is_none());
+    }
+
+    #[tokio::test]
+    async fn response_detected_event_stream_is_accounted_as_sse() {
+        let proxy = RelaynaPingoraProxy {
+            foundry_tokens: Default::default(),
+            connection_limits: Arc::new(ConnectionLimits::default()),
+            store: Arc::new(MemoryUsageStore::default()),
+            control_state: Arc::new(MemoryControlState::default()),
+            config: PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "test-key")
+                .unwrap(),
+            auth_runtime: default_auth_runtime_for_tests(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let _client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        let mut session = Session::new_h1(Box::new(
+            pingora_core::protocols::l4::stream::Stream::from(server),
+        ));
+        let before = gateway_telemetry::runtime_snapshot(60).totals.sse_completed;
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.route_match = Some(service_route_match_for_persisted_registration(
+            &http::Method::GET,
+            "/services/events/stream",
+            "events",
+        ));
+        ctx.runtime_request = Some(gateway_telemetry::runtime_request_started(
+            gateway_telemetry::RuntimeTransport::Http,
+        ));
+        let mut response = ResponseHeader::build(200, Some(1)).unwrap();
+        response
+            .insert_header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
+            .unwrap();
+        proxy
+            .upstream_response_filter(&mut session, &mut response, &mut ctx)
+            .await
+            .unwrap();
+        assert!(!ctx.is_streaming, "request did not opt in to streaming");
+        assert!(ctx.traffic.streaming, "response established SSE transport");
+        finish_traffic(&mut ctx, Some(200), None);
+        finish_runtime_traffic(&mut ctx);
+        assert!(gateway_telemetry::runtime_snapshot(60).totals.sse_completed > before);
+    }
+
+    #[tokio::test]
     async fn accessa_socket_hooks_reject_expiry_and_bad_frames_without_buffering_or_retry() {
         let proxy = RelaynaPingoraProxy {
             foundry_tokens: Default::default(),
@@ -6897,6 +7005,7 @@ mod tests {
     #[derive(Default)]
     pub(super) struct MemoryControlState {
         released: Mutex<Vec<(Uuid, String)>>,
+        pub(super) delete_barrier: Mutex<Option<Arc<tokio::sync::Barrier>>>,
     }
 
     #[async_trait]
@@ -7425,6 +7534,10 @@ impl AccessaStore for tests::MemoryControlState {
         Err(GatewayError::ControlStateUnavailable)
     }
     async fn accessa_delete(&self, _: &str) -> GatewayResult<()> {
+        let barrier = self.delete_barrier.lock().unwrap().clone();
+        if let Some(barrier) = barrier {
+            barrier.wait().await;
+        }
         Err(GatewayError::ControlStateUnavailable)
     }
 }

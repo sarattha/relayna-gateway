@@ -8,6 +8,7 @@ define the release gate.
 
 | Version | Runtime architecture | Coverage | Results |
 | --- | --- | --- | --- |
+| v1.0.0 candidate | Native arm64 planned | Full six-size release study pending; do not merge/tag/publish | [Validation status](v1.0.0.md) |
 | v0.1.49 | Native amd64 | Full 5/10/20/40/80/100 MiB resource search; 217 trials | [Results and interactive report](v0.1.49.md) |
 
 ## Required protocol
