@@ -6,10 +6,14 @@ use argon2::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 const RELAYNA_KEY_PREFIX: &str = "rk_live_";
 const LOOKUP_PREFIX_LEN: usize = 16;
+// Argon2 is CPU/memory intensive. Share this bound across both Gateway
+// runtimes, independently of the number of outstanding authentication futures.
+static KEY_VERIFICATION_SLOTS: Semaphore = Semaphore::const_new(2);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VirtualKey {
@@ -144,7 +148,12 @@ where
             return Err(GatewayError::ExpiredVirtualKey);
         }
 
-        verify_secret(key.raw(), &stored.key_hash)?;
+        let raw_key = key.raw().to_owned();
+        let key_hash = stored.key_hash.clone();
+        verify_in_background(&KEY_VERIFICATION_SLOTS, move || {
+            verify_secret(&raw_key, &key_hash)
+        })
+        .await?;
         let _ = self.store.mark_key_used(stored.id, now).await;
 
         Ok(AuthenticatedKey {
@@ -153,6 +162,21 @@ where
             key_prefix: stored.key_prefix,
         })
     }
+}
+
+async fn verify_in_background(
+    slots: &'static Semaphore,
+    verify: impl FnOnce() -> GatewayResult<()> + Send + 'static,
+) -> GatewayResult<()> {
+    let permit = slots.acquire().await.expect("private semaphore stays open");
+    tokio::task::spawn_blocking(move || {
+        // Cancellation cannot stop an executing CPU job. Keep its slot until
+        // verification actually finishes, even if the request is dropped.
+        let _permit = permit;
+        verify()
+    })
+    .await
+    .unwrap_or(Err(GatewayError::InvalidVirtualKey))
 }
 
 pub fn verify_secret(raw_key: &str, encoded_hash: &str) -> GatewayResult<()> {
@@ -247,6 +271,146 @@ mod tests {
             .expect("authenticated");
 
         assert_eq!(authenticated.key_prefix, "rk_live_12345678");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn key_verification_leaves_the_request_executor_responsive() {
+        let raw = "rk_live_1234567890abcdef";
+        let lookup = MemoryLookup {
+            value: Arc::new(Mutex::new(Some(stored(raw)))),
+        };
+        let authenticator = Authenticator::new(lookup);
+        let requests = async {
+            for _ in 0..4 {
+                authenticator
+                    .authenticate_raw_key(Some(raw), Utc::now())
+                    .await
+                    .expect("authenticated");
+            }
+        };
+        tokio::pin!(requests);
+
+        // This must progress on the same single-thread executor while the
+        // first authentication performs real, unchanged Argon2 verification.
+        let other_io = async {
+            for _ in 0..3 {
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::select! {
+            biased;
+            () = &mut requests => panic!("key verification blocked unrelated I/O"),
+            () = other_io => {}
+        }
+        requests.await;
+    }
+
+    #[tokio::test]
+    async fn rejects_wrong_key_secret() {
+        let lookup = MemoryLookup {
+            value: Arc::new(Mutex::new(Some(stored("rk_live_1234567890abcdef")))),
+        };
+        assert_eq!(
+            Authenticator::new(lookup)
+                .authenticate_raw_key(Some("rk_live_1234567890abcdeg"), Utc::now())
+                .await
+                .unwrap_err(),
+            GatewayError::InvalidVirtualKey
+        );
+    }
+
+    #[tokio::test]
+    async fn verification_workers_are_bounded() {
+        static SLOTS: Semaphore = Semaphore::const_new(2);
+        let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut jobs = Vec::new();
+        let mut releases = Vec::new();
+        for index in 0..4 {
+            let (release_tx, release_rx) = std::sync::mpsc::channel();
+            releases.push(release_tx);
+            let started = started_tx.clone();
+            jobs.push(tokio::spawn(verify_in_background(&SLOTS, move || {
+                started.send(index).unwrap();
+                release_rx.recv().unwrap();
+                Ok(())
+            })));
+        }
+        let first = started_rx.recv().await.unwrap();
+        let second = started_rx.recv().await.unwrap();
+        assert_ne!(first, second);
+        tokio::task::yield_now().await;
+        assert!(started_rx.try_recv().is_err());
+        assert_eq!(SLOTS.available_permits(), 0);
+
+        for release in releases {
+            release.send(()).unwrap();
+        }
+        for job in jobs {
+            job.await.unwrap().unwrap();
+        }
+        assert_eq!(SLOTS.available_permits(), 2);
+    }
+
+    #[tokio::test]
+    async fn cancelling_started_verification_keeps_its_worker_slot() {
+        static SLOTS: Semaphore = Semaphore::const_new(1);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let job = tokio::spawn(verify_in_background(&SLOTS, move || {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            Ok(())
+        }));
+        started_rx.await.unwrap();
+        job.abort();
+        assert!(job.await.unwrap_err().is_cancelled());
+        assert_eq!(SLOTS.available_permits(), 0);
+
+        let (next_tx, mut next_rx) = tokio::sync::oneshot::channel();
+        let next = tokio::spawn(verify_in_background(&SLOTS, move || {
+            next_tx.send(()).unwrap();
+            Ok(())
+        }));
+        tokio::task::yield_now().await;
+        assert!(matches!(
+            next_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+        release_tx.send(()).unwrap();
+        next_rx.await.unwrap();
+        next.await.unwrap().unwrap();
+        assert_eq!(SLOTS.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn cancelling_queued_verification_does_not_start_cpu_work() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        static SLOTS: Semaphore = Semaphore::const_new(1);
+        let held = SLOTS.acquire().await.unwrap();
+        let ran = Arc::new(AtomicBool::new(false));
+        let observed = ran.clone();
+        let job = tokio::spawn(verify_in_background(&SLOTS, move || {
+            observed.store(true, Ordering::SeqCst);
+            Ok(())
+        }));
+        tokio::task::yield_now().await;
+        job.abort();
+        assert!(job.await.unwrap_err().is_cancelled());
+        drop(held);
+        tokio::task::yield_now().await;
+        assert!(!ran.load(Ordering::SeqCst));
+        assert_eq!(SLOTS.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn verification_worker_failure_is_closed_and_releases_its_slot() {
+        static SLOTS: Semaphore = Semaphore::const_new(1);
+        assert_eq!(
+            verify_in_background(&SLOTS, || panic!("simulated verifier failure")).await,
+            Err(GatewayError::InvalidVirtualKey)
+        );
+        assert_eq!(SLOTS.available_permits(), 1);
     }
 
     #[tokio::test]

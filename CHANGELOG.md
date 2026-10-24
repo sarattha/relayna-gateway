@@ -28,6 +28,9 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Fixed
 
+- Run virtual-key Argon2 verification on at most two blocking workers per
+  process so bursts do not starve async I/O and database pool progress. Preserve
+  hashing parameters, key-state checks and cancellation-safe worker bounds.
 - Keep PostgreSQL analytics separate from forwarding queries and use
   parameter-specific plans. Preserve native historical percentiles and default
   numeric cost-threshold semantics.
