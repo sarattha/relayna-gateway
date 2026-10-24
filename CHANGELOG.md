@@ -4,6 +4,8 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+- Adopt the selected Open Signal banners and product pictograms from design-system 0.1.1, including Studio Runtime pulse. Update family taglines to RT1 / GT4 / DT8 / ST4 and use matching signal artwork on sign-in.
+
 ### Added
 
 - Apply the shared Natural Connection identity across Admin, Owner and access

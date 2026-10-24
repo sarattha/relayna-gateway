@@ -1,11 +1,11 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/banners/relayna-gateway-wide-dark.svg">
-  <img src="docs/assets/brand/banners/relayna-gateway-wide-light.svg" alt="relayna Gateway — One gateway. Clear control." width="1600">
+  <img src="docs/assets/brand/banners/relayna-gateway-wide-light.svg" alt="relayna Gateway — Route intelligence. Keep control." width="1600">
 </picture>
 
 # Relayna Gateway
 
-**One gateway. Clear control.**
+**Route intelligence. Keep control.**
 
 The Rust proxy and control plane for AI traffic. Authenticate callers, apply policy, route to LiteLLM, direct providers or registered services, and inspect usage and live traffic from one operator console.
 
@@ -17,7 +17,7 @@ Relayna remains the task execution runtime. Gateway provides the governed connec
 
 ```mermaid
 flowchart LR
-  Clients[Applications · SDK · Studio] --> Gateway[Relayna Gateway]
+  Clients[Applications · Model SDKs] --> Gateway[Relayna Gateway]
   Gateway --> Models[LiteLLM · Direct providers]
   Gateway --> Services[Registered services]
   Gateway --> State[PostgreSQL · Redis]
@@ -87,18 +87,25 @@ Provider keys, operator tokens, virtual keys, Studio credentials and request pro
 
 ## Natural Connection
 
+The Relayna SDK supplies service-side task, status and workflow plumbing. Relayna Studio provides centralized operational visibility, task investigation and assessments.
+
 Gateway belongs to one Relayna family, using the **Slim Leaf** gateway symbol, original **Relayna Round** typography and **Mulberry & Linen** colors in light and dark modes.
 
 | Identity | Tagline |
 | --- | --- |
-| relayna | Connect intelligence. Keep control |
-| Gateway | One gateway. Clear control. |
-| SDK | Build the connection |
-| Studio | Shape. Inspect. Iterate |
+| relayna | Connected work. Clear direction. |
+| Gateway | Route intelligence. Keep control. |
+| SDK | Your logic. Connected execution. |
+| Studio | Make distributed work visible. |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/banners/open-signal-family-dark.svg">
+  <img src="docs/assets/brand/banners/open-signal-family-light.svg" alt="Open Signal pictograms: Relayna Signal braid, Gateway Split portal, SDK Build bridge and Studio Runtime pulse" width="1600">
+</picture>
 
 [Brand and design-system guide](docs/brand.md) · [Logo family](docs/assets/brand/banners/natural-connection-family-light.svg) · [Dark family board](docs/assets/brand/banners/natural-connection-family-dark.svg) · [Gateway logo](docs/assets/brand/logos/relayna-gateway-light.svg)
 
-The versioned brand snapshot is committed with this repo; builds need no external design-system checkout or remote font service. Relayna Round remains a 0.100 development draft. See the [brand guide](docs/brand.md) for source, usage and current limits.
+The approved **Open Signal** banners and supporting product pictograms accompany the Slim Leaf logo family. Studio uses **Runtime pulse** for its operational-control-plane role. The versioned design-system **0.1.1** snapshot is committed with this repo; builds need no external design-system checkout or remote font service. Relayna Round remains a 0.100 development draft. See the [brand guide](docs/brand.md) for source, usage and current limits.
 
 ## Repository map
 

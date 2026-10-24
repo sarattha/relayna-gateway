@@ -1,5 +1,6 @@
 Relayna Natural Connection — Mulberry & Linen
-Snapshot: @relayna/design-system 0.1.0, 24 October 2026.
+Snapshot: @relayna/design-system 0.1.1, 24 October 2026.
+Campaign: Open Signal; selected Studio pictogram: Runtime pulse.
 Selected symbol: G3 / Swing Gate / refinement 3 — Slim Leaf.
 
 These original Relayna identity assets are included for Gateway at the project

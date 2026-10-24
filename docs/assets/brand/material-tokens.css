@@ -38,6 +38,7 @@
   --rn-color-chart-4: var(--rn-primitive-chart-copper);
   --rn-color-chart-5: var(--rn-primitive-chart-blue);
   --rn-color-chart-6: var(--rn-primitive-chart-rose);
+  --rn-color-pictogram-accent: var(--rn-primitive-chart-copper);
 }
 [data-md-color-scheme="slate"] {
   --rn-color-canvas: var(--rn-primitive-ink);
@@ -78,4 +79,5 @@
   --rn-color-chart-4: var(--rn-primitive-chart-night-copper);
   --rn-color-chart-5: var(--rn-primitive-chart-night-blue);
   --rn-color-chart-6: var(--rn-primitive-chart-night-rose);
+  --rn-color-pictogram-accent: var(--rn-primitive-copper);
 }

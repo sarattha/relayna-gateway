@@ -138,6 +138,7 @@
   --rn-color-chart-4: #A45B28;
   --rn-color-chart-5: #426B9B;
   --rn-color-chart-6: #A53D64;
+  --rn-color-pictogram-accent: #A45B28;
   --rn-shadow-rest: 0 2px 8px rgb(44 31 46 / 0.05);
   --rn-shadow-hover: 0 8px 22px rgb(44 31 46 / 0.13);
   --rn-shadow-overlay: 0 24px 64px rgb(44 31 46 / 0.22);
@@ -184,6 +185,7 @@
   --rn-color-chart-4: #E6AC7A;
   --rn-color-chart-5: #9EBFED;
   --rn-color-chart-6: #F09AB8;
+  --rn-color-pictogram-accent: #D99E70;
   --rn-shadow-rest: 0 2px 8px rgb(0 0 0 / 0.14);
   --rn-shadow-hover: 0 8px 22px rgb(0 0 0 / 0.32);
   --rn-shadow-overlay: 0 24px 64px rgb(0 0 0 / 0.48);
@@ -230,6 +232,7 @@
   --rn-color-chart-4: #E6AC7A;
   --rn-color-chart-5: #9EBFED;
   --rn-color-chart-6: #F09AB8;
+  --rn-color-pictogram-accent: #D99E70;
   --rn-shadow-rest: 0 2px 8px rgb(0 0 0 / 0.14);
   --rn-shadow-hover: 0 8px 22px rgb(0 0 0 / 0.32);
   --rn-shadow-overlay: 0 24px 64px rgb(0 0 0 / 0.48);

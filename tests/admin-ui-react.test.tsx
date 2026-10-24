@@ -524,13 +524,13 @@ describe("shared console and accessibility", () => {
     const { container } = render(<ConsoleShell />);
     expect(container.querySelectorAll("[data-view]")).toHaveLength(18);
     expect(screen.getByLabelText("Operator token")).toBeTruthy();
-    expect(screen.getAllByText("One gateway. Clear control.")).toHaveLength(2);
-    expect(screen.getByText("Connect intelligence. Keep control")).toBeTruthy();
+    expect(screen.getAllByText("Route intelligence. Keep control.")).toHaveLength(2);
+    expect(screen.getByText("Connected work. Clear direction.")).toBeTruthy();
     const logos = container.querySelectorAll("svg.relayna-logo");
     expect(logos).toHaveLength(2);
     expect(logos[0].innerHTML).toBe(logos[1].innerHTML);
     expect([...logos].every((logo) => logo.getAttribute("role") === "img" && logo.getAttribute("aria-label") === "relayna Gateway" && logo.getAttribute("focusable") === "false")).toBe(true);
-    expect(container.querySelector(".natural-connection-ribbons")?.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelector(".gateway-signal-artwork")?.getAttribute("aria-hidden")).toBe("true");
     expect(
       container.querySelector("#entra-sign-in")?.getAttribute("href"),
     ).toBe("/admin-ui/auth/login");

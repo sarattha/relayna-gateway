@@ -1,11 +1,11 @@
 <div class="brand-banner">
-  <img class="brand-light" src="assets/brand/banners/relayna-gateway-wide-light.svg" alt="relayna Gateway — One gateway. Clear control.">
-  <img class="brand-dark" src="assets/brand/banners/relayna-gateway-wide-dark.svg" alt="relayna Gateway — One gateway. Clear control.">
+  <img class="brand-light" src="assets/brand/banners/relayna-gateway-wide-light.svg" alt="relayna Gateway — Route intelligence. Keep control.">
+  <img class="brand-dark" src="assets/brand/banners/relayna-gateway-wide-dark.svg" alt="relayna Gateway — Route intelligence. Keep control.">
 </div>
 
 # Relayna Gateway
 
-**One gateway. Clear control.**
+**Route intelligence. Keep control.**
 
 Relayna Gateway is the Rust control plane and proxy for Relayna AI traffic. It gives external clients, SDKs, Studio, and Relayna workers a single governed API surface for model access instead of exposing provider credentials directly.
 

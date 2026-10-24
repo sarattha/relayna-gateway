@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { Button, Input, NativeSelect } from "../components/ui";
-import { RelaynaLogo, NaturalConnectionRibbons } from "./brand";
+import { RelaynaLogo, GatewaySignalArtwork } from "./brand";
 import { brandIdentity } from "../brand-identity";
 import {
   getThemePreference,
@@ -45,12 +45,11 @@ export function ConsoleShell() {
           className="login-brand-panel"
           aria-label="Relayna Gateway overview"
         >
-          <NaturalConnectionRibbons />
           <div className="login-brand-lockup">
             <RelaynaLogo />
           </div>
           <div className="login-brand-message">
-            <span className="login-brand-eyebrow">Natural Connection</span>
+            <span className="login-brand-eyebrow">AI traffic control</span>
             <h1>{brandIdentity.taglines.Gateway}</h1>
             <p>{brandIdentity.taglines.relayna}</p>
             <ul
@@ -73,6 +72,7 @@ export function ConsoleShell() {
                 access
               </li>
             </ul>
+            <GatewaySignalArtwork />
           </div>
           <small className="login-copyright">
             relayna · Gateway / SDK / Studio

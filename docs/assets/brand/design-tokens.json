@@ -1131,6 +1131,10 @@
       "color-chart-6": {
         "$type": "color",
         "$value": "{primitive.color.chart-rose}"
+      },
+      "color-pictogram-accent": {
+        "$type": "color",
+        "$value": "{primitive.color.chart-copper}"
       }
     },
     "dark": {
@@ -1285,6 +1289,10 @@
       "color-chart-6": {
         "$type": "color",
         "$value": "{primitive.color.chart-night-rose}"
+      },
+      "color-pictogram-accent": {
+        "$type": "color",
+        "$value": "{primitive.color.copper}"
       }
     }
   }

@@ -20143,27 +20143,119 @@ function RelaynaLogo() {
 		]
 	});
 }
-function NaturalConnectionRibbons() {
-	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("svg", {
-		className: "natural-connection-ribbons",
-		viewBox: "0 0 1600 600",
-		preserveAspectRatio: "none",
+function GatewaySignalArtwork() {
+	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("svg", {
+		className: "gateway-signal-artwork",
+		viewBox: "940 120 620 360",
+		preserveAspectRatio: "xMidYMid meet",
 		"aria-hidden": "true",
 		focusable: "false",
-		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
-				fill: "var(--rg-ribbon-1)",
-				d: "M1600 0 C1050 70 930 190 1070 310 C1170 430 920 530 800 600 H1600Z"
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
-				fill: "var(--rg-ribbon-2)",
-				d: "M1600 170 C1110 180 1070 260 1200 350 C1280 430 1200 540 1120 600 H1600Z"
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
-				fill: "var(--rg-ribbon-3)",
-				d: "M1600 390 C1290 340 1270 450 1310 600 H1600Z"
-			})
-		]
+		children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("g", {
+			xmlns: "http://www.w3.org/2000/svg",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("rect", {
+					x: "1108.0",
+					y: "172.0",
+					width: "256",
+					height: "256",
+					rx: "62.72",
+					fill: "var(--rn-color-surface-subtle)"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("g", {
+					transform: "translate(1154.0 218.0) scale(1.28125)",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+							d: "M42 110V40Q42 18 64 18H71Q91 18 91 39V44",
+							fill: "none",
+							stroke: "var(--rn-color-brand-frame)",
+							strokeWidth: "15",
+							strokeLinecap: "round",
+							strokeLinejoin: "round"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+							d: "M91 88V110",
+							fill: "none",
+							stroke: "var(--rn-color-brand-frame)",
+							strokeWidth: "15",
+							strokeLinecap: "round",
+							strokeLinejoin: "round"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+							d: "M8 65H66Q81 65 91 50L111 30",
+							fill: "none",
+							stroke: "var(--rn-color-pictogram-accent)",
+							strokeWidth: "12",
+							strokeLinecap: "round",
+							strokeLinejoin: "round"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+							d: "M66 65Q81 65 91 80L111 100",
+							fill: "none",
+							stroke: "var(--rn-color-pictogram-accent)",
+							strokeWidth: "12",
+							strokeLinecap: "round",
+							strokeLinejoin: "round"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+							d: "M101 19H124V42Z",
+							fill: "var(--rn-color-pictogram-accent)",
+							fillRule: "evenodd"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+							d: "M101 111H124V88Z",
+							fill: "var(--rn-color-pictogram-accent)",
+							fillRule: "evenodd"
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+					d: "M994 300L1102 300",
+					fill: "none",
+					stroke: "var(--rn-color-pictogram-accent)",
+					strokeWidth: "9",
+					strokeLinecap: "round",
+					strokeLinejoin: "round"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("circle", {
+					cx: "982",
+					cy: "300",
+					r: "12",
+					fill: "var(--rn-color-pictogram-accent)"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+					d: "M1370 270C1415 270 1410 174 1470 174",
+					fill: "none",
+					stroke: "var(--rn-color-brand-leaf)",
+					strokeWidth: "8",
+					strokeLinecap: "round",
+					strokeLinejoin: "round"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+					d: "M1370 330C1415 330 1410 426 1470 426",
+					fill: "none",
+					stroke: "var(--rn-color-brand-frame)",
+					strokeWidth: "8",
+					strokeLinecap: "round",
+					strokeLinejoin: "round"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("rect", {
+					x: "1482",
+					y: "160",
+					width: "38",
+					height: "28",
+					rx: "12",
+					fill: "var(--rn-color-brand-leaf)"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("rect", {
+					x: "1482",
+					y: "412",
+					width: "38",
+					height: "28",
+					rx: "12",
+					fill: "var(--rn-color-brand-frame)"
+				})
+			]
+		})
 	});
 }
 //#endregion
@@ -20172,7 +20264,7 @@ var brandIdentity = {
 	"name": "relayna",
 	"system": "Natural Connection",
 	"palette": "Mulberry & Linen",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"date": "2026-10-24",
 	"logo": {
 		"name": "Slim Leaf",
@@ -20197,10 +20289,10 @@ var brandIdentity = {
 		"descriptorWeight": 400
 	},
 	"taglines": {
-		"relayna": "Connect intelligence. Keep control",
-		"Gateway": "One gateway. Clear control.",
-		"SDK": "Build the connection",
-		"Studio": "Shape. Inspect. Iterate"
+		"relayna": "Connected work. Clear direction.",
+		"Gateway": "Route intelligence. Keep control.",
+		"SDK": "Your logic. Connected execution.",
+		"Studio": "Make distributed work visible."
 	},
 	"anchors": {
 		"mulberry": "#653D60",
@@ -20216,7 +20308,30 @@ var brandIdentity = {
 		"Visual evidence with honest unknown states",
 		"One family across Gateway, SDK and Studio"
 	],
-	"status": "Initial reusable design-system package; font remains a development draft"
+	"status": "Approved Open Signal campaign and copy; original Relayna Round 0.100 remains a development draft.",
+	"campaign": {
+		"name": "Open Signal",
+		"selectedBannerDirections": {
+			"relayna": "R2",
+			"Gateway": "G2",
+			"SDK": "D2",
+			"Studio": "S2"
+		},
+		"selectedTaglineIds": {
+			"relayna": "RT1",
+			"Gateway": "GT4",
+			"SDK": "DT8",
+			"Studio": "ST4"
+		},
+		"studioPictogram": "Runtime pulse",
+		"clearSpace": "External connectors stay outside 0.25 × symbol-height, including stroke caps."
+	},
+	"productRoles": {
+		"relayna": "Connected services, tasks and workflows across the Relayna ecosystem.",
+		"Gateway": "Governed access, routing and visibility for AI and service traffic.",
+		"SDK": "Service-side task publishing, worker/runtime plumbing, status delivery and workflow transport.",
+		"Studio": "Central operational control plane for service registry, task search, execution graphs, monitoring, failure investigation, retries and assessments."
+	}
 };
 //#endregion
 //#region crates/gateway-api/admin-ui/src/theme-preference.ts
@@ -20349,7 +20464,6 @@ function ConsoleShell() {
 				className: "login-brand-panel",
 				"aria-label": "Relayna Gateway overview",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(NaturalConnectionRibbons, {}),
 					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
 						className: "login-brand-lockup",
 						children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(RelaynaLogo, {})
@@ -20359,7 +20473,7 @@ function ConsoleShell() {
 						children: [
 							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "login-brand-eyebrow",
-								children: "Natural Connection"
+								children: "AI traffic control"
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("h1", { children: brandIdentity.taglines.Gateway }),
 							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", { children: brandIdentity.taglines.relayna }),
@@ -20384,7 +20498,8 @@ function ConsoleShell() {
 										"aria-hidden": "true"
 									}), "Scoped access"] })
 								]
-							})
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(GatewaySignalArtwork, {})
 						]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", {

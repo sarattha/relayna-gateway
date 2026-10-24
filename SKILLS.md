@@ -125,7 +125,7 @@ views need the same structure or status semantics.
 
 - Support light and dark themes with a distinct Relayna brand mark, elevated
   active navigation, and restrained hover shadows. Use the approved Natural Connection / Mulberry & Linen snapshot under
-  `docs/assets/brand/`, original Relayna Round typography and Slim Leaf logo.
+  `docs/assets/brand/`, original Relayna Round typography and Slim Leaf logo. Open Signal supplies the approved banners and product pictograms; Studio uses Runtime pulse. Keep exact selected taglines in the shared identity metadata.
   Dark mode uses Ink/plum surfaces and Blossom action accents. Keep navigation labels legible
   and preserve distinct success, warning, error and unknown states in both modes.
 - Group navigation by Monitor, Discover, and Govern.

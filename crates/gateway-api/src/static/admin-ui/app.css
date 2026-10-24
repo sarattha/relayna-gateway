@@ -457,6 +457,7 @@
     --rn-color-chart-4: #a45b28;
     --rn-color-chart-5: #426b9b;
     --rn-color-chart-6: #a53d64;
+    --rn-color-pictogram-accent: #a45b28;
     --rn-shadow-rest: 0 2px 8px #2c1f2e0d;
     --rn-shadow-hover: 0 8px 22px #2c1f2e21;
     --rn-shadow-overlay: 0 24px 64px #2c1f2e38;
@@ -504,6 +505,7 @@
       --rn-color-chart-4: #e6ac7a;
       --rn-color-chart-5: #9ebfed;
       --rn-color-chart-6: #f09ab8;
+      --rn-color-pictogram-accent: #d99e70;
       --rn-shadow-rest: 0 2px 8px #00000024;
       --rn-shadow-hover: 0 8px 22px #00000052;
       --rn-shadow-overlay: 0 24px 64px #0000007a;
@@ -551,6 +553,7 @@
     --rn-color-chart-4: #e6ac7a;
     --rn-color-chart-5: #9ebfed;
     --rn-color-chart-6: #f09ab8;
+    --rn-color-pictogram-accent: #d99e70;
     --rn-shadow-rest: 0 2px 8px #00000024;
     --rn-shadow-hover: 0 8px 22px #00000052;
     --rn-shadow-overlay: 0 24px 64px #0000007a;
@@ -8184,18 +8187,12 @@ button:not(:disabled):active {
   overflow: hidden;
 }
 
-.natural-connection-ribbons {
-  z-index: -1;
-  opacity: .6;
+.gateway-signal-artwork {
   pointer-events: none;
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-}
-
-:root[data-theme="dark"] .natural-connection-ribbons {
-  opacity: .35;
+  width: min(100%, 320px);
+  height: auto;
+  margin-top: 24px;
+  display: block;
 }
 
 .login-brand-lockup .relayna-logo {
@@ -8204,15 +8201,17 @@ button:not(:disabled):active {
 }
 
 .login-brand-message h1 {
+  text-wrap: balance;
   letter-spacing: normal;
-  max-width: 12ch;
-  font-size: clamp(36px, 4vw, 56px);
+  max-width: 18ch;
+  font-size: clamp(34px, 3.6vw, 52px);
   font-weight: 500;
   line-height: 1.15;
 }
 
 .login-brand-message > p {
-  max-width: 24ch;
+  text-wrap: balance;
+  max-width: 34ch;
   color: var(--muted-foreground);
   font-size: 18px;
 }

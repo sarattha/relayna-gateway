@@ -3,7 +3,7 @@ export const brandIdentity = {
   "name": "relayna",
   "system": "Natural Connection",
   "palette": "Mulberry & Linen",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "date": "2026-10-24",
   "logo": {
     "name": "Slim Leaf",
@@ -36,10 +36,10 @@ export const brandIdentity = {
     "descriptorWeight": 400
   },
   "taglines": {
-    "relayna": "Connect intelligence. Keep control",
-    "Gateway": "One gateway. Clear control.",
-    "SDK": "Build the connection",
-    "Studio": "Shape. Inspect. Iterate"
+    "relayna": "Connected work. Clear direction.",
+    "Gateway": "Route intelligence. Keep control.",
+    "SDK": "Your logic. Connected execution.",
+    "Studio": "Make distributed work visible."
   },
   "anchors": {
     "mulberry": "#653D60",
@@ -55,5 +55,28 @@ export const brandIdentity = {
     "Visual evidence with honest unknown states",
     "One family across Gateway, SDK and Studio"
   ],
-  "status": "Initial reusable design-system package; font remains a development draft"
+  "status": "Approved Open Signal campaign and copy; original Relayna Round 0.100 remains a development draft.",
+  "campaign": {
+    "name": "Open Signal",
+    "selectedBannerDirections": {
+      "relayna": "R2",
+      "Gateway": "G2",
+      "SDK": "D2",
+      "Studio": "S2"
+    },
+    "selectedTaglineIds": {
+      "relayna": "RT1",
+      "Gateway": "GT4",
+      "SDK": "DT8",
+      "Studio": "ST4"
+    },
+    "studioPictogram": "Runtime pulse",
+    "clearSpace": "External connectors stay outside 0.25 × symbol-height, including stroke caps."
+  },
+  "productRoles": {
+    "relayna": "Connected services, tasks and workflows across the Relayna ecosystem.",
+    "Gateway": "Governed access, routing and visibility for AI and service traffic.",
+    "SDK": "Service-side task publishing, worker/runtime plumbing, status delivery and workflow transport.",
+    "Studio": "Central operational control plane for service registry, task search, execution graphs, monitoring, failure investigation, retries and assessments."
+  }
 } as const;

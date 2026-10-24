@@ -10,7 +10,7 @@ const identity = JSON.parse(read(assets + "identity.json"));
 assert.equal(identity.system, "Natural Connection");
 assert.equal(identity.palette, "Mulberry & Linen");
 assert.deepEqual(identity.anchors, { mulberry: "#653D60", rose: "#A87891", copper: "#D99E70", linen: "#F7F0E8", ink: "#2C1F2E", blossom: "#E7BEDA" });
-assert.deepEqual(identity.taglines, { relayna: "Connect intelligence. Keep control", Gateway: "One gateway. Clear control.", SDK: "Build the connection", Studio: "Shape. Inspect. Iterate" });
+assert.deepEqual(identity.taglines, { relayna: "Connected work. Clear direction.", Gateway: "Route intelligence. Keep control.", SDK: "Your logic. Connected execution.", Studio: "Make distributed work visible." });
 for (const [file, digest] of Object.entries(checksums)) assert.equal(crypto.createHash("sha256").update(read(assets + file)).digest("hex"), digest, file);
 assert.equal(read("crates/gateway-api/admin-ui/src/design-system/brand-tokens.css").toString(), read(assets + "tokens.css").toString());
 assert.equal(crypto.createHash("sha256").update(read("crates/gateway-api/src/static/admin-ui/admin-ui-RelaynaRound-0.100.woff2")).digest("hex"), checksums["fonts/RelaynaRound-0.100.woff2"]);
@@ -27,11 +27,25 @@ for (const logo of doc.querySelectorAll(".relayna-logo")) {
 }
 assert.equal(doc.querySelector(".login-brand-message h1").textContent, identity.taglines.Gateway);
 assert.equal(doc.querySelector(".brand-tagline").textContent, identity.taglines.Gateway);
-assert.match(doc.querySelector(".login-brand-message p").textContent, /Connect intelligence\. Keep control/);
+assert.match(doc.querySelector(".login-brand-message p").textContent, /Connected work\. Clear direction\./);
 assert.equal(doc.querySelector('link[rel="icon"]').getAttribute("href"), "/admin-ui/favicon.ico");
 const css = read("crates/gateway-api/src/static/admin-ui/app.css").toString();
 assert.match(css, /font-family: "?Relayna Round/);
 assert.match(css, /admin-ui-RelaynaRound-0\.100\.woff2/);
 assert.match(css, /font-weight: 300 700/);
 assert.match(css, /--rg-brand-body: var\(--rn-color-brand-frame\)/);
-console.log("ok - approved logo geometry, exact taglines, font bytes, favicon and portable CI snapshot agree");
+
+assert.equal(identity.version, "0.1.1");
+assert.equal(identity.campaign.name, "Open Signal");
+assert.equal(identity.campaign.studioPictogram, "Runtime pulse");
+assert.deepEqual(identity.campaign.selectedTaglineIds, { relayna: "RT1", Gateway: "GT4", SDK: "DT8", Studio: "ST4" });
+const runtimePulse = new JSDOM(read(assets + "pictograms/studio-dark.svg").toString(), { contentType: "image/svg+xml" }).window.document;
+assert.equal(runtimePulse.querySelectorAll("rect").length, 3);
+assert.equal(runtimePulse.querySelector("path").getAttribute("d"), "M7 74H28L42 53L58 87L77 39L93 66H121");
+const illustration = new JSDOM(read(assets + "illustrations/relayna-gateway-open-signal-light.svg").toString(), { contentType: "image/svg+xml" }).window.document;
+assert.deepEqual(geometry(doc.querySelector(".gateway-signal-artwork")), geometry(illustration));
+assert.deepEqual(transforms(doc.querySelector(".gateway-signal-artwork")), transforms(illustration));
+assert.equal(doc.querySelector(".gateway-signal-artwork").getAttribute("viewBox"), "940 120 620 360");
+assert.equal(doc.querySelector(".gateway-signal-artwork").getAttribute("aria-hidden"), "true");
+
+console.log("ok - selected Open Signal copy, Runtime pulse, native logo/artwork geometry and portable CI snapshot agree");
