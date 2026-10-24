@@ -95,13 +95,25 @@ offered cohort. All earlier cohorts remain in CSV/JSON; the summary/chart never
 combines them into one confirmation.
 
 The mock pauses upstream reads for **10 seconds**, then waits **2 seconds**
-after upload. Requests have a **60-second** absolute deadline, including socket
+after upload. Requests have a **180-second** absolute deadline, including socket
 inactivity. JSON has one string field with the exact requested serialized size; HTTP/1.1
 keepalive uses no TLS, compression or retries. The driver alternates directly
 between pod IPs, so this does not measure ingress/load-balancer distribution.
 Body length, SHA-256 and credential stripping are verified against
 the streaming mock. The fixture uses Node.js 22.23.4, PostgreSQL 16 and Redis 7.
 Historical reports keep their original fixture versions and source snapshots.
+
+The observation window includes authentication, upload and the upstream delays.
+The v1.0.0 ARM64 diagnostic at 2,048 requests per pod needed 77.4 seconds to
+drain a resource-stable 10 MiB trial; the previous 60-second window censored
+unfinished requests. Keep those failed observations separate from new runs.
+Every size now uses the same 180-second window, a 300-second condition-runner
+deadline and a 600-second outer trial deadline covering setup and evidence
+collection. These values are recorded in checkpoints, JSON and CSV. Exceeding
+the observation window remains a failure; there is no latency SLO in this
+resource search. Body verification, request reconciliation, pod caps and the
+resource-stability criterion remain unchanged. Lost denial responses remain
+transport errors and prevent an HTTP-clean result.
 
 The report labels a **confirmed resource edge** only when at least three trials
 at the candidate setting are resource-stable, the adjacent setting was tested

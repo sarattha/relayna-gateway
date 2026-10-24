@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 
 FIELDS = ("directory", "slots", "attempt", "cohort_per_pod", "phase", "status", "resource_failure",
+          "client_deadline_ms", "condition_timeout_seconds", "trial_timeout_seconds",
           "resource_stable", "clean", "incomplete", "memory_censored", "memory_streams",
           "oom_pods", "terminated_pods", "restarts", "transport_errors", "admission_counter_gap",
           "successes", "requests", "statuses", "rss_peak_mib", "cgroup_peak_mib",
@@ -66,6 +67,9 @@ def describe(summary):
     rss, cgroup = peak(selected, "rss_peak_mib"), peak(selected, "cgroup_peak_mib")
     p95 = peak([{"p95": row["success_latency_ms"].get("p95")} for row in selected], "p95")
     return {"body_mib": summary.get("body_mib"), "complete": complete, "label": label,
+            "client_deadline_ms": summary.get("client_deadline_ms"),
+            "condition_timeout_seconds": summary.get("condition_timeout_seconds"),
+            "trial_timeout_seconds": summary.get("trial_timeout_seconds"),
             "cohort_per_pod": cohort, "slots": candidate, "stable_trials": len(selected),
             "http_clean_trials": sum(bool(row["clean"]) for row in selected),
             "adjacent_slots": candidate + 1 if adjacent else None,

@@ -24,7 +24,8 @@ All notable changes to Relayna Gateway are documented in this file.
 - Adopt the original F3 Portico 0.101 family for Relayna/Gateway with self-hosted
   upright/italic variable fonts. SDK/Studio retain Round. See [brand guidance](https://sarattha.github.io/relayna-gateway/brand/).
 - Add the native two-pod adaptive body-admission CLI with retained HTML, JSON,
-  CSV, failed trials and immutable runtime/harness provenance.
+  CSV, failed trials and immutable runtime/harness provenance. Record the fixed
+  180-second observation window and retain earlier deadline-censored failures.
 
 ### Fixed
 
