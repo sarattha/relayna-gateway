@@ -40,7 +40,6 @@ nav:
   - Redis Keys: redis.md
   - Getting Started: getting-started.md
   - Admin Portal: admin-portal.md
-  - Brand and Design System: brand.md
   - Traffic Monitor: operations/traffic-monitor.md
   - Gateway Monitoring and Usage: operations/gateway-monitoring.md
   - Authentication Profiles: operations/authentication-profiles.md

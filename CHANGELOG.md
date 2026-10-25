@@ -17,12 +17,9 @@ All notable changes to Relayna Gateway are documented in this file.
 - Monitor per-instance and fleet request rates, protocol counts, body-buffer
   occupancy/vacancy, admission and recording failures, rolling latency
   distributions, and nullable process diagnostics without requiring a collector.
-- Apply the Natural Connection design system to every Admin and Owner page,
-  access screen, action drawer and policy-layer view: Slim Leaf logos, selected
-  Open Signal banners/taglines, Mulberry & Linen light/dark themes, charts,
+- Update every Admin and Owner page, access screen, action drawer and
+  policy-layer view with consistent light/dark themes, charts,
   configuration diagrams, accessible help and responsive layouts.
-- Adopt the original F3 Portico 0.101 family for Relayna/Gateway with self-hosted
-  upright/italic variable fonts. SDK/Studio retain Round. See [brand guidance](https://sarattha.github.io/relayna-gateway/brand/).
 - Add the native two-pod adaptive body-admission CLI with retained HTML, JSON,
   CSV, failed trials and immutable runtime/harness provenance. Record the fixed
   180-second observation window and retain earlier deadline-censored failures.
@@ -52,7 +49,7 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Compatibility and upgrade
 
-- The major version marks the expanded operational console and brand system.
+- The major version marks the expanded operational console.
   Released v0.1.49 HTTP/authentication, provider, streaming, Usage and accounting
   contracts remain supported; existing Admin UI asset paths remain stable.
 - Apply three additive migrations for chronological indexes, Traffic completion
