@@ -11,6 +11,13 @@ define the release gate.
 | v1.0.0 candidate | Native arm64 planned | Full six-size release study pending; do not merge/tag/publish | [Validation status](v1.0.0.md) |
 | v0.1.49 | Native amd64 | Full 5/10/20/40/80/100 MiB resource search; 217 trials | [Results and interactive report](v0.1.49.md) |
 
+## Focused development comparisons
+
+- [Body-buffer allocation, runtime 00e996b (native arm64)](body-buffer-allocation-00e996b.md):
+  matched 5/10 MiB bodies at 16/32/40/64/128 slots, three fresh-pod trials per
+  setting and version. Includes raw evidence, OOMs and admission outcomes;
+  this focused comparison does not replace the six-size release gate.
+
 ## Required protocol
 
 Use the [source benchmark CLI](https://github.com/sarattha/relayna-gateway/blob/main/benches/body-admission/README.md)

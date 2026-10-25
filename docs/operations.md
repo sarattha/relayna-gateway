@@ -48,6 +48,8 @@ route body limit. Token estimation runs when an input-token or token-per-minute
 limit needs it; policy and guardrail checks still inspect the complete body.
 These allocation savings do not establish a new safe slot count. Validate
 slot and byte settings with representative traffic and pod memory headroom.
+The [native arm64 allocation comparison](benchmarks/body-buffer-allocation-00e996b.md)
+records measured gains, overload responses and remaining OOM limits.
 
 Buffered request slots and byte reservations follow the forwarded buffer until
 its last reference is released. An upload queued behind a slow upstream writer
