@@ -66,11 +66,13 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Release validation
 
-- The versioned candidate remains subject to the full verification stack,
-  final-head CI/reviews, fresh six-size [v1.0.0 benchmarks](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.0/),
-  continuous ten-minute mixed-protocol CI check and controlled forwarding-latency
-  comparison. Extended 24-hour soaks remain optional manual runs.
-  Completion and exact evidence will be recorded before merge/tag/publication.
+- Native ARM64 [v1.0.0 validation](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.0/)
+  completed 179 resource trials across all six body sizes, a matched observer
+  latency comparison and a continuous 600-second local protocol check. The
+  full verification stack passed with 479 Nextest tests. Final-head CI and
+  required GitHub approval gate merge and release; CI requires ten continuous
+  minutes of mixed-protocol observation. Extended 24-hour soaks are optional
+  manual runs. Versioned evidence records finite bounds and retained failures.
 
 ## 0.1.49 - 2026-10-22
 

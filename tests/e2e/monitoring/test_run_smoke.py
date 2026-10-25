@@ -85,7 +85,7 @@ class SmokeRunnerTests(unittest.TestCase):
         self.assertIn("--seconds 600", job)
         self.assertIn("if: always()", job)
         self.assertIn("github.run_attempt", job, "reruns must retain earlier failed artifacts")
-        self.assertIn("runner.temp }}/monitoring-python-cache", job,
+        self.assertIn("github.workspace }}/target/monitoring-python-cache", job,
                       "bytecode must not falsely mark the checked-out candidate dirty")
         self.assertNotIn("86400", job)
 

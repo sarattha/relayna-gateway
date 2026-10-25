@@ -190,7 +190,7 @@ jobs:
     permissions:
       contents: read
     env:
-      PYTHONPYCACHEPREFIX: ${{ runner.temp }}/monitoring-python-cache
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/target/monitoring-python-cache
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0
@@ -238,6 +238,12 @@ jobs:
       - name: Validate workflow YAML parses
         run: |
           ruby -ryaml -e 'Dir[".github/workflows/*.yml"].each { |path| YAML.load_file(path) }'
+
+      - name: Validate workflow expressions and schemas
+        run: >-
+          docker run --rm -v "$PWD:/repo:ro" -w /repo
+          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+          -shellcheck= -pyflakes=
 
       - name: Validate release metadata
         run: python3 scripts/validate-release-metadata.py
