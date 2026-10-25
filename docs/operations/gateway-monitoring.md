@@ -186,7 +186,9 @@ concurrent readers, 24-hour/7-day/30-day ranges, all-project/project reads,
 per-request outcomes, and query plans. See its
 [run instructions](https://github.com/sarattha/relayna-gateway/blob/main/tests/e2e/monitoring/README.md) in the source repository.
 
-Run latency comparisons and a 24-hour mixed HTTP/streaming/WebSocket soak on
-your deployment resources before claiming a production capacity. A short test
-does not establish a 24-hour soak or a safe limit. Version bumps separately
+CI requires a continuous ten-minute mixed HTTP/SSE/WebSocket check. Longer
+24-hour soaks are optional, intentionally started manual runs and do not gate
+PRs or releases. Choose deployment-specific latency and endurance measurements
+before claiming production capacity; a short CI check does not establish a
+24-hour soak or a safe limit. Version bumps separately
 require the complete [release benchmark procedure](https://github.com/sarattha/relayna-gateway/blob/main/benches/body-admission/README.md).

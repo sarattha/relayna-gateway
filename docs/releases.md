@@ -194,8 +194,10 @@ avoids changing the required lint baseline whenever the stable channel moves.
 
 5. Commit the final runtime candidate, run the fresh six-size adaptive benchmark
    with at least three fresh-pod trials per confirmed setting, and publish its
-   raw evidence and versioned results. Finish the 24-hour mixed-protocol soak,
-   controlled forwarding-latency comparison, and required PR reviews/checks.
+   raw evidence and versioned results. Finish the continuous ten-minute
+   HTTP/SSE/WebSocket CI check, controlled forwarding-latency comparison, and
+   required PR reviews/checks. Extended 24-hour soaks are intentional manual
+   runs; they are not CI, PR or release gates.
    Results/documentation commits may follow an unchanged measured runtime.
 6. Merge the approved PR only after these gates pass.
 7. Create and push the tag at the merged release commit:

@@ -1,5 +1,40 @@
 # Monitoring verification
 
+## Required ten-minute CI check
+
+The `monitoring smoke` CI job runs **600 continuous seconds** of mixed HTTP,
+SSE and WebSocket traffic against two fresh native Gateway processes. Setup,
+build time and cleanup do not count toward those ten minutes. It exercises
+quiet sockets, explicit socket replacement, journal authorization-lease renewal,
+terminal outcomes, cluster publication, capacity bounds and drain/recovery.
+An all-project Usage reader runs concurrently over 100,000 synthetic events
+across 30 projects and 20 shared services. Unexpected protocol/observer errors,
+incomplete observation, failed Usage reads or failed cleanup fail the check.
+Expected admission denials and intentional interrupted SSE responses retain
+their distinct assertions and counters.
+
+To run the same check locally with Python 3.11+, Docker and a built candidate:
+
+```bash
+cargo build --release --locked --bin gateway-api
+PYTHONPYCACHEPREFIX=target/python-cache python3 tests/e2e/monitoring/run_smoke.py \
+  --binary target/release/gateway-api --seconds 600 \
+  --history-rows 100000 --output output/monitoring/ci-smoke
+```
+
+The runner creates and removes only its own loopback PostgreSQL/Redis containers
+and Gateway processes. Random credentials stay in a private temporary directory
+and process memory; only redacted logs, numeric observations and harness/binary
+provenance enter the evidence directory. CI retains evidence for 14 days,
+including failed runs. Shorter local diagnostics are explicitly labeled and do
+not satisfy the ten-minute gate. The runner refuses durations above 600 seconds.
+
+The **24-hour soak is manual and opt-in**. It is not a CI, PR or release gate,
+and no scheduled long soak starts automatically. A passing ten-minute check
+does not establish long-term stability or safe production capacity.
+
+## Usage scale measurements
+
 Use an isolated, migrated PostgreSQL database named `relayna_monitoring` in a
 Docker container named `relayna-monitoring-*`, with role `relayna_test`.
 The harness refuses remote gateway targets and requires `--allow-seed`.
@@ -41,7 +76,7 @@ Complete the required repository verification stack, UI build/tests, and
 desktop/mobile browser checks. Keep all generated evidence under ignored
 `output/` or `target/`.
 
-## Two-instance mixed-protocol soak
+## Manual two-instance mixed-protocol soak
 
 `soak.py` uses Python 3.11+ and its standard library. Run two disposable native
 Gateway processes against the same migrated monitoring database and Redis,
@@ -131,7 +166,8 @@ directory and rerun into a new one. Record the built binary checksum/runtime
 commit separately when publishing evidence; the Git checkout may contain
 uncommitted code and is not proof of the running binary's identity.
 
-For a future 24-hour run, use `--seconds 86400` and a new evidence directory.
+For an intentionally requested 24-hour run, use `--seconds 86400` and a new
+evidence directory. This optional manual run is separate from the CI gate.
 Each socket is probed after every configured quiet interval (240 seconds by
 default), within the registered-service idle timeout. The runtime's session-age
 limit remains 24 hours. At 23 hours the harness explicitly opens and probes a

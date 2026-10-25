@@ -68,7 +68,8 @@ All notable changes to Relayna Gateway are documented in this file.
 
 - The versioned candidate remains subject to the full verification stack,
   final-head CI/reviews, fresh six-size [v1.0.0 benchmarks](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.0/),
-  24-hour mixed-protocol soak and controlled forwarding-latency comparison.
+  continuous ten-minute mixed-protocol CI check and controlled forwarding-latency
+  comparison. Extended 24-hour soaks remain optional manual runs.
   Completion and exact evidence will be recorded before merge/tag/publication.
 
 ## 0.1.49 - 2026-10-22
