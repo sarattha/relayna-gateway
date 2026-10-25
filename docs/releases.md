@@ -1,8 +1,16 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version **1.0.0** is the
-current release target. The candidate is not published until the release gates
-below and [versioned evidence](benchmarks/v1.0.0.md) are complete.
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version **1.0.0** was
+[released October 25, 2026](https://github.com/sarattha/relayna-gateway/releases/tag/v1.0.0).
+The release includes [versioned evidence](benchmarks/v1.0.0.md), raw and failed
+trials, checksums, screenshots and an SPDX SBOM.
+
+The published image is **linux/amd64**:
+`ghcr.io/sarattha/relayna-gateway:1.0.0`, with immutable index digest
+`sha256:20a17e64b435abac5f8fa41c469969b2d7871af275f8686fa7732cb3f9bf4d21`.
+Its signature and provenance identify the tagged merge commit
+`e5200b662a7c1a3d085c00f56bf8ed09c1293f88`. The native ARM64 benchmark
+used a separate source-built image; it does not imply an ARM64 release image.
 
 The major release combines scalable all-project Usage, HTTP/SSE and WebSocket
 monitoring, live gateway capacity, and the Natural Connection operator console.
