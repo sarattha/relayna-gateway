@@ -746,7 +746,11 @@ where
             matched.estimated_cost_usd = None;
         }
 
-        ctx.request_rewriter = Some(BoundedBodyRewriter::new(matched.max_body_bytes));
+        ctx.request_rewriter = Some(
+            BoundedBodyRewriter::new(matched.max_body_bytes).with_expected_length(
+                header_value(req, "content-length").and_then(|value| value.parse().ok()),
+            ),
+        );
         ctx.response_rewriter = Some(BoundedBodyRewriter::new(matched.max_response_body_bytes));
         ctx.traceparent = header_value(req, "traceparent")
             .filter(|value| is_valid_traceparent(value))
@@ -1749,7 +1753,12 @@ where
             respond_error(session, error, ctx).await?;
             return Ok(false);
         }
-        let estimated_tokens = estimate_generation_tokens(&ctx.body_prefix);
+        let estimated_tokens =
+            if policy.max_input_tokens_per_request.is_some() || policy.tpm_limit.is_some() {
+                estimate_generation_tokens(&ctx.body_prefix)
+            } else {
+                0
+            };
         if let Err(error) = evaluate_policy_limits(
             &policy,
             now,
@@ -3146,7 +3155,10 @@ where
                     retry_after_seconds: None,
                 });
             }
-            let tokens = estimate_generation_tokens(raw);
+            let tokens = effective
+                .policy
+                .tpm_limit
+                .map_or(0, |_| estimate_generation_tokens(raw));
             match self
                 .control_state
                 .check_token_rate_limit(key.key_id, effective.policy.tpm_limit, tokens, Utc::now())
@@ -3814,7 +3826,9 @@ fn check_complete_request_policy(
         Utc::now(),
         i64::try_from(body.len()).ok(),
         None,
-        i32::try_from(estimate_generation_tokens(body)).ok(),
+        policy
+            .max_input_tokens_per_request
+            .and_then(|_| i32::try_from(estimate_generation_tokens(body)).ok()),
         None,
         matched.estimated_cost_usd,
     )?;
@@ -6765,6 +6779,31 @@ mod tests {
             *store.policy_models.lock().unwrap(),
             vec![None, Some("first".into()), Some("second".into())]
         );
+    }
+
+    #[test]
+    fn complete_body_input_token_limits_keep_their_estimation_boundary() {
+        let body = br#"{"model":"gpt-test","input":"abcdefgh","max_tokens":12}"#;
+        let matched = Route::resolve_match(&http::Method::POST, "/v1/chat/completions").unwrap();
+        let features = extract_generation_features(body);
+        let estimated = i32::try_from(estimate_generation_tokens(body)).unwrap();
+        for limit in [None, Some(estimated), Some(estimated + 1)] {
+            let policy = KeyPolicy {
+                max_input_tokens_per_request: limit,
+                ..KeyPolicy::default()
+            };
+            assert!(check_complete_request_policy(&policy, &matched, body, &features).is_ok());
+        }
+        for limit in [-1, 0, estimated - 1] {
+            let policy = KeyPolicy {
+                max_input_tokens_per_request: Some(limit),
+                ..KeyPolicy::default()
+            };
+            assert_eq!(
+                check_complete_request_policy(&policy, &matched, body, &features),
+                Err(GatewayError::PolicyDenied)
+            );
+        }
     }
 
     #[tokio::test]
