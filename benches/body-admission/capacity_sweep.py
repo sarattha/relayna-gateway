@@ -12,6 +12,9 @@ import time
 
 HERE = Path(__file__).resolve().parent
 MIB = 1024 * 1024
+CLIENT_DEADLINE_MS = 180_000
+CONDITION_TIMEOUT_SECONDS = 300
+TRIAL_TIMEOUT_SECONDS = 600
 GRIDS = {
     5: [32, 64, 96, 102, 128, 192, 256],
     10: [16, 32, 48, 51, 64, 96, 128],
@@ -27,6 +30,9 @@ def analyze(folder, slots, attempt, expected_body_bytes, cohort):
     raw = folder / f"limit-{slots:02}-rep-1.json"
     row = {"slots": slots, "attempt": attempt, "directory": folder.name,
            "body_bytes": expected_body_bytes, "cohort_per_pod": cohort,
+           "client_deadline_ms": CLIENT_DEADLINE_MS,
+           "condition_timeout_seconds": CONDITION_TIMEOUT_SECONDS,
+           "trial_timeout_seconds": TRIAL_TIMEOUT_SECONDS,
            "expected_requests": 2 * cohort}
     pods = json.loads(raw.with_suffix(".pods.json").read_text())["items"]
     assert len(pods) == 2, "expected exactly two Gateway pods"
@@ -132,6 +138,9 @@ def main(argv=None):
     summary = {"body_mib": args.body_mib, "body_bytes": args.body_mib * MIB,
                "full_body_arithmetic_bound_per_pod": capacity, "cohort_per_pod": cohort,
                "upstream_read_delay_ms": 10000, "post_upload_delay_ms": 2000,
+               "client_deadline_ms": CLIENT_DEADLINE_MS,
+               "condition_timeout_seconds": CONDITION_TIMEOUT_SECONDS,
+               "trial_timeout_seconds": TRIAL_TIMEOUT_SECONDS,
                "image": args.image, "source_commit": args.source_commit,
                "confirmation_repetitions": args.confirmation_repetitions,
                "criterion": "resource_stability",
@@ -157,10 +166,13 @@ def main(argv=None):
                    "--output", str(folder), "--body-mib", str(args.body_mib),
                    "--limits", str(slots), "--repetitions", "1", "--memory-limit-mib", "1024",
                    "--concurrent-per-pod", str(cohort), "--read-delay-ms", "10000",
-                   "--delay-ms", "2000", "--client-deadline-ms", "60000",
-                   "--condition-timeout", "150", "--retain-failures", "--host-metadata"]
+                   "--delay-ms", "2000", "--client-deadline-ms", str(CLIENT_DEADLINE_MS),
+                   "--condition-timeout", str(CONDITION_TIMEOUT_SECONDS), "--retain-failures", "--host-metadata"]
         row = {"slots": slots, "attempt": attempt, "directory": folder.name,
                "body_bytes": args.body_mib * MIB, "cohort_per_pod": cohort,
+                "client_deadline_ms": CLIENT_DEADLINE_MS,
+                "condition_timeout_seconds": CONDITION_TIMEOUT_SECONDS,
+                "trial_timeout_seconds": TRIAL_TIMEOUT_SECONDS,
                "phase": phase, "status": "running", "incomplete": True,
                "resource_failure": False, "resource_stable": False, "clean": False,
                "memory_censored": True}
@@ -168,7 +180,7 @@ def main(argv=None):
         save()
         try:
             with (root / f"{folder.name}.runner.log").open("w") as log:
-                result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=300)
+                result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=TRIAL_TIMEOUT_SECONDS)
             analyzed = analyze(folder, slots, attempt, args.body_mib * MIB, cohort)
             row.clear()
             row.update(analyzed, phase=phase, runner_exit_code=result.returncode, status="completed")

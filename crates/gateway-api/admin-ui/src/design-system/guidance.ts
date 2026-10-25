@@ -1,4 +1,4 @@
-import { fieldGuidance, termGuidance } from "./guidance-content";
+import { fieldGuidance, fieldSummary, termGuidance } from "./guidance-content";
 
 // Constrain the tooltip to the viewport, including narrow screens and bottom rows.
 export function tooltipPosition(anchor, size, viewport) {
@@ -32,6 +32,7 @@ const terms = 'th, .stat > span:first-child, .posture-fact > span:first-child, .
  * controls, changing values, or rebinding their submit/change handlers. */
 export function installComponentGuidance(doc: Document = document) {
   const seen = new WeakSet<Element>();
+  const tooltipTriggers = new WeakSet<HTMLElement>();
   let sequence = 0;
   let active: { trigger: HTMLElement; tip: HTMLElement; pinned: boolean } | null = null;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -78,6 +79,8 @@ export function installComponentGuidance(doc: Document = document) {
     tip.addEventListener('pointerleave', scheduleHide);
   };
   const bindTooltip = (trigger: HTMLElement) => {
+    if (tooltipTriggers.has(trigger)) return;
+    tooltipTriggers.add(trigger);
     trigger.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') show(trigger); });
     trigger.addEventListener('pointerleave', scheduleHide);
     trigger.addEventListener('focus', () => show(trigger));
@@ -110,6 +113,7 @@ export function installComponentGuidance(doc: Document = document) {
     if (control.hasAttribute('aria-describedby') || (control.type === 'checkbox' && !control.closest('label.check'))) return;
     const name = control.dataset.guidanceName || control.name || control.dataset.pricingRuleField || control.dataset.endpointField || control.id;
     const explanation = fieldGuidance(name, contextFor(control));
+    const compact = fieldSummary(name, contextFor(control));
     const label = control.closest('label');
     if (!explanation || !label) return;
     const labelCopy = label.cloneNode(true) as HTMLElement;
@@ -121,11 +125,11 @@ export function installComponentGuidance(doc: Document = document) {
     const help = doc.createElement('small');
     help.id = `component-field-help-${++sequence}`;
     help.className = 'field-hint';
-    help.textContent = explanation;
+    help.textContent = compact || explanation;
     control.setAttribute('aria-describedby', help.id);
     label.append(help);
-    if (['profile', 'identity', 'traffic'].includes(contextFor(control)) || control.dataset.guidanceName || control.type === 'checkbox') {
-      help.hidden = true;
+    if (compact || ['profile', 'identity', 'traffic'].includes(contextFor(control)) || control.dataset.guidanceName || control.type === 'checkbox') {
+      help.hidden = !compact;
       const trigger = doc.createElement('button');
       trigger.type = 'button';
       trigger.className = 'help-trigger';
@@ -146,13 +150,13 @@ export function installComponentGuidance(doc: Document = document) {
     root.querySelectorAll(controls).forEach(node => addField(node as HTMLInputElement));
     if (root.matches(terms)) addTerm(root as HTMLElement);
     root.querySelectorAll(terms).forEach(node => addTerm(node as HTMLElement));
-    const icons = 'button.icon-button[aria-label], #command-trigger';
+    const icons = 'button.icon-button[aria-label], #command-trigger, button[data-help-tooltip]';
     const buttons = [...root.querySelectorAll<HTMLElement>(icons)];
     if (root.matches(icons)) buttons.push(root as HTMLElement);
     for (const button of buttons) {
       if (seen.has(button)) continue;
       seen.add(button);
-      button.dataset.helpTooltip = button.id === 'command-trigger' ? 'Search available pages. Keyboard shortcut: Command/Ctrl + K.' : button.getAttribute('aria-label') || '';
+      if (!button.dataset.helpTooltip) button.dataset.helpTooltip = button.id === 'command-trigger' ? 'Search available pages. Keyboard shortcut: Command/Ctrl + K.' : button.getAttribute('aria-label') || '';
       bindTooltip(button);
     }
   };

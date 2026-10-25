@@ -1,7 +1,14 @@
 # Releases
 
-Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version `0.1.49` is the
-current release target.
+Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version **1.0.0** is the
+current release target. The candidate is not published until the release gates
+below and [versioned evidence](benchmarks/v1.0.0.md) are complete.
+
+The major release combines scalable all-project Usage, HTTP/SSE and WebSocket
+monitoring, live gateway capacity, and the Natural Connection operator console.
+Read the [console tour](v1.0.0.md), [upgrade guide](deployment.md#upgrade-to-100)
+and [monitoring semantics](operations/gateway-monitoring.md). Released v0.1.49
+proxy, identity, Usage and budget contracts remain supported.
 
 Every version starting with v0.1.49 requires a full body-admission benchmark
 and versioned results before release. See the [benchmark history and release
@@ -164,7 +171,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v0.1.49
+   python3 scripts/validate-release-metadata.py v1.0.0
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -182,15 +189,22 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:0.1.49 .
+   docker build -t relayna-gateway:1.0.0 .
    ```
 
-5. Commit the release changes.
-6. Create and push the tag:
+5. Commit the final runtime candidate, run the fresh six-size adaptive benchmark
+   with at least three fresh-pod trials per confirmed setting, and publish its
+   raw evidence and versioned results. Finish the continuous ten-minute
+   HTTP/SSE/WebSocket CI check, controlled forwarding-latency comparison, and
+   required PR reviews/checks. Extended 24-hour soaks are intentional manual
+   runs; they are not CI, PR or release gates.
+   Results/documentation commits may follow an unchanged measured runtime.
+6. Merge the approved PR only after these gates pass.
+7. Create and push the tag at the merged release commit:
 
    ```bash
-   git tag -a v0.1.49 -m "Release v0.1.49"
-   git push origin v0.1.49
+   git tag -a v1.0.0 -m "Release v1.0.0"
+   git push origin v1.0.0
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -200,11 +214,11 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v0.1.49`, the workflow publishes:
+For `v1.0.0`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:0.1.49
-ghcr.io/sarattha/relayna-gateway:0.1
+ghcr.io/sarattha/relayna-gateway:1.0.0
+ghcr.io/sarattha/relayna-gateway:1.0
 ghcr.io/sarattha/relayna-gateway:latest
 ```
 

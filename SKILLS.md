@@ -123,7 +123,11 @@ views need the same structure or status semantics.
 
 ### Visual Rules
 
-- Use the dark-sidebar and light-workspace shell.
+- Support light and dark themes with a distinct Relayna brand mark, elevated
+  active navigation, and restrained hover shadows. Use the approved Natural Connection / Mulberry & Linen snapshot under
+  `docs/assets/brand/`, original Relayna Portico typography and Slim Leaf logo. Open Signal supplies the approved banners and product pictograms; Studio uses Runtime pulse. Keep exact selected taglines in the shared identity metadata.
+  Dark mode uses Ink/plum surfaces and Blossom action accents. Keep navigation labels legible
+  and preserve distinct success, warning, error and unknown states in both modes.
 - Group navigation by Monitor, Discover, and Govern.
 - Use compact panels and tables for operational workflows.
 - Use status badges and status colors consistently:
@@ -133,6 +137,11 @@ views need the same structure or status semantics.
   - `neutral` for insufficient samples and informational states.
 - Do not add decorative hero sections, gradient-only pages, nested cards, or
   oversized marketing layout patterns.
+- Use shared `insights.ts` summaries, measured comparisons, protocol icons and
+  configuration flows where they clarify a decision. Label configuration and
+  returned samples accurately; unknown measurements must not become zero.
+- Keep read-only charts stable. Actionable controls lift subtly on hover;
+  keyboard focus stays visible and reduced-motion preferences disable movement.
 - Keep text inside controls from wrapping awkwardly or overflowing.
 - Maintain responsive behavior for narrow screens with single-column layouts
   and horizontal table scrolling.

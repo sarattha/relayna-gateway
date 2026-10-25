@@ -80,7 +80,7 @@ console.log('ok - authentication profile forms validate bindings, independent cl
 assert.match(profileFields({}), /panel-heading[^]*data-add-profile>Add profile/);
 assert.equal((profileFields({}).match(/data-add-profile/g)||[]).length,1);
 const main=readFileSync(new URL('../crates/gateway-api/admin-ui/src/main.ts',import.meta.url),'utf8');
-assert.match(main, /<form class="modal-form"><div class="modal-scroll form-grid">\$\{endpointIdentityFields\(setting.access\)\}/);
+assert.match(main, /<form class="modal-form"><div class="modal-scroll drawer-body form-grid">\$\{endpointIdentityFields\(setting.access\)\}/);
 assert.match(main, /websocketTransportFields\(setting.access, true\)/);
 
 const pattern = profileRow().match(/pattern="([^"]+)"/)[1];

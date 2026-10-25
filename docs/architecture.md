@@ -40,6 +40,14 @@ flowchart LR
    header derived from the selected upstream.
 8. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields when available.
 
+Virtual-key Argon2 verification runs on blocking workers with a shared limit of
+two concurrent verifications per process. This keeps CPU-intensive verification
+off async I/O threads and bounds its simultaneous memory use. Waiting requests
+remain subject to client and deployment deadlines; this is not an RPS guarantee.
+Cancelling a request releases a queued verification, while an already-running
+verification keeps its worker slot until it finishes. Hash parameters, key-state
+checks and authentication responses are unchanged.
+
 Canonical OpenAI-compatible and Anthropic-compatible routes can run in
 `managed_by_gateway` mode or `direct_litellm_passthrough` mode. Direct mode
 still enforces Relayna auth, route enablement, route/model/provider policy,
@@ -150,6 +158,8 @@ Redis is the fast mutable state layer:
 - Daily and monthly budget counters.
 - In-flight budget reservation keys.
 - Readiness checks used by `/admin-ui/readyz`.
+- Bounded, expiring per-process monitoring snapshots for cluster observation;
+  this state is independent of proxy admission and durable Usage accounting.
 
 PostgreSQL remains the durable usage ledger. On startup and periodic
 reconciliation, Gateway can rebuild current daily and monthly Redis budget

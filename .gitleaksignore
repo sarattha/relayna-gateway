@@ -50,3 +50,13 @@ d9d1920e2ebab47b23c27e71b6f7aa5da86275f3:internal/test-reports/litellm-real-pass
 
 # PR #121 report prose: a list of binding rejection cases, not a credential.
 d749e48ea7bed7a8ff1ed607d652bc61861e980c:internal/test-reports/traffic-profiles.md:generic-api-key:20
+
+# PR #143's original authentication regressions used documented synthetic
+# keys in an in-memory lookup. They now generate their keys at runtime.
+# Scope: these six historical fingerprints only; see security-exceptions.md.
+fbad25aeb454bd773ba4be9f44141a37773d48b4:crates/gateway-core/src/auth.rs:relayna-live-token:278
+fbad25aeb454bd773ba4be9f44141a37773d48b4:crates/gateway-core/src/auth.rs:relayna-live-token:311
+fbad25aeb454bd773ba4be9f44141a37773d48b4:crates/gateway-core/src/auth.rs:relayna-live-token:315
+fbad25aeb454bd773ba4be9f44141a37773d48b4:crates/gateway-core/src/auth.rs:stripe-access-token:278
+fbad25aeb454bd773ba4be9f44141a37773d48b4:crates/gateway-core/src/auth.rs:stripe-access-token:311
+fbad25aeb454bd773ba4be9f44141a37773d48b4:crates/gateway-core/src/auth.rs:stripe-access-token:315

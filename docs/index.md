@@ -1,8 +1,17 @@
+<div class="brand-banner">
+  <img class="brand-light" src="assets/brand/banners/relayna-gateway-wide-light.svg" alt="relayna Gateway — Route intelligence. Keep control.">
+  <img class="brand-dark" src="assets/brand/banners/relayna-gateway-wide-dark.svg" alt="relayna Gateway — Route intelligence. Keep control.">
+</div>
+
 # Relayna Gateway
+
+**Route intelligence. Keep control.**
 
 Relayna Gateway is the Rust control plane and proxy for Relayna AI traffic. It gives external clients, SDKs, Studio, and Relayna workers a single governed API surface for model access instead of exposing provider credentials directly.
 
 The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-compatible traffic to LiteLLM or direct providers, records usage events, and exposes an operator admin portal from the same binary.
+
+[Explore the 1.0 console](v1.0.0.md) · [Upgrade safely](deployment.md#upgrade-to-100) · [Release evidence](benchmarks/v1.0.0.md)
 
 ## What Runs
 
@@ -26,6 +35,8 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - A secure operator workflow for the first bootstrap token, either seeded from
   `GATEWAY_ADMIN_TOKEN` on a fresh database or generated and printed once.
 
+See [Natural Connection](brand.md) for the shared logo family, Mulberry & Linen colors and original Relayna Portico typography.
+
 ## Documentation Map
 
 - [Architecture](architecture.md) explains the request path, crate ownership, data stores, and trust boundaries.
@@ -38,7 +49,7 @@ The gateway validates Relayna virtual keys, enforces policy, forwards OpenAI-com
 - [Admin Portal](admin-portal.md) covers the embedded operator console.
 - [OpenAPI Service Pricing](openapi-service-pricing.md) explains registered
   service discovery, endpoint billing, multipart selectors, and budget rules.
-- [Current Feature Highlights](current-features.md) summarizes the `v0.1.49`
+- [Current Feature Highlights](current-features.md) summarizes the `v1.0.0`
   feature set, including Admin UI screenshots.
 - [Entra Portal and Service-owner Monitoring](operations/entra-portal-and-owner-monitoring.md)
   covers browser OIDC, member approval, service assignments, managed

@@ -18,6 +18,7 @@ type Props = {
 export function FoundryIdentityFields({ identity, credentialConfigured = false }: { identity?: Identity; credentialConfigured?: boolean }) {
   const [method, setMethod] = useState(identity?.method || "workload_identity");
   return <>
+        <div className="editor-section-heading"><i className="ti ti-fingerprint" aria-hidden="true" />Azure identity</div>
         <Field label="Azure identity"><NativeSelect name="foundry_method" value={method} onChange={e => setMethod(e.target.value)}>
           <option value="workload_identity">Workload identity (AKS)</option><option value="managed_identity">Managed identity (Azure VM)</option><option value="client_secret">Client secret</option>
         </NativeSelect></Field>
@@ -63,7 +64,7 @@ export function FoundryEditor({ kind, record, providers, projects, onSave, onClo
     try { await onSave(body); setBusy(false); onClose(); }
     catch (error) { setError(String(error instanceof Error ? error.message : error)); setBusy(false); }
   };
-  return <Dialog title={provider ? "Azure Foundry connection" : "Foundry service"} onClose={() => { if (!busy) onClose(); }} restoreFocus={restoreFocus}
+  return <Dialog layout="drawer" title={provider ? "Azure Foundry connection" : "Foundry service"} onClose={() => { if (!busy) onClose(); }} restoreFocus={restoreFocus}
     description={provider ? "Azure credentials are used only by the gateway. Caller authentication is configured on each service." : "Register an existing agent or expose the project Responses endpoint."}>
     <form onSubmit={submit} className="grid gap-4">
       {(provider || !record) && <Field label="Name"><Input name="name" required defaultValue={record?.name || ""} pattern={provider ? undefined : "[a-z0-9][a-z0-9-]{0,62}[a-z0-9]|[a-z0-9]"} placeholder={provider ? "Production Foundry" : "research-agent"} /></Field>}
@@ -85,7 +86,7 @@ export function FoundryEditor({ kind, record, providers, projects, onSave, onClo
         </>}
       </>}
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
-      <div className="flex gap-2 border-t border-border pt-4"><Button type="submit" variant="default" disabled={busy || (!provider && !providers.length)}>{busy ? "Saving…" : "Save"}</Button><Button disabled={busy} onClick={onClose}>Cancel</Button></div>
+      <div className="editor-form-actions"><Button type="submit" variant="default" disabled={busy || (!provider && !providers.length)}>{busy ? "Saving…" : "Save"}</Button><Button disabled={busy} onClick={onClose}>Cancel</Button></div>
     </form>
   </Dialog>;
 }

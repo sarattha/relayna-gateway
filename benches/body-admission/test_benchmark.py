@@ -75,6 +75,20 @@ class Reports(unittest.TestCase):
             report.write_json(root / "run.json", {"status": "running"})
             self.assertEqual(report.generate(root)["status"], "in progress / unfinished")
 
+    def test_observation_window_survives_json_and_csv_without_inventing_legacy_data(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            timing = dict(client_deadline_ms=180000, condition_timeout_seconds=300, trial_timeout_seconds=600)
+            report.write_json(root / "summary.json", dict(body_mib=10, complete=True, trials=[trial(**timing)], **timing))
+            report.generate(root)
+            data = json.loads((root / "report.json").read_text())["sizes"][0]
+            for key, value in timing.items():
+                self.assertEqual(data[key], value)
+                self.assertEqual(data["trials"][0][key], value)
+            self.assertIn("client_deadline_ms", (root / "trials.csv").read_text().splitlines()[0])
+            self.assertIsNone(report.describe(dict(complete=True, trials=[trial()]))["client_deadline_ms"])
+            self.assertIsNone(report.normalize(trial())["client_deadline_ms"])
+
 
 class Orchestration(unittest.TestCase):
     def setUp(self):
@@ -141,6 +155,9 @@ class Orchestration(unittest.TestCase):
         meta = json.loads((self.output / "run.json").read_text())
         self.assertTrue(meta["native_verified"])
         self.assertEqual(meta["completed_sizes"], [5, 100])
+        self.assertEqual(meta["client_deadline_ms"], 180000)
+        self.assertEqual(meta["condition_timeout_seconds"], 300)
+        self.assertEqual(meta["trial_timeout_seconds"], 600)
         create = next(cmd for cmd in commands if cmd[:3] == ["kind", "create", "cluster"])
         kubeconfig = Path(create[create.index("--kubeconfig") + 1])
         self.assertFalse(kubeconfig.exists())
@@ -197,6 +214,21 @@ class Checkpointing(unittest.TestCase):
             self.assertEqual([row["slots"] for row in data["trials"]], [1, 1, 4, 4])
             self.assertTrue(data["complete"])
             self.assertEqual(data["search_mode"], "fixed")
+
+    def test_observation_window_is_applied_after_checkpointing_and_before_outer_timeout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            def process(cmd, **kwargs):
+                data = json.loads((root / "summary.json").read_text())
+                self.assertEqual(data["client_deadline_ms"], 180000)
+                self.assertEqual(data["condition_timeout_seconds"], 300)
+                self.assertEqual(data["trial_timeout_seconds"], 600)
+                self.assertEqual(data["trials"][-1]["client_deadline_ms"], 180000)
+                self.assertEqual(cmd[cmd.index("--client-deadline-ms") + 1], "180000")
+                self.assertEqual(cmd[cmd.index("--condition-timeout") + 1], "300")
+                self.assertEqual(kwargs["timeout"], 600)
+                return subprocess.CompletedProcess(cmd, 0)
+            self.execute(root, process)
 
     def test_timeout_checkpoint_precedes_child_execution(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -100,6 +100,9 @@ def run(args):
     meta = {"schema_version": 1, "run_id": run_id, "status": "running", "stage": "preflight",
             "started_at": now(), "body_mib": args.body_mib, "mode": "sweep" if args.slots else "capacity",
             "repetitions": args.repetitions, "cluster": cluster, "native_verified": False,
+             "client_deadline_ms": capacity_sweep.CLIENT_DEADLINE_MS,
+             "condition_timeout_seconds": capacity_sweep.CONDITION_TIMEOUT_SECONDS,
+             "trial_timeout_seconds": capacity_sweep.TRIAL_TIMEOUT_SECONDS,
             "resources": {"pods": 2, "cpu_per_pod": 2, "memory_mib_per_pod": 1024, "body_budget_mib_per_pod": 512},
             "completed_sizes": [], "errors": []}
     capacity_report.write_json(output / "run.json", meta)

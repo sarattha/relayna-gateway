@@ -1,4 +1,4 @@
-# Admin UI Design System 2.0
+# Admin UI Design System 4.0
 
 The design system is the reusable foundation for the Relayna Gateway operator
 portal. It keeps the UI dense, scannable, and governance-oriented without
@@ -9,6 +9,8 @@ copying any external brand.
 - `tokens.css`: color, spacing, radius, shadow, focus, density, and status
   tokens. Import this through `src/app.css`; do not duplicate token values in
   feature views.
+- `insights.ts`: escaped, read-only metric strips, measured comparison bars and
+  configuration-flow diagrams shared across admin and owner pages.
 - `view-meta.ts`: Monitor, Discover, and Govern navigation metadata.
 - `components.ts`: small HTML helpers for panels, badges, notices, metrics,
   empty states, modal shells, action groups, and table wrappers.
@@ -28,3 +30,24 @@ copying any external brand.
 - Preserve security invariants: raw virtual keys and operator tokens are shown
   once, provider credentials stay write-only, and secrets are never rendered
   back into tables, exports, audit snapshots, or notices.
+
+## Visual and interaction contract
+
+The light sidebar uses an elevated active item and subtle lift/shadow feedback
+on actionable controls. Read-only plots retain their position. Keyboard focus
+remains visible, and `prefers-reduced-motion` removes movement.
+
+Inventories lead with configuration coverage, governance pages with lifecycle
+and access summaries, and scoped dashboards with recorded demand and outcomes.
+Native progress bars represent known values; missing values remain unknown.
+Longer metric definitions use authored `data-help-tooltip` controls, enhanced
+by the same hover/focus/tap help system as forms and tables. Bind each trigger
+only once as content is inserted dynamically.
+
+Light and dark appearance share the same component geometry. The root
+`data-theme` attribute selects semantic colors; the dark palette uses green-gray
+surfaces, green actions and separate warning/error colors. Theme controls expose
+Light, Dark and System on the sign-in screen and in the sidebar footer. The
+browser stores only the chosen mode under `relayna.theme`. Charts listen for
+`relayna:theme-change` and update their existing instances without replacing
+page controllers or refetching measurements.

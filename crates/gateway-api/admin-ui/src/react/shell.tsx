@@ -1,4 +1,37 @@
+import { useSyncExternalStore } from "react";
 import { Button, Input, NativeSelect } from "../components/ui";
+import { RelaynaLogo, GatewaySignalArtwork } from "./brand";
+import { brandIdentity } from "../brand-identity";
+import {
+  getThemePreference,
+  setThemePreference,
+  subscribeThemePreference,
+  type ThemePreference,
+} from "../theme-preference";
+
+function ThemeSwitcher() {
+  const preference = useSyncExternalStore(
+    subscribeThemePreference,
+    getThemePreference,
+    () => "system",
+  );
+  return (
+    <label className="theme-control">
+      <span>Theme</span>
+      <NativeSelect
+        className="theme-switcher"
+        value={preference}
+        onChange={(event) =>
+          setThemePreference(event.currentTarget.value as ThemePreference)
+        }
+      >
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="system">System</option>
+      </NativeSelect>
+    </label>
+  );
+}
 
 /** Controller viewport children are deliberately outside React reconciliation. */
 export function ConsoleShell() {
@@ -13,25 +46,12 @@ export function ConsoleShell() {
           aria-label="Relayna Gateway overview"
         >
           <div className="login-brand-lockup">
-            <span className="login-brand-icon" aria-hidden="true">
-              <i className="ti ti-route-alt-left"></i>
-            </span>
-            <span>
-              <strong>Relayna</strong>
-              <small>Gateway</small>
-            </span>
+            <RelaynaLogo />
           </div>
           <div className="login-brand-message">
-            <span className="login-brand-eyebrow">Internal AI gateway</span>
-            <h1>
-              Governed access.
-              <br />
-              Operational clarity.
-            </h1>
-            <p>
-              One secure control plane for AI service traffic, usage, incidents,
-              and service ownership.
-            </p>
+            <span className="login-brand-eyebrow">AI traffic control</span>
+            <h1>{brandIdentity.taglines.Gateway}</h1>
+            <p>{brandIdentity.taglines.relayna}</p>
             <ul
               className="login-capabilities"
               aria-label="Gateway capabilities"
@@ -52,13 +72,15 @@ export function ConsoleShell() {
                 access
               </li>
             </ul>
+            <GatewaySignalArtwork />
           </div>
           <small className="login-copyright">
-            Relayna Gateway · Internal use only
+            relayna · Gateway / SDK / Studio
           </small>
         </section>
         <section className="login-access-panel" aria-labelledby="login-title">
           <div className="login-access-card">
+            <ThemeSwitcher />
             <span className="login-access-eyebrow">Organization access</span>
             <h1 id="login-title">Welcome back</h1>
             <p className="login-copy">
@@ -135,17 +157,16 @@ export function ConsoleShell() {
         <aside id="sidebar" className="sidebar" aria-label="Admin navigation">
           <div className="sidebar-header">
             <div className="brand">
-              <i className="ti ti-route" aria-hidden="true"></i>
-              <span className="brand-title">
-                <strong>relayna</strong>
-                <small>Gateway console · 4.0</small>
+              <RelaynaLogo />
+              <span className="brand-meta">
                 <span
                   className="version-indicator"
                   aria-label="Current Relayna Gateway version"
                 >
-                  v0.1.49
+                  v1.0.0
                 </span>
               </span>
+              <small className="brand-tagline">{brandIdentity.taglines.Gateway}</small>
             </div>
             <Button
               id="nav-close"
@@ -243,6 +264,7 @@ export function ConsoleShell() {
             </section>
           </nav>
           <div className="sidebar-actions">
+            <ThemeSwitcher />
             <Button id="rotate-token" className="danger" data-break-glass-only>
               <i className="ti ti-refresh" aria-hidden="true"></i>
               <span>Rotate token</span>

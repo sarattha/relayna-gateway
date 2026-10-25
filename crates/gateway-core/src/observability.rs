@@ -27,6 +27,11 @@ pub struct UsageQuery {
     pub interval: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    /// `start` begins a stable chronological traversal; subsequent values are opaque.
+    /// Omitted cursors retain the released offset/sort behavior.
+    pub cursor: Option<String>,
+    /// Opt in to a bounded, backpressured full export over a bounded time range.
+    pub stream: Option<bool>,
     pub timeseries_limit: Option<i64>,
     pub timeseries_offset: Option<i64>,
     pub service_timeseries_limit: Option<i64>,
@@ -170,6 +175,49 @@ pub struct UsageEventsPage {
     pub limit: i64,
     pub offset: i64,
     pub has_more: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_cursor: Option<String>,
+}
+
+/// Independent, bounded dashboard sections. The legacy dashboard stays intact.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum UsageSectionKind {
+    Projects,
+    Keys,
+    Services,
+    ProjectKeyServices,
+    Endpoints,
+    Providers,
+    Models,
+    Tasks,
+    Timeseries,
+    ServiceTimeseries,
+    UnusedKeys,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum UsageSection {
+    Breakdown {
+        rows: Vec<UsageBreakdown>,
+    },
+    ProjectKeyServices {
+        rows: Vec<UsageProjectKeyServiceBreakdown>,
+    },
+    Timeseries {
+        rows: Vec<UsageTimeseriesPoint>,
+        page: UsagePage,
+    },
+    ServiceTimeseries {
+        rows: Vec<UsageServiceTimeseriesPoint>,
+        page: UsagePage,
+    },
+    UnusedKeys {
+        rows: Vec<UnusedKey>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -239,6 +287,64 @@ pub trait UsageQueryStore: Send + Sync {
 
     async fn usage_events(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage>;
 
+    /// Stores can override this to avoid computing a summary for each export batch.
+    async fn usage_export_page(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage> {
+        let limit = query.limit.unwrap_or(1_000).clamp(1, 10_000);
+        let offset = query.offset.unwrap_or_default().max(0);
+        let rows = self.usage_export(query).await?.rows;
+        let has_more = rows.len() == limit as usize;
+        Ok(UsageEventsPage {
+            rows,
+            limit,
+            offset,
+            has_more,
+            next_cursor: None,
+            snapshot_cursor: None,
+        })
+    }
+
+    async fn usage_section(
+        &self,
+        query: UsageQuery,
+        section: UsageSectionKind,
+    ) -> GatewayResult<UsageSection> {
+        let dimension = match section {
+            UsageSectionKind::Projects => Some(UsageBreakdownDimension::Project),
+            UsageSectionKind::Keys => Some(UsageBreakdownDimension::Key),
+            UsageSectionKind::Services => Some(UsageBreakdownDimension::Service),
+            UsageSectionKind::Endpoints => Some(UsageBreakdownDimension::Endpoint),
+            UsageSectionKind::Providers => Some(UsageBreakdownDimension::Provider),
+            UsageSectionKind::Models => Some(UsageBreakdownDimension::Model),
+            UsageSectionKind::Tasks => Some(UsageBreakdownDimension::Task),
+            _ => None,
+        };
+        if let Some(dimension) = dimension {
+            return Ok(UsageSection::Breakdown {
+                rows: self.usage_breakdown(query, dimension).await?,
+            });
+        }
+        if section == UsageSectionKind::UnusedKeys {
+            return Ok(UsageSection::UnusedKeys {
+                rows: self.unused_keys(query).await?,
+            });
+        }
+        let dashboard = self.usage_dashboard(query).await?;
+        Ok(match section {
+            UsageSectionKind::ProjectKeyServices => UsageSection::ProjectKeyServices {
+                rows: dashboard.breakdowns.project_key_services,
+            },
+            UsageSectionKind::Timeseries => UsageSection::Timeseries {
+                rows: dashboard.timeseries,
+                page: dashboard.timeseries_page,
+            },
+            UsageSectionKind::ServiceTimeseries => UsageSection::ServiceTimeseries {
+                rows: dashboard.service_timeseries,
+                page: dashboard.service_timeseries_page,
+            },
+            _ => unreachable!("breakdown and unused-key sections handled above"),
+        })
+    }
+
     async fn usage_status_codes(&self, _query: UsageQuery) -> GatewayResult<Vec<i32>> {
         Ok(Vec::new())
     }
@@ -305,6 +411,18 @@ where
 
     async fn usage_events(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage> {
         (**self).usage_events(query).await
+    }
+
+    async fn usage_export_page(&self, query: UsageQuery) -> GatewayResult<UsageEventsPage> {
+        (**self).usage_export_page(query).await
+    }
+
+    async fn usage_section(
+        &self,
+        query: UsageQuery,
+        section: UsageSectionKind,
+    ) -> GatewayResult<UsageSection> {
+        (**self).usage_section(query, section).await
     }
 
     async fn usage_status_codes(&self, query: UsageQuery) -> GatewayResult<Vec<i32>> {

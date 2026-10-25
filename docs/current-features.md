@@ -1,10 +1,16 @@
 # Current Feature Highlights
 
+Usage opens with a bounded 24-hour range and independently loads summaries,
+request pages, and selected breakdowns. Traffic separates retained active HTTP
+and WebSocket summaries from recent completions. Health and Traffic expose live
+gateway capacity, rolling latency distributions, and explicit per-instance or
+partial cluster observations. See [Gateway monitoring and scalable Usage](operations/gateway-monitoring.md).
+
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the `v0.1.49` feature set.
+This page summarizes the **v1.0.0** feature set. Start with the [current console tour](v1.0.0.md), including the approved Natural Connection identity, Portico typography and all three operational workspaces.
 
-New in 0.1.49: build/test tooling requires patched Node.js 24.x/26.x versions
+Retained from 0.1.49: build/test tooling requires patched Node.js 24.x/26.x versions
 for CVE-2026-111497. Local, test-harness, and benchmark helpers use Node.js
 22.23.4. See [tooling setup](getting-started.md#install-tools) and
 [upgrade instructions](deployment.md#upgrade-to-0149).
@@ -198,9 +204,9 @@ deployments do not need a separate frontend service.
 
 The Usage export panel can apply an exact export-only start and end timestamp,
 or inherit the active Usage time filter. **All rows (download)** requires a
-bounded window and retrieves ordered 10,000-row batches until every match is in
-one CSV or JSON file. The server-side cap and direct API contract remain
-unchanged, and preview or copied-request actions stay limited to one request.
+bounded window and uses the additive server-streaming export path with ordered
+1,000-row cursor batches. Existing one-page API contracts and CSV escaping are
+preserved; preview or copied-request actions stay limited to one request.
 
 Registered services can preview and sync OpenAPI 3.x JSON from a same-origin
 relative path such as `/openapi.json`. The service editor displays the durable

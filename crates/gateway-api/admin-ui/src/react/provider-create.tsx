@@ -35,9 +35,10 @@ export function ProviderCreate({ onSave, onClose, restoreFocus }: Props) {
     try { await onSave(body); setBusy(false); onClose(); }
     catch (error) { setError(String(error instanceof Error ? error.message : error)); setBusy(false); }
   };
-  return <Dialog title="Create provider" description="Choose a provider and configure its upstream connection." restoreFocus={restoreFocus} onClose={() => { if (!busy) onClose(); }}>
+  return <Dialog layout="drawer" title="Create provider" description="Choose a provider and configure its upstream connection." restoreFocus={restoreFocus} onClose={() => { if (!busy) onClose(); }}>
     <form onSubmit={submit} className="grid gap-4">
       <fieldset disabled={busy} className="grid min-w-0 gap-4">
+        <div className="editor-section-heading"><i className="ti ti-server-2" aria-hidden="true" />Upstream connection</div>
         <Field label="Provider"><NativeSelect value={provider} onChange={event => { setProvider(event.target.value); setError(""); }}>
           <option value="litellm">LiteLLM</option><option value="internal-service">Internal service</option><option value="azure-foundry">Azure Foundry</option>
         </NativeSelect></Field>
@@ -47,6 +48,7 @@ export function ProviderCreate({ onSave, onClose, restoreFocus }: Props) {
         </Field>
         <label className="flex items-center gap-2 text-xs text-muted-foreground"><input name="enabled" type="checkbox" defaultChecked />Enabled</label>
         {foundry ? <FoundryIdentityFields /> : <div key={provider} className="grid gap-4">
+          <div className="editor-section-heading"><i className="ti ti-key" aria-hidden="true" />Credential routing</div>
           <Field label="Default credential (optional)" help="Write-only upstream credential. Leave blank if this provider does not require a shared credential."><Input name="credential" type="password" autoComplete="new-password" /></Field>
           <Field label="Credential mode"><NativeSelect value={headerMode} onChange={event => setHeaderMode(event.target.value)}><option value="authorization_bearer">Authorization bearer</option><option value="custom_header">Custom header</option></NativeSelect></Field>
           {headerMode === "custom_header" && <>
@@ -56,7 +58,7 @@ export function ProviderCreate({ onSave, onClose, restoreFocus }: Props) {
         </div>}
       </fieldset>
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
-      <div className="flex gap-2 border-t border-border pt-4"><Button type="submit" variant="default" disabled={busy}>{busy ? "Creating…" : "Create provider"}</Button><Button disabled={busy} onClick={onClose}>Cancel</Button></div>
+      <div className="editor-form-actions"><Button type="submit" variant="default" disabled={busy}>{busy ? "Creating…" : "Create provider"}</Button><Button disabled={busy} onClick={onClose}>Cancel</Button></div>
     </form>
   </Dialog>;
 }

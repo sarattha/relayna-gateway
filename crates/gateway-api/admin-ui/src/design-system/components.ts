@@ -27,8 +27,15 @@ export function badge(label: unknown, tone: Tone = toneForStatus(label)): string
 }
 
 export function panel(title: string, body: string, meta = ""): string {
+  const icons: Record<string, string> = {
+    Projects: "folders", "Registered services": "cube", "Provider configuration": "server-2",
+    "Virtual keys": "key", "Policy simulator": "test-pipe", "Inherited policy layers": "stack-2",
+    "Audit events": "history", "Current availability & circuit state": "heartbeat",
+    "Latest changes": "history", "Project activity": "chart-bar", "Service bindings": "link",
+  };
+  const icon = icons[title];
   const heading = title
-    ? `<div class="panel-heading"><h3>${html(title)}</h3>${meta ? `<span class="subtle">${html(meta)}</span>` : ""}</div>`
+    ? `<div class="panel-heading"><h3>${icon ? `<i class="ti ti-${icon}" aria-hidden="true"></i>` : ""}${html(title)}</h3>${meta ? `<span class="subtle">${html(meta)}</span>` : ""}</div>`
     : "";
   return `<section class="panel">${heading}${body}</section>`;
 }
@@ -38,7 +45,7 @@ export function metricTile(label: string, value: unknown, tone: Tone = "neutral"
 }
 
 export function emptyState(message: string): string {
-  return `<div class="empty-state"><p>${html(message)}</p></div>`;
+  return `<div class="empty-state"><i class="ti ti-inbox" aria-hidden="true"></i><p>${html(message)}</p></div>`;
 }
 
 export function tableWrap(tableMarkup: string): string {

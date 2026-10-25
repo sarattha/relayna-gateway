@@ -2,10 +2,49 @@
 
 Relayna Gateway ships as one binary and one Docker image. The image serves both the core proxy and the admin portal because the admin UI is embedded in the `gateway-api` binary.
 
-Version `0.1.39` includes Admin UI 4.0, route authentication profiles, named
-virtual keys, Azure Foundry connections and registered agents, and replica
-synchronization of saved gateway Entra settings.
-The UI remains embedded in the Rust binary; no separate frontend service is needed.
+Version **1.0.0** adds protocol-aware monitoring, scalable Usage and the Natural
+Connection console. The UI remains embedded; no separate frontend service or
+metrics collector is required. See the [illustrated console tour](v1.0.0.md).
+
+## Upgrade to 1.0.0
+
+The major release preserves v0.1.49 public authentication, proxy, streaming,
+Usage and budget contracts. The visible Usage default becomes Last 24 hours;
+explicit All time and absent-date API queries keep their existing meaning.
+
+1. Back up PostgreSQL and plan an index-build maintenance window. Startup applies
+   `20261023000100_usage_chronological_paging`,
+   `20261023000200_traffic_completion_protocol`, and
+   `20261023000300_usage_insertion_visibility` using the normal SQLx migration
+   mechanism. Indexes use normal build locks; large ledgers can increase startup
+   time and database I/O. Nullable columns are added without historical backfill.
+2. Budget **14 connections per PostgreSQL store/replica**, plus migrations and
+   operations: ten primary and four analytics. Usage connections use custom
+   plans, a two-second acquisition bound and fifteen-second statement deadline.
+3. Roll out `ghcr.io/sarattha/relayna-gateway:1.0.0` after its release image is
+   published. Keep control endpoints private. Drain and replace old replicas;
+   active observations are process-local until new snapshots are published.
+4. Verify readiness, one selected-instance and one fleet observation, a bounded
+   all-project Usage query, HTTP/SSE forwarding and the configured WebSocket
+   path. Unknown legacy completion times and partial/stale publishers are
+   explicit; a missing publisher is not proof of zero traffic.
+5. Confirm final body capacity returns to zero after drain. Defaults remain
+   eight request slots and 512 MiB retained serialized bodies per process.
+   Leave memory headroom; the [versioned benchmark](benchmarks/v1.0.0.md)
+   describes a synthetic resource study, not a safe production capacity.
+
+Redis adds bounded, expiring `gateway:monitor:v1:` observation keys. Do not flush
+Redis for an upgrade: existing budgets, rates and reservations must be preserved.
+No external Prometheus deployment is necessary; existing metrics remain usable.
+
+Rollback requires draining the new processes and restoring the pre-upgrade
+database backup together with the prior image. The old SQLx migrator rejects
+applied migrations it does not know, so switching only the binary back to
+v0.1.49 is insufficient. Do not delete migration history to bypass this check.
+Reconcile writes made since the backup before any database restore; test the
+exact procedure against a restored copy first. The new completion view cannot
+retrospectively invent end timestamps for historical rows. Process snapshots
+expire independently; historical Usage remains authoritative.
 
 ## Upgrade to 0.1.49
 
@@ -272,7 +311,7 @@ channel bindings are enabled; see [Accessa channels](accessa-channels.md).
 Build the image:
 
 ```bash
-docker build -t relayna-gateway:0.1.49 .
+docker build -t relayna-gateway:1.0.0 .
 ```
 
 Run it with required dependencies:
@@ -292,7 +331,7 @@ docker run --rm \
   -e GATEWAY_MAX_BUFFERED_REQUESTS="8" \
   -e GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912" \
   -e LOG_LEVEL="gateway_api=info,gateway_proxy=info" \
-  relayna-gateway:0.1.49
+  relayna-gateway:1.0.0
 ```
 
 The proxy listens on port `8080`. The control API, admin portal, readiness, and metrics listen on port `8081`.
@@ -352,13 +391,13 @@ private control plane on separate Services.
 1. Use the image published by the tag-based release workflow:
 
    ```text
-   ghcr.io/sarattha/relayna-gateway:0.1.49
+   ghcr.io/sarattha/relayna-gateway:1.0.0
    ```
 
    To build and publish manually to another registry:
 
    ```bash
-   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:0.1.49"
+   export RELAYNA_GATEWAY_IMAGE="<your-registry>/<your-org>/relayna-gateway:1.0.0"
    docker build -t "$RELAYNA_GATEWAY_IMAGE" .
    docker push "$RELAYNA_GATEWAY_IMAGE"
    ```
@@ -366,7 +405,7 @@ private control plane on separate Services.
 2. Update the Deployment image when you use a different registry or tag:
 
    ```yaml
-   image: <your-registry>/<your-org>/relayna-gateway:0.1.49
+   image: <your-registry>/<your-org>/relayna-gateway:1.0.0
    ```
 
 3. Store secrets through your cluster secret manager:

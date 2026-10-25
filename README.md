@@ -1,425 +1,145 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/banners/relayna-gateway-wide-dark.svg">
+  <img src="docs/assets/brand/banners/relayna-gateway-wide-light.svg" alt="relayna Gateway — Route intelligence. Keep control." width="1600">
+</picture>
+
 # Relayna Gateway
 
-Relayna Gateway is the Rust proxy and control plane for Relayna AI traffic. It validates Relayna virtual keys, enforces route and model policy, forwards approved OpenAI-compatible requests to LiteLLM or direct providers, records usage, and exposes an embedded operator admin portal.
+**Route intelligence. Keep control.**
 
-Relayna remains the task execution runtime. Relayna Gateway is the public governance, routing, metering, and operator surface in front of provider access.
+The Rust proxy and control plane for AI traffic. Authenticate callers, apply policy, route to LiteLLM, direct providers or registered services, and inspect usage and live traffic from one operator console.
 
-Version `0.1.49` patches the Node.js build/test toolchain and helper containers
-for CVE-2026-111497. Development requires Node.js 24.22.1+ on 24.x or 26.12.1+
-on 26.x; standalone helpers use Node.js 22.23.4. See
-[tooling requirements](docs/getting-started.md#install-tools) and
-[upgrade instructions](docs/deployment.md#upgrade-to-0149).
+Relayna remains the task execution runtime. Gateway provides the governed connection to model and service access, with OpenAI and Anthropic endpoints, HTTP streaming, and opt-in WebSocket transport.
 
-Version `0.1.48` fixes caller-owned LiteLLM WebSockets with custom credential
-headers. Keep `x-litellm-key` and its raw/bearer format configured; Gateway also
-supplies Bearer Authorization from the same caller key for socket authentication.
-HTTP and registered-service credentials retain their existing behavior. See
-[WebSocket credentials](docs/websocket-transport.md#caller-owned-litellm-passthrough)
-and [upgrade instructions](docs/deployment.md#upgrade-to-0148).
+[Get started](docs/getting-started.md) · [Documentation](https://sarattha.github.io/relayna-gateway/) · [Admin console](docs/admin-portal.md) · [Deploy](docs/deployment.md) · [Benchmarks](docs/benchmarks/index.md)
 
-Version `0.1.47` improves large-request memory use and body admission. Completed
-uploads release their buffer slots while service responses are still pending,
-and the Debian image reclaims large allocations with a fixed glibc threshold.
-Two-pod, 5 MiB experiments include native amd64 validation. See
-[buffering and sizing](docs/operations.md#configuration),
-[benchmark results](https://github.com/sarattha/relayna-gateway/blob/8903a62191d461f12c53d10108b1c880452945eb/internal/test-reports/body-admission-5mib/amd64/README.md), and
-[upgrade instructions](docs/deployment.md#upgrade-to-0147). Repeat the slot or
-resource-boundary experiments on native amd64 or Apple Silicon/arm64 with the
-[source benchmark CLI](benches/body-admission/README.md), including interactive
-HTML reports for completed, failed and interrupted runs.
+## Understand the gateway
 
-Version `0.1.46` adds opt-in WebSockets alongside HTTP for registered services
-and caller-owned LiteLLM passthrough. LiteLLM owns its sessions, model policy,
-usage and spend; Relayna-governed LiteLLM sessions are deferred. See
-[WebSocket setup and limits](docs/websocket-transport.md) and
-[upgrade instructions](docs/deployment.md#upgrade-to-0146).
-
-Version `0.1.45` adds opt-in forwarding of Gateway-verified Accessa user JWTs
-under an adjustable header and includes PUT in new Accessa channel registrations.
-See [Accessa token forwarding](docs/accessa-channels.md#verified-user-token-forwarding)
-and [upgrade instructions](docs/deployment.md#upgrade-to-0145) before enabling it.
-
-Version `0.1.44` closes policy and accounting gaps in direct forwarding,
-streaming output limits, shared Anthropic batches and large service responses.
-Generation caps require explicit provider maxima, and nested model overrides are
-rejected. Upgrade every replica; see [deployment](docs/deployment.md#upgrade-to-0144)
-and [LiteLLM admission](docs/litellm-passthrough.md#output-token-admission).
-
-Version `0.1.43` makes historical pricing require recorded selector proof,
-limits service charges to the ledger's eight decimal places, and lets Foundry
-service edits reuse one database connection. Legacy named-rule records without
-proof stay unchanged. Upgrade every replica before historical recalculation;
-see [service pricing](docs/openapi-service-pricing.md#changing-prices-for-recorded-requests)
-and [deployment](docs/deployment.md#upgrade-to-0143).
-
-Version `0.1.42` introduced opt-in historical reporting-cost recalculation while
-preserving original budget charges. New requests only remains the default.
-
-Version `0.1.41` strengthens complete-request governance, atomic budget accounting,
-operator-cookie security, JWT refresh bounds and UI resource handling. Drain old
-replicas before upgrading the accounting writer; see [operations](docs/operations.md#budgets-and-rate-limits).
-
-Version `0.1.40` added opt-in LiteLLM caller-key API access independent of dashboard
-exposure, plus explicit path denies. See [LiteLLM passthrough](docs/litellm-passthrough.md)
-for authentication precedence and rollout.
-
-Version `0.1.39` introduced **Admin UI 4.0**, route authentication profiles,
-searchable key names, reliable Traffic filters, and automatic synchronization of
-saved gateway Entra settings across replicas. Profiles support **Entra + Relayna
-key** and **Relayna key only**, including direct LiteLLM forwarding. Start with
-the [illustrated authentication profile guide](docs/operations/authentication-profiles.md)
-for setup, key assignment and troubleshooting. Upgrade every replica before
-opting routes into profiles; see [deployment](docs/deployment.md).
-
-The gateway also supports `POST /embeddings` as an alias of
-`POST /v1/embeddings`, matching the rerank alias behavior. Both paths share the
-canonical LiteLLM mode, policy, limits, and usage identity. Explicit registered
-embeddings services retain precedence and their existing service permissions.
-See [LiteLLM route precedence](docs/litellm-passthrough.md#route-precedence).
-
-See `docs/operations/entra-portal-and-owner-monitoring.md`,
-`docs/operations/entra-integration-requirements.md`,
-`docs/openapi-service-pricing.md`, `docs/current-features.md`,
-`docs/litellm-passthrough.md`, `docs/entra-id-auth.md`,
-`docs/operations/entra-authorization-debug.md`, and
-`docs/apigee-gateway-path.md` for the public feature highlights.
-
-## What This Repository Contains
-
-- `crates/gateway-api`: Axum control API, health, readiness, metrics, admin APIs, embedded admin UI, and process startup.
-- `crates/gateway-core`: Authentication, policy, routing, services, rate limits, budgets, usage, operator tokens, and shared error types.
-- `crates/gateway-proxy`: Pingora proxy service for OpenAI-compatible traffic, upstream credential handling, streaming paths, and usage recording.
-- `crates/gateway-store`: PostgreSQL migrations, SQLx queries, Redis readiness, rate-limit, and budget state.
-- `crates/gateway-telemetry`: tracing and Prometheus output.
-- `deploy/kubernetes`: baseline Kubernetes manifests.
-- `docs`: Material for MkDocs documentation.
-
-## Runtime Services
-
-Relayna Gateway requires:
-
-- PostgreSQL for virtual keys, route policies, usage events, service registrations, and operator token hashes.
-- Redis for readiness, rate-limit counters, and budget counters.
-- LiteLLM or another OpenAI-compatible upstream.
-
-Secrets such as provider keys, LiteLLM service keys, operator tokens, and raw Relayna virtual keys must stay out of source control and logs.
-
-## Local Development
-
-Set the required environment variables:
-
-```bash
-export DATABASE_URL="postgres://relayna_gateway@localhost:5432/relayna_gateway"
-export REDIS_URL="redis://127.0.0.1:6379"
-export LITELLM_BASE_URL="http://127.0.0.1:4000"
-export LITELLM_SERVICE_KEY="sk-litellm-service-key"
-# Optional first-start admin bootstrap token. Must start with op_live_.
-# Ignored after an active operator token exists in PostgreSQL.
-# export GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value"
-export RELAYNA_STUDIO_BASE_URL="http://127.0.0.1:8000"
-# Optional when Studio protects the Gateway export endpoint:
-# export RELAYNA_STUDIO_TOKEN="studio-gateway-token"
-# Optional guardrail PII mapping controls:
-# export GUARDRAIL_PII_MAPPING_TTL_SECONDS="3600"
-# export GUARDRAIL_MAPPING_ENCRYPTION_KEY="<base64-32-byte-key>"
-export GATEWAY_BIND_ADDR="127.0.0.1:8080"
-export GATEWAY_CONTROL_BIND_ADDR="127.0.0.1:8081"
-# Optional process-wide managed-body admission limits:
-# export GATEWAY_MAX_BUFFERED_REQUESTS="8"
-# export GATEWAY_MAX_INFLIGHT_BUFFER_BYTES="536870912"
-export LOG_LEVEL="gateway_api=info,gateway_proxy=info"
-# Optional Entra front-door auth. Disabled by default.
-# export ENTRA_AUTH_ENABLED="true"
-# export ENTRA_APPLICATION_ID="<single-application-id-guid>"
-# export ENTRA_TENANT_ID="<tenant-guid>"
-# export ENTRA_ISSUER="https://login.microsoftonline.com/<tenant-guid>/v2.0"
-# export ENTRA_OIDC_DISCOVERY_URL="https://login.microsoftonline.com/<tenant-guid>/v2.0/.well-known/openid-configuration"
-# export ENTRA_REQUIRED_ROLE="gateway.invoke"
-# export ENTRA_RELAYNA_KEY_HEADER="X-Relayna-Key"
-# Temporary incident diagnostics. Decoded claims can contain personal data.
-# export ENTRA_AUTH_DEBUG="true"
-# Optional Apigee trusted signed-header mode. Disabled by default.
-# export APIGEE_TRUSTED_HEADER_ENABLED="true"
-# export APIGEE_TRUSTED_HEADER_SECRET="<shared-hmac-secret>"
+```mermaid
+flowchart LR
+  Clients[Applications · Model SDKs] --> Gateway[Relayna Gateway]
+  Gateway --> Models[LiteLLM · Direct providers]
+  Gateway --> Services[Registered services]
+  Gateway --> State[PostgreSQL · Redis]
+  Operators[Admins · Resource owners] --> Console[Operator console]
+  Console --> Gateway
 ```
 
-When debugging an Entra or portal-cookie failure, temporarily enable
-`ENTRA_AUTH_DEBUG=true` and follow
-[`docs/operations/entra-authorization-debug.md`](docs/operations/entra-authorization-debug.md).
-The dedicated structured trail identifies the first rejected validation,
-session-persistence, or cookie-observation phase without logging compact
-tokens, cookie values, authorization codes, PKCE values, or raw Relayna keys.
+| Monitor | Discover | Govern |
+| --- | --- | --- |
+| Live HTTP/SSE requests and WebSocket sessions | Projects and shared services | Virtual keys and authentication profiles |
+| Usage, cost and request investigations | Providers, routes and service imports | Policy layers, guardrails and budgets |
+| Buffer occupancy, latency and fleet coverage | OpenAPI endpoints and pricing | People, workload identities and audit |
 
-Run the gateway:
+The console uses charts, capacity meters, ranked comparisons and configuration flows. Current observations, recorded history and saved configuration stay distinct; missing or stale data never becomes a healthy zero. Admin and Owner workspaces share the same design while preserving resource scope.
+
+See [gateway monitoring](docs/operations/gateway-monitoring.md), [Traffic](docs/operations/traffic-monitor.md), and [the console guide](docs/admin-portal.md).
+
+## Start locally
+
+Gateway needs PostgreSQL 14+, Redis 6+, and LiteLLM or another supported upstream. Install the repository's Rust toolchain and configure the required connection and credential variables using [Getting Started](docs/getting-started.md), then run:
 
 ```bash
 cargo run -p gateway-api
 ```
 
-The first startup runs database migrations and creates one bootstrap operator token. If `GATEWAY_ADMIN_TOKEN` is set, Gateway stores that token hash in a fresh database and does not print the raw token. If it is not set, Gateway generates and prints one raw operator token. After an active operator token exists, later `GATEWAY_ADMIN_TOKEN` changes are ignored; rotate the token from the Admin portal to change it.
+| Listener | Default local URL |
+| --- | --- |
+| Operator console | `http://127.0.0.1:8081/admin-ui` |
+| Readiness | `http://127.0.0.1:8081/admin-ui/readyz` |
+| Prometheus metrics | `http://127.0.0.1:8081/admin-ui/metrics` |
+| OpenAI-compatible proxy | `http://127.0.0.1:8080/v1/chat/completions` |
 
-Useful endpoints:
+On a fresh database, `GATEWAY_ADMIN_TOKEN` can seed a bootstrap operator token. Otherwise Gateway generates and prints one once. Store it securely; later environment changes do not rotate an existing token. Microsoft Entra browser sign-in and exact resource memberships support day-to-day operator access. See [authentication setup](docs/operations/entra-portal-and-owner-monitoring.md).
 
-- Proxy traffic: `http://127.0.0.1:8080/v1/chat/completions`
-- Health: `http://127.0.0.1:8081/admin-ui/healthz`
-- Readiness: `http://127.0.0.1:8081/admin-ui/readyz`
-- Metrics: `http://127.0.0.1:8081/admin-ui/metrics`
-- Admin portal: `http://127.0.0.1:8081/admin-ui`
-- Guardrail catalog: `http://127.0.0.1:8081/admin-ui/admin/guardrails`
-- Studio connection status: `http://127.0.0.1:8081/admin-ui/admin/studio/connection`
-- Studio import preview: `http://127.0.0.1:8081/admin-ui/admin/studio/services`
-- Usage export JSON: `http://127.0.0.1:8081/admin-ui/admin/usage/export.json`
-- Usage export CSV: `http://127.0.0.1:8081/admin-ui/admin/usage/export.csv`
+For the full local development environment with synthetic personas, use [`deploy/local/README.md`](deploy/local/README.md).
 
-Post-freeze admin endpoints also include scoped audit events, policy
-simulation, policy layers, provider health state, debug bundles, service import
-preview/activation/version/rollback, and paginated expanded usage analytics. These are
-documented in `docs/current-features.md`.
+### Preview every console page
 
-Release `0.1.39` can run Relayna Gateway as the single ingress in front of
-LiteLLM. Canonical OpenAI-compatible and Anthropic-compatible Claude routes
-remain governed by Relayna policy by default, and operators can optionally
-switch each canonical route to direct LiteLLM passthrough while preserving
-route enablement, policy, rate-limit, and budget checks. Wildcard LiteLLM
-passthrough is disabled by default; when enabled, configure allowed paths and
-methods from Admin portal Providers.
-
-Gateway client authentication is Relayna-owned for governed traffic. When Entra
-is disabled, clients send `Authorization: Bearer rk_live_...`. When Entra is
-enabled, clients send the Entra access token in `Authorization: Bearer <jwt>`
-and the Relayna virtual key in the configured Relayna key header, which defaults
-to `X-Relayna-Key`. Gateway strips those client credentials before forwarding
-and injects the resolved internal LiteLLM credential by using the configured
-LiteLLM header mode/name and custom-header value format.
-
-For canonical routes set to `direct_litellm_passthrough` without authentication
-profiles, non-Relayna
-`Authorization: Bearer ...` credentials can be delegated directly to LiteLLM
-and translated to the configured upstream header. Relayna `rk_live_...` bearer
-keys keep the Relayna-authenticated path with policy, mapping lookup, rate
-limits, budgets, credential stripping, and status-only usage. With profiles
-enabled, every caller needs a Relayna key assigned to an enabled profile; Entra
-requirements come from that profile. Native LiteLLM credentials alone are rejected.
-
-Sensitive LiteLLM `/ui` and admin-like paths remain blocked unless explicitly
-configured. For browser access, choose either operator-token proxy flow
-(`/admin-ui/litellm-ui/...`) or trusted-ingress `trusted_ingress` mode for
-browser-safe `/ui` support. The former requires a request with operator
-`Authorization`; the latter allows trusted front-door contexts while keeping
-non-UI passthrough on normal Relayna auth unless the admin API exposure is
-intentionally set to `explicitly_exposed` and path/method allowlists match.
-See `docs/litellm-passthrough.md`,
-`docs/current-features.md`, `docs/operations.md`, `docs/entra-id-auth.md`, and
-`docs/apigee-gateway-path.md`.
-
-Operators can configure Entra ID and Apigee front-door auth from Admin portal
-Settings, including enablement, tenant, audience, issuer, OIDC discovery,
-scope, role, groups, accepted algorithms, JWKS cache TTL, clock skew, Relayna
-key header, and the write-only Apigee secret. The opt-in **Require unverified
-bearer (troubleshooting)** setting preserves the two-header contract while pausing
-Entra verification on gateway-managed routes. Only the Relayna key is authenticated;
-trusted Apigee headers cannot be enabled with it. See [pause and restore
-instructions](docs/entra-id-auth.md#temporarily-pause-verification-while-keeping-both-headers).
-
-`RELAYNA_STUDIO_BASE_URL` and `RELAYNA_STUDIO_TOKEN` are startup fallback
-settings. Operators can also open Admin portal Settings after Gateway starts to
-set, replace, test, or clear the Studio backend connection. Admin-saved settings
-override the env fallback until the persisted base URL is cleared.
-
-When Relayna Studio is running, verify the export path before importing:
+A loopback-only, GET-only fixture lets you explore the new identity and all Admin/Owner views without a Gateway, credentials or production data:
 
 ```bash
-curl http://127.0.0.1:8000/studio/gateway/services
+npm ci
+npm run build:admin-ui
+node tests/fixtures/admin-ui-design-preview.mjs --port 18464
 ```
 
-## OpenAPI Service Pricing
+Open `http://127.0.0.1:18464/admin-ui`. Its charts and status indicators are explicitly synthetic. Node.js requires 24.22.1+ on 24.x or 26.12.1+ on 26.x.
 
-Registered services can preview and explicitly sync OpenAPI 3.x JSON from a
-same-origin relative source such as `/openapi.json`. The durable endpoint
-catalog supports `none`, `fixed`, and `passthrough` billing per method/path;
-Relayna operational endpoints default to `none`, and operators may override
-them. Billable endpoints still compose with JSON and multipart body selectors,
-so an OCR `/engine = docint` rule can charge `$0.50` without charging feed,
-status, event, or DLQ traffic.
+## Deploy and operate
 
-Discovery is authenticated, audited, redirect-free, credential-free, bounded,
-and never runs on the client request path. See
-[`docs/openapi-service-pricing.md`](docs/openapi-service-pricing.md) for the UI
-and API workflow, budget behavior, security requirements, and troubleshooting.
-
-Authenticated registered-service requests also use the synced catalog for
-usage observability. The effective monitoring endpoint is the matching template
-or the query-free concrete path when no operation matches. Every routed status
-of 400 or greater remains a failure, whether returned by Gateway or upstream.
-
-## Docker
-
-Build the single image that runs both the gateway proxy and embedded admin portal:
+Build this source checkout, including its checked-in console assets:
 
 ```bash
-docker build -t relayna-gateway:0.1.49 .
+docker build -t relayna-gateway:local .
 ```
 
-Run it:
+Use the [Docker and Kubernetes deployment guide](docs/deployment.md) for secrets, database migrations, listener exposure and upgrades. Keep the control listener behind appropriate network and identity controls. The published runtime release remains **v0.1.49**; this branch's new identity does not bump that version.
+
+- [Operations](docs/operations.md): readiness, logs, secrets, limits and budget recovery.
+- [LiteLLM passthrough](docs/litellm-passthrough.md): canonical route modes, caller credentials and dashboard exposure.
+- [WebSocket transport](docs/websocket-transport.md): registered-service and caller-owned sessions, limits and ownership boundaries.
+- [OpenAPI pricing](docs/openapi-service-pricing.md): discovery, endpoint billing, body selectors and historical reporting costs.
+- [Authentication profiles](docs/operations/authentication-profiles.md): Entra + key and key-only assignments.
+- [Azure Foundry](docs/azure-foundry.md) and [Accessa channels](docs/accessa-channels.md): service integrations.
+
+Provider keys, operator tokens, virtual keys, Studio credentials and request prompts must stay out of source control, screenshots and logs.
+
+## Natural Connection
+
+The Relayna SDK supplies service-side task, status and workflow plumbing. Relayna Studio provides centralized operational visibility, task investigation and assessments.
+
+Gateway belongs to one Relayna family, using the **Slim Leaf** gateway symbol, original **Relayna Portico** typography and **Mulberry & Linen** colors in light and dark modes.
+
+| Identity | Tagline |
+| --- | --- |
+| relayna | Connected work. Clear direction. |
+| Gateway | Route intelligence. Keep control. |
+| SDK | Your logic. Connected execution. |
+| Studio | Make distributed work visible. |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/banners/open-signal-family-dark.svg">
+  <img src="docs/assets/brand/banners/open-signal-family-light.svg" alt="Open Signal pictograms: Relayna Signal braid, Gateway Split portal, SDK Build bridge and Studio Runtime pulse" width="1600">
+</picture>
+
+[Brand and design-system guide](docs/brand.md) · [Logo family](docs/assets/brand/banners/natural-connection-family-light.svg) · [Dark family board](docs/assets/brand/banners/natural-connection-family-dark.svg) · [Gateway logo](docs/assets/brand/logos/relayna-gateway-light.svg)
+
+The approved **Open Signal** banners and supporting product pictograms accompany the Slim Leaf logo family. Studio uses **Runtime pulse** for its operational-control-plane role. The versioned design-system **0.2.1** snapshot is committed with this repo; builds need no external design-system checkout or remote font service. Portico is the parent/Gateway face; Round remains the SDK/Studio companion. Portico is at development version 0.101; Round remains 0.100. See the [brand guide](docs/brand.md) for source, usage and current limits.
+
+## Repository map
+
+| Path | Responsibility |
+| --- | --- |
+| `crates/gateway-api` | Axum APIs, readiness, admin console and startup |
+| `crates/gateway-core` | Framework-independent authentication, policy, routing, budgets and usage |
+| `crates/gateway-proxy` | Pingora forwarding, credentials, streaming and cancellation |
+| `crates/gateway-store` | PostgreSQL persistence and Redis state |
+| `crates/gateway-telemetry` | Logs, traces, Prometheus and runtime observations |
+| `deploy` | Local and Kubernetes deployment examples |
+| `docs` | Architecture, operational guides and brand assets |
+| `tests` / `benches` | Integration, UI and release benchmark harnesses |
+
+Read [the architecture](docs/architecture.md) and [contributor guide](AGENTS.md) before changing behavior.
+
+## Verify changes
 
 ```bash
-docker run --rm \
-  -p 8080:8080 \
-  -p 8081:8081 \
-  -e DATABASE_URL="postgres://user:password@host.docker.internal:5432/relayna_gateway" \
-  -e REDIS_URL="redis://host.docker.internal:6379" \
-  -e LITELLM_BASE_URL="http://host.docker.internal:4000" \
-  -e LITELLM_SERVICE_KEY="sk-litellm-service-key" \
-  -e GATEWAY_ADMIN_TOKEN="op_live_replace_with_secret_value" \
-  relayna-gateway:0.1.49
-```
-
-`GATEWAY_ADMIN_TOKEN` is optional and only seeds a fresh database. Omit it to
-let Gateway generate and print a first-start operator token. Once PostgreSQL has
-an active operator token, changing this env var has no effect; rotate from the
-Admin portal instead.
-
-To inspect the project-owner flow with local Entra-shaped sign-in and realistic
-mock usage, run `./deploy/local/run.sh --rebuild` and open
-<http://127.0.0.1:18381/admin-ui>. See
-[`deploy/local/README.md`](deploy/local/README.md) for the test identities,
-managed-identity example, ports, and cleanup commands.
-
-## Kubernetes
-
-Start from `deploy/kubernetes/relayna-gateway.yaml`, which defaults to the GitHub Container Registry image `ghcr.io/sarattha/relayna-gateway:0.1.49`, and provide `relayna-gateway-secrets` through your cluster secret manager. Set `GATEWAY_ADMIN_TOKEN` only before first startup when you want to seed a fresh database with a known operator token. Keep the control port private unless it is protected by an internal ingress, VPN, or identity-aware proxy.
-
-## Budgets, TPM, and Usage Exports
-
-Virtual key policies can enforce request-per-minute, token-per-minute, daily
-budget, and monthly budget limits. Redis stores the fast control counters, and
-PostgreSQL usage events remain the durable ledger.
-
-The Admin UI Usage view groups the selected top results as Project → Virtual
-key → Service. Apply the existing time, project, key, service, provider, route,
-status, or cost filters first, then expand a project and safe key prefix to
-compare request, failure, token, latency, and estimated-cost totals by service.
-
-Gateway rehydrates current daily and monthly Redis budget counters from
-PostgreSQL usage events after Redis readiness succeeds, then keeps reconciling
-periodically while the process runs. This lets budget enforcement recover after
-Redis loss without treating Redis as the source of truth. Token-per-minute
-limits use Redis minute buckets and return `token_rate_limit_exceeded` when the
-estimated request token impact exceeds the key policy.
-
-Operators can export usage data from the protected admin endpoints:
-
-```bash
-curl -sS \
-  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
-  "http://127.0.0.1:8081/admin-ui/admin/usage/export.json?limit=1000"
-
-curl -sS \
-  -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" \
-  "http://127.0.0.1:8081/admin-ui/admin/usage/export.csv?limit=1000"
-```
-
-Exports support the dashboard filters, including `from`, `to`, `project_id`,
-`key_id`, `route`, `provider`, `service`, `method`, `endpoint`, `status_code`,
-`task_id`, `model`, and `status`. JSON rows and the appended CSV columns expose
-`http_method`, `endpoint_path`, and `endpoint_template`. CSV exports escape
-cells and neutralize spreadsheet formula prefixes.
-
-In the Admin UI, **Export from** and **Export to** can override the active Usage
-time filter. **All rows (download)** requires both bounds and pages the existing
-endpoint in a stable total order; direct API clients still use `limit` and
-`offset`, with every request capped at 10,000 rows.
-
-## Guardrails
-
-Guardrails are opt-in policy controls for Relayna virtual keys. The catalog
-defines global guardrail behavior, and each key decides which guardrails are
-mandatory, optional, or forbidden. `pii-redact` is seeded as an enabled built-in
-guardrail, but it is not default-on for existing keys.
-
-Operator setup flow:
-
-1. Open Admin portal Guardrails and review the catalog entry for `pii-redact`.
-2. Edit the catalog runtime config for global defaults, such as
-   `{ "restore_output": true }`.
-3. Add custom HTTP guardrails when an external policy service should run before
-   or after provider calls.
-4. Open Keys and use the guardrail pickers to select mandatory, optional, and
-   forbidden guardrails.
-5. Configure per-key overrides only after a guardrail is selected as mandatory
-   or optional. Override editors are intentionally hidden for unselected
-   guardrails.
-
-Effective config is a shallow merge of catalog `runtime_config` plus the
-per-key override for the selected guardrail. Overrides must be JSON objects, are
-dormant until the guardrail is applied, and are rejected for unknown or
-forbidden guardrails.
-
-Example key policy:
-
-```json
-{
-  "guardrail_policy": {
-    "mandatory_guardrails": ["pii-redact"],
-    "optional_guardrails": ["custom-check"],
-    "forbidden_guardrails": [],
-    "guardrail_config_overrides": {
-      "pii-redact": {
-        "restore_output": false
-      },
-      "custom-check": {
-        "threshold": 0.85
-      }
-    }
-  }
-}
-```
-
-Custom HTTP guardrail endpoint URL, timeout, and bearer token are catalog
-settings. Per-key overrides tune only that guardrail's runtime config, so
-secrets are not copied into key policy.
-
-## Checks
-
-Run the release checks before pushing:
-
-```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-node tests/admin-ui.test.mjs
-mkdocs build --strict
-```
-
-The repository also provides:
-
-```bash
-make verify
+npm run build:admin-ui
+npm test
+npm run typecheck:admin-ui
+npm run test:react:coverage
+bash .codex/skills/code-change-verification/scripts/run.sh
 make docs-check
+make metadata-check
 ```
 
-## Documentation
+The Rust verification helper runs formatting, workspace Clippy/tests and the required dependency/security checks. See [AGENTS.md](AGENTS.md) for database fixtures and the version-bump benchmark requirements.
 
-Full documentation is built with Material for MkDocs:
+## Releases and performance evidence
 
-```bash
-pip install mkdocs-material
-mkdocs serve
-```
+[v1.0.0 validation](docs/benchmarks/v1.0.0.md) · [v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
 
-See:
+Version **1.0.0** brings scalable all-project Usage, protocol-aware Traffic, live gateway capacity, and the Natural Connection console with original Portico typography. Follow the [console tour](docs/v1.0.0.md) and [1.0 upgrade guide](docs/deployment.md#upgrade-to-100) for migrations, PostgreSQL connection sizing, and rollout. The major version preserves the released v0.1.49 proxy and accounting contracts.
 
-- `docs/architecture.md`
-- `docs/getting-started.md`
-- `docs/deployment.md`
-- `docs/guardrails.md`
-- `docs/current-features.md`
-- `docs/provider-intelligence.md`
-- `docs/operations.md`
-- `CHANGELOG.md`
-
-### Azure Foundry integration
-
-Register existing Foundry agents or expose a governed project Responses endpoint.
-See the [Azure Foundry setup guide](docs/azure-foundry.md) for identity configuration,
-illustrated Admin UI steps, API examples, supported boundaries and mock E2E tests.
+New versions require fresh native body-admission benchmarks. Short synthetic UI or protocol checks do not establish production capacity; use the [benchmark methodology](benches/body-admission/README.md) and retain failed as well as completed observations.

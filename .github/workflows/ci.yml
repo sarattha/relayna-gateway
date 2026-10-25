@@ -183,6 +183,39 @@ jobs:
       - name: Verify orchestration, boundary classification and failure reports
         run: python3 -m unittest discover -s benches/body-admission -p 'test_*.py' -v
 
+  monitoring-smoke:
+    name: monitoring smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/target/monitoring-python-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify protocol and disposable-fixture orchestration
+        run: python3 -m unittest discover -s tests/e2e/monitoring -p 'test_*.py' -v
+      - name: Build the candidate Gateway
+        run: cargo build --release --locked --bin gateway-api
+      - name: Observe continuous HTTP, SSE and WebSocket traffic for ten minutes
+        run: >-
+          python3 tests/e2e/monitoring/run_smoke.py
+          --binary target/release/gateway-api --seconds 600
+          --history-rows 100000 --output output/ci-monitoring-smoke
+      - name: Retain monitoring observations, failures and provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-smoke-${{ github.event_name }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: output/ci-monitoring-smoke/
+          if-no-files-found: ignore
+          retention-days: 14
+
   repository-metadata:
     name: repository metadata
     runs-on: ubuntu-latest
@@ -205,6 +238,12 @@ jobs:
       - name: Validate workflow YAML parses
         run: |
           ruby -ryaml -e 'Dir[".github/workflows/*.yml"].each { |path| YAML.load_file(path) }'
+
+      - name: Validate workflow expressions and schemas
+        run: >-
+          docker run --rm -v "$PWD:/repo:ro" -w /repo
+          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+          -shellcheck= -pyflakes=
 
       - name: Validate release metadata
         run: python3 scripts/validate-release-metadata.py
