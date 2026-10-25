@@ -13,7 +13,7 @@ Its signature and provenance identify the tagged merge commit
 used a separate source-built image; it does not imply an ARM64 release image.
 
 The major release combines scalable all-project Usage, HTTP/SSE and WebSocket
-monitoring, live gateway capacity, and the Natural Connection operator console.
+monitoring, live gateway capacity, and an expanded operator console.
 Read the [console tour](v1.0.0.md), [upgrade guide](deployment.md#upgrade-to-100)
 and [monitoring semantics](operations/gateway-monitoring.md). Released v0.1.49
 proxy, identity, Usage and budget contracts remain supported.

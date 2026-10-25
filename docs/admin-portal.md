@@ -8,11 +8,10 @@ For current v1.0.0 screenshots and a question-led walkthrough, see the
 [console tour](v1.0.0.md). [Current Feature Highlights](current-features.md)
 covers governance, provider intelligence, usage and supply-chain features.
 
-## Design 4.0
+## Console layout and accessibility
 
-Design 4.0 upgrades the shared shell and every Admin/Owner page with consistent
-Mulberry & Linen surfaces, original Relayna Portico typography, table spacing, field labels and semantic
-status colors. The design version is separate from the gateway release version. The approved Natural Connection identity, Slim Leaf logo family and exact taglines come from the [shared brand snapshot](brand.md).
+Admin and Owner pages share consistent navigation, table spacing, field labels
+and semantic status colors.
 
 The sidebar uses elevated selected items and subtle lift-and-shadow
 feedback on actionable controls. Keyboard focus remains visible, and reduced
@@ -153,7 +152,7 @@ drawer. Owner details remain exact-resource scoped and contain only sanitized
 usage metadata plus an optional redacted debug bundle. Project dashboards scope
 usage by persisted project attribution and add service-level breakdowns.
 
-The [v1.0 console tour](v1.0.0.md) shows the current Portico/Mulberry & Linen
+The [v1.0 console tour](v1.0.0.md) shows the current
 interface in both themes. Step-by-step screenshots later in this guide retain
 historical captures where labeled; control names and instructions describe
 the current workflow.

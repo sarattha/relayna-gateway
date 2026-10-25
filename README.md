@@ -56,7 +56,7 @@ For the full local development environment with synthetic personas, use [`deploy
 
 ### Preview every console page
 
-A loopback-only, GET-only fixture lets you explore the new identity and all Admin/Owner views without a Gateway, credentials or production data:
+A loopback-only, GET-only fixture lets you explore all Admin/Owner views without a Gateway, credentials or production data:
 
 ```bash
 npm ci
@@ -74,7 +74,7 @@ Build this source checkout, including its checked-in console assets:
 docker build -t relayna-gateway:local .
 ```
 
-Use the [Docker and Kubernetes deployment guide](docs/deployment.md) for secrets, database migrations, listener exposure and upgrades. Keep the control listener behind appropriate network and identity controls. The published runtime release remains **v0.1.49**; this branch's new identity does not bump that version.
+Use the [Docker and Kubernetes deployment guide](docs/deployment.md) for secrets, database migrations, listener exposure and upgrades. Keep the control listener behind appropriate network and identity controls.
 
 - [Operations](docs/operations.md): readiness, logs, secrets, limits and budget recovery.
 - [LiteLLM passthrough](docs/litellm-passthrough.md): canonical route modes, caller credentials and dashboard exposure.
@@ -85,27 +85,9 @@ Use the [Docker and Kubernetes deployment guide](docs/deployment.md) for secrets
 
 Provider keys, operator tokens, virtual keys, Studio credentials and request prompts must stay out of source control, screenshots and logs.
 
-## Natural Connection
+## Relayna integration
 
 The Relayna SDK supplies service-side task, status and workflow plumbing. Relayna Studio provides centralized operational visibility, task investigation and assessments.
-
-Gateway belongs to one Relayna family, using the **Slim Leaf** gateway symbol, original **Relayna Portico** typography and **Mulberry & Linen** colors in light and dark modes.
-
-| Identity | Tagline |
-| --- | --- |
-| relayna | Connected work. Clear direction. |
-| Gateway | Route intelligence. Keep control. |
-| SDK | Your logic. Connected execution. |
-| Studio | Make distributed work visible. |
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/banners/open-signal-family-dark.svg">
-  <img src="docs/assets/brand/banners/open-signal-family-light.svg" alt="Open Signal pictograms: Relayna Signal braid, Gateway Split portal, SDK Build bridge and Studio Runtime pulse" width="1600">
-</picture>
-
-[Brand and design-system guide](docs/brand.md) · [Logo family](docs/assets/brand/banners/natural-connection-family-light.svg) · [Dark family board](docs/assets/brand/banners/natural-connection-family-dark.svg) · [Gateway logo](docs/assets/brand/logos/relayna-gateway-light.svg)
-
-The approved **Open Signal** banners and supporting product pictograms accompany the Slim Leaf logo family. Studio uses **Runtime pulse** for its operational-control-plane role. The versioned design-system **0.2.1** snapshot is committed with this repo; builds need no external design-system checkout or remote font service. Portico is the parent/Gateway face; Round remains the SDK/Studio companion. Portico is at development version 0.101; Round remains 0.100. See the [brand guide](docs/brand.md) for source, usage and current limits.
 
 ## Repository map
 
@@ -117,7 +99,7 @@ The approved **Open Signal** banners and supporting product pictograms accompany
 | `crates/gateway-store` | PostgreSQL persistence and Redis state |
 | `crates/gateway-telemetry` | Logs, traces, Prometheus and runtime observations |
 | `deploy` | Local and Kubernetes deployment examples |
-| `docs` | Architecture, operational guides and brand assets |
+| `docs` | Architecture and operational guides |
 | `tests` / `benches` | Integration, UI and release benchmark harnesses |
 
 Read [the architecture](docs/architecture.md) and [contributor guide](AGENTS.md) before changing behavior.
@@ -140,6 +122,6 @@ The Rust verification helper runs formatting, workspace Clippy/tests and the req
 
 [v1.0.0 validation](docs/benchmarks/v1.0.0.md) · [v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
 
-Version **1.0.0** brings scalable all-project Usage, protocol-aware Traffic, live gateway capacity, and the Natural Connection console with original Portico typography. Follow the [console tour](docs/v1.0.0.md) and [1.0 upgrade guide](docs/deployment.md#upgrade-to-100) for migrations, PostgreSQL connection sizing, and rollout. The major version preserves the released v0.1.49 proxy and accounting contracts.
+Version **1.0.0** brings scalable all-project Usage, protocol-aware Traffic, live gateway capacity, and an expanded operator console. Follow the [console tour](docs/v1.0.0.md) and [1.0 upgrade guide](docs/deployment.md#upgrade-to-100) for migrations, PostgreSQL connection sizing, and rollout. The major version preserves the released v0.1.49 proxy and accounting contracts.
 
 New versions require fresh native body-admission benchmarks. Short synthetic UI or protocol checks do not establish production capacity; use the [benchmark methodology](benches/body-admission/README.md) and retain failed as well as completed observations.
