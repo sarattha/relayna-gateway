@@ -43,5 +43,8 @@ Invoke-Step -Label "cargo clippy --workspace --all-targets --all-features -- -D 
     cargo clippy --workspace --all-targets --all-features -- -D warnings
 }
 Invoke-Step -Label "cargo test --workspace --all-features" -Command { cargo test --workspace --all-features }
+Invoke-Step -Label "cargo test --manifest-path vendor/pingora-header-serde/Cargo.toml" -Command {
+    cargo test --manifest-path vendor/pingora-header-serde/Cargo.toml
+}
 
 Write-Host "code-change-verification: all commands passed."

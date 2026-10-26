@@ -120,8 +120,8 @@ The Rust verification helper runs formatting, workspace Clippy/tests and the req
 
 ## Releases and performance evidence
 
-[v1.0.0 validation](docs/benchmarks/v1.0.0.md) · [v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
+[v1.0.1 validation](docs/benchmarks/v1.0.1.md) · [v1.0.0 validation](docs/benchmarks/v1.0.0.md) · [v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
 
-Version **1.0.0** brings scalable all-project Usage, protocol-aware Traffic, live gateway capacity, and an expanded operator console. Follow the [console tour](docs/v1.0.0.md) and [1.0 upgrade guide](docs/deployment.md#upgrade-to-100) for migrations, PostgreSQL connection sizing, and rollout. The major version preserves the released v0.1.49 proxy and accounting contracts.
+Version **1.0.1** refreshes console typography and monitoring readability and updates the proxy/compression dependencies. Its [validation record](docs/benchmarks/v1.0.1.md) tracks the fresh release gates. Version **1.0.0** brings scalable all-project Usage, protocol-aware Traffic, live gateway capacity, and an expanded operator console. Follow the [console tour](docs/v1.0.0.md) and [1.0 upgrade guide](docs/deployment.md#upgrade-to-100) for migrations, PostgreSQL connection sizing, and rollout. The major version preserves the released v0.1.49 proxy and accounting contracts.
 
 New versions require fresh native body-admission benchmarks. Short synthetic UI or protocol checks do not establish production capacity; use the [benchmark methodology](benches/body-admission/README.md) and retain failed as well as completed observations.

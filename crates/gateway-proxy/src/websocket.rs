@@ -233,10 +233,10 @@ mod tests {
             assert!(!valid_handshake(&req), "{name}");
         }
         let mut req = handshake();
-        req.method = http::Method::POST;
+        req.set_method(http::Method::POST);
         assert!(!valid_handshake(&req));
         req = handshake();
-        req.version = http::Version::HTTP_2;
+        req.set_version(http::Version::HTTP_2);
         assert!(!valid_handshake(&req));
         for name in [
             "upgrade",

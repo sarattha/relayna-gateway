@@ -2,43 +2,42 @@
   "name": "relayna",
   "system": "Natural Connection",
   "palette": "Mulberry & Linen",
-  "version": "0.2.1",
-  "date": "2026-10-25",
+  "version": "0.4.0",
+  "date": "2026-10-26",
   "logo": {
     "name": "Slim Leaf",
     "lineage": "G3 / Swing Gate / refinement 3",
-    "clearSpace": "At least 0.25 \u00d7 symbol height",
+    "clearSpace": "At least 0.25 × symbol height",
     "smallVariantMaxPx": 24
   },
   "typeface": {
-    "family": "Relayna Portico",
-    "version": "0.101",
-    "status": "Development draft",
+    "family": "Manrope",
+    "version": "4.505",
+    "status": "Upstream release",
+    "designer": "Mikhail Sharanda",
+    "license": "SIL Open Font License 1.1",
     "weights": [
+      200,
       300,
       400,
       500,
       600,
-      700
+      700,
+      800
     ],
     "variableAxis": {
       "wght": [
-        300,
-        700
+        200,
+        800
       ]
     },
-    "scripts": [
-      "Latin",
-      "Extended Latin"
+    "styles": [
+      "normal"
     ],
     "wordmarkWeight": 600,
     "descriptorWeight": 400,
-    "styles": [
-      "normal",
-      "italic"
-    ],
-    "lineage": "Owner-selected F3 Portico; original six-glyph study expanded into Latin and extended Latin",
-    "construction": "F3 filled contours, straight-sided bowls, flat terminals, optical stem zones; double-storey a in upright and italic"
+    "source": "https://fonts.google.com/specimen/Manrope",
+    "lineage": "Official Google Fonts Manrope, pinned and self-hosted without outline or spacing changes."
   },
   "taglines": {
     "relayna": "Connected work. Clear direction.",
@@ -60,7 +59,7 @@
     "Visual evidence with honest unknown states",
     "One family across Gateway, SDK and Studio"
   ],
-  "status": "Corrected F3 architecture throughout Portico 0.101 for Relayna/Gateway; Round 0.100 retained for SDK/Studio.",
+  "status": "Manrope is the sole typeface for all interfaces, documentation, wordmarks and artwork.",
   "campaign": {
     "name": "Open Signal",
     "selectedBannerDirections": {
@@ -76,7 +75,7 @@
       "Studio": "ST4"
     },
     "studioPictogram": "Runtime pulse",
-    "clearSpace": "External connectors stay outside 0.25 \u00d7 symbol-height, including stroke caps."
+    "clearSpace": "External connectors stay outside 0.25 × symbol-height, including stroke caps."
   },
   "productRoles": {
     "relayna": "Connected services, tasks and workflows across the Relayna ecosystem.",
@@ -85,24 +84,45 @@
     "Studio": "Central operational control plane for service registry, task search, execution graphs, monitoring, failure investigation, retries and assessments."
   },
   "typefaceAssignments": {
-    "relayna": "Relayna Portico",
-    "Gateway": "Relayna Portico",
-    "SDK": "Relayna Round",
-    "Studio": "Relayna Round"
+    "relayna": "Manrope",
+    "Gateway": "Manrope",
+    "SDK": "Manrope",
+    "Studio": "Manrope"
   },
-  "secondaryTypeface": {
-    "family": "Relayna Round",
-    "version": "0.100",
-    "status": "Development draft",
+  "interfaceTypeface": {
+    "family": "Manrope",
+    "version": "4.505",
+    "status": "Upstream release",
+    "designer": "Mikhail Sharanda",
+    "license": "SIL Open Font License 1.1",
     "weights": [
+      200,
       300,
       400,
       500,
       600,
-      700
+      700,
+      800
     ],
+    "variableAxis": {
+      "wght": [
+        200,
+        800
+      ]
+    },
     "styles": [
       "normal"
-    ]
+    ],
+    "wordmarkWeight": 600,
+    "descriptorWeight": 400,
+    "source": "https://fonts.google.com/specimen/Manrope",
+    "lineage": "Official Google Fonts Manrope, pinned and self-hosted without outline or spacing changes."
+  },
+  "interfaceTypefaceAssignments": {
+    "default": "Manrope",
+    "Gateway": "Manrope",
+    "Gateway documentation": "Manrope",
+    "SDK": "Manrope",
+    "Studio": "Manrope"
   }
 }

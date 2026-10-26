@@ -100,7 +100,7 @@ export function gatewayCpuUtilization(current, previous, instanceId = "all") {
   return limitCores > 0 ? 100 * usedCores / limitCores : null;
 }
 
-export function gatewayStatusView(selection, { esc, badge, table }, { compact = false, windowSeconds = 60, hasTrend = false } = {}) {
+export function gatewayStatusView(selection, { esc, badge, table }, { compact = false, windowSeconds = 60, observations = [] } = {}) {
   const runtime = selection.runtime, active = runtime?.active, latency = runtime?.latency, capacity = runtime?.body_capacity;
   const notice = `<div data-gateway-part="notice">${selection.message ? `<p class="notice inline" data-kind="${selection.tone}" role="status">${esc(selection.message)}</p>` : ""}</div>`;
   const activeTotal = [active?.http, active?.sse, active?.websocket].every(number) ? active.http + active.sse + active.websocket : null;
@@ -109,14 +109,23 @@ export function gatewayStatusView(selection, { esc, badge, table }, { compact = 
   const hasLatency = latencySeries.some(histogram => histogram?.sample_count > 0 && [50, 95, 99].some(percentile => number(histogram[`p${percentile}_ms`])));
   const latencyEmpty = hasLatency ? "" : latencySeries.some(histogram => histogram?.sample_count > 0) ? "Samples exceed the chart range" : latencySeries.some(histogram => number(histogram?.sample_count)) ? "No latency samples in this window" : "Latency unavailable";
   const rate = number(selection.arrivalsPerSecond) ? selection.arrivalsPerSecond.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—";
+  const hasTrend = observations.some(point => measured(point.rate));
+  const latestRate = observations.at(-1)?.rate;
+  const trendValue = measured(latestRate) ? `Last observed ${metricNumber(latestRate)} req/s` : "No fresh rate sample";
+  const observationTime = at => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const trendRange = hasTrend ? `${observationTime(observations[0].at)} – ${observationTime(observations.at(-1).at)}` : "since this page opened";
+  const trendCaption = `Rolling ${windowLabel(windowSeconds)} rate · browser observations ${trendRange}`;
+  const trendEmpty = hasTrend ? "" : observations.length ? "No fresh arrival-rate samples" : "Waiting for live observations";
+  const trendChart = `<div class="${compact ? "monitor-trend-chart" : "monitor-chart"}"><canvas data-gateway-chart="trend" role="img" aria-label="Arrival rate in requests per second. ${esc(trendValue)}. ${esc(trendCaption)}."></canvas><div class="monitor-chart-empty" data-gateway-part="trend-empty">${trendEmpty ? `<i class="ti ti-chart-line" aria-hidden="true"></i><span>${esc(trendEmpty)}</span>` : ""}</div></div>`;
+  const capacityNote = '<p class="monitor-capacity-note">Current reservations for managed request/response body buffers. Requests can remain in flight after buffers are released. Brief occupancy may fall between samples; these meters do not show cumulative traffic or total memory use.</p>';
   const scope = `<div class="monitor-scope-line" data-gateway-part="scope">${badge(selection.label, selection.tone)}<span><i class="ti ti-server" aria-hidden="true"></i> ${esc(count(runtime?.instance_count))} reporting instances</span><span>${esc(count(completed))} completed · ${esc(windowLabel(windowSeconds))}</span></div>`;
   const kpis = `<div class="monitor-kpis" data-gateway-part="kpis">
     ${monitorKpi("Arrivals / second", rate, { esc, icon: "activity", detail: `Rolling ${windowLabel(windowSeconds)}` })}
     ${monitorKpi("In flight", metricNumber(activeTotal), { esc, icon: "arrows-exchange", detail: "HTTP · SSE · WebSocket" })}
     ${monitorKpi("HTTP success p95", gatewayQuantile(latency?.http_success_duration, 95), { esc, icon: "clock", detail: "Completed HTTP + SSE" })}
-    ${compact ? monitorKpi("Body slots occupied", capacity ? `${count(capacity.used_requests)} / ${count(capacity.max_requests)}` : "—", { esc, icon: "stack-2", detail: capacity ? `${bytes(capacity.free_bytes)} buffer space free` : "Capacity unavailable" }) : monitorKpi("Failed requests", metricNumber(failures), { esc, icon: "alert-circle", detail: number(completed) && completed > 0 && number(failures) ? `${(100 * failures / completed).toFixed(2)}% of completed requests` : "No completed samples", tone: failures > 0 ? "bad" : "neutral" })}
+    ${compact ? monitorKpi("Buffered body slots", capacity ? `${count(capacity.used_requests)} / ${count(capacity.max_requests)}` : "—", { esc, icon: "stack-2", detail: capacity ? `${bytes(capacity.free_bytes)} buffer space free` : "Capacity unavailable" }) : monitorKpi("Failed requests", metricNumber(failures), { esc, icon: "alert-circle", detail: number(completed) && completed > 0 && number(failures) ? `${(100 * failures / completed).toFixed(2)}% of completed requests` : "No completed samples", tone: failures > 0 ? "bad" : "neutral" })}
   </div>`;
-  if (compact) return `${scope}${notice}${kpis}<div class="monitor-compact-footer"><div data-gateway-part="protocols">${protocolMix(active, esc)}</div><div class="monitor-mini-trend"><canvas data-gateway-chart="trend" role="img" aria-label="Arrival rate observations since this page opened"></canvas></div></div>`;
+  if (compact) return `${scope}${notice}${kpis}${capacityNote}<div class="monitor-compact-footer"><div><h4 class="monitor-protocol-title">In-flight requests by protocol</h4><div data-gateway-part="protocols">${protocolMix(active, esc)}</div></div><figure class="monitor-mini-trend"><figcaption><h4>Arrival rate</h4><span data-gateway-part="trend-value">${esc(trendValue)}</span></figcaption><p class="monitor-trend-caption" data-gateway-part="trend-range">${esc(trendCaption)}</p>${trendChart}</figure></div>`;
   const latencyRows = [
     ["HTTP + SSE · all outcomes", "http_duration"], ["HTTP + SSE · successes", "http_success_duration"],
     ["HTTP + SSE · upstream duration", "upstream_duration"], ["HTTP + SSE · first body byte", "ttfb"],
@@ -143,8 +152,8 @@ export function gatewayStatusView(selection, { esc, badge, table }, { compact = 
   const recordingSignals = [["Usage", recording?.usage_events], ["Debug bundles", recording?.debug_bundles], ["Traffic", recording?.request_traffic]].map(([label, value]) => `<span class="${value > 0 ? "bad" : ""}">${esc(label)}<strong>${esc(count(value))}</strong></span>`).join("");
   return `${scope}${notice}${kpis}
     <div class="monitor-dashboard-grid">
-      <figure class="monitor-figure"><figcaption><h3>Live request rate</h3><span>Browser observations · since opened</span></figcaption><div class="monitor-chart"><canvas data-gateway-chart="trend" role="img" aria-label="Observed arrival rate, ${esc(rate)} requests per second in the latest sample"></canvas><div class="monitor-chart-empty" data-gateway-part="trend-empty">${hasTrend ? "" : '<i class="ti ti-chart-line" aria-hidden="true"></i><span>Waiting for live observations</span>'}</div></div></figure>
-      <div class="monitor-resource-panel" data-gateway-part="capacity"><div class="monitor-section-heading"><h3>Buffer capacity</h3><i class="ti ti-stack-2" aria-hidden="true"></i></div>${capacityMeter("Request slots", capacity?.used_requests, capacity?.free_requests, capacity?.max_requests, count, esc)}${capacityMeter("Serialized body bytes", capacity?.used_bytes, capacity?.free_bytes, capacity?.max_bytes, bytes, esc)}<div class="monitor-section-heading"><h4>Active protocols</h4><span>${esc(metricNumber(activeTotal))} in flight</span></div>${protocolMix(active, esc)}</div>
+      <figure class="monitor-figure"><figcaption><h3>Live request rate</h3><span data-gateway-part="trend-value">${esc(trendValue)}</span></figcaption><p class="monitor-trend-caption" data-gateway-part="trend-range">${esc(trendCaption)}</p>${trendChart}</figure>
+      <div class="monitor-resource-panel" data-gateway-part="capacity"><div class="monitor-section-heading"><h3>Buffer capacity</h3><i class="ti ti-stack-2" aria-hidden="true"></i></div>${capacityNote}${capacityMeter("Buffered body slots", capacity?.used_requests, capacity?.free_requests, capacity?.max_requests, count, esc)}${capacityMeter("Reserved body bytes", capacity?.used_bytes, capacity?.free_bytes, capacity?.max_bytes, bytes, esc)}<div class="monitor-section-heading"><h4>Active protocols</h4><span>${esc(metricNumber(activeTotal))} in flight</span></div>${protocolMix(active, esc)}</div>
       <figure class="monitor-figure"><figcaption><h3>Response latency</h3><span>Histogram upper bounds · milliseconds</span></figcaption><div class="monitor-chart monitor-latency-chart"><canvas data-gateway-chart="latency" role="img" aria-label="Compare p50, p95 and p99 for successful HTTP, first byte, first token and WebSocket handshake. Exact displayed values are in Latency distribution below."></canvas><div class="monitor-chart-empty" data-gateway-part="latency-empty">${latencyEmpty ? `<i class="ti ti-clock" aria-hidden="true"></i><span>${esc(latencyEmpty)}</span>` : ""}</div></div></figure>
       <div class="monitor-resource-panel" data-gateway-part="dependencies"><div class="monitor-section-heading"><h3>Fleet & dependencies</h3><i class="ti ti-topology-star-3" aria-hidden="true"></i></div>${instances || `<div class="monitor-empty"><i class="ti ti-server-off" aria-hidden="true"></i><span>No reporting instances</span></div>`}<div class="monitor-section-heading"><h4>Recording failures</h4><span>${esc(windowLabel(windowSeconds))}</span></div><div class="monitor-recording-signals">${recordingSignals}</div></div>
     </div>
@@ -212,7 +221,7 @@ export function mountGatewayStatus({ content, api, esc, attr = esc, badge, table
     const focusedDetail = statusHost.querySelector?.("details[data-gateway-detail] > summary:focus")?.parentElement.dataset.gatewayDetail;
     const previousCharts = new Map(charts.map(chart => [chart.canvas.dataset.gatewayChart, chart]));
     charts = [];
-    const markup = gatewayStatusView(selection, { esc, badge, table }, { compact, windowSeconds, hasTrend: observations.some(point => point.rate !== null) });
+    const markup = gatewayStatusView(selection, { esc, badge, table }, { compact, windowSeconds, observations });
     const nextFrame = statusHost.ownerDocument?.createElement("div");
     if (nextFrame) nextFrame.innerHTML = markup;
     if (nextFrame && statusHost.querySelector('[data-gateway-part="scope"]')) {

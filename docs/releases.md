@@ -1,5 +1,11 @@
 # Releases
 
+Version **1.0.1** is being prepared with refreshed console typography, monitoring
+readability fixes and patched Pingora/compression dependencies. Its
+[fresh validation record](benchmarks/v1.0.1.md) must be complete before merge,
+tagging and publication. The release uses the existing tag-title/changelog/SBOM
+template and publishes benchmark evidence through documentation hosting.
+
 Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version **1.0.0** was
 [released October 25, 2026](https://github.com/sarattha/relayna-gateway/releases/tag/v1.0.0).
 The release attaches the changelog and an SPDX SBOM. The documentation hosts
@@ -180,7 +186,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v1.0.0
+   python3 scripts/validate-release-metadata.py v1.0.1
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -198,7 +204,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:1.0.0 .
+   docker build -t relayna-gateway:1.0.1 .
    ```
 
 5. Commit the final runtime candidate, run the fresh six-size adaptive benchmark
@@ -212,8 +218,8 @@ avoids changing the required lint baseline whenever the stable channel moves.
 7. Create and push the tag at the merged release commit:
 
    ```bash
-   git tag -a v1.0.0 -m "Release v1.0.0"
-   git push origin v1.0.0
+   git tag -a v1.0.1 -m "Release v1.0.1"
+   git push origin v1.0.1
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -223,10 +229,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v1.0.0`, the workflow publishes:
+For `v1.0.1`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:1.0.0
+ghcr.io/sarattha/relayna-gateway:1.0.1
 ghcr.io/sarattha/relayna-gateway:1.0
 ghcr.io/sarattha/relayna-gateway:latest
 ```

@@ -142,6 +142,13 @@ gh workflow run body-admission-benchmark.yml --ref <branch> \
   -f architecture=amd64 -f mode=full -f body_mib=all
 ```
 
+The `latency` mode fixes eight slots per pod and three fresh-pod trials. Run
+the same selected body size once with a candidate source build and once with
+an immutable baseline image, on matching native runner architecture/resources.
+Keep both runs and compare only matched cohorts. This measures the complete
+body round trip, including the fixture's upstream delay, not isolated proxy
+instruction overhead or provider inference.
+
 Pilot runs use slots 1 and 4, one repetition, for the requested size(s). Full
 runs use the adaptive search and three confirmations. A selected size receives
 up to six hours; select one size per workflow for independent longer searches.

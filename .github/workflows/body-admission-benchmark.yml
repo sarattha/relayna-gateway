@@ -1,4 +1,5 @@
 name: Native body admission benchmark
+run-name: "Body admission ${{ inputs.architecture }} / ${{ inputs.body_mib }} MiB / ${{ inputs.mode }} / ${{ inputs.image || 'source build' }}"
 
 on:
   workflow_dispatch:
@@ -10,9 +11,9 @@ on:
         default: amd64
         required: true
       mode:
-        description: Quick fixed-slot validation or adaptive resource search
+        description: Pilot, adaptive resource search, or matched fixed-slot latency
         type: choice
-        options: [pilot, full]
+        options: [pilot, full, latency]
         default: pilot
         required: true
       body_mib:
@@ -68,6 +69,8 @@ jobs:
           fi
           if [ "$BENCH_MODE" = pilot ]; then
             args+=(--slots 1 4 --repetitions 1)
+          elif [ "$BENCH_MODE" = latency ]; then
+            args+=(--slots 8 --repetitions 3)
           fi
           scripts/bench-body-admission --json run --output target/body-capacity "${args[@]}"
 

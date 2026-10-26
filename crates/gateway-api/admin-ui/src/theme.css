@@ -3,18 +3,10 @@
 @import "./app.css" layer(legacy);
 
 @font-face {
-  font-family: "Relayna Portico";
-  src: url("../../../../docs/assets/brand/fonts/RelaynaPortico-0.101.woff2") format("woff2");
-  font-weight: 300 700;
+  font-family: "Manrope";
+  src: url("../../../../docs/assets/brand/fonts/Manrope-4.505.woff2") format("woff2");
+  font-weight: 200 800;
   font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Relayna Portico";
-  src: url("../../../../docs/assets/brand/fonts/RelaynaPortico-Italic-0.101.woff2") format("woff2");
-  font-weight: 300 700;
-  font-style: italic;
   font-display: swap;
 }
 
@@ -63,6 +55,18 @@ button,
 button {
   min-height: 40px;
   padding: 8px 12px;
+}
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
 }
 button:hover {
   box-shadow: none;
@@ -737,11 +741,13 @@ input[type="radio"] {
 .monitor-figure figcaption > span, .monitor-section-heading > span { font-size: 11px; color: var(--muted-foreground); }
 .monitor-section-heading > i { font-size: 18px; color: var(--muted-foreground); }
 .monitor-chart { position: relative; height: 218px; min-width: 0; }
-.monitor-chart canvas, .monitor-mini-trend canvas { max-width: 100%; }
+.monitor-chart canvas, .monitor-trend-chart canvas { max-width: 100%; }
 .monitor-latency-chart { height: 240px; }
 .monitor-chart-placeholder, .monitor-empty { height: 100%; min-height: 90px; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted-foreground); font-size: 12px; margin: 0; text-align: center; }
 .monitor-empty > i { font-size: 25px; }
 .monitor-capacity { margin-bottom: 20px; }
+.monitor-capacity-note { margin: 0 0 16px; color: var(--muted-foreground); font-size: 12px; line-height: 1.5; }
+.monitor-runtime.is-compact .monitor-capacity-note { margin: 12px 0 0; }
 .monitor-capacity-heading, .monitor-capacity-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12px; }
 .monitor-capacity-heading strong { font-weight: 600; font-variant-numeric: tabular-nums; }
 .monitor-capacity-foot { color: var(--muted-foreground); font-size: 11px; margin-top: 6px; }
@@ -764,8 +770,13 @@ input[type="radio"] {
 .monitor-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 9px; font-size: 11px; color: var(--muted-foreground); }
 .monitor-legend > span { display: inline-flex; align-items: center; gap: 5px; }
 .monitor-legend strong { color: var(--foreground); margin-left: 3px; font-variant-numeric: tabular-nums; }
-.monitor-compact-footer { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 24px; align-items: center; padding-top: 12px; }
-.monitor-mini-trend { position: relative; height: 35px; min-width: 0; }
+.monitor-compact-footer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 24px; align-items: start; padding-top: 16px; }
+.monitor-mini-trend { min-width: 0; margin: 0; }
+.monitor-mini-trend figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 12px; }
+.monitor-mini-trend h4, .monitor-protocol-title { font-size: 12px; font-weight: 600; margin: 0 0 8px; }
+.monitor-mini-trend figcaption > span { font-size: 12px; color: var(--muted-foreground); }
+.monitor-trend-caption { margin: 0 0 12px; font-size: 12px; color: var(--muted-foreground); }
+.monitor-trend-chart { position: relative; height: 150px; min-width: 0; }
 .monitor-runtime.is-compact .monitor-kpis { padding: 16px 0; }
 .monitor-runtime.is-compact .monitor-kpi > strong { font-size: 24px; }
 .monitor-instance { margin-bottom: 13px; padding-bottom: 12px; border-bottom: 1px solid var(--rg-color-border); }
@@ -848,7 +859,6 @@ input[type="radio"] {
   .monitor-kpi > strong, .monitor-runtime.is-compact .monitor-kpi > strong { font-size: 22px; }
   .monitor-kpi > small { font-size: 10px; }
   .monitor-compact-footer { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .monitor-mini-trend { display: none; }
   .monitor-chart { height: 195px; }
   .monitor-latency-chart { height: 220px; }
   .monitor-signal-strip { gap: 10px 18px; }
@@ -860,7 +870,7 @@ input[type="radio"] {
   .traffic-source-actions select { max-width: 100%; }
 }
 .monitor-history-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 0 0 18px; }
-.monitor-history-summary .stat { padding: 0; border: 0; background: transparent; }
+.monitor-history-summary .stat { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .monitor-history-summary .stat > span { font-size: 11px; text-transform: none; font-weight: 500; }
 .monitor-history-summary .stat > strong { font-size: 19px; }
 @media (max-width: 540px) { .monitor-history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -1022,7 +1032,8 @@ button:not(:disabled):active { transform: translateY(0); }
   scrollbar-color: var(--rg-color-border-strong) var(--rg-color-bg);
 }
 :root[data-theme="dark"] ::selection { background: var(--rg-color-surface-muted); color: var(--foreground); }
-:root[data-theme="dark"] :is(.panel, .page-insights, .overview-metrics, .workflow-disclosure, .empty-state, .global-toolbar, .modal, .rg-dialog, .owner-service-card, .login-access-card) {
+/* Component variants must retain their geometry and transparent surfaces. */
+:where(:root[data-theme="dark"]) :is(.panel, .page-insights, .overview-metrics, .workflow-disclosure, .empty-state, .global-toolbar, .modal, .rg-dialog, .owner-service-card, .login-access-card) {
   background: var(--background);
   border-color: var(--border);
 }
@@ -1126,7 +1137,7 @@ button:not(:disabled):active { transform: translateY(0); }
 .drawer-title .eyebrow { display: block; font-size: 9px; letter-spacing: .09em; margin-bottom: 4px; color: var(--muted-foreground); }
 .drawer-title h3 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: normal; overflow-wrap: anywhere; }
 .drawer-title p { margin-top: 5px; line-height: 1.5; }
-.drawer-heading > button { width: 34px; min-width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.drawer-heading > button { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .drawer-nav { display: flex; flex-shrink: 0; gap: 6px; overflow-x: auto; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--background); }
 .drawer-nav button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-height: 31px; font-size: 11px; padding: 5px 9px; border-color: transparent; color: var(--muted-foreground); background: transparent; }
 .drawer-nav button[aria-current] { background: var(--rg-color-bg-strong); color: var(--primary); border-color: var(--border); }
@@ -1143,7 +1154,7 @@ button:not(:disabled):active { transform: translateY(0); }
 .form-section[open] > summary > .ti { transform: rotate(180deg); }
 .drawer-body .form-section-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 18px 16px; gap: 18px 16px; }
 .drawer-body .field-hint { font-size: 11px; line-height: 1.5; margin-top: 5px; }
-.drawer-body form > .form-actions, .editor-form-actions { display: flex; flex-wrap: wrap; position: sticky; bottom: calc(-1 * var(--drawer-padding, 20px)); z-index: 3; margin: 20px calc(-1 * var(--drawer-padding, 20px)) calc(-1 * var(--drawer-padding, 20px)); padding: 16px var(--drawer-padding, 20px); background: var(--background); border-top: 1px solid var(--border); gap: 8px; }
+.drawer-body form > .form-actions, .editor-form-actions { display: flex; flex-wrap: wrap; grid-column: 1 / -1; position: sticky; bottom: calc(-1 * var(--drawer-padding, 20px)); z-index: 3; margin: 20px calc(-1 * var(--drawer-padding, 20px)) calc(-1 * var(--drawer-padding, 20px)); padding: 16px var(--drawer-padding, 20px); background: var(--background); border-top: 1px solid var(--border); gap: 8px; }
 .workflow-disclosure > summary:has(> .workflow-symbol) { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 13px 16px; list-style: none; }
 .workflow-disclosure > summary::-webkit-details-marker { display: none; }
 .workflow-symbol { width: 30px; height: 30px; border-radius: var(--rn-radius-control); font-size: 17px; }

@@ -4,6 +4,43 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+## 1.0.1 - 2026-10-26
+
+### Changed
+
+- Adopt self-hosted Manrope 4.505 throughout the Admin/Owner console,
+  sign-in, charts and documentation. Regenerate every product wordmark and
+  banner from the official font and include its SIL Open Font License 1.1.
+- Upgrade Pingora to 0.9.0 to address RUSTSEC-2026-0388, RUSTSEC-2026-0389
+  and RUSTSEC-2026-0390. Patch its unchanged header-codec source to use
+  zstd 0.14.3 / zstd-safe 8.2.0, removing the vulnerable compression bindings.
+  Update the yanked spin lockfile entry to 0.9.9.
+
+### Fixed
+
+- Align recorded-reliability metrics, creation-drawer action rows and square
+  icon controls in both themes and on narrow screens.
+- Replace the unlabeled compact sparkline with a visible, labeled arrival-rate
+  chart showing requests per second, observation times and missing samples.
+- Label body-capacity meters as buffered body slots and reserved body bytes;
+  explain how requests remain in flight after buffer reservations are released.
+
+### Compatibility and upgrade
+
+- Keep released application URLs and font URLs available. Retired font URLs
+  serve Manrope; no authentication, policy, usage or database migration is
+  required. Body-admission defaults remain eight slots and 512 MiB per process.
+- Pingora's patched HTTP/2 handling rejects authority/Host mismatches and bounds
+  default header/stream resources. No compression format or cached-header
+  serialization code is changed by the dependency-only header-codec patch.
+
+### Release validation
+
+- Fresh native six-size body-admission results, runtime/image/harness identity
+  and all retained evidence are tracked in the
+  [v1.0.1 validation](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.1/).
+  Benchmark execution and final verification must finish before merge/tag/release.
+
 ## 1.0.0 - 2026-10-25
 
 ### Added

@@ -684,7 +684,7 @@
     "font-family-sans": {
       "$type": "fontFamily",
       "$value": [
-        "Relayna Portico",
+        "Manrope",
         "system-ui",
         "sans-serif"
       ]
@@ -692,10 +692,9 @@
     "font-family-mono": {
       "$type": "fontFamily",
       "$value": [
-        "ui-monospace",
-        "SFMono-Regular",
-        "Consolas",
-        "monospace"
+        "Manrope",
+        "system-ui",
+        "sans-serif"
       ]
     },
     "font-weight-light": {
@@ -975,15 +974,6 @@
     "z-index-sticky": {
       "$type": "number",
       "$value": 10
-    },
-    "font-family-round": {
-      "$type": "fontFamily",
-      "$value": [
-        "Relayna Round",
-        "ui-rounded",
-        "system-ui",
-        "sans-serif"
-      ]
     }
   },
   "themes": {

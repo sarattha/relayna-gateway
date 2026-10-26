@@ -66,6 +66,7 @@ const removeEventListener = document.removeEventListener.bind(document);
 document.addEventListener = (type, ...args) => { if (type === "relayna:theme-change") listenerAdds++; return addEventListener(type, ...args); };
 document.removeEventListener = (type, ...args) => { if (type === "relayna:theme-change") listenerRemoves++; return removeEventListener(type, ...args); };
 const disposeTheme = installChartTheme(HeadlessChart, document);
+assert.equal(HeadlessChart.defaults.font.family, '"Manrope", system-ui, sans-serif');
 assert.equal(installChartTheme(HeadlessChart, document), disposeTheme);
 assert.equal(listenerAdds, 1, "repeated installation adds no duplicate listeners");
 const toggle = theme => {
