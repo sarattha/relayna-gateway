@@ -2,8 +2,9 @@
 
 Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version **1.0.0** was
 [released October 25, 2026](https://github.com/sarattha/relayna-gateway/releases/tag/v1.0.0).
-The release includes [versioned evidence](benchmarks/v1.0.0.md), raw and failed
-trials, checksums, screenshots and an SPDX SBOM.
+The release attaches the changelog and an SPDX SBOM. The documentation hosts
+[versioned evidence](benchmarks/v1.0.0.md), raw and failed trials, checksums and
+console screenshots.
 
 The published image is **linux/amd64**:
 `ghcr.io/sarattha/relayna-gateway:1.0.0`, with immutable index digest
@@ -231,5 +232,15 @@ ghcr.io/sarattha/relayna-gateway:latest
 ```
 
 Release artifacts include `CHANGELOG.md` and an SPDX JSON SBOM named
-`relayna-gateway-<tag>.spdx.json`. Verify image signatures with Cosign against
-the GHCR image digest published by the release workflow.
+`relayna-gateway-<tag>.spdx.json`, alongside GitHub's automatic source archives.
+Use the Git tag as the release title. Keep benchmark reports, supporting evidence
+and screenshots in documentation hosting, outside the release asset list.
+Verify image signatures with Cosign against the GHCR image digest published by
+the release workflow.
+
+The documentation deployment retrieves the v1.0.0 assets from an immutable
+[documentation archive](https://github.com/sarattha/relayna-gateway/tree/e38a6ed887a0e8797650a8d55b4a98187e0242d5),
+verifies the original SHA-256 manifest and publishes them with the site. Original
+evidence stays outside the application source tree. The interactive report copy
+only changes its download links to documentation URLs; the original report and
+checksums remain available in the archive.

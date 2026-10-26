@@ -105,6 +105,11 @@ responses.
 
 ## Release benchmarks
 
+Use the Git tag as the GitHub release title. Attach only `CHANGELOG.md` and the
+SPDX SBOM to releases, alongside GitHub's automatic source archives. Publish
+benchmark reports, supporting evidence, and screenshots through documentation
+hosting; keep them out of the release asset list.
+
 Starting with **v0.1.49**, every version bump requires fresh body-admission
 benchmarks and versioned results, including patch, security, docs, and tooling
 releases. Do not mark a release ready, merge its version bump, tag it, or publish
