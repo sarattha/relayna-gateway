@@ -11,6 +11,7 @@ pub enum BodyRewriteOutcome {
 #[derive(Debug, Clone)]
 pub struct BoundedBodyRewriter {
     max_bytes: usize,
+    allocation_hint: usize,
     buffer: Vec<u8>,
 }
 
@@ -18,8 +19,16 @@ impl BoundedBodyRewriter {
     pub fn new(max_bytes: usize) -> Self {
         Self {
             max_bytes,
+            allocation_hint: max_bytes,
             buffer: Vec::new(),
         }
+    }
+
+    pub(crate) fn with_expected_length(mut self, expected_length: Option<usize>) -> Self {
+        self.allocation_hint = expected_length
+            .unwrap_or(self.max_bytes)
+            .min(self.max_bytes);
+        self
     }
 
     pub fn buffered_len(&self) -> usize {
@@ -31,6 +40,20 @@ impl BoundedBodyRewriter {
             let next_len = self.buffer.len().saturating_add(chunk.len());
             if next_len > self.max_bytes {
                 return Err(GatewayError::RequestBodyTooLarge);
+            }
+            // Content-Length guides allocation only: an underestimated hint
+            // must not replace the actual-byte limit or cause tiny reallocations.
+            if next_len > self.allocation_hint {
+                self.allocation_hint = self.max_bytes;
+            }
+            if next_len > self.buffer.capacity() {
+                let capacity = self
+                    .buffer
+                    .capacity()
+                    .saturating_mul(2)
+                    .max(next_len)
+                    .min(self.allocation_hint);
+                self.buffer.reserve_exact(capacity - self.buffer.len());
             }
             self.buffer.extend_from_slice(chunk);
         }
@@ -102,6 +125,54 @@ pub fn prepare_rewritten_response_headers(response: &mut ResponseHeader, use_htt
 mod tests {
     use super::*;
     use pingora_http::{RequestHeader, ResponseHeader};
+
+    #[test]
+    fn chunked_growth_avoids_capacity_overshoot_for_known_length_bodies() {
+        let length = 10 * 1024 * 1024;
+        let mut rewriter =
+            BoundedBodyRewriter::new(100 * 1024 * 1024).with_expected_length(Some(length));
+        assert_eq!(rewriter.buffer.capacity(), 0, "do not preallocate the hint");
+        let chunk = Bytes::from(vec![b'x'; 64 * 1024]);
+        for _ in 0..length / chunk.len() {
+            rewriter.append_chunk(Some(&chunk)).unwrap();
+        }
+        let body = rewriter.take_buffer();
+        assert_eq!(body.len(), length);
+        assert_eq!(body.capacity(), length);
+        assert!(body.iter().all(|byte| *byte == b'x'));
+    }
+
+    #[test]
+    fn unknown_length_growth_is_capped_at_the_route_body_limit() {
+        let mut rewriter = BoundedBodyRewriter::new(10);
+        let chunk = Bytes::from_static(b"abcd");
+        rewriter.append_chunk(Some(&chunk)).unwrap();
+        rewriter.append_chunk(Some(&chunk)).unwrap();
+        rewriter
+            .append_chunk(Some(&Bytes::from_static(b"ef")))
+            .unwrap();
+        let body = rewriter.take_buffer();
+        assert_eq!(body, b"abcdabcdef");
+        assert_eq!(body.capacity(), 10);
+    }
+
+    #[test]
+    fn length_hints_do_not_change_actual_body_limits() {
+        for hint in [Some(0), Some(3), Some(usize::MAX), None] {
+            let mut rewriter = BoundedBodyRewriter::new(10).with_expected_length(hint);
+            rewriter
+                .append_chunk(Some(&Bytes::from_static(b"abcd")))
+                .unwrap();
+            rewriter
+                .append_chunk(Some(&Bytes::from_static(b"efghij")))
+                .unwrap();
+            assert_eq!(
+                rewriter.append_chunk(Some(&Bytes::from_static(b"k"))),
+                Err(GatewayError::RequestBodyTooLarge)
+            );
+            assert_eq!(rewriter.take_buffer(), b"abcdefghij");
+        }
+    }
 
     #[test]
     fn buffers_multi_chunk_request_and_emits_rewritten_final_body() {

@@ -39,6 +39,18 @@ consuming the buffered-body budget. Size the byte limit well below the pod
 memory limit because JSON object trees and guardrails require additional
 working memory.
 
+Buffered bodies grow incrementally. For requests with a declared
+`Content-Length`, buffer growth uses that length as an allocation hint to avoid
+geometric capacity overshoot (for example, a 16 MiB allocation for a 10 MiB
+body). The hint does not preallocate the full body or replace actual-byte
+admission and route-size checks. Unknown-length bodies still grow within the
+route body limit. Token estimation runs when an input-token or token-per-minute
+limit needs it; policy and guardrail checks still inspect the complete body.
+These allocation savings do not establish a new safe slot count. Validate
+slot and byte settings with representative traffic and pod memory headroom.
+The [native arm64 allocation comparison](benchmarks/body-buffer-allocation-00e996b.md)
+records measured gains, overload responses and remaining OOM limits.
+
 Buffered request slots and byte reservations follow the forwarded buffer until
 its last reference is released. An upload queued behind a slow upstream writer
 still consumes admission; upstream processing time after the upload is consumed

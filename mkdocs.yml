@@ -64,6 +64,7 @@ nav:
       - v1.0.1 results: benchmarks/v1.0.1.md
       - v1.0.0 results: benchmarks/v1.0.0.md
       - v0.1.49 results: benchmarks/v0.1.49.md
+      - Body-buffer allocation (arm64): benchmarks/body-buffer-allocation-00e996b.md
   - Releases: releases.md
 markdown_extensions:
   - admonition
