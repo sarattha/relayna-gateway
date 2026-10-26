@@ -38,6 +38,13 @@ jobs:
           path: target/docs-release-assets/v1.0.0
           persist-credentials: false
 
+      - name: Check out archived v1.0.1 documentation assets
+        uses: actions/checkout@v4
+        with:
+          ref: c5586222ef3a3dc182f15b2d38cf0cc31dba78f0
+          path: target/docs-release-assets/v1.0.1
+          persist-credentials: false
+
       - name: Verify gateway documentation anchors
         run: |
           grep -q "Relayna Gateway" README.md
@@ -64,6 +71,9 @@ jobs:
           sed 's|https://github.com/sarattha/relayna-gateway/releases/download/v1.0.0/|https://sarattha.github.io/relayna-gateway/assets/releases/v1.0.0/|g' \
             site/assets/releases/v1.0.0/gateway-1.0.0-benchmarks.html \
             > site/assets/benchmarks/v1.0.0-arm64.html
+          (cd target/docs-release-assets/v1.0.1 && sha256sum -c gateway-1.0.1-evidence-SHA256SUMS)
+          mkdir -p site/assets/releases/v1.0.1
+          cp target/docs-release-assets/v1.0.1/* site/assets/releases/v1.0.1/
 
       - name: Upload Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

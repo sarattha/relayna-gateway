@@ -1,10 +1,12 @@
 # Releases
 
-Version **1.0.1** is being prepared with refreshed console typography, monitoring
-readability fixes and patched Pingora/compression dependencies. Its
-[fresh validation record](benchmarks/v1.0.1.md) must be complete before merge,
-tagging and publication. The release uses the existing tag-title/changelog/SBOM
-template and publishes benchmark evidence through documentation hosting.
+Version **1.0.1** refreshes console typography, monitoring readability and
+patched Pingora/compression dependencies. Its [fresh native amd64 validation](benchmarks/v1.0.1.md)
+completed 212 fresh-pod trials across all six body sizes, with three clean
+confirmations per selected setting. Audited HTML/JSON/CSV, raw and failed trials,
+provenance and checksums are retained through documentation hosting. Final-head
+CI and repository merge gates apply before tagging and publication. The release
+uses the existing tag-title/changelog/SBOM template; no migration is required.
 
 Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version **1.0.0** was
 [released October 25, 2026](https://github.com/sarattha/relayna-gateway/releases/tag/v1.0.0).

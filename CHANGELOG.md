@@ -4,7 +4,7 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
-## 1.0.1 - 2026-10-26
+## 1.0.1 - 2026-10-27
 
 ### Changed
 
@@ -36,10 +36,13 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Release validation
 
-- Fresh native six-size body-admission results, runtime/image/harness identity
-  and all retained evidence are tracked in the
-  [v1.0.1 validation](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.1/).
-  Benchmark execution and final verification must finish before merge/tag/release.
+- Complete 212 fresh native amd64 body-admission trials across all six sizes,
+  with three clean fresh-pod confirmations per selected setting. Publish
+  audited HTML/JSON/CSV, raw and failed trials, hardware/image/harness provenance
+  and checksums in [v1.0.1 validation](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.1/).
+  Near-boundary settings need production headroom; differing hardware prevents
+  a release-to-release performance claim. Full local verification and the
+  continuous ten-minute protocol/Usage monitoring CI check pass.
 
 ## 1.0.0 - 2026-10-25
 
