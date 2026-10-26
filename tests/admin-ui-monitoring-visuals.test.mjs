@@ -4,9 +4,9 @@ import { JSDOM } from "jsdom";
 
 const visualSource = readFileSync(new URL("../crates/gateway-api/admin-ui/src/monitoring-visuals.ts", import.meta.url), "utf8");
 const visualUrl = `data:text/javascript;base64,${Buffer.from(visualSource).toString("base64")}`;
-const { appendGatewayObservation, capacityMeter, protocolMix, usageRanking, usageSummaryView, usageTrendConfigs } = await import(visualUrl);
+const { appendGatewayObservation, capacityMeter, gatewayTrendConfig, protocolMix, usageRanking, usageSummaryView, usageTrendConfigs } = await import(visualUrl);
 const gatewaySource = readFileSync(new URL("../crates/gateway-api/admin-ui/src/gateway-status.ts", import.meta.url), "utf8").replace('"./monitoring-visuals"', JSON.stringify(visualUrl));
-const { gatewayLatencyConfig, mountHealthGatewayStatus } = await import(`data:text/javascript;base64,${Buffer.from(gatewaySource).toString("base64")}`);
+const { gatewayLatencyConfig, mountHealthGatewayStatus, mountTrafficGatewayStatus } = await import(`data:text/javascript;base64,${Buffer.from(gatewaySource).toString("base64")}`);
 const esc = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 
 {
@@ -40,6 +40,22 @@ const esc = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<"
   assert.equal(gap.at(-1).rate, null, "failed reads cannot become zero or fresh traffic");
   assert.equal(gap.at(-1).p95, null);
   assert.equal(appendGatewayObservation([], selection(9), 300000).length, 1, "new scopes can begin without carrying another scope’s history");
+  const compact = gatewayTrendConfig([{ at: 100000, rate: 0.25 }, { at: 103000, rate: null }, { at: 120000, rate: 0 }], { compact: true });
+  assert.equal(compact.options.scales.x.display, true, "compact trends retain visible time labels");
+  assert.equal(compact.options.scales.y.display, true);
+  assert.equal(compact.options.scales.y.title.text, "req/s");
+  assert.equal(compact.options.scales.y.ticks.callback(0.25), "0.25", "fractional request rates stay readable");
+  assert.equal(compact.options.plugins.tooltip.callbacks.label({ parsed: { y: 0 } }), "0 req/s");
+  assert.deepEqual(compact.data.datasets[0].data, [{ x: 100000, y: 0.25 }, { x: 103000, y: null }, { x: 120000, y: 0 }], "time spacing, gaps and measured zero are preserved");
+  assert.equal(compact.data.datasets[0].spanGaps, false);
+  const single = gatewayTrendConfig([{ at: 100000, rate: 0 }], { compact: true });
+  assert.equal(single.data.datasets[0].pointRadius, 3);
+  assert.equal(single.options.scales.x.max - single.options.scales.x.min, 2000, "one observation gets a bounded time scale");
+  for (const history of [[], [{ at: 100000, rate: null }]]) {
+    const empty = gatewayTrendConfig(history, { compact: true });
+    assert.equal(empty.options.scales.x.display, false);
+    assert.equal(empty.options.scales.y.display, false);
+  }
 }
 
 {
@@ -96,4 +112,35 @@ const esc = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<"
   assert.equal(charts.filter(chart => !chart.destroyed).length, 0, "navigation releases every chart");
   dom.window.close();
 }
-console.log("ok - monitoring visuals preserve measured zeros, unknowns, gaps, scope, escaping, chart teardown and keyboard state");
+{
+  const dom = new JSDOM('<main></main>', { pretendToBeVisual: true });
+  const content = dom.window.document.querySelector('main');
+  const charts = [];
+  class Chart {
+    constructor(canvas, config) { this.canvas = canvas; this.data = config.data; charts.push(this); }
+    update() {}
+    destroy() {}
+  }
+  let reads = 0;
+  const at = Date.now();
+  const dispose = mountTrafficGatewayStatus({ content, Chart, refreshMs: 0, esc, badge: esc, table: () => '', api: async () => {
+    const sampled_at = new Date(at + reads).toISOString();
+    const runtime = { schema_version: 1, window_seconds: 60, observed_seconds: 60, counters: { started: reads++ ? 15 : 0 } };
+    return { sampled_at, instances: [{ instance_id: 'trend-fixture', sampled_at, runtime }], aggregate: runtime };
+  } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const figure = content.querySelector('.monitor-mini-trend');
+  const canvas = figure.querySelector('canvas');
+  assert.equal(content.querySelector('[data-gateway-part="trend-value"]').textContent, 'Last observed 0 req/s');
+  content.querySelector('[data-gateway-refresh]').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(content.querySelector('[data-gateway-part="trend-value"]').textContent, 'Last observed 0.25 req/s');
+  assert.equal(content.querySelector('.monitor-mini-trend'), figure, 'polling retains the chart figure');
+  assert.equal(content.querySelector('.monitor-mini-trend canvas'), canvas, 'polling retains the chart canvas');
+  assert.equal(charts.length, 1);
+  assert.deepEqual(charts[0].data.datasets[0].data.map(point => point.y), [0, 0.25]);
+  assert.match(canvas.getAttribute('aria-label'), /0\.25 req\/s/);
+  dispose();
+  dom.window.close();
+}
+console.log("ok - monitoring visuals preserve measured zeros, unknowns, labeled compact trends, live updates, gaps, scope, escaping, chart teardown and keyboard state");

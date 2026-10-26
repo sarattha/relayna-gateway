@@ -61,6 +61,7 @@ nav:
   - Security Exceptions: security-exceptions.md
   - Benchmarks:
       - Release benchmark history: benchmarks/index.md
+      - v1.0.1 results: benchmarks/v1.0.1.md
       - v1.0.0 results: benchmarks/v1.0.0.md
       - v0.1.49 results: benchmarks/v0.1.49.md
   - Releases: releases.md

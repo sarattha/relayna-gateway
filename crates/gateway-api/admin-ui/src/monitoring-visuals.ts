@@ -20,7 +20,7 @@ export function installChartTheme(Chart, document = globalThis.document) {
   let documents = chartThemeInstallations.get(Chart);
   if (!documents) { documents = new WeakMap(); chartThemeInstallations.set(Chart, documents); }
   if (documents.has(document)) return documents.get(document);
-  if (Chart.defaults?.font) Chart.defaults.font.family = '"Relayna Portico", system-ui, sans-serif';
+  if (Chart.defaults?.font) Chart.defaults.font.family = '"Manrope", system-ui, sans-serif';
   let active = true;
   const refresh = () => {
     // Chart.js removes destroyed charts from this registry. Keeping no chart
@@ -98,12 +98,24 @@ export function appendGatewayObservation(history, selection, sampledAt) {
 export function gatewayTrendConfig(history, { compact = false } = {}) {
   const options = monitorChartOptions();
   options.plugins.legend.display = !compact;
-  options.scales.x.ticks.maxTicksLimit = 5;
-  if (compact || !history.some(point => point.rate !== null)) { options.scales.x.display = false; options.scales.y.display = false; }
-  if (!history.some(point => point.rate !== null)) options.plugins.legend.display = false;
+  const hasSamples = history.some(point => measured(point.rate));
+  options.scales.x.type = "linear";
+  options.scales.x.display = hasSamples;
+  options.scales.x.ticks.maxTicksLimit = compact ? 3 : 5;
+  options.scales.x.ticks.font.size = 11;
+  options.scales.x.ticks.callback = value => new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  if (history.length) {
+    const first = history[0].at, last = history.at(-1).at;
+    options.scales.x.min = first === last ? first - 1000 : first;
+    options.scales.x.max = first === last ? last + 1000 : last;
+  }
+  options.scales.y.display = hasSamples;
+  options.scales.y.title = { display: true, text: "req/s", color: options.scales.y.ticks.color, font: { size: 11 } };
+  options.scales.y.ticks = { color: options.scales.y.ticks.color, font: { size: 11 }, maxTicksLimit: 4, callback: value => metricNumber(Number(value)) };
+  options.plugins.tooltip.callbacks = { title: items => items.length ? new Date(items[0].parsed.x).toLocaleTimeString() : "", label: context => `${metricNumber(context.parsed.y)} req/s` };
+  if (!hasSamples) options.plugins.legend.display = false;
   return { type: "line", data: {
-    labels: history.map(point => new Date(point.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })),
-    datasets: [{ label: "Arrivals / s", data: history.map(point => point.rate), borderColor: chartColor(monitorPalette.teal, "teal"), backgroundColor: chartColor("#EFE4E9", "fill"), fill: true, pointRadius: history.length === 1 ? 3 : 0, borderWidth: 2, tension: 0.2, spanGaps: false }],
+    datasets: [{ label: "Arrivals / s", data: history.map(point => ({ x: point.at, y: point.rate })), borderColor: chartColor(monitorPalette.teal, "teal"), backgroundColor: chartColor("#EFE4E9", "fill"), fill: true, pointRadius: history.filter(point => measured(point.rate)).length === 1 ? 3 : 0, borderWidth: 2, tension: 0.2, spanGaps: false }],
   }, options };
 }
 

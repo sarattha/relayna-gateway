@@ -1,22 +1,15 @@
 Relayna Natural Connection — Mulberry & Linen
-Snapshot: @relayna/design-system 0.2.1, 25 October 2026.
-Campaign: Open Signal; selected Studio pictogram: Runtime pulse.
-Selected symbol: G3 / Swing Gate / refinement 3 — Slim Leaf.
+Snapshot: @relayna/design-system 0.4.0, 26 October 2026.
+Campaign: Open Signal; Studio pictogram: Runtime pulse.
+Selected symbol: Slim Leaf. Exact taglines and six anchors are retained.
 
-These original Relayna identity assets are included for Gateway at the project
-owner's request. Logo geometry comes from the selected native traced master.
-Parent/Gateway lettering uses the original Relayna Portico family, expanded from
-owner-selected F3 Bezier drawings. SDK/Studio lettering retains Relayna Round.
-No third-party font binary, outline or proprietary metrics are included.
+All interface text, documentation, wordmarks, banners and artwork lettering
+use Manrope 4.505, designed by Mikhail Sharanda. The official variable font
+is self-hosted without changes to outlines, spacing or names. Font software:
+Copyright 2018 The Manrope Project Authors (https://github.com/googlefonts/manrope).
+SIL Open Font License 1.1; full copyright/license in fonts/Manrope-OFL.txt.
+The upstream source is pinned in the design system's source/manrope/upstream.json.
 
-Portico 0.101 supplies five weights with matching italics and two variable
-faces, with Latin/extended-Latin coverage. It is a complete development family;
-manual hinting and complete native-platform font QA remain open.
-A separate public distribution license for the typeface/brand has not been
-selected in the source design-system project. This provenance notice does not
-replace the repository's software license or select a new brand/font license.
-
-identity.json records exact taglines and the six approved colors.
-manifest.json records the imported snapshot's SHA-256 checksums.
-The source project retains editable font masters, procedural font source,
-campaign generation scripts and validation evidence.
+The Relayna brand assets and package remain private project material. Their
+policy does not override Manrope's OFL. This provenance notice does not replace
+the repository's software license. manifest.json records snapshot SHA-256 hashes.
