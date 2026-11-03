@@ -1,5 +1,8 @@
 #[path = "accessa_runtime.rs"]
 mod accessa_runtime;
+#[cfg(test)]
+#[path = "request_admission_tests.rs"]
+mod request_admission_tests;
 #[path = "websocket.rs"]
 mod websocket;
 use crate::accessa_transport::{ConnectionLease, ConnectionLimits, FrameLimit};
@@ -1382,13 +1385,15 @@ where
         }
         // Apply the complete original selector before policy cost checks.
         resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
-        let analysis = analyze_generation_request(&raw_body);
+        let analyzed = CompleteRequestBody::new(Bytes::from(raw_body));
+        let raw_body = &analyzed.bytes;
+        let analysis = &analyzed.generation;
         let wildcard_delegation = ctx.litellm_passthrough
             && ctx.route == Some(Route::LiteLlmPassthrough)
             && ctx.access.authentication_profiles.is_none();
         if wildcard_delegation
             && analysis.is_none()
-            && serde_json::from_slice::<serde_json::Value>(&raw_body)
+            && serde_json::from_slice::<serde_json::Value>(raw_body)
                 .is_ok_and(|value| value.is_object())
         {
             // Duplicate or malformed selectors must not become model=None and
@@ -1407,7 +1412,7 @@ where
                 matched.provider = Provider::LiteLlm;
             }
             match self
-                .effective_complete_policy(key, &matched, &raw_body)
+                .effective_complete_policy(key, &matched, &analyzed)
                 .await
             {
                 Ok(effective) => {
@@ -1420,13 +1425,13 @@ where
                         gateway_core::policies::enforce_output_token_limit(
                             &effective.policy,
                             matched.route,
-                            &raw_body,
+                            raw_body,
                         )
                     } else {
                         check_complete_request_policy(
                             &effective.policy,
                             &matched,
-                            &raw_body,
+                            &analyzed,
                             &features,
                         )
                     };
@@ -1448,14 +1453,14 @@ where
         // Relayna-key canonical passthrough still enforces body-selected policy,
         // rate limits and budgets, while retaining its released no-rewrite mode.
         if ctx.litellm_passthrough {
-            *body = Some(Bytes::from(raw_body));
-            if let Some(body) = body.as_ref() {
-                ctx.body_prefix.clear();
-                ctx.body_prefix
-                    .extend_from_slice(&body[..body.len().min(65_536)]);
-            }
-            if !wildcard_delegation {
-                self.admit_complete_body(session, body, ctx).await?;
+            ctx.body_prefix.clear();
+            ctx.body_prefix
+                .extend_from_slice(&raw_body[..raw_body.len().min(65_536)]);
+            if wildcard_delegation {
+                *body = Some(analyzed.bytes);
+            } else {
+                self.admit_complete_body(session, body, ctx, analyzed)
+                    .await?;
             }
             return bind_request_body_admission(body, ctx);
         }
@@ -1529,24 +1534,22 @@ where
         };
 
         if plan.entries.is_empty() && response_plan.entries.is_empty() {
-            *body = Some(Bytes::from(raw_body));
-            if let Some(body) = body.as_ref() {
-                ctx.rewritten_request_len = Some(body.len());
-                ctx.body_prefix.clear();
-                ctx.body_prefix
-                    .extend_from_slice(&body[..body.len().min(65_536)]);
-            }
+            ctx.rewritten_request_len = Some(raw_body.len());
+            ctx.body_prefix.clear();
+            ctx.body_prefix
+                .extend_from_slice(&raw_body[..raw_body.len().min(65_536)]);
             resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
-            self.admit_complete_body(session, body, ctx).await?;
+            self.admit_complete_body(session, body, ctx, analyzed)
+                .await?;
             return bind_request_body_admission(body, ctx);
         }
 
-        let mut request_json = match serde_json::from_slice::<serde_json::Value>(&raw_body) {
+        let mut request_json = match serde_json::from_slice::<serde_json::Value>(raw_body) {
             Ok(value) => value,
             Err(_) => {
-                *body = Some(Bytes::from(raw_body));
                 resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
-                self.admit_complete_body(session, body, ctx).await?;
+                self.admit_complete_body(session, body, ctx, analyzed)
+                    .await?;
                 return bind_request_body_admission(body, ctx);
             }
         };
@@ -1583,6 +1586,7 @@ where
                 .map_err(|_| GatewayError::InvalidGuardrailRequest)
         })();
 
+        drop(analyzed);
         match result {
             Ok(rewritten) => *body = Some(Bytes::from(rewritten)),
             Err(error) => {
@@ -1606,7 +1610,9 @@ where
                 .extend_from_slice(&body[..body.len().min(65_536)]);
         }
         resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
-        self.admit_complete_body(session, body, ctx).await?;
+        let analyzed = CompleteRequestBody::new(body.take().unwrap_or_default());
+        self.admit_complete_body(session, body, ctx, analyzed)
+            .await?;
         bind_request_body_admission(body, ctx)
     }
 
@@ -1777,7 +1783,12 @@ where
             return Ok(false);
         }
         if body_empty {
-            if let Err(error) = check_complete_request_policy(&policy, &matched, b"", &features) {
+            if let Err(error) = check_complete_request_policy(
+                &policy,
+                &matched,
+                &CompleteRequestBody::new(Bytes::new()),
+                &features,
+            ) {
                 self.record_terminal_usage(ctx, &key, route, &error, now)
                     .await;
                 respond_error(session, error, ctx).await?;
@@ -3004,12 +3015,11 @@ where
         &self,
         key: &AuthenticatedKey,
         matched: &RouteMatch,
-        body: &[u8],
+        body: &CompleteRequestBody,
     ) -> GatewayResult<gateway_core::EffectivePolicy>
     where
         S: PolicyLookup,
     {
-        let features = extract_generation_features(body);
         let base = self
             .store
             .effective_policy_for_context(
@@ -3017,10 +3027,12 @@ where
                 key.project_id,
                 None,
                 Some(matched.route),
-                features.model.clone(),
+                body.generation
+                    .as_ref()
+                    .and_then(|analysis| analysis.features.model.clone()),
             )
             .await?;
-        if matched.route != Route::AnthropicMessageBatches || body.is_empty() {
+        if matched.route != Route::AnthropicMessageBatches || body.bytes.is_empty() {
             return Ok(base);
         }
         let mut layers = vec![gateway_core::PolicyLayer {
@@ -3031,7 +3043,7 @@ where
             guardrail_policy: base.guardrail_policy,
         }];
         let mut models = std::collections::BTreeMap::new();
-        for feature in batch_request_features(body)? {
+        for feature in batch_request_features(&body.bytes)? {
             let effective = match models.entry(feature.model.clone()) {
                 std::collections::btree_map::Entry::Vacant(entry) => entry.insert(
                     self.store
@@ -3113,6 +3125,7 @@ where
         session: &mut Session,
         body: &mut Option<Bytes>,
         ctx: &mut PingoraContext,
+        analyzed: CompleteRequestBody,
     ) -> PingoraResult<()>
     where
         S: PolicyLookup,
@@ -3122,10 +3135,7 @@ where
             // Rewritten output must fit before reserving a service charge.
             // The lease is transferred to the forwarded bytes after admission.
             if let Some(lease) = ctx.request_body_lease.as_mut() {
-                let additional_bytes = body
-                    .as_ref()
-                    .map_or(0, Bytes::len)
-                    .saturating_sub(lease.reserved_bytes());
+                let additional_bytes = analyzed.bytes.len().saturating_sub(lease.reserved_bytes());
                 lease.try_reserve(additional_bytes)?;
             }
             let key = ctx.key.as_ref().ok_or(GatewayError::MissingAuthorization)?;
@@ -3136,13 +3146,14 @@ where
             if ctx.fallback_count > 0 {
                 matched.provider = Provider::LiteLlm;
             }
-            let raw = body.as_deref().unwrap_or_default();
-            let mut features = extract_generation_features(raw);
+            let mut features = analyzed.features();
             features.service_name = features
                 .service_name
                 .or_else(|| matched.service_name.clone());
-            let effective = self.effective_complete_policy(key, &matched, raw).await?;
-            check_complete_request_policy(&effective.policy, &matched, raw, &features)?;
+            let effective = self
+                .effective_complete_policy(key, &matched, &analyzed)
+                .await?;
+            check_complete_request_policy(&effective.policy, &matched, &analyzed, &features)?;
             if ctx.budget_reserved {
                 ctx.policy = Some(effective.policy);
                 return Ok(());
@@ -3158,7 +3169,7 @@ where
             let tokens = effective
                 .policy
                 .tpm_limit
-                .map_or(0, |_| estimate_generation_tokens(raw));
+                .map_or(0, |_| analyzed.estimated_tokens());
             match self
                 .control_state
                 .check_token_rate_limit(key.key_id, effective.policy.tpm_limit, tokens, Utc::now())
@@ -3203,11 +3214,14 @@ where
         }
         .await;
         if let Err(error) = result {
+            // A slow downstream error write must not retain the rejected body.
+            drop(analyzed);
             ctx.guardrail_error = Some(error.clone());
             *body = Some(Bytes::new());
             respond_error(session, error, ctx).await?;
             return Err(PingoraError::new(ErrorType::InternalError));
         }
+        *body = Some(analyzed.bytes);
         Ok(())
     }
 
@@ -3783,12 +3797,44 @@ fn provider_for_usage(ctx: &PingoraContext) -> Provider {
         .unwrap_or(Provider::LiteLlm)
 }
 
+// Keep cached analysis inseparable from the immutable bytes it describes.
+// A rewrite constructs a new value; unchanged forwarding moves the original.
+struct CompleteRequestBody {
+    bytes: Bytes,
+    generation: Option<gateway_core::GenerationRequestAnalysis>,
+    tokens: std::sync::OnceLock<i64>,
+}
+
+impl CompleteRequestBody {
+    fn new(bytes: Bytes) -> Self {
+        Self {
+            generation: analyze_generation_request(&bytes),
+            bytes,
+            tokens: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn features(&self) -> gateway_core::GenerationFeatures {
+        self.generation
+            .as_ref()
+            .map(|analysis| analysis.features.clone())
+            .unwrap_or_default()
+    }
+
+    fn estimated_tokens(&self) -> i64 {
+        *self
+            .tokens
+            .get_or_init(|| estimate_generation_tokens(&self.bytes))
+    }
+}
+
 fn check_complete_request_policy(
     policy: &KeyPolicy,
     matched: &RouteMatch,
-    body: &[u8],
+    analyzed: &CompleteRequestBody,
     features: &gateway_core::GenerationFeatures,
 ) -> GatewayResult<()> {
+    let body = &analyzed.bytes;
     if body.len() > matched.max_body_bytes {
         return Err(GatewayError::RequestBodyTooLarge);
     }
@@ -3800,10 +3846,10 @@ fn check_complete_request_policy(
             | Route::LiteLlmEmbeddings
             | Route::LiteLlmRerank
     );
-    let malformed_metadata = analyze_generation_request(body).is_none()
+    let malformed_metadata = analyzed.generation.is_none()
         && serde_json::from_slice::<serde_json::Value>(body).is_ok_and(|value| value.is_object());
     if malformed_metadata
-        || (generation && analyze_generation_request(body).is_none())
+        || (generation && analyzed.generation.is_none())
         || ((generation || (!body.is_empty() && matched.route != Route::AnthropicMessageBatches))
             && !policy.allowed_models.is_empty()
             && features.model.is_none())
@@ -3828,7 +3874,7 @@ fn check_complete_request_policy(
         None,
         policy
             .max_input_tokens_per_request
-            .and_then(|_| i32::try_from(estimate_generation_tokens(body)).ok()),
+            .and_then(|_| i32::try_from(analyzed.estimated_tokens()).ok()),
         None,
         matched.estimated_cost_usd,
     )?;
@@ -6642,7 +6688,10 @@ mod tests {
         assert_eq!(events[0].output_tokens, None);
     }
 
-    struct MemoryUsageStore {
+    pub(super) struct MemoryUsageStore {
+        pub(super) policy: Mutex<KeyPolicy>,
+        pub(super) model_policy: Mutex<Option<(String, KeyPolicy)>>,
+        pub(super) guardrail_policy: Mutex<GuardrailPolicy>,
         events: Mutex<Vec<UsageEvent>>,
         debug_bundles: Mutex<Vec<gateway_core::DebugBundle>>,
         guardrail_events: Mutex<Vec<GuardrailExecutionEvent>>,
@@ -6680,7 +6729,24 @@ mod tests {
     #[async_trait]
     impl PolicyLookup for MemoryUsageStore {
         async fn policy_for_key(&self, _: Uuid) -> GatewayResult<KeyPolicy> {
-            Ok(KeyPolicy::default())
+            Ok(self.policy.lock().unwrap().clone())
+        }
+
+        async fn effective_policy_for_context(
+            &self,
+            key: Uuid,
+            project: Option<Uuid>,
+            team: Option<String>,
+            route: Option<Route>,
+            model: Option<String>,
+        ) -> GatewayResult<gateway_core::EffectivePolicy> {
+            Ok(gateway_core::EffectivePolicy {
+                policy: self
+                    .policy_for_context(key, project, team, route, model)
+                    .await?,
+                guardrail_policy: self.guardrail_policy.lock().unwrap().clone(),
+                applied_layers: Vec::new(),
+            })
         }
 
         async fn policy_for_context(
@@ -6694,8 +6760,13 @@ mod tests {
             self.policy_models
                 .lock()
                 .expect("policy models lock")
-                .push(model);
-            let mut policy = KeyPolicy::default();
+                .push(model.clone());
+            let mut policy = self.policy.lock().unwrap().clone();
+            if let Some((name, model_policy)) = self.model_policy.lock().unwrap().as_ref() {
+                if model.as_ref() == Some(name) {
+                    policy = model_policy.clone();
+                }
+            }
             if route == Some(Route::AnthropicMessageBatches) {
                 policy.allowed_routes.push(Route::AnthropicMessageBatches);
             }
@@ -6738,6 +6809,9 @@ mod tests {
                 active_litellm_config: Mutex::new(None),
                 litellm_credential_mapping: Mutex::new(None),
                 policy_models: Mutex::new(Vec::new()),
+                policy: Mutex::new(KeyPolicy::default()),
+                model_policy: Mutex::new(None),
+                guardrail_policy: Mutex::new(GuardrailPolicy::default()),
             }
         }
     }
@@ -6765,13 +6839,17 @@ mod tests {
             .collect();
         let body = serde_json::to_vec(&serde_json::json!({"requests":entries})).unwrap();
         let effective = proxy
-            .effective_complete_policy(&key, &matched, &body)
+            .effective_complete_policy(
+                &key,
+                &matched,
+                &CompleteRequestBody::new(Bytes::copy_from_slice(&body)),
+            )
             .await
             .unwrap();
         check_complete_request_policy(
             &effective.policy,
             &matched,
-            &body,
+            &CompleteRequestBody::new(Bytes::copy_from_slice(&body)),
             &extract_generation_features(&body),
         )
         .unwrap();
@@ -6786,13 +6864,15 @@ mod tests {
         let body = br#"{"model":"gpt-test","input":"abcdefgh","max_tokens":12}"#;
         let matched = Route::resolve_match(&http::Method::POST, "/v1/chat/completions").unwrap();
         let features = extract_generation_features(body);
-        let estimated = i32::try_from(estimate_generation_tokens(body)).unwrap();
+        let estimated = 16;
+        assert_eq!(estimate_generation_tokens(body), i64::from(estimated));
+        let body = CompleteRequestBody::new(Bytes::from_static(body));
         for limit in [None, Some(estimated), Some(estimated + 1)] {
             let policy = KeyPolicy {
                 max_input_tokens_per_request: limit,
                 ..KeyPolicy::default()
             };
-            assert!(check_complete_request_policy(&policy, &matched, body, &features).is_ok());
+            assert!(check_complete_request_policy(&policy, &matched, &body, &features).is_ok());
         }
         for limit in [-1, 0, estimated - 1] {
             let policy = KeyPolicy {
@@ -6800,7 +6880,7 @@ mod tests {
                 ..KeyPolicy::default()
             };
             assert_eq!(
-                check_complete_request_policy(&policy, &matched, body, &features),
+                check_complete_request_policy(&policy, &matched, &body, &features),
                 Err(GatewayError::PolicyDenied)
             );
         }
@@ -7043,6 +7123,8 @@ mod tests {
 
     #[derive(Default)]
     pub(super) struct MemoryControlState {
+        pub(super) token_calls: Mutex<Vec<(Option<i32>, i64)>>,
+        token_count: Mutex<i64>,
         released: Mutex<Vec<(Uuid, String)>>,
         pub(super) delete_barrier: Mutex<Option<Arc<tokio::sync::Barrier>>>,
     }
@@ -7131,11 +7213,27 @@ mod tests {
         async fn check_token_rate_limit(
             &self,
             _key_id: Uuid,
-            _tpm_limit: Option<i32>,
-            _estimated_tokens: i64,
+            tpm_limit: Option<i32>,
+            estimated_tokens: i64,
             _now: DateTime<Utc>,
         ) -> GatewayResult<RateLimitDecision> {
-            Ok(RateLimitDecision::Allowed { count: 1 })
+            self.token_calls
+                .lock()
+                .unwrap()
+                .push((tpm_limit, estimated_tokens));
+            let Some(limit) = tpm_limit else {
+                return Ok(RateLimitDecision::Allowed { count: 0 });
+            };
+            let mut count = self.token_count.lock().unwrap();
+            *count += estimated_tokens.max(0);
+            if *count > i64::from(limit) {
+                Ok(RateLimitDecision::Exceeded {
+                    count: *count,
+                    retry_after_seconds: Some(60),
+                })
+            } else {
+                Ok(RateLimitDecision::Allowed { count: *count })
+            }
         }
     }
 

@@ -46,6 +46,11 @@ body). The hint does not preallocate the full body or replace actual-byte
 admission and route-size checks. Unknown-length bodies still grow within the
 route body limit. Token estimation runs when an input-token or token-per-minute
 limit needs it; policy and guardrail checks still inspect the complete body.
+Metadata analysis and any required token estimate are retained with the exact
+immutable body bytes and reused by subsequent admission checks. Guardrail
+rewrites receive fresh analysis, and the original buffer is released before
+final admission of the rewritten body. Both original and rewritten bodies
+remain subject to policy checks; TPM is charged once from the forwarded body.
 These allocation savings do not establish a new safe slot count. Validate
 slot and byte settings with representative traffic and pod memory headroom.
 The [native arm64 allocation comparison](benchmarks/body-buffer-allocation-00e996b.md)

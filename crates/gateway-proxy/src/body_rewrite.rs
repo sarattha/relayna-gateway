@@ -175,6 +175,51 @@ mod tests {
     }
 
     #[test]
+    fn irregular_chunks_cross_exact_hint_and_keep_geometric_growth() {
+        let mut rewriter = BoundedBodyRewriter::new(37).with_expected_length(Some(9));
+        let mut expected = Vec::new();
+        for size in [1, 2, 6, 1, 1, 7, 1, 16, 2] {
+            let chunk = Bytes::from(vec![size as u8; size]);
+            expected.extend_from_slice(&chunk);
+            rewriter.append_chunk(Some(&chunk)).unwrap();
+            assert_eq!(rewriter.buffer, expected);
+            assert!(rewriter.buffer.capacity() <= 37);
+            if expected.len() == 9 {
+                assert_eq!(rewriter.buffer.capacity(), 9);
+            }
+            if expected.len() == 10 || expected.len() == 11 {
+                assert_eq!(rewriter.buffer.capacity(), 18);
+            }
+        }
+        assert_eq!(rewriter.buffer.capacity(), 37);
+        assert_eq!(
+            rewriter.append_chunk(Some(&Bytes::from_static(b"x"))),
+            Err(GatewayError::RequestBodyTooLarge)
+        );
+        assert_eq!(rewriter.take_buffer(), expected);
+    }
+
+    #[test]
+    fn oversized_hint_is_lazy_and_response_growth_preserves_final_short_chunk() {
+        let rewriter = BoundedBodyRewriter::new(100).with_expected_length(Some(usize::MAX));
+        assert_eq!(rewriter.buffer.capacity(), 0);
+        let mut response = BoundedBodyRewriter::new(13);
+        for size in [1, 3, 8, 1] {
+            let mut chunk = Some(Bytes::from(vec![b'x'; size]));
+            let final_chunk = response.buffered_len() + size == 13;
+            response
+                .filter_chunk(&mut chunk, final_chunk, |raw| Ok(raw.to_vec()))
+                .unwrap();
+            if final_chunk {
+                assert_eq!(chunk.unwrap().as_ref(), b"xxxxxxxxxxxxx");
+                assert_eq!(response.buffer.capacity(), 13);
+            } else {
+                assert!(chunk.unwrap().is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn buffers_multi_chunk_request_and_emits_rewritten_final_body() {
         let mut rewriter = BoundedBodyRewriter::new(32);
         let mut first = Some(Bytes::from_static(b"{\"a\""));
