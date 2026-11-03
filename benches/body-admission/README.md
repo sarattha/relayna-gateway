@@ -314,8 +314,9 @@ kind delete cluster --name body-bench
 
 ## Isolate complete body analysis costs
 
-The source-extracted CPU/allocation probe compares the current implementation
-with PR #146 at `277851f24a82fd5d870edabcb0a6d1c334fa932f`:
+The source-extracted CPU/allocation probe requires Python 3.12+ and compares the
+current implementation with PR #146 at
+`277851f24a82fd5d870edabcb0a6d1c334fa932f`:
 
 ```sh
 python3 benches/body-admission/analysis_benchmark.py \
@@ -325,11 +326,12 @@ python3 benches/body-admission/analysis_benchmark.py \
 It compiles both implementations into one native release binary using the
 baseline core library, workspace manifest and dependency lockfile. It refuses
 comparisons when core or telemetry source differs, and isolates analysis costs
-from later dependency upgrades. The probe models original/final policy validation and metadata
-extraction, including uncapped, input-only, TPM-only and combined policies, for
-flat and message-array JSON. It records each repetition, allocation calls and
+from later dependency upgrades. The probe models original/final policy
+validation and metadata extraction, including uncapped, input-only, TPM-only
+and combined policies, for flat and message-array JSON. It records each repetition, allocation calls and
 requested allocation bytes. Those bytes are cumulative allocation traffic, not
-peak live memory or RSS. Timing disables allocation-counter updates; the allocator wrapper remains installed.
+peak live memory or RSS. Timing disables allocation-counter updates; the
+allocator wrapper remains installed.
 
 The output retains extracted source, build logs, source/binary hashes, host and
 compiler identity, and raw JSONL observations. Run without concurrent builds or
