@@ -2,16 +2,18 @@
 """Compare complete-body analysis with PR #146 using extracted Rust source.
 
 This is a CPU/allocation microbenchmark, not a proxy throughput or RSS test.
-Both variants run in one release binary against the same gateway-core and lockfile.
+Both variants run in one release binary against the baseline core and lockfile.
 """
 import argparse
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import platform
 import subprocess
 import sys
+import tarfile
 
 
 def main():
@@ -32,13 +34,17 @@ def main():
     baseline = git("rev-parse", args.baseline).decode().strip()
     # Otherwise a shared library would silently substitute candidate behavior
     # for the historical implementation under comparison.
-    for path in ("Cargo.toml", "Cargo.lock", "crates/gateway-core"):
+    for path in ("crates/gateway-core", "crates/gateway-telemetry"):
         if git("diff", baseline, "--", path):
             parser.error(f"shared benchmark dependency differs from baseline: {path}")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     project = output / "probe"
     (project / "src").mkdir(parents=True)
+    common = output / "baseline-source"
+    common.mkdir()
+    with tarfile.open(fileobj=io.BytesIO(git("archive", baseline, "Cargo.toml", "Cargo.lock", "crates"))) as archive:
+        archive.extractall(common, filter="data")
     source_path = "crates/gateway-proxy/src/pingora_plane.rs"
     old = git("show", f"{baseline}:{source_path}").decode()
     new = (repo / source_path).read_text()
@@ -78,7 +84,7 @@ pub fn run(bytes: Bytes, policy: &KeyPolicy, route: &RouteMatch) -> i64 {
         (project / "src" / f"{name}.rs").write_text(imports + helpers + wrapper)
     driver = Path(__file__).with_name("analysis_driver.rs").read_text()
     (project / "src/main.rs").write_text(driver)
-    core = json.dumps(str(repo / "crates/gateway-core"))
+    core = json.dumps(str(common / "crates/gateway-core"))
     (project / "Cargo.toml").write_text(f'''[package]
 name = "request-analysis-probe"
 version = "0.0.0"
@@ -91,7 +97,7 @@ chrono = "0.4.42"
 http = "1.4.0"
 serde_json = {{ version = "1.0.145", features = ["float_roundtrip", "raw_value"] }}
 ''')
-    (project / "Cargo.lock").write_bytes((repo / "Cargo.lock").read_bytes())
+    (project / "Cargo.lock").write_bytes((common / "Cargo.lock").read_bytes())
     env = dict(os.environ, CARGO_TARGET_DIR=str(repo / "target/request-analysis-probe"))
     manifest = {
         "baseline": baseline, "candidate_head": git("rev-parse", "HEAD").decode().strip(),
@@ -101,6 +107,7 @@ serde_json = {{ version = "1.0.145", features = ["float_roundtrip", "raw_value"]
         "rustc": subprocess.check_output(["rustc", "-Vv"], text=True),
         "iterations": args.iterations, "repetitions": args.repetitions,
         "harness_sha256": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in ("analysis_benchmark.py", "analysis_driver.rs")},
+        "common_dependencies": "Baseline workspace manifest and lockfile; core and telemetry source must match the candidate. This isolates analysis changes from later dependency upgrades.",
         "method": "Matched source-extracted analysis pipeline; AB/BA alternating order; warmed release binary; synthetic flat and message-array JSON. Not end-to-end proxy, RSS, or capacity evidence.",
     }
     (output / "provenance.json").write_text(json.dumps(manifest, indent=2) + "\n")

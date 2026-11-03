@@ -322,9 +322,10 @@ python3 benches/body-admission/analysis_benchmark.py \
   --output target/body-analysis-comparison
 ```
 
-It compiles both implementations into one native release binary with the same
-core library and dependency lockfile. It refuses comparisons when those shared
-inputs differ. The probe models original/final policy validation and metadata
+It compiles both implementations into one native release binary using the
+baseline core library, workspace manifest and dependency lockfile. It refuses
+comparisons when core or telemetry source differs, and isolates analysis costs
+from later dependency upgrades. The probe models original/final policy validation and metadata
 extraction, including uncapped, input-only, TPM-only and combined policies, for
 flat and message-array JSON. It records each repetition, allocation calls and
 requested allocation bytes. Those bytes are cumulative allocation traffic, not
