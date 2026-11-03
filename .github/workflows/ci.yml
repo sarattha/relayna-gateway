@@ -69,7 +69,9 @@ jobs:
 
       - name: Run Rust tests
         if: steps.cargo.outputs.present == 'true'
-        run: cargo test --workspace --all-features
+        run: |
+          cargo test --workspace --all-features
+          cargo test --manifest-path vendor/pingora-header-serde/Cargo.toml
 
       - name: Build workspace
         if: steps.cargo.outputs.present == 'true'

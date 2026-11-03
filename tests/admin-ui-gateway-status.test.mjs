@@ -76,7 +76,39 @@ assert.ok(full.includes("Unknown"), "missing diagnostics stay unknown");
 assert.ok(full.includes("WebSocket · session only"));
 assert.ok(full.includes("No admission queue is used"));
 assert.ok(gatewayStatusView(localFallback, helpers).includes("5 free / 8"), "local runtime measurements stay visible when cluster collection is unavailable");
+{
+  const idleBuffers = { ...runtime, active: { http: 2, sse: 0, websocket: 0 }, body_capacity: { max_requests: 200, used_requests: 0, free_requests: 200, max_bytes: 2684354560, used_bytes: 0, free_bytes: 2684354560 } };
+  const selection = { ...selectGatewayStatus(envelope, { now }), runtime: idleBuffers };
+  const dom = new JSDOM(gatewayStatusView(selection, helpers));
+  const panel = dom.window.document.querySelector('[data-gateway-part="capacity"]');
+  assert.match(panel.textContent, /Buffered body slots/);
+  assert.match(panel.textContent, /Reserved body bytes/);
+  assert.match(panel.textContent, /2 in flight/);
+  assert.deepEqual([...panel.querySelectorAll('progress')].map(node => node.value), [0, 0], 'in-flight requests do not invent body-buffer occupancy');
+  assert.match(panel.querySelector('.monitor-capacity-note').textContent, /in flight after buffers are released/);
+  assert.match(panel.querySelector('.monitor-capacity-note').textContent, /Brief occupancy may fall between samples/);
+  assert.match(gatewayStatusView(selection, helpers, { compact: true }), /Buffered body slots[\s\S]*Current reservations for managed request\/response body buffers/);
+  dom.window.close();
+}
 assert.ok(!gatewayStatusView(selectGatewayStatus(envelope, { now }), helpers, { compact: true }).includes("Latency distribution"));
+{
+  const view = observations => new JSDOM(gatewayStatusView(selectGatewayStatus(envelope, { now }), helpers, { compact: true, observations }));
+  const empty = view([]);
+  assert.equal(empty.window.document.querySelector('.monitor-mini-trend h4').textContent, "Arrival rate");
+  assert.match(empty.window.document.querySelector('[data-gateway-part="trend-empty"]').textContent, /Waiting for live observations/);
+  assert.match(empty.window.document.body.textContent, /No fresh rate sample/);
+  empty.window.close();
+  const zero = view([{ at: now - 2000, rate: 0.25 }, { at: now, rate: 0 }]);
+  assert.equal(zero.window.document.querySelector('[data-gateway-part="trend-value"]').textContent, "Last observed 0 req/s");
+  assert.match(zero.window.document.querySelector('[data-gateway-part="trend-range"]').textContent, /Rolling 1 min rate · browser observations .+ – .+/);
+  assert.equal(zero.window.document.querySelector('[data-gateway-part="trend-empty"]').textContent, "");
+  assert.match(zero.window.document.querySelector('canvas').getAttribute('aria-label'), /requests per second.*Last observed 0 req\/s/);
+  zero.window.close();
+  const missing = view([{ at: now, rate: null }]);
+  assert.match(missing.window.document.querySelector('[data-gateway-part="trend-empty"]').textContent, /No fresh arrival-rate samples/);
+  assert.doesNotMatch(missing.window.document.body.textContent, /Last observed 0 req\/s/);
+  missing.window.close();
+}
 const unknown = gatewayStatusView(selectGatewayStatus(null, { now }), helpers);
 assert.ok(unknown.includes("Waiting for a gateway runtime snapshot"));
 assert.ok(!unknown.includes("0 free /"), "unknown is not represented as zero capacity");

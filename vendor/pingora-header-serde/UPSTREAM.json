@@ -1,0 +1,27 @@
+{
+  "package": "pingora-header-serde",
+  "version": "0.9.0",
+  "source": "https://crates.io/crates/pingora-header-serde/0.9.0",
+  "archive_sha256": "e2e824dac9612e4b807e55981c2d6b665b6f936a8b4b75ee0ce1922373e93243",
+  "license": "Apache-2.0",
+  "changes": {
+    "Cargo.toml": "Upgrade zstd from 0.13.1 to 0.14.3 and zstd-safe from 7.1.0 to 8.2.0. Upstream Rust source is unchanged."
+  },
+  "source_sha256": {
+    "src/dict.rs": "59e954f310f4da9413c9cc15853f57e54c6b1e382fc806172c8c6586fc84d57d",
+    "src/lib.rs": "25b830c45184caff694d321fcad76c6153bce93b24e52ccb66c99c4fad0a5998",
+    "src/thread_zstd.rs": "2e75278a161b84ed6dc0116cf399f63a6e025bc43e2bf317eb1b7e04fab7cb23",
+    "src/trainer.rs": "0027b99734b378a539709f280f5c7fe2db4f1d56ee2c58ee7a82d16f100d9b61"
+  },
+  "upstream_revision": "702f69015e53f7244d6ad2e743de571d859a70a4",
+  "test_samples_sha256": {
+    "samples/test/1": "d1fb087001015b7600db4aac5331f52376a02f36baafefb7bc4438a3f5e9577c",
+    "samples/test/2": "a53218af2653a6673df3b6fd8ee3848e67d6813f9f76b6b666810ca5074ac63d",
+    "samples/test/3": "44ae6aff58bbfe88562cd9f94c52d0d48e5c5ec4ea10d7ba88c0cfa35dd7fb55",
+    "samples/test/4": "27d73d98e3e64834370d7b3065a4c1dd7585f528fae2a1fff71bbb04cc80625f",
+    "samples/test/5": "b0282e96f9fbee0b6d890ea5c28c69e7b488917be1ba09df56b7d086d27eca59",
+    "samples/test/6": "d1fb087001015b7600db4aac5331f52376a02f36baafefb7bc4438a3f5e9577c",
+    "samples/test/7": "cd49fa96a52339a698adf2a4d12191cb4b51d9eba467d5b36bf38cc64f717cdd"
+  },
+  "test_samples_note": "Seven original upstream header samples omitted from the crates.io archive, restored from the same source revision for dictionary codec tests."
+}

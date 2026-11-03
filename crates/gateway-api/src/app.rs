@@ -5742,13 +5742,16 @@ async fn admin_ui_asset(Path(path): Path<String>) -> Response {
             "image/svg+xml",
             include_str!("static/admin-ui/microsoft-sign-in.svg"),
         ),
-        "admin-ui-RelaynaPortico-0.101.woff2" => static_binary_response(
+        // Keep released font URLs available, serving the selected Manrope face.
+        "admin-ui-Manrope-4.505.woff2"
+        | "admin-ui-RelaynaPortico-0.101.woff2"
+        | "admin-ui-RelaynaPortico-Italic-0.101.woff2" => static_binary_response(
             "font/woff2",
-            include_bytes!("static/admin-ui/admin-ui-RelaynaPortico-0.101.woff2"),
+            include_bytes!("static/admin-ui/admin-ui-Manrope-4.505.woff2"),
         ),
-        "admin-ui-RelaynaPortico-Italic-0.101.woff2" => static_binary_response(
-            "font/woff2",
-            include_bytes!("static/admin-ui/admin-ui-RelaynaPortico-Italic-0.101.woff2"),
+        "Manrope-OFL.txt" => static_response(
+            "text/plain; charset=utf-8",
+            include_str!("static/admin-ui/Manrope-OFL.txt"),
         ),
         "favicon.ico" => static_binary_response(
             "image/x-icon",
@@ -14944,6 +14947,7 @@ mod tests {
         );
 
         for (path, content_type) in [
+            ("admin-ui-Manrope-4.505.woff2", "font/woff2"),
             ("admin-ui-RelaynaPortico-0.101.woff2", "font/woff2"),
             ("admin-ui-RelaynaPortico-Italic-0.101.woff2", "font/woff2"),
             ("favicon.ico", "image/x-icon"),
@@ -14968,8 +14972,20 @@ mod tests {
                     .await
                     .expect("font body");
                 assert!(body.starts_with(b"wOF2"), "valid WOFF2 asset: {path}");
+                if path.contains("Manrope") || path.contains("RelaynaPortico") {
+                    assert_eq!(
+                        body.as_ref(),
+                        include_bytes!("static/admin-ui/admin-ui-Manrope-4.505.woff2")
+                    );
+                }
             }
         }
+        let response = request(app.clone(), "/admin-ui/Manrope-OFL.txt").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let license = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("font license");
+        assert!(String::from_utf8_lossy(&license).contains("SIL OPEN FONT LICENSE Version 1.1"));
     }
 
     #[tokio::test]

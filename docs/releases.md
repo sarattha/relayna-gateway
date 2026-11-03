@@ -1,9 +1,18 @@
 # Releases
 
+Version **1.0.1** refreshes console typography, monitoring readability and
+patched Pingora/compression dependencies. Its [fresh native amd64 validation](benchmarks/v1.0.1.md)
+completed 212 fresh-pod trials across all six body sizes, with three clean
+confirmations per selected setting. Audited HTML/JSON/CSV, raw and failed trials,
+provenance and checksums are retained through documentation hosting. Final-head
+CI and repository merge gates apply before tagging and publication. The release
+uses the existing tag-title/changelog/SBOM template; no migration is required.
+
 Relayna Gateway uses `vMAJOR.MINOR.PATCH` Git tags. Version **1.0.0** was
 [released October 25, 2026](https://github.com/sarattha/relayna-gateway/releases/tag/v1.0.0).
-The release includes [versioned evidence](benchmarks/v1.0.0.md), raw and failed
-trials, checksums, screenshots and an SPDX SBOM.
+The release attaches the changelog and an SPDX SBOM. The documentation hosts
+[versioned evidence](benchmarks/v1.0.0.md), raw and failed trials, checksums and
+console screenshots.
 
 The published image is **linux/amd64**:
 `ghcr.io/sarattha/relayna-gateway:1.0.0`, with immutable index digest
@@ -179,7 +188,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v1.0.0
+   python3 scripts/validate-release-metadata.py v1.0.1
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -197,7 +206,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:1.0.0 .
+   docker build -t relayna-gateway:1.0.1 .
    ```
 
 5. Commit the final runtime candidate, run the fresh six-size adaptive benchmark
@@ -211,8 +220,8 @@ avoids changing the required lint baseline whenever the stable channel moves.
 7. Create and push the tag at the merged release commit:
 
    ```bash
-   git tag -a v1.0.0 -m "Release v1.0.0"
-   git push origin v1.0.0
+   git tag -a v1.0.1 -m "Release v1.0.1"
+   git push origin v1.0.1
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -222,14 +231,24 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v1.0.0`, the workflow publishes:
+For `v1.0.1`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:1.0.0
+ghcr.io/sarattha/relayna-gateway:1.0.1
 ghcr.io/sarattha/relayna-gateway:1.0
 ghcr.io/sarattha/relayna-gateway:latest
 ```
 
 Release artifacts include `CHANGELOG.md` and an SPDX JSON SBOM named
-`relayna-gateway-<tag>.spdx.json`. Verify image signatures with Cosign against
-the GHCR image digest published by the release workflow.
+`relayna-gateway-<tag>.spdx.json`, alongside GitHub's automatic source archives.
+Use the Git tag as the release title. Keep benchmark reports, supporting evidence
+and screenshots in documentation hosting, outside the release asset list.
+Verify image signatures with Cosign against the GHCR image digest published by
+the release workflow.
+
+The documentation deployment retrieves the v1.0.0 assets from an immutable
+[documentation archive](https://github.com/sarattha/relayna-gateway/tree/e38a6ed887a0e8797650a8d55b4a98187e0242d5),
+verifies the original SHA-256 manifest and publishes them with the site. Original
+evidence stays outside the application source tree. The interactive report copy
+only changes its download links to documentation URLs; the original report and
+checksums remain available in the archive.

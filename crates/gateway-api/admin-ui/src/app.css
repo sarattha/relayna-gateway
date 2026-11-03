@@ -113,7 +113,7 @@ label.check input {
 }
 
 code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--rn-font-family-sans);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -973,7 +973,7 @@ tr:last-child td {
 
 .guardrail-override-row textarea,
 .guardrail-form textarea {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--rn-font-family-sans);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -1470,7 +1470,7 @@ kbd {
   border-radius: 4px;
   background: var(--rg-color-surface-muted);
   color: var(--rg-color-muted);
-  font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 700 11px/1 var(--rn-font-family-sans);
 }
 
 .global-end {

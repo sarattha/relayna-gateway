@@ -1,4 +1,6 @@
 target
+**/target
+vendor/**/Cargo.lock
 site
 .git
 .venv

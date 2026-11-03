@@ -19,6 +19,11 @@ Live charts retain at most 90 browser observations, collected while that view is
 open. Changing the instance or window starts a new series. They are not persisted
 history; missing observations create gaps. Latency bars are histogram upper
 bounds. Missing measurements remain unknown rather than zero.
+The Traffic arrival-rate chart stays visible on narrow screens and labels its
+requests-per-second scale, observation times and last observed value. Its
+caption identifies the rolling rate window and browser observation range.
+Before a fresh sample arrives it shows an explicit waiting or unavailable
+message; a measured zero remains `0 req/s`.
 
 ## Usage at production volume
 
@@ -127,6 +132,13 @@ connections or outstanding upstream work. Admission is fail-fast; no queue or
 queue-wait measurement is invented. Admission decision and body-retention
 latencies are separate. Assess total process/container memory alongside buffer
 capacity because parsing, guardrails, sockets, and the runtime also use memory.
+The UI labels these instantaneous reservations **Buffered body slots** and
+**Reserved body bytes**. They can both read zero while HTTP requests are still
+in flight: forwarded buffers may already have been released, or the route may
+stream without managed body buffering. Publishers sample once per second and
+the UI refreshes every two seconds, so brief reservations may fall between
+samples. The meters do not show cumulative bytes transferred or peak occupancy
+over the selected window.
 
 Linux `/proc` and cgroup v2 supply nullable RSS, cgroup memory/current limit, CPU
 usage/limits/throttling, and observed OOM counters. These are sampled observations;

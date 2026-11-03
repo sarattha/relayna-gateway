@@ -20,7 +20,7 @@ const renderMermaid = () => {
       theme: "base",
       themeVariables: {
         darkMode: document.body.dataset.mdColorScheme === "slate",
-        fontFamily: '"Relayna Portico", system-ui, sans-serif',
+        fontFamily: '"Manrope", system-ui, sans-serif',
         fontSize: "14px",
         background: color("canvas"),
         primaryColor: color("surface"),

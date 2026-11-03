@@ -13,6 +13,9 @@ covers governance, provider intelligence, usage and supply-chain features.
 Admin and Owner pages share consistent navigation, table spacing, field labels
 and semantic status colors.
 
+The console and this guide use **Manrope** for interface text, code examples
+and aligned numeric figures. Other scripts use system fallbacks.
+
 The sidebar uses elevated selected items and subtle lift-and-shadow
 feedback on actionable controls. Keyboard focus remains visible, and reduced
 motion preferences remove movement. Read-only charts stay stable while their
@@ -21,6 +24,10 @@ measurements update.
 Metric values share aligned rows when captions wrap. On narrow screens,
 headings and action groups stack, while status messages keep their own space
 above the measurements. Wide result tables retain horizontal scrolling.
+Recorded reliability uses flat summary metrics aligned with the panel content
+in both themes. Creation drawers place their action row below the fields across
+the full form width, including on narrow screens.
+Icon-only table and navigation buttons use square controls with centered icons.
 
 Choose **Light**, **Dark** or **System** under **Theme** in the sidebar footer or
 on the sign-in screen. System follows the device appearance. The browser saves

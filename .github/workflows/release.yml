@@ -71,6 +71,7 @@ jobs:
           cargo fmt --all --check
           cargo clippy --workspace --all-targets --all-features -- -D warnings
           cargo test --workspace --all-features
+          cargo test --manifest-path vendor/pingora-header-serde/Cargo.toml
           cargo build --workspace --release --all-features
 
       - name: Install admin portal dependencies

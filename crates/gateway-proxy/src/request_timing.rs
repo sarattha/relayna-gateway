@@ -280,9 +280,11 @@ mod tests {
             timing_digest: vec![
                 Some(TimingDigest {
                     established_ts: start + Duration::from_micros(850),
+                    ..Default::default()
                 }),
                 Some(TimingDigest {
                     established_ts: start + Duration::from_micros(3350),
+                    ..Default::default()
                 }),
             ],
             ..Default::default()
