@@ -4,6 +4,10 @@ Relayna Gateway CI treats dependency advisories, denied licenses, committed
 secrets, high or critical filesystem/image vulnerabilities, and Semgrep
 security findings as blocking by default.
 
+The production runtime's package reduction and all 12 CVEs reported in
+[issue #149 are documented separately](runtime-image-security.md). This change
+adds no vulnerability exception; image gates include unfixed findings.
+
 ## Exception Requirements
 
 Allowed exceptions must be narrow, temporary, and documented before an ignore is

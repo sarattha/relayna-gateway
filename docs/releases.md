@@ -1,5 +1,15 @@
 # Releases
 
+Version **1.0.2** prepares the runtime image remediation for
+[issue #149](https://github.com/sarattha/relayna-gateway/issues/149). It uses a
+digest-pinned Debian 13 Distroless runtime, image-level protocol/TLS/auth checks,
+and image gates that include unfixed High/Critical findings. Public application
+contracts and UID/GID 10001 are preserved; no data migration is required.
+Operators use external debug containers because the image omits shell tools.
+The [v1.0.2 release validation](benchmarks/v1.0.2.md) is pending and blocks merge,
+tagging and publication. See [upgrade guidance](deployment.md#upgrade-to-102)
+and [CVE triage](runtime-image-security.md).
+
 Version **1.0.1** refreshes console typography, monitoring readability and
 patched Pingora/compression dependencies. Its [fresh native amd64 validation](benchmarks/v1.0.1.md)
 completed 212 fresh-pod trials across all six body sizes, with three clean
@@ -188,7 +198,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v1.0.1
+   python3 scripts/validate-release-metadata.py v1.0.2
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -206,7 +216,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:1.0.1 .
+   docker build -t relayna-gateway:1.0.2 .
    ```
 
 5. Commit the final runtime candidate, run the fresh six-size adaptive benchmark
@@ -220,8 +230,8 @@ avoids changing the required lint baseline whenever the stable channel moves.
 7. Create and push the tag at the merged release commit:
 
    ```bash
-   git tag -a v1.0.1 -m "Release v1.0.1"
-   git push origin v1.0.1
+   git tag -a v1.0.2 -m "Release v1.0.2"
+   git push origin v1.0.2
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -231,10 +241,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v1.0.1`, the workflow publishes:
+For `v1.0.2`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:1.0.1
+ghcr.io/sarattha/relayna-gateway:1.0.2
 ghcr.io/sarattha/relayna-gateway:1.0
 ghcr.io/sarattha/relayna-gateway:latest
 ```

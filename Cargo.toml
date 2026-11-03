@@ -15,7 +15,7 @@ exclude = ["vendor/pingora-header-serde"]
 pingora-header-serde = { path = "vendor/pingora-header-serde" }
 
 [workspace.package]
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/sarattha/relayna-gateway"

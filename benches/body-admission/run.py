@@ -14,7 +14,11 @@ import time
 
 HERE = Path(__file__).resolve().parent
 NAMESPACE = "gateway-body-bench"
-SAMPLER = r'''while :; do printf '%s %s %s %s %s\n' "$(date +%s%N)" "$(cat /sys/fs/cgroup/memory.current)" "$(awk '/^VmRSS:/{print $2 * 1024}' /proc/1/status)" "$(cat /sys/fs/cgroup/memory.peak)" "$(awk '/^throttled_usec /{print $2}' /sys/fs/cgroup/cpu.stat)"; sleep 0.25; done'''
+SAMPLER_IMAGE = "busybox:1.37.0-musl@sha256:f6a95d611e0a8780fabdb2aec43e31275b2720dfefa3e41b16835bfc42454478"
+SAMPLER_TOOL = "/benchmark-tools/busybox"
+# BusyBox date lacks nanoseconds. Kernel boot time + uptime supplies centisecond
+# timestamps in the existing epoch-nanosecond column without a production shell.
+SAMPLER = r'''B=/benchmark-tools/busybox; while :; do printf '%s %s %s %s %s\n' "$("$B" awk '/^btime /{boot=$2} END {getline < "/proc/uptime"; printf "%.0f", (boot+$1)*1000000000}' /proc/stat)" "$("$B" cat /sys/fs/cgroup/memory.current)" "$("$B" awk '/^VmRSS:/{print $2 * 1024}' /proc/1/status)" "$("$B" cat /sys/fs/cgroup/memory.peak)" "$("$B" awk '/^throttled_usec /{print $2}' /sys/fs/cgroup/cpu.stat)"; "$B" sleep 0.25; done'''
 
 
 def command(args, **kwargs):
@@ -37,6 +41,12 @@ def deployment(name, image, *, env=None, command_args=None, ports=None, resource
         spec["volumes"] = [{"name": "scripts", "configMap": {"name": "scripts"}}]
     if name == "gateway":
         container["readinessProbe"] = {"httpGet": {"path": "/admin-ui/readyz", "port": 8081}, "periodSeconds": 1, "timeoutSeconds": 2}
+        # Instrument the unchanged production image only in benchmark pods.
+        container["volumeMounts"] = [{"name": "benchmark-tools", "mountPath": "/benchmark-tools", "readOnly": True}]
+        spec.setdefault("volumes", []).append({"name": "benchmark-tools", "emptyDir": {}})
+        spec["initContainers"] = [{"name": "benchmark-tools", "image": SAMPLER_IMAGE,
+            "command": ["/bin/busybox", "cp", "/bin/busybox", SAMPLER_TOOL],
+            "volumeMounts": [{"name": "benchmark-tools", "mountPath": "/benchmark-tools"}]}]
     metadata = {"labels": {"app": name}}
     if volumes:
         metadata["annotations"] = {"benchmark-script-sha256": hashlib.sha256(b"".join((HERE / filename).read_bytes() for filename in ["mock.mjs", "workload.mjs"])).hexdigest()}
@@ -134,6 +144,8 @@ class Benchmark:
             "gateway_resources": {"cpu_limit": 2, "memory_limit_bytes": self.args.memory_limit_mib * 1024 * 1024},
             "malloc_mmap_threshold_override": self.args.malloc_mmap_threshold,
             "docker": None,
+            "sampler_image": SAMPLER_IMAGE,
+            "sampler_timestamp_resolution_ms": 10,
         }
         if self.args.host_metadata:
             info = json.loads(command(["docker", "info", "--format", "{{json .}}"], capture_output=True).stdout)
@@ -162,7 +174,7 @@ class Benchmark:
                 samplers = []
                 for pod in pods:
                     stream = (self.output / f"{name}-{pod['name']}.memory.txt").open("w")
-                    process = subprocess.Popen(self.kubectl + ["exec", pod["name"], "--", "sh", "-c", SAMPLER], stdout=stream, stderr=subprocess.DEVNULL)
+                    process = subprocess.Popen(self.kubectl + ["exec", pod["name"], "-c", "gateway", "--", SAMPLER_TOOL, "sh", "-c", SAMPLER], stdout=stream, stderr=subprocess.DEVNULL)
                     samplers.append((process, stream))
                 config = {"label": self.args.label, "limit": limit, "repetition": repetition,
                           "pods": pods, "duration_seconds": self.args.duration, "rps": self.args.rps,

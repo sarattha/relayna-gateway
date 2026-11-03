@@ -4,6 +4,46 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+## 1.0.2 - 2026-11-04
+
+### Fixed
+
+- Remediate the runtime OS-package findings tracked in
+  [#149](https://github.com/sarattha/relayna-gateway/issues/149) with a
+  digest-pinned Debian 13 Distroless runtime and matching Debian 13 builder.
+  Omit unused distribution utilities while retaining glibc, OpenSSL, CA roots
+  and GCC runtime libraries. Document applicability of all 12 reported CVEs.
+
+### Changed
+
+- Test the actual production image with fresh PostgreSQL/Redis, portal RSA
+  certificate loading, HTTP/SSE/WebSocket/TLS forwarding, authentication
+  denials, Usage, monitoring and graceful shutdown. Block CI and release image
+  scans on all High/Critical dispositions, including unfixed findings.
+- Mount digest-pinned static sampler tools only in benchmark pods so release
+  measurements continue to use the production image without an embedded shell.
+  Record the changed sampler method and timestamp resolution in provenance.
+
+### Compatibility and upgrade
+
+- Preserve public routes, authentication, policy, usage, configuration, ports,
+  UID/GID 10001 and glibc allocator tuning. No database or Redis migration is
+  required. Body-admission defaults remain eight slots and 512 MiB per process.
+- The runtime has no shell or package manager; use external debug containers
+  for diagnostics. The existing five-minute Pingora SIGTERM grace exceeds the
+  deployment manifest's 45-second grace; this separate mismatch is documented.
+- Earlier packaging scans cleared all 12 reported CVE IDs and all High/Critical
+  records, with 36 Medium and 8 Low records retained per image. Full scan
+  evidence and current results accompany release validation.
+
+### Release validation
+
+- Fresh committed-candidate validation is in progress. Do not merge, tag or
+  publish until the native six-size adaptive study, three fresh-pod
+  confirmations per selected setting, matched forwarding-latency comparison
+  and final-head checks pass. Results and evidence will be recorded in
+  [v1.0.2 validation](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.2/).
+
 ## 1.0.1 - 2026-10-27
 
 ### Changed

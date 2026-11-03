@@ -149,6 +149,19 @@ Keep both runs and compare only matched cohorts. This measures the complete
 body round trip, including the fixture's upstream delay, not isolated proxy
 instruction overhead or provider inference.
 
+Use `comparison` to run the candidate and immutable baseline sequentially on
+one native runner with the same harness, caps, slots and offered cohort:
+
+```sh
+gh workflow run body-admission-benchmark.yml --ref <branch> \
+  -f architecture=amd64 -f mode=comparison -f body_mib=5 \
+  -f baseline_image=ghcr.io/sarattha/relayna-gateway@sha256:<baseline-manifest>
+```
+
+It retains candidate evidence in `body-capacity-*` and the baseline in
+`body-baseline-latency-*`. Both runs own isolated clusters and record hardware,
+image and harness identity. Check these records before comparing results.
+
 Pilot runs use slots 1 and 4, one repetition, for the requested size(s). Full
 runs use the adaptive search and three confirmations. A selected size receives
 up to six hours; select one size per workflow for independent longer searches.
@@ -223,6 +236,15 @@ measures Gateway resident pages. Sampled peaks can miss brief spikes; cgroup
 and warmup. Fresh pods prevent earlier conditions from contaminating it.
 Pod snapshots record restarts/OOMs. Memory is reported per pod rather than
 presenting the two-pod sum as one pod's usage.
+
+Shellless production images are supported: a digest-pinned static BusyBox is
+copied by a benchmark-only init container into a read-only tools volume. The
+sampler executes that helper in the Gateway container, preserving PID 1 and
+cgroup attribution without adding utilities to the production image. Its image
+identity is retained in `environment.json`. Timestamps use kernel boot time plus
+uptime, with 10 ms resolution in the existing epoch-nanosecond column. Compared
+with earlier GNU utility samplers, helper memory/CPU overhead can differ; record
+this method change when comparing results. The 250 ms interval is unchanged.
 
 ## Historical fixed-rate baseline comparison
 

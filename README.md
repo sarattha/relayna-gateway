@@ -120,7 +120,14 @@ The Rust verification helper runs formatting, workspace Clippy/tests and the req
 
 ## Releases and performance evidence
 
-[v1.0.1 validation](docs/benchmarks/v1.0.1.md) · [v1.0.0 validation](docs/benchmarks/v1.0.0.md) · [v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
+[v1.0.2 validation](docs/benchmarks/v1.0.2.md) · [v1.0.1 validation](docs/benchmarks/v1.0.1.md) · [v1.0.0 validation](docs/benchmarks/v1.0.0.md) · [v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
+
+Version **1.0.2** prepares the runtime image remediation for issue #149 with a
+digest-pinned Debian 13 Distroless image, runtime-image functional checks and
+all-disposition High/Critical image gates. Public contracts and data formats
+remain supported. Its fresh native release benchmark is pending and blocks
+merge and publication; see [validation status](docs/benchmarks/v1.0.2.md) and
+[upgrade guidance](docs/deployment.md#upgrade-to-102).
 
 Version **1.0.1** refreshes console typography and monitoring readability and updates the proxy/compression dependencies. Its [native amd64 validation](docs/benchmarks/v1.0.1.md) records 212 fresh-pod trials across all six body sizes, audited results and retained evidence. Version **1.0.0** brings scalable all-project Usage, protocol-aware Traffic, live gateway capacity, and an expanded operator console. Follow the [console tour](docs/v1.0.0.md) and [1.0 upgrade guide](docs/deployment.md#upgrade-to-100) for migrations, PostgreSQL connection sizing, and rollout. The major version preserves the released v0.1.49 proxy and accounting contracts.
 

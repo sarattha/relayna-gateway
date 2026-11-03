@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM rust:1-bookworm AS builder
+FROM rust:1-trixie AS builder
 WORKDIR /app
 
 RUN apt-get update \
@@ -11,18 +11,17 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY vendor ./vendor
 
-RUN cargo build --release --bin gateway-api
+RUN cargo build --locked --release --bin gateway-api
 
-FROM debian:bookworm-slim AS runtime
-WORKDIR /app
-
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system --gid 10001 relayna \
+RUN groupadd --system --gid 10001 relayna \
     && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent --no-create-home relayna
 
+# Includes glibc, libgcc, OpenSSL and CA roots, without distribution utilities.
+# Pin the multi-platform index; refresh deliberately and scan every candidate.
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1 AS runtime
+WORKDIR /app
+
+COPY --from=builder /etc/passwd /etc/group /etc/
 COPY --from=builder /app/target/release/gateway-api /usr/local/bin/relayna-gateway
 
 # Keep large request/KDF allocations independently reclaimable instead of
@@ -34,5 +33,5 @@ ENV MALLOC_MMAP_THRESHOLD_=131072 \
 
 EXPOSE 8080 8081
 
-USER relayna
+USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/relayna-gateway"]
