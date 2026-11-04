@@ -2,6 +2,36 @@
 
 Relayna Gateway ships as one binary and one Docker image. The image serves both the core proxy and the admin portal because the admin UI is embedded in the `gateway-api` binary.
 
+Source builds now use a digest-pinned Debian 13 Distroless runtime for
+[issue #149's OS-package remediation](runtime-image-security.md). UID/GID
+10001, listeners, configuration and data contracts are preserved. The image has
+no shell or package manager; use an external debug container for diagnostics.
+Published v1.0.1 images retain their original contents. Replace them with the
+v1.0.2 image after publication; see the
+[triage and verification procedure](runtime-image-security.md).
+
+## Upgrade to 1.0.2
+
+There is no database or Redis migration relative to v1.0.1. After release
+validation and publication, roll out `ghcr.io/sarattha/relayna-gateway:1.0.2`
+through the existing deployment process. UID/GID 10001, listeners, secrets,
+configuration and body-admission defaults are preserved. Retain existing
+database, virtual-key, rate and budget state.
+
+The Debian 13 Distroless runtime retains glibc, OpenSSL and CA trust but has no
+shell or package manager. Use an external debug container for diagnostics.
+Verify readiness, authenticated Usage and instance monitoring, configured
+HTTP/SSE/WebSocket forwarding, custom TLS trust and mounted portal RSA files.
+The [versioned validation](benchmarks/v1.0.2.md) records completed checks and the
+owner's release-specific benchmark waiver. No new capacity result is claimed;
+previous releases' resource results do not validate this image.
+
+The existing Pingora SIGTERM grace is five minutes, exceeding the example
+manifest's 45-second termination grace. Account for that known shutdown mismatch
+when draining replicas; the packaging release preserves its existing behavior.
+Rollback to v1.0.1 needs no data conversion and restores its reported package
+findings.
+
 Version **1.0.0** adds protocol-aware monitoring, scalable Usage and the Natural
 Connection console. The UI remains embedded; no separate frontend service or
 metrics collector is required. See the [illustrated console tour](v1.0.0.md).

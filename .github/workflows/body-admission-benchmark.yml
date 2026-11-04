@@ -11,9 +11,9 @@ on:
         default: amd64
         required: true
       mode:
-        description: Pilot, adaptive resource search, or matched fixed-slot latency
+        description: Pilot, adaptive search, fixed-slot latency, or same-runner comparison
         type: choice
-        options: [pilot, full, latency]
+        options: [pilot, full, latency, comparison]
         default: pilot
         required: true
       body_mib:
@@ -24,6 +24,10 @@ on:
         required: true
       image:
         description: Optional native Gateway image; leave empty to build checked-out source
+        type: string
+        required: false
+      baseline_image:
+        description: Immutable baseline image digest required for comparison mode
         type: string
         required: false
 
@@ -54,6 +58,7 @@ jobs:
           BENCH_MODE: ${{ inputs.mode }}
           BENCH_SIZE: ${{ inputs.body_mib }}
           BENCH_ARCH: ${{ inputs.architecture }}
+          BENCH_BASELINE_IMAGE: ${{ inputs.baseline_image }}
         run: |
           set -euo pipefail
           scripts/bench-body-admission --json doctor > "$RUNNER_TEMP/body-doctor.json"
@@ -69,10 +74,21 @@ jobs:
           fi
           if [ "$BENCH_MODE" = pilot ]; then
             args+=(--slots 1 4 --repetitions 1)
-          elif [ "$BENCH_MODE" = latency ]; then
+          elif [ "$BENCH_MODE" = latency ] || [ "$BENCH_MODE" = comparison ]; then
             args+=(--slots 8 --repetitions 3)
           fi
+          if [ "$BENCH_MODE" = comparison ] && [[ ! "$BENCH_BASELINE_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
+            echo 'Comparison mode requires an immutable baseline_image digest.' >&2
+            exit 2
+          fi
           scripts/bench-body-admission --json run --output target/body-capacity "${args[@]}"
+          if [ "$BENCH_MODE" = comparison ]; then
+            baseline_args=(--image "$BENCH_BASELINE_IMAGE" --slots 8 --repetitions 3)
+            if [ "$BENCH_SIZE" != all ]; then
+              baseline_args+=(--body-mib "$BENCH_SIZE")
+            fi
+            scripts/bench-body-admission --json run --output target/body-baseline-latency "${baseline_args[@]}"
+          fi
 
       - name: Recover partial report and clean up owned cluster
         if: always()
@@ -90,19 +106,21 @@ jobs:
                       "errors": [{"stage": "workflow setup", "message": "Benchmark CLI was not reached; see Actions step logs."}]}
               (root / "run.json").write_text(json.dumps(data))
           PY_REPORT
-          if [ -f target/body-capacity/run.json ]; then
-            scripts/bench-body-admission --json report target/body-capacity
+          for root in target/body-capacity target/body-baseline-latency; do
+            if [ ! -f "$root/run.json" ]; then continue; fi
+            scripts/bench-body-admission --json report "$root"
+            export BENCH_CLEANUP_ROOT="$root"
             python3 - <<'PY'
-          import json, re, subprocess, tempfile
+          import json, os, re, subprocess, tempfile
           from pathlib import Path
-          run = json.loads(Path("target/body-capacity/run.json").read_text())
+          run = json.loads((Path(os.environ["BENCH_CLEANUP_ROOT"]) / "run.json").read_text())
           cluster = run.get("cluster", "")
           if re.fullmatch(r"relayna-body-bench-[0-9a-f]{12}", cluster):
               with tempfile.TemporaryDirectory() as cleanup:
                   subprocess.run(["kind", "delete", "cluster", "--name", cluster,
                                   "--kubeconfig", str(Path(cleanup) / "kubeconfig")], check=True, timeout=180)
           PY
-          fi
+          done
 
       - name: Upload HTML report and raw evidence (including failures)
         if: always()
@@ -110,5 +128,14 @@ jobs:
         with:
           name: body-capacity-${{ inputs.architecture }}-${{ inputs.body_mib }}-${{ inputs.mode }}
           path: target/body-capacity/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload same-runner baseline latency evidence
+        if: always() && inputs.mode == 'comparison'
+        uses: actions/upload-artifact@v4
+        with:
+          name: body-baseline-latency-${{ inputs.architecture }}-${{ inputs.body_mib }}
+          path: target/body-baseline-latency/
           if-no-files-found: warn
           retention-days: 30

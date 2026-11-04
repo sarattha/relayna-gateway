@@ -9,6 +9,20 @@ Redis, mock identity/provider services, and real LiteLLM where required:
   direct, Entra, and Apigee front doors.
 - `litellm-real-passthrough/`: managed/direct routes and LiteLLM passthrough.
 
+The standalone runtime-image smoke verifies the production image with disposable
+Docker fixtures, a read-only root and dropped capabilities. It requires Python
+3.11+, Docker and OpenSSL on the host, and checks HTTP/SSE/WebSocket/TLS,
+readiness, authentication denials, Usage, monitoring and portal key loading:
+
+```bash
+docker build -t relayna-gateway:local .
+python3 tests/e2e/runtime-image/run.py --image relayna-gateway:local
+```
+
+It resolves the tag to an immutable local ID before starting and removes only
+its uniquely named fixture containers/network. Synthetic credentials are
+generated per run and are not printed or retained.
+
 From the repository root, run one harness at a time:
 
 ```bash
