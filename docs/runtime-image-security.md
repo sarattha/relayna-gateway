@@ -24,8 +24,10 @@ must use an external debug container instead of executing a shell in Gateway.
 The body-admission harness mounts its own static sampler tools only in
 benchmark pods; see its
 [methodology](https://github.com/sarattha/relayna-gateway/blob/main/benches/body-admission/README.md).
-The [v1.0.2 release benchmark](benchmarks/v1.0.2.md) must validate this new
-runtime before publication. Earlier release benchmarks do not validate it.
+The owner waived benchmark completion for v1.0.2 on 4 November 2026. The
+[versioned validation record](benchmarks/v1.0.2.md) identifies completed checks
+and interrupted work. Earlier release benchmarks do not validate the new
+runtime's resource capacity.
 
 ## Triage of the reported CVEs
 
@@ -109,5 +111,6 @@ image. Local ARM64 execution was native on Apple M1 Pro; amd64 execution used
 emulation and does not substitute for native release benchmarks.
 
 These 3 November scans measured the packaging preparation. The committed
-v1.0.2 runtime requires its own image validation and native release study,
-recorded in the [versioned results](benchmarks/v1.0.2.md).
+v1.0.2 runtime passed fresh CI image and protocol validation. Its resource study
+was interrupted following the owner's explicit waiver, recorded in the
+[versioned validation](benchmarks/v1.0.2.md).

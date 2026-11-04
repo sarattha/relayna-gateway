@@ -38,11 +38,14 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Release validation
 
-- Fresh committed-candidate validation is in progress. Do not merge, tag or
-  publish until the native six-size adaptive study, three fresh-pod
-  confirmations per selected setting, matched forwarding-latency comparison
-  and final-head checks pass. Results and evidence will be recorded in
-  [v1.0.2 validation](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.2/).
+- The owner explicitly waived benchmark completion for v1.0.2 on 4 November
+  2026 and requested stopping the remaining runs. No completed six-size resource
+  study, new capacity limit or release-to-release performance claim is made.
+  The completed same-runner comparison and interrupted work remain identified
+  in [v1.0.2 validation](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.2/).
+- Full repository verification, UI checks, actual-image protocol/TLS/auth checks,
+  image vulnerability gates and continuous ten-minute monitoring/Usage checks
+  pass on the runtime candidate. Final-head CI and merge gates still apply.
 
 ## 1.0.1 - 2026-10-27
 

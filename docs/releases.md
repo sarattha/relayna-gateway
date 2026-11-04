@@ -6,8 +6,10 @@ digest-pinned Debian 13 Distroless runtime, image-level protocol/TLS/auth checks
 and image gates that include unfixed High/Critical findings. Public application
 contracts and UID/GID 10001 are preserved; no data migration is required.
 Operators use external debug containers because the image omits shell tools.
-The [v1.0.2 release validation](benchmarks/v1.0.2.md) is pending and blocks merge,
-tagging and publication. See [upgrade guidance](deployment.md#upgrade-to-102)
+The owner explicitly waived benchmark completion for this release; the
+[v1.0.2 validation record](benchmarks/v1.0.2.md) documents the waiver, completed
+checks and interrupted runs. Final-head CI and merge gates still apply.
+See [upgrade guidance](deployment.md#upgrade-to-102)
 and [CVE triage](runtime-image-security.md).
 
 Version **1.0.1** refreshes console typography, monitoring readability and
@@ -42,6 +44,10 @@ and versioned results before release. See the [benchmark history and release
 protocol](benchmarks/index.md). The [v0.1.49 results](benchmarks/v0.1.49.md)
 establish the initial six-size native amd64 resource baseline, including memory,
 latency, admission outcomes and raw evidence.
+
+Version 1.0.2 has an explicit owner waiver dated 4 November 2026. It does not
+claim completion of the usual six-size resource study or change the default
+policy for future releases.
 
 Version `0.1.49` excludes Node.js releases affected by CVE-2026-111497 from
 build/test tooling and helper containers. npm enforces patched 24.x/26.x

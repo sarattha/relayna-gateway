@@ -125,10 +125,13 @@ The Rust verification helper runs formatting, workspace Clippy/tests and the req
 Version **1.0.2** prepares the runtime image remediation for issue #149 with a
 digest-pinned Debian 13 Distroless image, runtime-image functional checks and
 all-disposition High/Critical image gates. Public contracts and data formats
-remain supported. Its fresh native release benchmark is pending and blocks
-merge and publication; see [validation status](docs/benchmarks/v1.0.2.md) and
+remain supported. The owner waived benchmark completion for this release;
+see the [validation record](docs/benchmarks/v1.0.2.md) and
 [upgrade guidance](docs/deployment.md#upgrade-to-102).
 
 Version **1.0.1** refreshes console typography and monitoring readability and updates the proxy/compression dependencies. Its [native amd64 validation](docs/benchmarks/v1.0.1.md) records 212 fresh-pod trials across all six body sizes, audited results and retained evidence. Version **1.0.0** brings scalable all-project Usage, protocol-aware Traffic, live gateway capacity, and an expanded operator console. Follow the [console tour](docs/v1.0.0.md) and [1.0 upgrade guide](docs/deployment.md#upgrade-to-100) for migrations, PostgreSQL connection sizing, and rollout. The major version preserves the released v0.1.49 proxy and accounting contracts.
 
 New versions require fresh native body-admission benchmarks. Short synthetic UI or protocol checks do not establish production capacity; use the [benchmark methodology](benches/body-admission/README.md) and retain failed as well as completed observations.
+
+The [v1.0.2 owner waiver](docs/benchmarks/v1.0.2.md) is specific to that release
+and does not change the default benchmark policy for future versions.

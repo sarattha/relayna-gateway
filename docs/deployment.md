@@ -22,8 +22,9 @@ The Debian 13 Distroless runtime retains glibc, OpenSSL and CA trust but has no
 shell or package manager. Use an external debug container for diagnostics.
 Verify readiness, authenticated Usage and instance monitoring, configured
 HTTP/SSE/WebSocket forwarding, custom TLS trust and mounted portal RSA files.
-The [versioned validation](benchmarks/v1.0.2.md) records the new runtime and
-sampler method; previous releases' resource results do not validate this image.
+The [versioned validation](benchmarks/v1.0.2.md) records completed checks and the
+owner's release-specific benchmark waiver. No new capacity result is claimed;
+previous releases' resource results do not validate this image.
 
 The existing Pingora SIGTERM grace is five minutes, exceeding the example
 manifest's 45-second termination grace. Account for that known shutdown mismatch
