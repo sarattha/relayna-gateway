@@ -4581,7 +4581,7 @@ async fn respond_error(
         error,
         GatewayError::AuthenticationOverloaded | GatewayError::SourceRateLimitExceeded
     ) {
-        gateway_telemetry::record_auth_admission_rejection(error.code());
+        gateway_telemetry::record_auth_admission_rejection("proxy", error.code());
     }
     traffic_gateway_error(ctx, &error);
     let close_connection = ctx.guardrail_error.is_some()

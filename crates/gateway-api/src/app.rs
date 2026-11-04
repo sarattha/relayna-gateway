@@ -6902,7 +6902,7 @@ fn error_response(headers: &HeaderMap, error: GatewayError) -> Response {
         error,
         GatewayError::AuthenticationOverloaded | GatewayError::SourceRateLimitExceeded
     ) {
-        gateway_telemetry::record_auth_admission_rejection(error.code());
+        gateway_telemetry::record_auth_admission_rejection("control", error.code());
     }
     let body = error.body(request_id_from_headers(headers));
     let retry = body.error.retry_after_seconds;

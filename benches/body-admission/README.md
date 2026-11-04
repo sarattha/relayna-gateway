@@ -8,6 +8,10 @@ Authentication/source admission remains enabled during measurements. Reports
 separate `gateway_overloaded` (body capacity), `authentication_overloaded`
 (authentication capacity), and `source_rate_limit_exceeded` (429). Their counters
 are reconciled independently from verified successes and transport failures.
+Authentication/source counters are scoped to `route="proxy"`; separate
+`route="control"` observations retain readiness-probe denials without attributing
+them to workload requests. The local harness unit tests also require Node.js to
+exercise this metric parser.
 Rejection latency includes both 429 and 503. Early protection can prevent body
 slots from filling: report occupied slots and denial counts, and do not interpret
 such a setting as a maximum body concurrency measurement. Direct-pod workloads

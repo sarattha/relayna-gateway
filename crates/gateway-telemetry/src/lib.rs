@@ -242,8 +242,10 @@ pub fn record_auth_failure(reason: &str) {
     increment_denial_metric("auth", "unknown", reason);
 }
 
-pub fn record_auth_admission_rejection(reason: &str) {
-    increment_denial_metric("auth_admission", "all", reason);
+pub fn record_auth_admission_rejection(listener: &str, reason: &str) {
+    // Admission runs before route resolution. Use the bounded listener name
+    // so control-plane readiness probes do not contaminate proxy accounting.
+    increment_denial_metric("auth_admission", listener, reason);
 }
 
 pub fn record_policy_denial(route: &str, reason: &str) {
@@ -737,6 +739,18 @@ mod tests {
         assert!(metrics.contains("route=\"chat_completions\""));
         assert!(metrics.contains("provider=\"litellm\""));
         assert!(!metrics.contains("request_id"));
+    }
+
+    #[test]
+    fn separates_control_and_proxy_admission_denials() {
+        super::record_auth_admission_rejection("control", "authentication_overloaded");
+        super::record_auth_admission_rejection("proxy", "authentication_overloaded");
+        let metrics = super::prometheus();
+        for listener in ["control", "proxy"] {
+            assert!(metrics.contains(&format!(
+                "gateway_denials_total{{kind=\"auth_admission\",route=\"{listener}\",reason=\"authentication_overloaded\"}}"
+            )));
+        }
     }
 
     #[test]

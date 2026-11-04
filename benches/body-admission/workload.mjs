@@ -114,14 +114,16 @@ function distribution(values) {
 
 function metrics(text) {
   const value = name => Number(text.match(new RegExp(`^${name} ([0-9.e+\\-]+)$`, "m"))?.[1] ?? 0);
-  const denial = (reason, kind = "body_admission") => text.split("\n").filter(line => line.startsWith("gateway_denials_total{") && line.includes(`kind="${kind}"`) && line.includes(`reason="${reason}"`)).reduce((total, line) => total + Number(line.split(" ").at(-1)), 0);
+  const denial = (reason, kind = "body_admission", route = "all") => text.split("\n").filter(line => line.startsWith("gateway_denials_total{") && line.includes(`kind="${kind}"`) && line.includes(`route="${route}"`) && line.includes(`reason="${reason}"`)).reduce((total, line) => total + Number(line.split(" ").at(-1)), 0);
   return {
     buffered_requests: value("gateway_buffered_requests"),
     buffered_bytes: value("gateway_buffered_body_bytes"),
     active_requests: value("gateway_active_requests"),
     concurrency_denials: denial("concurrency"), byte_denials: denial("bytes"),
-    authentication_denials: denial("authentication_overloaded", "auth_admission"),
-    source_denials: denial("source_rate_limit_exceeded", "auth_admission"),
+    authentication_denials: denial("authentication_overloaded", "auth_admission", "proxy"),
+    source_denials: denial("source_rate_limit_exceeded", "auth_admission", "proxy"),
+    control_authentication_denials: denial("authentication_overloaded", "auth_admission", "control"),
+    control_source_denials: denial("source_rate_limit_exceeded", "auth_admission", "control"),
   };
 }
 

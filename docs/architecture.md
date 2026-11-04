@@ -92,6 +92,11 @@ capacity receive an authentication-capacity 503. Source exhaustion returns
 disable a key. See [deployment controls](deployment.md#authentication-abuse-and-memory-protection)
 for trusted ingress, NAT sizing, and Linux dump protection.
 
+Pre-routing admission counters use `gateway_denials_total{kind="auth_admission"}`
+with `route="proxy"` or `route="control"` to distinguish the two listeners.
+Control-plane readiness probes can be denied during saturation; those denials
+must not be attributed to proxy clients. Resource-free liveness remains exempt.
+
 Effective policy and guardrails reuse the layers loaded for the current lookup
 when their project context matches. Policy state is not cached across requests.
 Callers that omit project context retain the existing distinction between

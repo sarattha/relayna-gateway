@@ -91,6 +91,26 @@ class Reports(unittest.TestCase):
 
 
 class AdmissionAccounting(unittest.TestCase):
+    def test_proxy_metrics_exclude_control_plane_probe_denials(self):
+        source = (Path(__file__).parent / "workload.mjs").read_text()
+        parser = source.split("function metrics(text) {", 1)[1].split("async function run(config)", 1)[0]
+        lines = [
+            'gateway_denials_total{kind="body_admission",route="all",reason="concurrency"} 5',
+            'gateway_denials_total{kind="auth_admission",route="proxy",reason="authentication_overloaded"} 7',
+            'gateway_denials_total{kind="auth_admission",route="control",reason="authentication_overloaded"} 1',
+            'gateway_denials_total{kind="auth_admission",route="proxy",reason="source_rate_limit_exceeded"} 11',
+            'gateway_denials_total{kind="auth_admission",route="control",reason="source_rate_limit_exceeded"} 2',
+        ]
+        script = "function metrics(text) {" + parser + "\nprocess.stdout.write(JSON.stringify(metrics(" + json.dumps("\n".join(lines)) + ")));"
+        result = subprocess.run(["node", "--input-type=module", "-e", script],
+                                check=True, capture_output=True, text=True)
+        values = json.loads(result.stdout)
+        self.assertEqual(values["concurrency_denials"], 5)
+        self.assertEqual(values["authentication_denials"], 7)
+        self.assertEqual(values["source_denials"], 11)
+        self.assertEqual(values["control_authentication_denials"], 1)
+        self.assertEqual(values["control_source_denials"], 2)
+
     def test_body_authentication_and_source_denials_reconcile_separately(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
