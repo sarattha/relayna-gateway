@@ -48,6 +48,26 @@ Cancelling a request releases a queued verification, while an already-running
 verification keeps its worker slot until it finishes. Hash parameters, key-state
 checks and authentication responses are unchanged.
 
+Successful virtual-key secret verification can be reused for 60 seconds within
+one process, up to 1,024 proofs. Each proof binds the key ID, presented secret,
+and complete stored Argon2 hash using a process-random HMAC; the cache retains
+only the digest and verification time. Hits do not extend expiry. Every request
+still loads current key state from PostgreSQL, rejects disabled/revoked/expired
+keys, and records key use. Changed hashes miss the cache; a database failure
+still fails closed. Cold, invalid, expired-cache, and evicted keys use the same
+bounded Argon2 workers and unchanged hashing parameters.
+
+Effective policy and guardrails reuse the layers loaded for the current lookup
+when their project context matches. Policy state is not cached across requests.
+Callers that omit project context retain the existing distinction between
+inherited key policy and caller-context guardrails.
+
+HTTP guardrails share a client and connection pool across calls, with bearer
+credentials and deadlines applied per request. Their synchronous executor still
+waits on an OS thread per call. Provider forwarding continues to use Pingora's
+upstream pool; these changes do not increase provider inference speed or remove
+upstream concurrency limits.
+
 Canonical OpenAI-compatible and Anthropic-compatible routes can run in
 `managed_by_gateway` mode or `direct_litellm_passthrough` mode. Direct mode
 still enforces Relayna auth, route enablement, route/model/provider policy,

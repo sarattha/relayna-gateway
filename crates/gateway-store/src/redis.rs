@@ -5,10 +5,89 @@ use gateway_core::{
     BudgetDecision, BudgetState, BudgetStore, GatewayError, GatewayResult, RateLimitDecision,
     RateLimitStore,
 };
-use redis::{aio::MultiplexedConnection, AsyncCommands};
+use redis::{
+    aio::{ConnectionManager, ConnectionManagerConfig, MultiplexedConnection},
+    AsyncCommands,
+};
 use std::sync::Arc;
 use uuid::Uuid;
 const BUDGET_EPOCH_KEY: &str = "budget:accounting-epoch:v2";
+
+#[cfg(test)]
+mod connection_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn clones_multiplex_and_reconnect_without_losing_counter_state() {
+        let Ok(url) = std::env::var("REDIS_URL") else {
+            return;
+        };
+        let state = RedisControlState::new(&url).unwrap();
+        let counter = format!("test:connection:{}", Uuid::new_v4());
+        let mut tasks = Vec::new();
+        for _ in 0..32 {
+            let state = state.clone();
+            let counter = counter.clone();
+            tasks.push(tokio::spawn(async move {
+                let mut connection = state.connection().await.unwrap();
+                let id: i64 = redis::cmd("CLIENT")
+                    .arg("ID")
+                    .query_async(&mut connection)
+                    .await
+                    .unwrap();
+                let _: i64 = connection.incr(counter, 1).await.unwrap();
+                id
+            }));
+        }
+        let id = tasks.remove(0).await.unwrap();
+        for task in tasks {
+            assert_eq!(task.await.unwrap(), id);
+        }
+        let mut admin = redis::Client::open(url)
+            .unwrap()
+            .get_multiplexed_async_connection()
+            .await
+            .unwrap();
+        let total: i64 = admin.get(&counter).await.unwrap();
+        assert_eq!(total, 32);
+        let killed: i64 = redis::cmd("CLIENT")
+            .arg("KILL")
+            .arg("ID")
+            .arg(id)
+            .query_async(&mut admin)
+            .await
+            .unwrap();
+        assert_eq!(killed, 1);
+        let new_id = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if let Ok(mut connection) = state.connection().await {
+                    if let Ok(new_id) = redis::cmd("CLIENT")
+                        .arg("ID")
+                        .query_async::<i64>(&mut connection)
+                        .await
+                    {
+                        if new_id != id {
+                            break new_id;
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_ne!(new_id, id);
+        let total: i64 = state
+            .connection()
+            .await
+            .unwrap()
+            .get(&counter)
+            .await
+            .unwrap();
+        assert_eq!(total, 32);
+        let _: usize = admin.del(counter).await.unwrap();
+    }
+}
 
 #[derive(Clone)]
 pub struct RedisReadiness {
@@ -46,6 +125,7 @@ impl RedisReadiness {
 #[derive(Clone)]
 pub struct RedisControlState {
     client: redis::Client,
+    connection: Arc<tokio::sync::OnceCell<ConnectionManager>>,
     budget_epoch: Arc<std::sync::OnceLock<String>>,
 }
 
@@ -53,14 +133,25 @@ impl RedisControlState {
     pub fn new(redis_url: &str) -> redis::RedisResult<Self> {
         Ok(Self {
             client: redis::Client::open(redis_url)?,
+            connection: Arc::new(tokio::sync::OnceCell::new()),
             budget_epoch: Arc::new(std::sync::OnceLock::new()),
         })
     }
 
-    async fn connection(&self) -> GatewayResult<MultiplexedConnection> {
-        self.client
-            .get_multiplexed_async_connection()
+    async fn connection(&self) -> GatewayResult<ConnectionManager> {
+        self.connection
+            .get_or_try_init(|| async {
+                // Share one multiplexed socket across clones/runtimes. Dropped
+                // commands return an error, never a replay of a counter debit.
+                // Reconnect for later calls without adding connection retries.
+                ConnectionManager::new_with_config(
+                    self.client.clone(),
+                    ConnectionManagerConfig::new().set_number_of_retries(0),
+                )
+                .await
+            })
             .await
+            .cloned()
             .map_err(|_| GatewayError::ControlStateUnavailable)
     }
 

@@ -21,6 +21,15 @@ state, readiness checks, and bounded ephemeral monitoring snapshots.
 
 ## Required Operational State
 
+Each `RedisControlState` and its clones lazily share one multiplexed connection.
+Concurrent commands can use it without opening a socket per operation. A
+connection failure is returned to the affected operation; the connection manager
+reconnects for later calls and does not replay the failed counter command.
+An interrupted mutation can still have an unknown outcome if Redis executed it
+before the response was lost. Reconnection does not reset the accounting epoch
+or bypass budget recovery after state loss. Readiness continues to open a fresh
+connection for its `PING` check.
+
 | Area | Redis key family | Required when |
 | --- | --- | --- |
 | Request rate limit | `rl:req:<key_id>:<yyyymmddhhmm>` | A virtual key policy has `rpm_limit` set. |

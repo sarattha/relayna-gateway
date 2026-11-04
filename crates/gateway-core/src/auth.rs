@@ -9,6 +9,9 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use uuid::Uuid;
 
+#[path = "verification_cache.rs"]
+mod verification_cache;
+
 const RELAYNA_KEY_PREFIX: &str = "rk_live_";
 const LOOKUP_PREFIX_LEN: usize = 16;
 // Argon2 is CPU/memory intensive. Share this bound across both Gateway
@@ -150,10 +153,19 @@ where
 
         let raw_key = key.raw().to_owned();
         let key_hash = stored.key_hash.clone();
-        verify_in_background(&KEY_VERIFICATION_SLOTS, move || {
-            verify_secret(&raw_key, &key_hash)
-        })
-        .await?;
+        let proof = verification_cache::proof(stored.id, &raw_key, &key_hash);
+        if !verification_cache::contains(proof) {
+            verify_in_background(&KEY_VERIFICATION_SLOTS, move || {
+                // Another request for this exact secret/hash may have verified
+                // while this request waited for a bounded Argon2 worker.
+                if !verification_cache::contains(proof) {
+                    verify_secret(&raw_key, &key_hash)?;
+                    verification_cache::insert(proof);
+                }
+                Ok(())
+            })
+            .await?;
+        }
         let _ = self.store.mark_key_used(stored.id, now).await;
 
         Ok(AuthenticatedKey {
@@ -319,6 +331,122 @@ mod tests {
                 .unwrap_err(),
             GatewayError::InvalidVirtualKey
         );
+    }
+
+    #[tokio::test]
+    async fn verified_secret_hit_skips_workers_but_refreshes_key_state() {
+        let raw = format!("{RELAYNA_KEY_PREFIX}{}", Uuid::new_v4().simple());
+        let value = stored(&raw);
+        let lookup = MemoryLookup {
+            value: Arc::new(Mutex::new(Some(value.clone()))),
+        };
+        let authenticator = Authenticator::new(lookup.clone());
+        authenticator
+            .authenticate_raw_key(Some(&raw), Utc::now())
+            .await
+            .unwrap();
+        let held = KEY_VERIFICATION_SLOTS.acquire_many(2).await.unwrap();
+        let changed_project = Some(Uuid::new_v4());
+        lookup.value.lock().unwrap().as_mut().unwrap().project_id = changed_project;
+        let hit = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            authenticator.authenticate_raw_key(Some(&raw), Utc::now()),
+        )
+        .await;
+        drop(held);
+        assert_eq!(hit.unwrap().unwrap().project_id, changed_project);
+
+        for (disabled, revoked, expired, expected) in [
+            (true, false, false, GatewayError::DisabledVirtualKey),
+            (false, true, false, GatewayError::RevokedVirtualKey),
+            (false, false, true, GatewayError::ExpiredVirtualKey),
+        ] {
+            let mut changed = value.clone();
+            changed.disabled = disabled;
+            changed.revoked_at = revoked.then(Utc::now);
+            changed.expires_at = expired.then(|| Utc::now() - Duration::seconds(1));
+            *lookup.value.lock().unwrap() = Some(changed);
+            assert_eq!(
+                authenticator
+                    .authenticate_raw_key(Some(&raw), Utc::now())
+                    .await,
+                Err(expected)
+            );
+        }
+        *lookup.value.lock().unwrap() = None;
+        assert_eq!(
+            authenticator
+                .authenticate_raw_key(Some(&raw), Utc::now())
+                .await,
+            Err(GatewayError::InvalidVirtualKey)
+        );
+
+        let mut rotated = value;
+        let new_raw = format!("{raw}_rotated");
+        rotated.key_hash = hash(&new_raw);
+        *lookup.value.lock().unwrap() = Some(rotated);
+        assert_eq!(
+            authenticator
+                .authenticate_raw_key(Some(&raw), Utc::now())
+                .await,
+            Err(GatewayError::InvalidVirtualKey)
+        );
+        authenticator
+            .authenticate_raw_key(Some(&new_raw), Utc::now())
+            .await
+            .unwrap();
+        assert_eq!(
+            authenticator
+                .authenticate_raw_key(Some(&format!("{new_raw}_wrong")), Utc::now())
+                .await,
+            Err(GatewayError::InvalidVirtualKey)
+        );
+    }
+
+    #[tokio::test]
+    async fn verified_secret_hit_still_marks_usage_and_fails_closed_on_store_error() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        struct ObservedLookup {
+            key: StoredVirtualKey,
+            unavailable: AtomicBool,
+            used: AtomicUsize,
+        }
+        #[async_trait]
+        impl VirtualKeyLookup for ObservedLookup {
+            async fn find_by_prefix(&self, _: &str) -> GatewayResult<Option<StoredVirtualKey>> {
+                if self.unavailable.load(Ordering::SeqCst) {
+                    Err(GatewayError::StoreUnavailable)
+                } else {
+                    Ok(Some(self.key.clone()))
+                }
+            }
+            async fn mark_key_used(&self, _: Uuid, _: DateTime<Utc>) -> GatewayResult<()> {
+                self.used.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+        let raw = format!("{RELAYNA_KEY_PREFIX}{}", Uuid::new_v4().simple());
+        let lookup = Arc::new(ObservedLookup {
+            key: stored(&raw),
+            unavailable: AtomicBool::new(false),
+            used: AtomicUsize::new(0),
+        });
+        let authenticator = Authenticator::new(lookup.clone());
+        for _ in 0..2 {
+            authenticator
+                .authenticate_raw_key(Some(&raw), Utc::now())
+                .await
+                .unwrap();
+        }
+        assert_eq!(lookup.used.load(Ordering::SeqCst), 2);
+        lookup.unavailable.store(true, Ordering::SeqCst);
+        assert_eq!(
+            authenticator
+                .authenticate_raw_key(Some(&raw), Utc::now())
+                .await,
+            Err(GatewayError::StoreUnavailable)
+        );
+        assert_eq!(lookup.used.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
