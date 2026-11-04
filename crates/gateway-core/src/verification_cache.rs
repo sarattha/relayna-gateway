@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 use uuid::Uuid;
+use zeroize::{Zeroize, Zeroizing};
 
 type Proof = [u8; 32];
 const CAPACITY: usize = 1024;
@@ -16,7 +17,7 @@ const TTL: Duration = Duration::from_secs(60);
 static CACHE: OnceLock<Option<VerificationCache>> = OnceLock::new();
 
 struct VerificationCache {
-    secret: [u8; 32],
+    secret: Zeroizing<[u8; 32]>,
     entries: Mutex<Entries>,
 }
 
@@ -27,6 +28,24 @@ struct Entries {
 }
 
 impl Entries {
+    fn remove_oldest(&mut self) {
+        if let Some(mut oldest) = self.order.pop_front() {
+            if let Some((mut key, _)) = self.proofs.remove_entry(&oldest) {
+                key.zeroize();
+            }
+            oldest.zeroize();
+        }
+    }
+
+    fn purge_expired(&mut self, now: Instant) {
+        while self
+            .order
+            .front()
+            .is_some_and(|proof| !self.contains(proof, now))
+        {
+            self.remove_oldest();
+        }
+    }
     fn contains(&self, proof: &Proof, now: Instant) -> bool {
         self.proofs
             .get(proof)
@@ -42,8 +61,7 @@ impl Entries {
             if self.proofs.len() < CAPACITY && self.contains(oldest, now) {
                 break;
             }
-            let oldest = self.order.pop_front().unwrap();
-            self.proofs.remove(&oldest);
+            self.remove_oldest();
         }
         if let std::collections::hash_map::Entry::Vacant(entry) = self.proofs.entry(proof) {
             entry.insert(now);
@@ -55,9 +73,9 @@ impl Entries {
 fn cache() -> Option<&'static VerificationCache> {
     CACHE
         .get_or_init(|| {
-            let mut secret = [0; 32];
+            let mut secret = Zeroizing::new([0; 32]);
             // Entropy failure disables this optimization; Argon2 still verifies.
-            OsRng.try_fill_bytes(&mut secret).ok()?;
+            OsRng.try_fill_bytes(secret.as_mut()).ok()?;
             Some(VerificationCache {
                 secret,
                 entries: Mutex::new(Entries::default()),
@@ -68,7 +86,7 @@ fn cache() -> Option<&'static VerificationCache> {
 
 pub(super) fn proof(id: Uuid, raw: &str, encoded_hash: &str) -> Option<Proof> {
     let cache = cache()?;
-    let mut mac = Hmac::<Sha256>::new_from_slice(&cache.secret).ok()?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(cache.secret.as_ref()).ok()?;
     mac.update(id.as_bytes());
     mac.update(&(encoded_hash.len() as u64).to_le_bytes());
     mac.update(encoded_hash.as_bytes());
@@ -90,6 +108,15 @@ pub(super) fn insert(proof: Option<Proof>) {
     if let Some((cache, proof)) = cache().zip(proof) {
         if let Ok(mut entries) = cache.entries.lock() {
             entries.insert(proof, Instant::now());
+        }
+    }
+}
+
+pub(super) fn purge_expired() {
+    // Maintenance must not initialize the cache or create secrets on its own.
+    if let Some(Some(cache)) = CACHE.get() {
+        if let Ok(mut entries) = cache.entries.lock() {
+            entries.purge_expired(Instant::now());
         }
     }
 }
@@ -126,5 +153,18 @@ mod tests {
         assert_ne!(Some(original), proof(id, "different", "hash"));
         assert_ne!(Some(original), proof(id, &raw, "rotated hash"));
         assert_ne!(Some(original), proof(id, "hash", &raw));
+    }
+
+    #[test]
+    fn maintenance_removes_idle_proofs_without_an_insertion() {
+        let now = Instant::now();
+        let mut entries = Entries::default();
+        entries.insert([1; 32], now);
+        entries.insert([2; 32], now + Duration::from_secs(1));
+        entries.purge_expired(now + TTL);
+        assert_eq!(entries.proofs.len(), 1);
+        entries.purge_expired(now + TTL + Duration::from_secs(1));
+        assert!(entries.proofs.is_empty());
+        assert!(entries.order.is_empty());
     }
 }

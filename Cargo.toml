@@ -30,6 +30,8 @@ chrono = { version = "0.4.42", features = ["serde"] }
 http = "1.4.0"
 bytes = "1.11.1"
 hmac = "0.12.1"
+libc = "0.2.177"
+zeroize = "1.8.2"
 jsonwebtoken = "9.3.1"
 pem = "3.0.6"
 openssl = "0.10.81"

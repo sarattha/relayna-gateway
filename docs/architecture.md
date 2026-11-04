@@ -40,13 +40,31 @@ flowchart LR
    header derived from the selected upstream.
 8. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields when available.
 
-Virtual-key Argon2 verification runs on blocking workers with a shared limit of
-two concurrent verifications per process. This keeps CPU-intensive verification
-off async I/O threads and bounds its simultaneous memory use. Waiting requests
-remain subject to client and deployment deadlines; this is not an RPS guarantee.
-Cancelling a request releases a queued verification, while an already-running
-verification keeps its worker slot until it finishes. Hash parameters, key-state
-checks and authentication responses are unchanged.
+Before routing or store access, both HTTP listeners share a fail-fast admission
+limit of 64 requests per process. The proxy releases this permit after its
+request filter, before body upload and provider streaming. Control-plane
+handlers hold it through request extraction and handler completion. Exact
+static assets, liveness, and the in-memory metrics export are exempt. Authentication,
+owner APIs, and LiteLLM aliases are covered. Core virtual-key and operator lookups also have a shared
+64-operation limit for callers outside these HTTP adapters.
+
+Malformed-credential and source/capacity denials without an authenticated key do
+not write per-request database history. They remain in local counters and the
+bounded live monitor. Other traffic without a key uses at most eight concurrent
+history writes, without waiting for a slot. This prevents error logging from
+bypassing authentication admission; historical denial detail can be absent under
+load. Authenticated usage recording retains its existing behavior.
+
+Virtual-key and operator-token Argon2 verification, plus runtime key generation,
+share two blocking workers per process. At most eight jobs can wait for a worker,
+for at most 250 ms. Queue saturation or expiry returns
+`503 authentication_overloaded`, with `Retry-After: 1`; it does not classify the credential as invalid. Cancellation releases a queued
+permit; started CPU work retains its worker permit until completion. These are
+resource bounds, not throughput guarantees. Cold virtual-key verification
+reloads state and checks expiry at completion; a changed ID/hash fails closed,
+and a changed project is reflected in the returned identity. Operator state
+changes during verification also fail closed. These checks narrow the race with
+revocation; they do not lock identity state for a whole upstream request.
 
 Successful virtual-key secret verification can be reused for 60 seconds within
 one process, up to 1,024 proofs. Each proof binds the key ID, presented secret,
@@ -55,7 +73,24 @@ only the digest and verification time. Hits do not extend expiry. Every request
 still loads current key state from PostgreSQL, rejects disabled/revoked/expired
 keys, and records key use. Changed hashes miss the cache; a database failure
 still fails closed. Cold, invalid, expired-cache, and evicted keys use the same
-bounded Argon2 workers and unchanged hashing parameters.
+bounded Argon2 workers and unchanged hashing parameters. A five-second
+maintenance task physically removes expired proofs even without new inserts;
+logical expiry stays at 60 seconds. Owned raw virtual-key/verifier buffers use
+zeroization and virtual-key debug formatting is redacted. This cannot erase all
+copies held by HTTP parsers, libraries, allocator moves, or the operating system.
+
+Before store work, duplicate or oversized credential headers and malformed key
+text are rejected. Credential headers are limited to 16 KiB and Relayna/operator
+keys to 1,024 bytes of printable ASCII without commas or internal whitespace.
+Existing variable-length keys within those bounds remain supported. Per-source
+token buckets default to 100 requests/second with a burst of 200, shared by both
+listeners. They use only the transport peer IP (including canonical IPv4-mapped
+IPv6), never forwarded headers. Unknown peers share a bucket. The map holds at
+most 4,096 sources and expires fully refilled idle entries after 60 seconds; new sources at map
+capacity receive an authentication-capacity 503. Source exhaustion returns
+`429 source_rate_limit_exceeded` with `Retry-After: 1`. Failed attempts do not
+disable a key. See [deployment controls](deployment.md#authentication-abuse-and-memory-protection)
+for trusted ingress, NAT sizing, and Linux dump protection.
 
 Effective policy and guardrails reuse the layers loaded for the current lookup
 when their project context matches. Policy state is not cached across requests.

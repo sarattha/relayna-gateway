@@ -405,6 +405,7 @@ impl VirtualKeyMaterial {
     }
 
     pub fn from_raw(raw_key: String) -> GatewayResult<Self> {
+        crate::auth_admission::validate_key_text(&raw_key)?;
         if !raw_key.starts_with(RELAYNA_KEY_PREFIX) || raw_key.len() <= LOOKUP_PREFIX_LEN {
             return Err(GatewayError::MalformedAuthorization);
         }

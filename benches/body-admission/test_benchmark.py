@@ -90,6 +90,44 @@ class Reports(unittest.TestCase):
             self.assertIsNone(report.normalize(trial())["client_deadline_ms"])
 
 
+class AdmissionAccounting(unittest.TestCase):
+    def test_body_authentication_and_source_denials_reconcile_separately(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "limit-08-rep-1.json"
+            pods = [{"metadata": {"name": name}, "status": {"containerStatuses": [{"restartCount": 0}]},
+                     "spec": {"containers": [{"resources": {"limits": {"cpu": "2", "memory": "1Gi"}},
+                     "env": [{"name": "GATEWAY_MAX_BUFFERED_REQUESTS", "value": "8"},
+                             {"name": "GATEWAY_MAX_INFLIGHT_BUFFER_BYTES", "value": str(512 * sweep.MIB)}]}]}}
+                    for name in ["pod-a", "pod-b"]]
+            path.with_suffix(".pods.json").write_text(json.dumps({"items": pods}))
+            results, samples = [], []
+            for pod in pods:
+                name = pod["metadata"]["name"]
+                (root / f"limit-08-rep-1-{name}.memory.txt").write_text("0 0 100 200 0\n")
+                for status, code in [(200, None), (503, "gateway_overloaded"), (503, "authentication_overloaded"), (429, "source_rate_limit_exceeded")]:
+                    results.append(dict(pod=name, status=status, error_code=code, verified=status == 200))
+                for count in [0, 1]:
+                    samples.append(dict(pod=name, buffered_requests=0, buffered_bytes=0,
+                                        concurrency_denials=count, byte_denials=0,
+                                        authentication_denials=count, source_denials=count))
+            run = dict(body_bytes=sweep.MIB, scheduled_requests=8, completed_requests=8,
+                       verified_requests=2, successful_requests=2, http_max_sockets_per_host=4,
+                       pods=[{"name": pod["metadata"]["name"]} for pod in pods], results=results,
+                       samples=samples, status_counts={"200": 2, "503": 4, "429": 2},
+                       body_sha256="fixture", elapsed_ms=1, success_latency_ms={}, rejection_latency_ms={}, dispatch_lag_ms={})
+            path.write_text(json.dumps(run))
+            row = sweep.analyze(root, 8, 1, sweep.MIB, 4)
+            self.assertTrue(row["clean"])
+            self.assertEqual(row["preauth_denials"], 4)
+            self.assertEqual(row["denial_codes"]["gateway_overloaded"], 2)
+            self.assertEqual(row["admission_counter_gap"], 0)
+            run["results"][3]["error_code"] = "rate_limit_exceeded"
+            path.write_text(json.dumps(run))
+            with self.assertRaises(AssertionError):
+                sweep.analyze(root, 8, 1, sweep.MIB, 4)
+
+
 class Orchestration(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

@@ -2653,11 +2653,20 @@ impl OperatorTokenStore for PostgresStore {
         now: chrono::DateTime<chrono::Utc>,
     ) -> GatewayResult<OperatorAuthorization> {
         let prefix = operator_token_prefix(raw_token)?;
+        let _admission = gateway_core::auth::try_auth_lookup()?;
         let stored = self
             .stored_operator_token_by_prefix(&prefix)
             .await?
             .ok_or(GatewayError::InvalidOperatorToken)?;
-        let authorization = verify_stored_operator_token(raw_token, &stored)?;
+        let authorization = verify_stored_operator_token(raw_token, &stored).await?;
+        if self
+            .stored_operator_token_by_prefix(&prefix)
+            .await?
+            .as_ref()
+            != Some(&stored)
+        {
+            return Err(GatewayError::InvalidOperatorToken);
+        }
 
         sqlx::query(
             r#"
@@ -2681,11 +2690,20 @@ impl OperatorTokenStore for PostgresStore {
         now: chrono::DateTime<chrono::Utc>,
     ) -> GatewayResult<OperatorTokenResponse> {
         let prefix = operator_token_prefix(current_raw_token)?;
+        let _admission = gateway_core::auth::try_auth_lookup()?;
         let stored = self
             .stored_operator_token_by_prefix(&prefix)
             .await?
             .ok_or(GatewayError::InvalidOperatorToken)?;
-        verify_stored_operator_token(current_raw_token, &stored)?;
+        verify_stored_operator_token(current_raw_token, &stored).await?;
+        if self
+            .stored_operator_token_by_prefix(&prefix)
+            .await?
+            .as_ref()
+            != Some(&stored)
+        {
+            return Err(GatewayError::InvalidOperatorToken);
+        }
 
         let token_id = Uuid::new_v4();
         let mut tx = self

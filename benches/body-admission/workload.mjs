@@ -114,12 +114,14 @@ function distribution(values) {
 
 function metrics(text) {
   const value = name => Number(text.match(new RegExp(`^${name} ([0-9.e+\\-]+)$`, "m"))?.[1] ?? 0);
-  const denial = reason => text.split("\n").filter(line => line.startsWith("gateway_denials_total{") && line.includes('kind="body_admission"') && line.includes(`reason="${reason}"`)).reduce((total, line) => total + Number(line.split(" ").at(-1)), 0);
+  const denial = (reason, kind = "body_admission") => text.split("\n").filter(line => line.startsWith("gateway_denials_total{") && line.includes(`kind="${kind}"`) && line.includes(`reason="${reason}"`)).reduce((total, line) => total + Number(line.split(" ").at(-1)), 0);
   return {
     buffered_requests: value("gateway_buffered_requests"),
     buffered_bytes: value("gateway_buffered_body_bytes"),
     active_requests: value("gateway_active_requests"),
     concurrency_denials: denial("concurrency"), byte_denials: denial("bytes"),
+    authentication_denials: denial("authentication_overloaded", "auth_admission"),
+    source_denials: denial("source_rate_limit_exceeded", "auth_admission"),
   };
 }
 
@@ -177,7 +179,7 @@ async function run(config) {
   await sampleTask;
   await fetchMetrics();
   const successes = results.filter(result => result.status === 200);
-  const rejected = results.filter(result => result.status === 503);
+  const rejected = results.filter(result => result.status === 503 || result.status === 429);
   const counts = {};
   for (const result of results) counts[result.status] = (counts[result.status] ?? 0) + 1;
   const output = {

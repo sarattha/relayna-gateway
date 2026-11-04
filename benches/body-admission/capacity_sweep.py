@@ -77,31 +77,35 @@ def analyze(folder, slots, attempt, expected_body_bytes, cohort):
     assert run["verified_requests"] == run["successful_requests"]
     assert run["http_max_sockets_per_host"] >= cohort
     assert all(result["verified"] for result in run["results"] if result["status"] == 200)
-    assert all(result.get("error_code") == "gateway_overloaded" for result in run["results"] if result["status"] == 503)
+    expected_denials = {503: {"gateway_overloaded", "authentication_overloaded"}, 429: {"source_rate_limit_exceeded"}}
+    assert all(result.get("error_code") in expected_denials[result["status"]] for result in run["results"] if result["status"] in expected_denials)
+    denial_counts = {code: sum(result.get("error_code") == code for result in run["results"] if result["status"] in expected_denials)
+                     for codes in expected_denials.values() for code in codes}
     for pod in run["pods"]:
         assert sum(result["pod"] == pod["name"] for result in run["results"]) == cohort
     samples = [sample for sample in run["samples"] if "error" not in sample]
     assert all(0 <= sample["buffered_requests"] <= slots and 0 <= sample["buffered_bytes"] <= 512 * MIB for sample in samples)
     row.update({"requests": run["scheduled_requests"], "successes": run["successful_requests"],
-                "statuses": run["status_counts"], "body_sha256": run["body_sha256"],
+                "statuses": run["status_counts"], "denial_codes": denial_counts,
+                "preauth_denials": denial_counts["authentication_overloaded"] + denial_counts["source_rate_limit_exceeded"], "body_sha256": run["body_sha256"],
                 "elapsed_ms": run["elapsed_ms"], "success_latency_ms": run["success_latency_ms"],
                 "rejection_latency_ms": run["rejection_latency_ms"], "dispatch_lag_ms": run["dispatch_lag_ms"],
                 "metric_scrape_errors": len(run["samples"]) - len(samples),
                 "buffered_requests_peak": max((sample["buffered_requests"] for sample in samples), default=0),
                 "buffered_bytes_peak_mib": max((sample["buffered_bytes"] for sample in samples), default=0) / MIB,
                 "transport_errors": sum(result["status"] == 0 for result in run["results"]),
-                "other_http_statuses": sum(result["status"] not in (0, 200, 503) for result in run["results"]),
-                "unexpected_results": [result for result in run["results"] if result["status"] not in (200, 503)]})
-    row["concurrency_denials"] = row["byte_denials"] = None
+                "other_http_statuses": sum(result["status"] not in (0, 200, 429, 503) for result in run["results"]),
+                "unexpected_results": [result for result in run["results"] if result["status"] not in (200, 429, 503)]})
+    row["concurrency_denials"] = row["byte_denials"] = row["authentication_denials"] = row["source_denials"] = None
     row["admission_counter_gap"] = None
     row["terminal_zero"] = False
     if not row["resource_failure"] and row["metric_scrape_errors"] == 0:
-        for key in ("concurrency_denials", "byte_denials"):
-            row[key] = sum(max(sample[key] for sample in samples if sample["pod"] == pod["name"]) - min(sample[key] for sample in samples if sample["pod"] == pod["name"]) for pod in run["pods"])
+        for key in ("concurrency_denials", "byte_denials", "authentication_denials", "source_denials"):
+            row[key] = sum(max(sample.get(key, 0) for sample in samples if sample["pod"] == pod["name"]) - min(sample.get(key, 0) for sample in samples if sample["pod"] == pod["name"]) for pod in run["pods"])
         # A reset can lose the rejection response while the server has already
         # recorded its denial. Keep that failed observation and its discrepancy
         # instead of aborting the resource search. Clean trials must reconcile.
-        row["admission_counter_gap"] = row["concurrency_denials"] + row["byte_denials"] - run["status_counts"].get("503", 0)
+        row["admission_counter_gap"] = row["concurrency_denials"] + row["byte_denials"] + row["authentication_denials"] + row["source_denials"] - sum(denial_counts.values())
         final = {pod["name"]: [sample for sample in samples if sample["pod"] == pod["name"]][-1] for pod in run["pods"]}
         row["terminal_zero"] = all(sample["buffered_requests"] == sample["buffered_bytes"] == 0 for sample in final.values())
     # Every offered request must reconcile to either a verified success or a

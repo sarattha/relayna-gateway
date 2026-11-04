@@ -31,6 +31,8 @@ pub struct Config {
     pub gateway_control_bind_addr: SocketAddr,
     pub gateway_max_buffered_requests: usize,
     pub gateway_max_inflight_buffer_bytes: usize,
+    pub gateway_preauth_source_rps: usize,
+    pub gateway_preauth_source_burst: usize,
     pub log_level: String,
 }
 
@@ -168,6 +170,18 @@ impl Config {
             "GATEWAY_MAX_INFLIGHT_BUFFER_BYTES",
             DEFAULT_MAX_INFLIGHT_BUFFER_BYTES,
         )?;
+        let gateway_preauth_source_rps = optional_positive_usize(
+            "GATEWAY_PREAUTH_SOURCE_RPS",
+            gateway_core::auth_admission::DEFAULT_SOURCE_RPS,
+        )?;
+        let gateway_preauth_source_burst = optional_positive_usize(
+            "GATEWAY_PREAUTH_SOURCE_BURST",
+            gateway_core::auth_admission::DEFAULT_SOURCE_BURST,
+        )?;
+        gateway_core::auth_admission::RequestAdmission::new(
+            gateway_preauth_source_rps,
+            gateway_preauth_source_burst,
+        )?;
         let log_level = required("LOG_LEVEL")?;
 
         Ok(Self {
@@ -194,6 +208,8 @@ impl Config {
             gateway_control_bind_addr,
             gateway_max_buffered_requests,
             gateway_max_inflight_buffer_bytes,
+            gateway_preauth_source_rps,
+            gateway_preauth_source_burst,
             log_level,
         })
     }

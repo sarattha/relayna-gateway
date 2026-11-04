@@ -242,6 +242,10 @@ pub fn record_auth_failure(reason: &str) {
     increment_denial_metric("auth", "unknown", reason);
 }
 
+pub fn record_auth_admission_rejection(reason: &str) {
+    increment_denial_metric("auth_admission", "all", reason);
+}
+
 pub fn record_policy_denial(route: &str, reason: &str) {
     POLICY_DENIALS_TOTAL.fetch_add(1, Ordering::Relaxed);
     increment_denial_metric("policy", route, reason);

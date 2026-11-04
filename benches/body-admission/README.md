@@ -4,6 +4,15 @@ This measures the real release-built Gateway proxy, PostgreSQL-backed virtual
 key authentication/policy/usage, Redis control state, and a mock registered
 service. It is a local Kubernetes experiment, not a production capacity claim.
 
+Authentication/source admission remains enabled during measurements. Reports
+separate `gateway_overloaded` (body capacity), `authentication_overloaded`
+(authentication capacity), and `source_rate_limit_exceeded` (429). Their counters
+are reconciled independently from verified successes and transport failures.
+Rejection latency includes both 429 and 503. Early protection can prevent body
+slots from filling: report occupied slots and denial counts, and do not interpret
+such a setting as a maximum body concurrency measurement. Direct-pod workloads
+do not measure ingress connection limits or original-client IP enforcement.
+
 ## Run from source on amd64 or arm64
 
 Requirements: Python **3.10+**, Docker with Linux containers, kind, and kubectl.

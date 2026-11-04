@@ -499,6 +499,75 @@ For local development, port-forward the control Service or run the container
 directly. Do not expose `/admin-ui/admin/*`, `/admin-ui/metrics`, or operator
 token workflows on a public ingress.
 
+## Authentication Abuse and Memory Protection
+
+`GATEWAY_PREAUTH_SOURCE_RPS` (default `100`) and
+`GATEWAY_PREAUTH_SOURCE_BURST` (default `200`) accept integers from 1 to
+1,000,000. They limit requests per actual peer IP per Gateway process before
+routing/authentication store work. Both listeners share the same limiter. Set
+these for the expected aggregate behind NAT or an ingress: Gateway intentionally
+does not interpret `X-Forwarded-For`, `X-Real-IP`, or `Forwarded` as a source
+identity. Source limits are per pod; replica counts multiply aggregate capacity.
+The 64-request admission cap and the two-worker/eight-waiter/250-ms Argon2 bounds
+are independent of body slots. Clients should honor `Retry-After` and add jitter.
+
+Enforce original-client request and connection limits at the trusted ingress as
+well. The existing nginx-compatible Ingress example sets 100 RPS, burst
+multiplier 2, and 64 connections per source per controller replica. Merge these
+values into the **existing controller's** ConfigMap, for both public and internal
+controllers; they are controller settings, not Ingress annotations:
+
+```yaml
+data:
+  limit-req-status-code: "429"
+  limit-conn-status-code: "429"
+  use-forwarded-headers: "false"
+  enable-real-ip: "false"
+  allow-snippet-annotations: "false"
+```
+
+This direct-peer example assumes the ingress sees the client source IP. Behind a
+load balancer, configure real-IP/PROXY protocol only for its explicit trusted
+CIDRs, restrict controller access to that load balancer, and verify that spoofed
+forwarded headers cannot change the limiting key. Do not use a trust-all CIDR.
+Tune limits for NAT clients and active streams. Limits and error formatting at
+the edge depend on the controller; Gateway's JSON/Retry-After contract applies
+to Gateway-generated denials. See the controller's
+[rate-limit settings](https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#rate-limiting)
+and [status/trust settings](https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/).
+
+The community ingress-nginx controller was
+[retired in March 2026](https://kubernetes.io/blog/2026/03/30/kubernetes-v1-36-sneak-peek/).
+The existing manifest is a legacy compatibility example, not a recommendation to
+install that controller. Use a maintained controller and translate these limits
+and trust settings to its supported policy API. Validate the effective policy
+with repeated requests, parallel connections, and forged forwarding headers
+before exposing the service. Direct-pod benchmarks do not validate ingress policy.
+
+On Linux, Gateway disables process dumping with `PR_SET_DUMPABLE=0` and sets
+both soft and hard `RLIMIT_CORE` to zero **before loading configuration**. It
+reads the settings back and aborts startup if either protection fails. Both are
+needed because [piped core collectors can ignore RLIMIT_CORE](https://man7.org/linux/man-pages/man5/core.5.html).
+Normal same-user debugger/ptrace access is also restricted by the
+[dumpable attribute](https://man7.org/linux/man-pages/man2/PR_SET_DUMPABLE.2const.html).
+Non-Linux development builds do not apply these Linux controls; configure the
+platform's crash-report and debugger policy separately.
+
+The pod example also disables service-account token automounting, alongside
+non-root execution, dropped capabilities, read-only root filesystem, and
+RuntimeDefault seccomp. Keep `hostPID` and privileged containers disabled.
+Operator RBAC must not grant `pods/exec`, `pods/attach`,
+`pods/ephemeralcontainers`, secret reads, or node debugging to ordinary observers.
+Kubernetes RBAC grants are additive: omitting these permissions in one Role does
+not revoke permissions from another binding. Restrict and audit break-glass
+access and access to node crash collectors and diagnostics storage. Do not retain
+process dumps in support bundles.
+
+These controls reduce accidental dump exposure and ordinary peer-process access;
+they cannot protect live credentials from host administrators, privileged
+container access, or arbitrary code execution inside Gateway. Zeroization covers
+owned short-lived verifier buffers, not every parser/library/allocator copy.
+
 ## Guardrail Configuration
 
 Database migrations create the guardrail catalog, key policy, execution event,

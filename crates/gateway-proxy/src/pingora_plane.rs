@@ -63,6 +63,8 @@ const MAX_MULTIPART_PRICING_FIELD_NAME_BYTES: usize = 256;
 const MAX_MULTIPART_PRICING_FIELD_VALUE_BYTES: usize = 16 * 1024;
 const MAX_MULTIPART_PRICING_METADATA_BYTES: usize = 64 * 1024;
 
+static UNIDENTIFIED_TRAFFIC_WRITES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
+
 #[derive(Debug, Clone)]
 pub struct PingoraLiteLlmConfig {
     pub litellm: PingoraUpstreamConfig,
@@ -72,6 +74,7 @@ pub struct PingoraLiteLlmConfig {
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
     pub relayna_key_header: String,
     body_admission: BodyAdmissionController,
+    request_admission: Arc<gateway_core::auth_admission::RequestAdmission>,
     auth_runtime: Option<SharedGatewayAuthRuntime>,
 }
 
@@ -104,6 +107,7 @@ impl PingoraLiteLlmConfig {
                 DEFAULT_MAX_INFLIGHT_BUFFER_BYTES,
             )?,
             auth_runtime: None,
+            request_admission: Arc::new(Default::default()),
         })
     }
 
@@ -145,6 +149,14 @@ impl PingoraLiteLlmConfig {
 
     pub fn with_auth_runtime(mut self, auth_runtime: SharedGatewayAuthRuntime) -> Self {
         self.auth_runtime = Some(auth_runtime);
+        self
+    }
+
+    pub fn with_request_admission(
+        mut self,
+        admission: Arc<gateway_core::auth_admission::RequestAdmission>,
+    ) -> Self {
+        self.request_admission = admission;
         self
     }
 
@@ -268,6 +280,46 @@ where
 }
 
 impl<S, R> RelaynaPingoraProxy<S, R> {
+    async fn persist_traffic(&self, ctx: &mut PingoraContext)
+    where
+        S: TrafficStore,
+    {
+        // Rejected pre-auth traffic must not turn into unbounded DB pool waiters
+        // during logging. Local counters and the bounded live monitor remain.
+        let _unidentified_write = if ctx.key.is_none() {
+            if matches!(
+                ctx.traffic.diagnostics.failure_code.as_deref(),
+                Some(
+                    "authentication_overloaded"
+                        | "source_rate_limit_exceeded"
+                        | "malformed_authorization"
+                )
+            ) {
+                ctx.traffic.recording_failed("request_traffic_admission");
+                return;
+            }
+            match UNIDENTIFIED_TRAFFIC_WRITES.try_acquire() {
+                Ok(permit) => Some(permit),
+                Err(_) => {
+                    ctx.traffic.recording_failed("request_traffic_admission");
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        if !matches!(
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                self.store.insert_traffic(&ctx.traffic)
+            )
+            .await,
+            Ok(Ok(()))
+        ) {
+            ctx.traffic.recording_failed("request_traffic");
+        }
+    }
+
     async fn verify_entra_request(
         &self,
         req: &RequestHeader,
@@ -526,6 +578,31 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        let peer = session
+            .client_addr()
+            .and_then(|addr| addr.as_inet())
+            .map(|addr| addr.ip());
+        let _admission = match self.config.request_admission.try_acquire(peer) {
+            Ok(permit) => permit,
+            Err(error) => {
+                respond_error(session, error, ctx).await?;
+                return Ok(true);
+            }
+        };
+        let auth = match self.auth_runtime.snapshot() {
+            Ok(auth) => auth,
+            Err(error) => {
+                respond_error(session, error, ctx).await?;
+                return Ok(true);
+            }
+        };
+        if let Err(error) = gateway_core::auth_admission::validate_credential_headers(
+            &session.req_header().headers,
+            &auth.config.relayna_key_header,
+        ) {
+            respond_error(session, error, ctx).await?;
+            return Ok(true);
+        }
         if session
             .req_header()
             .uri
@@ -776,13 +853,6 @@ where
         }
 
         traffic_step(ctx, "authentication");
-        let auth = match self.auth_runtime.snapshot() {
-            Ok(auth) => auth,
-            Err(error) => {
-                respond_error(session, error, ctx).await?;
-                return Ok(true);
-            }
-        };
         ctx.relayna_key_header = auth.config.relayna_key_header.clone();
         let now = Utc::now();
         let authorization = header_value(req, "authorization");
@@ -871,11 +941,11 @@ where
                 Err(GatewayError::MalformedAuthorization)
             } else if dedicated.is_some() {
                 Authenticator::new(self.store.clone())
-                    .authenticate_raw_key(dedicated, now)
+                    .authenticate_raw_key(dedicated, Utc::now())
                     .await
             } else {
                 Authenticator::new(self.store.clone())
-                    .authenticate_authorization(authorization, now)
+                    .authenticate_authorization(authorization, Utc::now())
                     .await
             };
             let key = match result {
@@ -1040,17 +1110,20 @@ where
             Ok(key)
         } else if ctx.access.entra.is_some() {
             Authenticator::new(self.store.clone())
-                .authenticate_raw_key(header_value(req, &auth.config.relayna_key_header), now)
+                .authenticate_raw_key(
+                    header_value(req, &auth.config.relayna_key_header),
+                    Utc::now(),
+                )
                 .await
         } else if ctx.access.skip_entra {
             // Dedicated key header is accepted consistently; never treat a JWT as a key.
             if let Some(key) = header_value(req, &auth.config.relayna_key_header) {
                 Authenticator::new(self.store.clone())
-                    .authenticate_raw_key(Some(key), now)
+                    .authenticate_raw_key(Some(key), Utc::now())
                     .await
             } else {
                 Authenticator::new(self.store.clone())
-                    .authenticate_authorization(authorization, now)
+                    .authenticate_authorization(authorization, Utc::now())
                     .await
             }
         } else if auth.config.unverified_bearer_enabled {
@@ -1059,7 +1132,7 @@ where
                     Authenticator::new(self.store.clone())
                         .authenticate_raw_key(
                             header_value(req, &auth.config.relayna_key_header),
-                            now,
+                            Utc::now(),
                         )
                         .await
                 }
@@ -1093,11 +1166,14 @@ where
                 }
             }
             Authenticator::new(self.store.clone())
-                .authenticate_raw_key(header_value(req, &auth.config.relayna_key_header), now)
+                .authenticate_raw_key(
+                    header_value(req, &auth.config.relayna_key_header),
+                    Utc::now(),
+                )
                 .await
         } else {
             Authenticator::new(self.store.clone())
-                .authenticate_authorization(authorization, now)
+                .authenticate_authorization(authorization, Utc::now())
                 .await
         };
         match key_result {
@@ -2675,16 +2751,7 @@ where
                 ctx.traffic.client_status.unwrap_or(500),
             ));
         }
-        if !matches!(
-            tokio::time::timeout(
-                Duration::from_secs(2),
-                self.store.insert_traffic(&ctx.traffic)
-            )
-            .await,
-            Ok(Ok(()))
-        ) {
-            ctx.traffic.recording_failed("request_traffic");
-        }
+        self.persist_traffic(ctx).await;
         traffic::monitor().publish(ctx.traffic.clone());
     }
 
@@ -4510,11 +4577,21 @@ async fn respond_error(
     error: GatewayError,
     ctx: &mut PingoraContext,
 ) -> PingoraResult<()> {
+    if matches!(
+        error,
+        GatewayError::AuthenticationOverloaded | GatewayError::SourceRateLimitExceeded
+    ) {
+        gateway_telemetry::record_auth_admission_rejection(error.code());
+    }
     traffic_gateway_error(ctx, &error);
     let close_connection = ctx.guardrail_error.is_some()
         || matches!(
             error,
-            GatewayError::UpstreamTimeout | GatewayError::UpstreamConnection
+            GatewayError::UpstreamTimeout
+                | GatewayError::UpstreamConnection
+                | GatewayError::AuthenticationOverloaded
+                | GatewayError::SourceRateLimitExceeded
+                | GatewayError::MalformedAuthorization
         );
     let (response, body) = gateway_error_response(error, &ctx.request_id)?;
     if close_connection {
@@ -4531,13 +4608,18 @@ fn gateway_error_response(
     error: GatewayError,
     request_id: &str,
 ) -> PingoraResult<(ResponseHeader, Bytes)> {
-    let body = serde_json::to_vec(&error.body(request_id)).unwrap_or_else(|_| b"{}".to_vec());
+    let error_body = error.body(request_id);
+    let retry = error_body.error.retry_after_seconds;
+    let body = serde_json::to_vec(&error_body).unwrap_or_else(|_| b"{}".to_vec());
     let mut response = ResponseHeader::build(error.status_code().as_u16(), Some(4))?;
     response.insert_header(header::CONTENT_TYPE, "application/json")?;
     response.insert_header(header::CONTENT_LENGTH, body.len().to_string())?;
     response.insert_header(header::CACHE_CONTROL, "private, no-store")?;
     response.insert_header("x-request-id", request_id)?;
     response.insert_header("x-relayna-request-id", request_id)?;
+    if let Some(seconds) = retry {
+        response.insert_header(header::RETRY_AFTER, seconds.to_string())?;
+    }
     Ok((response, Bytes::from(body)))
 }
 
@@ -4660,6 +4742,9 @@ fn traffic_gateway_error(ctx: &mut PingoraContext, error: &GatewayError) {
     let stage = match error {
         GatewayError::GatewayOverloaded | GatewayError::RequestBodyTooLarge => {
             Some("body_admission")
+        }
+        GatewayError::AuthenticationOverloaded | GatewayError::SourceRateLimitExceeded => {
+            Some("authentication_admission")
         }
         GatewayError::ResponseBodyTooLarge => Some("response_body"),
         GatewayError::GuardrailBlocked
@@ -4871,6 +4956,30 @@ mod tests {
         assert_eq!((socket.client_bytes, socket.upstream_bytes), (12, 24));
         assert_eq!(socket.close_cause.as_deref(), Some("transport_ended"));
         assert_eq!(socket.state, "closed");
+    }
+
+    #[test]
+    fn authentication_admission_responses_have_distinct_codes_and_retry_headers() {
+        for (error, status, code) in [
+            (
+                GatewayError::AuthenticationOverloaded,
+                503,
+                "authentication_overloaded",
+            ),
+            (
+                GatewayError::SourceRateLimitExceeded,
+                429,
+                "source_rate_limit_exceeded",
+            ),
+        ] {
+            let (response, body) = gateway_error_response(error, "admission-test").unwrap();
+            assert_eq!(response.status.as_u16(), status);
+            assert_eq!(response.headers[header::RETRY_AFTER], "1");
+            assert_eq!(response.headers["x-request-id"], "admission-test");
+            assert_eq!(response.headers["x-relayna-request-id"], "admission-test");
+            let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(json["error"]["code"], code);
+        }
     }
 
     #[test]
@@ -6009,6 +6118,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejected_preauth_logging_cannot_bypass_database_admission() {
+        use std::sync::atomic::Ordering;
+        let store = Arc::new(MemoryUsageStore::default());
+        let proxy = RelaynaPingoraProxy::new(
+            store.clone(),
+            Arc::new(MemoryControlState::default()),
+            PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "test-key").unwrap(),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let _client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        let mut session = Session::new_h1(Box::new(
+            pingora_core::protocols::l4::stream::Stream::from(server),
+        ));
+        for error in [
+            GatewayError::AuthenticationOverloaded,
+            GatewayError::SourceRateLimitExceeded,
+            GatewayError::MalformedAuthorization,
+        ] {
+            let mut ctx = new_pingora_context_for_tests();
+            traffic_gateway_error(&mut ctx, &error);
+            gateway_telemetry::request_started();
+            proxy.logging(&mut session, None, &mut ctx).await;
+        }
+        assert_eq!(store.traffic_writes.load(Ordering::SeqCst), 0);
+        let held = UNIDENTIFIED_TRAFFIC_WRITES.acquire_many(8).await.unwrap();
+        let mut ctx = new_pingora_context_for_tests();
+        traffic_gateway_error(&mut ctx, &GatewayError::InvalidVirtualKey);
+        proxy.persist_traffic(&mut ctx).await;
+        assert_eq!(store.traffic_writes.load(Ordering::SeqCst), 0);
+        drop(held);
+        proxy.persist_traffic(&mut ctx).await;
+        assert_eq!(store.traffic_writes.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
     async fn terminal_observation_precedes_blocked_accessa_cleanup() {
         let barrier = Arc::new(tokio::sync::Barrier::new(2));
         let control_state = Arc::new(MemoryControlState::default());
@@ -6693,6 +6840,7 @@ mod tests {
         pub(super) model_policy: Mutex<Option<(String, KeyPolicy)>>,
         pub(super) guardrail_policy: Mutex<GuardrailPolicy>,
         events: Mutex<Vec<UsageEvent>>,
+        traffic_writes: std::sync::atomic::AtomicUsize,
         debug_bundles: Mutex<Vec<gateway_core::DebugBundle>>,
         guardrail_events: Mutex<Vec<GuardrailExecutionEvent>>,
         openai_routes_enabled: Mutex<bool>,
@@ -6706,6 +6854,8 @@ mod tests {
     #[async_trait]
     impl TrafficStore for MemoryUsageStore {
         async fn insert_traffic(&self, _request: &TrafficRequest) -> GatewayResult<()> {
+            self.traffic_writes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(())
         }
         async fn traffic_history(
@@ -6799,6 +6949,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 events: Mutex::new(Vec::new()),
+                traffic_writes: Default::default(),
                 debug_bundles: Mutex::new(Vec::new()),
                 guardrail_events: Mutex::new(Vec::new()),
                 openai_routes_enabled: Mutex::new(true),
