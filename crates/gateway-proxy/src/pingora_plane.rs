@@ -1552,6 +1552,11 @@ where
         // Apply the complete original selector before policy cost checks.
         resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
         let analyzed = CompleteRequestBody::new(Bytes::from(raw_body));
+        if let Err(error) = retain_request_metadata_workspace(ctx, &analyzed) {
+            ctx.guardrail_error = Some(error.clone());
+            respond_error(session, error, ctx).await?;
+            return Err(PingoraError::new(ErrorType::InternalError));
+        }
         let raw_body = &analyzed.bytes;
         let analysis = &analyzed.generation;
         let wildcard_delegation = ctx.litellm_passthrough
@@ -1585,22 +1590,29 @@ where
                     features.service_name = features
                         .service_name
                         .or_else(|| matched.service_name.clone());
-                    let admission = if wildcard_delegation {
-                        // Select body-specified model layers even on delegated
-                        // formats, then fail closed if their cap cannot be enforced.
-                        gateway_core::policies::enforce_output_token_limit(
-                            &effective.policy,
-                            matched.route,
-                            raw_body,
-                        )
-                    } else {
-                        check_complete_request_policy(
-                            &effective.policy,
-                            &matched,
-                            &analyzed,
-                            &features,
-                        )
-                    };
+                    let admission = ctx
+                        .request_body_lease
+                        .as_mut()
+                        .map_or(Ok(()), BodyAdmissionLease::begin_processing)
+                        .and_then(|()| {
+                            if wildcard_delegation {
+                                // Select body-specified model layers even on delegated
+                                // formats, then fail closed if their cap cannot be enforced.
+                                gateway_core::policies::enforce_output_token_limit(
+                                    &effective.policy,
+                                    matched.route,
+                                    raw_body,
+                                )
+                            } else {
+                                check_complete_request_policy(
+                                    &effective.policy,
+                                    &matched,
+                                    &analyzed,
+                                    &features,
+                                )
+                            }
+                        })
+                        .and_then(|()| retain_request_metadata_workspace(ctx, &analyzed));
                     if let Err(error) = admission {
                         ctx.guardrail_error = Some(error.clone());
                         respond_error(session, error, ctx).await?;
@@ -1710,6 +1722,15 @@ where
             return bind_request_body_admission(body, ctx);
         }
 
+        if let Err(error) = ctx
+            .request_body_lease
+            .as_mut()
+            .map_or(Ok(()), BodyAdmissionLease::begin_processing)
+        {
+            ctx.guardrail_error = Some(error.clone());
+            respond_error(session, error, ctx).await?;
+            return Err(PingoraError::new(ErrorType::InternalError));
+        }
         let mut request_json = match serde_json::from_slice::<serde_json::Value>(raw_body) {
             Ok(value) => value,
             Err(_) => {
@@ -3367,7 +3388,7 @@ where
                 let additional_bytes = analyzed.bytes.len().saturating_sub(lease.reserved_bytes());
                 lease.try_reserve(additional_bytes)?;
             }
-            let key = ctx.key.as_ref().ok_or(GatewayError::MissingAuthorization)?;
+            let key = ctx.key.clone().ok_or(GatewayError::MissingAuthorization)?;
             let mut matched = ctx
                 .route_match
                 .clone()
@@ -3380,8 +3401,11 @@ where
                 .service_name
                 .or_else(|| matched.service_name.clone());
             let effective = self
-                .effective_complete_policy(key, &matched, &analyzed)
+                .effective_complete_policy(&key, &matched, &analyzed)
                 .await?;
+            if let Some(lease) = ctx.request_body_lease.as_mut() {
+                lease.begin_processing()?;
+            }
             check_complete_request_policy(&effective.policy, &matched, &analyzed, &features)?;
             if ctx.budget_reserved {
                 ctx.policy = Some(effective.policy);
@@ -3399,6 +3423,7 @@ where
                 .policy
                 .tpm_limit
                 .map_or(0, |_| analyzed.estimated_tokens());
+            retain_request_metadata_workspace(ctx, &analyzed)?;
             match self
                 .control_state
                 .check_token_rate_limit(key.key_id, effective.policy.tpm_limit, tokens, Utc::now())
@@ -4032,6 +4057,24 @@ fn provider_for_usage(ctx: &PingoraContext) -> Provider {
         .unwrap_or(Provider::LiteLlm)
 }
 
+fn retain_request_metadata_workspace(
+    ctx: &mut PingoraContext,
+    body: &CompleteRequestBody,
+) -> GatewayResult<()> {
+    if ctx.foundry.is_none()
+        && ctx.service_pricing_rules.is_empty()
+        && ctx.route != Some(Route::AnthropicMessageBatches)
+        && ctx.pre_guardrail_plan.is_none()
+        && ctx.guardrail_context.is_none()
+        && body.has_compact_metadata()
+    {
+        if let Some(lease) = ctx.request_body_lease.as_mut() {
+            lease.retain_compact_workspace()?;
+        }
+    }
+    Ok(())
+}
+
 // Keep cached analysis inseparable from the immutable bytes it describes.
 // A rewrite constructs a new value; unchanged forwarding moves the original.
 struct CompleteRequestBody {
@@ -4041,6 +4084,25 @@ struct CompleteRequestBody {
 }
 
 impl CompleteRequestBody {
+    fn has_compact_metadata(&self) -> bool {
+        self.generation.as_ref().is_some_and(|analysis| {
+            analysis.client_guardrails.is_none()
+                && analysis
+                    .features
+                    .model
+                    .as_ref()
+                    .map_or(0, String::capacity)
+                    .saturating_add(
+                        analysis
+                            .features
+                            .service_name
+                            .as_ref()
+                            .map_or(0, String::capacity),
+                    )
+                    <= 4096
+        })
+    }
+
     fn new(bytes: Bytes) -> Self {
         Self {
             generation: analyze_generation_request(&bytes),

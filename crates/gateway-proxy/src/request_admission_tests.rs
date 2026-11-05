@@ -133,6 +133,51 @@ fn removing_elastic_policy_restores_configured_count_ceiling() {
     );
 }
 
+#[test]
+fn only_compact_metadata_releases_request_workspace_during_policy_waits() {
+    let mut policy = size_policy(0);
+    policy.elastic_max_requests = Some(128);
+    policy.max_working_bytes = 4 * 1024 * 1024;
+    let controller =
+        crate::BodyAdmissionController::with_size_policy(8, 8 * 1024 * 1024, Some(policy)).unwrap();
+    for (raw, route, compact) in [
+        (
+            br#"{"model":"small","input":"test"}"#.to_vec(),
+            Route::ChatCompletions,
+            true,
+        ),
+        (
+            br#"{"guardrails":{"names":["test"]}}"#.to_vec(),
+            Route::ChatCompletions,
+            false,
+        ),
+        (
+            serde_json::to_vec(&serde_json::json!({"model":"x".repeat(8192)})).unwrap(),
+            Route::ChatCompletions,
+            false,
+        ),
+        (b"not json".to_vec(), Route::ServiceWildcard, false),
+        (
+            br#"{"model":"small"}"#.to_vec(),
+            Route::AnthropicMessageBatches,
+            false,
+        ),
+    ] {
+        let mut ctx = new_pingora_context_for_tests();
+        ctx.route = Some(route);
+        let mut lease = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        lease.begin_processing().unwrap();
+        ctx.request_body_lease = Some(lease);
+        let analyzed = CompleteRequestBody::new(Bytes::from(raw));
+        retain_request_metadata_workspace(&mut ctx, &analyzed).unwrap();
+        let other = controller.try_acquire_sized(Some(1024 * 1024));
+        assert_eq!(other.is_ok(), compact);
+        drop(other);
+        drop(ctx);
+        assert_eq!(controller.active_requests(), 0);
+    }
+}
+
 #[tokio::test]
 async fn small_body_growth_cannot_bypass_reserved_capacity_and_releases_partial_body() {
     let mut h = Harness::new(KeyPolicy::default(), false).await;

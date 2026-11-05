@@ -84,6 +84,7 @@ pub struct BodyAdmissionLease {
     working_bytes: usize,
     extent: usize,
     processing: bool,
+    compact_workspace: bool,
     large: bool,
 }
 
@@ -163,6 +164,7 @@ impl BodyAdmissionController {
                 .state
                 .size_policy
                 .is_none_or(|policy| policy.elastic_max_requests.is_none()),
+            compact_workspace: false,
             large: false,
         };
         lease.prepare_buffer(0, 0)?;
@@ -237,6 +239,29 @@ impl BodyAdmissionLease {
         Ok(())
     }
 
+    /// Retain a small metadata allowance after synchronous analysis, rather
+    /// than holding body-sized scratch space across policy/database waits.
+    /// Callers must keep full workspace while larger parsed structures live.
+    pub(crate) fn retain_compact_workspace(&mut self) -> GatewayResult<()> {
+        if self
+            .state
+            .size_policy
+            .is_none_or(|policy| policy.elastic_max_requests.is_none())
+        {
+            return Ok(());
+        }
+        let previous = self.compact_workspace;
+        self.compact_workspace = true;
+        if let Err(error) =
+            self.update_working(self.extent, self.allocation_capacity, self.large, false)
+        {
+            self.compact_workspace = previous;
+            return Err(error);
+        }
+        self.processing = false;
+        Ok(())
+    }
+
     pub fn upload_remaining(&self) -> Option<std::time::Duration> {
         self.state.size_policy.map(|policy| {
             policy
@@ -255,14 +280,20 @@ impl BodyAdmissionLease {
         let Some(policy) = self.state.size_policy else {
             return Ok(());
         };
-        let workspace = if processing {
-            policy.workspace_multiplier
+        let workspace = if processing || self.compact_workspace {
+            let bytes = length
+                .checked_mul(policy.workspace_multiplier)
+                .ok_or(GatewayError::GatewayOverloaded)?;
+            if processing {
+                bytes
+            } else {
+                bytes.min(64 * 1024)
+            }
         } else {
             0
         };
-        let charge = length
-            .checked_mul(workspace)
-            .and_then(|bytes| bytes.checked_add(capacity.max(length)))
+        let charge = workspace
+            .checked_add(capacity.max(length))
             .and_then(|bytes| bytes.checked_add(REQUEST_WORKING_OVERHEAD))
             .ok_or(GatewayError::GatewayOverloaded)?;
         // Declared-length reservations usually cover many upload chunks. The
@@ -337,6 +368,7 @@ impl BodyAdmissionLease {
     pub(crate) fn into_bytes(mut self, body: Bytes) -> GatewayResult<Bytes> {
         // Guardrails may expand a body after its original chunks were admitted.
         self.try_reserve(body.len().saturating_sub(self.reserved_bytes))?;
+        self.compact_workspace = false;
         // Parsing/rewrite workspace is no longer needed, but the allocation
         // remains charged through all upstream clones/slices of the buffer.
         self.update_working(
@@ -471,6 +503,28 @@ mod tests {
         drop(last);
         assert_eq!(controller.active_bytes(), 0);
         assert_eq!(controller.active_requests(), 0);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn compact_metadata_releases_scratch_and_requires_reacquisition_before_processing() {
+        let controller = elastic(4, 32);
+        let mut lease = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        lease.begin_processing().unwrap();
+        assert!(controller.try_acquire_sized(Some(1024 * 1024)).is_err());
+        lease.retain_compact_workspace().unwrap();
+        assert_eq!(lease.working_bytes, 1024 * 1024 + 2 * 64 * 1024);
+        let other = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        assert!(lease.begin_processing().is_err());
+        assert!(!lease.processing);
+        drop(other);
+        lease.begin_processing().unwrap();
+        let bytes = lease.into_bytes(Bytes::from(vec![0; 1024 * 1024])).unwrap();
+        assert_eq!(
+            controller.state.working.lock().unwrap().bytes,
+            1024 * 1024 + 64 * 1024
+        );
+        drop(bytes);
         assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
     }
 

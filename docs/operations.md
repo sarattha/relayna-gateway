@@ -85,7 +85,11 @@ released after request analysis/rewrite, while the forwarded allocation remains
 charged through its last reference. In elastic mode, upload reservations cover
 the body and overhead; the workspace multiplier is added only immediately
 before complete-body processing. This avoids charging processing workspace
-during network waits. That upgrade can fail after an upload has completed:
+during network waits. After synchronous analysis, requests with only compact
+selectors retain at most 64 KiB of metadata workspace during policy/database
+waits, and must reacquire full workspace before further body processing.
+Large selectors, client guardrail data, batches, provider transforms and service
+pricing retain the full estimate. That upgrade can fail after an upload has completed:
 the body is dropped and rejected without waiting or forwarding. Operators must
 measure these late denials as well as early rejections. Buffered post-call
 responses use the same processing upgrade and share the budget, retaining

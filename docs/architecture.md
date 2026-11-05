@@ -112,7 +112,9 @@ Buffered traffic can opt into a size-aware working-set bound. An additional
 elastic mode replaces the ordinary count ceiling with an explicit larger safety
 ceiling, allowing concurrency to follow available memory and body sizes. It
 adds processing workspace only when the complete-body processing phase starts;
-an unavailable upgrade fails without waiting while holding a body. The released
+compact analyzed metadata releases temporary scratch space before asynchronous
+policy lookups, with workspace reacquired for subsequent body processing.
+An unavailable upgrade fails without waiting while holding a body. The released
 defaults and serialized-byte ceiling remain unchanged. Declared lengths reserve estimated
 capacity early, unknown-length uploads grow within shared capacity, and an
 optional reserve protects declared small bodies. Growth and JSON serialization
