@@ -180,6 +180,9 @@ impl Config {
         {
             let policy = gateway_proxy::SizeAwareBodyPolicy {
                 max_working_bytes: optional_positive_usize("GATEWAY_MAX_BODY_WORKING_BYTES", 0)?,
+                elastic_max_requests: optional("GATEWAY_BODY_ELASTIC_MAX_REQUESTS")
+                    .map(|_| optional_positive_usize("GATEWAY_BODY_ELASTIC_MAX_REQUESTS", 0))
+                    .transpose()?,
                 reserved_small_requests: match optional("GATEWAY_SMALL_BODY_RESERVED_REQUESTS") {
                     Some(value) => value
                         .parse()
@@ -199,6 +202,7 @@ impl Config {
             Some(policy)
         } else {
             if [
+                "GATEWAY_BODY_ELASTIC_MAX_REQUESTS",
                 "GATEWAY_SMALL_BODY_RESERVED_REQUESTS",
                 "GATEWAY_BODY_WORKSPACE_MULTIPLIER",
                 "GATEWAY_BODY_UPLOAD_TIMEOUT_MS",

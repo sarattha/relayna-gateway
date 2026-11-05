@@ -8,9 +8,12 @@ use pingora_http::{RequestHeader, ResponseHeader};
 pub(crate) fn serialize_with_admission<T: serde::Serialize>(
     value: &T,
     maximum: usize,
-    lease: Option<&mut crate::BodyAdmissionLease>,
+    mut lease: Option<&mut crate::BodyAdmissionLease>,
     too_large: GatewayError,
 ) -> GatewayResult<Vec<u8>> {
+    if let Some(lease) = lease.as_mut() {
+        lease.begin_processing()?;
+    }
     struct Writer<'a> {
         bytes: Vec<u8>,
         maximum: usize,
@@ -239,6 +242,7 @@ mod tests {
             2,
             1024 * 1024,
             Some(crate::SizeAwareBodyPolicy {
+                elastic_max_requests: None,
                 max_working_bytes: 128 * 1024,
                 reserved_small_requests: 0,
                 workspace_multiplier: 2,

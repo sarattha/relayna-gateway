@@ -101,6 +101,7 @@ class AdmissionAccounting(unittest.TestCase):
         lines = [
             'gateway_denials_total{kind="body_admission",route="all",reason="concurrency"} 5',
             'gateway_denials_total{kind="body_admission",route="all",reason="working_set"} 3',
+            'gateway_denials_total{kind="body_admission",route="all",reason="processing_workspace"} 2',
             'gateway_denials_total{kind="upstream_admission",route="proxy",reason="concurrency"} 4',
             'gateway_denials_total{kind="auth_admission",route="proxy",reason="authentication_overloaded"} 7',
             'gateway_denials_total{kind="auth_admission",route="control",reason="authentication_overloaded"} 1',
@@ -112,7 +113,8 @@ class AdmissionAccounting(unittest.TestCase):
                                 check=True, capture_output=True, text=True)
         values = json.loads(result.stdout)
         self.assertEqual(values["concurrency_denials"], 5)
-        self.assertEqual(values["working_set_denials"], 3)
+        self.assertEqual(values["working_set_denials"], 5)
+        self.assertEqual(values["processing_denials"], 2)
         self.assertEqual(values["upstream_denials"], 4)
         self.assertEqual(values["authentication_denials"], 7)
         self.assertEqual(values["source_denials"], 11)

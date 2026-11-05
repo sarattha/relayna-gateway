@@ -108,8 +108,12 @@ waits on an OS thread per call. Provider forwarding continues to use Pingora's
 upstream pool; these changes do not increase provider inference speed or remove
 upstream concurrency limits.
 
-Buffered traffic can opt into a size-aware working-set bound in addition to the
-released count and serialized-byte ceilings. Declared lengths reserve estimated
+Buffered traffic can opt into a size-aware working-set bound. An additional
+elastic mode replaces the ordinary count ceiling with an explicit larger safety
+ceiling, allowing concurrency to follow available memory and body sizes. It
+adds processing workspace only when the complete-body processing phase starts;
+an unavailable upgrade fails without waiting while holding a body. The released
+defaults and serialized-byte ceiling remain unchanged. Declared lengths reserve estimated
 capacity early, unknown-length uploads grow within shared capacity, and an
 optional reserve protects declared small bodies. Growth and JSON serialization
 check capacity before allocation; temporary workspace estimates remain distinct

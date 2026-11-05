@@ -81,11 +81,56 @@ impl Harness {
 
 fn size_policy(reserved_small_requests: usize) -> crate::SizeAwareBodyPolicy {
     crate::SizeAwareBodyPolicy {
+        elastic_max_requests: None,
         max_working_bytes: 32 * 1024 * 1024,
         reserved_small_requests,
         workspace_multiplier: 2,
         upload_timeout: Duration::from_secs(30),
     }
+}
+
+#[tokio::test]
+async fn elastic_workspace_rejection_frees_body_before_returning_overload() {
+    let mut h = Harness::new(KeyPolicy::default(), false).await;
+    let mut policy = size_policy(0);
+    policy.elastic_max_requests = Some(128);
+    policy.max_working_bytes = 70 * 1024;
+    h.proxy.config = h
+        .proxy
+        .config
+        .clone()
+        .with_size_aware_body_policy(Some(policy))
+        .unwrap();
+    let raw = Bytes::from(format!("{{\"input\":\"{}\"}}", "x".repeat(4000)));
+    h.ctx.request_rewriter =
+        Some(BoundedBodyRewriter::new(8192).with_expected_length(Some(raw.len())));
+    assert!(h.send(raw.slice(..1000), false).await.0);
+    let (ok, forwarded) = h.send(raw.slice(1000..), true).await;
+    assert!(!ok && forwarded.is_empty());
+    assert_eq!(h.proxy.config.body_admission.active_requests(), 0);
+    assert_eq!(h.proxy.config.body_admission.active_bytes(), 0);
+    assert!(h.response().await.starts_with("HTTP/1.1 503"));
+}
+
+#[test]
+fn removing_elastic_policy_restores_configured_count_ceiling() {
+    let config = PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "test-key").unwrap();
+    let mut policy = size_policy(0);
+    policy.elastic_max_requests = Some(128);
+    let config = config
+        .with_body_admission_limits(32, 512 * 1024 * 1024)
+        .unwrap()
+        .with_size_aware_body_policy(Some(policy))
+        .unwrap();
+    assert_eq!(config.body_admission.max_requests(), 128);
+    assert_eq!(
+        config
+            .with_size_aware_body_policy(None)
+            .unwrap()
+            .body_admission
+            .max_requests(),
+        32
+    );
 }
 
 #[tokio::test]

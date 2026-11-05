@@ -191,7 +191,7 @@ impl PingoraLiteLlmConfig {
         policy: Option<crate::SizeAwareBodyPolicy>,
     ) -> GatewayResult<Self> {
         self.body_admission = BodyAdmissionController::with_size_policy(
-            self.body_admission.max_requests(),
+            self.body_admission.configured_max_requests(),
             self.body_admission.max_bytes(),
             policy,
         )?;
@@ -1509,6 +1509,16 @@ where
             session.set_read_timeout(original);
         }
 
+        if let Some(lease) = ctx.request_body_lease.as_mut() {
+            if let Err(error) = lease.begin_processing() {
+                drop(rewriter.take_buffer());
+                ctx.request_body_lease.take();
+                ctx.guardrail_error = Some(error.clone());
+                respond_error(session, error, ctx).await?;
+                return Err(PingoraError::new(ErrorType::InternalError));
+            }
+        }
+
         let mut raw_body = rewriter.take_buffer();
         if let Some((binding, _)) = &ctx.foundry {
             raw_body = match binding.prepare_request(&raw_body) {
@@ -2628,6 +2638,19 @@ where
                         *body = Some(Bytes::new());
                         return Err(PingoraError::new(ErrorType::InternalError));
                     }
+                }
+            }
+        }
+        if end_of_stream {
+            if let Some(lease) = ctx.response_body_lease.as_mut() {
+                if let Err(error) = lease.begin_processing() {
+                    if let Some(rewriter) = ctx.response_rewriter.as_mut() {
+                        drop(rewriter.take_buffer());
+                    }
+                    ctx.response_body_lease.take();
+                    ctx.guardrail_error = Some(error);
+                    *body = Some(Bytes::new());
+                    return Err(PingoraError::new(ErrorType::InternalError));
                 }
             }
         }

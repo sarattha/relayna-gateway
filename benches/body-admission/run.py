@@ -121,6 +121,7 @@ class Benchmark:
 
     def admission_environment(self):
         values = {
+            "GATEWAY_BODY_ELASTIC_MAX_REQUESTS": self.args.elastic_max_requests,
             "GATEWAY_MAX_BODY_WORKING_BYTES": None if self.args.max_body_working_mib is None else self.args.max_body_working_mib * 1024 * 1024,
             "GATEWAY_SMALL_BODY_RESERVED_REQUESTS": self.args.small_body_reserved_requests,
             "GATEWAY_BODY_WORKSPACE_MULTIPLIER": self.args.body_workspace_multiplier,
@@ -267,6 +268,7 @@ def main():
     parser.add_argument("--chunked", action="store_true")
     parser.add_argument("--upload-delay-ms", type=int, default=0)
     parser.add_argument("--max-body-working-mib", type=int)
+    parser.add_argument("--elastic-max-requests", type=int)
     parser.add_argument("--small-body-reserved-requests", type=int)
     parser.add_argument("--body-workspace-multiplier", type=int)
     parser.add_argument("--body-upload-timeout-ms", type=int)
@@ -287,7 +289,9 @@ def main():
             parser.error(f"{name} must be positive")
     if args.small_body_reserved_requests is not None and not 0 <= args.small_body_reserved_requests < min(args.limits):
         parser.error("small-body reserve must be nonnegative and below every slot limit")
-    if args.max_body_working_mib is None and any(value is not None for value in (args.small_body_reserved_requests, args.body_workspace_multiplier, args.body_upload_timeout_ms)):
+    if args.elastic_max_requests is not None and args.elastic_max_requests < max(args.limits):
+        parser.error("elastic ceiling must be at least every ordinary slot limit")
+    if args.max_body_working_mib is None and any(value is not None for value in (args.elastic_max_requests, args.small_body_reserved_requests, args.body_workspace_multiplier, args.body_upload_timeout_ms)):
         parser.error("working-set policy options require --max-body-working-mib")
     if args.body_mix:
         command(["node", "--input-type=module", "-e", "import {parseMix} from './mixed_workload.mjs'; parseMix(process.argv[1], 0)", args.body_mix], cwd=HERE)

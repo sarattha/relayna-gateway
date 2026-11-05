@@ -116,6 +116,17 @@ python3 benches/body-admission/run.py \
 ```
 
 These settings are experiment inputs, not validated production recommendations.
+To measure elastic admission, add `--elastic-max-requests 512`. This explicitly
+replaces the ordinary `--limits` count with a 512-request safety ceiling; the
+working-byte budget governs useful concurrency. It also defers workspace
+reservation until processing starts, so record late processing-upgrade denials.
+Label the effective ceiling and memory profile in comparisons; the nominal
+`--limits` value does not mean the elastic version has the old fixed count cap.
+When reusing historical results, preserve their raw evidence and hashes, match
+payload sequences, fixture images, hardware and resource caps, and disclose
+elapsed time, harness differences and configuration differences. Do not rerun
+historical versions merely to populate an extended comparison.
+
 Leave the new admission options unset for older images and the configuration-only
 control. Compare both equal count ceilings and a separately labeled tuned-count
 candidate; a higher ceiling alone can account for a gain. Authentication/source
