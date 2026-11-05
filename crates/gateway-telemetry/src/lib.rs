@@ -220,6 +220,29 @@ pub fn buffered_bytes_removed(bytes: usize) {
     BUFFERED_BODY_BYTES.fetch_sub(u64::try_from(bytes).unwrap_or(u64::MAX), Ordering::Relaxed);
 }
 
+static BODY_WORKING_BYTES: AtomicU64 = AtomicU64::new(0);
+static UPSTREAM_REQUESTS: AtomicU64 = AtomicU64::new(0);
+
+pub fn upstream_request_started() {
+    UPSTREAM_REQUESTS.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn upstream_request_finished() {
+    UPSTREAM_REQUESTS.fetch_sub(1, Ordering::Relaxed);
+}
+
+pub fn record_upstream_admission_rejection() {
+    increment_denial_metric("upstream_admission", "proxy", "concurrency");
+}
+
+pub fn body_working_bytes_changed(previous: usize, current: usize) {
+    if current >= previous {
+        BODY_WORKING_BYTES.fetch_add((current - previous) as u64, Ordering::Relaxed);
+    } else {
+        BODY_WORKING_BYTES.fetch_sub((previous - current) as u64, Ordering::Relaxed);
+    }
+}
+
 pub fn record_body_admission_rejection(reason: &str) {
     BODY_ADMISSION_REJECTIONS_TOTAL.fetch_add(1, Ordering::Relaxed);
     increment_denial_metric("body_admission", "all", reason);
@@ -443,6 +466,14 @@ gateway_circuit_transitions_total {}
     render_provider_fallback_metrics(&mut metrics);
     render_circuit_state_metrics(&mut metrics);
     render_histograms(&mut metrics);
+    metrics.push_str(&format!(
+        "# TYPE gateway_admitted_upstream_requests gauge\ngateway_admitted_upstream_requests {}\n",
+        UPSTREAM_REQUESTS.load(Ordering::Relaxed)
+    ));
+    metrics.push_str(&format!(
+        "# TYPE gateway_body_working_bytes gauge\ngateway_body_working_bytes {}\n",
+        BODY_WORKING_BYTES.load(Ordering::Relaxed)
+    ));
     runtime::render_prometheus(&mut metrics);
     metrics.push_str("# TYPE gateway_guardrail_executions_total counter\n");
     metrics.push_str("# TYPE gateway_guardrail_failures_total counter\n");

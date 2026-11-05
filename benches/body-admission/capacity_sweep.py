@@ -96,18 +96,20 @@ def analyze(folder, slots, attempt, expected_body_bytes, cohort):
                 "transport_errors": sum(result["status"] == 0 for result in run["results"]),
                 "other_http_statuses": sum(result["status"] not in (0, 200, 429, 503) for result in run["results"]),
                 "unexpected_results": [result for result in run["results"] if result["status"] not in (200, 429, 503)]})
-    row["concurrency_denials"] = row["byte_denials"] = row["authentication_denials"] = row["source_denials"] = None
+    denial_metrics = ("concurrency_denials", "byte_denials", "working_set_denials", "upload_timeout_denials", "upstream_denials", "authentication_denials", "source_denials")
+    for key in denial_metrics:
+        row[key] = None
     row["admission_counter_gap"] = None
     row["terminal_zero"] = False
     if not row["resource_failure"] and row["metric_scrape_errors"] == 0:
-        for key in ("concurrency_denials", "byte_denials", "authentication_denials", "source_denials"):
+        for key in denial_metrics:
             row[key] = sum(max(sample.get(key, 0) for sample in samples if sample["pod"] == pod["name"]) - min(sample.get(key, 0) for sample in samples if sample["pod"] == pod["name"]) for pod in run["pods"])
         # A reset can lose the rejection response while the server has already
         # recorded its denial. Keep that failed observation and its discrepancy
         # instead of aborting the resource search. Clean trials must reconcile.
-        row["admission_counter_gap"] = row["concurrency_denials"] + row["byte_denials"] + row["authentication_denials"] + row["source_denials"] - sum(denial_counts.values())
+        row["admission_counter_gap"] = sum(row[key] for key in denial_metrics) - sum(denial_counts.values())
         final = {pod["name"]: [sample for sample in samples if sample["pod"] == pod["name"]][-1] for pod in run["pods"]}
-        row["terminal_zero"] = all(sample["buffered_requests"] == sample["buffered_bytes"] == 0 for sample in final.values())
+        row["terminal_zero"] = all(sample["buffered_requests"] == sample["buffered_bytes"] == sample.get("working_bytes", 0) == sample.get("admitted_upstream_requests", 0) == 0 for sample in final.values())
     # Every offered request must reconcile to either a verified success or a
     # server admission denial. A lost denial response is reported separately
     # from resource stability; a missing admitted response remains invalid.
@@ -150,7 +152,7 @@ def main(argv=None):
                "criterion": "resource_stability",
                "search_mode": "fixed" if args.fixed_limits else "adaptive",
                "max_search_slots": args.max_search_slots,
-               "harness_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in (HERE / "capacity_sweep.py", HERE / "run.py", HERE / "mock.mjs", HERE / "workload.mjs")},
+               "harness_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in (HERE / "capacity_sweep.py", HERE / "run.py", HERE / "mock.mjs", HERE / "workload.mjs", HERE / "mixed_workload.mjs")},
                "trials": rows, "complete": False}
 
     def save():

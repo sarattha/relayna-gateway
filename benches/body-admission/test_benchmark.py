@@ -91,11 +91,17 @@ class Reports(unittest.TestCase):
 
 
 class AdmissionAccounting(unittest.TestCase):
+    def test_mixed_payloads_schedules_and_goodput(self):
+        subprocess.run(["node", "--test", str(Path(__file__).parent / "mixed_workload.test.mjs")],
+                       check=True, capture_output=True, text=True)
+
     def test_proxy_metrics_exclude_control_plane_probe_denials(self):
         source = (Path(__file__).parent / "workload.mjs").read_text()
         parser = source.split("function metrics(text) {", 1)[1].split("async function run(config)", 1)[0]
         lines = [
             'gateway_denials_total{kind="body_admission",route="all",reason="concurrency"} 5',
+            'gateway_denials_total{kind="body_admission",route="all",reason="working_set"} 3',
+            'gateway_denials_total{kind="upstream_admission",route="proxy",reason="concurrency"} 4',
             'gateway_denials_total{kind="auth_admission",route="proxy",reason="authentication_overloaded"} 7',
             'gateway_denials_total{kind="auth_admission",route="control",reason="authentication_overloaded"} 1',
             'gateway_denials_total{kind="auth_admission",route="proxy",reason="source_rate_limit_exceeded"} 11',
@@ -106,6 +112,8 @@ class AdmissionAccounting(unittest.TestCase):
                                 check=True, capture_output=True, text=True)
         values = json.loads(result.stdout)
         self.assertEqual(values["concurrency_denials"], 5)
+        self.assertEqual(values["working_set_denials"], 3)
+        self.assertEqual(values["upstream_denials"], 4)
         self.assertEqual(values["authentication_denials"], 7)
         self.assertEqual(values["source_denials"], 11)
         self.assertEqual(values["control_authentication_denials"], 1)

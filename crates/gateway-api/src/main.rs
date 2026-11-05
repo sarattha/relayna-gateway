@@ -116,7 +116,11 @@ fn main() -> anyhow::Result<()> {
             config.gateway_max_buffered_requests,
             config.gateway_max_inflight_buffer_bytes,
         )
-        .context("configure body admission limits")?;
+        .context("configure body admission limits")?
+        .with_size_aware_body_policy(config.gateway_size_aware_body_policy)
+        .context("configure body working-set admission")?
+        .with_upstream_request_limit(config.gateway_max_upstream_requests)
+        .context("configure upstream request admission")?;
 
     let studio = config.relayna_studio_base_url.clone().map(|base_url| {
         app::StudioCatalogClient::new(base_url, config.relayna_studio_token.clone())

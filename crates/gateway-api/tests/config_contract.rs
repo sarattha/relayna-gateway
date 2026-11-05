@@ -56,6 +56,11 @@ const VARIABLES: &[&str] = &[
     "GATEWAY_CONTROL_BIND_ADDR",
     "GATEWAY_MAX_BUFFERED_REQUESTS",
     "GATEWAY_MAX_INFLIGHT_BUFFER_BYTES",
+    "GATEWAY_MAX_BODY_WORKING_BYTES",
+    "GATEWAY_SMALL_BODY_RESERVED_REQUESTS",
+    "GATEWAY_BODY_WORKSPACE_MULTIPLIER",
+    "GATEWAY_BODY_UPLOAD_TIMEOUT_MS",
+    "GATEWAY_MAX_UPSTREAM_REQUESTS",
     "LOG_LEVEL",
 ];
 
@@ -77,6 +82,47 @@ fn set_required_environment() {
     ] {
         std::env::set_var(name, value);
     }
+}
+
+#[test]
+fn size_aware_admission_is_additive_and_validated() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    clear_environment();
+    set_required_environment();
+    let legacy = Config::from_env().unwrap();
+    assert!(legacy.gateway_size_aware_body_policy.is_none());
+    assert!(legacy.gateway_max_upstream_requests.is_none());
+    std::env::set_var("GATEWAY_SMALL_BODY_RESERVED_REQUESTS", "2");
+    assert!(
+        Config::from_env().is_err(),
+        "do not silently ignore an incomplete policy"
+    );
+    std::env::set_var("GATEWAY_MAX_BODY_WORKING_BYTES", "536870912");
+    std::env::set_var("GATEWAY_MAX_UPSTREAM_REQUESTS", "128");
+    let configured = Config::from_env().unwrap();
+    assert_eq!(
+        configured
+            .gateway_size_aware_body_policy
+            .unwrap()
+            .reserved_small_requests,
+        2
+    );
+    assert_eq!(configured.gateway_max_upstream_requests, Some(128));
+    for (name, value) in [
+        ("GATEWAY_SMALL_BODY_RESERVED_REQUESTS", "8"),
+        ("GATEWAY_BODY_WORKSPACE_MULTIPLIER", "17"),
+        ("GATEWAY_BODY_UPLOAD_TIMEOUT_MS", "0"),
+        ("GATEWAY_MAX_UPSTREAM_REQUESTS", "0"),
+    ] {
+        let previous = std::env::var(name).ok();
+        std::env::set_var(name, value);
+        assert!(Config::from_env().is_err(), "{name} must be validated");
+        match previous {
+            Some(value) => std::env::set_var(name, value),
+            None => std::env::remove_var(name),
+        }
+    }
+    clear_environment();
 }
 
 #[test]

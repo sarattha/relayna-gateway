@@ -79,6 +79,128 @@ impl Harness {
     }
 }
 
+fn size_policy(reserved_small_requests: usize) -> crate::SizeAwareBodyPolicy {
+    crate::SizeAwareBodyPolicy {
+        max_working_bytes: 32 * 1024 * 1024,
+        reserved_small_requests,
+        workspace_multiplier: 2,
+        upload_timeout: Duration::from_secs(30),
+    }
+}
+
+#[tokio::test]
+async fn small_body_growth_cannot_bypass_reserved_capacity_and_releases_partial_body() {
+    let mut h = Harness::new(KeyPolicy::default(), false).await;
+    h.proxy.config = h
+        .proxy
+        .config
+        .clone()
+        .with_body_admission_limits(2, 8 * 1024 * 1024)
+        .unwrap()
+        .with_size_aware_body_policy(Some(size_policy(1)))
+        .unwrap();
+    let large = h
+        .proxy
+        .config
+        .body_admission
+        .try_acquire_sized(Some(1024 * 1024))
+        .unwrap();
+    h.ctx.request_rewriter =
+        Some(BoundedBodyRewriter::new(1024 * 1024).with_expected_length(Some(128)));
+    assert!(
+        h.send(Bytes::from_static(b"{\"payload\":\""), false)
+            .await
+            .0
+    );
+    let (ok, forwarded) = h.send(Bytes::from(vec![b'x'; 300 * 1024]), false).await;
+    assert!(!ok && forwarded.is_empty());
+    assert!(h.response().await.starts_with("HTTP/1.1 503"));
+    assert_eq!(h.proxy.config.body_admission.active_requests(), 1);
+    assert_eq!(h.proxy.config.body_admission.active_bytes(), 0);
+    drop(large);
+    assert_eq!(h.proxy.config.body_admission.active_requests(), 0);
+}
+
+#[tokio::test]
+async fn size_aware_body_keeps_policy_and_restores_read_timeout_after_upload() {
+    let mut h = Harness::new(KeyPolicy::default(), false).await;
+    h.proxy.config = h
+        .proxy
+        .config
+        .clone()
+        .with_size_aware_body_policy(Some(size_policy(0)))
+        .unwrap();
+    let raw = Bytes::from_static(br#"{"model":"gpt-test","input":"test"}"#);
+    h.ctx.request_rewriter =
+        Some(BoundedBodyRewriter::new(1024).with_expected_length(Some(raw.len())));
+    h.session.set_read_timeout(Some(Duration::from_secs(90)));
+    assert!(h.send(raw.slice(..10), false).await.0);
+    assert!(h.session.get_read_timeout().unwrap() <= Duration::from_secs(30));
+    let (ok, body) = h.send(raw.slice(10..), true).await;
+    assert!(ok);
+    assert_eq!(body, raw);
+    assert_eq!(h.session.get_read_timeout(), Some(Duration::from_secs(90)));
+    assert_eq!(h.proxy.config.body_admission.active_requests(), 1);
+    drop(body);
+    assert_eq!(h.proxy.config.body_admission.active_requests(), 0);
+}
+
+#[tokio::test]
+async fn upstream_limit_spans_body_release_and_is_reused_on_retry() {
+    let mut h = Harness::new(KeyPolicy::default(), false).await;
+    h.proxy.config = h
+        .proxy
+        .config
+        .clone()
+        .with_upstream_request_limit(Some(1))
+        .unwrap();
+    h.proxy
+        .upstream_peer(&mut h.session, &mut h.ctx)
+        .await
+        .unwrap();
+    h.proxy
+        .upstream_peer(&mut h.session, &mut h.ctx)
+        .await
+        .unwrap();
+    assert_eq!(h.proxy.config.body_admission.active_requests(), 0);
+    let mut other = new_pingora_context_for_tests();
+    assert!(h
+        .proxy
+        .upstream_peer(&mut h.session, &mut other)
+        .await
+        .is_err());
+    assert_eq!(other.guardrail_error, Some(GatewayError::GatewayOverloaded));
+    // Cancellation drops the request context even when logging is not reached.
+    drop(std::mem::replace(
+        &mut h.ctx,
+        new_pingora_context_for_tests(),
+    ));
+    h.proxy
+        .upstream_peer(&mut h.session, &mut other)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn expired_upload_releases_its_partial_buffer() {
+    let mut h = Harness::new(KeyPolicy::default(), false).await;
+    let mut policy = size_policy(0);
+    policy.upload_timeout = Duration::from_millis(10);
+    h.proxy.config = h
+        .proxy
+        .config
+        .clone()
+        .with_size_aware_body_policy(Some(policy))
+        .unwrap();
+    assert!(h.send(Bytes::from_static(b"{\"input\":\""), false).await.0);
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let (ok, body) = h.send(Bytes::from_static(b"late\"}"), true).await;
+    assert!(!ok && body.is_empty());
+    assert_eq!(h.proxy.config.body_admission.active_requests(), 0);
+    assert_eq!(h.proxy.config.body_admission.active_bytes(), 0);
+    assert!(h.response().await.starts_with("HTTP/1.1 503"));
+}
+
 #[tokio::test]
 async fn complete_body_limits_cover_none_input_tpm_and_both_modes() {
     let raw = Bytes::from_static(br#"{"model":"gpt-test","input":"abcdefgh","max_tokens":12}"#);

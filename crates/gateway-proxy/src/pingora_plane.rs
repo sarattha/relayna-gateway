@@ -65,6 +65,17 @@ const MAX_MULTIPART_PRICING_METADATA_BYTES: usize = 64 * 1024;
 
 static UNIDENTIFIED_TRAFFIC_WRITES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
 
+#[derive(Debug)]
+struct UpstreamLease(tokio::sync::OwnedSemaphorePermit);
+
+impl Drop for UpstreamLease {
+    fn drop(&mut self) {
+        // Keep the semaphore permit until the request/stream ends or is cancelled.
+        let _ = &self.0;
+        gateway_telemetry::upstream_request_finished();
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PingoraLiteLlmConfig {
     pub litellm: PingoraUpstreamConfig,
@@ -74,6 +85,7 @@ pub struct PingoraLiteLlmConfig {
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
     pub relayna_key_header: String,
     body_admission: BodyAdmissionController,
+    upstream_slots: Option<Arc<tokio::sync::Semaphore>>,
     request_admission: Arc<gateway_core::auth_admission::RequestAdmission>,
     auth_runtime: Option<SharedGatewayAuthRuntime>,
 }
@@ -107,6 +119,7 @@ impl PingoraLiteLlmConfig {
                 DEFAULT_MAX_INFLIGHT_BUFFER_BYTES,
             )?,
             auth_runtime: None,
+            upstream_slots: None,
             request_admission: Arc::new(Default::default()),
         })
     }
@@ -165,8 +178,31 @@ impl PingoraLiteLlmConfig {
         max_buffered_requests: usize,
         max_inflight_buffer_bytes: usize,
     ) -> GatewayResult<Self> {
-        self.body_admission =
-            BodyAdmissionController::new(max_buffered_requests, max_inflight_buffer_bytes)?;
+        self.body_admission = BodyAdmissionController::with_size_policy(
+            max_buffered_requests,
+            max_inflight_buffer_bytes,
+            self.body_admission.size_policy(),
+        )?;
+        Ok(self)
+    }
+
+    pub fn with_size_aware_body_policy(
+        mut self,
+        policy: Option<crate::SizeAwareBodyPolicy>,
+    ) -> GatewayResult<Self> {
+        self.body_admission = BodyAdmissionController::with_size_policy(
+            self.body_admission.max_requests(),
+            self.body_admission.max_bytes(),
+            policy,
+        )?;
+        Ok(self)
+    }
+
+    pub fn with_upstream_request_limit(mut self, limit: Option<usize>) -> GatewayResult<Self> {
+        if limit.is_some_and(|value| value == 0 || value > tokio::sync::Semaphore::MAX_PERMITS) {
+            return Err(GatewayError::InvalidConfiguration);
+        }
+        self.upstream_slots = limit.map(|value| Arc::new(tokio::sync::Semaphore::new(value)));
         Ok(self)
     }
 
@@ -387,6 +423,8 @@ pub struct PingoraContext {
     response_rewriter: Option<BoundedBodyRewriter>,
     request_body_lease: Option<BodyAdmissionLease>,
     response_body_lease: Option<BodyAdmissionLease>,
+    upstream_lease: Option<UpstreamLease>,
+    original_upload_read_timeout: Option<Option<Duration>>,
     is_streaming: bool,
     first_chunk_recorded: bool,
     budget_reserved: bool,
@@ -487,6 +525,8 @@ where
             response_rewriter: None,
             request_body_lease: None,
             response_body_lease: None,
+            upstream_lease: None,
+            original_upload_read_timeout: None,
             is_streaming: false,
             first_chunk_recorded: false,
             budget_reserved: false,
@@ -1396,7 +1436,11 @@ where
         let chunk_len = body.as_ref().map_or(0, Bytes::len);
         if chunk_len > 0 {
             if ctx.request_body_lease.is_none() {
-                match self.config.body_admission.try_acquire() {
+                match self
+                    .config
+                    .body_admission
+                    .try_acquire_sized(rewriter.expected_length())
+                {
                     Ok(lease) => ctx.request_body_lease = Some(lease),
                     Err(error) => {
                         ctx.guardrail_error = Some(error.clone());
@@ -1407,26 +1451,62 @@ where
                 }
             }
             if let Some(lease) = ctx.request_body_lease.as_mut() {
-                if let Err(error) = lease.try_reserve(chunk_len) {
-                    ctx.request_body_lease.take();
+                let reservation = rewriter.next_capacity(chunk_len).and_then(|capacity| {
+                    lease.prepare_buffer(
+                        rewriter.buffered_len().saturating_add(chunk_len),
+                        capacity,
+                    )?;
+                    lease.try_reserve(chunk_len)
+                });
+                if let Err(error) = reservation {
                     drop(rewriter.take_buffer());
+                    ctx.request_body_lease.take();
                     ctx.guardrail_error = Some(error.clone());
                     *body = Some(Bytes::new());
                     respond_error(session, error, ctx).await?;
                     return Err(PingoraError::new(ErrorType::InternalError));
                 }
+                if let Some(remaining) = lease.upload_remaining() {
+                    if remaining.is_zero() {
+                        gateway_telemetry::record_body_admission_rejection("upload_timeout");
+                        drop(rewriter.take_buffer());
+                        ctx.request_body_lease.take();
+                        ctx.guardrail_error = Some(GatewayError::GatewayOverloaded);
+                        *body = Some(Bytes::new());
+                        respond_error(session, GatewayError::GatewayOverloaded, ctx).await?;
+                        return Err(PingoraError::new(ErrorType::InternalError));
+                    }
+                    let original = *ctx
+                        .original_upload_read_timeout
+                        .get_or_insert_with(|| session.get_read_timeout());
+                    let timeout = original.map_or(remaining, |old| old.min(remaining));
+                    session.set_read_timeout(Some(timeout));
+                }
             }
         }
         if let Err(error) = rewriter.append_chunk(body.as_ref()) {
-            ctx.request_body_lease.take();
             drop(rewriter.take_buffer());
+            ctx.request_body_lease.take();
             ctx.guardrail_error = Some(error);
             *body = Some(Bytes::new());
             return Err(PingoraError::new(ErrorType::InternalError));
         }
+        if let Some(lease) = ctx.request_body_lease.as_mut() {
+            if let Err(error) = lease.prepare_buffer(rewriter.buffered_len(), rewriter.capacity()) {
+                drop(rewriter.take_buffer());
+                ctx.request_body_lease.take();
+                ctx.guardrail_error = Some(error.clone());
+                *body = Some(Bytes::new());
+                respond_error(session, error, ctx).await?;
+                return Err(PingoraError::new(ErrorType::InternalError));
+            }
+        }
         *body = Some(Bytes::new());
         if !end_of_stream {
             return Ok(());
+        }
+        if let Some(original) = ctx.original_upload_read_timeout.take() {
+            session.set_read_timeout(original);
         }
 
         let mut raw_body = rewriter.take_buffer();
@@ -1658,8 +1738,14 @@ where
                 Utc::now(),
             ));
             guardrail_context = Some(context);
-            serde_json::to_vec(&execution.request.unwrap_or(serde_json::Value::Null))
-                .map_err(|_| GatewayError::InvalidGuardrailRequest)
+            crate::body_rewrite::serialize_with_admission(
+                &execution.request.unwrap_or(serde_json::Value::Null),
+                route_match
+                    .as_ref()
+                    .map_or(usize::MAX, |matched| matched.max_body_bytes),
+                ctx.request_body_lease.as_mut(),
+                GatewayError::RequestBodyTooLarge,
+            )
         })();
 
         drop(analyzed);
@@ -2006,6 +2092,21 @@ where
         _session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<Box<HttpPeer>> {
+        if ctx.upstream_lease.is_none() {
+            if let Some(slots) = self.config.upstream_slots.as_ref() {
+                match Arc::clone(slots).try_acquire_owned() {
+                    Ok(lease) => {
+                        gateway_telemetry::upstream_request_started();
+                        ctx.upstream_lease = Some(UpstreamLease(lease));
+                    }
+                    Err(_) => {
+                        gateway_telemetry::record_upstream_admission_rejection();
+                        ctx.guardrail_error = Some(GatewayError::GatewayOverloaded);
+                        return Err(PingoraError::new(ErrorType::InternalError));
+                    }
+                }
+            }
+        }
         finish_attempt_timing(ctx);
         ctx.traffic.attempts += 1;
         ctx.traffic.diagnostics.upstream_status = None;
@@ -2418,7 +2519,12 @@ where
             .as_ref()
             .is_some_and(|plan| !plan.entries.is_empty());
         if has_post_guardrails && ctx.response_body_lease.is_none() {
-            let mut lease = match self.config.body_admission.try_acquire() {
+            let expected = upstream_response
+                .headers
+                .get(header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<usize>().ok());
+            let mut lease = match self.config.body_admission.try_acquire_sized(expected) {
                 Ok(lease) => lease,
                 Err(error) => {
                     ctx.guardrail_error = Some(error);
@@ -2505,11 +2611,19 @@ where
                 let required_bytes = buffered_len.saturating_add(chunk_len);
                 if let Some(lease) = ctx.response_body_lease.as_mut() {
                     let additional_bytes = required_bytes.saturating_sub(lease.reserved_bytes());
-                    if let Err(error) = lease.try_reserve(additional_bytes) {
-                        ctx.response_body_lease.take();
+                    let reservation = ctx
+                        .response_rewriter
+                        .as_ref()
+                        .map_or(Ok(required_bytes), |rewriter| {
+                            rewriter.next_capacity(chunk_len)
+                        })
+                        .and_then(|capacity| lease.prepare_buffer(required_bytes, capacity))
+                        .and_then(|()| lease.try_reserve(additional_bytes));
+                    if let Err(error) = reservation {
                         if let Some(rewriter) = ctx.response_rewriter.as_mut() {
                             drop(rewriter.take_buffer());
                         }
+                        ctx.response_body_lease.take();
                         ctx.guardrail_error = Some(error);
                         *body = Some(Bytes::new());
                         return Err(PingoraError::new(ErrorType::InternalError));
@@ -2521,6 +2635,30 @@ where
             ctx.guardrail_error = Some(error);
             *body = Some(Bytes::new());
             return Err(PingoraError::new(ErrorType::InternalError));
+        }
+        if let Some(lease) = ctx.response_body_lease.as_mut() {
+            let retained = ctx
+                .response_rewriter
+                .as_ref()
+                .map_or(0, BoundedBodyRewriter::capacity);
+            let length = body.as_ref().map_or(0, Bytes::len);
+            let length = length.max(
+                ctx.response_rewriter
+                    .as_ref()
+                    .map_or(0, BoundedBodyRewriter::buffered_len),
+            );
+            let reservation = lease
+                .prepare_buffer(length, retained.max(length))
+                .and_then(|()| lease.try_reserve(length.saturating_sub(lease.reserved_bytes())));
+            if let Err(error) = reservation {
+                *body = Some(Bytes::new());
+                if let Some(rewriter) = ctx.response_rewriter.as_mut() {
+                    drop(rewriter.take_buffer());
+                }
+                ctx.response_body_lease.take();
+                ctx.guardrail_error = Some(error);
+                return Err(PingoraError::new(ErrorType::InternalError));
+            }
         }
         if let Some(body) = body.as_ref() {
             ctx.response_bytes_seen = ctx.response_bytes_seen.saturating_add(body.len());
@@ -2573,6 +2711,7 @@ where
         ctx: &mut Self::CTX,
     ) {
         ctx.socket_lease.take();
+        ctx.upstream_lease.take();
         gateway_telemetry::request_finished();
         finish_traffic(
             ctx,
@@ -3749,8 +3888,14 @@ fn apply_post_call_guardrails(
             &execution.records,
             Utc::now(),
         ));
-        serde_json::to_vec(&execution.response.unwrap_or(serde_json::Value::Null))
-            .map_err(|_| GatewayError::InvalidGuardrailRequest)
+        crate::body_rewrite::serialize_with_admission(
+            &execution.response.unwrap_or(serde_json::Value::Null),
+            ctx.route_match
+                .as_ref()
+                .map_or(usize::MAX, |matched| matched.max_response_body_bytes),
+            ctx.response_body_lease.as_mut(),
+            GatewayError::ResponseBodyTooLarge,
+        )
     })?;
     ctx.guardrail_events.extend(events);
     Ok(())
@@ -4524,6 +4669,8 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         response_rewriter: None,
         request_body_lease: None,
         response_body_lease: None,
+        upstream_lease: None,
+        original_upload_read_timeout: None,
         is_streaming: false,
         first_chunk_recorded: false,
         budget_reserved: false,

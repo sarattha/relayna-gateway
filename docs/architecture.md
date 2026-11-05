@@ -108,6 +108,14 @@ waits on an OS thread per call. Provider forwarding continues to use Pingora's
 upstream pool; these changes do not increase provider inference speed or remove
 upstream concurrency limits.
 
+Buffered traffic can opt into a size-aware working-set bound in addition to the
+released count and serialized-byte ceilings. Declared lengths reserve estimated
+capacity early, unknown-length uploads grow within shared capacity, and an
+optional reserve protects declared small bodies. Growth and JSON serialization
+check capacity before allocation; temporary workspace estimates remain distinct
+from an exact RSS limit. A separate optional upstream request/stream ceiling
+spans the entire provider operation. See [mixed-body operation and limits](operations.md#mixed-body-sizes).
+
 Canonical OpenAI-compatible and Anthropic-compatible routes can run in
 `managed_by_gateway` mode or `direct_litellm_passthrough` mode. Direct mode
 still enforces Relayna auth, route enablement, route/model/provider policy,

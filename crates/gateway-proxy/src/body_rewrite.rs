@@ -2,6 +2,76 @@ use bytes::Bytes;
 use gateway_core::{GatewayError, GatewayResult};
 use pingora_http::{RequestHeader, ResponseHeader};
 
+/// Bound serialization growth before allocating rewritten output. The body
+/// budget still checks final serialized length; the separate working-set budget
+/// covers this temporary output alongside the input/JSON workspace estimate.
+pub(crate) fn serialize_with_admission<T: serde::Serialize>(
+    value: &T,
+    maximum: usize,
+    lease: Option<&mut crate::BodyAdmissionLease>,
+    too_large: GatewayError,
+) -> GatewayResult<Vec<u8>> {
+    struct Writer<'a> {
+        bytes: Vec<u8>,
+        maximum: usize,
+        lease: Option<&'a mut crate::BodyAdmissionLease>,
+        error: Option<GatewayError>,
+        too_large: GatewayError,
+    }
+    impl std::io::Write for Writer<'_> {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            let result = (|| {
+                let length = self
+                    .bytes
+                    .len()
+                    .checked_add(bytes.len())
+                    .filter(|length| *length <= self.maximum)
+                    .ok_or_else(|| self.too_large.clone())?;
+                if length > self.bytes.capacity() {
+                    let capacity = self
+                        .bytes
+                        .capacity()
+                        .saturating_mul(2)
+                        .max(length)
+                        .min(self.maximum);
+                    if let Some(lease) = self.lease.as_mut() {
+                        lease.prepare_buffer(capacity, capacity)?;
+                    }
+                    self.bytes
+                        .try_reserve_exact(capacity - self.bytes.len())
+                        .map_err(|_| GatewayError::GatewayOverloaded)?;
+                    if let Some(lease) = self.lease.as_mut() {
+                        lease.prepare_buffer(self.bytes.capacity(), self.bytes.capacity())?;
+                    }
+                }
+                self.bytes.extend_from_slice(bytes);
+                Ok(bytes.len())
+            })();
+            result.map_err(|error| {
+                self.error = Some(error);
+                std::io::Error::other("rewritten body capacity unavailable")
+            })
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut writer = Writer {
+        bytes: Vec::new(),
+        maximum,
+        lease,
+        error: None,
+        too_large,
+    };
+    serde_json::to_writer(&mut writer, value).map_err(|_| {
+        writer
+            .error
+            .take()
+            .unwrap_or(GatewayError::InvalidGuardrailRequest)
+    })?;
+    Ok(writer.bytes)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BodyRewriteOutcome {
     Suppressed,
@@ -12,6 +82,7 @@ pub enum BodyRewriteOutcome {
 pub struct BoundedBodyRewriter {
     max_bytes: usize,
     allocation_hint: usize,
+    expected_length: Option<usize>,
     buffer: Vec<u8>,
 }
 
@@ -20,11 +91,13 @@ impl BoundedBodyRewriter {
         Self {
             max_bytes,
             allocation_hint: max_bytes,
+            expected_length: None,
             buffer: Vec::new(),
         }
     }
 
     pub(crate) fn with_expected_length(mut self, expected_length: Option<usize>) -> Self {
+        self.expected_length = expected_length.map(|length| length.min(self.max_bytes));
         self.allocation_hint = expected_length
             .unwrap_or(self.max_bytes)
             .min(self.max_bytes);
@@ -35,8 +108,40 @@ impl BoundedBodyRewriter {
         self.buffer.len()
     }
 
+    pub(crate) fn expected_length(&self) -> Option<usize> {
+        self.expected_length
+    }
+
+    pub(crate) fn capacity(&self) -> usize {
+        self.buffer.capacity()
+    }
+
+    pub(crate) fn next_capacity(&self, additional_bytes: usize) -> GatewayResult<usize> {
+        let length = self
+            .buffer
+            .len()
+            .checked_add(additional_bytes)
+            .filter(|length| *length <= self.max_bytes)
+            .ok_or(GatewayError::RequestBodyTooLarge)?;
+        if length <= self.buffer.capacity() {
+            return Ok(self.buffer.capacity());
+        }
+        let hint = if length > self.allocation_hint {
+            self.max_bytes
+        } else {
+            self.allocation_hint
+        };
+        Ok(self
+            .buffer
+            .capacity()
+            .saturating_mul(2)
+            .max(length)
+            .min(hint))
+    }
+
     pub fn append_chunk(&mut self, body: Option<&Bytes>) -> GatewayResult<()> {
         if let Some(chunk) = body {
+            let capacity = self.next_capacity(chunk.len())?;
             let next_len = self.buffer.len().saturating_add(chunk.len());
             if next_len > self.max_bytes {
                 return Err(GatewayError::RequestBodyTooLarge);
@@ -47,13 +152,9 @@ impl BoundedBodyRewriter {
                 self.allocation_hint = self.max_bytes;
             }
             if next_len > self.buffer.capacity() {
-                let capacity = self
-                    .buffer
-                    .capacity()
-                    .saturating_mul(2)
-                    .max(next_len)
-                    .min(self.allocation_hint);
-                self.buffer.reserve_exact(capacity - self.buffer.len());
+                self.buffer
+                    .try_reserve_exact(capacity - self.buffer.len())
+                    .map_err(|_| GatewayError::GatewayOverloaded)?;
             }
             self.buffer.extend_from_slice(chunk);
         }
@@ -92,7 +193,7 @@ impl BoundedBodyRewriter {
         if end_of_stream {
             let rewritten = rewrite(&self.buffer)?;
             *body = Some(Bytes::from(rewritten));
-            self.buffer.clear();
+            self.buffer = Vec::new();
             return Ok(BodyRewriteOutcome::Emitted);
         }
 
@@ -125,6 +226,41 @@ pub fn prepare_rewritten_response_headers(response: &mut ResponseHeader, use_htt
 mod tests {
     use super::*;
     use pingora_http::{RequestHeader, ResponseHeader};
+
+    #[test]
+    fn serialization_checks_expansion_before_growing_output() {
+        let value = serde_json::json!({"expanded": "x".repeat(200_000)});
+        assert_eq!(
+            serialize_with_admission(&value, 1024, None, GatewayError::RequestBodyTooLarge)
+                .unwrap_err(),
+            GatewayError::RequestBodyTooLarge
+        );
+        let controller = crate::BodyAdmissionController::with_size_policy(
+            2,
+            1024 * 1024,
+            Some(crate::SizeAwareBodyPolicy {
+                max_working_bytes: 128 * 1024,
+                reserved_small_requests: 0,
+                workspace_multiplier: 2,
+                upload_timeout: std::time::Duration::from_secs(30),
+            }),
+        )
+        .unwrap();
+        let mut lease = controller.try_acquire_sized(Some(16)).unwrap();
+        assert_eq!(
+            serialize_with_admission(
+                &value,
+                1024 * 1024,
+                Some(&mut lease),
+                GatewayError::RequestBodyTooLarge
+            )
+            .unwrap_err(),
+            GatewayError::GatewayOverloaded
+        );
+        drop(lease);
+        assert_eq!(controller.active_requests(), 0);
+        assert_eq!(controller.active_bytes(), 0);
+    }
 
     #[test]
     fn chunked_growth_avoids_capacity_overshoot_for_known_length_bodies() {
@@ -212,7 +348,11 @@ mod tests {
                 .unwrap();
             if final_chunk {
                 assert_eq!(chunk.unwrap().as_ref(), b"xxxxxxxxxxxxx");
-                assert_eq!(response.buffer.capacity(), 13);
+                assert_eq!(
+                    response.buffer.capacity(),
+                    0,
+                    "release the original response allocation after rewriting"
+                );
             } else {
                 assert!(chunk.unwrap().is_empty());
             }
