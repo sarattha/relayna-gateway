@@ -7,9 +7,13 @@ from v1.0.2. Public routes and persisted contracts remain supported, with no
 database or Redis migration. Review the new source/admission limits and Linux
 startup requirements in the [upgrade guide](deployment.md#upgrade-to-120).
 
-The [1.2.0 validation record](benchmarks/v1.2.0.md) tracks the mandatory fresh
-six-size study. Merge, tagging and publication remain gated on complete
-evidence, verification and PR checks. This release retains the previous
+The [1.2.0 validation record](benchmarks/v1.2.0.md) contains the completed fresh
+six-size study: 239 native amd64 fresh-pod trials, at least three resource-stable
+confirmations per selected setting, and a separate same-runner v1.0.2 comparison.
+Audited reports, raw observations, failures and checksums are retained in a pinned
+artifact archive. Resource edges need production headroom; lost denial replies
+are reported separately from HTTP-clean trials. Final-head CI and GitHub review
+gates still apply before merge and tagging. This release retains the previous
 tag-title/changelog/SPDX-SBOM template and hosts benchmark evidence through
 documentation, outside GitHub release attachments.
 

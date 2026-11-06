@@ -70,10 +70,16 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Release validation
 
-- Fresh six-size adaptive validation of the committed 1.2.0 candidate is
-  required before merge and publication. The
+- Complete fresh native amd64 adaptive validation at 5, 10, 20, 40, 80 and
+  100 MiB: 239 fresh-pod trials, with three resource-stable confirmations at
+  each selected setting. Retain OOMs, transport errors and both superseded
+  attempts. Most settings establish tested bounds, not production capacity;
+  the 40 MiB confirmations include one trial with lost denial replies. The
   [versioned validation record](https://sarattha.github.io/relayna-gateway/benchmarks/v1.2.0/)
-  tracks completion, runtime identity, observations and retained evidence.
+  links audited HTML/JSON/CSV, raw evidence, runtime/image identities and checksums.
+- Include a separate same-runner comparison against immutable v1.0.2 at 5 MiB,
+  eight slots/pod and three trials per version. Its small sequential cohort and
+  deliberate upstream pauses do not establish general throughput improvements.
 - Earlier PR comparisons cover uniform/mixed bodies and controlled HTTP/SSE
   and WebSocket Responses traffic, including LiteLLM. They describe their
   measured candidate commits and do not substitute for this release's study.
