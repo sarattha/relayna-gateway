@@ -1,19 +1,19 @@
 {
-  "checked_at": "2026-11-06T08:51:47.590551+00:00",
-  "archive_files_examined": 5756,
+  "checked_at": "2026-11-06T10:01:55.065611+00:00",
+  "archive_files_examined": 5920,
   "raw_credential_pattern_matches": 0,
   "kubeconfigs_or_env_files": 0,
   "gitleaks_findings": 0,
   "gitleaks_archive_depth": 3,
   "report": {
     "views": 18,
-    "points": 323,
+    "points": 342,
     "summary_rows": 6,
-    "raw_trial_rows": 239,
+    "raw_trial_rows": 254,
     "js_errors": [],
     "relative_links": "all resolve"
   },
-  "csv_rows": 239,
+  "csv_rows": 254,
   "structured_csv_cells": "valid JSON",
-  "archive_max_bytes": 32787864
+  "archive_max_bytes": 35824513
 }

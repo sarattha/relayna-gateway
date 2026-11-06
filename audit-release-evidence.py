@@ -177,16 +177,21 @@ for label, paths in [('resource', resource_paths), ('latency', [ROOT / 'comparis
             for name in ['release-plan.json', 'dispatches.json', 'workflows.json']:
                 tar.add(ROOT / name, arcname=name)
             tar.add(ROOT / 'tooling', arcname='tooling', filter=lambda info: None if '__pycache__' in info.name else info)
-security = REPO / 'target/release-verification/v1.2.0/zlib'
+security = REPO / 'target/release-verification/v1.2.0/rewrite-image'
+security_record = read(security / 'security-provenance.json')
+assert security_record['runtime_commit'] == source and security_record['native_runtime_smoke']['passed']
+assert security_record['native_image_gate_exit_code'] == 0 and security_record['fresh_database_download']
 with tarfile.open(OUT / (prefix + '-image-security-evidence.tar.gz'), 'w:gz') as tar:
     for name in ['security-provenance.json', 'package-provenance.json', 'debian-package-changelog.txt', 'candidate-image.json', 'candidate-build.log', 'candidate-unfiltered-scan.json', 'candidate-gated-scan.json', 'candidate-runtime-smoke.log', 'gate-regression.json', 'unpatched-gate.json', 'patched-gate.json']:
         assert (security / name).is_file(), name
         tar.add(security / name, arcname=name)
+    tar.add(security / 'database-refresh.log', arcname='database-refresh.log')
+    tar.add(security / 'scan-with-older-cache', arcname='scan-with-older-cache')
     for name in ['Dockerfile', '.trivyignore-image.yaml', 'docs/security-exceptions.md', 'docs/runtime-image-security.md', 'tests/e2e/runtime-image/run.py']:
         tar.add(REPO / name, arcname='source/' + name)
 verification = REPO / 'target/release-verification/v1.2.0'
 with tarfile.open(OUT / (prefix + '-verification-evidence.tar.gz'), 'w:gz') as tar:
-    for name in ['result.json', 'nextest-isolation-result.json', 'nextest-runtime-equivalence.json', 'auth-nextest-isolated.log']:
+    for name in ['result.json', 'rewrite-fix-result.json', 'rewrite-regression-after.log', 'auth-nextest-isolated.log']:
         assert (verification / name).is_file(), name
         tar.add(verification / name, arcname=name)
     tar.add(REPO / '.config/nextest.toml', arcname='source/.config/nextest.toml')
