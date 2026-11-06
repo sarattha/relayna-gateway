@@ -82,7 +82,8 @@ async def check(image):
                 "POSTGRES_USER": "smoke", "POSTGRES_PASSWORD": password, "POSTGRES_DB": "smoke"})
             start("redis", "redis:7-alpine")
             for _ in range(120):
-                ready = subprocess.run(["docker", "exec", postgres, "pg_isready", "-U", "smoke"],
+                # Ignore the socket-only temporary server used during initdb.
+                ready = subprocess.run(["docker", "exec", postgres, "pg_isready", "-h", "127.0.0.1", "-U", "smoke"],
                                        capture_output=True, timeout=10)
                 if ready.returncode == 0:
                     break

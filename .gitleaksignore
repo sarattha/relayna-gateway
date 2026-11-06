@@ -60,3 +60,11 @@ fbad25aeb454bd773ba4be9f44141a37773d48b4:crates/gateway-core/src/auth.rs:relayna
 fbad25aeb454bd773ba4be9f44141a37773d48b4:crates/gateway-core/src/auth.rs:stripe-access-token:278
 fbad25aeb454bd773ba4be9f44141a37773d48b4:crates/gateway-core/src/auth.rs:stripe-access-token:311
 fbad25aeb454bd773ba4be9f44141a37773d48b4:crates/gateway-core/src/auth.rs:stripe-access-token:315
+
+# PR #146's synthetic header, overload and Debug-redaction fixtures. These
+# values never identify deployed credentials; ignore only these historical
+# findings from CI's Gitleaks 8.24.3. See security-exceptions.md.
+c2eb9ecd5d6d482c3660702b9d5c8486630903b2:crates/gateway-core/src/auth_admission.rs:stripe-access-token:246
+c2eb9ecd5d6d482c3660702b9d5c8486630903b2:crates/gateway-core/src/auth.rs:generic-api-key:337
+c2eb9ecd5d6d482c3660702b9d5c8486630903b2:crates/gateway-core/src/auth.rs:relayna-live-token:384
+c2eb9ecd5d6d482c3660702b9d5c8486630903b2:crates/gateway-core/src/auth.rs:stripe-access-token:369

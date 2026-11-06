@@ -105,7 +105,9 @@ class Fixtures:
             self.docker(*command)
             self.images[name] = self.docker("inspect", "--format", "{{.Image}}", name)
         for _ in range(120):
-            result = subprocess.run(["docker", "exec", self.postgres, "pg_isready", "-U",
+            # The image's temporary initialization server accepts Unix sockets
+            # before restarting. Wait for the TCP server used by Gateway.
+            result = subprocess.run(["docker", "exec", self.postgres, "pg_isready", "-h", "127.0.0.1", "-U",
                                      "relayna_test", "-d", "relayna_monitoring"],
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if result.returncode == 0:

@@ -19,7 +19,7 @@ All notable changes to Relayna Gateway are documented in this file.
 ### Changed
 
 - Reuse complete-body JSON analysis, effective policy reads, guardrail HTTP
-  connections and Redis script execution paths within their existing policy
+  connections and multiplexed Redis connections within their existing policy
   and accounting contracts. Bound serialization and retain body reservations
   until the last forwarded buffer reference is released.
 - Reuse successful virtual-key secret proofs for at most 60 seconds while
@@ -27,7 +27,7 @@ All notable changes to Relayna Gateway are documented in this file.
   proofs share one verification job; each successful subscriber independently
   rechecks current key state before authorization.
 - Bound authentication to 64 active HTTP admissions and 128 FIFO waiters with
-  a 250 ms deadline. Crypto work retains two workers, eight waiting leaders
+  a 250 ms deadline. Crypto work uses two workers, eight waiting leaders
   and bounded proof subscribers. Cancellation releases queued capacity without
   abandoning followers or releasing a running verifier early.
 

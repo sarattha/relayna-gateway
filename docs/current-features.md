@@ -12,7 +12,7 @@ Version **1.2.0** adds bounded authentication queues, short-lived secret proofs
 with current-state reads, shared cold verification and Linux dump protection.
 Optional size-aware/elastic body admission packs mixed request sizes into a
 working-byte budget; a separate upstream limit bounds open requests/streams.
-Request-local analysis/policy reuse, Redis script paths and shared guardrail
+Request-local analysis/policy reuse, multiplexed Redis and shared guardrail
 HTTP connections reduce repeated work. See [architecture](architecture.md),
 [mixed-body operation](operations.md#mixed-body-sizes) and the
 [1.2.0 upgrade guide](deployment.md#upgrade-to-120).
