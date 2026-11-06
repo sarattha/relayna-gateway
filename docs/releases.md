@@ -7,13 +7,16 @@ from v1.0.2. Public routes and persisted contracts remain supported, with no
 database or Redis migration. Review the new source/admission limits and Linux
 startup requirements in the [upgrade guide](deployment.md#upgrade-to-120).
 
-The [1.2.0 validation record](benchmarks/v1.2.0.md) retains the completed
-pre-review study and tracks the mandatory fresh rerun after the rewrite-accounting
-fix. The earlier 239-trial results and all failed/superseded attempts remain
-available through pinned Git revisions. Merge, tagging and publication await
-corrected-runtime evidence, final verification and GitHub review gates. This
-release retains the tag-title/changelog/SPDX-SBOM template and hosts benchmark
-evidence through documentation, outside GitHub release attachments.
+The [1.2.0 validation record](benchmarks/v1.2.0.md) contains the completed fresh
+study of the corrected runtime: 254 native amd64 fresh-pod trials, at least three
+resource-stable confirmations per selected setting, and a separate same-runner
+v1.0.2 comparison. Audited reports, raw observations, failures and all three
+preceding attempts remain available through immutable archives. All six sizes
+establish tested lower bounds; selected settings need production headroom, and
+lost denial replies are reported separately from HTTP-clean trials. Final-head
+CI and GitHub review gates still apply before merge and tagging. This release
+retains the tag-title/changelog/SPDX-SBOM template and hosts benchmark evidence
+through documentation, outside GitHub release attachments.
 
 Version **1.0.2** prepares the runtime image remediation for
 [issue #149](https://github.com/sarattha/relayna-gateway/issues/149). It uses a

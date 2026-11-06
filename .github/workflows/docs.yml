@@ -48,7 +48,7 @@ jobs:
       - name: Check out archived v1.2.0 documentation assets
         uses: actions/checkout@v4
         with:
-          ref: 9d3d2ce3b876dbaea1e7e3390edac6bdda79e4a5
+          ref: 492a5db9138f807874e6893201949722b86e68ba
           path: target/docs-release-assets/v1.2.0
           persist-credentials: false
 
