@@ -1,0 +1,688 @@
+[
+  {
+    "conclusion": "success",
+    "createdAt": "2026-11-06T08:11:45Z",
+    "databaseId": 42185938365,
+    "displayTitle": "Body admission amd64 / 5 MiB / full / source build",
+    "headSha": "58cc984b962ecd65c0f70e3a5fb9c665373695d5",
+    "jobs": [
+      {
+        "completedAt": "2026-11-06T08:47:44Z",
+        "conclusion": "success",
+        "databaseId": 127786164950,
+        "name": "benchmark",
+        "startedAt": "2026-11-06T08:11:49Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-11-06T08:11:50Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-11-06T08:11:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:11:51Z",
+            "conclusion": "success",
+            "name": "Check out benchmark source",
+            "number": 2,
+            "startedAt": "2026-11-06T08:11:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:11:52Z",
+            "conclusion": "success",
+            "name": "Install native kind",
+            "number": 3,
+            "startedAt": "2026-11-06T08:11:51Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:47:40Z",
+            "conclusion": "success",
+            "name": "Run native benchmark CLI",
+            "number": 4,
+            "startedAt": "2026-11-06T08:11:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:47:40Z",
+            "conclusion": "success",
+            "name": "Recover partial report and clean up owned cluster",
+            "number": 5,
+            "startedAt": "2026-11-06T08:47:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:47:42Z",
+            "conclusion": "success",
+            "name": "Upload HTML report and raw evidence (including failures)",
+            "number": 6,
+            "startedAt": "2026-11-06T08:47:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:47:42Z",
+            "conclusion": "skipped",
+            "name": "Upload same-runner baseline latency evidence",
+            "number": 7,
+            "startedAt": "2026-11-06T08:47:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:47:43Z",
+            "conclusion": "success",
+            "name": "Post Check out benchmark source",
+            "number": 14,
+            "startedAt": "2026-11-06T08:47:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:47:43Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-11-06T08:47:43Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185938365/job/127786164950"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-11-06T08:47:44Z",
+    "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185938365",
+    "mode": "full",
+    "body_mib": 5,
+    "architecture": "amd64"
+  },
+  {
+    "conclusion": "success",
+    "createdAt": "2026-11-06T08:11:47Z",
+    "databaseId": 42185942259,
+    "displayTitle": "Body admission amd64 / 10 MiB / full / source build",
+    "headSha": "58cc984b962ecd65c0f70e3a5fb9c665373695d5",
+    "jobs": [
+      {
+        "completedAt": "2026-11-06T08:44:19Z",
+        "conclusion": "success",
+        "databaseId": 127786178685,
+        "name": "benchmark",
+        "startedAt": "2026-11-06T08:11:51Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-11-06T08:11:52Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-11-06T08:11:51Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:11:53Z",
+            "conclusion": "success",
+            "name": "Check out benchmark source",
+            "number": 2,
+            "startedAt": "2026-11-06T08:11:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:11:54Z",
+            "conclusion": "success",
+            "name": "Install native kind",
+            "number": 3,
+            "startedAt": "2026-11-06T08:11:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:44:14Z",
+            "conclusion": "success",
+            "name": "Run native benchmark CLI",
+            "number": 4,
+            "startedAt": "2026-11-06T08:11:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:44:14Z",
+            "conclusion": "success",
+            "name": "Recover partial report and clean up owned cluster",
+            "number": 5,
+            "startedAt": "2026-11-06T08:44:14Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:44:17Z",
+            "conclusion": "success",
+            "name": "Upload HTML report and raw evidence (including failures)",
+            "number": 6,
+            "startedAt": "2026-11-06T08:44:14Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:44:17Z",
+            "conclusion": "skipped",
+            "name": "Upload same-runner baseline latency evidence",
+            "number": 7,
+            "startedAt": "2026-11-06T08:44:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:44:17Z",
+            "conclusion": "success",
+            "name": "Post Check out benchmark source",
+            "number": 14,
+            "startedAt": "2026-11-06T08:44:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:44:17Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-11-06T08:44:17Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185942259/job/127786178685"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-11-06T08:44:20Z",
+    "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185942259",
+    "mode": "full",
+    "body_mib": 10,
+    "architecture": "amd64"
+  },
+  {
+    "conclusion": "success",
+    "createdAt": "2026-11-06T08:11:49Z",
+    "databaseId": 42185945961,
+    "displayTitle": "Body admission amd64 / 20 MiB / full / source build",
+    "headSha": "58cc984b962ecd65c0f70e3a5fb9c665373695d5",
+    "jobs": [
+      {
+        "completedAt": "2026-11-06T08:35:09Z",
+        "conclusion": "success",
+        "databaseId": 127786189148,
+        "name": "benchmark",
+        "startedAt": "2026-11-06T08:11:52Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-11-06T08:11:54Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-11-06T08:11:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:11:56Z",
+            "conclusion": "success",
+            "name": "Check out benchmark source",
+            "number": 2,
+            "startedAt": "2026-11-06T08:11:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:11:56Z",
+            "conclusion": "success",
+            "name": "Install native kind",
+            "number": 3,
+            "startedAt": "2026-11-06T08:11:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:05Z",
+            "conclusion": "success",
+            "name": "Run native benchmark CLI",
+            "number": 4,
+            "startedAt": "2026-11-06T08:11:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:05Z",
+            "conclusion": "success",
+            "name": "Recover partial report and clean up owned cluster",
+            "number": 5,
+            "startedAt": "2026-11-06T08:35:05Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:07Z",
+            "conclusion": "success",
+            "name": "Upload HTML report and raw evidence (including failures)",
+            "number": 6,
+            "startedAt": "2026-11-06T08:35:05Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:07Z",
+            "conclusion": "skipped",
+            "name": "Upload same-runner baseline latency evidence",
+            "number": 7,
+            "startedAt": "2026-11-06T08:35:07Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:07Z",
+            "conclusion": "success",
+            "name": "Post Check out benchmark source",
+            "number": 14,
+            "startedAt": "2026-11-06T08:35:07Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:07Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-11-06T08:35:07Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185945961/job/127786189148"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-11-06T08:35:10Z",
+    "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185945961",
+    "mode": "full",
+    "body_mib": 20,
+    "architecture": "amd64"
+  },
+  {
+    "conclusion": "success",
+    "createdAt": "2026-11-06T08:11:51Z",
+    "databaseId": 42185949646,
+    "displayTitle": "Body admission amd64 / 40 MiB / full / source build",
+    "headSha": "58cc984b962ecd65c0f70e3a5fb9c665373695d5",
+    "jobs": [
+      {
+        "completedAt": "2026-11-06T08:46:54Z",
+        "conclusion": "success",
+        "databaseId": 127786203943,
+        "name": "benchmark",
+        "startedAt": "2026-11-06T08:11:54Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-11-06T08:11:56Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-11-06T08:11:55Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:11:57Z",
+            "conclusion": "success",
+            "name": "Check out benchmark source",
+            "number": 2,
+            "startedAt": "2026-11-06T08:11:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:11:58Z",
+            "conclusion": "success",
+            "name": "Install native kind",
+            "number": 3,
+            "startedAt": "2026-11-06T08:11:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:46:49Z",
+            "conclusion": "success",
+            "name": "Run native benchmark CLI",
+            "number": 4,
+            "startedAt": "2026-11-06T08:11:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:46:49Z",
+            "conclusion": "success",
+            "name": "Recover partial report and clean up owned cluster",
+            "number": 5,
+            "startedAt": "2026-11-06T08:46:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:46:52Z",
+            "conclusion": "success",
+            "name": "Upload HTML report and raw evidence (including failures)",
+            "number": 6,
+            "startedAt": "2026-11-06T08:46:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:46:52Z",
+            "conclusion": "skipped",
+            "name": "Upload same-runner baseline latency evidence",
+            "number": 7,
+            "startedAt": "2026-11-06T08:46:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:46:52Z",
+            "conclusion": "success",
+            "name": "Post Check out benchmark source",
+            "number": 14,
+            "startedAt": "2026-11-06T08:46:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:46:52Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-11-06T08:46:52Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185949646/job/127786203943"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-11-06T08:46:54Z",
+    "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185949646",
+    "mode": "full",
+    "body_mib": 40,
+    "architecture": "amd64"
+  },
+  {
+    "conclusion": "success",
+    "createdAt": "2026-11-06T08:11:53Z",
+    "databaseId": 42185953421,
+    "displayTitle": "Body admission amd64 / 80 MiB / full / source build",
+    "headSha": "58cc984b962ecd65c0f70e3a5fb9c665373695d5",
+    "jobs": [
+      {
+        "completedAt": "2026-11-06T08:45:26Z",
+        "conclusion": "success",
+        "databaseId": 127786215963,
+        "name": "benchmark",
+        "startedAt": "2026-11-06T08:11:56Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-11-06T08:11:58Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-11-06T08:11:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:11:59Z",
+            "conclusion": "success",
+            "name": "Check out benchmark source",
+            "number": 2,
+            "startedAt": "2026-11-06T08:11:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:11:59Z",
+            "conclusion": "success",
+            "name": "Install native kind",
+            "number": 3,
+            "startedAt": "2026-11-06T08:11:59Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:45:22Z",
+            "conclusion": "success",
+            "name": "Run native benchmark CLI",
+            "number": 4,
+            "startedAt": "2026-11-06T08:11:59Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:45:22Z",
+            "conclusion": "success",
+            "name": "Recover partial report and clean up owned cluster",
+            "number": 5,
+            "startedAt": "2026-11-06T08:45:22Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:45:24Z",
+            "conclusion": "success",
+            "name": "Upload HTML report and raw evidence (including failures)",
+            "number": 6,
+            "startedAt": "2026-11-06T08:45:22Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:45:24Z",
+            "conclusion": "skipped",
+            "name": "Upload same-runner baseline latency evidence",
+            "number": 7,
+            "startedAt": "2026-11-06T08:45:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:45:24Z",
+            "conclusion": "success",
+            "name": "Post Check out benchmark source",
+            "number": 14,
+            "startedAt": "2026-11-06T08:45:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:45:25Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-11-06T08:45:25Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185953421/job/127786215963"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-11-06T08:45:27Z",
+    "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185953421",
+    "mode": "full",
+    "body_mib": 80,
+    "architecture": "amd64"
+  },
+  {
+    "conclusion": "success",
+    "createdAt": "2026-11-06T08:11:55Z",
+    "databaseId": 42185957234,
+    "displayTitle": "Body admission amd64 / 100 MiB / full / source build",
+    "headSha": "58cc984b962ecd65c0f70e3a5fb9c665373695d5",
+    "jobs": [
+      {
+        "completedAt": "2026-11-06T08:35:57Z",
+        "conclusion": "success",
+        "databaseId": 127786228127,
+        "name": "benchmark",
+        "startedAt": "2026-11-06T08:11:58Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-11-06T08:11:59Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-11-06T08:11:59Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:12:01Z",
+            "conclusion": "success",
+            "name": "Check out benchmark source",
+            "number": 2,
+            "startedAt": "2026-11-06T08:11:59Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:12:01Z",
+            "conclusion": "success",
+            "name": "Install native kind",
+            "number": 3,
+            "startedAt": "2026-11-06T08:12:01Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:54Z",
+            "conclusion": "success",
+            "name": "Run native benchmark CLI",
+            "number": 4,
+            "startedAt": "2026-11-06T08:12:01Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:54Z",
+            "conclusion": "success",
+            "name": "Recover partial report and clean up owned cluster",
+            "number": 5,
+            "startedAt": "2026-11-06T08:35:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:56Z",
+            "conclusion": "success",
+            "name": "Upload HTML report and raw evidence (including failures)",
+            "number": 6,
+            "startedAt": "2026-11-06T08:35:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:56Z",
+            "conclusion": "skipped",
+            "name": "Upload same-runner baseline latency evidence",
+            "number": 7,
+            "startedAt": "2026-11-06T08:35:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:56Z",
+            "conclusion": "success",
+            "name": "Post Check out benchmark source",
+            "number": 14,
+            "startedAt": "2026-11-06T08:35:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:35:56Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-11-06T08:35:56Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185957234/job/127786228127"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-11-06T08:35:58Z",
+    "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185957234",
+    "mode": "full",
+    "body_mib": 100,
+    "architecture": "amd64"
+  },
+  {
+    "conclusion": "success",
+    "createdAt": "2026-11-06T08:11:57Z",
+    "databaseId": 42185960764,
+    "displayTitle": "Body admission amd64 / 5 MiB / comparison / source build",
+    "headSha": "58cc984b962ecd65c0f70e3a5fb9c665373695d5",
+    "jobs": [
+      {
+        "completedAt": "2026-11-06T08:22:38Z",
+        "conclusion": "success",
+        "databaseId": 127786239565,
+        "name": "benchmark",
+        "startedAt": "2026-11-06T08:12:00Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-11-06T08:12:02Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-11-06T08:12:01Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:12:03Z",
+            "conclusion": "success",
+            "name": "Check out benchmark source",
+            "number": 2,
+            "startedAt": "2026-11-06T08:12:02Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:12:03Z",
+            "conclusion": "success",
+            "name": "Install native kind",
+            "number": 3,
+            "startedAt": "2026-11-06T08:12:03Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:22:34Z",
+            "conclusion": "success",
+            "name": "Run native benchmark CLI",
+            "number": 4,
+            "startedAt": "2026-11-06T08:12:03Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:22:34Z",
+            "conclusion": "success",
+            "name": "Recover partial report and clean up owned cluster",
+            "number": 5,
+            "startedAt": "2026-11-06T08:22:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:22:35Z",
+            "conclusion": "success",
+            "name": "Upload HTML report and raw evidence (including failures)",
+            "number": 6,
+            "startedAt": "2026-11-06T08:22:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:22:36Z",
+            "conclusion": "success",
+            "name": "Upload same-runner baseline latency evidence",
+            "number": 7,
+            "startedAt": "2026-11-06T08:22:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:22:36Z",
+            "conclusion": "success",
+            "name": "Post Check out benchmark source",
+            "number": 14,
+            "startedAt": "2026-11-06T08:22:36Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-11-06T08:22:36Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-11-06T08:22:36Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185960764/job/127786239565"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-11-06T08:22:38Z",
+    "url": "https://github.com/sarattha/relayna-gateway/actions/runs/42185960764",
+    "mode": "comparison",
+    "body_mib": 5,
+    "architecture": "amd64"
+  }
+]
