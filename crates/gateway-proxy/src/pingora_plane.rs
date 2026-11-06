@@ -2691,9 +2691,14 @@ where
                     .as_ref()
                     .map_or(0, BoundedBodyRewriter::buffered_len),
             );
-            let reservation = lease
-                .prepare_buffer(length, retained.max(length))
-                .and_then(|()| lease.try_reserve(length.saturating_sub(lease.reserved_bytes())));
+            // Final rewritten output was charged separately by serialization.
+            // Do not replace the input extent with its (possibly smaller) size.
+            let reservation = if end_of_stream {
+                Ok(())
+            } else {
+                lease.prepare_buffer(length, retained.max(length))
+            }
+            .and_then(|()| lease.try_reserve(length.saturating_sub(lease.reserved_bytes())));
             if let Err(error) = reservation {
                 *body = Some(Bytes::new());
                 if let Some(rewriter) = ctx.response_rewriter.as_mut() {

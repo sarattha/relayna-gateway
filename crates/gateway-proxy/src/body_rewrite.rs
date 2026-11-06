@@ -38,13 +38,13 @@ pub(crate) fn serialize_with_admission<T: serde::Serialize>(
                         .max(length)
                         .min(self.maximum);
                     if let Some(lease) = self.lease.as_mut() {
-                        lease.prepare_buffer(capacity, capacity)?;
+                        lease.prepare_rewrite(capacity)?;
                     }
                     self.bytes
                         .try_reserve_exact(capacity - self.bytes.len())
                         .map_err(|_| GatewayError::GatewayOverloaded)?;
                     if let Some(lease) = self.lease.as_mut() {
-                        lease.prepare_buffer(self.bytes.capacity(), self.bytes.capacity())?;
+                        lease.prepare_rewrite(self.bytes.capacity())?;
                     }
                 }
                 self.bytes.extend_from_slice(bytes);
@@ -229,6 +229,88 @@ pub fn prepare_rewritten_response_headers(response: &mut ResponseHeader, use_htt
 mod tests {
     use super::*;
     use pingora_http::{RequestHeader, ResponseHeader};
+
+    #[test]
+    fn serialization_keeps_live_input_workspace_during_small_output_writes() {
+        struct Probe(crate::BodyAdmissionController);
+        impl serde::Serialize for Probe {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                assert!(matches!(
+                    self.0.try_acquire_sized(Some(1)),
+                    Err(GatewayError::GatewayOverloaded)
+                ));
+                serializer.serialize_bool(true)
+            }
+        }
+        #[derive(serde::Serialize)]
+        struct Envelope {
+            // The opening object/key writes occur before this capacity probe.
+            probe: Probe,
+        }
+        let input = 512 * 1024;
+        for elastic_max_requests in [None, Some(8)] {
+            for expected in [None, Some(16), Some(input)] {
+                let controller = crate::BodyAdmissionController::with_size_policy(
+                    2,
+                    1024 * 1024,
+                    Some(crate::SizeAwareBodyPolicy {
+                        elastic_max_requests,
+                        max_working_bytes: 64 * 1024 + input * 3 + 64,
+                        reserved_small_requests: 0,
+                        workspace_multiplier: 2,
+                        upload_timeout: std::time::Duration::from_secs(30),
+                    }),
+                )
+                .unwrap();
+                let mut lease = controller.try_acquire_sized(expected).unwrap();
+                lease.prepare_buffer(input, input).unwrap();
+                let output = serialize_with_admission(
+                    &Envelope {
+                        probe: Probe(controller.clone()),
+                    },
+                    input,
+                    Some(&mut lease),
+                    GatewayError::RequestBodyTooLarge,
+                )
+                .unwrap();
+                assert_eq!(output, br#"{"probe":true}"#);
+                drop(lease);
+                assert!(controller.try_acquire_sized(Some(input)).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn serialization_reserves_output_in_addition_to_live_input() {
+        let input = 512 * 1024;
+        let controller = crate::BodyAdmissionController::with_size_policy(
+            2,
+            1024 * 1024,
+            Some(crate::SizeAwareBodyPolicy {
+                elastic_max_requests: None,
+                max_working_bytes: 64 * 1024 + input * 3 + 64,
+                reserved_small_requests: 0,
+                workspace_multiplier: 2,
+                upload_timeout: std::time::Duration::from_secs(30),
+            }),
+        )
+        .unwrap();
+        let mut lease = controller.try_acquire_sized(Some(input)).unwrap();
+        lease.prepare_buffer(input, input).unwrap();
+        assert_eq!(
+            serialize_with_admission(
+                &"x".repeat(1024),
+                input,
+                Some(&mut lease),
+                GatewayError::RequestBodyTooLarge,
+            ),
+            Err(GatewayError::GatewayOverloaded)
+        );
+        assert!(controller.try_acquire_sized(Some(1)).is_err());
+        drop(lease);
+        assert_eq!(controller.active_requests(), 0);
+        assert!(controller.try_acquire_sized(Some(input)).is_ok());
+    }
 
     #[test]
     fn serialization_checks_expansion_before_growing_output() {

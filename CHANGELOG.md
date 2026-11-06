@@ -47,6 +47,9 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Fixed
 
+- Preserve the live input allocation and processing workspace while serializing
+  guardrail rewrites, including chunked and underestimated-length bodies. Charge
+  output growth separately and retain its allocation through forwarding.
 - Keep simultaneous replicas using the same configured bootstrap operator token
   from failing startup on a duplicate prefix. The winning token remains unchanged;
   a collision without an active operator still fails closed.
@@ -70,16 +73,12 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Release validation
 
-- Complete fresh native amd64 adaptive validation at 5, 10, 20, 40, 80 and
-  100 MiB: 239 fresh-pod trials, with three resource-stable confirmations at
-  each selected setting. Retain OOMs, transport errors and both superseded
-  attempts. Most settings establish tested bounds, not production capacity;
-  the 40 MiB confirmations include one trial with lost denial replies. The
+- Retain the completed 239-trial pre-review study and same-runner v1.0.2
+  comparison as immutable evidence. The rewrite-accounting correction changes
+  runtime inputs, so fresh full six-size adaptive validation is required before
+  merge, tagging and publication. The
   [versioned validation record](https://sarattha.github.io/relayna-gateway/benchmarks/v1.2.0/)
-  links audited HTML/JSON/CSV, raw evidence, runtime/image identities and checksums.
-- Include a separate same-runner comparison against immutable v1.0.2 at 5 MiB,
-  eight slots/pod and three trials per version. Its small sequential cohort and
-  deliberate upstream pauses do not establish general throughput improvements.
+  tracks replacement execution and links the preceding evidence.
 - Earlier PR comparisons cover uniform/mixed bodies and controlled HTTP/SSE
   and WebSocket Responses traffic, including LiteLLM. They describe their
   measured candidate commits and do not substitute for this release's study.

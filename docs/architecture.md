@@ -146,7 +146,9 @@ defaults and serialized-byte ceiling remain unchanged. Declared lengths reserve 
 capacity early, unknown-length uploads grow within shared capacity, and an
 optional reserve protects declared small bodies. Growth and JSON serialization
 check capacity before allocation; temporary workspace estimates remain distinct
-from an exact RSS limit. A separate optional upstream request/stream ceiling
+from an exact RSS limit. Rewritten output has a separate allocation charge;
+serialization preserves the original input extent and its processing workspace,
+including for unknown-length uploads and shrinking rewrites. A separate optional upstream request/stream ceiling
 spans the entire provider operation. See [mixed-body operation and limits](operations.md#mixed-body-sizes).
 
 Canonical OpenAI-compatible and Anthropic-compatible routes can run in

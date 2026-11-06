@@ -81,6 +81,7 @@ pub struct BodyAdmissionLease {
     admitted_at: Instant,
     expected_length: Option<usize>,
     allocation_capacity: usize,
+    rewrite_capacity: usize,
     working_bytes: usize,
     extent: usize,
     processing: bool,
@@ -158,6 +159,7 @@ impl BodyAdmissionController {
             admitted_at: Instant::now(),
             expected_length,
             allocation_capacity: 0,
+            rewrite_capacity: 0,
             working_bytes: 0,
             extent: 0,
             processing: self
@@ -239,6 +241,21 @@ impl BodyAdmissionLease {
         Ok(())
     }
 
+    /// Output coexists with the input allocation and parsed structures. Keep
+    /// their extent/capacity intact while independently reserving output growth.
+    pub(crate) fn prepare_rewrite(&mut self, capacity: usize) -> GatewayResult<()> {
+        let previous = self.rewrite_capacity;
+        self.rewrite_capacity = previous.max(capacity);
+        if let Err(error) =
+            self.update_working(self.extent, self.allocation_capacity, self.large, true)
+        {
+            self.rewrite_capacity = previous;
+            return Err(error);
+        }
+        self.processing = true;
+        Ok(())
+    }
+
     /// Retain a small metadata allowance after synchronous analysis, rather
     /// than holding body-sized scratch space across policy/database waits.
     /// Callers must keep full workspace while larger parsed structures live.
@@ -280,8 +297,10 @@ impl BodyAdmissionLease {
         let Some(policy) = self.state.size_policy else {
             return Ok(());
         };
+        let large = large || self.rewrite_capacity > SMALL_BODY_MAX_BYTES;
         let workspace = if processing || self.compact_workspace {
             let bytes = length
+                .max(self.rewrite_capacity)
                 .checked_mul(policy.workspace_multiplier)
                 .ok_or(GatewayError::GatewayOverloaded)?;
             if processing {
@@ -294,6 +313,7 @@ impl BodyAdmissionLease {
         };
         let charge = workspace
             .checked_add(capacity.max(length))
+            .and_then(|bytes| bytes.checked_add(self.rewrite_capacity))
             .and_then(|bytes| bytes.checked_add(REQUEST_WORKING_OVERHEAD))
             .ok_or(GatewayError::GatewayOverloaded)?;
         // Declared-length reservations usually cover many upload chunks. The
@@ -369,11 +389,17 @@ impl BodyAdmissionLease {
         // Guardrails may expand a body after its original chunks were admitted.
         self.try_reserve(body.len().saturating_sub(self.reserved_bytes))?;
         self.compact_workspace = false;
+        let retained_capacity = if self.rewrite_capacity > 0 {
+            self.rewrite_capacity
+        } else {
+            self.allocation_capacity
+        };
+        self.rewrite_capacity = 0;
         // Parsing/rewrite workspace is no longer needed, but the allocation
         // remains charged through all upstream clones/slices of the buffer.
         self.update_working(
             body.len(),
-            self.allocation_capacity.max(body.len()),
+            retained_capacity.max(body.len()),
             body.len() > SMALL_BODY_MAX_BYTES,
             false,
         )?;
@@ -541,6 +567,60 @@ mod tests {
         assert_eq!(unknown.allocation_capacity, 1024 * 1024);
         drop(unknown);
         assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn rewrite_growth_is_atomic_and_only_output_capacity_survives_forwarding() {
+        let controller = elastic(4, 32);
+        let mut lease = controller.try_acquire_sized(None).unwrap();
+        lease.prepare_buffer(1024 * 1024, 1024 * 1024).unwrap();
+        lease.begin_processing().unwrap();
+        let input_charge = lease.working_bytes;
+        lease.prepare_rewrite(128).unwrap();
+        assert_eq!(lease.working_bytes, input_charge + 128);
+        assert_eq!(lease.extent, 1024 * 1024);
+        assert_eq!(lease.allocation_capacity, 1024 * 1024);
+        assert!(lease.prepare_rewrite(2 * 1024 * 1024).is_err());
+        assert!(lease.prepare_rewrite(usize::MAX).is_err());
+        assert_eq!(lease.rewrite_capacity, 128);
+        assert_eq!(lease.working_bytes, input_charge + 128);
+        assert_eq!(
+            controller.state.working.lock().unwrap().bytes,
+            input_charge + 128
+        );
+
+        let body = lease.into_bytes(Bytes::from(vec![0; 128])).unwrap();
+        let last = body.clone();
+        drop(body);
+        assert_eq!(
+            controller.state.working.lock().unwrap().bytes,
+            REQUEST_WORKING_OVERHEAD + 128
+        );
+        drop(last);
+        assert_eq!(controller.active_requests(), 0);
+        assert_eq!(controller.active_bytes(), 0);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn expanded_rewrite_must_acquire_shared_capacity_before_leaving_small_reserve() {
+        let controller = sized(2, 8, 1);
+        let large = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        let mut small = controller.try_acquire_sized(Some(64)).unwrap();
+        let before = small.working_bytes;
+        assert!(small.prepare_rewrite(SMALL_BODY_MAX_BYTES + 1).is_err());
+        assert_eq!(small.working_bytes, before);
+        assert_eq!(small.rewrite_capacity, 0);
+        assert!(!small.large);
+        drop(large);
+        small.prepare_rewrite(SMALL_BODY_MAX_BYTES + 1).unwrap();
+        assert!(small.large);
+        drop(small);
+        let state = controller.state.working.lock().unwrap();
+        assert_eq!(
+            (state.bytes, state.large_bytes, state.large_requests),
+            (0, 0, 0)
+        );
     }
 
     #[test]

@@ -80,7 +80,11 @@ capacity or forecast body length, and `GATEWAY_BODY_WORKSPACE_MULTIPLIER` times
 the forecast length. A declared Content-Length reserves estimated working bytes
 without allocating the complete body. Actual bytes and route limits remain
 authoritative. Growth is checked before buffer allocation, including rewritten
-JSON output; buffer capacity is checked again after allocation. Workspace is
+JSON output; buffer capacity is checked again after allocation. The original
+input workspace remains reserved while a rewrite is serialized, and output
+capacity is reserved in addition to the input allocation. Shrinking or chunked
+rewrites cannot release still-live input workspace. Expanded output also needs
+shared capacity if it outgrows the protected small-body class. Workspace is
 released after request analysis/rewrite, while the forwarded allocation remains
 charged through its last reference. In elastic mode, upload reservations cover
 the body and overhead; the workspace multiplier is added only immediately
