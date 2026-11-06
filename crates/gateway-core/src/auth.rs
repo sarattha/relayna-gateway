@@ -1,3 +1,4 @@
+use crate::auth_admission::overload;
 use crate::errors::{GatewayError, GatewayResult};
 use argon2::{
     password_hash::{PasswordHash, PasswordVerifier},
@@ -5,25 +6,71 @@ use argon2::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use std::sync::Arc;
+use gateway_telemetry::{record_auth_admission_event, AuthAdmissionEvent};
+use std::{
+    sync::Arc,
+    time::{Duration as StdDuration, Instant},
+};
 use tokio::sync::Semaphore;
 use uuid::Uuid;
+use zeroize::Zeroizing;
+
+#[path = "verification_cache.rs"]
+mod verification_cache;
+#[path = "verification_flight.rs"]
+mod verification_flight;
 
 const RELAYNA_KEY_PREFIX: &str = "rk_live_";
 const LOOKUP_PREFIX_LEN: usize = 16;
 // Argon2 is CPU/memory intensive. Share this bound across both Gateway
 // runtimes, independently of the number of outstanding authentication futures.
 static KEY_VERIFICATION_SLOTS: Semaphore = Semaphore::const_new(2);
+static KEY_VERIFICATION_WAITERS: Semaphore = Semaphore::const_new(8);
+static AUTH_LOOKUP_SLOTS: Semaphore = Semaphore::const_new(64);
+const VERIFICATION_WAIT: StdDuration = StdDuration::from_millis(250);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Covers store work even for callers outside the HTTP adapters.
+pub fn try_auth_lookup() -> GatewayResult<tokio::sync::SemaphorePermit<'static>> {
+    AUTH_LOOKUP_SLOTS
+        .try_acquire()
+        .map_err(|_| overload(AuthAdmissionEvent::LookupFull))
+}
+
+/// All runtime key hashing/verification shares this executor across runtimes.
+pub async fn run_key_crypto<T: Send + 'static>(
+    work: impl FnOnce() -> GatewayResult<T> + Send + 'static,
+) -> GatewayResult<T> {
+    verify_in_background(&KEY_VERIFICATION_SLOTS, &KEY_VERIFICATION_WAITERS, work).await
+}
+
+pub async fn run_verification_cache_maintenance() {
+    let mut interval = tokio::time::interval(StdDuration::from_secs(5));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        interval.tick().await;
+        verification_cache::purge_expired();
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct VirtualKey {
-    raw: String,
+    raw: Zeroizing<String>,
     prefix: String,
+}
+
+impl std::fmt::Debug for VirtualKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VirtualKey")
+            .field("raw", &"[REDACTED]")
+            .field("prefix", &self.prefix)
+            .finish()
+    }
 }
 
 impl VirtualKey {
     pub fn parse(raw: impl Into<String>) -> GatewayResult<Self> {
-        let raw = raw.into();
+        let raw = Zeroizing::new(raw.into());
+        crate::auth_admission::validate_key_text(&raw)?;
         if !raw.starts_with(RELAYNA_KEY_PREFIX) || raw.len() <= LOOKUP_PREFIX_LEN {
             return Err(GatewayError::MalformedAuthorization);
         }
@@ -92,6 +139,7 @@ where
 #[derive(Debug, Clone)]
 pub struct Authenticator<S> {
     store: S,
+    lookup_slots: &'static Semaphore,
 }
 
 impl<S> Authenticator<S>
@@ -99,7 +147,10 @@ where
     S: VirtualKeyLookup,
 {
     pub fn new(store: S) -> Self {
-        Self { store }
+        Self {
+            store,
+            lookup_slots: &AUTH_LOOKUP_SLOTS,
+        }
     }
 
     pub async fn authenticate_authorization(
@@ -108,6 +159,9 @@ where
         now: DateTime<Utc>,
     ) -> GatewayResult<AuthenticatedKey> {
         let authorization = authorization.ok_or(GatewayError::MissingAuthorization)?;
+        if authorization.len() > crate::auth_admission::MAX_KEY_BYTES + 16 {
+            return Err(GatewayError::MalformedAuthorization);
+        }
         let key = VirtualKey::from_authorization(authorization)?;
         self.authenticate_virtual_key(key, now).await
     }
@@ -118,6 +172,9 @@ where
         now: DateTime<Utc>,
     ) -> GatewayResult<AuthenticatedKey> {
         let raw_key = raw_key.ok_or(GatewayError::MissingAuthorization)?;
+        if raw_key.len() > crate::auth_admission::MAX_KEY_BYTES + 16 {
+            return Err(GatewayError::MalformedAuthorization);
+        }
         let key = VirtualKey::parse(raw_key.trim())?;
         self.authenticate_virtual_key(key, now).await
     }
@@ -127,34 +184,46 @@ where
         key: VirtualKey,
         now: DateTime<Utc>,
     ) -> GatewayResult<AuthenticatedKey> {
-        let stored = self
+        let _lookup = self
+            .lookup_slots
+            .try_acquire()
+            .map_err(|_| overload(AuthAdmissionEvent::LookupFull))?;
+        let started = Instant::now();
+        let current_time =
+            || now + chrono::Duration::from_std(started.elapsed()).unwrap_or_default();
+        let mut stored = self
             .store
             .find_by_prefix(key.prefix())
             .await?
             .ok_or(GatewayError::InvalidVirtualKey)?;
+        validate_key_state(&stored, current_time())?;
 
-        if stored.revoked_at.is_some() {
-            return Err(GatewayError::RevokedVirtualKey);
+        let proof = verification_cache::proof(stored.id, key.raw(), &stored.key_hash);
+        if !verification_cache::contains(proof) {
+            let raw_key = key.raw.clone();
+            let key_hash = Zeroizing::new(stored.key_hash.clone());
+            verification_flight::verify(proof, move || {
+                if !verification_cache::contains(proof) {
+                    verify_secret(&raw_key, &key_hash)?;
+                    verification_cache::insert(proof);
+                }
+                Ok(())
+            })
+            .await?;
+            let refreshed = self
+                .store
+                .find_by_prefix(key.prefix())
+                .await?
+                .ok_or(GatewayError::InvalidVirtualKey)?;
+            validate_key_state(&refreshed, current_time())?;
+            if refreshed.id != stored.id || refreshed.key_hash != stored.key_hash {
+                return Err(GatewayError::InvalidVirtualKey);
+            }
+            stored = refreshed;
+        } else {
+            record_auth_admission_event(AuthAdmissionEvent::CacheHit);
         }
-
-        if stored.disabled {
-            return Err(GatewayError::DisabledVirtualKey);
-        }
-
-        if stored
-            .expires_at
-            .is_some_and(|expires_at| expires_at <= now)
-        {
-            return Err(GatewayError::ExpiredVirtualKey);
-        }
-
-        let raw_key = key.raw().to_owned();
-        let key_hash = stored.key_hash.clone();
-        verify_in_background(&KEY_VERIFICATION_SLOTS, move || {
-            verify_secret(&raw_key, &key_hash)
-        })
-        .await?;
-        let _ = self.store.mark_key_used(stored.id, now).await;
+        let _ = self.store.mark_key_used(stored.id, current_time()).await;
 
         Ok(AuthenticatedKey {
             key_id: stored.id,
@@ -164,19 +233,48 @@ where
     }
 }
 
-async fn verify_in_background(
+fn validate_key_state(stored: &StoredVirtualKey, now: DateTime<Utc>) -> GatewayResult<()> {
+    if stored.revoked_at.is_some() {
+        return Err(GatewayError::RevokedVirtualKey);
+    }
+    if stored.disabled {
+        return Err(GatewayError::DisabledVirtualKey);
+    }
+    if stored.expires_at.is_some_and(|expiry| expiry <= now) {
+        return Err(GatewayError::ExpiredVirtualKey);
+    }
+    Ok(())
+}
+
+async fn verify_in_background<T: Send + 'static>(
     slots: &'static Semaphore,
-    verify: impl FnOnce() -> GatewayResult<()> + Send + 'static,
-) -> GatewayResult<()> {
-    let permit = slots.acquire().await.expect("private semaphore stays open");
-    tokio::task::spawn_blocking(move || {
-        // Cancellation cannot stop an executing CPU job. Keep its slot until
-        // verification actually finishes, even if the request is dropped.
+    waiters: &'static Semaphore,
+    verify: impl FnOnce() -> GatewayResult<T> + Send + 'static,
+) -> GatewayResult<T> {
+    let permit = match slots.try_acquire() {
+        Ok(permit) => permit,
+        Err(_) => {
+            let _waiting = waiters
+                .try_acquire()
+                .map_err(|_| overload(AuthAdmissionEvent::CryptoQueueFull))?;
+            tokio::time::timeout(VERIFICATION_WAIT, slots.acquire())
+                .await
+                .map_err(|_| overload(AuthAdmissionEvent::CryptoTimeout))?
+                .map_err(|_| overload(AuthAdmissionEvent::CryptoQueueFull))?
+        }
+    };
+    // JoinSet aborts jobs that have not started when the request is cancelled.
+    // A started blocking job cannot be aborted and keeps its captured permit.
+    let mut jobs = tokio::task::JoinSet::new();
+    jobs.spawn_blocking(move || {
+        // Dropping the request cannot stop started CPU work: keep its permit.
         let _permit = permit;
         verify()
-    })
-    .await
-    .unwrap_or(Err(GatewayError::InvalidVirtualKey))
+    });
+    jobs.join_next()
+        .await
+        .expect("one verification job")
+        .unwrap_or(Err(GatewayError::InvalidVirtualKey))
 }
 
 pub fn verify_secret(raw_key: &str, encoded_hash: &str) -> GatewayResult<()> {
@@ -196,6 +294,302 @@ mod tests {
     };
     use chrono::Duration;
     use std::sync::{Arc, Mutex};
+
+    static AUTH_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    #[tokio::test]
+    async fn cold_cohort_shares_one_job_and_each_follower_rechecks_current_state() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
+        for change in 0..7 {
+            let raw = format!("rk_live_{}", Uuid::new_v4().simple());
+            let value = stored(&raw);
+            let lookup = MemoryLookup {
+                value: Arc::new(Mutex::new(Some(value.clone()))),
+            };
+            let held = KEY_VERIFICATION_SLOTS.acquire_many(2).await.unwrap();
+            let mut requests = Vec::new();
+            for _ in 0..64 {
+                let raw = raw.clone();
+                let auth = Authenticator::new(lookup.clone());
+                requests.push(tokio::spawn(async move {
+                    auth.authenticate_raw_key(Some(&raw), Utc::now()).await
+                }));
+            }
+            tokio::time::timeout(StdDuration::from_millis(200), async {
+                while verification_flight::follower_count() != 63 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            // All 64 requests have completed their initial lookup, but only
+            // one leader has reserved a crypto waiter.
+            assert_eq!(KEY_VERIFICATION_WAITERS.available_permits(), 7);
+            let mut refreshed = value;
+            let expected = match change {
+                0 => {
+                    refreshed.disabled = true;
+                    Some(GatewayError::DisabledVirtualKey)
+                }
+                1 => {
+                    refreshed.revoked_at = Some(Utc::now());
+                    Some(GatewayError::RevokedVirtualKey)
+                }
+                2 => {
+                    refreshed.expires_at = Some(Utc::now());
+                    Some(GatewayError::ExpiredVirtualKey)
+                }
+                3 => {
+                    refreshed.key_hash.push('x');
+                    Some(GatewayError::InvalidVirtualKey)
+                }
+                4 => {
+                    refreshed.id = Uuid::new_v4();
+                    Some(GatewayError::InvalidVirtualKey)
+                }
+                5 => Some(GatewayError::InvalidVirtualKey),
+                _ => {
+                    refreshed.project_id = Some(Uuid::new_v4());
+                    None
+                }
+            };
+            let project = refreshed.project_id;
+            *lookup.value.lock().unwrap() = (change != 5).then_some(refreshed);
+            drop(held);
+            for request in requests {
+                let result = request.await.unwrap();
+                if let Some(expected) = &expected {
+                    assert_eq!(result, Err(expected.clone()));
+                } else {
+                    assert_eq!(result.unwrap().project_id, project);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelling_first_request_keeps_shared_work_and_wrong_secrets_separate() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
+        let raw = format!("rk_live_{}", Uuid::new_v4().simple());
+        let lookup = MemoryLookup {
+            value: Arc::new(Mutex::new(Some(stored(&raw)))),
+        };
+        let held = KEY_VERIFICATION_SLOTS.acquire_many(2).await.unwrap();
+        let spawn = |secret: String| {
+            let auth = Authenticator::new(lookup.clone());
+            tokio::spawn(async move { auth.authenticate_raw_key(Some(&secret), Utc::now()).await })
+        };
+        let first = spawn(raw.clone());
+        while KEY_VERIFICATION_WAITERS.available_permits() != 7 {
+            tokio::task::yield_now().await;
+        }
+        let follower = spawn(raw.clone());
+        while verification_flight::follower_count() != 1 {
+            tokio::task::yield_now().await;
+        }
+        first.abort();
+        assert!(first.await.unwrap_err().is_cancelled());
+        let wrong = spawn(format!("{raw}_wrong"));
+        while KEY_VERIFICATION_WAITERS.available_permits() != 6 {
+            tokio::task::yield_now().await;
+        }
+        drop(held);
+        follower.await.unwrap().unwrap();
+        assert_eq!(wrong.await.unwrap(), Err(GatewayError::InvalidVirtualKey));
+        assert_eq!(verification_flight::follower_count(), 0);
+    }
+
+    #[test]
+    fn cancellation_aborts_crypto_queued_in_the_blocking_pool() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static SLOTS: Semaphore = Semaphore::const_new(1);
+        static WAITERS: Semaphore = Semaphore::const_new(8);
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = std::sync::mpsc::channel();
+            let blocker = tokio::task::spawn_blocking(move || {
+                started_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+            started_rx.await.unwrap();
+            let ran = Arc::new(AtomicBool::new(false));
+            let observed = ran.clone();
+            let request = tokio::spawn(verify_in_background(&SLOTS, &WAITERS, move || {
+                observed.store(true, Ordering::SeqCst);
+                Ok(())
+            }));
+            while SLOTS.available_permits() != 0 {
+                tokio::task::yield_now().await;
+            }
+            request.abort();
+            assert!(request.await.unwrap_err().is_cancelled());
+            release_tx.send(()).unwrap();
+            blocker.await.unwrap();
+            let _released = SLOTS.acquire().await.unwrap();
+            assert!(!ran.load(Ordering::SeqCst));
+        });
+    }
+
+    #[tokio::test]
+    async fn operator_verification_shares_capacity_and_preserves_overload_error() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
+        let held = KEY_VERIFICATION_SLOTS.acquire_many(2).await.unwrap();
+        let token = crate::operators::StoredOperatorToken {
+            id: Uuid::new_v4(),
+            token_prefix: "op_live_12345678".into(),
+            token_hash: "not-reached".into(),
+            roles: vec![],
+            scopes: vec![],
+            disabled: false,
+            revoked_at: None,
+        };
+        assert_eq!(
+            crate::operators::verify_stored_operator_token("op_live_1234567890", &token).await,
+            Err(GatewayError::AuthenticationOverloaded)
+        );
+        assert_eq!(KEY_VERIFICATION_WAITERS.available_permits(), 8);
+        drop(held);
+    }
+
+    #[tokio::test]
+    async fn rejects_capacity_and_malformed_keys_before_store_work() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
+        struct NoLookup;
+        #[async_trait]
+        impl VirtualKeyLookup for NoLookup {
+            async fn find_by_prefix(&self, _: &str) -> GatewayResult<Option<StoredVirtualKey>> {
+                panic!("admission must precede store work");
+            }
+        }
+        static SLOTS: Semaphore = Semaphore::const_new(1);
+        let held = SLOTS.acquire().await.unwrap();
+        let auth = Authenticator {
+            store: NoLookup,
+            lookup_slots: &SLOTS,
+        };
+        assert_eq!(
+            auth.authenticate_raw_key(Some("rk_live_1234567890"), Utc::now())
+                .await,
+            Err(GatewayError::AuthenticationOverloaded)
+        );
+        drop(held);
+        for raw in [
+            "rk_live_1234,567890".to_owned(),
+            "rk_live_1234 567890".into(),
+            format!("rk_live_{}", "x".repeat(1024)),
+        ] {
+            assert_eq!(
+                auth.authenticate_raw_key(Some(&raw), Utc::now()).await,
+                Err(GatewayError::MalformedAuthorization)
+            );
+        }
+        let key = VirtualKey::parse("rk_live_1234567890-secret").unwrap();
+        assert!(!format!("{key:?}").contains("secret"));
+    }
+
+    #[tokio::test]
+    async fn verifier_waiting_queue_is_finite_and_deadline_releases_it() {
+        static SLOTS: Semaphore = Semaphore::const_new(2);
+        static WAITERS: Semaphore = Semaphore::const_new(8);
+        let held = SLOTS.acquire_many(2).await.unwrap();
+        let mut jobs = Vec::new();
+        for _ in 0..8 {
+            jobs.push(tokio::spawn(verify_in_background(
+                &SLOTS,
+                &WAITERS,
+                || -> GatewayResult<()> { panic!("timed out work must not run") },
+            )));
+        }
+        while WAITERS.available_permits() != 0 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            verify_in_background(&SLOTS, &WAITERS, || Ok(())).await,
+            Err(GatewayError::AuthenticationOverloaded)
+        );
+        for job in jobs {
+            assert_eq!(
+                job.await.unwrap(),
+                Err(GatewayError::AuthenticationOverloaded)
+            );
+        }
+        assert_eq!(WAITERS.available_permits(), 8);
+        drop(held);
+        verify_in_background(&SLOTS, &WAITERS, || Ok(()))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn cold_verification_refreshes_state_before_returning_identity() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
+        struct ChangingLookup {
+            initial: StoredVirtualKey,
+            refreshed: Option<StoredVirtualKey>,
+            calls: std::sync::atomic::AtomicUsize,
+        }
+        #[async_trait]
+        impl VirtualKeyLookup for ChangingLookup {
+            async fn find_by_prefix(&self, _: &str) -> GatewayResult<Option<StoredVirtualKey>> {
+                if self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                    Ok(Some(self.initial.clone()))
+                } else {
+                    Ok(self.refreshed.clone())
+                }
+            }
+        }
+        for change in 0..7 {
+            let raw = format!("rk_live_{}", Uuid::new_v4().simple());
+            let initial = stored(&raw);
+            let mut refreshed = initial.clone();
+            let now = Utc::now();
+            let expected = match change {
+                0 => {
+                    refreshed.disabled = true;
+                    Some(GatewayError::DisabledVirtualKey)
+                }
+                1 => {
+                    refreshed.revoked_at = Some(now);
+                    Some(GatewayError::RevokedVirtualKey)
+                }
+                2 => {
+                    refreshed.expires_at = Some(now);
+                    Some(GatewayError::ExpiredVirtualKey)
+                }
+                3 => {
+                    refreshed.key_hash.push('x');
+                    Some(GatewayError::InvalidVirtualKey)
+                }
+                4 => {
+                    refreshed.id = Uuid::new_v4();
+                    Some(GatewayError::InvalidVirtualKey)
+                }
+                5 => Some(GatewayError::InvalidVirtualKey),
+                _ => {
+                    refreshed.project_id = Some(Uuid::new_v4());
+                    None
+                }
+            };
+            let expected_project = refreshed.project_id;
+            let auth = Authenticator::new(ChangingLookup {
+                initial,
+                refreshed: (change != 5).then_some(refreshed),
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            });
+            let result = auth.authenticate_raw_key(Some(&raw), now).await;
+            if let Some(error) = expected {
+                assert_eq!(result, Err(error));
+            } else {
+                assert_eq!(result.unwrap().project_id, expected_project);
+            }
+        }
+    }
 
     #[derive(Clone)]
     struct MemoryLookup {
@@ -245,6 +639,7 @@ mod tests {
 
     #[tokio::test]
     async fn authenticates_valid_key() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
         let raw = "rk_live_1234567890abcdef";
         let lookup = MemoryLookup {
             value: Arc::new(Mutex::new(Some(stored(raw)))),
@@ -260,6 +655,7 @@ mod tests {
 
     #[tokio::test]
     async fn authenticates_raw_header_key() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
         let raw = "rk_live_1234567890abcdef";
         let lookup = MemoryLookup {
             value: Arc::new(Mutex::new(Some(stored(raw)))),
@@ -275,6 +671,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn key_verification_leaves_the_request_executor_responsive() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
         let raw = format!("{RELAYNA_KEY_PREFIX}{}", Uuid::new_v4().simple());
         let lookup = MemoryLookup {
             value: Arc::new(Mutex::new(Some(stored(&raw)))),
@@ -307,6 +704,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_wrong_key_secret() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
         let raw = format!("{RELAYNA_KEY_PREFIX}{}", Uuid::new_v4().simple());
         let wrong_secret = format!("{raw}_wrong");
         let lookup = MemoryLookup {
@@ -322,8 +720,127 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn verified_secret_hit_skips_workers_but_refreshes_key_state() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
+        let raw = format!("{RELAYNA_KEY_PREFIX}{}", Uuid::new_v4().simple());
+        let value = stored(&raw);
+        let lookup = MemoryLookup {
+            value: Arc::new(Mutex::new(Some(value.clone()))),
+        };
+        let authenticator = Authenticator::new(lookup.clone());
+        authenticator
+            .authenticate_raw_key(Some(&raw), Utc::now())
+            .await
+            .unwrap();
+        let held = KEY_VERIFICATION_SLOTS.acquire_many(2).await.unwrap();
+        let changed_project = Some(Uuid::new_v4());
+        lookup.value.lock().unwrap().as_mut().unwrap().project_id = changed_project;
+        let hit = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            authenticator.authenticate_raw_key(Some(&raw), Utc::now()),
+        )
+        .await;
+        drop(held);
+        assert_eq!(hit.unwrap().unwrap().project_id, changed_project);
+
+        for (disabled, revoked, expired, expected) in [
+            (true, false, false, GatewayError::DisabledVirtualKey),
+            (false, true, false, GatewayError::RevokedVirtualKey),
+            (false, false, true, GatewayError::ExpiredVirtualKey),
+        ] {
+            let mut changed = value.clone();
+            changed.disabled = disabled;
+            changed.revoked_at = revoked.then(Utc::now);
+            changed.expires_at = expired.then(|| Utc::now() - Duration::seconds(1));
+            *lookup.value.lock().unwrap() = Some(changed);
+            assert_eq!(
+                authenticator
+                    .authenticate_raw_key(Some(&raw), Utc::now())
+                    .await,
+                Err(expected)
+            );
+        }
+        *lookup.value.lock().unwrap() = None;
+        assert_eq!(
+            authenticator
+                .authenticate_raw_key(Some(&raw), Utc::now())
+                .await,
+            Err(GatewayError::InvalidVirtualKey)
+        );
+
+        let mut rotated = value;
+        let new_raw = format!("{raw}_rotated");
+        rotated.key_hash = hash(&new_raw);
+        *lookup.value.lock().unwrap() = Some(rotated);
+        assert_eq!(
+            authenticator
+                .authenticate_raw_key(Some(&raw), Utc::now())
+                .await,
+            Err(GatewayError::InvalidVirtualKey)
+        );
+        authenticator
+            .authenticate_raw_key(Some(&new_raw), Utc::now())
+            .await
+            .unwrap();
+        assert_eq!(
+            authenticator
+                .authenticate_raw_key(Some(&format!("{new_raw}_wrong")), Utc::now())
+                .await,
+            Err(GatewayError::InvalidVirtualKey)
+        );
+    }
+
+    #[tokio::test]
+    async fn verified_secret_hit_still_marks_usage_and_fails_closed_on_store_error() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        struct ObservedLookup {
+            key: StoredVirtualKey,
+            unavailable: AtomicBool,
+            used: AtomicUsize,
+        }
+        #[async_trait]
+        impl VirtualKeyLookup for ObservedLookup {
+            async fn find_by_prefix(&self, _: &str) -> GatewayResult<Option<StoredVirtualKey>> {
+                if self.unavailable.load(Ordering::SeqCst) {
+                    Err(GatewayError::StoreUnavailable)
+                } else {
+                    Ok(Some(self.key.clone()))
+                }
+            }
+            async fn mark_key_used(&self, _: Uuid, _: DateTime<Utc>) -> GatewayResult<()> {
+                self.used.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+        let raw = format!("{RELAYNA_KEY_PREFIX}{}", Uuid::new_v4().simple());
+        let lookup = Arc::new(ObservedLookup {
+            key: stored(&raw),
+            unavailable: AtomicBool::new(false),
+            used: AtomicUsize::new(0),
+        });
+        let authenticator = Authenticator::new(lookup.clone());
+        for _ in 0..2 {
+            authenticator
+                .authenticate_raw_key(Some(&raw), Utc::now())
+                .await
+                .unwrap();
+        }
+        assert_eq!(lookup.used.load(Ordering::SeqCst), 2);
+        lookup.unavailable.store(true, Ordering::SeqCst);
+        assert_eq!(
+            authenticator
+                .authenticate_raw_key(Some(&raw), Utc::now())
+                .await,
+            Err(GatewayError::StoreUnavailable)
+        );
+        assert_eq!(lookup.used.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
     async fn verification_workers_are_bounded() {
         static SLOTS: Semaphore = Semaphore::const_new(2);
+        static WAITERS: Semaphore = Semaphore::const_new(8);
         let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut jobs = Vec::new();
         let mut releases = Vec::new();
@@ -331,11 +848,15 @@ mod tests {
             let (release_tx, release_rx) = std::sync::mpsc::channel();
             releases.push(release_tx);
             let started = started_tx.clone();
-            jobs.push(tokio::spawn(verify_in_background(&SLOTS, move || {
-                started.send(index).unwrap();
-                release_rx.recv().unwrap();
-                Ok(())
-            })));
+            jobs.push(tokio::spawn(verify_in_background(
+                &SLOTS,
+                &WAITERS,
+                move || {
+                    started.send(index).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(())
+                },
+            )));
         }
         let first = started_rx.recv().await.unwrap();
         let second = started_rx.recv().await.unwrap();
@@ -356,9 +877,10 @@ mod tests {
     #[tokio::test]
     async fn cancelling_started_verification_keeps_its_worker_slot() {
         static SLOTS: Semaphore = Semaphore::const_new(1);
+        static WAITERS: Semaphore = Semaphore::const_new(8);
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
-        let job = tokio::spawn(verify_in_background(&SLOTS, move || {
+        let job = tokio::spawn(verify_in_background(&SLOTS, &WAITERS, move || {
             started_tx.send(()).unwrap();
             release_rx.recv().unwrap();
             Ok(())
@@ -369,7 +891,7 @@ mod tests {
         assert_eq!(SLOTS.available_permits(), 0);
 
         let (next_tx, mut next_rx) = tokio::sync::oneshot::channel();
-        let next = tokio::spawn(verify_in_background(&SLOTS, move || {
+        let next = tokio::spawn(verify_in_background(&SLOTS, &WAITERS, move || {
             next_tx.send(()).unwrap();
             Ok(())
         }));
@@ -389,10 +911,11 @@ mod tests {
         use std::sync::atomic::{AtomicBool, Ordering};
 
         static SLOTS: Semaphore = Semaphore::const_new(1);
+        static WAITERS: Semaphore = Semaphore::const_new(8);
         let held = SLOTS.acquire().await.unwrap();
         let ran = Arc::new(AtomicBool::new(false));
         let observed = ran.clone();
-        let job = tokio::spawn(verify_in_background(&SLOTS, move || {
+        let job = tokio::spawn(verify_in_background(&SLOTS, &WAITERS, move || {
             observed.store(true, Ordering::SeqCst);
             Ok(())
         }));
@@ -408,8 +931,10 @@ mod tests {
     #[tokio::test]
     async fn verification_worker_failure_is_closed_and_releases_its_slot() {
         static SLOTS: Semaphore = Semaphore::const_new(1);
+        static WAITERS: Semaphore = Semaphore::const_new(8);
         assert_eq!(
-            verify_in_background(&SLOTS, || panic!("simulated verifier failure")).await,
+            verify_in_background::<()>(&SLOTS, &WAITERS, || panic!("simulated verifier failure"))
+                .await,
             Err(GatewayError::InvalidVirtualKey)
         );
         assert_eq!(SLOTS.available_permits(), 1);
@@ -417,6 +942,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_disabled_key() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
         let raw = "rk_live_1234567890abcdef";
         let mut key = stored(raw);
         key.disabled = true;
@@ -434,6 +960,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_expired_key() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
         let raw = "rk_live_1234567890abcdef";
         let mut key = stored(raw);
         key.expires_at = Some(Utc::now() - Duration::minutes(1));
@@ -451,6 +978,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_revoked_key_even_when_not_disabled() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
         let raw = "rk_live_1234567890abcdef";
         let mut key = stored(raw);
         key.disabled = false;

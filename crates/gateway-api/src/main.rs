@@ -13,6 +13,8 @@ use tokio::net::TcpListener;
 use tokio::time::{self, Duration};
 
 fn main() -> anyhow::Result<()> {
+    gateway_api::memory_protection::disable_process_dumps()
+        .context("disable process memory dumps")?;
     let config = Config::from_env().context("load gateway configuration")?;
     gateway_telemetry::init(&config.log_level, config.entra_auth_debug);
     gateway_telemetry::runtime::init_runtime_monitoring();
@@ -86,6 +88,10 @@ fn main() -> anyhow::Result<()> {
     }
     let shared_auth = SharedGatewayAuthRuntime::new(effective_auth.runtime_config())
         .context("create shared gateway auth runtime")?;
+    let admission = Arc::new(gateway_core::auth_admission::RequestAdmission::new(
+        config.gateway_preauth_source_rps,
+        config.gateway_preauth_source_burst,
+    )?);
     let mut proxy_config =
         PingoraLiteLlmConfig::from_base_url(&config.litellm_base_url, &config.litellm_service_key)
             .context("create pingora LiteLLM proxy config")?
@@ -101,6 +107,7 @@ fn main() -> anyhow::Result<()> {
         ));
     }
     proxy_config = proxy_config
+        .with_request_admission(admission.clone())
         .with_worker_token(config.relayna_worker_token.clone())
         .with_entra_auth(effective_auth.entra_auth.clone())
         .with_apigee_trusted_header(effective_auth.apigee_trusted_header.clone())
@@ -109,7 +116,11 @@ fn main() -> anyhow::Result<()> {
             config.gateway_max_buffered_requests,
             config.gateway_max_inflight_buffer_bytes,
         )
-        .context("configure body admission limits")?;
+        .context("configure body admission limits")?
+        .with_size_aware_body_policy(config.gateway_size_aware_body_policy)
+        .context("configure body working-set admission")?
+        .with_upstream_request_limit(config.gateway_max_upstream_requests)
+        .context("configure upstream request admission")?;
 
     let studio = config.relayna_studio_base_url.clone().map(|base_url| {
         app::StudioCatalogClient::new(base_url, config.relayna_studio_token.clone())
@@ -140,6 +151,7 @@ fn main() -> anyhow::Result<()> {
         config.litellm_service_key.clone(),
         portal_oidc,
         owner_entra_verifier,
+        admission,
     );
     let control_bind_addr = config.gateway_control_bind_addr;
     let reconciler_store = store.clone();
@@ -164,6 +176,7 @@ fn main() -> anyhow::Result<()> {
             tracing::info!(addr = %listener.local_addr().unwrap_or(control_bind_addr), "gateway control API listening");
             // Dropping the task set stops both reconcilers with the control API.
             let mut reconcilers = tokio::task::JoinSet::new();
+            reconcilers.spawn(gateway_core::auth::run_verification_cache_maintenance());
             reconcilers.spawn(app::run_gateway_monitoring(monitoring_redis, monitoring_store));
             reconcilers.spawn(run_budget_counter_reconciler(
                 reconciler_store,
@@ -174,7 +187,7 @@ fn main() -> anyhow::Result<()> {
                 auth_env,
                 shared_auth,
             ));
-            if let Err(error) = axum::serve(listener, app)
+            if let Err(error) = axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
                 .with_graceful_shutdown(shutdown_signal())
                 .await
             {

@@ -1270,9 +1270,24 @@ impl gateway_core::PolicyLookup for PostgresStore {
         route: Option<Route>,
         model: Option<String>,
     ) -> GatewayResult<gateway_core::EffectivePolicy> {
-        let policy = self
-            .policy_for_context(key_id, project_id, team_id.clone(), route, model.clone())
+        let loaded = self
+            .load_policy_context(key_id, project_id, team_id.clone(), route, model.clone())
             .await?;
+        let policy = if let Some((mut effective, resolved_project_id)) = loaded {
+            if project_id == resolved_project_id {
+                // Both decisions use the same freshly loaded layers. Preserve
+                // the released trace's effective version on the key layer.
+                if let Some(key_layer) = effective.applied_layers.last_mut() {
+                    key_layer.policy_version = effective.policy.policy_version;
+                }
+                return Ok(effective);
+            }
+            effective.policy
+        } else {
+            KeyPolicy::default()
+        };
+        // A caller that omits the project retains the released distinction:
+        // key policy inherits its stored project, guardrails use caller context.
         let mut guardrail_layers = self
             .policy_layers_for_context(
                 project_id,
@@ -1305,6 +1320,23 @@ impl gateway_core::PolicyLookup for PostgresStore {
         route: Option<Route>,
         model: Option<String>,
     ) -> GatewayResult<KeyPolicy> {
+        Ok(self
+            .load_policy_context(key_id, context_project_id, team_id, route, model)
+            .await?
+            .map(|(effective, _)| effective.policy)
+            .unwrap_or_default())
+    }
+}
+
+impl PostgresStore {
+    async fn load_policy_context(
+        &self,
+        key_id: Uuid,
+        context_project_id: Option<Uuid>,
+        team_id: Option<String>,
+        route: Option<Route>,
+        model: Option<String>,
+    ) -> GatewayResult<Option<(gateway_core::EffectivePolicy, Option<Uuid>)>> {
         let Some(row) = sqlx::query(
             r#"
             SELECT
@@ -1363,7 +1395,7 @@ impl gateway_core::PolicyLookup for PostgresStore {
         .await
         .map_err(|_| GatewayError::StoreUnavailable)?
         else {
-            return Ok(KeyPolicy::default());
+            return Ok(None);
         };
 
         let owner_type: String = row
@@ -1481,10 +1513,10 @@ impl gateway_core::PolicyLookup for PostgresStore {
             guardrail_policy: self.guardrail_policy_for_key(key_id).await?,
             policy_version,
         });
-        let mut effective_policy = resolve_effective_policy(layers)?.policy;
-        self.apply_daily_cap_denials(key_id, &mut effective_policy)
+        let mut effective = resolve_effective_policy(layers)?;
+        self.apply_daily_cap_denials(key_id, &mut effective.policy)
             .await?;
-        Ok(effective_policy)
+        Ok(Some((effective, project_id)))
     }
 }
 
@@ -2611,6 +2643,15 @@ impl OperatorTokenStore for PostgresStore {
             Err(error) if is_unique_violation_on(&error, "operator_tokens_one_active_idx") => {
                 Ok(None)
             }
+            Err(error)
+                if is_unique_violation_on(&error, "operator_tokens_token_prefix_key")
+                    && self.has_active_operator_token().await? =>
+            {
+                // Replicas bootstrapping the same configured token can collide
+                // on its prefix before PostgreSQL checks the one-active index.
+                // Only accept the race when another active token now exists.
+                Ok(None)
+            }
             Err(_) => Err(GatewayError::StoreUnavailable),
         }
     }
@@ -2621,11 +2662,20 @@ impl OperatorTokenStore for PostgresStore {
         now: chrono::DateTime<chrono::Utc>,
     ) -> GatewayResult<OperatorAuthorization> {
         let prefix = operator_token_prefix(raw_token)?;
+        let _admission = gateway_core::auth::try_auth_lookup()?;
         let stored = self
             .stored_operator_token_by_prefix(&prefix)
             .await?
             .ok_or(GatewayError::InvalidOperatorToken)?;
-        let authorization = verify_stored_operator_token(raw_token, &stored)?;
+        let authorization = verify_stored_operator_token(raw_token, &stored).await?;
+        if self
+            .stored_operator_token_by_prefix(&prefix)
+            .await?
+            .as_ref()
+            != Some(&stored)
+        {
+            return Err(GatewayError::InvalidOperatorToken);
+        }
 
         sqlx::query(
             r#"
@@ -2649,11 +2699,20 @@ impl OperatorTokenStore for PostgresStore {
         now: chrono::DateTime<chrono::Utc>,
     ) -> GatewayResult<OperatorTokenResponse> {
         let prefix = operator_token_prefix(current_raw_token)?;
+        let _admission = gateway_core::auth::try_auth_lookup()?;
         let stored = self
             .stored_operator_token_by_prefix(&prefix)
             .await?
             .ok_or(GatewayError::InvalidOperatorToken)?;
-        verify_stored_operator_token(current_raw_token, &stored)?;
+        verify_stored_operator_token(current_raw_token, &stored).await?;
+        if self
+            .stored_operator_token_by_prefix(&prefix)
+            .await?
+            .as_ref()
+            != Some(&stored)
+        {
+            return Err(GatewayError::InvalidOperatorToken);
+        }
 
         let token_id = Uuid::new_v4();
         let mut tx = self
@@ -9419,6 +9478,52 @@ mod tests {
             })))
             .await
             .expect("upsert policy layer");
+        // Preserve policy inheritance, guardrail caller context, and the
+        // effective key trace version while reusing a single layer read.
+        store
+            .upsert_guardrail_policy_for_key(key.id, &GuardrailPolicy::default())
+            .await
+            .unwrap();
+        let layer_guardrails = GuardrailPolicy {
+            mandatory_guardrails: vec!["pii-redact".to_owned()],
+            ..GuardrailPolicy::default()
+        };
+        sqlx::query("UPDATE policy_layers SET guardrail_policy = $1, policy_version = 17, policy = jsonb_set(policy, '{policy_version}', '17') WHERE id = $2")
+            .bind(Json(&layer_guardrails)).bind(policy_layer.id).execute(store.pool()).await.unwrap();
+        let explicit = store
+            .effective_policy_for_context(key.id, Some(project.id), None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(explicit.policy.rpm_limit, Some(40));
+        assert_eq!(explicit.guardrail_policy, layer_guardrails);
+        assert_eq!(
+            explicit.applied_layers.last().unwrap().policy_version,
+            explicit.policy.policy_version
+        );
+        let implicit = store
+            .effective_policy_for_context(key.id, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(implicit.policy, explicit.policy);
+        assert!(!implicit
+            .guardrail_policy
+            .mandatory_guardrails
+            .contains(&"pii-redact".to_owned()));
+        assert!(!implicit
+            .applied_layers
+            .iter()
+            .any(|layer| layer.kind == PolicyLayerKind::Project));
+        sqlx::query("UPDATE policy_layers SET policy = jsonb_set(policy, '{rpm_limit}', '23') WHERE id = $1")
+            .bind(policy_layer.id).execute(store.pool()).await.unwrap();
+        let changed = store
+            .effective_policy_for_context(key.id, Some(project.id), None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(changed.policy.rpm_limit, Some(23));
+        store
+            .upsert_guardrail_policy_for_key(key.id, &layer_guardrails)
+            .await
+            .unwrap();
         store
             .list_policy_layers()
             .await

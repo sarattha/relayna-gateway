@@ -12,10 +12,18 @@ establish a new capacity result.
 
 | Version | Runtime architecture | Coverage | Results |
 | --- | --- | --- | --- |
+| v1.2.0 | Native amd64, separate hosted runners | Corrected runtime: 254 fresh-pod trials; six sizes, three resource-stable confirmations each; failures and earlier attempts retained | [Versioned results](v1.2.0.md) |
 | v1.0.2 | Native amd64 partial runs | Owner waived completion; no completed six-size resource study or new capacity claim | [Validation and waiver](v1.0.2.md) |
 | v1.0.1 | Native amd64, separate hosted runners | 212 fresh-pod trials; six sizes, three clean confirmations each; finite bounds and retained OOMs | [Versioned results](v1.0.1.md) |
 | v1.0.0 | Native arm64 | Full six-size study, 179 resource trials, matched latency and ten-minute protocol checks | [Results and evidence](v1.0.0.md) |
 | v0.1.49 | Native amd64 | Full 5/10/20/40/80/100 MiB resource search; 217 trials | [Results and interactive report](v0.1.49.md) |
+
+## Focused development comparisons
+
+- [Body-buffer allocation, runtime 00e996b (native arm64)](body-buffer-allocation-00e996b.md):
+  matched 5/10 MiB bodies at 16/32/40/64/128 slots, three fresh-pod trials per
+  setting and version. Includes raw evidence, OOMs and admission outcomes;
+  this focused comparison does not replace the six-size release gate.
 
 ## Required protocol
 

@@ -27,6 +27,12 @@ Optional variables:
 | `RELAYNA_STUDIO_TOKEN` | Optional bearer token used when Gateway fetches the Studio service catalog. |
 | `GATEWAY_MAX_BUFFERED_REQUESTS` | Maximum concurrent managed requests or post-call responses that may retain complete bodies in memory. Defaults to `8`. |
 | `GATEWAY_MAX_INFLIGHT_BUFFER_BYTES` | Maximum aggregate serialized body bytes retained by buffered proxy requests and responses. Defaults to `536870912` (512 MiB). |
+| `GATEWAY_MAX_BODY_WORKING_BYTES` | Optional additional estimated working-set budget for buffered requests/responses. Unset preserves existing count/byte admission. |
+| `GATEWAY_BODY_ELASTIC_MAX_REQUESTS` | Optional elastic-mode safety ceiling, at least `GATEWAY_MAX_BUFFERED_REQUESTS`. Requires a working budget. Explicitly replaces the ordinary count ceiling; byte charges determine concurrency below it. Unset retains the ordinary ceiling and upfront workspace reservation. |
+| `GATEWAY_SMALL_BODY_RESERVED_REQUESTS` | With a working-set budget, reserve this many count permits and their estimated working bytes for declared bodies up to 256 KiB. Defaults to `0`; must be below `GATEWAY_MAX_BUFFERED_REQUESTS`. |
+| `GATEWAY_BODY_WORKSPACE_MULTIPLIER` | Estimated temporary workspace in multiples of body size, in addition to allocation capacity and 64 KiB/request overhead. Defaults to `2`; accepts `1`–`16`. Requires a working-set budget. |
+| `GATEWAY_BODY_UPLOAD_TIMEOUT_MS` | Buffered-upload deadline from first admitted chunk, default `30000`, maximum `600000`. Checked on each chunk; HTTP/1 reads also use the remaining deadline. Requires a working-set budget. |
+| `GATEWAY_MAX_UPSTREAM_REQUESTS` | Optional fail-fast process-wide upstream request/stream ceiling, held through completion or cancellation and reused across retries. Unset preserves existing behavior. |
 | `MALLOC_MMAP_THRESHOLD_` | glibc allocator setting; the official Debian image pins `131072` (128 KiB). Set before starting native glibc deployments to match the image's large-allocation reclamation behavior. Other allocators/platforms may ignore it. |
 | `ENTRA_AUTH_DEBUG` | Enables the temporary structured Entra, trusted-Apigee, portal-login, and cookie-session decision trail. Defaults to `false`; see [Entra Authorization Debug Mode](operations/entra-authorization-debug.md). |
 
@@ -38,6 +44,97 @@ requests with non-JSON bodies and no active body guardrails stream without
 consuming the buffered-body budget. Size the byte limit well below the pod
 memory limit because JSON object trees and guardrails require additional
 working memory.
+
+Buffered bodies grow incrementally. For requests with a declared
+`Content-Length`, buffer growth uses that length as an allocation hint to avoid
+geometric capacity overshoot (for example, a 16 MiB allocation for a 10 MiB
+body). The hint does not preallocate the full body or replace actual-byte
+admission and route-size checks. Unknown-length bodies still grow within the
+route body limit. Token estimation runs when an input-token or token-per-minute
+limit needs it; policy and guardrail checks still inspect the complete body.
+Metadata analysis and any required token estimate are retained with the exact
+immutable body bytes and reused by subsequent admission checks. Guardrail
+rewrites receive fresh analysis, and the original buffer is released before
+final admission of the rewritten body. Both original and rewritten bodies
+remain subject to policy checks; TPM is charged once from the forwarded body.
+These allocation savings do not establish a new safe slot count. Validate
+slot and byte settings with representative traffic and pod memory headroom.
+The [native arm64 allocation comparison](benchmarks/body-buffer-allocation-00e996b.md)
+records measured gains, overload responses and remaining OOM limits.
+
+### Mixed body sizes
+
+The request-count ceiling charges one permit per retained body, regardless of
+size. With mixed traffic, that ceiling can reject small bodies while the byte
+budget still has space. The optional working-set budget allows operators to
+evaluate a higher count ceiling with a second size-dependent bound.
+For elastic admission, explicitly set `GATEWAY_BODY_ELASTIC_MAX_REQUESTS` to
+a larger safety ceiling. The working budget then admits many small bodies or
+fewer large bodies as the mix changes, without a sampled average body size or
+a feedback loop. The safety ceiling bounds tiny/empty-body bookkeeping; it is
+not a target concurrency. Without this option, the ordinary count ceiling
+remains unchanged. The serialized-byte limit always remains authoritative.
+
+Working-set admission charges 64 KiB of request overhead, the larger of buffer
+capacity or forecast body length, and `GATEWAY_BODY_WORKSPACE_MULTIPLIER` times
+the forecast length. A declared Content-Length reserves estimated working bytes
+without allocating the complete body. Actual bytes and route limits remain
+authoritative. Growth is checked before buffer allocation, including rewritten
+JSON output; buffer capacity is checked again after allocation. The original
+input workspace remains reserved while a rewrite is serialized, and output
+capacity is reserved in addition to the input allocation. Shrinking or chunked
+rewrites cannot release still-live input workspace. Expanded output also needs
+shared capacity if it outgrows the protected small-body class. Workspace is
+released after request analysis/rewrite, while the forwarded allocation remains
+charged through its last reference. In elastic mode, upload reservations cover
+the body and overhead; the workspace multiplier is added only immediately
+before complete-body processing. This avoids charging processing workspace
+during network waits. After synchronous analysis, requests with only compact
+selectors retain at most 64 KiB of metadata workspace during policy/database
+waits, and must reacquire full workspace before further body processing.
+Large selectors, client guardrail data, batches, provider transforms and service
+pricing retain the full estimate. That upgrade can fail after an upload has completed:
+the body is dropped and rejected without waiting or forwarding. Operators must
+measure these late denials as well as early rejections. Buffered post-call
+responses use the same processing upgrade and share the budget, retaining
+their reservation through downstream completion.
+
+For example, an experimental configuration can use a 384 MiB working budget,
+an elastic safety ceiling of 512, four reserved small requests, multiplier 2,
+and an upstream ceiling of 1,024. These values are not production capacity
+guarantees. A higher count ceiling can shift the bottleneck to authentication,
+CPU, sockets or the upstream; preserve independent limits on those resources.
+
+Declared bodies up to 256 KiB may use protected small-body capacity. Large and
+unknown-length bodies use shared capacity; a small body that grows beyond its
+classification must acquire shared capacity before growth. The protected count
+and estimated-memory reserve are not lent to large requests. This limits
+interference but does not guarantee fairness or minimum throughput for either
+class. Admission remains fail-fast, without a queue of partially retained
+bodies. Saturation returns `503 gateway_overloaded`; route-size violations
+remain `413 request_body_too_large`.
+
+This budget is an estimate, not an RSS or allocator limit. JSON object density,
+guardrail internals, provider transforms, and networking can consume additional
+memory. Choose workspace multipliers and pod headroom from representative
+measurements; the default multiplier is not a worst-case expansion bound.
+The upload timeout is checked whenever another chunk arrives. Pingora's
+downstream read timeout currently applies to HTTP/1, not HTTP/2; use ingress
+stream/idle deadlines for silent HTTP/2 uploads. Timeout can close a connection
+without delivering a structured denial. The limits do not protect against
+distributed abuse or replace ingress connection limits.
+
+An optional upstream ceiling bounds open provider requests even after their
+upload buffers have been released. It is shared across providers, includes long
+streams, and does not reserve per-tenant or per-provider capacity. Rejections
+use the existing overload response. The gauges `gateway_body_working_bytes`
+and `gateway_admitted_upstream_requests` report estimated reserved memory and
+requests covered by the optional upstream limiter; a zero upstream gauge with
+that limiter unset is not a count of all provider traffic. Rejection counters
+use `kind="body_admission",reason="working_set"` for buffer admission,
+`kind="body_admission",reason="processing_workspace"` for a late elastic
+workspace upgrade, and
+`kind="upstream_admission",route="proxy",reason="concurrency"` respectively.
 
 Buffered request slots and byte reservations follow the forwarded buffer until
 its last reference is released. An upload queued behind a slow upstream writer

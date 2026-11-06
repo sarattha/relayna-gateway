@@ -2,19 +2,71 @@ use bytes::Bytes;
 use gateway_core::{GatewayError, GatewayResult};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::time::Instant;
 
 pub const DEFAULT_MAX_BUFFERED_REQUESTS: usize = 8;
 pub const DEFAULT_MAX_INFLIGHT_BUFFER_BYTES: usize = 512 * 1024 * 1024;
+pub const SMALL_BODY_MAX_BYTES: usize = 256 * 1024;
+const REQUEST_WORKING_OVERHEAD: usize = 64 * 1024;
+
+/// Optional, additive working-set admission. This is a conservative estimate,
+/// not an allocator/RSS limit: JSON shape and third-party guardrails still matter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SizeAwareBodyPolicy {
+    pub max_working_bytes: usize,
+    /// Opt-in ceiling for elastic admission. Memory charges determine useful
+    /// concurrency; this larger count is a backstop for per-request state.
+    pub elastic_max_requests: Option<usize>,
+    pub reserved_small_requests: usize,
+    pub workspace_multiplier: usize,
+    pub upload_timeout: std::time::Duration,
+}
+
+impl SizeAwareBodyPolicy {
+    pub fn validate(self, max_requests: usize) -> GatewayResult<()> {
+        if self.max_working_bytes == 0
+            || self
+                .elastic_max_requests
+                .is_some_and(|limit| limit < max_requests)
+            || self.reserved_small_requests >= max_requests
+            || !(1..=16).contains(&self.workspace_multiplier)
+            || self.upload_timeout.is_zero()
+            || self.upload_timeout > std::time::Duration::from_secs(600)
+            || self
+                .small_reserve()
+                .is_none_or(|bytes| bytes >= self.max_working_bytes)
+        {
+            return Err(GatewayError::InvalidConfiguration);
+        }
+        Ok(())
+    }
+
+    fn small_reserve(self) -> Option<usize> {
+        SMALL_BODY_MAX_BYTES
+            .checked_mul(1 + self.workspace_multiplier)?
+            .checked_add(REQUEST_WORKING_OVERHEAD)?
+            .checked_mul(self.reserved_small_requests)
+    }
+}
+
+#[derive(Debug, Default)]
+struct WorkingSet {
+    bytes: usize,
+    large_bytes: usize,
+    large_requests: usize,
+}
 
 #[derive(Debug)]
 struct BodyAdmissionState {
+    configured_max_requests: usize,
     max_requests: usize,
     max_bytes: usize,
     active_requests: AtomicUsize,
     active_bytes: AtomicUsize,
+    size_policy: Option<SizeAwareBodyPolicy>,
+    working: Mutex<WorkingSet>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +79,14 @@ pub struct BodyAdmissionLease {
     state: Arc<BodyAdmissionState>,
     reserved_bytes: usize,
     admitted_at: Instant,
+    expected_length: Option<usize>,
+    allocation_capacity: usize,
+    rewrite_capacity: usize,
+    working_bytes: usize,
+    extent: usize,
+    processing: bool,
+    compact_workspace: bool,
+    large: bool,
 }
 
 struct AdmittedBody {
@@ -43,21 +103,46 @@ impl AsRef<[u8]> for AdmittedBody {
 
 impl BodyAdmissionController {
     pub fn new(max_requests: usize, max_bytes: usize) -> GatewayResult<Self> {
+        Self::with_size_policy(max_requests, max_bytes, None)
+    }
+
+    pub fn with_size_policy(
+        max_requests: usize,
+        max_bytes: usize,
+        size_policy: Option<SizeAwareBodyPolicy>,
+    ) -> GatewayResult<Self> {
         if max_requests == 0 || max_bytes == 0 {
             return Err(GatewayError::InvalidConfiguration);
         }
+        if let Some(policy) = size_policy {
+            policy.validate(max_requests)?;
+        }
+        let configured_max_requests = max_requests;
+        let max_requests = size_policy
+            .and_then(|policy| policy.elastic_max_requests)
+            .unwrap_or(max_requests);
         gateway_telemetry::runtime::configure_body_capacity(max_requests, max_bytes);
         Ok(Self {
             state: Arc::new(BodyAdmissionState {
+                configured_max_requests,
                 max_requests,
                 max_bytes,
                 active_requests: AtomicUsize::new(0),
                 active_bytes: AtomicUsize::new(0),
+                size_policy,
+                working: Mutex::new(WorkingSet::default()),
             }),
         })
     }
 
     pub fn try_acquire(&self) -> GatewayResult<BodyAdmissionLease> {
+        self.try_acquire_sized(None)
+    }
+
+    pub fn try_acquire_sized(
+        &self,
+        expected_length: Option<usize>,
+    ) -> GatewayResult<BodyAdmissionLease> {
         let started = Instant::now();
         increment_bounded(&self.state.active_requests, 1, self.state.max_requests).map_err(
             |_| {
@@ -68,11 +153,28 @@ impl BodyAdmissionController {
         )?;
         gateway_telemetry::runtime::record_body_admission_decision(started.elapsed(), false);
         gateway_telemetry::buffered_request_started();
-        Ok(BodyAdmissionLease {
+        let mut lease = BodyAdmissionLease {
             state: Arc::clone(&self.state),
             reserved_bytes: 0,
             admitted_at: Instant::now(),
-        })
+            expected_length,
+            allocation_capacity: 0,
+            rewrite_capacity: 0,
+            working_bytes: 0,
+            extent: 0,
+            processing: self
+                .state
+                .size_policy
+                .is_none_or(|policy| policy.elastic_max_requests.is_none()),
+            compact_workspace: false,
+            large: false,
+        };
+        lease.prepare_buffer(0, 0)?;
+        Ok(lease)
+    }
+
+    pub fn size_policy(&self) -> Option<SizeAwareBodyPolicy> {
+        self.state.size_policy
     }
 
     pub fn active_requests(&self) -> usize {
@@ -85,6 +187,10 @@ impl BodyAdmissionController {
 
     pub fn max_requests(&self) -> usize {
         self.state.max_requests
+    }
+
+    pub(crate) fn configured_max_requests(&self) -> usize {
+        self.state.configured_max_requests
     }
 
     pub fn max_bytes(&self) -> usize {
@@ -114,6 +220,144 @@ impl Default for BodyAdmissionController {
 }
 
 impl BodyAdmissionLease {
+    /// Reserve forecast payload, allocation capacity, and analysis workspace
+    /// before growing the buffer. Unknown lengths use shared (large) capacity.
+    /// Growth is fail-fast; partial bodies never wait while holding memory.
+    pub fn prepare_buffer(&mut self, length: usize, capacity: usize) -> GatewayResult<()> {
+        let capacity = self.allocation_capacity.max(capacity);
+        let extent = length.max(self.expected_length.unwrap_or(0));
+        let large = self.expected_length.is_none() || extent > SMALL_BODY_MAX_BYTES;
+        self.update_working(extent, capacity, large, self.processing)?;
+        self.allocation_capacity = capacity;
+        self.extent = extent;
+        Ok(())
+    }
+
+    /// Upgrade before analysis, transformations or JSON materialization. Never
+    /// wait holding a partial/full body when workspace is unavailable.
+    pub fn begin_processing(&mut self) -> GatewayResult<()> {
+        self.update_working(self.extent, self.allocation_capacity, self.large, true)?;
+        self.processing = true;
+        Ok(())
+    }
+
+    /// Output coexists with the input allocation and parsed structures. Keep
+    /// their extent/capacity intact while independently reserving output growth.
+    pub(crate) fn prepare_rewrite(&mut self, capacity: usize) -> GatewayResult<()> {
+        let previous = self.rewrite_capacity;
+        self.rewrite_capacity = previous.max(capacity);
+        if let Err(error) =
+            self.update_working(self.extent, self.allocation_capacity, self.large, true)
+        {
+            self.rewrite_capacity = previous;
+            return Err(error);
+        }
+        self.processing = true;
+        Ok(())
+    }
+
+    /// Retain a small metadata allowance after synchronous analysis, rather
+    /// than holding body-sized scratch space across policy/database waits.
+    /// Callers must keep full workspace while larger parsed structures live.
+    pub(crate) fn retain_compact_workspace(&mut self) -> GatewayResult<()> {
+        if self
+            .state
+            .size_policy
+            .is_none_or(|policy| policy.elastic_max_requests.is_none())
+        {
+            return Ok(());
+        }
+        let previous = self.compact_workspace;
+        self.compact_workspace = true;
+        if let Err(error) =
+            self.update_working(self.extent, self.allocation_capacity, self.large, false)
+        {
+            self.compact_workspace = previous;
+            return Err(error);
+        }
+        self.processing = false;
+        Ok(())
+    }
+
+    pub fn upload_remaining(&self) -> Option<std::time::Duration> {
+        self.state.size_policy.map(|policy| {
+            policy
+                .upload_timeout
+                .saturating_sub(self.admitted_at.elapsed())
+        })
+    }
+
+    fn update_working(
+        &mut self,
+        length: usize,
+        capacity: usize,
+        large: bool,
+        processing: bool,
+    ) -> GatewayResult<()> {
+        let Some(policy) = self.state.size_policy else {
+            return Ok(());
+        };
+        let large = large || self.rewrite_capacity > SMALL_BODY_MAX_BYTES;
+        let workspace = if processing || self.compact_workspace {
+            let bytes = length
+                .max(self.rewrite_capacity)
+                .checked_mul(policy.workspace_multiplier)
+                .ok_or(GatewayError::GatewayOverloaded)?;
+            if processing {
+                bytes
+            } else {
+                bytes.min(64 * 1024)
+            }
+        } else {
+            0
+        };
+        let charge = workspace
+            .checked_add(capacity.max(length))
+            .and_then(|bytes| bytes.checked_add(self.rewrite_capacity))
+            .and_then(|bytes| bytes.checked_add(REQUEST_WORKING_OVERHEAD))
+            .ok_or(GatewayError::GatewayOverloaded)?;
+        // Declared-length reservations usually cover many upload chunks. The
+        // live lease already owns this charge; no shared update is needed.
+        if charge == self.working_bytes && large == self.large {
+            return Ok(());
+        }
+        let mut state = self
+            .state
+            .working
+            .lock()
+            .map_err(|_| GatewayError::GatewayOverloaded)?;
+        let next_bytes = state
+            .bytes
+            .checked_sub(self.working_bytes)
+            .and_then(|v| v.checked_add(charge));
+        let next_large_bytes = state
+            .large_bytes
+            .checked_sub(if self.large { self.working_bytes } else { 0 })
+            .and_then(|v| v.checked_add(if large { charge } else { 0 }));
+        let next_large_requests =
+            state.large_requests - usize::from(self.large) + usize::from(large);
+        if next_bytes.is_none_or(|bytes| bytes > policy.max_working_bytes)
+            || next_large_bytes.is_none_or(|bytes| {
+                bytes > policy.max_working_bytes - policy.small_reserve().expect("validated policy")
+            })
+            || next_large_requests > self.state.max_requests - policy.reserved_small_requests
+        {
+            gateway_telemetry::record_body_admission_rejection(if processing && !self.processing {
+                "processing_workspace"
+            } else {
+                "working_set"
+            });
+            return Err(GatewayError::GatewayOverloaded);
+        }
+        state.bytes = next_bytes.expect("checked above");
+        state.large_bytes = next_large_bytes.expect("checked above");
+        state.large_requests = next_large_requests;
+        gateway_telemetry::body_working_bytes_changed(self.working_bytes, charge);
+        self.working_bytes = charge;
+        self.large = large;
+        Ok(())
+    }
+
     pub fn try_reserve(&mut self, additional_bytes: usize) -> GatewayResult<()> {
         if additional_bytes == 0 {
             return Ok(());
@@ -144,12 +388,40 @@ impl BodyAdmissionLease {
     pub(crate) fn into_bytes(mut self, body: Bytes) -> GatewayResult<Bytes> {
         // Guardrails may expand a body after its original chunks were admitted.
         self.try_reserve(body.len().saturating_sub(self.reserved_bytes))?;
+        self.compact_workspace = false;
+        let retained_capacity = if self.rewrite_capacity > 0 {
+            self.rewrite_capacity
+        } else {
+            self.allocation_capacity
+        };
+        self.rewrite_capacity = 0;
+        // Parsing/rewrite workspace is no longer needed, but the allocation
+        // remains charged through all upstream clones/slices of the buffer.
+        self.update_working(
+            body.len(),
+            retained_capacity.max(body.len()),
+            body.len() > SMALL_BODY_MAX_BYTES,
+            false,
+        )?;
         Ok(Bytes::from_owner(AdmittedBody { body, _lease: self }))
     }
 }
 
 impl Drop for BodyAdmissionLease {
     fn drop(&mut self) {
+        if self.working_bytes > 0 {
+            let mut working = self
+                .state
+                .working
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            working.bytes -= self.working_bytes;
+            if self.large {
+                working.large_bytes -= self.working_bytes;
+                working.large_requests -= 1;
+            }
+            gateway_telemetry::body_working_bytes_changed(self.working_bytes, 0);
+        }
         if self.reserved_bytes > 0 {
             self.state
                 .active_bytes
@@ -179,6 +451,298 @@ fn increment_bounded(counter: &AtomicUsize, amount: usize, maximum: usize) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sized(requests: usize, working_mib: usize, small: usize) -> BodyAdmissionController {
+        BodyAdmissionController::with_size_policy(
+            requests,
+            512 * 1024 * 1024,
+            Some(SizeAwareBodyPolicy {
+                max_working_bytes: working_mib * 1024 * 1024,
+                elastic_max_requests: None,
+                reserved_small_requests: small,
+                workspace_multiplier: 2,
+                upload_timeout: std::time::Duration::from_secs(30),
+            }),
+        )
+        .unwrap()
+    }
+
+    fn elastic(working_mib: usize, ceiling: usize) -> BodyAdmissionController {
+        let mut policy = sized(2, working_mib, 0).size_policy().unwrap();
+        policy.elastic_max_requests = Some(ceiling);
+        BodyAdmissionController::with_size_policy(2, 512 * 1024 * 1024, Some(policy)).unwrap()
+    }
+
+    #[test]
+    fn elastic_concurrency_follows_body_size_with_a_count_backstop() {
+        let controller = elastic(8, 128);
+        let mut small = Vec::new();
+        while let Ok(lease) = controller.try_acquire_sized(Some(8192)) {
+            small.push(lease);
+        }
+        assert!(small.len() > 100);
+        assert!(
+            small.len() < controller.max_requests(),
+            "memory, not count, bound this mix"
+        );
+        drop(small);
+        let mut large = Vec::new();
+        while let Ok(lease) = controller.try_acquire_sized(Some(1024 * 1024)) {
+            large.push(lease);
+        }
+        assert_eq!(large.len(), 7);
+        drop(large);
+        let controller = elastic(16, 128);
+        let tiny: Vec<_> = (0..128)
+            .map(|_| controller.try_acquire_sized(Some(1)).unwrap())
+            .collect();
+        assert!(controller.try_acquire_sized(Some(1)).is_err());
+        drop(tiny);
+        assert_eq!(controller.active_requests(), 0);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn elastic_processing_upgrade_is_atomic_and_forwarding_releases_workspace() {
+        let controller = elastic(4, 32);
+        let mut first = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        let second = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        let before = controller.state.working.lock().unwrap().bytes;
+        assert!(first.begin_processing().is_err());
+        assert!(!first.processing);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, before);
+        drop(second);
+        first.begin_processing().unwrap();
+        let processing = first.working_bytes;
+        first.begin_processing().unwrap();
+        assert_eq!(
+            first.working_bytes, processing,
+            "upgrade must be idempotent"
+        );
+        let body = first.into_bytes(Bytes::from(vec![0; 1024 * 1024])).unwrap();
+        let last = body.clone();
+        drop(body);
+        assert_eq!(
+            controller.state.working.lock().unwrap().bytes,
+            REQUEST_WORKING_OVERHEAD + 1024 * 1024
+        );
+        drop(last);
+        assert_eq!(controller.active_bytes(), 0);
+        assert_eq!(controller.active_requests(), 0);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn compact_metadata_releases_scratch_and_requires_reacquisition_before_processing() {
+        let controller = elastic(4, 32);
+        let mut lease = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        lease.begin_processing().unwrap();
+        assert!(controller.try_acquire_sized(Some(1024 * 1024)).is_err());
+        lease.retain_compact_workspace().unwrap();
+        assert_eq!(lease.working_bytes, 1024 * 1024 + 2 * 64 * 1024);
+        let other = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        assert!(lease.begin_processing().is_err());
+        assert!(!lease.processing);
+        drop(other);
+        lease.begin_processing().unwrap();
+        let bytes = lease.into_bytes(Bytes::from(vec![0; 1024 * 1024])).unwrap();
+        assert_eq!(
+            controller.state.working.lock().unwrap().bytes,
+            1024 * 1024 + 64 * 1024
+        );
+        drop(bytes);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn elastic_growth_cannot_overdraw_memory_or_lose_existing_charge() {
+        let controller = elastic(4, 32);
+        let mut unknown = controller.try_acquire_sized(None).unwrap();
+        unknown.prepare_buffer(1024 * 1024, 1024 * 1024).unwrap();
+        let before = unknown.working_bytes;
+        assert!(unknown
+            .prepare_buffer(4 * 1024 * 1024, 4 * 1024 * 1024)
+            .is_err());
+        assert_eq!(unknown.working_bytes, before);
+        assert_eq!(unknown.allocation_capacity, 1024 * 1024);
+        drop(unknown);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn rewrite_growth_is_atomic_and_only_output_capacity_survives_forwarding() {
+        let controller = elastic(4, 32);
+        let mut lease = controller.try_acquire_sized(None).unwrap();
+        lease.prepare_buffer(1024 * 1024, 1024 * 1024).unwrap();
+        lease.begin_processing().unwrap();
+        let input_charge = lease.working_bytes;
+        lease.prepare_rewrite(128).unwrap();
+        assert_eq!(lease.working_bytes, input_charge + 128);
+        assert_eq!(lease.extent, 1024 * 1024);
+        assert_eq!(lease.allocation_capacity, 1024 * 1024);
+        assert!(lease.prepare_rewrite(2 * 1024 * 1024).is_err());
+        assert!(lease.prepare_rewrite(usize::MAX).is_err());
+        assert_eq!(lease.rewrite_capacity, 128);
+        assert_eq!(lease.working_bytes, input_charge + 128);
+        assert_eq!(
+            controller.state.working.lock().unwrap().bytes,
+            input_charge + 128
+        );
+
+        let body = lease.into_bytes(Bytes::from(vec![0; 128])).unwrap();
+        let last = body.clone();
+        drop(body);
+        assert_eq!(
+            controller.state.working.lock().unwrap().bytes,
+            REQUEST_WORKING_OVERHEAD + 128
+        );
+        drop(last);
+        assert_eq!(controller.active_requests(), 0);
+        assert_eq!(controller.active_bytes(), 0);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn expanded_rewrite_must_acquire_shared_capacity_before_leaving_small_reserve() {
+        let controller = sized(2, 8, 1);
+        let large = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        let mut small = controller.try_acquire_sized(Some(64)).unwrap();
+        let before = small.working_bytes;
+        assert!(small.prepare_rewrite(SMALL_BODY_MAX_BYTES + 1).is_err());
+        assert_eq!(small.working_bytes, before);
+        assert_eq!(small.rewrite_capacity, 0);
+        assert!(!small.large);
+        drop(large);
+        small.prepare_rewrite(SMALL_BODY_MAX_BYTES + 1).unwrap();
+        assert!(small.large);
+        drop(small);
+        let state = controller.state.working.lock().unwrap();
+        assert_eq!(
+            (state.bytes, state.large_bytes, state.large_requests),
+            (0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn elastic_memory_reserve_leaves_room_for_small_body_processing() {
+        let mut policy = elastic(4, 32).size_policy().unwrap();
+        policy.reserved_small_requests = 1;
+        let controller =
+            BodyAdmissionController::with_size_policy(2, 8 * 1024 * 1024, Some(policy)).unwrap();
+        let large: Vec<_> = (0..3)
+            .map(|_| controller.try_acquire_sized(Some(1024 * 1024)).unwrap())
+            .collect();
+        assert!(controller.try_acquire_sized(Some(1024 * 1024)).is_err());
+        let mut small = controller
+            .try_acquire_sized(Some(SMALL_BODY_MAX_BYTES))
+            .unwrap();
+        small.begin_processing().unwrap();
+        drop((large, small));
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn concurrent_elastic_uploads_and_processing_keep_bounds_and_release_charges() {
+        let controller = elastic(4, 32);
+        std::thread::scope(|scope| {
+            for _ in 0..16 {
+                let controller = &controller;
+                scope.spawn(move || {
+                    for size in [8192, 64 * 1024, 1024 * 1024].into_iter().cycle().take(100) {
+                        if let Ok(mut lease) = controller.try_acquire_sized(Some(size)) {
+                            let _ = lease.begin_processing();
+                            std::thread::yield_now();
+                            assert!(controller.active_requests() <= controller.max_requests());
+                            assert!(
+                                controller.state.working.lock().unwrap().bytes <= 4 * 1024 * 1024
+                            );
+                        }
+                    }
+                });
+            }
+        });
+        assert_eq!(controller.active_requests(), 0);
+        let state = controller.state.working.lock().unwrap();
+        assert_eq!(
+            (state.bytes, state.large_bytes, state.large_requests),
+            (0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn large_and_unknown_uploads_cannot_consume_small_request_reserve() {
+        let controller = sized(3, 32, 1);
+        let large = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        let unknown = controller.try_acquire_sized(None).unwrap();
+        assert!(controller.try_acquire_sized(Some(1024 * 1024)).is_err());
+        let small = controller.try_acquire_sized(Some(8192)).unwrap();
+        assert_eq!(controller.active_requests(), 3);
+        drop((large, unknown, small));
+        assert_eq!(controller.active_requests(), 0);
+        let state = controller.state.working.lock().unwrap();
+        assert_eq!(
+            (state.bytes, state.large_bytes, state.large_requests),
+            (0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn declared_lengths_reserve_working_memory_without_claiming_actual_bytes() {
+        let controller = sized(32, 8, 2);
+        let first = controller.try_acquire_sized(Some(2 * 1024 * 1024)).unwrap();
+        assert!(controller.try_acquire_sized(Some(2 * 1024 * 1024)).is_err());
+        assert_eq!(controller.active_bytes(), 0);
+        assert_eq!(controller.active_requests(), 1);
+        let small = controller
+            .try_acquire_sized(Some(SMALL_BODY_MAX_BYTES))
+            .unwrap();
+        drop((first, small));
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn an_underestimated_small_body_must_promote_before_growing() {
+        let controller = sized(2, 32, 1);
+        let large = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        let mut small = controller.try_acquire_sized(Some(1024)).unwrap();
+        let before = small.working_bytes;
+        assert!(small
+            .prepare_buffer(SMALL_BODY_MAX_BYTES + 1, SMALL_BODY_MAX_BYTES * 2)
+            .is_err());
+        assert_eq!(small.working_bytes, before);
+        drop(large);
+        small
+            .prepare_buffer(SMALL_BODY_MAX_BYTES + 1, SMALL_BODY_MAX_BYTES * 2)
+            .unwrap();
+        assert!(small.large);
+        drop(small);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn upload_workspace_is_released_but_forwarded_allocation_stays_charged() {
+        let controller = sized(4, 32, 0);
+        let mut lease = controller.try_acquire_sized(Some(1024 * 1024)).unwrap();
+        lease.prepare_buffer(1024 * 1024, 2 * 1024 * 1024).unwrap();
+        let during = lease.working_bytes;
+        let body = lease.into_bytes(Bytes::from(vec![0; 1024 * 1024])).unwrap();
+        let queued = body.slice(0..1);
+        drop(body);
+        let retained = controller.state.working.lock().unwrap().bytes;
+        assert_eq!(during - retained, 2 * 1024 * 1024);
+        assert_eq!(retained, REQUEST_WORKING_OVERHEAD + 2 * 1024 * 1024);
+        drop(queued);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+        assert_eq!(controller.active_bytes(), 0);
+    }
+
+    #[test]
+    fn working_charge_overflow_fails_closed_without_leaking_a_slot() {
+        let controller = sized(2, 8, 0);
+        assert!(controller.try_acquire_sized(Some(usize::MAX)).is_err());
+        assert_eq!(controller.active_requests(), 0);
+        assert_eq!(controller.state.working.lock().unwrap().bytes, 0);
+    }
 
     #[test]
     fn defaults_match_the_documented_memory_budget() {

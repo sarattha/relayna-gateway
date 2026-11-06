@@ -7,6 +7,7 @@ pub use endpoint_access::{
 pub mod access;
 pub mod admin;
 pub mod auth;
+pub mod auth_admission;
 pub mod auth_settings;
 pub mod budgets;
 pub mod entra;

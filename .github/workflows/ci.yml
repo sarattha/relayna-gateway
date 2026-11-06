@@ -99,8 +99,11 @@ jobs:
         run: python3 tests/e2e/runtime-image/run.py --image relayna-gateway:ci
       - name: Scan all image vulnerability dispositions
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_SHOW_SUPPRESSED: "true"
         with:
           image-ref: relayna-gateway:ci
+          trivyignores: .trivyignore-image.yaml
           scanners: vuln
           severity: HIGH,CRITICAL
           exit-code: "1"

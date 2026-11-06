@@ -142,8 +142,11 @@ jobs:
 
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_SHOW_SUPPRESSED: "true"
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          trivyignores: .trivyignore-image.yaml
           severity: HIGH,CRITICAL
           exit-code: "1"
 

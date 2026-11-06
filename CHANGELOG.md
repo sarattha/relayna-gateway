@@ -4,6 +4,90 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+## 1.2.0 - 2026-11-06
+
+### Added
+
+- Add optional size-aware and elastic body admission. Estimated byte charges
+  let small requests share available capacity, with a protected small-body
+  reserve, bounded upload time and a separate upstream-request/stream limit.
+  Elastic mode reserves parsing workspace when processing starts and releases
+  excess scratch reservations across asynchronous waits.
+- Expose fixed-cardinality authentication admission metrics for source limits,
+  queue saturation, deadlines, verification sharing and warm-proof hits.
+
+### Changed
+
+- Reuse complete-body JSON analysis, effective policy reads, guardrail HTTP
+  connections and multiplexed Redis connections within their existing policy
+  and accounting contracts. Bound serialization and retain body reservations
+  until the last forwarded buffer reference is released.
+- Reuse successful virtual-key secret proofs for at most 60 seconds while
+  reading current key state for every request. Concurrent identical cold
+  proofs share one verification job; each successful subscriber independently
+  rechecks current key state before authorization.
+- Bound authentication to 64 active HTTP admissions and 128 FIFO waiters with
+  a 250 ms deadline. Crypto work uses two workers, eight waiting leaders
+  and bounded proof subscribers. Cancellation releases queued capacity without
+  abandoning followers or releasing a running verifier early.
+
+### Security
+
+- Apply credential syntax/size checks and actual-peer source limits before
+  database or crypto work. Bound unauthenticated denial persistence, redact
+  key debug output, zeroize owned secret buffers and disable Linux core dumps
+  and process dumpability by default.
+- Retain the v1.0.2 digest-pinned Debian 13 Distroless runtime and image gates
+  covering all High/Critical vulnerability dispositions.
+- Replace its affected zlib with Debian's checksum-pinned
+  `1:1.3.dfsg+really1.3.2-4` package for amd64/arm64, fixing CVE-2026-76844 and
+  CVE-2026-85091. Remove the old library and retain the genuine package inventory.
+  A documented scanner exception applies only to this exact fixed package on
+  amd64/arm64 and expires 6 December 2026; unpatched versions remain blocked.
+
+### Fixed
+
+- Preserve the live input allocation and processing workspace while serializing
+  guardrail rewrites, including chunked and underestimated-length bodies. Charge
+  output growth separately and retain its allocation through forwarding.
+- Keep simultaneous replicas using the same configured bootstrap operator token
+  from failing startup on a duplicate prefix. The winning token remains unchanged;
+  a collision without an active operator still fails closed.
+- Wait for PostgreSQL TCP readiness in CI/benchmark fixtures and prefer repeated
+  stable settings over one-off discoveries in capacity summaries.
+
+### Compatibility and upgrade
+
+- Preserve public routes, key formats, policy/accounting contracts, PostgreSQL
+  schemas and Redis state. No data migration is required. Default body
+  admission remains eight retained bodies and 512 MiB per process; size-aware,
+  elastic and upstream limits require explicit configuration.
+- Capacity exhaustion can return `503 authentication_overloaded`; source
+  exhaustion returns `429 source_rate_limit_exceeded`, with `Retry-After: 1`.
+  Review ingress/NAT aggregation and the default 100 requests/s, burst 200
+  actual-peer limit. Linux startup fails if required dump protection cannot
+  be installed. See the [upgrade guide](https://sarattha.github.io/relayna-gateway/deployment/#upgrade-to-120).
+- Byte estimates are not RSS bounds. Elastic workspace upgrades may reject
+  already-uploaded bodies; bounded waiting can increase successful-request
+  tail latency. Warm proofs do not cache authorization or remove state reads.
+
+### Release validation
+
+- Complete fresh native amd64 adaptive validation of the corrected runtime at
+  5, 10, 20, 40, 80 and 100 MiB: 254 fresh-pod trials, with three resource-stable
+  confirmations per selected setting. All sizes establish tested lower bounds,
+  not production slot recommendations. The 10 MiB confirmations include one
+  trial with two lost denial replies, reconciled to server admission counters.
+  The [versioned validation record](https://sarattha.github.io/relayna-gateway/benchmarks/v1.2.0/)
+  links audited HTML/JSON/CSV, raw/failed trials, provenance and checksums.
+- Include a separate same-runner comparison against immutable v1.0.2 at 5 MiB,
+  eight slots/pod and three trials per version. Its small sequential cohort and
+  deliberate upstream pauses do not establish general throughput improvements.
+- Preserve all three preceding attempts, including the completed 239-trial
+  pre-review study, through immutable evidence archives and pinned documents.
+  Earlier uniform/mixed-body and controlled HTTP/SSE/WebSocket/LiteLLM studies
+  remain attributable to their original candidate commits.
+
 ## 1.0.2 - 2026-11-04
 
 ### Fixed

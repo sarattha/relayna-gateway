@@ -14,6 +14,7 @@ import time
 
 HERE = Path(__file__).resolve().parent
 NAMESPACE = "gateway-body-bench"
+SCRIPT_FILES = ["mock.mjs", "workload.mjs", "mixed_workload.mjs"]
 SAMPLER_IMAGE = "busybox:1.37.0-musl@sha256:f6a95d611e0a8780fabdb2aec43e31275b2720dfefa3e41b16835bfc42454478"
 SAMPLER_TOOL = "/benchmark-tools/busybox"
 # BusyBox date lacks nanoseconds. Kernel boot time + uptime supplies centisecond
@@ -49,7 +50,7 @@ def deployment(name, image, *, env=None, command_args=None, ports=None, resource
             "volumeMounts": [{"name": "benchmark-tools", "mountPath": "/benchmark-tools"}]}]
     metadata = {"labels": {"app": name}}
     if volumes:
-        metadata["annotations"] = {"benchmark-script-sha256": hashlib.sha256(b"".join((HERE / filename).read_bytes() for filename in ["mock.mjs", "workload.mjs"])).hexdigest()}
+        metadata["annotations"] = {"benchmark-script-sha256": hashlib.sha256(b"".join((HERE / filename).read_bytes() for filename in SCRIPT_FILES)).hexdigest()}
     return {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": name}, "spec": {
         "replicas": replicas, "selector": {"matchLabels": {"app": name}},
         "template": {"metadata": metadata, "spec": spec},
@@ -84,20 +85,21 @@ class Benchmark:
                 "admin": "op_live_" + secrets.token_hex(24), "service": secrets.token_hex(24),
             }}])
         self.apply([
-            {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "scripts"}, "data": {name: (HERE / name).read_text() for name in ["mock.mjs", "workload.mjs"]}},
+            {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "scripts"}, "data": {name: (HERE / name).read_text() for name in SCRIPT_FILES}},
             deployment("postgres", "postgres:16-alpine", env={"POSTGRES_USER": "benchmark", "POSTGRES_PASSWORD": "benchmark-local-only", "POSTGRES_DB": "benchmark"}),
             service("postgres", 5432),
             deployment("redis", "redis:7-alpine", command_args=["redis-server", "--save", "", "--appendonly", "no"]),
             service("redis", 6379),
             deployment("mock", "node:22.23.4-alpine", env={"SERVICE_TOKEN": self.secret_ref("service"), "DELAY_MS": self.args.delay_ms, "READ_DELAY_MS": self.args.read_delay_ms}, command_args=["node", "/bench/mock.mjs"], volumes=True),
             service("mock", 4000),
-            deployment("driver", "node:22.23.4-alpine", env={"ADMIN_TOKEN": self.secret_ref("admin"), "SERVICE_TOKEN": self.secret_ref("service"), "BENCH_BODY_MIB": self.args.body_mib, "BENCH_CLIENT_DEADLINE_MS": self.args.client_deadline_ms, "BENCH_SERVICE_TIMEOUT_MS": 120000 if self.args.concurrent_per_pod else 30000}, command_args=["sleep", "infinity"], volumes=True),
+            deployment("driver", "node:22.23.4-alpine", env={"ADMIN_TOKEN": self.secret_ref("admin"), "SERVICE_TOKEN": self.secret_ref("service"), "BENCH_BODY_MIB": self.args.body_mib, "BENCH_BODY_MIX": self.args.body_mix or "", "BENCH_CLIENT_DEADLINE_MS": self.args.client_deadline_ms, "BENCH_SERVICE_TIMEOUT_MS": 120000}, command_args=["sleep", "infinity"], volumes=True),
         ])
         for name in ["postgres", "redis", "mock", "driver"]:
             self.kube("rollout", "status", f"deployment/{name}", "--timeout=180s", stdout=subprocess.DEVNULL)
-        # Deployment readiness alone does not mean PostgreSQL accepts connections.
+        # The temporary initialization server accepts Unix sockets before the
+        # final server is available to Gateway's TCP connections.
         for _ in range(60):
-            ready = subprocess.run(self.kubectl + ["exec", "deployment/postgres", "--", "pg_isready", "-U", "benchmark"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ready = subprocess.run(self.kubectl + ["exec", "deployment/postgres", "--", "pg_isready", "-h", "127.0.0.1", "-U", "benchmark"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if ready.returncode == 0:
                 break
             time.sleep(1)
@@ -115,6 +117,7 @@ class Benchmark:
         }
         if self.args.malloc_mmap_threshold is not None:
             env["MALLOC_MMAP_THRESHOLD_"] = self.args.malloc_mmap_threshold
+        env.update(self.admission_environment())
         self.apply([deployment("gateway", self.args.image, env=env, replicas=2, resources={
             "requests": {"cpu": "500m", "memory": "256Mi"}, "limits": {"cpu": "2", "memory": f"{self.args.memory_limit_mib}Mi"},
         })])
@@ -127,6 +130,17 @@ class Benchmark:
             time.sleep(1)
         raise RuntimeError("expected exactly two ready Gateway pods")
 
+    def admission_environment(self):
+        values = {
+            "GATEWAY_BODY_ELASTIC_MAX_REQUESTS": self.args.elastic_max_requests,
+            "GATEWAY_MAX_BODY_WORKING_BYTES": None if self.args.max_body_working_mib is None else self.args.max_body_working_mib * 1024 * 1024,
+            "GATEWAY_SMALL_BODY_RESERVED_REQUESTS": self.args.small_body_reserved_requests,
+            "GATEWAY_BODY_WORKSPACE_MULTIPLIER": self.args.body_workspace_multiplier,
+            "GATEWAY_BODY_UPLOAD_TIMEOUT_MS": self.args.body_upload_timeout_ms,
+            "GATEWAY_MAX_UPSTREAM_REQUESTS": self.args.max_upstream_requests,
+        }
+        return {key: value for key, value in values.items() if value is not None}
+
     def run(self):
         self.setup()
         metadata = {
@@ -135,6 +149,10 @@ class Benchmark:
             "limits": self.args.limits, "repetitions": self.args.repetitions,
             "rps": self.args.rps, "duration_seconds": self.args.duration, "delay_ms": self.args.delay_ms,
             "body_bytes": self.args.body_mib * 1024 * 1024,
+            "body_mix": json.loads(self.args.body_mix) if self.args.body_mix else None,
+            "body_order": self.args.body_order, "sequence_seed": self.args.sequence_seed,
+            "chunked": self.args.chunked, "upload_delay_ms": self.args.upload_delay_ms,
+            "admission_environment": self.admission_environment(),
             "load_mode": "simultaneous" if self.args.concurrent_per_pod else "fixed-rate",
             "concurrent_per_pod": self.args.concurrent_per_pod,
             "read_delay_ms": self.args.read_delay_ms,
@@ -154,7 +172,7 @@ class Benchmark:
         metadata["image_architecture"] = command(["docker", "image", "inspect", self.args.image, "--format", "{{.Architecture}}"], capture_output=True).stdout.strip()
         nodes = json.loads(self.kube("get", "nodes", "-o", "json", capture_output=True).stdout)["items"]
         metadata["kubernetes_nodes"] = [node["status"]["nodeInfo"] for node in nodes]
-        metadata["scripts_sha256"] = {name: hashlib.sha256((HERE / name).read_bytes()).hexdigest() for name in ["mock.mjs", "workload.mjs"]}
+        metadata["scripts_sha256"] = {name: hashlib.sha256((HERE / name).read_bytes()).hexdigest() for name in SCRIPT_FILES}
         image_env = json.loads(command(["docker", "image", "inspect", self.args.image, "--format", "{{json .Config.Env}}"], capture_output=True).stdout)
         metadata["image_allocator_environment"] = dict(item.split("=", 1) for item in image_env if item.split("=", 1)[0] in {"MALLOC_MMAP_THRESHOLD_", "MALLOC_ARENA_MAX"})
         (self.output / "environment.json").write_text(json.dumps(metadata, indent=2))
@@ -181,6 +199,7 @@ class Benchmark:
                           "load_mode": metadata["load_mode"], "concurrent_per_pod": self.args.concurrent_per_pod,
                           "upstream_read_delay_ms": self.args.read_delay_ms,
                           "upstream_delay_ms": self.args.delay_ms}
+                config.update({key: metadata[key] for key in ("body_order", "sequence_seed", "chunked", "upload_delay_ms", "admission_environment")})
                 failure = None
                 try:
                     with (self.output / f"{name}.json").open("w") as output:
@@ -256,6 +275,17 @@ def main():
     parser.add_argument("--duration", type=float, default=15)
     parser.add_argument("--delay-ms", type=int, default=12000)
     parser.add_argument("--body-mib", type=int, default=5)
+    parser.add_argument("--body-mix", help='JSON array of {"bytes":integer,"weight":integer,"shape":"string"|"objects"}')
+    parser.add_argument("--body-order", choices=["shuffled", "large-first", "small-first"], default="shuffled")
+    parser.add_argument("--sequence-seed", type=int, default=146)
+    parser.add_argument("--chunked", action="store_true")
+    parser.add_argument("--upload-delay-ms", type=int, default=0)
+    parser.add_argument("--max-body-working-mib", type=int)
+    parser.add_argument("--elastic-max-requests", type=int)
+    parser.add_argument("--small-body-reserved-requests", type=int)
+    parser.add_argument("--body-workspace-multiplier", type=int)
+    parser.add_argument("--body-upload-timeout-ms", type=int)
+    parser.add_argument("--max-upstream-requests", type=int)
     parser.add_argument("--concurrent-per-pod", type=int, default=0, help="simultaneous finite cohort; zero keeps fixed-rate mode")
     parser.add_argument("--read-delay-ms", type=int, default=0, help="mock upstream read pause; warmup remains unpaused")
     parser.add_argument("--client-deadline-ms", type=int, default=0)
@@ -265,6 +295,19 @@ def main():
     parser.add_argument("--malloc-mmap-threshold", type=int, help="diagnostic glibc allocator override; omitted for the comparison matrix")
     parser.add_argument("--memory-limit-mib", type=int, default=2048)
     args = parser.parse_args()
+    if not 1 <= args.sequence_seed <= 0xffffffff or args.upload_delay_ms < 0:
+        parser.error("invalid sequence seed or upload delay")
+    for name in ("max_body_working_mib", "body_workspace_multiplier", "body_upload_timeout_ms", "max_upstream_requests"):
+        if getattr(args, name) is not None and getattr(args, name) <= 0:
+            parser.error(f"{name} must be positive")
+    if args.small_body_reserved_requests is not None and not 0 <= args.small_body_reserved_requests < min(args.limits):
+        parser.error("small-body reserve must be nonnegative and below every slot limit")
+    if args.elastic_max_requests is not None and args.elastic_max_requests < max(args.limits):
+        parser.error("elastic ceiling must be at least every ordinary slot limit")
+    if args.max_body_working_mib is None and any(value is not None for value in (args.elastic_max_requests, args.small_body_reserved_requests, args.body_workspace_multiplier, args.body_upload_timeout_ms)):
+        parser.error("working-set policy options require --max-body-working-mib")
+    if args.body_mix:
+        command(["node", "--input-type=module", "-e", "import {parseMix} from './mixed_workload.mjs'; parseMix(process.argv[1], 0)", args.body_mix], cwd=HERE)
     if args.rps <= 0 or args.duration <= 0 or args.delay_ms < 0 or args.repetitions < 1 or args.memory_limit_mib <= 0 or any(limit < 1 for limit in args.limits) or (args.malloc_mmap_threshold is not None and args.malloc_mmap_threshold <= 0) or not 1 <= args.body_mib <= 100 or min(args.concurrent_per_pod, args.read_delay_ms, args.client_deadline_ms, args.condition_timeout) < 0:
         parser.error("rate, duration, repetitions, and limits must be positive; delay must be nonnegative")
     Benchmark(args).run()

@@ -1,5 +1,8 @@
 #[path = "accessa_runtime.rs"]
 mod accessa_runtime;
+#[cfg(test)]
+#[path = "request_admission_tests.rs"]
+mod request_admission_tests;
 #[path = "websocket.rs"]
 mod websocket;
 use crate::accessa_transport::{ConnectionLease, ConnectionLimits, FrameLimit};
@@ -60,6 +63,19 @@ const MAX_MULTIPART_PRICING_FIELD_NAME_BYTES: usize = 256;
 const MAX_MULTIPART_PRICING_FIELD_VALUE_BYTES: usize = 16 * 1024;
 const MAX_MULTIPART_PRICING_METADATA_BYTES: usize = 64 * 1024;
 
+static UNIDENTIFIED_TRAFFIC_WRITES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
+
+#[derive(Debug)]
+struct UpstreamLease(tokio::sync::OwnedSemaphorePermit);
+
+impl Drop for UpstreamLease {
+    fn drop(&mut self) {
+        // Keep the semaphore permit until the request/stream ends or is cancelled.
+        let _ = &self.0;
+        gateway_telemetry::upstream_request_finished();
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PingoraLiteLlmConfig {
     pub litellm: PingoraUpstreamConfig,
@@ -69,6 +85,8 @@ pub struct PingoraLiteLlmConfig {
     pub apigee_trusted_header: Option<ApigeeTrustedHeaderConfig>,
     pub relayna_key_header: String,
     body_admission: BodyAdmissionController,
+    upstream_slots: Option<Arc<tokio::sync::Semaphore>>,
+    request_admission: Arc<gateway_core::auth_admission::RequestAdmission>,
     auth_runtime: Option<SharedGatewayAuthRuntime>,
 }
 
@@ -101,6 +119,8 @@ impl PingoraLiteLlmConfig {
                 DEFAULT_MAX_INFLIGHT_BUFFER_BYTES,
             )?,
             auth_runtime: None,
+            upstream_slots: None,
+            request_admission: Arc::new(Default::default()),
         })
     }
 
@@ -145,13 +165,44 @@ impl PingoraLiteLlmConfig {
         self
     }
 
+    pub fn with_request_admission(
+        mut self,
+        admission: Arc<gateway_core::auth_admission::RequestAdmission>,
+    ) -> Self {
+        self.request_admission = admission;
+        self
+    }
+
     pub fn with_body_admission_limits(
         mut self,
         max_buffered_requests: usize,
         max_inflight_buffer_bytes: usize,
     ) -> GatewayResult<Self> {
-        self.body_admission =
-            BodyAdmissionController::new(max_buffered_requests, max_inflight_buffer_bytes)?;
+        self.body_admission = BodyAdmissionController::with_size_policy(
+            max_buffered_requests,
+            max_inflight_buffer_bytes,
+            self.body_admission.size_policy(),
+        )?;
+        Ok(self)
+    }
+
+    pub fn with_size_aware_body_policy(
+        mut self,
+        policy: Option<crate::SizeAwareBodyPolicy>,
+    ) -> GatewayResult<Self> {
+        self.body_admission = BodyAdmissionController::with_size_policy(
+            self.body_admission.configured_max_requests(),
+            self.body_admission.max_bytes(),
+            policy,
+        )?;
+        Ok(self)
+    }
+
+    pub fn with_upstream_request_limit(mut self, limit: Option<usize>) -> GatewayResult<Self> {
+        if limit.is_some_and(|value| value == 0 || value > tokio::sync::Semaphore::MAX_PERMITS) {
+            return Err(GatewayError::InvalidConfiguration);
+        }
+        self.upstream_slots = limit.map(|value| Arc::new(tokio::sync::Semaphore::new(value)));
         Ok(self)
     }
 
@@ -265,6 +316,46 @@ where
 }
 
 impl<S, R> RelaynaPingoraProxy<S, R> {
+    async fn persist_traffic(&self, ctx: &mut PingoraContext)
+    where
+        S: TrafficStore,
+    {
+        // Rejected pre-auth traffic must not turn into unbounded DB pool waiters
+        // during logging. Local counters and the bounded live monitor remain.
+        let _unidentified_write = if ctx.key.is_none() {
+            if matches!(
+                ctx.traffic.diagnostics.failure_code.as_deref(),
+                Some(
+                    "authentication_overloaded"
+                        | "source_rate_limit_exceeded"
+                        | "malformed_authorization"
+                )
+            ) {
+                ctx.traffic.recording_failed("request_traffic_admission");
+                return;
+            }
+            match UNIDENTIFIED_TRAFFIC_WRITES.try_acquire() {
+                Ok(permit) => Some(permit),
+                Err(_) => {
+                    ctx.traffic.recording_failed("request_traffic_admission");
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        if !matches!(
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                self.store.insert_traffic(&ctx.traffic)
+            )
+            .await,
+            Ok(Ok(()))
+        ) {
+            ctx.traffic.recording_failed("request_traffic");
+        }
+    }
+
     async fn verify_entra_request(
         &self,
         req: &RequestHeader,
@@ -332,6 +423,8 @@ pub struct PingoraContext {
     response_rewriter: Option<BoundedBodyRewriter>,
     request_body_lease: Option<BodyAdmissionLease>,
     response_body_lease: Option<BodyAdmissionLease>,
+    upstream_lease: Option<UpstreamLease>,
+    original_upload_read_timeout: Option<Option<Duration>>,
     is_streaming: bool,
     first_chunk_recorded: bool,
     budget_reserved: bool,
@@ -432,6 +525,8 @@ where
             response_rewriter: None,
             request_body_lease: None,
             response_body_lease: None,
+            upstream_lease: None,
+            original_upload_read_timeout: None,
             is_streaming: false,
             first_chunk_recorded: false,
             budget_reserved: false,
@@ -523,6 +618,31 @@ where
     where
         Self::CTX: Send + Sync,
     {
+        let peer = session
+            .client_addr()
+            .and_then(|addr| addr.as_inet())
+            .map(|addr| addr.ip());
+        let _admission = match self.config.request_admission.acquire(peer).await {
+            Ok(permit) => permit,
+            Err(error) => {
+                respond_error(session, error, ctx).await?;
+                return Ok(true);
+            }
+        };
+        let auth = match self.auth_runtime.snapshot() {
+            Ok(auth) => auth,
+            Err(error) => {
+                respond_error(session, error, ctx).await?;
+                return Ok(true);
+            }
+        };
+        if let Err(error) = gateway_core::auth_admission::validate_credential_headers(
+            &session.req_header().headers,
+            &auth.config.relayna_key_header,
+        ) {
+            respond_error(session, error, ctx).await?;
+            return Ok(true);
+        }
         if session
             .req_header()
             .uri
@@ -746,7 +866,11 @@ where
             matched.estimated_cost_usd = None;
         }
 
-        ctx.request_rewriter = Some(BoundedBodyRewriter::new(matched.max_body_bytes));
+        ctx.request_rewriter = Some(
+            BoundedBodyRewriter::new(matched.max_body_bytes).with_expected_length(
+                header_value(req, "content-length").and_then(|value| value.parse().ok()),
+            ),
+        );
         ctx.response_rewriter = Some(BoundedBodyRewriter::new(matched.max_response_body_bytes));
         ctx.traceparent = header_value(req, "traceparent")
             .filter(|value| is_valid_traceparent(value))
@@ -769,13 +893,6 @@ where
         }
 
         traffic_step(ctx, "authentication");
-        let auth = match self.auth_runtime.snapshot() {
-            Ok(auth) => auth,
-            Err(error) => {
-                respond_error(session, error, ctx).await?;
-                return Ok(true);
-            }
-        };
         ctx.relayna_key_header = auth.config.relayna_key_header.clone();
         let now = Utc::now();
         let authorization = header_value(req, "authorization");
@@ -864,11 +981,11 @@ where
                 Err(GatewayError::MalformedAuthorization)
             } else if dedicated.is_some() {
                 Authenticator::new(self.store.clone())
-                    .authenticate_raw_key(dedicated, now)
+                    .authenticate_raw_key(dedicated, Utc::now())
                     .await
             } else {
                 Authenticator::new(self.store.clone())
-                    .authenticate_authorization(authorization, now)
+                    .authenticate_authorization(authorization, Utc::now())
                     .await
             };
             let key = match result {
@@ -1033,17 +1150,20 @@ where
             Ok(key)
         } else if ctx.access.entra.is_some() {
             Authenticator::new(self.store.clone())
-                .authenticate_raw_key(header_value(req, &auth.config.relayna_key_header), now)
+                .authenticate_raw_key(
+                    header_value(req, &auth.config.relayna_key_header),
+                    Utc::now(),
+                )
                 .await
         } else if ctx.access.skip_entra {
             // Dedicated key header is accepted consistently; never treat a JWT as a key.
             if let Some(key) = header_value(req, &auth.config.relayna_key_header) {
                 Authenticator::new(self.store.clone())
-                    .authenticate_raw_key(Some(key), now)
+                    .authenticate_raw_key(Some(key), Utc::now())
                     .await
             } else {
                 Authenticator::new(self.store.clone())
-                    .authenticate_authorization(authorization, now)
+                    .authenticate_authorization(authorization, Utc::now())
                     .await
             }
         } else if auth.config.unverified_bearer_enabled {
@@ -1052,7 +1172,7 @@ where
                     Authenticator::new(self.store.clone())
                         .authenticate_raw_key(
                             header_value(req, &auth.config.relayna_key_header),
-                            now,
+                            Utc::now(),
                         )
                         .await
                 }
@@ -1086,11 +1206,14 @@ where
                 }
             }
             Authenticator::new(self.store.clone())
-                .authenticate_raw_key(header_value(req, &auth.config.relayna_key_header), now)
+                .authenticate_raw_key(
+                    header_value(req, &auth.config.relayna_key_header),
+                    Utc::now(),
+                )
                 .await
         } else {
             Authenticator::new(self.store.clone())
-                .authenticate_authorization(authorization, now)
+                .authenticate_authorization(authorization, Utc::now())
                 .await
         };
         match key_result {
@@ -1313,7 +1436,11 @@ where
         let chunk_len = body.as_ref().map_or(0, Bytes::len);
         if chunk_len > 0 {
             if ctx.request_body_lease.is_none() {
-                match self.config.body_admission.try_acquire() {
+                match self
+                    .config
+                    .body_admission
+                    .try_acquire_sized(rewriter.expected_length())
+                {
                     Ok(lease) => ctx.request_body_lease = Some(lease),
                     Err(error) => {
                         ctx.guardrail_error = Some(error.clone());
@@ -1324,26 +1451,72 @@ where
                 }
             }
             if let Some(lease) = ctx.request_body_lease.as_mut() {
-                if let Err(error) = lease.try_reserve(chunk_len) {
-                    ctx.request_body_lease.take();
+                let reservation = rewriter.next_capacity(chunk_len).and_then(|capacity| {
+                    lease.prepare_buffer(
+                        rewriter.buffered_len().saturating_add(chunk_len),
+                        capacity,
+                    )?;
+                    lease.try_reserve(chunk_len)
+                });
+                if let Err(error) = reservation {
                     drop(rewriter.take_buffer());
+                    ctx.request_body_lease.take();
                     ctx.guardrail_error = Some(error.clone());
                     *body = Some(Bytes::new());
                     respond_error(session, error, ctx).await?;
                     return Err(PingoraError::new(ErrorType::InternalError));
                 }
+                if let Some(remaining) = lease.upload_remaining() {
+                    if remaining.is_zero() {
+                        gateway_telemetry::record_body_admission_rejection("upload_timeout");
+                        drop(rewriter.take_buffer());
+                        ctx.request_body_lease.take();
+                        ctx.guardrail_error = Some(GatewayError::GatewayOverloaded);
+                        *body = Some(Bytes::new());
+                        respond_error(session, GatewayError::GatewayOverloaded, ctx).await?;
+                        return Err(PingoraError::new(ErrorType::InternalError));
+                    }
+                    let original = *ctx
+                        .original_upload_read_timeout
+                        .get_or_insert_with(|| session.get_read_timeout());
+                    let timeout = original.map_or(remaining, |old| old.min(remaining));
+                    session.set_read_timeout(Some(timeout));
+                }
             }
         }
         if let Err(error) = rewriter.append_chunk(body.as_ref()) {
-            ctx.request_body_lease.take();
             drop(rewriter.take_buffer());
+            ctx.request_body_lease.take();
             ctx.guardrail_error = Some(error);
             *body = Some(Bytes::new());
             return Err(PingoraError::new(ErrorType::InternalError));
         }
+        if let Some(lease) = ctx.request_body_lease.as_mut() {
+            if let Err(error) = lease.prepare_buffer(rewriter.buffered_len(), rewriter.capacity()) {
+                drop(rewriter.take_buffer());
+                ctx.request_body_lease.take();
+                ctx.guardrail_error = Some(error.clone());
+                *body = Some(Bytes::new());
+                respond_error(session, error, ctx).await?;
+                return Err(PingoraError::new(ErrorType::InternalError));
+            }
+        }
         *body = Some(Bytes::new());
         if !end_of_stream {
             return Ok(());
+        }
+        if let Some(original) = ctx.original_upload_read_timeout.take() {
+            session.set_read_timeout(original);
+        }
+
+        if let Some(lease) = ctx.request_body_lease.as_mut() {
+            if let Err(error) = lease.begin_processing() {
+                drop(rewriter.take_buffer());
+                ctx.request_body_lease.take();
+                ctx.guardrail_error = Some(error.clone());
+                respond_error(session, error, ctx).await?;
+                return Err(PingoraError::new(ErrorType::InternalError));
+            }
         }
 
         let mut raw_body = rewriter.take_buffer();
@@ -1378,13 +1551,20 @@ where
         }
         // Apply the complete original selector before policy cost checks.
         resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
-        let analysis = analyze_generation_request(&raw_body);
+        let analyzed = CompleteRequestBody::new(Bytes::from(raw_body));
+        if let Err(error) = retain_request_metadata_workspace(ctx, &analyzed) {
+            ctx.guardrail_error = Some(error.clone());
+            respond_error(session, error, ctx).await?;
+            return Err(PingoraError::new(ErrorType::InternalError));
+        }
+        let raw_body = &analyzed.bytes;
+        let analysis = &analyzed.generation;
         let wildcard_delegation = ctx.litellm_passthrough
             && ctx.route == Some(Route::LiteLlmPassthrough)
             && ctx.access.authentication_profiles.is_none();
         if wildcard_delegation
             && analysis.is_none()
-            && serde_json::from_slice::<serde_json::Value>(&raw_body)
+            && serde_json::from_slice::<serde_json::Value>(raw_body)
                 .is_ok_and(|value| value.is_object())
         {
             // Duplicate or malformed selectors must not become model=None and
@@ -1403,29 +1583,36 @@ where
                 matched.provider = Provider::LiteLlm;
             }
             match self
-                .effective_complete_policy(key, &matched, &raw_body)
+                .effective_complete_policy(key, &matched, &analyzed)
                 .await
             {
                 Ok(effective) => {
                     features.service_name = features
                         .service_name
                         .or_else(|| matched.service_name.clone());
-                    let admission = if wildcard_delegation {
-                        // Select body-specified model layers even on delegated
-                        // formats, then fail closed if their cap cannot be enforced.
-                        gateway_core::policies::enforce_output_token_limit(
-                            &effective.policy,
-                            matched.route,
-                            &raw_body,
-                        )
-                    } else {
-                        check_complete_request_policy(
-                            &effective.policy,
-                            &matched,
-                            &raw_body,
-                            &features,
-                        )
-                    };
+                    let admission = ctx
+                        .request_body_lease
+                        .as_mut()
+                        .map_or(Ok(()), BodyAdmissionLease::begin_processing)
+                        .and_then(|()| {
+                            if wildcard_delegation {
+                                // Select body-specified model layers even on delegated
+                                // formats, then fail closed if their cap cannot be enforced.
+                                gateway_core::policies::enforce_output_token_limit(
+                                    &effective.policy,
+                                    matched.route,
+                                    raw_body,
+                                )
+                            } else {
+                                check_complete_request_policy(
+                                    &effective.policy,
+                                    &matched,
+                                    &analyzed,
+                                    &features,
+                                )
+                            }
+                        })
+                        .and_then(|()| retain_request_metadata_workspace(ctx, &analyzed));
                     if let Err(error) = admission {
                         ctx.guardrail_error = Some(error.clone());
                         respond_error(session, error, ctx).await?;
@@ -1444,14 +1631,14 @@ where
         // Relayna-key canonical passthrough still enforces body-selected policy,
         // rate limits and budgets, while retaining its released no-rewrite mode.
         if ctx.litellm_passthrough {
-            *body = Some(Bytes::from(raw_body));
-            if let Some(body) = body.as_ref() {
-                ctx.body_prefix.clear();
-                ctx.body_prefix
-                    .extend_from_slice(&body[..body.len().min(65_536)]);
-            }
-            if !wildcard_delegation {
-                self.admit_complete_body(session, body, ctx).await?;
+            ctx.body_prefix.clear();
+            ctx.body_prefix
+                .extend_from_slice(&raw_body[..raw_body.len().min(65_536)]);
+            if wildcard_delegation {
+                *body = Some(analyzed.bytes);
+            } else {
+                self.admit_complete_body(session, body, ctx, analyzed)
+                    .await?;
             }
             return bind_request_body_admission(body, ctx);
         }
@@ -1525,24 +1712,31 @@ where
         };
 
         if plan.entries.is_empty() && response_plan.entries.is_empty() {
-            *body = Some(Bytes::from(raw_body));
-            if let Some(body) = body.as_ref() {
-                ctx.rewritten_request_len = Some(body.len());
-                ctx.body_prefix.clear();
-                ctx.body_prefix
-                    .extend_from_slice(&body[..body.len().min(65_536)]);
-            }
+            ctx.rewritten_request_len = Some(raw_body.len());
+            ctx.body_prefix.clear();
+            ctx.body_prefix
+                .extend_from_slice(&raw_body[..raw_body.len().min(65_536)]);
             resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
-            self.admit_complete_body(session, body, ctx).await?;
+            self.admit_complete_body(session, body, ctx, analyzed)
+                .await?;
             return bind_request_body_admission(body, ctx);
         }
 
-        let mut request_json = match serde_json::from_slice::<serde_json::Value>(&raw_body) {
+        if let Err(error) = ctx
+            .request_body_lease
+            .as_mut()
+            .map_or(Ok(()), BodyAdmissionLease::begin_processing)
+        {
+            ctx.guardrail_error = Some(error.clone());
+            respond_error(session, error, ctx).await?;
+            return Err(PingoraError::new(ErrorType::InternalError));
+        }
+        let mut request_json = match serde_json::from_slice::<serde_json::Value>(raw_body) {
             Ok(value) => value,
             Err(_) => {
-                *body = Some(Bytes::from(raw_body));
                 resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
-                self.admit_complete_body(session, body, ctx).await?;
+                self.admit_complete_body(session, body, ctx, analyzed)
+                    .await?;
                 return bind_request_body_admission(body, ctx);
             }
         };
@@ -1575,10 +1769,17 @@ where
                 Utc::now(),
             ));
             guardrail_context = Some(context);
-            serde_json::to_vec(&execution.request.unwrap_or(serde_json::Value::Null))
-                .map_err(|_| GatewayError::InvalidGuardrailRequest)
+            crate::body_rewrite::serialize_with_admission(
+                &execution.request.unwrap_or(serde_json::Value::Null),
+                route_match
+                    .as_ref()
+                    .map_or(usize::MAX, |matched| matched.max_body_bytes),
+                ctx.request_body_lease.as_mut(),
+                GatewayError::RequestBodyTooLarge,
+            )
         })();
 
+        drop(analyzed);
         match result {
             Ok(rewritten) => *body = Some(Bytes::from(rewritten)),
             Err(error) => {
@@ -1602,7 +1803,9 @@ where
                 .extend_from_slice(&body[..body.len().min(65_536)]);
         }
         resolve_service_cost_for_ctx(ctx, pricing_selector.as_ref());
-        self.admit_complete_body(session, body, ctx).await?;
+        let analyzed = CompleteRequestBody::new(body.take().unwrap_or_default());
+        self.admit_complete_body(session, body, ctx, analyzed)
+            .await?;
         bind_request_body_admission(body, ctx)
     }
 
@@ -1749,7 +1952,12 @@ where
             respond_error(session, error, ctx).await?;
             return Ok(false);
         }
-        let estimated_tokens = estimate_generation_tokens(&ctx.body_prefix);
+        let estimated_tokens =
+            if policy.max_input_tokens_per_request.is_some() || policy.tpm_limit.is_some() {
+                estimate_generation_tokens(&ctx.body_prefix)
+            } else {
+                0
+            };
         if let Err(error) = evaluate_policy_limits(
             &policy,
             now,
@@ -1768,7 +1976,12 @@ where
             return Ok(false);
         }
         if body_empty {
-            if let Err(error) = check_complete_request_policy(&policy, &matched, b"", &features) {
+            if let Err(error) = check_complete_request_policy(
+                &policy,
+                &matched,
+                &CompleteRequestBody::new(Bytes::new()),
+                &features,
+            ) {
                 self.record_terminal_usage(ctx, &key, route, &error, now)
                     .await;
                 respond_error(session, error, ctx).await?;
@@ -1910,6 +2123,21 @@ where
         _session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<Box<HttpPeer>> {
+        if ctx.upstream_lease.is_none() {
+            if let Some(slots) = self.config.upstream_slots.as_ref() {
+                match Arc::clone(slots).try_acquire_owned() {
+                    Ok(lease) => {
+                        gateway_telemetry::upstream_request_started();
+                        ctx.upstream_lease = Some(UpstreamLease(lease));
+                    }
+                    Err(_) => {
+                        gateway_telemetry::record_upstream_admission_rejection();
+                        ctx.guardrail_error = Some(GatewayError::GatewayOverloaded);
+                        return Err(PingoraError::new(ErrorType::InternalError));
+                    }
+                }
+            }
+        }
         finish_attempt_timing(ctx);
         ctx.traffic.attempts += 1;
         ctx.traffic.diagnostics.upstream_status = None;
@@ -2322,7 +2550,12 @@ where
             .as_ref()
             .is_some_and(|plan| !plan.entries.is_empty());
         if has_post_guardrails && ctx.response_body_lease.is_none() {
-            let mut lease = match self.config.body_admission.try_acquire() {
+            let expected = upstream_response
+                .headers
+                .get(header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<usize>().ok());
+            let mut lease = match self.config.body_admission.try_acquire_sized(expected) {
                 Ok(lease) => lease,
                 Err(error) => {
                     ctx.guardrail_error = Some(error);
@@ -2409,11 +2642,19 @@ where
                 let required_bytes = buffered_len.saturating_add(chunk_len);
                 if let Some(lease) = ctx.response_body_lease.as_mut() {
                     let additional_bytes = required_bytes.saturating_sub(lease.reserved_bytes());
-                    if let Err(error) = lease.try_reserve(additional_bytes) {
-                        ctx.response_body_lease.take();
+                    let reservation = ctx
+                        .response_rewriter
+                        .as_ref()
+                        .map_or(Ok(required_bytes), |rewriter| {
+                            rewriter.next_capacity(chunk_len)
+                        })
+                        .and_then(|capacity| lease.prepare_buffer(required_bytes, capacity))
+                        .and_then(|()| lease.try_reserve(additional_bytes));
+                    if let Err(error) = reservation {
                         if let Some(rewriter) = ctx.response_rewriter.as_mut() {
                             drop(rewriter.take_buffer());
                         }
+                        ctx.response_body_lease.take();
                         ctx.guardrail_error = Some(error);
                         *body = Some(Bytes::new());
                         return Err(PingoraError::new(ErrorType::InternalError));
@@ -2421,10 +2662,52 @@ where
                 }
             }
         }
+        if end_of_stream {
+            if let Some(lease) = ctx.response_body_lease.as_mut() {
+                if let Err(error) = lease.begin_processing() {
+                    if let Some(rewriter) = ctx.response_rewriter.as_mut() {
+                        drop(rewriter.take_buffer());
+                    }
+                    ctx.response_body_lease.take();
+                    ctx.guardrail_error = Some(error);
+                    *body = Some(Bytes::new());
+                    return Err(PingoraError::new(ErrorType::InternalError));
+                }
+            }
+        }
         if let Err(error) = apply_post_call_guardrails(body, end_of_stream, ctx) {
             ctx.guardrail_error = Some(error);
             *body = Some(Bytes::new());
             return Err(PingoraError::new(ErrorType::InternalError));
+        }
+        if let Some(lease) = ctx.response_body_lease.as_mut() {
+            let retained = ctx
+                .response_rewriter
+                .as_ref()
+                .map_or(0, BoundedBodyRewriter::capacity);
+            let length = body.as_ref().map_or(0, Bytes::len);
+            let length = length.max(
+                ctx.response_rewriter
+                    .as_ref()
+                    .map_or(0, BoundedBodyRewriter::buffered_len),
+            );
+            // Final rewritten output was charged separately by serialization.
+            // Do not replace the input extent with its (possibly smaller) size.
+            let reservation = if end_of_stream {
+                Ok(())
+            } else {
+                lease.prepare_buffer(length, retained.max(length))
+            }
+            .and_then(|()| lease.try_reserve(length.saturating_sub(lease.reserved_bytes())));
+            if let Err(error) = reservation {
+                *body = Some(Bytes::new());
+                if let Some(rewriter) = ctx.response_rewriter.as_mut() {
+                    drop(rewriter.take_buffer());
+                }
+                ctx.response_body_lease.take();
+                ctx.guardrail_error = Some(error);
+                return Err(PingoraError::new(ErrorType::InternalError));
+            }
         }
         if let Some(body) = body.as_ref() {
             ctx.response_bytes_seen = ctx.response_bytes_seen.saturating_add(body.len());
@@ -2477,6 +2760,7 @@ where
         ctx: &mut Self::CTX,
     ) {
         ctx.socket_lease.take();
+        ctx.upstream_lease.take();
         gateway_telemetry::request_finished();
         finish_traffic(
             ctx,
@@ -2655,16 +2939,7 @@ where
                 ctx.traffic.client_status.unwrap_or(500),
             ));
         }
-        if !matches!(
-            tokio::time::timeout(
-                Duration::from_secs(2),
-                self.store.insert_traffic(&ctx.traffic)
-            )
-            .await,
-            Ok(Ok(()))
-        ) {
-            ctx.traffic.recording_failed("request_traffic");
-        }
+        self.persist_traffic(ctx).await;
         traffic::monitor().publish(ctx.traffic.clone());
     }
 
@@ -2995,12 +3270,11 @@ where
         &self,
         key: &AuthenticatedKey,
         matched: &RouteMatch,
-        body: &[u8],
+        body: &CompleteRequestBody,
     ) -> GatewayResult<gateway_core::EffectivePolicy>
     where
         S: PolicyLookup,
     {
-        let features = extract_generation_features(body);
         let base = self
             .store
             .effective_policy_for_context(
@@ -3008,10 +3282,12 @@ where
                 key.project_id,
                 None,
                 Some(matched.route),
-                features.model.clone(),
+                body.generation
+                    .as_ref()
+                    .and_then(|analysis| analysis.features.model.clone()),
             )
             .await?;
-        if matched.route != Route::AnthropicMessageBatches || body.is_empty() {
+        if matched.route != Route::AnthropicMessageBatches || body.bytes.is_empty() {
             return Ok(base);
         }
         let mut layers = vec![gateway_core::PolicyLayer {
@@ -3022,7 +3298,7 @@ where
             guardrail_policy: base.guardrail_policy,
         }];
         let mut models = std::collections::BTreeMap::new();
-        for feature in batch_request_features(body)? {
+        for feature in batch_request_features(&body.bytes)? {
             let effective = match models.entry(feature.model.clone()) {
                 std::collections::btree_map::Entry::Vacant(entry) => entry.insert(
                     self.store
@@ -3104,6 +3380,7 @@ where
         session: &mut Session,
         body: &mut Option<Bytes>,
         ctx: &mut PingoraContext,
+        analyzed: CompleteRequestBody,
     ) -> PingoraResult<()>
     where
         S: PolicyLookup,
@@ -3113,13 +3390,10 @@ where
             // Rewritten output must fit before reserving a service charge.
             // The lease is transferred to the forwarded bytes after admission.
             if let Some(lease) = ctx.request_body_lease.as_mut() {
-                let additional_bytes = body
-                    .as_ref()
-                    .map_or(0, Bytes::len)
-                    .saturating_sub(lease.reserved_bytes());
+                let additional_bytes = analyzed.bytes.len().saturating_sub(lease.reserved_bytes());
                 lease.try_reserve(additional_bytes)?;
             }
-            let key = ctx.key.as_ref().ok_or(GatewayError::MissingAuthorization)?;
+            let key = ctx.key.clone().ok_or(GatewayError::MissingAuthorization)?;
             let mut matched = ctx
                 .route_match
                 .clone()
@@ -3127,13 +3401,17 @@ where
             if ctx.fallback_count > 0 {
                 matched.provider = Provider::LiteLlm;
             }
-            let raw = body.as_deref().unwrap_or_default();
-            let mut features = extract_generation_features(raw);
+            let mut features = analyzed.features();
             features.service_name = features
                 .service_name
                 .or_else(|| matched.service_name.clone());
-            let effective = self.effective_complete_policy(key, &matched, raw).await?;
-            check_complete_request_policy(&effective.policy, &matched, raw, &features)?;
+            let effective = self
+                .effective_complete_policy(&key, &matched, &analyzed)
+                .await?;
+            if let Some(lease) = ctx.request_body_lease.as_mut() {
+                lease.begin_processing()?;
+            }
+            check_complete_request_policy(&effective.policy, &matched, &analyzed, &features)?;
             if ctx.budget_reserved {
                 ctx.policy = Some(effective.policy);
                 return Ok(());
@@ -3146,7 +3424,11 @@ where
                     retry_after_seconds: None,
                 });
             }
-            let tokens = estimate_generation_tokens(raw);
+            let tokens = effective
+                .policy
+                .tpm_limit
+                .map_or(0, |_| analyzed.estimated_tokens());
+            retain_request_metadata_workspace(ctx, &analyzed)?;
             match self
                 .control_state
                 .check_token_rate_limit(key.key_id, effective.policy.tpm_limit, tokens, Utc::now())
@@ -3191,11 +3473,14 @@ where
         }
         .await;
         if let Err(error) = result {
+            // A slow downstream error write must not retain the rejected body.
+            drop(analyzed);
             ctx.guardrail_error = Some(error.clone());
             *body = Some(Bytes::new());
             respond_error(session, error, ctx).await?;
             return Err(PingoraError::new(ErrorType::InternalError));
         }
+        *body = Some(analyzed.bytes);
         Ok(())
     }
 
@@ -3656,8 +3941,14 @@ fn apply_post_call_guardrails(
             &execution.records,
             Utc::now(),
         ));
-        serde_json::to_vec(&execution.response.unwrap_or(serde_json::Value::Null))
-            .map_err(|_| GatewayError::InvalidGuardrailRequest)
+        crate::body_rewrite::serialize_with_admission(
+            &execution.response.unwrap_or(serde_json::Value::Null),
+            ctx.route_match
+                .as_ref()
+                .map_or(usize::MAX, |matched| matched.max_response_body_bytes),
+            ctx.response_body_lease.as_mut(),
+            GatewayError::ResponseBodyTooLarge,
+        )
     })?;
     ctx.guardrail_events.extend(events);
     Ok(())
@@ -3771,12 +4062,81 @@ fn provider_for_usage(ctx: &PingoraContext) -> Provider {
         .unwrap_or(Provider::LiteLlm)
 }
 
+fn retain_request_metadata_workspace(
+    ctx: &mut PingoraContext,
+    body: &CompleteRequestBody,
+) -> GatewayResult<()> {
+    if ctx.foundry.is_none()
+        && ctx.service_pricing_rules.is_empty()
+        && ctx.route != Some(Route::AnthropicMessageBatches)
+        && ctx.pre_guardrail_plan.is_none()
+        && ctx.guardrail_context.is_none()
+        && body.has_compact_metadata()
+    {
+        if let Some(lease) = ctx.request_body_lease.as_mut() {
+            lease.retain_compact_workspace()?;
+        }
+    }
+    Ok(())
+}
+
+// Keep cached analysis inseparable from the immutable bytes it describes.
+// A rewrite constructs a new value; unchanged forwarding moves the original.
+struct CompleteRequestBody {
+    bytes: Bytes,
+    generation: Option<gateway_core::GenerationRequestAnalysis>,
+    tokens: std::sync::OnceLock<i64>,
+}
+
+impl CompleteRequestBody {
+    fn has_compact_metadata(&self) -> bool {
+        self.generation.as_ref().is_some_and(|analysis| {
+            analysis.client_guardrails.is_none()
+                && analysis
+                    .features
+                    .model
+                    .as_ref()
+                    .map_or(0, String::capacity)
+                    .saturating_add(
+                        analysis
+                            .features
+                            .service_name
+                            .as_ref()
+                            .map_or(0, String::capacity),
+                    )
+                    <= 4096
+        })
+    }
+
+    fn new(bytes: Bytes) -> Self {
+        Self {
+            generation: analyze_generation_request(&bytes),
+            bytes,
+            tokens: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn features(&self) -> gateway_core::GenerationFeatures {
+        self.generation
+            .as_ref()
+            .map(|analysis| analysis.features.clone())
+            .unwrap_or_default()
+    }
+
+    fn estimated_tokens(&self) -> i64 {
+        *self
+            .tokens
+            .get_or_init(|| estimate_generation_tokens(&self.bytes))
+    }
+}
+
 fn check_complete_request_policy(
     policy: &KeyPolicy,
     matched: &RouteMatch,
-    body: &[u8],
+    analyzed: &CompleteRequestBody,
     features: &gateway_core::GenerationFeatures,
 ) -> GatewayResult<()> {
+    let body = &analyzed.bytes;
     if body.len() > matched.max_body_bytes {
         return Err(GatewayError::RequestBodyTooLarge);
     }
@@ -3788,10 +4148,10 @@ fn check_complete_request_policy(
             | Route::LiteLlmEmbeddings
             | Route::LiteLlmRerank
     );
-    let malformed_metadata = analyze_generation_request(body).is_none()
+    let malformed_metadata = analyzed.generation.is_none()
         && serde_json::from_slice::<serde_json::Value>(body).is_ok_and(|value| value.is_object());
     if malformed_metadata
-        || (generation && analyze_generation_request(body).is_none())
+        || (generation && analyzed.generation.is_none())
         || ((generation || (!body.is_empty() && matched.route != Route::AnthropicMessageBatches))
             && !policy.allowed_models.is_empty()
             && features.model.is_none())
@@ -3814,7 +4174,9 @@ fn check_complete_request_policy(
         Utc::now(),
         i64::try_from(body.len()).ok(),
         None,
-        i32::try_from(estimate_generation_tokens(body)).ok(),
+        policy
+            .max_input_tokens_per_request
+            .and_then(|_| i32::try_from(analyzed.estimated_tokens()).ok()),
         None,
         matched.estimated_cost_usd,
     )?;
@@ -4397,6 +4759,8 @@ fn new_pingora_context_for_tests() -> PingoraContext {
         response_rewriter: None,
         request_body_lease: None,
         response_body_lease: None,
+        upstream_lease: None,
+        original_upload_read_timeout: None,
         is_streaming: false,
         first_chunk_recorded: false,
         budget_reserved: false,
@@ -4450,11 +4814,21 @@ async fn respond_error(
     error: GatewayError,
     ctx: &mut PingoraContext,
 ) -> PingoraResult<()> {
+    if matches!(
+        error,
+        GatewayError::AuthenticationOverloaded | GatewayError::SourceRateLimitExceeded
+    ) {
+        gateway_telemetry::record_auth_admission_rejection("proxy", error.code());
+    }
     traffic_gateway_error(ctx, &error);
     let close_connection = ctx.guardrail_error.is_some()
         || matches!(
             error,
-            GatewayError::UpstreamTimeout | GatewayError::UpstreamConnection
+            GatewayError::UpstreamTimeout
+                | GatewayError::UpstreamConnection
+                | GatewayError::AuthenticationOverloaded
+                | GatewayError::SourceRateLimitExceeded
+                | GatewayError::MalformedAuthorization
         );
     let (response, body) = gateway_error_response(error, &ctx.request_id)?;
     if close_connection {
@@ -4471,13 +4845,18 @@ fn gateway_error_response(
     error: GatewayError,
     request_id: &str,
 ) -> PingoraResult<(ResponseHeader, Bytes)> {
-    let body = serde_json::to_vec(&error.body(request_id)).unwrap_or_else(|_| b"{}".to_vec());
+    let error_body = error.body(request_id);
+    let retry = error_body.error.retry_after_seconds;
+    let body = serde_json::to_vec(&error_body).unwrap_or_else(|_| b"{}".to_vec());
     let mut response = ResponseHeader::build(error.status_code().as_u16(), Some(4))?;
     response.insert_header(header::CONTENT_TYPE, "application/json")?;
     response.insert_header(header::CONTENT_LENGTH, body.len().to_string())?;
     response.insert_header(header::CACHE_CONTROL, "private, no-store")?;
     response.insert_header("x-request-id", request_id)?;
     response.insert_header("x-relayna-request-id", request_id)?;
+    if let Some(seconds) = retry {
+        response.insert_header(header::RETRY_AFTER, seconds.to_string())?;
+    }
     Ok((response, Bytes::from(body)))
 }
 
@@ -4600,6 +4979,9 @@ fn traffic_gateway_error(ctx: &mut PingoraContext, error: &GatewayError) {
     let stage = match error {
         GatewayError::GatewayOverloaded | GatewayError::RequestBodyTooLarge => {
             Some("body_admission")
+        }
+        GatewayError::AuthenticationOverloaded | GatewayError::SourceRateLimitExceeded => {
+            Some("authentication_admission")
         }
         GatewayError::ResponseBodyTooLarge => Some("response_body"),
         GatewayError::GuardrailBlocked
@@ -4811,6 +5193,30 @@ mod tests {
         assert_eq!((socket.client_bytes, socket.upstream_bytes), (12, 24));
         assert_eq!(socket.close_cause.as_deref(), Some("transport_ended"));
         assert_eq!(socket.state, "closed");
+    }
+
+    #[test]
+    fn authentication_admission_responses_have_distinct_codes_and_retry_headers() {
+        for (error, status, code) in [
+            (
+                GatewayError::AuthenticationOverloaded,
+                503,
+                "authentication_overloaded",
+            ),
+            (
+                GatewayError::SourceRateLimitExceeded,
+                429,
+                "source_rate_limit_exceeded",
+            ),
+        ] {
+            let (response, body) = gateway_error_response(error, "admission-test").unwrap();
+            assert_eq!(response.status.as_u16(), status);
+            assert_eq!(response.headers[header::RETRY_AFTER], "1");
+            assert_eq!(response.headers["x-request-id"], "admission-test");
+            assert_eq!(response.headers["x-relayna-request-id"], "admission-test");
+            let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(json["error"]["code"], code);
+        }
     }
 
     #[test]
@@ -5949,6 +6355,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejected_preauth_logging_cannot_bypass_database_admission() {
+        use std::sync::atomic::Ordering;
+        let store = Arc::new(MemoryUsageStore::default());
+        let proxy = RelaynaPingoraProxy::new(
+            store.clone(),
+            Arc::new(MemoryControlState::default()),
+            PingoraLiteLlmConfig::from_base_url("http://127.0.0.1:4000", "test-key").unwrap(),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let _client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        let mut session = Session::new_h1(Box::new(
+            pingora_core::protocols::l4::stream::Stream::from(server),
+        ));
+        for error in [
+            GatewayError::AuthenticationOverloaded,
+            GatewayError::SourceRateLimitExceeded,
+            GatewayError::MalformedAuthorization,
+        ] {
+            let mut ctx = new_pingora_context_for_tests();
+            traffic_gateway_error(&mut ctx, &error);
+            gateway_telemetry::request_started();
+            proxy.logging(&mut session, None, &mut ctx).await;
+        }
+        assert_eq!(store.traffic_writes.load(Ordering::SeqCst), 0);
+        let held = UNIDENTIFIED_TRAFFIC_WRITES.acquire_many(8).await.unwrap();
+        let mut ctx = new_pingora_context_for_tests();
+        traffic_gateway_error(&mut ctx, &GatewayError::InvalidVirtualKey);
+        proxy.persist_traffic(&mut ctx).await;
+        assert_eq!(store.traffic_writes.load(Ordering::SeqCst), 0);
+        drop(held);
+        proxy.persist_traffic(&mut ctx).await;
+        assert_eq!(store.traffic_writes.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
     async fn terminal_observation_precedes_blocked_accessa_cleanup() {
         let barrier = Arc::new(tokio::sync::Barrier::new(2));
         let control_state = Arc::new(MemoryControlState::default());
@@ -6628,8 +7072,12 @@ mod tests {
         assert_eq!(events[0].output_tokens, None);
     }
 
-    struct MemoryUsageStore {
+    pub(super) struct MemoryUsageStore {
+        pub(super) policy: Mutex<KeyPolicy>,
+        pub(super) model_policy: Mutex<Option<(String, KeyPolicy)>>,
+        pub(super) guardrail_policy: Mutex<GuardrailPolicy>,
         events: Mutex<Vec<UsageEvent>>,
+        traffic_writes: std::sync::atomic::AtomicUsize,
         debug_bundles: Mutex<Vec<gateway_core::DebugBundle>>,
         guardrail_events: Mutex<Vec<GuardrailExecutionEvent>>,
         openai_routes_enabled: Mutex<bool>,
@@ -6643,6 +7091,8 @@ mod tests {
     #[async_trait]
     impl TrafficStore for MemoryUsageStore {
         async fn insert_traffic(&self, _request: &TrafficRequest) -> GatewayResult<()> {
+            self.traffic_writes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(())
         }
         async fn traffic_history(
@@ -6666,7 +7116,24 @@ mod tests {
     #[async_trait]
     impl PolicyLookup for MemoryUsageStore {
         async fn policy_for_key(&self, _: Uuid) -> GatewayResult<KeyPolicy> {
-            Ok(KeyPolicy::default())
+            Ok(self.policy.lock().unwrap().clone())
+        }
+
+        async fn effective_policy_for_context(
+            &self,
+            key: Uuid,
+            project: Option<Uuid>,
+            team: Option<String>,
+            route: Option<Route>,
+            model: Option<String>,
+        ) -> GatewayResult<gateway_core::EffectivePolicy> {
+            Ok(gateway_core::EffectivePolicy {
+                policy: self
+                    .policy_for_context(key, project, team, route, model)
+                    .await?,
+                guardrail_policy: self.guardrail_policy.lock().unwrap().clone(),
+                applied_layers: Vec::new(),
+            })
         }
 
         async fn policy_for_context(
@@ -6680,8 +7147,13 @@ mod tests {
             self.policy_models
                 .lock()
                 .expect("policy models lock")
-                .push(model);
-            let mut policy = KeyPolicy::default();
+                .push(model.clone());
+            let mut policy = self.policy.lock().unwrap().clone();
+            if let Some((name, model_policy)) = self.model_policy.lock().unwrap().as_ref() {
+                if model.as_ref() == Some(name) {
+                    policy = model_policy.clone();
+                }
+            }
             if route == Some(Route::AnthropicMessageBatches) {
                 policy.allowed_routes.push(Route::AnthropicMessageBatches);
             }
@@ -6714,6 +7186,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 events: Mutex::new(Vec::new()),
+                traffic_writes: Default::default(),
                 debug_bundles: Mutex::new(Vec::new()),
                 guardrail_events: Mutex::new(Vec::new()),
                 openai_routes_enabled: Mutex::new(true),
@@ -6724,6 +7197,9 @@ mod tests {
                 active_litellm_config: Mutex::new(None),
                 litellm_credential_mapping: Mutex::new(None),
                 policy_models: Mutex::new(Vec::new()),
+                policy: Mutex::new(KeyPolicy::default()),
+                model_policy: Mutex::new(None),
+                guardrail_policy: Mutex::new(GuardrailPolicy::default()),
             }
         }
     }
@@ -6751,13 +7227,17 @@ mod tests {
             .collect();
         let body = serde_json::to_vec(&serde_json::json!({"requests":entries})).unwrap();
         let effective = proxy
-            .effective_complete_policy(&key, &matched, &body)
+            .effective_complete_policy(
+                &key,
+                &matched,
+                &CompleteRequestBody::new(Bytes::copy_from_slice(&body)),
+            )
             .await
             .unwrap();
         check_complete_request_policy(
             &effective.policy,
             &matched,
-            &body,
+            &CompleteRequestBody::new(Bytes::copy_from_slice(&body)),
             &extract_generation_features(&body),
         )
         .unwrap();
@@ -6765,6 +7245,33 @@ mod tests {
             *store.policy_models.lock().unwrap(),
             vec![None, Some("first".into()), Some("second".into())]
         );
+    }
+
+    #[test]
+    fn complete_body_input_token_limits_keep_their_estimation_boundary() {
+        let body = br#"{"model":"gpt-test","input":"abcdefgh","max_tokens":12}"#;
+        let matched = Route::resolve_match(&http::Method::POST, "/v1/chat/completions").unwrap();
+        let features = extract_generation_features(body);
+        let estimated = 16;
+        assert_eq!(estimate_generation_tokens(body), i64::from(estimated));
+        let body = CompleteRequestBody::new(Bytes::from_static(body));
+        for limit in [None, Some(estimated), Some(estimated + 1)] {
+            let policy = KeyPolicy {
+                max_input_tokens_per_request: limit,
+                ..KeyPolicy::default()
+            };
+            assert!(check_complete_request_policy(&policy, &matched, &body, &features).is_ok());
+        }
+        for limit in [-1, 0, estimated - 1] {
+            let policy = KeyPolicy {
+                max_input_tokens_per_request: Some(limit),
+                ..KeyPolicy::default()
+            };
+            assert_eq!(
+                check_complete_request_policy(&policy, &matched, &body, &features),
+                Err(GatewayError::PolicyDenied)
+            );
+        }
     }
 
     #[tokio::test]
@@ -7004,6 +7511,8 @@ mod tests {
 
     #[derive(Default)]
     pub(super) struct MemoryControlState {
+        pub(super) token_calls: Mutex<Vec<(Option<i32>, i64)>>,
+        token_count: Mutex<i64>,
         released: Mutex<Vec<(Uuid, String)>>,
         pub(super) delete_barrier: Mutex<Option<Arc<tokio::sync::Barrier>>>,
     }
@@ -7092,11 +7601,27 @@ mod tests {
         async fn check_token_rate_limit(
             &self,
             _key_id: Uuid,
-            _tpm_limit: Option<i32>,
-            _estimated_tokens: i64,
+            tpm_limit: Option<i32>,
+            estimated_tokens: i64,
             _now: DateTime<Utc>,
         ) -> GatewayResult<RateLimitDecision> {
-            Ok(RateLimitDecision::Allowed { count: 1 })
+            self.token_calls
+                .lock()
+                .unwrap()
+                .push((tpm_limit, estimated_tokens));
+            let Some(limit) = tpm_limit else {
+                return Ok(RateLimitDecision::Allowed { count: 0 });
+            };
+            let mut count = self.token_count.lock().unwrap();
+            *count += estimated_tokens.max(0);
+            if *count > i64::from(limit) {
+                Ok(RateLimitDecision::Exceeded {
+                    count: *count,
+                    retry_after_seconds: Some(60),
+                })
+            } else {
+                Ok(RateLimitDecision::Allowed { count: *count })
+            }
         }
     }
 

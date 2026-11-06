@@ -31,6 +31,10 @@ pub struct Config {
     pub gateway_control_bind_addr: SocketAddr,
     pub gateway_max_buffered_requests: usize,
     pub gateway_max_inflight_buffer_bytes: usize,
+    pub gateway_size_aware_body_policy: Option<gateway_proxy::SizeAwareBodyPolicy>,
+    pub gateway_max_upstream_requests: Option<usize>,
+    pub gateway_preauth_source_rps: usize,
+    pub gateway_preauth_source_burst: usize,
     pub log_level: String,
 }
 
@@ -168,6 +172,64 @@ impl Config {
             "GATEWAY_MAX_INFLIGHT_BUFFER_BYTES",
             DEFAULT_MAX_INFLIGHT_BUFFER_BYTES,
         )?;
+        let gateway_preauth_source_rps = optional_positive_usize(
+            "GATEWAY_PREAUTH_SOURCE_RPS",
+            gateway_core::auth_admission::DEFAULT_SOURCE_RPS,
+        )?;
+        let gateway_size_aware_body_policy = if optional("GATEWAY_MAX_BODY_WORKING_BYTES").is_some()
+        {
+            let policy = gateway_proxy::SizeAwareBodyPolicy {
+                max_working_bytes: optional_positive_usize("GATEWAY_MAX_BODY_WORKING_BYTES", 0)?,
+                elastic_max_requests: optional("GATEWAY_BODY_ELASTIC_MAX_REQUESTS")
+                    .map(|_| optional_positive_usize("GATEWAY_BODY_ELASTIC_MAX_REQUESTS", 0))
+                    .transpose()?,
+                reserved_small_requests: match optional("GATEWAY_SMALL_BODY_RESERVED_REQUESTS") {
+                    Some(value) => value
+                        .parse()
+                        .map_err(|_| GatewayError::InvalidConfiguration)?,
+                    None => 0,
+                },
+                workspace_multiplier: optional_positive_usize(
+                    "GATEWAY_BODY_WORKSPACE_MULTIPLIER",
+                    2,
+                )?,
+                upload_timeout: std::time::Duration::from_millis(optional_positive_usize(
+                    "GATEWAY_BODY_UPLOAD_TIMEOUT_MS",
+                    30_000,
+                )? as u64),
+            };
+            policy.validate(gateway_max_buffered_requests)?;
+            Some(policy)
+        } else {
+            if [
+                "GATEWAY_BODY_ELASTIC_MAX_REQUESTS",
+                "GATEWAY_SMALL_BODY_RESERVED_REQUESTS",
+                "GATEWAY_BODY_WORKSPACE_MULTIPLIER",
+                "GATEWAY_BODY_UPLOAD_TIMEOUT_MS",
+            ]
+            .iter()
+            .any(|name| optional(name).is_some())
+            {
+                return Err(GatewayError::InvalidConfiguration);
+            }
+            None
+        };
+        let gateway_max_upstream_requests = optional("GATEWAY_MAX_UPSTREAM_REQUESTS")
+            .map(|_| optional_positive_usize("GATEWAY_MAX_UPSTREAM_REQUESTS", 0))
+            .transpose()?;
+        if gateway_max_upstream_requests
+            .is_some_and(|limit| limit > tokio::sync::Semaphore::MAX_PERMITS)
+        {
+            return Err(GatewayError::InvalidConfiguration);
+        }
+        let gateway_preauth_source_burst = optional_positive_usize(
+            "GATEWAY_PREAUTH_SOURCE_BURST",
+            gateway_core::auth_admission::DEFAULT_SOURCE_BURST,
+        )?;
+        gateway_core::auth_admission::RequestAdmission::new(
+            gateway_preauth_source_rps,
+            gateway_preauth_source_burst,
+        )?;
         let log_level = required("LOG_LEVEL")?;
 
         Ok(Self {
@@ -194,6 +256,10 @@ impl Config {
             gateway_control_bind_addr,
             gateway_max_buffered_requests,
             gateway_max_inflight_buffer_bytes,
+            gateway_size_aware_body_policy,
+            gateway_max_upstream_requests,
+            gateway_preauth_source_rps,
+            gateway_preauth_source_burst,
             log_level,
         })
     }

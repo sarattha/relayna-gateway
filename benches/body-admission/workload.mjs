@@ -2,21 +2,19 @@ import http from "node:http";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
+import { parseMix, payload, schedule, summarizeClasses } from "./mixed_workload.mjs";
 
 const bodyMiB = Number(process.env.BENCH_BODY_MIB ?? 5);
 if (!Number.isInteger(bodyMiB) || bodyMiB < 1 || bodyMiB > 100) throw new Error("invalid benchmark body size");
-const size = bodyMiB * 1024 * 1024;
-const prefix = '{"payload":"';
-const suffix = '"}';
-const body = Buffer.alloc(size, "x");
-body.write(prefix, 0);
-body.write(suffix, size - suffix.length);
-const digest = createHash("sha256").update(body).digest("hex");
+const mix = parseMix(process.env.BENCH_BODY_MIX, bodyMiB * 1024 * 1024);
+const payloads = mix.map(payload);
+const size = mix.length === 1 ? mix[0].bytes : null;
+const digest = payloads.length === 1 ? payloads[0].sha256 : null;
 const socketTimeoutMs = Math.max(30000, Number(process.env.BENCH_CLIENT_DEADLINE_MS ?? 0));
 const agent = new http.Agent({ keepAlive: true, maxSockets: 256 });
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function request(url, { method = "GET", token, data, timeout = socketTimeoutMs } = {}) {
+function request(url, { method = "GET", token, data, timeout = socketTimeoutMs, chunked = false, uploadDelayMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const start = performance.now();
     let received = false;
@@ -32,7 +30,7 @@ function request(url, { method = "GET", token, data, timeout = socketTimeoutMs }
       method, agent,
       headers: {
         ...(token ? { authorization: `Bearer ${token}` } : {}),
-        ...(data ? { "content-type": "application/json", "content-length": data.length } : {}),
+        ...(data ? { "content-type": "application/json", ...(chunked ? { "transfer-encoding": "chunked" } : { "content-length": data.length }) } : {}),
       },
     }, res => {
       received = true;
@@ -59,7 +57,20 @@ function request(url, { method = "GET", token, data, timeout = socketTimeoutMs }
       finish(error);
       req.destroy(error);
     }, deadlineMs);
-    req.end(data);
+    if (data && uploadDelayMs > 0) {
+      let offset = 0;
+      const writeNext = () => {
+        if (settled || received || req.destroyed) return;
+        if (offset >= data.length) return req.end();
+        const chunk = data.subarray(offset, offset + 65536);
+        offset += chunk.length;
+        req.write(chunk, error => {
+          if (error) return finish(error);
+          setTimeout(writeNext, uploadDelayMs);
+        });
+      };
+      writeNext();
+    } else req.end(data);
   });
 }
 
@@ -74,7 +85,7 @@ async function seed(control) {
   // policy. Explicitly configure this isolated namespace for service traffic.
   await post("/admin-ui/admin/policy-layers", { kind: "global", policy: {}, guardrail_policy: {} });
   const existing = await request(control + "/admin-ui/admin/services/body-benchmark", { token });
-  const maxBodyBytes = Math.max(8 * 1024 * 1024, size);
+  const maxBodyBytes = Math.max(8 * 1024 * 1024, ...mix.map(item => item.bytes));
   const serviceTimeout = Number(process.env.BENCH_SERVICE_TIMEOUT_MS ?? 30000);
   if (existing.status === 404) await post("/admin-ui/admin/services", {
     name: "body-benchmark", route_pattern: "/services/body-benchmark/*",
@@ -96,6 +107,7 @@ async function seed(control) {
       allowed_routes: ["/services/*"], allowed_services: ["body-benchmark"],
       allowed_providers: ["internal-service"], allow_streaming: true, allow_tools: true,
       max_request_body_bytes: maxBodyBytes,
+      rpm_limit: 1000000,
     },
   });
   writeFileSync("/tmp/benchmark-key", created.raw_key, { mode: 0o600 });
@@ -114,12 +126,22 @@ function distribution(values) {
 
 function metrics(text) {
   const value = name => Number(text.match(new RegExp(`^${name} ([0-9.e+\\-]+)$`, "m"))?.[1] ?? 0);
-  const denial = reason => text.split("\n").filter(line => line.startsWith("gateway_denials_total{") && line.includes('kind="body_admission"') && line.includes(`reason="${reason}"`)).reduce((total, line) => total + Number(line.split(" ").at(-1)), 0);
+  const denial = (reason, kind = "body_admission", route = "all") => text.split("\n").filter(line => line.startsWith("gateway_denials_total{") && line.includes(`kind="${kind}"`) && line.includes(`route="${route}"`) && line.includes(`reason="${reason}"`)).reduce((total, line) => total + Number(line.split(" ").at(-1)), 0);
   return {
     buffered_requests: value("gateway_buffered_requests"),
     buffered_bytes: value("gateway_buffered_body_bytes"),
+    working_bytes: value("gateway_body_working_bytes"),
+    admitted_upstream_requests: value("gateway_admitted_upstream_requests"),
     active_requests: value("gateway_active_requests"),
     concurrency_denials: denial("concurrency"), byte_denials: denial("bytes"),
+    working_set_denials: denial("working_set") + denial("processing_workspace"),
+    processing_denials: denial("processing_workspace"),
+    upload_timeout_denials: denial("upload_timeout"),
+    upstream_denials: denial("concurrency", "upstream_admission", "proxy"),
+    authentication_denials: denial("authentication_overloaded", "auth_admission", "proxy"),
+    source_denials: denial("source_rate_limit_exceeded", "auth_admission", "proxy"),
+    control_authentication_denials: denial("authentication_overloaded", "auth_admission", "control"),
+    control_source_denials: denial("source_rate_limit_exceeded", "auth_admission", "control"),
   };
 }
 
@@ -138,23 +160,23 @@ async function run(config) {
       samples.push({ timestamp_ms: Date.now(), pod: pod.name, error: error.message });
     }
   }));
-  const send = async (pod, scheduled, warmup = false) => {
+  const send = async (pod, scheduled, warmup = false, selected = payloads[0]) => {
     const dispatchLag = performance.now() - scheduled;
     try {
-      const res = await request(`http://${pod.ip}:8080/services/body-benchmark/${warmup ? "warmup" : "work"}`, { method: "POST", token, data: body });
+      const res = await request(`http://${pod.ip}:8080/services/body-benchmark/${warmup ? "warmup" : "work"}`, { method: "POST", token, data: selected.data, chunked: config.chunked ?? false, uploadDelayMs: warmup ? 0 : (config.upload_delay_ms ?? 0) });
       let verification = true;
       if (res.status === 200) {
         const upstream = JSON.parse(res.text);
-        verification = upstream.bytes === size && upstream.sha256 === digest && upstream.credential_ok === true;
+        verification = upstream.bytes === selected.bytes && upstream.sha256 === selected.sha256 && upstream.credential_ok === true;
       }
-      results.push({ pod: pod.name, status: res.status, ms: res.ms, ttfb_ms: res.ttfb_ms, dispatch_lag_ms: dispatchLag, verified: verification,
+      results.push({ pod: pod.name, body_class: selected.id, body_bytes: selected.bytes, status: res.status, ms: res.ms, ttfb_ms: res.ttfb_ms, dispatch_lag_ms: dispatchLag, verified: verification,
         ...(res.status !== 200 ? { error_code: JSON.parse(res.text).error?.code } : {}) });
     } catch (error) {
-      results.push({ pod: pod.name, status: 0, error: error.message, dispatch_lag_ms: dispatchLag });
+      results.push({ pod: pod.name, body_class: selected.id, body_bytes: selected.bytes, status: 0, error: error.message, dispatch_lag_ms: dispatchLag });
     }
   };
   // Warm authentication, database pools, code paths, and allocators equally.
-  await Promise.all(config.pods.map(pod => send(pod, performance.now(), true)));
+  for (const selected of payloads) await Promise.all(config.pods.map(pod => send(pod, performance.now(), true, selected)));
   if (results.some(result => result.status !== 200 || !result.verified)) {
     process.stdout.write(JSON.stringify({ ...config, body_bytes: size, body_sha256: digest, warmup_failed: true, warmup_results: results }) + "\n");
     return;
@@ -167,9 +189,11 @@ async function run(config) {
   const start = performance.now();
   const startUnix = Date.now();
   const count = config.concurrent_per_pod ? 2 * config.concurrent_per_pod : Math.round(config.duration_seconds * config.rps);
+  // Both pods receive the same weighted sequence; size cannot correlate with pod parity.
+  const sequence = schedule(mix, Math.ceil(count / 2), config.sequence_seed ?? 146, config.body_order ?? "shuffled");
   await Promise.all(Array.from({ length: count }, (_, i) => new Promise(resolve => {
     const scheduled = config.concurrent_per_pod ? start : start + i * 1000 / config.rps;
-    setTimeout(() => send(config.pods[i % 2], scheduled).then(resolve), Math.max(0, scheduled - performance.now()));
+    setTimeout(() => send(config.pods[i % 2], scheduled, false, payloads[sequence[Math.floor(i / 2)]]).then(resolve), Math.max(0, scheduled - performance.now()));
   })));
   const elapsed = performance.now() - start;
   await sleep(500);
@@ -177,11 +201,13 @@ async function run(config) {
   await sampleTask;
   await fetchMetrics();
   const successes = results.filter(result => result.status === 200);
-  const rejected = results.filter(result => result.status === 503);
+  const rejected = results.filter(result => result.status === 503 || result.status === 429);
   const counts = {};
   for (const result of results) counts[result.status] = (counts[result.status] ?? 0) + 1;
   const output = {
     ...config, body_bytes: size, body_sha256: digest, started_at: new Date(startUnix).toISOString(),
+    body_mix: mix.map((item, index) => ({ ...item, sha256: payloads[index].sha256 })),
+    sequence_sha256: createHash("sha256").update(JSON.stringify(sequence)).digest("hex"),
     elapsed_ms: elapsed, scheduled_requests: count, completed_requests: results.length,
     successful_requests: successes.length, status_counts: counts,
     verified_requests: successes.filter(result => result.verified).length,
@@ -189,6 +215,8 @@ async function run(config) {
     client_socket_timeout_ms: socketTimeoutMs,
     success_rps_offered_window: config.concurrent_per_pod ? null : successes.length / config.duration_seconds,
     success_rps_including_drain: successes.length / (elapsed / 1000),
+    successful_mib_per_second: successes.filter(result => result.verified).reduce((sum, result) => sum + result.body_bytes, 0) / 1024 ** 2 / (elapsed / 1000),
+    size_classes: summarizeClasses(results, mix, elapsed / 1000, distribution),
     success_latency_ms: distribution(successes.map(result => result.ms)),
     success_ttfb_ms: distribution(successes.map(result => result.ttfb_ms)),
     rejection_latency_ms: distribution(rejected.map(result => result.ms)),

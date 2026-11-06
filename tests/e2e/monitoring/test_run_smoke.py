@@ -66,6 +66,27 @@ class SmokeRunnerTests(unittest.TestCase):
                              ["owned-redis", "owned-postgres"])
             self.assertEqual(fixture.cleanup_errors, ["owned_container_cleanup_failed"])
 
+    def test_dependencies_wait_for_tcp_after_the_temporary_socket_server(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = run_smoke.Fixtures(Path("unused"), Path(temporary), Path(temporary))
+            tcp_readiness = iter([1, 0])
+
+            def ready(arguments, **_kwargs):
+                # During initialization the Unix socket is already accepting,
+                # while the final TCP server becomes ready on the second probe.
+                tcp = "-h" in arguments and arguments[arguments.index("-h") + 1] == "127.0.0.1"
+                return Mock(returncode=next(tcp_readiness) if tcp else 0)
+
+            with patch.object(fixture, "docker", side_effect=["pg", "pg-image", "redis", "redis-image",
+                    "127.0.0.1:15432", "127.0.0.1:16379"]), \
+                    patch.object(run_smoke.subprocess, "run", side_effect=ready) as probe, \
+                    patch.object(run_smoke.time, "sleep") as pause:
+                fixture.create_dependencies()
+            self.assertEqual(probe.call_count, 2)
+            pause.assert_called_once_with(.25)
+            self.assertIn("@127.0.0.1:15432/", fixture.database_url)
+            self.assertEqual(fixture.redis_url, "redis://127.0.0.1:16379")
+
     def test_drained_owned_gateways_use_pingora_fast_shutdown(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = run_smoke.Fixtures(Path("unused"), Path(temporary), Path(temporary))

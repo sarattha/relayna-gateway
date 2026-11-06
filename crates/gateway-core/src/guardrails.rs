@@ -964,31 +964,33 @@ fn execute_http_guardrail_request(
     let handle = thread::Builder::new()
         .name("guardrail-http".to_owned())
         .spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|_| GatewayError::GuardrailUnavailable)?;
-            runtime.block_on(async move {
-                let client = reqwest::Client::builder()
-                    .timeout(Duration::from_millis(config.timeout_ms))
+            // Construct/use the blocking client outside an async executor.
+            // Its owned runtime and connection pool survive individual calls.
+            static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> =
+                std::sync::OnceLock::new();
+            if CLIENT.get().is_none() {
+                let client = reqwest::blocking::Client::builder()
                     .build()
                     .map_err(|_| GatewayError::GuardrailUnavailable)?;
-                let mut request = client.post(&config.endpoint_url).json(&provider_request);
-                if let Some(token) = config.bearer_token {
-                    request = request.bearer_auth(token);
-                }
-                let response = request
-                    .send()
-                    .await
-                    .map_err(|_| GatewayError::GuardrailUnavailable)?;
-                if !response.status().is_success() {
-                    return Err(GatewayError::GuardrailUnavailable);
-                }
-                response
-                    .json::<HttpGuardrailProviderResponse>()
-                    .await
-                    .map_err(|_| GatewayError::InvalidGuardrailRequest)
-            })
+                let _ = CLIENT.set(client);
+            }
+            let client = CLIENT.get().ok_or(GatewayError::GuardrailUnavailable)?;
+            let mut request = client
+                .post(&config.endpoint_url)
+                .timeout(Duration::from_millis(config.timeout_ms))
+                .json(&provider_request);
+            if let Some(token) = config.bearer_token {
+                request = request.bearer_auth(token);
+            }
+            let response = request
+                .send()
+                .map_err(|_| GatewayError::GuardrailUnavailable)?;
+            if !response.status().is_success() {
+                return Err(GatewayError::GuardrailUnavailable);
+            }
+            response
+                .json::<HttpGuardrailProviderResponse>()
+                .map_err(|_| GatewayError::InvalidGuardrailRequest)
         })
         .map_err(|_| GatewayError::GuardrailUnavailable)?;
     handle
@@ -2093,6 +2095,83 @@ mod tests {
             HttpGuardrailHandler.execute(missing_config).unwrap_err(),
             GatewayError::GuardrailUnavailable
         );
+    }
+
+    #[test]
+    fn http_guardrail_reuses_connection_without_reusing_credentials() {
+        use std::io::{BufRead, BufReader};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/check", listener.local_addr().unwrap());
+        let token = uuid::Uuid::new_v4().to_string();
+        let expected = token.clone();
+        let server = std::thread::spawn(move || {
+            // Only accept once: a second connection cannot pass this test.
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut stream = BufReader::new(stream);
+            for index in 0..2 {
+                let mut length = 0;
+                let mut authorization = None;
+                loop {
+                    let mut line = String::new();
+                    assert!(stream.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some((name, value)) = line.split_once(':') {
+                        if name.eq_ignore_ascii_case("content-length") {
+                            length = value.trim().parse::<usize>().unwrap();
+                        }
+                        if name.eq_ignore_ascii_case("authorization") {
+                            authorization = Some(value.trim().to_owned());
+                        }
+                    }
+                }
+                let mut body = vec![0; length];
+                stream.read_exact(&mut body).unwrap();
+                // Do not include credential values in assertion output.
+                assert!(authorization == (index == 0).then(|| format!("Bearer {expected}")));
+                let body = r#"{"action":"allow"}"#;
+                write!(stream.get_mut(), "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\n\r\n{body}", body.len()).unwrap();
+                stream.get_mut().flush().unwrap();
+            }
+        });
+        let mut input = http_guardrail_input(endpoint.clone());
+        input.config["bearer_token_secret"] = json!(token);
+        input.config["timeout_ms"] = json!(2000);
+        assert_eq!(
+            HttpGuardrailHandler.execute(input).unwrap().action,
+            GuardrailAction::Allow
+        );
+        let mut input = http_guardrail_input(endpoint);
+        input
+            .config
+            .as_object_mut()
+            .unwrap()
+            .remove("bearer_token_secret");
+        input.config["timeout_ms"] = json!(2000);
+        assert_eq!(
+            HttpGuardrailHandler.execute(input).unwrap().action,
+            GuardrailAction::Allow
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn http_guardrail_keeps_per_request_deadline() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut input =
+            http_guardrail_input(format!("http://{}/check", listener.local_addr().unwrap()));
+        input.config["timeout_ms"] = json!(100);
+        // The listener remains open but never responds.
+        let started = Instant::now();
+        assert_eq!(
+            HttpGuardrailHandler.execute(input).unwrap_err(),
+            GatewayError::GuardrailUnavailable
+        );
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

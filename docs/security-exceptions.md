@@ -5,8 +5,9 @@ secrets, high or critical filesystem/image vulnerabilities, and Semgrep
 security findings as blocking by default.
 
 The production runtime's package reduction and all 12 CVEs reported in
-[issue #149 are documented separately](runtime-image-security.md). This change
-adds no vulnerability exception; image gates include unfixed findings.
+[issue #149 are documented separately](runtime-image-security.md). Image gates
+include unfixed findings. The v1.2.0 package replacement has the narrow,
+time-limited Debian-suite false-positive exception below.
 
 ## Exception Requirements
 
@@ -28,6 +29,7 @@ Each exception must include:
 
 | Finding | Owner | Reason | Tracking link | Expiration |
 | --- | --- | --- | --- | --- |
+| Trivy `CVE-2026-76844` and `CVE-2026-85091`, only `zlib1g` `1:1.3.dfsg+really1.3.2-4` on amd64/arm64 Debian 13.7 | Relayna Gateway maintainers | Debian identifies this exact unstable package as fixed by upstream commit `df84af25dc1942490e1d1c899a07619152a46148`. The image replaces the actual old library with checksum-pinned Debian payloads and retains genuine inventory; image checks verify every package file checksum and no stale library. Trivy's Debian 13 suite records still lack a stable fixed version. `.trivyignore-image.yaml` scopes both findings to exact versioned architecture PURLs. The unpatched image remains blocked; all other findings remain blocking. Remove when the base/DB incorporates the fix, or at expiry. | [Debian tracker](https://security-tracker.debian.org/tracker/source-package/zlib), [package/hash evidence](runtime-image-security.md#v120-zlib-update), [PR #146](https://github.com/sarattha/relayna-gateway/pull/146) | 2026-12-06 |
 | `RUSTSEC-2023-0071` | Relayna Gateway maintainers | Transitive `rsa` dependency enters through `sqlx-mysql` under SQLx macros; Gateway configures PostgreSQL only and does not expose MySQL RSA authentication. | https://rustsec.org/advisories/RUSTSEC-2023-0071 | 2026-08-31 |
 | `RUSTSEC-2024-0437` | Relayna Gateway maintainers | Transitive `protobuf` dependency enters through `prometheus` under `pingora-core`; Gateway exports its own bounded Prometheus text metrics and does not parse untrusted protobuf metrics payloads. | https://rustsec.org/advisories/RUSTSEC-2024-0437 | 2026-08-31 |
 | `RUSTSEC-2024-0388` | Relayna Gateway maintainers | Transitive `derivative` dependency enters through `pingora-core`; no direct Gateway code depends on it. Track upstream Pingora replacement or upgrade. | https://rustsec.org/advisories/RUSTSEC-2024-0388 | 2026-08-31 |
@@ -36,6 +38,7 @@ Each exception must include:
 | Historical fake token fingerprints in `.gitleaksignore` | Relayna Gateway maintainers | Existing test fixtures and example tokens predate strict secret scanning. New Gitleaks findings must be fixed or documented separately. | `.gitleaksignore` | 2026-08-31 |
 | Gitleaks `generic-api-key` in PR #102's initial example Secret | Relayna Gateway maintainers | The finding is the literal prose placeholder `replace-with-pkcs8-or-pkcs1-rsa-private-key-pem`, never PEM or usable key material. The current Secret value is empty; the ignore is limited to the obsolete commit fingerprint. | https://github.com/sarattha/relayna-gateway/pull/102 | 2026-08-31 |
 | Gitleaks `relayna-live-token` and `stripe-access-token` in PR #143 authentication regressions | Relayna Gateway maintainers | Commit `fbad25a` used synthetic keys only with an in-memory test lookup; no deployed credential existed. These regressions now generate keys at runtime. Gitleaks 8.24.3 flags the historical additions despite the documented fixture patterns recognized locally by 8.30.1. Ignore only the six exact commit/file/rule/line fingerprints in `.gitleaksignore`, without excluding the file or new findings. | https://github.com/sarattha/relayna-gateway/pull/143 | 2027-01-25 |
+| Gitleaks `stripe-access-token`, `generic-api-key` and `relayna-live-token` in PR #146 authentication fixtures | Relayna Gateway maintainers | Commit `c2eb9ec` uses synthetic text for header validation, a verifier-capacity test with an intentionally unusable hash, a lookup that must never execute, and a Debug-redaction assertion. No issued or deployed credential exists. CI's Gitleaks 8.24.3 flags four historical additions that the newer local scanner accepts. Ignore only their four exact commit/file/rule/line fingerprints; retain all scanning rules and coverage for new findings. | https://github.com/sarattha/relayna-gateway/pull/146 | 2027-02-06 |
 
 | Gitleaks `generic-api-key` in PR #121 verification prose | Relayna Gateway maintainers | A comma after the word Apigee followed by a slash-separated list of binding rejection cases was misclassified as a credential. No secret existed. Current prose is rephrased; only the exact historical commit/file/line fingerprint is ignored. | https://github.com/sarattha/relayna-gateway/pull/121 | 2026-12-19 |
 

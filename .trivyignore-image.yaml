@@ -1,0 +1,23 @@
+# Temporary Debian-suite false positives for a genuinely patched package.
+# Owner, upstream fix, package hashes and removal criteria: docs/security-exceptions.md.
+# Do not omit the exact versions/architectures or extend this to older zlib builds.
+vulnerabilities:
+  - id: CVE-2026-76844
+    purls:
+      - "pkg:deb/debian/zlib1g@1.3.dfsg%2Breally1.3.2-4?arch=amd64&distro=debian-13.7&epoch=1"
+      - "pkg:deb/debian/zlib1g@1.3.dfsg%2Breally1.3.2-4?arch=arm64&distro=debian-13.7&epoch=1"
+    expired_at: 2026-12-06
+    statement: >-
+      Debian marks 1:1.3.dfsg+really1.3.2-4 fixed. The image installs its
+      SHA-256-pinned payload and genuine inventory; the actual-image test verifies
+      file checksums and absence of the old library. Trivy's Debian 13 suite
+      record has no stable fixed version. See docs/runtime-image-security.md.
+  - id: CVE-2026-85091
+    purls:
+      - "pkg:deb/debian/zlib1g@1.3.dfsg%2Breally1.3.2-4?arch=amd64&distro=debian-13.7&epoch=1"
+      - "pkg:deb/debian/zlib1g@1.3.dfsg%2Breally1.3.2-4?arch=arm64&distro=debian-13.7&epoch=1"
+    expired_at: 2026-12-06
+    statement: >-
+      Debian marks 1:1.3.dfsg+really1.3.2-4 fixed by the same upstream patch as
+      CVE-2026-76844. Only this verified package is excepted; old versions and
+      other packages remain blocked. See docs/runtime-image-security.md.

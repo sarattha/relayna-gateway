@@ -6,6 +6,10 @@ pub type GatewayResult<T> = Result<T, GatewayError>;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum GatewayError {
+    #[error("authentication capacity exhausted")]
+    AuthenticationOverloaded,
+    #[error("source request rate exceeded")]
+    SourceRateLimitExceeded,
     #[error("authentication profile selection denied")]
     AuthenticationProfileDenied,
     #[error("authentication profile configuration changed")]
@@ -198,7 +202,10 @@ impl GatewayError {
             Self::UnsupportedRoute => StatusCode::NOT_FOUND,
             Self::DisabledRoute => StatusCode::FORBIDDEN,
             Self::RequestBodyTooLarge | Self::ResponseBodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
-            Self::GatewayOverloaded => StatusCode::SERVICE_UNAVAILABLE,
+            Self::GatewayOverloaded | Self::AuthenticationOverloaded => {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
+            Self::SourceRateLimitExceeded => StatusCode::TOO_MANY_REQUESTS,
             Self::LiteLlmAuthenticationConflict => StatusCode::SERVICE_UNAVAILABLE,
             Self::PolicyDenied => StatusCode::FORBIDDEN,
             Self::RateLimitExceeded { .. } | Self::TokenRateLimitExceeded { .. } => {
@@ -242,6 +249,8 @@ impl GatewayError {
 
     pub fn code(&self) -> &'static str {
         match self {
+            Self::AuthenticationOverloaded => "authentication_overloaded",
+            Self::SourceRateLimitExceeded => "source_rate_limit_exceeded",
             Self::MissingAuthorization => "missing_authorization",
             Self::AuthenticationProfileDenied => "authentication_profile_denied",
             Self::AuthenticationProfileConflict => "authentication_profile_conflict",
@@ -320,6 +329,8 @@ impl GatewayError {
 
     pub fn public_message(&self) -> &'static str {
         match self {
+            Self::AuthenticationOverloaded => "Gateway authentication capacity is temporarily exhausted.",
+            Self::SourceRateLimitExceeded => "Source request rate limit exceeded.",
             Self::MissingAuthorization => "Authorization header is required.",
             Self::AuthenticationProfileDenied => "Authentication profile selection denied.",
             Self::AuthenticationProfileConflict => "Authentication configuration changed. Reload before saving.",
@@ -417,7 +428,9 @@ impl GatewayError {
                     | Self::TokenRateLimitExceeded {
                         retry_after_seconds,
                     } => *retry_after_seconds,
-                    Self::GatewayOverloaded => Some(1),
+                    Self::GatewayOverloaded
+                    | Self::AuthenticationOverloaded
+                    | Self::SourceRateLimitExceeded => Some(1),
                     _ => None,
                 },
             },

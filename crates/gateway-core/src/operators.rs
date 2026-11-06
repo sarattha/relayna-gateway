@@ -232,20 +232,28 @@ impl OperatorTokenMaterial {
 }
 
 pub fn operator_token_prefix(raw_token: &str) -> GatewayResult<String> {
+    crate::auth_admission::validate_key_text(raw_token)?;
     if !raw_token.starts_with(OPERATOR_TOKEN_PREFIX) || raw_token.len() <= LOOKUP_PREFIX_LEN {
         return Err(GatewayError::MalformedAuthorization);
     }
     Ok(raw_token.chars().take(LOOKUP_PREFIX_LEN).collect())
 }
 
-pub fn verify_stored_operator_token(
+pub async fn verify_stored_operator_token(
     raw_token: &str,
     stored: &StoredOperatorToken,
 ) -> GatewayResult<OperatorAuthorization> {
     if stored.disabled || stored.revoked_at.is_some() {
         return Err(GatewayError::DisabledOperatorToken);
     }
-    verify_secret(raw_token, &stored.token_hash).map_err(|_| GatewayError::InvalidOperatorToken)?;
+    let raw = zeroize::Zeroizing::new(raw_token.to_owned());
+    let hash = zeroize::Zeroizing::new(stored.token_hash.clone());
+    crate::auth::run_key_crypto(move || verify_secret(&raw, &hash))
+        .await
+        .map_err(|error| match error {
+            GatewayError::AuthenticationOverloaded => error,
+            _ => GatewayError::InvalidOperatorToken,
+        })?;
     Ok(OperatorAuthorization {
         token_id: stored.id,
         member_id: None,

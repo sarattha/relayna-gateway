@@ -193,6 +193,17 @@ async fn explicit_profiles_enforce_bindings_across_aliases_and_forwarding_modes(
             request
         }
     };
+    // Validate each cold credential before exercising profile concurrency.
+    // Debug Argon2 can exceed the production queue deadline; overload behavior
+    // is covered by the executor tests, independently of profile selection.
+    for (index, jwt) in [
+        (0, Some(employee.as_str())),
+        (1, Some(backend.as_str())),
+        (2, None),
+    ] {
+        let response = request("/v1/responses", index, jwt).send().await.unwrap();
+        assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+    }
     for mode in [
         OpenAiRouteMode::ManagedByGateway,
         OpenAiRouteMode::DirectLiteLlmPassthrough,

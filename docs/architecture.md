@@ -40,13 +40,116 @@ flowchart LR
    header derived from the selected upstream.
 8. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields when available.
 
-Virtual-key Argon2 verification runs on blocking workers with a shared limit of
-two concurrent verifications per process. This keeps CPU-intensive verification
-off async I/O threads and bounds its simultaneous memory use. Waiting requests
-remain subject to client and deployment deadlines; this is not an RPS guarantee.
-Cancelling a request releases a queued verification, while an already-running
-verification keeps its worker slot until it finishes. Hash parameters, key-state
-checks and authentication responses are unchanged.
+Before routing or store access, both HTTP listeners share an admission limit of
+64 active requests per process. At most 128 additional requests may wait, FIFO,
+for up to 250 ms. The source limiter runs before joining this queue; queued
+requests do not poll their bodies. Header, parser, and socket memory still exist
+while waiting, so this is not a total connection or memory limit. The proxy releases this permit after its
+request filter, before body upload and provider streaming. Control-plane
+handlers hold it through request extraction and handler completion. Exact
+static assets, liveness, and the in-memory metrics export are exempt. Authentication,
+owner APIs, and LiteLLM aliases are covered. Core virtual-key and operator lookups also have a shared
+64-operation limit for callers outside these HTTP adapters.
+
+Malformed-credential and source/capacity denials without an authenticated key do
+not write per-request database history. They remain in local counters and the
+bounded live monitor. Other traffic without a key uses at most eight concurrent
+history writes, without waiting for a slot. This prevents error logging from
+bypassing authentication admission; historical denial detail can be absent under
+load. Authenticated usage recording retains its existing behavior.
+
+Virtual-key and operator-token Argon2 verification, plus runtime key generation,
+share two blocking workers per process. At most eight distinct verification jobs can wait for a worker,
+for at most 250 ms. Queue saturation or expiry returns
+`503 authentication_overloaded`, with `Retry-After: 1`; it does not classify the credential as invalid. Cancellation releases a queued
+request permit; started CPU work retains its worker permit until completion. These are
+resource bounds, not throughput guarantees. Cold virtual-key verification
+reloads state and checks expiry at completion; a changed ID/hash fails closed,
+and a changed project is reflected in the returned identity. Operator state
+changes during verification also fail closed. These checks narrow the race with
+revocation; they do not lock identity state for a whole upstream request.
+
+Concurrent cold virtual-key requests with the same process-HMAC proof share one
+verification job **before** competing for crypto capacity. The proof binds the
+key ID, presented secret, and full stored hash; a wrong secret or changed hash
+cannot join a valid job. There are at most ten shared jobs, 63 followers per
+proof and 64 followers across all proofs. Each subscriber waits at most one
+second. Cancelling the first request does not cancel work needed by followers;
+the bounded job completes even if all subscribers leave. A stalled blocking job
+continues to hold its worker permit. Completion, panic, or runtime shutdown
+removes its registry entry and wakes subscribers. Every successful cold
+subscriber independently reloads and validates current database state, including
+project changes, before authorization. Failures are shared only with current
+subscribers and are never cached. Operator tokens and key generation retain the
+same executor without proof sharing.
+
+Successful virtual-key secret verification can be reused for 60 seconds within
+one process, up to 1,024 proofs. Each proof binds the key ID, presented secret,
+and complete stored Argon2 hash using a process-random HMAC; the cache retains
+only the digest and verification time. Hits do not extend expiry. Every request
+still loads current key state from PostgreSQL, rejects disabled/revoked/expired
+keys, and records key use. Changed hashes miss the cache; a database failure
+still fails closed. Cold, invalid, expired-cache, and evicted keys use the same
+bounded Argon2 workers and unchanged hashing parameters. A five-second
+maintenance task physically removes expired proofs even without new inserts;
+logical expiry stays at 60 seconds. Owned raw virtual-key/verifier buffers use
+zeroization and virtual-key debug formatting is redacted. This cannot erase all
+copies held by HTTP parsers, libraries, allocator moves, or the operating system.
+
+Before store work, duplicate or oversized credential headers and malformed key
+text are rejected. Credential headers are limited to 16 KiB and Relayna/operator
+keys to 1,024 bytes of printable ASCII without commas or internal whitespace.
+Existing variable-length keys within those bounds remain supported. Per-source
+token buckets default to 100 requests/second with a burst of 200, shared by both
+listeners. They use only the transport peer IP (including canonical IPv4-mapped
+IPv6), never forwarded headers. Unknown peers share a bucket. The map holds at
+most 4,096 sources and expires fully refilled idle entries after 60 seconds; new sources at map
+capacity receive an authentication-capacity 503. Source exhaustion returns
+`429 source_rate_limit_exceeded` with `Retry-After: 1`. Failed attempts do not
+disable a key. See [deployment controls](deployment.md#authentication-abuse-and-memory-protection)
+for trusted ingress, NAT sizing, and Linux dump protection.
+
+The existing `gateway_denials_total{kind="auth_admission"}` counters use
+`route="proxy"` or `route="control"` to distinguish listeners. They also include
+inner authentication overloads and overlap `kind="auth"`; do not add these
+series to count unique rejected requests. The additive
+`gateway_auth_admission_events_total{event="..."}` records the originating
+capacity decision: `request_queue_full`, `request_timeout`, `source_capacity`,
+`source_rate`, `lookup_full`, `crypto_queue_full`, `crypto_timeout`,
+`proof_capacity`, `proof_timeout`, or `proof_unavailable`. `request_queued`,
+`proof_leader`, `proof_shared`, and `cache_hit` describe admission work. These are
+process-wide events with fixed labels and no credential identifiers. A shared
+job's crypto rejection is counted once even if multiple subscribers receive a
+503; subscriber timeouts are counted individually.
+Control-plane readiness probes can be denied during saturation; those denials
+must not be attributed to proxy clients. Resource-free liveness remains exempt.
+
+Effective policy and guardrails reuse the layers loaded for the current lookup
+when their project context matches. Policy state is not cached across requests.
+Callers that omit project context retain the existing distinction between
+inherited key policy and caller-context guardrails.
+
+HTTP guardrails share a client and connection pool across calls, with bearer
+credentials and deadlines applied per request. Their synchronous executor still
+waits on an OS thread per call. Provider forwarding continues to use Pingora's
+upstream pool; these changes do not increase provider inference speed or remove
+upstream concurrency limits.
+
+Buffered traffic can opt into a size-aware working-set bound. An additional
+elastic mode replaces the ordinary count ceiling with an explicit larger safety
+ceiling, allowing concurrency to follow available memory and body sizes. It
+adds processing workspace only when the complete-body processing phase starts;
+compact analyzed metadata releases temporary scratch space before asynchronous
+policy lookups, with workspace reacquired for subsequent body processing.
+An unavailable upgrade fails without waiting while holding a body. The released
+defaults and serialized-byte ceiling remain unchanged. Declared lengths reserve estimated
+capacity early, unknown-length uploads grow within shared capacity, and an
+optional reserve protects declared small bodies. Growth and JSON serialization
+check capacity before allocation; temporary workspace estimates remain distinct
+from an exact RSS limit. Rewritten output has a separate allocation charge;
+serialization preserves the original input extent and its processing workspace,
+including for unknown-length uploads and shrinking rewrites. A separate optional upstream request/stream ceiling
+spans the entire provider operation. See [mixed-body operation and limits](operations.md#mixed-body-sizes).
 
 Canonical OpenAI-compatible and Anthropic-compatible routes can run in
 `managed_by_gateway` mode or `direct_litellm_passthrough` mode. Direct mode

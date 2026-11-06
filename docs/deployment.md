@@ -6,9 +6,47 @@ Source builds now use a digest-pinned Debian 13 Distroless runtime for
 [issue #149's OS-package remediation](runtime-image-security.md). UID/GID
 10001, listeners, configuration and data contracts are preserved. The image has
 no shell or package manager; use an external debug container for diagnostics.
-Published v1.0.1 images retain their original contents. Replace them with the
-v1.0.2 image after publication; see the
+Published v1.0.1 images retain their original contents. Use the current released
+image; see the
 [triage and verification procedure](runtime-image-security.md).
+
+## Upgrade to 1.2.0
+
+Version 1.2.0 adds bounded authentication, reusable secret proofs and optional
+size-aware/elastic admission. It advances two minor versions from v1.0.2 for
+the combined request-processing and admission changes. Public routes, key
+formats, policy, usage, PostgreSQL schemas and Redis accounting state remain
+compatible with v1.0.2; no migration or state reset is required.
+
+1. After release validation and publication, drain and replace replicas with
+   `ghcr.io/sarattha/relayna-gateway:1.2.0`. Retain the existing database, Redis
+   counters, secrets and mounted certificates. UID/GID 10001 and the Distroless
+   layout remain unchanged. The image replaces zlib with a pinned Debian security
+   fix; see [runtime image security](runtime-image-security.md#v120-zlib-update).
+2. Review [authentication abuse and memory protection](#authentication-abuse-and-memory-protection).
+   Limits use the actual transport peer, so ingress/NAT can aggregate clients
+   into one 100 requests/s, burst 200 bucket. Use the documented source-rate
+   controls for your ingress. Authentication may queue for 250 ms, then return
+   a capacity 503; source exhaustion returns 429. Both include `Retry-After: 1`.
+3. Verify Linux permits core-dump and process-dumpability protection at startup.
+   Debuggers and process dumps are intentionally restricted. These controls do
+   not protect secrets from a host administrator or arbitrary in-process code.
+4. Keep the default eight body slots and 512 MiB serialized-body budget until
+   workload-specific measurements justify changes. To enable size-aware or
+   elastic mode, follow [mixed-body configuration](operations.md#mixed-body-sizes).
+   The elastic request ceiling is a safety bound, not a guaranteed simultaneous
+   request count; byte estimates require process-memory headroom.
+5. Check readiness, valid/invalid/disabled key behavior, HTTP/SSE and configured
+   WebSocket routes, Usage and the authentication admission counters. Warm
+   proofs still read current key state on every request. Distinguish request
+   queue decisions from overlapping legacy denial counters.
+
+Rollback to v1.0.2 requires no data conversion. Drain requests and remove the
+new optional admission/source settings before restoring the earlier binary;
+its authentication limits and proof reuse differ. The existing five-minute
+Pingora grace and example manifest's 45-second termination grace still require
+care when draining. See [1.2.0 validation](benchmarks/v1.2.0.md) for measured
+limits and evidence; previous PR studies do not establish this release's capacity.
 
 ## Upgrade to 1.0.2
 
@@ -380,6 +418,9 @@ fresh database when you want to seed a known `op_live_...` operator token. Omit
 it to let Gateway generate and print a one-time operator token. After an active
 operator token exists in PostgreSQL, env changes are ignored; rotate the token
 from the Admin portal to change it.
+Concurrent replicas using the same configured token retain the first successful
+bootstrap without replacing it. A prefix collision with only a disabled or
+revoked historical token still fails startup; use a fresh bootstrap token.
 
 ## PostgreSQL Container
 
@@ -528,6 +569,84 @@ route provider traffic through an approved egress gateway.
 For local development, port-forward the control Service or run the container
 directly. Do not expose `/admin-ui/admin/*`, `/admin-ui/metrics`, or operator
 token workflows on a public ingress.
+
+## Authentication Abuse and Memory Protection
+
+`GATEWAY_PREAUTH_SOURCE_RPS` (default `100`) and
+`GATEWAY_PREAUTH_SOURCE_BURST` (default `200`) accept integers from 1 to
+1,000,000. They limit requests per actual peer IP per Gateway process before
+routing/authentication store work. Both listeners share the same limiter. Set
+these for the expected aggregate behind NAT or an ingress: Gateway intentionally
+does not interpret `X-Forwarded-For`, `X-Real-IP`, or `Forwarded` as a source
+identity. Source limits are per pod; replica counts multiply aggregate capacity.
+The 64-active-request admission cap permits 128 additional waiters for at most
+250 ms. This queue retains headers and connections but does not consume request
+bodies. It is independent of body slots and the two-worker/eight-waiter/250-ms
+Argon2 bounds. Identical virtual-key proofs share a verification job, with at
+most ten jobs, 63 followers per proof, 64 followers globally, and a one-second
+subscriber deadline. Current key state is still checked separately per request.
+These bounds can reject sustained traffic or many distinct cold keys; they do
+not reserve capacity for control-plane readiness. Liveness and metrics remain
+exempt. Monitor the cause-specific `gateway_auth_admission_events_total`
+counter alongside per-listener denials. Clients should honor `Retry-After` and
+add jitter.
+
+Enforce original-client request and connection limits at the trusted ingress as
+well. The existing nginx-compatible Ingress example sets 100 RPS, burst
+multiplier 2, and 64 connections per source per controller replica. Merge these
+values into the **existing controller's** ConfigMap, for both public and internal
+controllers; they are controller settings, not Ingress annotations:
+
+```yaml
+data:
+  limit-req-status-code: "429"
+  limit-conn-status-code: "429"
+  use-forwarded-headers: "false"
+  enable-real-ip: "false"
+  allow-snippet-annotations: "false"
+```
+
+This direct-peer example assumes the ingress sees the client source IP. Behind a
+load balancer, configure real-IP/PROXY protocol only for its explicit trusted
+CIDRs, restrict controller access to that load balancer, and verify that spoofed
+forwarded headers cannot change the limiting key. Do not use a trust-all CIDR.
+Tune limits for NAT clients and active streams. Limits and error formatting at
+the edge depend on the controller; Gateway's JSON/Retry-After contract applies
+to Gateway-generated denials. See the controller's
+[rate-limit settings](https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#rate-limiting)
+and [status/trust settings](https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/).
+
+The community ingress-nginx controller was
+[retired in March 2026](https://kubernetes.io/blog/2026/03/30/kubernetes-v1-36-sneak-peek/).
+The existing manifest is a legacy compatibility example, not a recommendation to
+install that controller. Use a maintained controller and translate these limits
+and trust settings to its supported policy API. Validate the effective policy
+with repeated requests, parallel connections, and forged forwarding headers
+before exposing the service. Direct-pod benchmarks do not validate ingress policy.
+
+On Linux, Gateway disables process dumping with `PR_SET_DUMPABLE=0` and sets
+both soft and hard `RLIMIT_CORE` to zero **before loading configuration**. It
+reads the settings back and aborts startup if either protection fails. Both are
+needed because [piped core collectors can ignore RLIMIT_CORE](https://man7.org/linux/man-pages/man5/core.5.html).
+Normal same-user debugger/ptrace access is also restricted by the
+[dumpable attribute](https://man7.org/linux/man-pages/man2/PR_SET_DUMPABLE.2const.html).
+Non-Linux development builds do not apply these Linux controls; configure the
+platform's crash-report and debugger policy separately.
+
+The pod example also disables service-account token automounting, alongside
+non-root execution, dropped capabilities, read-only root filesystem, and
+RuntimeDefault seccomp. Keep `hostPID` and privileged containers disabled.
+Operator RBAC must not grant `pods/exec`, `pods/attach`,
+`pods/ephemeralcontainers`, secret reads, or node debugging to ordinary observers.
+Kubernetes RBAC grants are additive: omitting these permissions in one Role does
+not revoke permissions from another binding. Restrict and audit break-glass
+access and access to node crash collectors and diagnostics storage. Do not retain
+process dumps in support bundles.
+
+These controls reduce accidental dump exposure and ordinary peer-process access;
+they cannot protect live credentials from host administrators, privileged
+container access, or arbitrary code execution inside Gateway. Zeroization covers
+owned short-lived verifier buffers, not every parser/library/allocator copy.
 
 ## Guardrail Configuration
 

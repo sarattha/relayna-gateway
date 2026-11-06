@@ -6,6 +6,7 @@ from pathlib import Path
 import signal
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -24,6 +25,12 @@ def trial(slots=8, cohort=32, stable=True, oom=False, **extra):
 
 
 class Reports(unittest.TestCase):
+    def test_repeated_setting_takes_precedence_over_single_discovery_success(self):
+        rows = [trial(31) for _ in range(3)] + [trial(32, stable=False, oom=True), trial(256)]
+        result = report.describe(dict(body_mib=5, complete=True, trials=rows))
+        self.assertEqual((result["slots"], result["stable_trials"], result["label"]),
+                         (31, 3, "tested lower bound"))
+
     def test_confirmed_edge_requires_repeated_adjacent_oom(self):
         rows = [trial() for _ in range(3)] + [trial(9, stable=False, oom=True) for _ in range(3)]
         result = report.describe(dict(body_mib=5, complete=True, trials=rows))
@@ -91,7 +98,89 @@ class Reports(unittest.TestCase):
             self.assertIsNone(report.normalize(trial())["client_deadline_ms"])
 
 
+class AdmissionAccounting(unittest.TestCase):
+    def test_mixed_payloads_schedules_and_goodput(self):
+        subprocess.run(["node", "--test", str(Path(__file__).parent / "mixed_workload.test.mjs")],
+                       check=True, capture_output=True, text=True)
+
+    def test_proxy_metrics_exclude_control_plane_probe_denials(self):
+        source = (Path(__file__).parent / "workload.mjs").read_text()
+        parser = source.split("function metrics(text) {", 1)[1].split("async function run(config)", 1)[0]
+        lines = [
+            'gateway_denials_total{kind="body_admission",route="all",reason="concurrency"} 5',
+            'gateway_denials_total{kind="body_admission",route="all",reason="working_set"} 3',
+            'gateway_denials_total{kind="body_admission",route="all",reason="processing_workspace"} 2',
+            'gateway_denials_total{kind="upstream_admission",route="proxy",reason="concurrency"} 4',
+            'gateway_denials_total{kind="auth_admission",route="proxy",reason="authentication_overloaded"} 7',
+            'gateway_denials_total{kind="auth_admission",route="control",reason="authentication_overloaded"} 1',
+            'gateway_denials_total{kind="auth_admission",route="proxy",reason="source_rate_limit_exceeded"} 11',
+            'gateway_denials_total{kind="auth_admission",route="control",reason="source_rate_limit_exceeded"} 2',
+        ]
+        script = "function metrics(text) {" + parser + "\nprocess.stdout.write(JSON.stringify(metrics(" + json.dumps("\n".join(lines)) + ")));"
+        result = subprocess.run(["node", "--input-type=module", "-e", script],
+                                check=True, capture_output=True, text=True)
+        values = json.loads(result.stdout)
+        self.assertEqual(values["concurrency_denials"], 5)
+        self.assertEqual(values["working_set_denials"], 5)
+        self.assertEqual(values["processing_denials"], 2)
+        self.assertEqual(values["upstream_denials"], 4)
+        self.assertEqual(values["authentication_denials"], 7)
+        self.assertEqual(values["source_denials"], 11)
+        self.assertEqual(values["control_authentication_denials"], 1)
+        self.assertEqual(values["control_source_denials"], 2)
+
+    def test_body_authentication_and_source_denials_reconcile_separately(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "limit-08-rep-1.json"
+            pods = [{"metadata": {"name": name}, "status": {"containerStatuses": [{"restartCount": 0}]},
+                     "spec": {"containers": [{"resources": {"limits": {"cpu": "2", "memory": "1Gi"}},
+                     "env": [{"name": "GATEWAY_MAX_BUFFERED_REQUESTS", "value": "8"},
+                             {"name": "GATEWAY_MAX_INFLIGHT_BUFFER_BYTES", "value": str(512 * sweep.MIB)}]}]}}
+                    for name in ["pod-a", "pod-b"]]
+            path.with_suffix(".pods.json").write_text(json.dumps({"items": pods}))
+            results, samples = [], []
+            for pod in pods:
+                name = pod["metadata"]["name"]
+                (root / f"limit-08-rep-1-{name}.memory.txt").write_text("0 0 100 200 0\n")
+                for status, code in [(200, None), (503, "gateway_overloaded"), (503, "authentication_overloaded"), (429, "source_rate_limit_exceeded")]:
+                    results.append(dict(pod=name, status=status, error_code=code, verified=status == 200))
+                for count in [0, 1]:
+                    samples.append(dict(pod=name, buffered_requests=0, buffered_bytes=0,
+                                        concurrency_denials=count, byte_denials=0,
+                                        authentication_denials=count, source_denials=count))
+            run = dict(body_bytes=sweep.MIB, scheduled_requests=8, completed_requests=8,
+                       verified_requests=2, successful_requests=2, http_max_sockets_per_host=4,
+                       pods=[{"name": pod["metadata"]["name"]} for pod in pods], results=results,
+                       samples=samples, status_counts={"200": 2, "503": 4, "429": 2},
+                       body_sha256="fixture", elapsed_ms=1, success_latency_ms={}, rejection_latency_ms={}, dispatch_lag_ms={})
+            path.write_text(json.dumps(run))
+            row = sweep.analyze(root, 8, 1, sweep.MIB, 4)
+            self.assertTrue(row["clean"])
+            self.assertEqual(row["preauth_denials"], 4)
+            self.assertEqual(row["denial_codes"]["gateway_overloaded"], 2)
+            self.assertEqual(row["admission_counter_gap"], 0)
+            run["results"][3]["error_code"] = "rate_limit_exceeded"
+            path.write_text(json.dumps(run))
+            with self.assertRaises(AssertionError):
+                sweep.analyze(root, 8, 1, sweep.MIB, 4)
+
+
 class Orchestration(unittest.TestCase):
+    def test_setup_waits_for_postgres_tcp_after_temporary_socket_server(self):
+        args = SimpleNamespace(kubeconfig="fixture", output=str(self.output), delay_ms=2000,
+                               read_delay_ms=10000, body_mib=5, body_mix=None, client_deadline_ms=180000)
+        instance = runner.Benchmark(args)
+        probes = []
+        def probe(command, **kwargs):
+            probes.append(command)
+            tcp = "-h" in command and command[command.index("-h") + 1] == "127.0.0.1"
+            return subprocess.CompletedProcess(command, int(tcp and len(probes) == 1))
+        with patch.object(instance, "apply"), patch.object(instance, "kube", return_value=subprocess.CompletedProcess([], 0, stdout="secret/credentials")), patch.object(runner.subprocess, "run", side_effect=probe), patch.object(runner.time, "sleep") as sleep:
+            instance.setup()
+        self.assertEqual(len(probes), 2)
+        sleep.assert_called_once_with(1)
+
     def test_shellless_production_image_gets_benchmark_tools_only_by_mount(self):
         spec = runner.deployment("gateway", "production@sha256:fixture")["spec"]["template"]["spec"]
         gateway = spec["containers"][0]

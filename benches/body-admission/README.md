@@ -4,6 +4,22 @@ This measures the real release-built Gateway proxy, PostgreSQL-backed virtual
 key authentication/policy/usage, Redis control state, and a mock registered
 service. It is a local Kubernetes experiment, not a production capacity claim.
 
+Authentication/source admission remains enabled during measurements. Reports
+separate `gateway_overloaded` (body capacity), `authentication_overloaded`
+(authentication capacity), and `source_rate_limit_exceeded` (429). Their counters
+are reconciled independently from verified successes and transport failures.
+Authentication/source counters are scoped to `route="proxy"`; separate
+`route="control"` observations retain readiness-probe denials without attributing
+them to workload requests. The local harness unit tests also require Node.js to
+exercise this metric parser.
+Rejection latency includes both 429 and 503. Early protection can prevent body
+slots from filling: report occupied slots and denial counts, and do not interpret
+such a setting as a maximum body concurrency measurement. Direct-pod workloads
+do not measure ingress connection limits or original-client IP enforcement.
+Summary settings prefer repeated stable trials over higher one-off discoveries.
+Audit startup failures separately from resource-boundary OOMs; retain invalid
+runs and repeat them in a new output directory after fixing the cause.
+
 ## Run from source on amd64 or arm64
 
 Requirements: Python **3.10+**, Docker with Linux containers, kind, and kubectl.
@@ -80,6 +96,59 @@ from the checkpoints, then delete **only** the cluster named in that run's
 An unfinished checkpoint stays visibly incomplete; the report never invents
 missing memory/latency measurements or calls a one-trial smoke run a confirmed
 limit. Keep the entire directory to preserve downloadable JSON/CSV links.
+
+## Mixed-size PR experiments
+
+The low-level runner also accepts `--body-mix`, a JSON array of byte lengths,
+integer request-count weights, and optional `shape` (`string` or `objects`).
+This is a targeted experiment, not the six-size release capacity search. Use
+an isolated benchmark cluster/private kubeconfig and immutable images, as for
+the standard harness. For example, after provisioning those fixtures:
+
+```sh
+python3 benches/body-admission/run.py \
+  --kubeconfig "$BENCH_KUBECONFIG" --image "$BENCH_IMAGE" \
+  --source-commit "$BENCH_COMMIT" --label mixed-small-heavy \
+  --output target/mixed-small-heavy --limits 128 --repetitions 3 \
+  --memory-limit-mib 1024 --rps 96 --duration 30 \
+  --read-delay-ms 1000 --delay-ms 2000 \
+  --client-deadline-ms 180000 --condition-timeout 300 --retain-failures \
+  --body-mix '[{"bytes":8192,"weight":70},{"bytes":262144,"weight":20},{"bytes":1048576,"weight":9},{"bytes":10485760,"weight":1}]' \
+  --max-body-working-mib 384 --small-body-reserved-requests 16 \
+  --body-workspace-multiplier 2 --max-upstream-requests 512
+```
+
+These settings are experiment inputs, not validated production recommendations.
+To measure elastic admission, add `--elastic-max-requests 512`. This explicitly
+replaces the ordinary `--limits` count with a 512-request safety ceiling; the
+working-byte budget governs useful concurrency. It also defers workspace
+reservation until processing starts, so record late processing-upgrade denials.
+Label the effective ceiling and memory profile in comparisons; the nominal
+`--limits` value does not mean the elastic version has the old fixed count cap.
+When reusing historical results, preserve their raw evidence and hashes, match
+payload sequences, fixture images, hardware and resource caps, and disclose
+elapsed time, harness differences and configuration differences. Do not rerun
+historical versions merely to populate an extended comparison.
+
+Leave the new admission options unset for older images and the configuration-only
+control. Compare both equal count ceilings and a separately labeled tuned-count
+candidate; a higher ceiling alone can account for a gain. Authentication/source
+controls remain enabled, and Redis RPM enforcement is exercised with a
+1,000,000-request limit. The driver uses the same generated payloads and weighted
+size sequence on both pods, with `--sequence-seed` (default 146) and
+`--body-order shuffled|large-first|small-first`. Warmup visits every body class
+before measurement. `--chunked` omits Content-Length, and `--upload-delay-ms`
+paces 64 KiB writes. The driver payload pool is bounded to 256 MiB.
+
+Raw results include each request's size class, exact byte/hash/credential
+verification, sequence hash, per-size acceptance and latency, successful MiB/s,
+and separate working-set/upstream/authentication/source denial counters. A
+corrupt HTTP 200 is a validation failure, not successful goodput. Keep failures,
+OOMs, transport errors, late denials, and all offered classes in the report.
+Inspect per-class performance: a higher total completion rate obtained by
+rejecting large bodies is not sufficient evidence of improved service.
+Run `python3 -m unittest discover -s benches/body-admission -p 'test_*.py'`
+for harness validation, including the Node mixed-payload/scheduling tests.
 
 ## Interpret the resource search
 
@@ -333,3 +402,31 @@ it specifically for this benchmark.
 kubectl --kubeconfig /tmp/relayna-body-bench.kubeconfig delete namespace gateway-body-bench
 kind delete cluster --name body-bench
 ```
+
+## Isolate complete body analysis costs
+
+The source-extracted CPU/allocation probe requires Python 3.12+ and compares the
+current implementation with PR #146 at
+`277851f24a82fd5d870edabcb0a6d1c334fa932f`:
+
+```sh
+python3 benches/body-admission/analysis_benchmark.py \
+  --output target/body-analysis-comparison
+```
+
+It compiles both implementations into one native release binary using the
+baseline core library, workspace manifest and dependency lockfile. It refuses
+comparisons when core or telemetry source differs, and isolates analysis costs
+from later dependency upgrades. The probe models original/final policy
+validation and metadata extraction, including uncapped, input-only, TPM-only
+and combined policies, for flat and message-array JSON. It records each repetition, allocation calls and
+requested allocation bytes. Those bytes are cumulative allocation traffic, not
+peak live memory or RSS. Timing disables allocation-counter updates; the
+allocator wrapper remains installed.
+
+The output retains extracted source, build logs, source/binary hashes, host and
+compiler identity, and raw JSONL observations. Run without concurrent builds or
+other heavy work. `--prepare-only` builds the probe and records `measure_command`
+in `provenance.json` so measurement can be deferred until the host is idle.
+This probe excludes network I/O, authentication, policy storage, guardrail
+execution and admission contention; use the two-pod harness for system results.

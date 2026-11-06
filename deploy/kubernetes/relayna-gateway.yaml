@@ -7,6 +7,9 @@ data:
   GATEWAY_CONTROL_BIND_ADDR: "0.0.0.0:8081"
   GATEWAY_MAX_BUFFERED_REQUESTS: "8"
   GATEWAY_MAX_INFLIGHT_BUFFER_BYTES: "536870912"
+  # Actual transport peer; size for aggregate ingress/NAT traffic.
+  GATEWAY_PREAUTH_SOURCE_RPS: "100"
+  GATEWAY_PREAUTH_SOURCE_BURST: "200"
   LOG_LEVEL: "gateway_api=info,gateway_proxy=info"
   # Temporary incident diagnostic. Keep false except during a controlled Entra
   # authorization investigation; the emitted claims can contain personal data.
@@ -103,6 +106,7 @@ spec:
       labels:
         app.kubernetes.io/name: relayna-gateway
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
@@ -242,6 +246,12 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: relayna-gateway
+  annotations:
+    # Legacy nginx-compatible example. See docs/deployment.md for controller
+    # trust/status settings and migration to a maintained ingress controller.
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+    nginx.ingress.kubernetes.io/limit-connections: "64"
 spec:
   ingressClassName: nginx
   rules:
@@ -263,6 +273,9 @@ metadata:
   annotations:
     # Example only: bind this ingress to an internal/VPN/IAP-protected class.
     nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8"
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+    nginx.ingress.kubernetes.io/limit-connections: "64"
 spec:
   ingressClassName: nginx-internal
   rules:

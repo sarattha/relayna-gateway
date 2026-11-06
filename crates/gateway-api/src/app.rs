@@ -308,6 +308,7 @@ pub fn router_with_studio_auth_and_litellm(
         litellm_service_key,
         None,
         None,
+        Arc::new(Default::default()),
     )
 }
 
@@ -322,6 +323,7 @@ pub fn router_with_identity(
     litellm_service_key: String,
     portal_oidc: Option<Arc<PortalOidcRuntime>>,
     owner_entra_verifier: Option<Arc<EntraJwtVerifier>>,
+    admission: Arc<gateway_core::auth_admission::RequestAdmission>,
 ) -> Router {
     let studio_env = studio
         .map(|studio| StudioConnectionEnv {
@@ -329,21 +331,32 @@ pub fn router_with_identity(
             token: studio.token,
         })
         .unwrap_or_default();
-    router_with_state(AppState {
-        store: Arc::new(store),
-        redis,
-        studio_env,
-        auth_env,
-        auth_runtime,
-        litellm_base_url,
-        litellm_service_key,
-        litellm_ui_client: litellm_ui_client(),
-        portal_oidc,
-        owner_entra_verifier,
-    })
+    router_with_state_and_admission(
+        AppState {
+            store: Arc::new(store),
+            redis,
+            studio_env,
+            auth_env,
+            auth_runtime,
+            litellm_base_url,
+            litellm_service_key,
+            litellm_ui_client: litellm_ui_client(),
+            portal_oidc,
+            owner_entra_verifier,
+        },
+        admission,
+    )
 }
 
 pub fn router_with_state(state: AppState) -> Router {
+    router_with_state_and_admission(state, Arc::new(Default::default()))
+}
+
+fn router_with_state_and_admission(
+    state: AppState,
+    admission: Arc<gateway_core::auth_admission::RequestAdmission>,
+) -> Router {
+    let admission_state = (admission, state.auth_runtime.clone());
     Router::new()
         .route("/admin-ui/healthz", get(healthz))
         .route("/admin-ui/readyz", get(readyz))
@@ -750,10 +763,55 @@ pub fn router_with_state(state: AppState) -> Router {
         .route("/admin-ui/metrics", get(metrics))
         .route("/admin-ui", get(admin_ui_index))
         .route("/admin-ui/{*path}", get(admin_ui_asset))
+        .layer(axum::middleware::from_fn_with_state(
+            admission_state,
+            preauth_admission,
+        ))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+async fn preauth_admission(
+    State((admission, auth)): State<(
+        Arc<gateway_core::auth_admission::RequestAdmission>,
+        SharedGatewayAuthRuntime,
+    )>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    // Exact resource-free endpoints only. Alias routes still pass this guard.
+    if matches!(
+        request.uri().path(),
+        "/admin-ui/healthz"
+            | "/admin-ui"
+            | "/admin-ui/"
+            | "/admin-ui/app.js"
+            | "/admin-ui/app.css"
+            | "/admin-ui/metrics"
+    ) {
+        return next.run(request).await;
+    }
+    let peer = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|peer| peer.0.ip());
+    let _permit = match admission.acquire(peer).await {
+        Ok(permit) => permit,
+        Err(error) => return error_response(request.headers(), error),
+    };
+    let auth = match auth.snapshot() {
+        Ok(auth) => auth,
+        Err(error) => return error_response(request.headers(), error),
+    };
+    if let Err(error) = gateway_core::auth_admission::validate_credential_headers(
+        request.headers(),
+        &auth.config.relayna_key_header,
+    ) {
+        return error_response(request.headers(), error);
+    }
+    next.run(request).await
 }
 
 async fn healthz() -> impl IntoResponse {
@@ -2891,7 +2949,7 @@ async fn create_key(
         Err(response) => return response,
     };
 
-    let material = match VirtualKeyMaterial::generate() {
+    let material = match gateway_core::auth::run_key_crypto(VirtualKeyMaterial::generate).await {
         Ok(material) => material,
         Err(error) => return error_response(&headers, error),
     };
@@ -3725,7 +3783,7 @@ async fn rotate_operator_token(State(state): State<AppState>, headers: HeaderMap
         Err(response) => return response,
     };
 
-    let material = match OperatorTokenMaterial::generate() {
+    let material = match gateway_core::auth::run_key_crypto(OperatorTokenMaterial::generate).await {
         Ok(material) => material,
         Err(error) => return error_response(&headers, error),
     };
@@ -6822,6 +6880,7 @@ async fn require_virtual_key(
 }
 
 fn bearer_token(headers: &HeaderMap) -> GatewayResult<&str> {
+    gateway_core::auth_admission::validate_credential_headers(headers, "x-relayna-key")?;
     let Some(authorization) = headers
         .get("authorization")
         .and_then(|value| value.to_str().ok())
@@ -6839,11 +6898,22 @@ fn bearer_token(headers: &HeaderMap) -> GatewayResult<&str> {
 }
 
 fn error_response(headers: &HeaderMap, error: GatewayError) -> Response {
-    (
-        error.status_code(),
-        Json(error.body(request_id_from_headers(headers))),
-    )
-        .into_response()
+    if matches!(
+        error,
+        GatewayError::AuthenticationOverloaded | GatewayError::SourceRateLimitExceeded
+    ) {
+        gateway_telemetry::record_auth_admission_rejection("control", error.code());
+    }
+    let body = error.body(request_id_from_headers(headers));
+    let retry = body.error.retry_after_seconds;
+    let mut response = (error.status_code(), Json(body)).into_response();
+    if let Some(seconds) = retry {
+        response.headers_mut().insert(
+            header::RETRY_AFTER,
+            seconds.to_string().parse().expect("integer header"),
+        );
+    }
+    response
 }
 
 fn authorization_debug(
@@ -10296,6 +10366,10 @@ mod tests {
         }
     }
 
+    // Successful workflows are isolated from intentional process-wide KDF
+    // overload; dedicated admission tests exercise concurrent rejection.
+    static KEY_CRYPTO_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     const TEST_OPERATOR_TOKEN: &str =
         "op_live_testoperator000000000000000000000000000000000000000000000000";
     const TEST_USAGE_OPERATOR_TOKEN: &str =
@@ -10351,6 +10425,100 @@ mod tests {
             portal_oidc: None,
             owner_entra_verifier: None,
         }
+    }
+
+    #[tokio::test]
+    async fn admission_covers_aliases_and_ignores_forged_forwarding_headers() {
+        for path in [
+            "/admin-ui/admin/keys",
+            "/owner/v1/services",
+            "/v2/model/info",
+            "/key/info",
+            "/litellm/ui",
+        ] {
+            let admission =
+                Arc::new(gateway_core::auth_admission::RequestAdmission::new(1, 1).unwrap());
+            let app = router_with_state_and_admission(test_state(default_store()), admission);
+            let request = || {
+                http::Request::builder()
+                    .uri(path)
+                    .header("authorization", "invalid")
+                    .body(Body::empty())
+                    .unwrap()
+            };
+            let first = app.clone().oneshot(request()).await.unwrap();
+            assert_eq!(first.status(), StatusCode::UNAUTHORIZED, "{path}");
+            let mut forged = request();
+            forged
+                .headers_mut()
+                .insert("x-forwarded-for", "192.0.2.100".parse().unwrap());
+            forged
+                .headers_mut()
+                .insert("x-real-ip", "198.51.100.10".parse().unwrap());
+            forged
+                .headers_mut()
+                .insert("x-request-id", "admission-test".parse().unwrap());
+            let denied = app.oneshot(forged).await.unwrap();
+            assert_eq!(denied.status(), StatusCode::TOO_MANY_REQUESTS, "{path}");
+            assert_eq!(denied.headers()[header::RETRY_AFTER], "1");
+            assert_eq!(denied.headers()["x-request-id"], "admission-test");
+            let body = axum::body::to_bytes(denied.into_body(), 4096)
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(body["error"]["code"], "source_rate_limit_exceeded");
+        }
+    }
+
+    #[tokio::test]
+    async fn admission_saturation_preserves_liveness_and_releases_capacity() {
+        let admission = Arc::new(gateway_core::auth_admission::RequestAdmission::default());
+        let app = router_with_state_and_admission(test_state(default_store()), admission.clone());
+        let mut permits = Vec::new();
+        for _ in 0..64 {
+            permits.push(admission.acquire(None).await.unwrap());
+        }
+        let request = |path: &str| {
+            http::Request::builder()
+                .uri(path)
+                .header("authorization", "invalid")
+                .body(Body::from_stream(futures_util::stream::poll_fn(
+                    |_| -> std::task::Poll<Option<Result<axum::body::Bytes, std::io::Error>>> {
+                        panic!("admission and malformed-header denials must not poll the body")
+                    },
+                )))
+                .unwrap()
+        };
+        let denied = app
+            .clone()
+            .oneshot(request("/admin-ui/admin/keys"))
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(denied.headers()[header::RETRY_AFTER], "1");
+        assert_eq!(
+            app.clone()
+                .oneshot(request("/admin-ui/healthz"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        let queued = app.clone().oneshot(request("/admin-ui/admin/keys"));
+        tokio::pin!(queued);
+        tokio::select! {
+            result = &mut queued => panic!("request should wait for admission: {result:?}"),
+            () = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+        }
+        drop(permits);
+        assert_eq!(queued.await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            app.oneshot(request("/admin-ui/admin/keys"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
     }
 
     fn default_store() -> MemoryStore {
@@ -10910,6 +11078,7 @@ mod tests {
 
     #[tokio::test]
     async fn litellm_spend_authorizes_and_handles_mapping_and_upstream_failures() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         use gateway_core::LiteLlmCredentialMappingScope::{Key, Project};
         let stored = stored_key("rk_live_spend_fixture");
         let key_id = stored.id;
@@ -12908,6 +13077,7 @@ mod tests {
 
     #[tokio::test]
     async fn guardrail_list_requires_virtual_key_and_returns_allowed_definitions() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let raw = "rk_live_guardrailtest1";
         let stored = stored_key(raw);
         let store = default_store();
@@ -12935,6 +13105,7 @@ mod tests {
 
     #[tokio::test]
     async fn guardrail_test_runs_pii_redact_without_provider_call() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let raw = "rk_live_guardrailtest2";
         let stored = stored_key(raw);
         let store = default_store();
@@ -13120,6 +13291,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_create_key_requires_admin_token() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
@@ -13162,6 +13334,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_create_key_returns_raw_key_once() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
@@ -13290,6 +13463,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_create_key_denies_operator_without_key_scope() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let store = MemoryStore {
             operator_tokens: Arc::new(Mutex::new(vec![TEST_USAGE_OPERATOR_TOKEN.to_owned()])),
             ..default_store()
@@ -13315,6 +13489,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_create_key_applies_safe_preset_and_lifecycle_metadata() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let app = router_with_state(test_state(default_store()));
         let project_id = Uuid::new_v4();
         let response = admin_post(
@@ -13465,6 +13640,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_create_key_writes_audit_event_without_raw_key() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let store = default_store();
         let audit_events = store.audit_events.clone();
         let app = router_with_state(test_state(store));
@@ -13507,6 +13683,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_key_create_returns_guardrail_config_overrides() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
@@ -13557,6 +13734,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_key_create_and_patch_support_no_expiration() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
@@ -13632,6 +13810,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_key_names_create_rename_clear_validate_and_audit() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let store = default_store();
         let audits = store.audit_events.clone();
         let app = router_with_state(test_state(store));
@@ -13721,6 +13900,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_key_patch_requires_key_disable_scope_for_disabled_field() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let raw = "rk_live_patchdisabled";
         let stored = stored_key(raw);
         let store = MemoryStore {
@@ -13901,6 +14081,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_list_keys_returns_database_backed_key_metadata() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),
@@ -13955,6 +14136,7 @@ mod tests {
 
     #[tokio::test]
     async fn admin_key_lifecycle_enable_disable_and_revoke_are_persisted() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         let store = MemoryStore {
             key: Arc::new(Mutex::new(None)),
             admin_key: Arc::new(Mutex::new(None)),

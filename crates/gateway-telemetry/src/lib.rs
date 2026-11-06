@@ -2,7 +2,9 @@ use serde_json::{json, Value};
 use tracing::{field, Span};
 use tracing_subscriber::{filter::Directive, fmt, EnvFilter};
 
+mod auth_admission;
 pub mod runtime;
+pub use auth_admission::{record_auth_admission_event, AuthAdmissionEvent};
 mod runtime_process;
 pub use runtime::{
     merge_runtime_snapshots, runtime_request_started, runtime_snapshot, RuntimeOutcome,
@@ -220,6 +222,29 @@ pub fn buffered_bytes_removed(bytes: usize) {
     BUFFERED_BODY_BYTES.fetch_sub(u64::try_from(bytes).unwrap_or(u64::MAX), Ordering::Relaxed);
 }
 
+static BODY_WORKING_BYTES: AtomicU64 = AtomicU64::new(0);
+static UPSTREAM_REQUESTS: AtomicU64 = AtomicU64::new(0);
+
+pub fn upstream_request_started() {
+    UPSTREAM_REQUESTS.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn upstream_request_finished() {
+    UPSTREAM_REQUESTS.fetch_sub(1, Ordering::Relaxed);
+}
+
+pub fn record_upstream_admission_rejection() {
+    increment_denial_metric("upstream_admission", "proxy", "concurrency");
+}
+
+pub fn body_working_bytes_changed(previous: usize, current: usize) {
+    if current >= previous {
+        BODY_WORKING_BYTES.fetch_add((current - previous) as u64, Ordering::Relaxed);
+    } else {
+        BODY_WORKING_BYTES.fetch_sub((previous - current) as u64, Ordering::Relaxed);
+    }
+}
+
 pub fn record_body_admission_rejection(reason: &str) {
     BODY_ADMISSION_REJECTIONS_TOTAL.fetch_add(1, Ordering::Relaxed);
     increment_denial_metric("body_admission", "all", reason);
@@ -240,6 +265,12 @@ pub fn record_upstream_duration_ms(route: &str, provider: &str, stream: bool, la
 pub fn record_auth_failure(reason: &str) {
     AUTH_FAILURES_TOTAL.fetch_add(1, Ordering::Relaxed);
     increment_denial_metric("auth", "unknown", reason);
+}
+
+pub fn record_auth_admission_rejection(listener: &str, reason: &str) {
+    // Legacy listener totals also include inner authentication overloads.
+    // Cause-specific events are recorded separately at the admission decision.
+    increment_denial_metric("auth_admission", listener, reason);
 }
 
 pub fn record_policy_denial(route: &str, reason: &str) {
@@ -434,9 +465,18 @@ gateway_circuit_transitions_total {}
     );
     render_request_metrics(&mut metrics);
     render_denial_metrics(&mut metrics);
+    auth_admission::render(&mut metrics);
     render_provider_fallback_metrics(&mut metrics);
     render_circuit_state_metrics(&mut metrics);
     render_histograms(&mut metrics);
+    metrics.push_str(&format!(
+        "# TYPE gateway_admitted_upstream_requests gauge\ngateway_admitted_upstream_requests {}\n",
+        UPSTREAM_REQUESTS.load(Ordering::Relaxed)
+    ));
+    metrics.push_str(&format!(
+        "# TYPE gateway_body_working_bytes gauge\ngateway_body_working_bytes {}\n",
+        BODY_WORKING_BYTES.load(Ordering::Relaxed)
+    ));
     runtime::render_prometheus(&mut metrics);
     metrics.push_str("# TYPE gateway_guardrail_executions_total counter\n");
     metrics.push_str("# TYPE gateway_guardrail_failures_total counter\n");
@@ -733,6 +773,18 @@ mod tests {
         assert!(metrics.contains("route=\"chat_completions\""));
         assert!(metrics.contains("provider=\"litellm\""));
         assert!(!metrics.contains("request_id"));
+    }
+
+    #[test]
+    fn separates_control_and_proxy_admission_denials() {
+        super::record_auth_admission_rejection("control", "authentication_overloaded");
+        super::record_auth_admission_rejection("proxy", "authentication_overloaded");
+        let metrics = super::prometheus();
+        for listener in ["control", "proxy"] {
+            assert!(metrics.contains(&format!(
+                "gateway_denials_total{{kind=\"auth_admission\",route=\"{listener}\",reason=\"authentication_overloaded\"}}"
+            )));
+        }
     }
 
     #[test]

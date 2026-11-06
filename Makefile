@@ -104,7 +104,7 @@ security-image: ## Scan a local Docker image; set IMAGE=relayna-gateway:tag
 		echo "Set IMAGE to the local image tag to scan, for example IMAGE=relayna-gateway:0.0.14"; \
 		exit 2; \
 	fi
-	trivy image --severity HIGH,CRITICAL --exit-code 1 "$${IMAGE}"
+	trivy image --ignorefile .trivyignore-image.yaml --show-suppressed --severity HIGH,CRITICAL --exit-code 1 "$${IMAGE}"
 
 .PHONY: security
 security: ## Run all local security checks except image scan
