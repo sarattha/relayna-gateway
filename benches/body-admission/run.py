@@ -96,9 +96,10 @@ class Benchmark:
         ])
         for name in ["postgres", "redis", "mock", "driver"]:
             self.kube("rollout", "status", f"deployment/{name}", "--timeout=180s", stdout=subprocess.DEVNULL)
-        # Deployment readiness alone does not mean PostgreSQL accepts connections.
+        # The temporary initialization server accepts Unix sockets before the
+        # final server is available to Gateway's TCP connections.
         for _ in range(60):
-            ready = subprocess.run(self.kubectl + ["exec", "deployment/postgres", "--", "pg_isready", "-U", "benchmark"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ready = subprocess.run(self.kubectl + ["exec", "deployment/postgres", "--", "pg_isready", "-h", "127.0.0.1", "-U", "benchmark"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if ready.returncode == 0:
                 break
             time.sleep(1)

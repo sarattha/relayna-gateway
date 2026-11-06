@@ -2643,6 +2643,15 @@ impl OperatorTokenStore for PostgresStore {
             Err(error) if is_unique_violation_on(&error, "operator_tokens_one_active_idx") => {
                 Ok(None)
             }
+            Err(error)
+                if is_unique_violation_on(&error, "operator_tokens_token_prefix_key")
+                    && self.has_active_operator_token().await? =>
+            {
+                // Replicas bootstrapping the same configured token can collide
+                // on its prefix before PostgreSQL checks the one-active index.
+                // Only accept the race when another active token now exists.
+                Ok(None)
+            }
             Err(_) => Err(GatewayError::StoreUnavailable),
         }
     }

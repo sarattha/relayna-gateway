@@ -6,6 +6,7 @@ from pathlib import Path
 import signal
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -24,6 +25,12 @@ def trial(slots=8, cohort=32, stable=True, oom=False, **extra):
 
 
 class Reports(unittest.TestCase):
+    def test_repeated_setting_takes_precedence_over_single_discovery_success(self):
+        rows = [trial(31) for _ in range(3)] + [trial(32, stable=False, oom=True), trial(256)]
+        result = report.describe(dict(body_mib=5, complete=True, trials=rows))
+        self.assertEqual((result["slots"], result["stable_trials"], result["label"]),
+                         (31, 3, "tested lower bound"))
+
     def test_confirmed_edge_requires_repeated_adjacent_oom(self):
         rows = [trial() for _ in range(3)] + [trial(9, stable=False, oom=True) for _ in range(3)]
         result = report.describe(dict(body_mib=5, complete=True, trials=rows))
@@ -160,6 +167,20 @@ class AdmissionAccounting(unittest.TestCase):
 
 
 class Orchestration(unittest.TestCase):
+    def test_setup_waits_for_postgres_tcp_after_temporary_socket_server(self):
+        args = SimpleNamespace(kubeconfig="fixture", output=str(self.output), delay_ms=2000,
+                               read_delay_ms=10000, body_mib=5, body_mix=None, client_deadline_ms=180000)
+        instance = runner.Benchmark(args)
+        probes = []
+        def probe(command, **kwargs):
+            probes.append(command)
+            tcp = "-h" in command and command[command.index("-h") + 1] == "127.0.0.1"
+            return subprocess.CompletedProcess(command, int(tcp and len(probes) == 1))
+        with patch.object(instance, "apply"), patch.object(instance, "kube", return_value=subprocess.CompletedProcess([], 0, stdout="secret/credentials")), patch.object(runner.subprocess, "run", side_effect=probe), patch.object(runner.time, "sleep") as sleep:
+            instance.setup()
+        self.assertEqual(len(probes), 2)
+        sleep.assert_called_once_with(1)
+
     def test_shellless_production_image_gets_benchmark_tools_only_by_mount(self):
         spec = runner.deployment("gateway", "production@sha256:fixture")["spec"]["template"]["spec"]
         gateway = spec["containers"][0]

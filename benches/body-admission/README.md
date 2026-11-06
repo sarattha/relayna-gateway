@@ -16,6 +16,9 @@ Rejection latency includes both 429 and 503. Early protection can prevent body
 slots from filling: report occupied slots and denial counts, and do not interpret
 such a setting as a maximum body concurrency measurement. Direct-pod workloads
 do not measure ingress connection limits or original-client IP enforcement.
+Summary settings prefer repeated stable trials over higher one-off discoveries.
+Audit startup failures separately from resource-boundary OOMs; retain invalid
+runs and repeat them in a new output directory after fixing the cause.
 
 ## Run from source on amd64 or arm64
 

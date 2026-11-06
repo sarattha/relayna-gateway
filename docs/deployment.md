@@ -417,6 +417,9 @@ fresh database when you want to seed a known `op_live_...` operator token. Omit
 it to let Gateway generate and print a one-time operator token. After an active
 operator token exists in PostgreSQL, env changes are ignored; rotate the token
 from the Admin portal to change it.
+Concurrent replicas using the same configured token retain the first successful
+bootstrap without replacing it. A prefix collision with only a disabled or
+revoked historical token still fails startup; use a fresh bootstrap token.
 
 ## PostgreSQL Container
 

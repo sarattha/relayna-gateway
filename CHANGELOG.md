@@ -40,6 +40,14 @@ All notable changes to Relayna Gateway are documented in this file.
 - Retain the v1.0.2 digest-pinned Debian 13 Distroless runtime and image gates
   covering all High/Critical vulnerability dispositions.
 
+### Fixed
+
+- Keep simultaneous replicas using the same configured bootstrap operator token
+  from failing startup on a duplicate prefix. The winning token remains unchanged;
+  a collision without an active operator still fails closed.
+- Wait for PostgreSQL TCP readiness in CI/benchmark fixtures and prefer repeated
+  stable settings over one-off discoveries in capacity summaries.
+
 ### Compatibility and upgrade
 
 - Preserve public routes, key formats, policy/accounting contracts, PostgreSQL

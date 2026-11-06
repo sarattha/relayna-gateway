@@ -55,7 +55,8 @@ def describe(summary):
     groups = {slot: [row for row in current if row["slots"] == slot]
               for slot in {row["slots"] for row in current if number(row["slots"]) and row["slots"] > 0}}
     stable = [slot for slot, trials in groups.items() if all(row["resource_stable"] for row in trials)]
-    candidate = max(stable, default=None)
+    repeated = [slot for slot in stable if len(groups[slot]) >= summary.get("confirmation_repetitions", 3)]
+    candidate = max(repeated or stable, default=None)
     selected = groups.get(candidate, [])
     adjacent = groups.get(candidate + 1, []) if candidate is not None else []
     complete = bool(summary.get("complete")) and not any(summary.get(key) for key in ("error", "refinement_stop", "confirmation_stop"))
