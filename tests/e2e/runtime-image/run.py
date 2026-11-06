@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import contextlib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,10 +11,39 @@ import secrets
 import ssl
 import subprocess
 import sys
+import tarfile
 import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "monitoring"))
 from soak import Upstream, frame_write, probe, request, websocket
+
+
+def verify_zlib_payload(image):
+    """Check the shipped files as well as the package version seen by scanners."""
+    container = subprocess.check_output(["docker", "create", image], text=True).strip()
+    try:
+        with tempfile.TemporaryDirectory(prefix="relayna-image-inventory-") as temporary:
+            archive = Path(temporary) / "rootfs.tar"
+            subprocess.run(["docker", "export", "--output", str(archive), container],
+                           check=True, capture_output=True, timeout=120)
+            with tarfile.open(archive) as root:
+                metadata = root.extractfile("var/lib/dpkg/status.d/zlib1g").read().decode()
+                assert "Version: 1:1.3.dfsg+really1.3.2-4\n" in metadata
+                libraries = [entry for entry in root.getmembers()
+                             if entry.isfile() and "/libz.so.1." in entry.name]
+                assert len(libraries) == 1 and libraries[0].name.endswith("/libz.so.1.3.2")
+                alias = root.getmember(str(Path(libraries[0].name).with_name("libz.so.1")))
+                assert alias.issym() and alias.linkname == "libz.so.1.3.2"
+                checksums = root.extractfile("var/lib/dpkg/status.d/zlib1g.md5sums").read().decode()
+                for line in checksums.splitlines():
+                    expected, filename = line.split(maxsplit=1)
+                    # MD5 is Debian's inventory integrity check. The downloaded
+                    # package itself is authenticated by a pinned SHA-256.
+                    actual = hashlib.md5(root.extractfile(filename).read(), usedforsecurity=False).hexdigest()
+                    assert actual == expected, "zlib package inventory does not match its payload"
+                assert "tmp/busybox" not in root.getnames()
+    finally:
+        subprocess.run(["docker", "rm", container], check=True, capture_output=True, timeout=30)
 
 
 async def serve():
@@ -64,6 +94,8 @@ async def check(image):
 
     try:
         assert docker("image", "inspect", image, "--format", "{{.Config.User}}") == "10001:10001"
+        verify_zlib_payload(image)
+        checks.append("patched_zlib_payload_inventory_and_no_stale_library")
         docker("network", "create", prefix)
         with tempfile.TemporaryDirectory(prefix=prefix) as temporary:
             certificates = Path(temporary)

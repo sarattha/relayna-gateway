@@ -31,6 +31,52 @@ runtime's resource capacity.
 
 ## Triage of the reported CVEs
 
+### v1.2.0 zlib update
+
+On 6 November 2026, the unchanged pinned Distroless image failed CI with two
+new High-severity zlib findings: [CVE-2026-76844](https://security-tracker.debian.org/tracker/CVE-2026-76844)
+and [CVE-2026-85091](https://security-tracker.debian.org/tracker/CVE-2026-85091).
+Debian still marks its Trixie package affected. Its fixed package is
+`zlib1g` **`1:1.3.dfsg+really1.3.2-4`**, from unstable. The first scanner title
+incorrectly mentioned webpack middleware; Debian identifies a zlib write-error
+buffer-lifetime flaw. The second report covers stale buffers in gzip writes.
+The upstream fix is shared; this update does not rely on Gateway reachability
+or an affected-version exception to clear either finding.
+
+The Dockerfile replaces only this package, using Debian's published amd64/arm64
+downloads and pinned SHA-256 checksums. Its glibc requirements (2.14 on amd64,
+2.17 on arm64) are below the existing Debian 13 glibc version, and its shared
+library SONAME remains `libz.so.1`. No other unstable package or repository is
+installed. The base's OpenSSL, glibc, GCC libraries, trust roots and allocator
+setting remain unchanged. See the [Debian package dependencies](https://packages.debian.org/sid/zlib1g).
+
+| Architecture | Debian package SHA-256 |
+| --- | --- |
+| amd64 | [`8506ce550a81ac14b047608e0df121037d9cbb10c3cc28446f68cf8c1d9d31ce`](https://packages.debian.org/sid/amd64/zlib1g/download) |
+| arm64 | [`aaf9e8cfc7d86771144c660d544806c886a5ae406f97bd50b62588a0718229ab`](https://packages.debian.org/sid/arm64/zlib1g/download) |
+
+A digest-pinned static tool is mounted only during image construction to remove
+the old library and documentation. The replacement retains Debian's actual
+control metadata, payload checksums and copyright. The tool is absent from the
+finished image. The actual-image test verifies payload checksums, the new library
+and symlink, absence of the old library, and subsequent protocol/TLS operation.
+All-disposition High/Critical scanning remains enabled. Trivy's fresh Debian 13
+database still reports both CVEs for this fixed unstable package because its
+stable-suite records lack a fixed version. `.trivyignore-image.yaml` therefore
+excepts only these two CVEs for the exact versioned amd64/arm64 package PURLs on
+Debian 13.7, expiring **6 December 2026**. Old versions remain blocked. The
+[exception record](security-exceptions.md) names the owner, evidence and removal
+criteria; suppressed findings remain visible in image scan output.
+
+This temporary package replacement must be revisited when Distroless incorporates
+a fixed stable package: refresh the base digest, remove the replacement stage,
+update the inventory test and repeat image scans, protocol checks and release
+benchmarks. Supported source-image architectures for this replacement are amd64
+and arm64; the release workflow currently publishes amd64. The versioned
+[v1.2.0 validation record](benchmarks/v1.2.0.md) tracks final-image qualification.
+
+### v1.0.2 package reduction
+
 The component descriptions below come from Debian's security tracker. Source
 inspection found no production subprocess invocation or use of the named
 utility/ACL/disk-probing functions. Gateway processes HTTP, JSON and protocol

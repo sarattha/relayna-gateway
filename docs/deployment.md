@@ -20,8 +20,9 @@ compatible with v1.0.2; no migration or state reset is required.
 
 1. After release validation and publication, drain and replace replicas with
    `ghcr.io/sarattha/relayna-gateway:1.2.0`. Retain the existing database, Redis
-   counters, secrets and mounted certificates. The Distroless runtime and
-   UID/GID 10001 remain unchanged.
+   counters, secrets and mounted certificates. UID/GID 10001 and the Distroless
+   layout remain unchanged. The image replaces zlib with a pinned Debian security
+   fix; see [runtime image security](runtime-image-security.md#v120-zlib-update).
 2. Review [authentication abuse and memory protection](#authentication-abuse-and-memory-protection).
    Limits use the actual transport peer, so ingress/NAT can aggregate clients
    into one 100 requests/s, burst 200 bucket. Use the documented source-rate

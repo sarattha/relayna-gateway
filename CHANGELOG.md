@@ -39,6 +39,11 @@ All notable changes to Relayna Gateway are documented in this file.
   and process dumpability by default.
 - Retain the v1.0.2 digest-pinned Debian 13 Distroless runtime and image gates
   covering all High/Critical vulnerability dispositions.
+- Replace its affected zlib with Debian's checksum-pinned
+  `1:1.3.dfsg+really1.3.2-4` package for amd64/arm64, fixing CVE-2026-76844 and
+  CVE-2026-85091. Remove the old library and retain the genuine package inventory.
+  A documented scanner exception applies only to this exact fixed package on
+  amd64/arm64 and expires 6 December 2026; unpatched versions remain blocked.
 
 ### Fixed
 

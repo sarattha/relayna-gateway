@@ -5,8 +5,9 @@ secrets, high or critical filesystem/image vulnerabilities, and Semgrep
 security findings as blocking by default.
 
 The production runtime's package reduction and all 12 CVEs reported in
-[issue #149 are documented separately](runtime-image-security.md). This change
-adds no vulnerability exception; image gates include unfixed findings.
+[issue #149 are documented separately](runtime-image-security.md). Image gates
+include unfixed findings. The v1.2.0 package replacement has the narrow,
+time-limited Debian-suite false-positive exception below.
 
 ## Exception Requirements
 
@@ -28,6 +29,7 @@ Each exception must include:
 
 | Finding | Owner | Reason | Tracking link | Expiration |
 | --- | --- | --- | --- | --- |
+| Trivy `CVE-2026-76844` and `CVE-2026-85091`, only `zlib1g` `1:1.3.dfsg+really1.3.2-4` on amd64/arm64 Debian 13.7 | Relayna Gateway maintainers | Debian identifies this exact unstable package as fixed by upstream commit `df84af25dc1942490e1d1c899a07619152a46148`. The image replaces the actual old library with checksum-pinned Debian payloads and retains genuine inventory; image checks verify every package file checksum and no stale library. Trivy's Debian 13 suite records still lack a stable fixed version. `.trivyignore-image.yaml` scopes both findings to exact versioned architecture PURLs. The unpatched image remains blocked; all other findings remain blocking. Remove when the base/DB incorporates the fix, or at expiry. | [Debian tracker](https://security-tracker.debian.org/tracker/source-package/zlib), [package/hash evidence](runtime-image-security.md#v120-zlib-update), [PR #146](https://github.com/sarattha/relayna-gateway/pull/146) | 2026-12-06 |
 | `RUSTSEC-2023-0071` | Relayna Gateway maintainers | Transitive `rsa` dependency enters through `sqlx-mysql` under SQLx macros; Gateway configures PostgreSQL only and does not expose MySQL RSA authentication. | https://rustsec.org/advisories/RUSTSEC-2023-0071 | 2026-08-31 |
 | `RUSTSEC-2024-0437` | Relayna Gateway maintainers | Transitive `protobuf` dependency enters through `prometheus` under `pingora-core`; Gateway exports its own bounded Prometheus text metrics and does not parse untrusted protobuf metrics payloads. | https://rustsec.org/advisories/RUSTSEC-2024-0437 | 2026-08-31 |
 | `RUSTSEC-2024-0388` | Relayna Gateway maintainers | Transitive `derivative` dependency enters through `pingora-core`; no direct Gateway code depends on it. Track upstream Pingora replacement or upgrade. | https://rustsec.org/advisories/RUSTSEC-2024-0388 | 2026-08-31 |
