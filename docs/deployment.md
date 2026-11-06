@@ -508,8 +508,17 @@ routing/authentication store work. Both listeners share the same limiter. Set
 these for the expected aggregate behind NAT or an ingress: Gateway intentionally
 does not interpret `X-Forwarded-For`, `X-Real-IP`, or `Forwarded` as a source
 identity. Source limits are per pod; replica counts multiply aggregate capacity.
-The 64-request admission cap and the two-worker/eight-waiter/250-ms Argon2 bounds
-are independent of body slots. Clients should honor `Retry-After` and add jitter.
+The 64-active-request admission cap permits 128 additional waiters for at most
+250 ms. This queue retains headers and connections but does not consume request
+bodies. It is independent of body slots and the two-worker/eight-waiter/250-ms
+Argon2 bounds. Identical virtual-key proofs share a verification job, with at
+most ten jobs, 63 followers per proof, 64 followers globally, and a one-second
+subscriber deadline. Current key state is still checked separately per request.
+These bounds can reject sustained traffic or many distinct cold keys; they do
+not reserve capacity for control-plane readiness. Liveness and metrics remain
+exempt. Monitor the cause-specific `gateway_auth_admission_events_total`
+counter alongside per-listener denials. Clients should honor `Retry-After` and
+add jitter.
 
 Enforce original-client request and connection limits at the trusted ingress as
 well. The existing nginx-compatible Ingress example sets 100 RPS, burst

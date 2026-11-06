@@ -1,3 +1,4 @@
+use crate::auth_admission::overload;
 use crate::errors::{GatewayError, GatewayResult};
 use argon2::{
     password_hash::{PasswordHash, PasswordVerifier},
@@ -5,6 +6,7 @@ use argon2::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use gateway_telemetry::{record_auth_admission_event, AuthAdmissionEvent};
 use std::{
     sync::Arc,
     time::{Duration as StdDuration, Instant},
@@ -15,6 +17,8 @@ use zeroize::Zeroizing;
 
 #[path = "verification_cache.rs"]
 mod verification_cache;
+#[path = "verification_flight.rs"]
+mod verification_flight;
 
 const RELAYNA_KEY_PREFIX: &str = "rk_live_";
 const LOOKUP_PREFIX_LEN: usize = 16;
@@ -29,7 +33,7 @@ const VERIFICATION_WAIT: StdDuration = StdDuration::from_millis(250);
 pub fn try_auth_lookup() -> GatewayResult<tokio::sync::SemaphorePermit<'static>> {
     AUTH_LOOKUP_SLOTS
         .try_acquire()
-        .map_err(|_| GatewayError::AuthenticationOverloaded)
+        .map_err(|_| overload(AuthAdmissionEvent::LookupFull))
 }
 
 /// All runtime key hashing/verification shares this executor across runtimes.
@@ -183,7 +187,7 @@ where
         let _lookup = self
             .lookup_slots
             .try_acquire()
-            .map_err(|_| GatewayError::AuthenticationOverloaded)?;
+            .map_err(|_| overload(AuthAdmissionEvent::LookupFull))?;
         let started = Instant::now();
         let current_time =
             || now + chrono::Duration::from_std(started.elapsed()).unwrap_or_default();
@@ -198,7 +202,7 @@ where
         if !verification_cache::contains(proof) {
             let raw_key = key.raw.clone();
             let key_hash = Zeroizing::new(stored.key_hash.clone());
-            run_key_crypto(move || {
+            verification_flight::verify(proof, move || {
                 if !verification_cache::contains(proof) {
                     verify_secret(&raw_key, &key_hash)?;
                     verification_cache::insert(proof);
@@ -216,6 +220,8 @@ where
                 return Err(GatewayError::InvalidVirtualKey);
             }
             stored = refreshed;
+        } else {
+            record_auth_admission_event(AuthAdmissionEvent::CacheHit);
         }
         let _ = self.store.mark_key_used(stored.id, current_time()).await;
 
@@ -250,11 +256,11 @@ async fn verify_in_background<T: Send + 'static>(
         Err(_) => {
             let _waiting = waiters
                 .try_acquire()
-                .map_err(|_| GatewayError::AuthenticationOverloaded)?;
+                .map_err(|_| overload(AuthAdmissionEvent::CryptoQueueFull))?;
             tokio::time::timeout(VERIFICATION_WAIT, slots.acquire())
                 .await
-                .map_err(|_| GatewayError::AuthenticationOverloaded)?
-                .map_err(|_| GatewayError::AuthenticationOverloaded)?
+                .map_err(|_| overload(AuthAdmissionEvent::CryptoTimeout))?
+                .map_err(|_| overload(AuthAdmissionEvent::CryptoQueueFull))?
         }
     };
     // JoinSet aborts jobs that have not started when the request is cancelled.
@@ -290,6 +296,108 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     static AUTH_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    #[tokio::test]
+    async fn cold_cohort_shares_one_job_and_each_follower_rechecks_current_state() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
+        for change in 0..7 {
+            let raw = format!("rk_live_{}", Uuid::new_v4().simple());
+            let value = stored(&raw);
+            let lookup = MemoryLookup {
+                value: Arc::new(Mutex::new(Some(value.clone()))),
+            };
+            let held = KEY_VERIFICATION_SLOTS.acquire_many(2).await.unwrap();
+            let mut requests = Vec::new();
+            for _ in 0..64 {
+                let raw = raw.clone();
+                let auth = Authenticator::new(lookup.clone());
+                requests.push(tokio::spawn(async move {
+                    auth.authenticate_raw_key(Some(&raw), Utc::now()).await
+                }));
+            }
+            tokio::time::timeout(StdDuration::from_millis(200), async {
+                while verification_flight::follower_count() != 63 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            // All 64 requests have completed their initial lookup, but only
+            // one leader has reserved a crypto waiter.
+            assert_eq!(KEY_VERIFICATION_WAITERS.available_permits(), 7);
+            let mut refreshed = value;
+            let expected = match change {
+                0 => {
+                    refreshed.disabled = true;
+                    Some(GatewayError::DisabledVirtualKey)
+                }
+                1 => {
+                    refreshed.revoked_at = Some(Utc::now());
+                    Some(GatewayError::RevokedVirtualKey)
+                }
+                2 => {
+                    refreshed.expires_at = Some(Utc::now());
+                    Some(GatewayError::ExpiredVirtualKey)
+                }
+                3 => {
+                    refreshed.key_hash.push('x');
+                    Some(GatewayError::InvalidVirtualKey)
+                }
+                4 => {
+                    refreshed.id = Uuid::new_v4();
+                    Some(GatewayError::InvalidVirtualKey)
+                }
+                5 => Some(GatewayError::InvalidVirtualKey),
+                _ => {
+                    refreshed.project_id = Some(Uuid::new_v4());
+                    None
+                }
+            };
+            let project = refreshed.project_id;
+            *lookup.value.lock().unwrap() = (change != 5).then_some(refreshed);
+            drop(held);
+            for request in requests {
+                let result = request.await.unwrap();
+                if let Some(expected) = &expected {
+                    assert_eq!(result, Err(expected.clone()));
+                } else {
+                    assert_eq!(result.unwrap().project_id, project);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelling_first_request_keeps_shared_work_and_wrong_secrets_separate() {
+        let _auth_test = AUTH_TEST_LOCK.lock().await;
+        let raw = format!("rk_live_{}", Uuid::new_v4().simple());
+        let lookup = MemoryLookup {
+            value: Arc::new(Mutex::new(Some(stored(&raw)))),
+        };
+        let held = KEY_VERIFICATION_SLOTS.acquire_many(2).await.unwrap();
+        let spawn = |secret: String| {
+            let auth = Authenticator::new(lookup.clone());
+            tokio::spawn(async move { auth.authenticate_raw_key(Some(&secret), Utc::now()).await })
+        };
+        let first = spawn(raw.clone());
+        while KEY_VERIFICATION_WAITERS.available_permits() != 7 {
+            tokio::task::yield_now().await;
+        }
+        let follower = spawn(raw.clone());
+        while verification_flight::follower_count() != 1 {
+            tokio::task::yield_now().await;
+        }
+        first.abort();
+        assert!(first.await.unwrap_err().is_cancelled());
+        let wrong = spawn(format!("{raw}_wrong"));
+        while KEY_VERIFICATION_WAITERS.available_permits() != 6 {
+            tokio::task::yield_now().await;
+        }
+        drop(held);
+        follower.await.unwrap().unwrap();
+        assert_eq!(wrong.await.unwrap(), Err(GatewayError::InvalidVirtualKey));
+        assert_eq!(verification_flight::follower_count(), 0);
+    }
 
     #[test]
     fn cancellation_aborts_crypto_queued_in_the_blocking_pool() {

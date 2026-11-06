@@ -797,7 +797,7 @@ async fn preauth_admission(
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
         .map(|peer| peer.0.ip());
-    let _permit = match admission.try_acquire(peer) {
+    let _permit = match admission.acquire(peer).await {
         Ok(permit) => permit,
         Err(error) => return error_response(request.headers(), error),
     };
@@ -10474,14 +10474,19 @@ mod tests {
     async fn admission_saturation_preserves_liveness_and_releases_capacity() {
         let admission = Arc::new(gateway_core::auth_admission::RequestAdmission::default());
         let app = router_with_state_and_admission(test_state(default_store()), admission.clone());
-        let permits: Vec<_> = (0..64)
-            .map(|_| admission.try_acquire(None).unwrap())
-            .collect();
+        let mut permits = Vec::new();
+        for _ in 0..64 {
+            permits.push(admission.acquire(None).await.unwrap());
+        }
         let request = |path: &str| {
             http::Request::builder()
                 .uri(path)
                 .header("authorization", "invalid")
-                .body(Body::empty())
+                .body(Body::from_stream(futures_util::stream::poll_fn(
+                    |_| -> std::task::Poll<Option<Result<axum::body::Bytes, std::io::Error>>> {
+                        panic!("admission and malformed-header denials must not poll the body")
+                    },
+                )))
                 .unwrap()
         };
         let denied = app
@@ -10499,7 +10504,14 @@ mod tests {
                 .status(),
             StatusCode::OK
         );
+        let queued = app.clone().oneshot(request("/admin-ui/admin/keys"));
+        tokio::pin!(queued);
+        tokio::select! {
+            result = &mut queued => panic!("request should wait for admission: {result:?}"),
+            () = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+        }
         drop(permits);
+        assert_eq!(queued.await.unwrap().status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
             app.oneshot(request("/admin-ui/admin/keys"))
                 .await

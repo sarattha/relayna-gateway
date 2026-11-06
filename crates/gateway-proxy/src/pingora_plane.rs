@@ -622,7 +622,7 @@ where
             .client_addr()
             .and_then(|addr| addr.as_inet())
             .map(|addr| addr.ip());
-        let _admission = match self.config.request_admission.try_acquire(peer) {
+        let _admission = match self.config.request_admission.acquire(peer).await {
             Ok(permit) => permit,
             Err(error) => {
                 respond_error(session, error, ctx).await?;

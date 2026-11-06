@@ -1,5 +1,6 @@
 //! Process-local admission before untrusted requests can reach stores or KDFs.
 use crate::{GatewayError, GatewayResult};
+use gateway_telemetry::{record_auth_admission_event, AuthAdmissionEvent};
 use http::HeaderMap;
 use std::{
     collections::HashMap,
@@ -13,12 +14,14 @@ pub const DEFAULT_SOURCE_RPS: usize = 100;
 pub const DEFAULT_SOURCE_BURST: usize = 200;
 const SOURCE_CAPACITY: usize = 4096;
 const SOURCE_TTL: Duration = Duration::from_secs(60);
+const REQUEST_WAIT: Duration = Duration::from_millis(250);
 pub const MAX_KEY_BYTES: usize = 1024;
 const MAX_CREDENTIAL_HEADER_BYTES: usize = 16 * 1024;
 
 #[derive(Debug)]
 pub struct RequestAdmission {
     slots: Semaphore,
+    waiters: Semaphore,
     sources: Mutex<Sources>,
     rps: usize,
     burst: usize,
@@ -49,6 +52,7 @@ impl RequestAdmission {
         }
         Ok(Self {
             slots: Semaphore::new(64),
+            waiters: Semaphore::new(128),
             sources: Mutex::new(Sources {
                 buckets: HashMap::new(),
                 last_prune: Instant::now(),
@@ -60,11 +64,22 @@ impl RequestAdmission {
 
     /// Only pass the transport peer, never an unvalidated forwarded header.
     /// Unknown peers share one bucket rather than bypassing enforcement.
-    pub fn try_acquire(&self, peer: Option<IpAddr>) -> GatewayResult<SemaphorePermit<'_>> {
+    pub async fn acquire(&self, peer: Option<IpAddr>) -> GatewayResult<SemaphorePermit<'_>> {
         self.check_source(peer, Instant::now())?;
-        self.slots
+        if let Ok(permit) = self.slots.try_acquire() {
+            return Ok(permit);
+        }
+        let _waiting = self
+            .waiters
             .try_acquire()
-            .map_err(|_| GatewayError::AuthenticationOverloaded)
+            .map_err(|_| overload(AuthAdmissionEvent::RequestQueueFull))?;
+        record_auth_admission_event(AuthAdmissionEvent::RequestQueued);
+        // No body is polled by the adapters until this returns. Cancellation
+        // drops both the queue reservation and semaphore acquisition future.
+        tokio::time::timeout(REQUEST_WAIT, self.slots.acquire())
+            .await
+            .map_err(|_| overload(AuthAdmissionEvent::RequestTimeout))?
+            .map_err(|_| overload(AuthAdmissionEvent::RequestQueueFull))
     }
 
     fn check_source(&self, peer: Option<IpAddr>, now: Instant) -> GatewayResult<()> {
@@ -75,7 +90,7 @@ impl RequestAdmission {
         let mut sources = self
             .sources
             .lock()
-            .map_err(|_| GatewayError::AuthenticationOverloaded)?;
+            .map_err(|_| overload(AuthAdmissionEvent::SourceCapacity))?;
         if now.duration_since(sources.last_prune) >= Duration::from_secs(1) {
             sources.buckets.retain(|_, bucket| {
                 let idle = now.duration_since(bucket.updated);
@@ -86,7 +101,7 @@ impl RequestAdmission {
         }
         // Never evict an active bucket to make room for an attacker-chosen IP.
         if !sources.buckets.contains_key(&peer) && sources.buckets.len() >= SOURCE_CAPACITY {
-            return Err(GatewayError::AuthenticationOverloaded);
+            return Err(overload(AuthAdmissionEvent::SourceCapacity));
         }
         let bucket = sources.buckets.entry(peer).or_insert(Bucket {
             tokens: self.burst as f64,
@@ -97,11 +112,17 @@ impl RequestAdmission {
             .min(self.burst as f64);
         bucket.updated = now;
         if bucket.tokens < 1.0 {
+            record_auth_admission_event(AuthAdmissionEvent::SourceRate);
             return Err(GatewayError::SourceRateLimitExceeded);
         }
         bucket.tokens -= 1.0;
         Ok(())
     }
+}
+
+pub(crate) fn overload(event: AuthAdmissionEvent) -> GatewayError {
+    record_auth_admission_event(event);
+    GatewayError::AuthenticationOverloaded
 }
 
 /// Cheap credential checks shared by HTTP adapters before routing/store work.
@@ -196,18 +217,56 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn admission_is_fail_fast_and_releases_on_drop() {
-        let admission = RequestAdmission::default();
-        let permits: Vec<_> = (0..64)
-            .map(|_| admission.try_acquire(None).unwrap())
-            .collect();
+    #[tokio::test]
+    async fn admission_queue_is_bounded_and_releases_on_timeout_and_cancellation() {
+        let admission = std::sync::Arc::new(RequestAdmission::new(1_000_000, 1_000_000).unwrap());
+        let permits = admission.slots.acquire_many(64).await.unwrap();
+        let mut jobs = Vec::new();
+        for _ in 0..128 {
+            let admission = admission.clone();
+            jobs.push(tokio::spawn(async move {
+                admission.acquire(None).await.map(drop)
+            }));
+        }
+        while admission.waiters.available_permits() != 0 {
+            tokio::task::yield_now().await;
+        }
         assert_eq!(
-            admission.try_acquire(None).unwrap_err(),
+            admission.acquire(None).await.unwrap_err(),
             GatewayError::AuthenticationOverloaded
         );
+        let cancelled = jobs.pop().unwrap();
+        cancelled.abort();
+        assert!(cancelled.await.unwrap_err().is_cancelled());
+        assert_eq!(admission.waiters.available_permits(), 1);
+        for job in jobs {
+            assert_eq!(
+                job.await.unwrap(),
+                Err(GatewayError::AuthenticationOverloaded)
+            );
+        }
+        assert_eq!(admission.waiters.available_permits(), 128);
         drop(permits);
-        assert!(admission.try_acquire(None).is_ok());
+        assert!(admission.acquire(None).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn queued_request_uses_released_capacity_but_sources_are_checked_first() {
+        let admission = std::sync::Arc::new(RequestAdmission::new(1, 1).unwrap());
+        let held = admission.slots.acquire_many(64).await.unwrap();
+        let queued = admission.clone();
+        let job = tokio::spawn(async move { queued.acquire(None).await.map(drop) });
+        while admission.waiters.available_permits() == 128 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            admission.acquire(None).await.unwrap_err(),
+            GatewayError::SourceRateLimitExceeded
+        );
+        drop(held);
+        job.await.unwrap().unwrap();
+        assert_eq!(admission.waiters.available_permits(), 128);
+        assert_eq!(admission.slots.available_permits(), 64);
     }
 
     #[test]

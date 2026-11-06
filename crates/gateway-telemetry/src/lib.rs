@@ -2,7 +2,9 @@ use serde_json::{json, Value};
 use tracing::{field, Span};
 use tracing_subscriber::{filter::Directive, fmt, EnvFilter};
 
+mod auth_admission;
 pub mod runtime;
+pub use auth_admission::{record_auth_admission_event, AuthAdmissionEvent};
 mod runtime_process;
 pub use runtime::{
     merge_runtime_snapshots, runtime_request_started, runtime_snapshot, RuntimeOutcome,
@@ -266,8 +268,8 @@ pub fn record_auth_failure(reason: &str) {
 }
 
 pub fn record_auth_admission_rejection(listener: &str, reason: &str) {
-    // Admission runs before route resolution. Use the bounded listener name
-    // so control-plane readiness probes do not contaminate proxy accounting.
+    // Legacy listener totals also include inner authentication overloads.
+    // Cause-specific events are recorded separately at the admission decision.
     increment_denial_metric("auth_admission", listener, reason);
 }
 
@@ -463,6 +465,7 @@ gateway_circuit_transitions_total {}
     );
     render_request_metrics(&mut metrics);
     render_denial_metrics(&mut metrics);
+    auth_admission::render(&mut metrics);
     render_provider_fallback_metrics(&mut metrics);
     render_circuit_state_metrics(&mut metrics);
     render_histograms(&mut metrics);

@@ -40,8 +40,11 @@ flowchart LR
    header derived from the selected upstream.
 8. A usage event is written for success and failure paths with request, project, route, provider, latency, status, token, and cost fields when available.
 
-Before routing or store access, both HTTP listeners share a fail-fast admission
-limit of 64 requests per process. The proxy releases this permit after its
+Before routing or store access, both HTTP listeners share an admission limit of
+64 active requests per process. At most 128 additional requests may wait, FIFO,
+for up to 250 ms. The source limiter runs before joining this queue; queued
+requests do not poll their bodies. Header, parser, and socket memory still exist
+while waiting, so this is not a total connection or memory limit. The proxy releases this permit after its
 request filter, before body upload and provider streaming. Control-plane
 handlers hold it through request extraction and handler completion. Exact
 static assets, liveness, and the in-memory metrics export are exempt. Authentication,
@@ -56,15 +59,29 @@ bypassing authentication admission; historical denial detail can be absent under
 load. Authenticated usage recording retains its existing behavior.
 
 Virtual-key and operator-token Argon2 verification, plus runtime key generation,
-share two blocking workers per process. At most eight jobs can wait for a worker,
+share two blocking workers per process. At most eight distinct verification jobs can wait for a worker,
 for at most 250 ms. Queue saturation or expiry returns
 `503 authentication_overloaded`, with `Retry-After: 1`; it does not classify the credential as invalid. Cancellation releases a queued
-permit; started CPU work retains its worker permit until completion. These are
+request permit; started CPU work retains its worker permit until completion. These are
 resource bounds, not throughput guarantees. Cold virtual-key verification
 reloads state and checks expiry at completion; a changed ID/hash fails closed,
 and a changed project is reflected in the returned identity. Operator state
 changes during verification also fail closed. These checks narrow the race with
 revocation; they do not lock identity state for a whole upstream request.
+
+Concurrent cold virtual-key requests with the same process-HMAC proof share one
+verification job **before** competing for crypto capacity. The proof binds the
+key ID, presented secret, and full stored hash; a wrong secret or changed hash
+cannot join a valid job. There are at most ten shared jobs, 63 followers per
+proof and 64 followers across all proofs. Each subscriber waits at most one
+second. Cancelling the first request does not cancel work needed by followers;
+the bounded job completes even if all subscribers leave. A stalled blocking job
+continues to hold its worker permit. Completion, panic, or runtime shutdown
+removes its registry entry and wakes subscribers. Every successful cold
+subscriber independently reloads and validates current database state, including
+project changes, before authorization. Failures are shared only with current
+subscribers and are never cached. Operator tokens and key generation retain the
+same executor without proof sharing.
 
 Successful virtual-key secret verification can be reused for 60 seconds within
 one process, up to 1,024 proofs. Each proof binds the key ID, presented secret,
@@ -92,8 +109,18 @@ capacity receive an authentication-capacity 503. Source exhaustion returns
 disable a key. See [deployment controls](deployment.md#authentication-abuse-and-memory-protection)
 for trusted ingress, NAT sizing, and Linux dump protection.
 
-Pre-routing admission counters use `gateway_denials_total{kind="auth_admission"}`
-with `route="proxy"` or `route="control"` to distinguish the two listeners.
+The existing `gateway_denials_total{kind="auth_admission"}` counters use
+`route="proxy"` or `route="control"` to distinguish listeners. They also include
+inner authentication overloads and overlap `kind="auth"`; do not add these
+series to count unique rejected requests. The additive
+`gateway_auth_admission_events_total{event="..."}` records the originating
+capacity decision: `request_queue_full`, `request_timeout`, `source_capacity`,
+`source_rate`, `lookup_full`, `crypto_queue_full`, `crypto_timeout`,
+`proof_capacity`, `proof_timeout`, or `proof_unavailable`. `request_queued`,
+`proof_leader`, `proof_shared`, and `cache_hit` describe admission work. These are
+process-wide events with fixed labels and no credential identifiers. A shared
+job's crypto rejection is counted once even if multiple subscribers receive a
+503; subscriber timeouts are counted individually.
 Control-plane readiness probes can be denied during saturation; those denials
 must not be attributed to proxy clients. Resource-free liveness remains exempt.
 
