@@ -8,7 +8,17 @@ partial cluster observations. See [Gateway monitoring and scalable Usage](operat
 
 Monitor → Traffic shows live request timelines, failure reasons and saved history. See [Traffic Monitor](operations/traffic-monitor.md) for operation and retention details.
 
-This page summarizes the **v1.0.0** feature set. Start with the [current console tour](v1.0.0.md), covering all three operational workspaces.
+Version **1.2.0** adds bounded authentication queues, short-lived secret proofs
+with current-state reads, shared cold verification and Linux dump protection.
+Optional size-aware/elastic body admission packs mixed request sizes into a
+working-byte budget; a separate upstream limit bounds open requests/streams.
+Request-local analysis/policy reuse, Redis script paths and shared guardrail
+HTTP connections reduce repeated work. See [architecture](architecture.md),
+[mixed-body operation](operations.md#mixed-body-sizes) and the
+[1.2.0 upgrade guide](deployment.md#upgrade-to-120).
+
+The [console tour](v1.0.0.md) covers the operational workspaces introduced in
+v1.0.0 and retained by the current feature set.
 
 Retained from 0.1.49: build/test tooling requires patched Node.js 24.x/26.x versions
 for CVE-2026-111497. Local, test-harness, and benchmark helpers use Node.js

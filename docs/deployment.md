@@ -6,9 +6,46 @@ Source builds now use a digest-pinned Debian 13 Distroless runtime for
 [issue #149's OS-package remediation](runtime-image-security.md). UID/GID
 10001, listeners, configuration and data contracts are preserved. The image has
 no shell or package manager; use an external debug container for diagnostics.
-Published v1.0.1 images retain their original contents. Replace them with the
-v1.0.2 image after publication; see the
+Published v1.0.1 images retain their original contents. Use the current released
+image; see the
 [triage and verification procedure](runtime-image-security.md).
+
+## Upgrade to 1.2.0
+
+Version 1.2.0 adds bounded authentication, reusable secret proofs and optional
+size-aware/elastic admission. It advances two minor versions from v1.0.2 for
+the combined request-processing and admission changes. Public routes, key
+formats, policy, usage, PostgreSQL schemas and Redis accounting state remain
+compatible with v1.0.2; no migration or state reset is required.
+
+1. After release validation and publication, drain and replace replicas with
+   `ghcr.io/sarattha/relayna-gateway:1.2.0`. Retain the existing database, Redis
+   counters, secrets and mounted certificates. The Distroless runtime and
+   UID/GID 10001 remain unchanged.
+2. Review [authentication abuse and memory protection](#authentication-abuse-and-memory-protection).
+   Limits use the actual transport peer, so ingress/NAT can aggregate clients
+   into one 100 requests/s, burst 200 bucket. Use the documented source-rate
+   controls for your ingress. Authentication may queue for 250 ms, then return
+   a capacity 503; source exhaustion returns 429. Both include `Retry-After: 1`.
+3. Verify Linux permits core-dump and process-dumpability protection at startup.
+   Debuggers and process dumps are intentionally restricted. These controls do
+   not protect secrets from a host administrator or arbitrary in-process code.
+4. Keep the default eight body slots and 512 MiB serialized-body budget until
+   workload-specific measurements justify changes. To enable size-aware or
+   elastic mode, follow [mixed-body configuration](operations.md#mixed-body-sizes).
+   The elastic request ceiling is a safety bound, not a guaranteed simultaneous
+   request count; byte estimates require process-memory headroom.
+5. Check readiness, valid/invalid/disabled key behavior, HTTP/SSE and configured
+   WebSocket routes, Usage and the authentication admission counters. Warm
+   proofs still read current key state on every request. Distinguish request
+   queue decisions from overlapping legacy denial counters.
+
+Rollback to v1.0.2 requires no data conversion. Drain requests and remove the
+new optional admission/source settings before restoring the earlier binary;
+its authentication limits and proof reuse differ. The existing five-minute
+Pingora grace and example manifest's 45-second termination grace still require
+care when draining. See [1.2.0 validation](benchmarks/v1.2.0.md) for measured
+limits and evidence; previous PR studies do not establish this release's capacity.
 
 ## Upgrade to 1.0.2
 

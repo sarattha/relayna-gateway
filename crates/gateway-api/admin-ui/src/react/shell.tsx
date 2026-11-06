@@ -163,7 +163,7 @@ export function ConsoleShell() {
                   className="version-indicator"
                   aria-label="Current Relayna Gateway version"
                 >
-                  v1.0.2
+                  v1.2.0
                 </span>
               </span>
               <small className="brand-tagline">{brandIdentity.taglines.Gateway}</small>

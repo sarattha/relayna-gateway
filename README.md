@@ -120,7 +120,15 @@ The Rust verification helper runs formatting, workspace Clippy/tests and the req
 
 ## Releases and performance evidence
 
-[v1.0.2 validation](docs/benchmarks/v1.0.2.md) · [v1.0.1 validation](docs/benchmarks/v1.0.1.md) · [v1.0.0 validation](docs/benchmarks/v1.0.0.md) · [v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
+[v1.2.0 validation](docs/benchmarks/v1.2.0.md) · [v1.0.2 validation](docs/benchmarks/v1.0.2.md) · [v1.0.1 validation](docs/benchmarks/v1.0.1.md) · [v1.0.0 validation](docs/benchmarks/v1.0.0.md) · [v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
+
+Version **1.2.0** adds bounded authentication with reusable secret proofs and
+optional size-aware/elastic body admission, alongside request-analysis,
+storage and connection reuse. Current key state remains checked per request;
+body-byte and upstream limits bound distinct resources. See the
+[upgrade guide](docs/deployment.md#upgrade-to-120) for source limits, Linux dump
+protection and opt-in configuration. Its fresh release validation must complete
+before publication; the earlier PR comparisons cover different runtime commits.
 
 Version **1.0.2** prepares the runtime image remediation for issue #149 with a
 digest-pinned Debian 13 Distroless image, runtime-image functional checks and

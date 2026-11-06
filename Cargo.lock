@@ -999,7 +999,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-api"
-version = "1.0.2"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "1.0.2"
+version = "1.2.0"
 dependencies = [
  "argon2",
  "async-trait",
@@ -1061,7 +1061,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-proxy"
-version = "1.0.2"
+version = "1.2.0"
 dependencies = [
  "async-trait",
  "base64",
@@ -1088,7 +1088,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "1.0.2"
+version = "1.2.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1105,7 +1105,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-telemetry"
-version = "1.0.2"
+version = "1.2.0"
 dependencies = [
  "serde",
  "serde_json",

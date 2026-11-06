@@ -12,6 +12,7 @@ establish a new capacity result.
 
 | Version | Runtime architecture | Coverage | Results |
 | --- | --- | --- | --- |
+| v1.2.0 | Pending fresh native execution | Release gate pending; prior PR evidence is not a substitute | [Validation record](v1.2.0.md) |
 | v1.0.2 | Native amd64 partial runs | Owner waived completion; no completed six-size resource study or new capacity claim | [Validation and waiver](v1.0.2.md) |
 | v1.0.1 | Native amd64, separate hosted runners | 212 fresh-pod trials; six sizes, three clean confirmations each; finite bounds and retained OOMs | [Versioned results](v1.0.1.md) |
 | v1.0.0 | Native arm64 | Full six-size study, 179 resource trials, matched latency and ten-minute protocol checks | [Results and evidence](v1.0.0.md) |
