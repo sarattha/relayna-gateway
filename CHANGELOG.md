@@ -4,6 +4,49 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+## 1.0.2 - 2026-11-04
+
+### Fixed
+
+- Remediate the runtime OS-package findings tracked in
+  [#149](https://github.com/sarattha/relayna-gateway/issues/149) with a
+  digest-pinned Debian 13 Distroless runtime and matching Debian 13 builder.
+  Omit unused distribution utilities while retaining glibc, OpenSSL, CA roots
+  and GCC runtime libraries. Document applicability of all 12 reported CVEs.
+
+### Changed
+
+- Test the actual production image with fresh PostgreSQL/Redis, portal RSA
+  certificate loading, HTTP/SSE/WebSocket/TLS forwarding, authentication
+  denials, Usage, monitoring and graceful shutdown. Block CI and release image
+  scans on all High/Critical dispositions, including unfixed findings.
+- Mount digest-pinned static sampler tools only in benchmark pods so release
+  measurements continue to use the production image without an embedded shell.
+  Record the changed sampler method and timestamp resolution in provenance.
+
+### Compatibility and upgrade
+
+- Preserve public routes, authentication, policy, usage, configuration, ports,
+  UID/GID 10001 and glibc allocator tuning. No database or Redis migration is
+  required. Body-admission defaults remain eight slots and 512 MiB per process.
+- The runtime has no shell or package manager; use external debug containers
+  for diagnostics. The existing five-minute Pingora SIGTERM grace exceeds the
+  deployment manifest's 45-second grace; this separate mismatch is documented.
+- Earlier packaging scans cleared all 12 reported CVE IDs and all High/Critical
+  records, with 36 Medium and 8 Low records retained per image. Full scan
+  evidence and current results accompany release validation.
+
+### Release validation
+
+- The owner explicitly waived benchmark completion for v1.0.2 on 4 November
+  2026 and requested stopping the remaining runs. No completed six-size resource
+  study, new capacity limit or release-to-release performance claim is made.
+  The completed same-runner comparison and interrupted work remain identified
+  in [v1.0.2 validation](https://sarattha.github.io/relayna-gateway/benchmarks/v1.0.2/).
+- Full repository verification, UI checks, actual-image protocol/TLS/auth checks,
+  image vulnerability gates and continuous ten-minute monitoring/Usage checks
+  pass on the runtime candidate. Final-head CI and merge gates still apply.
+
 ## 1.0.1 - 2026-10-27
 
 ### Changed

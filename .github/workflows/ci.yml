@@ -81,6 +81,31 @@ jobs:
         if: steps.cargo.outputs.present != 'true'
         run: echo "No Cargo.toml found yet; skipping Rust workspace checks."
 
+  runtime-image:
+    name: runtime image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build production runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: relayna-gateway:ci
+          cache-from: type=gha,scope=runtime-image
+          cache-to: type=gha,mode=max,scope=runtime-image
+      - name: Verify runtime compatibility
+        run: python3 tests/e2e/runtime-image/run.py --image relayna-gateway:ci
+      - name: Scan all image vulnerability dispositions
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: relayna-gateway:ci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: false
+
   security:
     name: security
     runs-on: ubuntu-latest

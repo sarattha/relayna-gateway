@@ -12,6 +12,7 @@ from unittest.mock import patch
 import benchmark
 import capacity_report as report
 import capacity_sweep as sweep
+import run as runner
 
 
 def trial(slots=8, cohort=32, stable=True, oom=False, **extra):
@@ -159,6 +160,17 @@ class AdmissionAccounting(unittest.TestCase):
 
 
 class Orchestration(unittest.TestCase):
+    def test_shellless_production_image_gets_benchmark_tools_only_by_mount(self):
+        spec = runner.deployment("gateway", "production@sha256:fixture")["spec"]["template"]["spec"]
+        gateway = spec["containers"][0]
+        self.assertEqual(gateway["image"], "production@sha256:fixture")
+        self.assertNotIn("command", gateway)
+        self.assertTrue(gateway["volumeMounts"][0]["readOnly"])
+        tools = spec["initContainers"][0]
+        self.assertEqual(tools["image"], runner.SAMPLER_IMAGE)
+        self.assertEqual(tools["command"][-1], runner.SAMPLER_TOOL)
+        self.assertNotIn("initContainers", runner.deployment("postgres", "postgres:16-alpine")["spec"]["template"]["spec"])
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

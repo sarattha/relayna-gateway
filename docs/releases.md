@@ -1,5 +1,17 @@
 # Releases
 
+Version **1.0.2** prepares the runtime image remediation for
+[issue #149](https://github.com/sarattha/relayna-gateway/issues/149). It uses a
+digest-pinned Debian 13 Distroless runtime, image-level protocol/TLS/auth checks,
+and image gates that include unfixed High/Critical findings. Public application
+contracts and UID/GID 10001 are preserved; no data migration is required.
+Operators use external debug containers because the image omits shell tools.
+The owner explicitly waived benchmark completion for this release; the
+[v1.0.2 validation record](benchmarks/v1.0.2.md) documents the waiver, completed
+checks and interrupted runs. Final-head CI and merge gates still apply.
+See [upgrade guidance](deployment.md#upgrade-to-102)
+and [CVE triage](runtime-image-security.md).
+
 Version **1.0.1** refreshes console typography, monitoring readability and
 patched Pingora/compression dependencies. Its [fresh native amd64 validation](benchmarks/v1.0.1.md)
 completed 212 fresh-pod trials across all six body sizes, with three clean
@@ -32,6 +44,10 @@ and versioned results before release. See the [benchmark history and release
 protocol](benchmarks/index.md). The [v0.1.49 results](benchmarks/v0.1.49.md)
 establish the initial six-size native amd64 resource baseline, including memory,
 latency, admission outcomes and raw evidence.
+
+Version 1.0.2 has an explicit owner waiver dated 4 November 2026. It does not
+claim completion of the usual six-size resource study or change the default
+policy for future releases.
 
 Version `0.1.49` excludes Node.js releases affected by CVE-2026-111497 from
 build/test tooling and helper containers. npm enforces patched 24.x/26.x
@@ -188,7 +204,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v1.0.1
+   python3 scripts/validate-release-metadata.py v1.0.2
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -206,7 +222,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:1.0.1 .
+   docker build -t relayna-gateway:1.0.2 .
    ```
 
 5. Commit the final runtime candidate, run the fresh six-size adaptive benchmark
@@ -220,8 +236,8 @@ avoids changing the required lint baseline whenever the stable channel moves.
 7. Create and push the tag at the merged release commit:
 
    ```bash
-   git tag -a v1.0.1 -m "Release v1.0.1"
-   git push origin v1.0.1
+   git tag -a v1.0.2 -m "Release v1.0.2"
+   git push origin v1.0.2
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -231,10 +247,10 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v1.0.1`, the workflow publishes:
+For `v1.0.2`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:1.0.1
+ghcr.io/sarattha/relayna-gateway:1.0.2
 ghcr.io/sarattha/relayna-gateway:1.0
 ghcr.io/sarattha/relayna-gateway:latest
 ```

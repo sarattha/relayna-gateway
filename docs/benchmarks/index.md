@@ -6,8 +6,13 @@ release is tagged/published. This includes patch, security, documentation and
 tooling releases. [Contributor requirements](https://github.com/sarattha/relayna-gateway/blob/main/AGENTS.md#mandatory-benchmarks-for-every-version-bump)
 define the release gate.
 
+The owner explicitly waived completion for [v1.0.2](v1.0.2.md) on 4 November
+2026. That release-specific exception does not change the default policy or
+establish a new capacity result.
+
 | Version | Runtime architecture | Coverage | Results |
 | --- | --- | --- | --- |
+| v1.0.2 | Native amd64 partial runs | Owner waived completion; no completed six-size resource study or new capacity claim | [Validation and waiver](v1.0.2.md) |
 | v1.0.1 | Native amd64, separate hosted runners | 212 fresh-pod trials; six sizes, three clean confirmations each; finite bounds and retained OOMs | [Versioned results](v1.0.1.md) |
 | v1.0.0 | Native arm64 | Full six-size study, 179 resource trials, matched latency and ten-minute protocol checks | [Results and evidence](v1.0.0.md) |
 | v0.1.49 | Native amd64 | Full 5/10/20/40/80/100 MiB resource search; 217 trials | [Results and interactive report](v0.1.49.md) |
