@@ -1,0 +1,8 @@
+# These tests use full-cost Argon2 and the production admission deadlines.
+# Nextest runs each test in its own process, so AUTH_TEST_LOCK cannot prevent
+# concurrent crypto tests from exhausting a small CI runner's CPU budget.
+# Reserve the runner while each auth test executes; retain its internal
+# concurrency, real hashing costs, and overload/deadline assertions.
+[[profile.default.overrides]]
+filter = 'package(gateway-core) & test(/^auth::tests::/)'
+threads-required = "num-test-threads"
