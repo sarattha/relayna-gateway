@@ -149,7 +149,7 @@ jobs:
         run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437 --ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0381
 
       - name: Check dependency policy
-        run: cargo deny check
+        run: cargo deny --workspace --all-features --locked check
 
       - name: Check unused Rust dependencies
         run: cargo machete
@@ -167,9 +167,11 @@ jobs:
           ignore-unfixed: true
 
       - name: Detect committed secrets
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Match local verification and support .gitleaks.toml global allowlists.
+          GITLEAKS_VERSION: "8.30.1"
 
       - name: Run Semgrep
         uses: semgrep/semgrep-action@v1

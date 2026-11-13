@@ -87,15 +87,15 @@ check: ## Run format, lint, and test checks
 
 .PHONY: security-rust
 security-rust: ## Run Rust dependency and nextest security-oriented checks
-	cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437
-	cargo deny check
+	cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437 --ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0381
+	cargo deny --workspace --all-features --locked check
 	cargo machete
 	cargo nextest run --workspace --all-features
 
 .PHONY: security-fs
 security-fs: ## Run repository filesystem, secret, and static-analysis checks
 	trivy fs --severity HIGH,CRITICAL --exit-code 1 --skip-dirs target --skip-dirs site .
-	gitleaks detect --source . --redact --log-opts=HEAD
+	gitleaks detect --source . --redact --log-opts='--full-history HEAD'
 	semgrep scan --config .semgrep.yml
 
 .PHONY: security-image
