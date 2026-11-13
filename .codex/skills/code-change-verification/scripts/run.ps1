@@ -46,5 +46,10 @@ Invoke-Step -Label "cargo test --workspace --all-features" -Command { cargo test
 Invoke-Step -Label "cargo test --manifest-path vendor/pingora-header-serde/Cargo.toml" -Command {
     cargo test --manifest-path vendor/pingora-header-serde/Cargo.toml
 }
+Invoke-Step -Label "cargo test --manifest-path vendor/sqlx-sqlite/Cargo.toml --features bundled (self-patch)" -Command {
+    cargo test --manifest-path vendor/sqlx-sqlite/Cargo.toml --features bundled --config 'patch.crates-io.sqlx-sqlite.path="vendor/sqlx-sqlite"'
+}
+# The standalone check resolves a temporary test graph; audit the workspace lock.
+Remove-Item -LiteralPath "vendor/sqlx-sqlite/Cargo.lock" -ErrorAction SilentlyContinue
 
 Write-Host "code-change-verification: all commands passed."

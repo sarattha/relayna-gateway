@@ -1,3 +1,5 @@
 # Preserve byte-identical third-party license text and HTTP header fixtures.
 **/Manrope-OFL.txt -whitespace
 vendor/pingora-header-serde/samples/test/* -whitespace
+# Preserve upstream Rustdoc hard line breaks without editing vendored source.
+vendor/sqlx-sqlite/src/connection/serialize.rs -whitespace

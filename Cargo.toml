@@ -7,12 +7,15 @@ members = [
     "crates/gateway-telemetry",
 ]
 resolver = "2"
-exclude = ["vendor/pingora-header-serde"]
+exclude = ["vendor/pingora-header-serde", "vendor/sqlx-sqlite"]
 
 [patch.crates-io]
 # Pingora 0.9's header codec still pins vulnerable pre-0.14 zstd bindings.
 # Keep upstream codec code unchanged; update only its compression dependencies.
 pingora-header-serde = { path = "vendor/pingora-header-serde" }
+# Keep SQLx 0.8's optional SQLite driver source unchanged while permitting
+# bindings with the SQLite security fixes; Gateway runtime uses PostgreSQL.
+sqlx-sqlite = { path = "vendor/sqlx-sqlite" }
 
 [workspace.package]
 version = "1.2.0"
