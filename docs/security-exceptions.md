@@ -60,6 +60,12 @@ upstream installers. Then run:
 make security
 ```
 
+Git secret checks scan the complete history reachable from `HEAD`, including
+inherited commits. This is the history published by a normal branch push.
+Private local recovery or orchestration checkpoint refs remain intact and are
+outside this publishing check. Scanner rules and existing historical-finding
+exceptions still apply to every reachable commit.
+
 For image scanning, build an image and pass its tag explicitly:
 
 ```bash

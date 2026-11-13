@@ -38,7 +38,8 @@ run_step cargo deny check
 run_step cargo machete
 run_step cargo nextest run --workspace --all-features
 run_step trivy fs --severity HIGH,CRITICAL --exit-code 1 --skip-dirs target --skip-dirs site .
-run_step gitleaks detect --source . --redact
+# Scan all history being published, without including private recovery refs.
+run_step gitleaks detect --source . --redact --log-opts=HEAD
 run_step semgrep scan --config .semgrep.yml
 
 echo "code-change-verification: all commands passed."
