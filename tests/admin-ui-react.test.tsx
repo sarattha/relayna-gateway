@@ -29,7 +29,8 @@ import {
   THEME_CHANGE_EVENT,
   THEME_STORAGE_KEY,
 } from "../crates/gateway-api/admin-ui/src/theme-preference";
-import { UserTokenForwarding } from "../crates/gateway-api/admin-ui/src/react/user-token-forwarding";
+import { UserTokenForwarding, mountUserTokenForwarding } from "../crates/gateway-api/admin-ui/src/react/user-token-forwarding";
+import { LiteLlmCustomerSpend, customerSpendDates, mountLiteLlmCustomerSpend } from "../crates/gateway-api/admin-ui/src/react/litellm-customer-spend";
 import {
   Button,
   Dialog,
@@ -1117,5 +1118,281 @@ describe("Accessa user token forwarding", () => {
     expect(data.get("user_token_header")).toBe("x-employee-identity");
     expect(data.get("user_token_configured")).toBe("true");
     expect(container.querySelector('input[type="password"]')).toBeNull();
+  });
+  it("mounts forwarding configuration and only releases its React root when its host is removed", async () => {
+    for (const configured of [false, true]) {
+      const host = document.createElement("div");
+      if (configured) host.dataset.userTokenForwarding = JSON.stringify({ enabled: true, header: "x-employee-identity" });
+      document.body.append(host);
+      await act(async () => { mountUserTokenForwarding(host); });
+      expect((within(host).getByRole("checkbox", { name: "Forward verified user token" }) as HTMLInputElement).checked).toBe(configured);
+      const marker = document.createElement("span");
+      await act(async () => { document.body.append(marker); });
+      expect(host.childElementCount).toBeGreaterThan(0);
+      await act(async () => { host.remove(); });
+      await waitFor(() => expect(host.childElementCount).toBe(0));
+      marker.remove();
+    }
+  });
+});
+
+describe("LiteLLM customer costs", () => {
+  const range = { from: "2026-11-12T23:00:00Z", to: "2026-11-13T04:00:00Z" };
+  const snapshot = (overrides = {}) => ({
+    key_id: "gateway-key", status: "available" as const, mapping_scope: "key" as const,
+    page: 1, page_size: 50, has_more: false, customers_checked: 2, customer_id: null as string | null,
+    customers: [{ customer_id: '<customer&one>', spend_usd: 0.00001234, requests: 3 }, { customer_id: "customer-zero", spend_usd: 0, requests: 1 }],
+    start_date: "2026-11-12", end_date: "2026-11-13", fetched_at: "2026-11-13T05:00:00Z", ...overrides,
+  });
+  const exportActions = { onExport: async () => {}, onCopyExport: async () => {} };
+  const loadButton = () => screen.getByRole("button", { name: "Load customer costs" });
+  it("uses UTC days and a bounded 30-day default for All time", () => {
+    expect(customerSpendDates("2026-11-12T23:00:00-07:00", "2026-11-14T01:00:00+07:00")).toEqual({ start_date: "2026-11-13", end_date: "2026-11-13" });
+    const defaults = customerSpendDates();
+    expect((Date.parse(defaults.end_date) - Date.parse(defaults.start_date)) / 86400000).toBe(29);
+  });
+  it("loads only on request, preserves tiny and zero costs, and renders customer IDs as text", async () => {
+    const api = vi.fn(async () => snapshot());
+    const { container } = render(<LiteLlmCustomerSpend keyId="gateway/key" {...range} {...exportActions} api={api} />);
+    expect(api).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("From (UTC day)") as HTMLInputElement).value).toBe("2026-11-12");
+    fireEvent.click(loadButton());
+    await screen.findByRole("table");
+    expect(api.mock.calls[0][0]).toBe("/admin-ui/admin/keys/gateway%2Fkey/litellm-customer-spend?start_date=2026-11-12&end_date=2026-11-13&page=1&page_size=50");
+    expect(screen.getByRole("rowheader", { name: '<customer&one>' })).toBeTruthy();
+    expect(container.querySelector("customer")).toBeNull();
+    expect(screen.getByText("$0.00001234")).toBeTruthy();
+    expect(screen.getByText("$0.0000")).toBeTruthy();
+    expect(screen.getByText(/other Usage filters do not apply/)).toBeTruthy();
+  });
+  it("distinguishes empty customer data, missing mapping, upstream unavailable, and read failure", async () => {
+    const api = vi.fn()
+      .mockResolvedValueOnce(snapshot({ customers: [], mapping_scope: "project" }))
+      .mockResolvedValueOnce(snapshot({ status: "not_mapped", customers: [], fetched_at: null }))
+      .mockResolvedValueOnce(snapshot({ status: "unavailable", customers: [], fetched_at: null }))
+      .mockRejectedValueOnce(new Error("private upstream error"))
+      .mockResolvedValueOnce(snapshot());
+    render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} {...exportActions} api={api} />);
+    fireEvent.click(loadButton());
+    await screen.findByText(/No activity recorded/);
+    expect(screen.getByText(/Shared project mapping/)).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
+    fireEvent.click(loadButton());
+    await screen.findByText(/No enabled LiteLLM credential mapping/);
+    expect(screen.queryByText(/No activity recorded/)).toBeNull();
+    fireEvent.click(loadButton());
+    await screen.findByText(/Customer costs unavailable/);
+    fireEvent.click(loadButton());
+    await screen.findByText(/permission to read the customer directory/);
+    expect(screen.queryByText(/private upstream error/)).toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+    fireEvent.click(loadButton());
+    await screen.findByRole("table");
+  });
+  it("validates the inclusive range and clears old data when dates change", async () => {
+    const api = vi.fn(async () => snapshot());
+    render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} {...exportActions} api={api} />);
+    fireEvent.click(loadButton());
+    await screen.findByRole("table");
+    fireEvent.change(screen.getByLabelText("From (UTC day)"), { target: { value: "2025-11-12" } });
+    expect(screen.queryByRole("table")).toBeNull();
+    fireEvent.click(loadButton());
+    expect(screen.getByText(/1–366 inclusive UTC days/)).toBeTruthy();
+    expect(api).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByLabelText("From (UTC day)"), { target: { value: "2026-11-14" } });
+    fireEvent.click(loadButton());
+    expect(api).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByLabelText("From (UTC day)"), { target: { value: "2025-11-13" } });
+    fireEvent.click(loadButton());
+    await screen.findByRole("table");
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+  it("disables duplicate reads and aborts the request when the key panel unmounts", async () => {
+    let finish!: (value: ReturnType<typeof snapshot>) => void;
+    const api = vi.fn((_path: string, _options: { signal: AbortSignal }) => new Promise<ReturnType<typeof snapshot>>(resolve => { finish = resolve; }));
+    const { unmount } = render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} {...exportActions} api={api} />);
+    fireEvent.click(loadButton());
+    expect((screen.getByRole("button", { name: "Loading customer costs…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText("From (UTC day)") as HTMLInputElement).disabled).toBe(true);
+    const signal = api.mock.calls[0][1].signal;
+    unmount();
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish(snapshot()));
+  });
+  it("keeps a million-customer directory to one visible page and reuses recent pages without more reads", async () => {
+    const api = vi.fn(async (path: string) => {
+      const params = new URL(path, "http://test").searchParams;
+      const page = Number(params.get("page"));
+      const size = Number(params.get("page_size"));
+      return snapshot({ page, page_size: size, customers_checked: size, has_more: page * size < 1000000, customers: Array.from({ length: size }, (_, i) => ({ customer_id: `customer-${(page - 1) * size + i + 1}`, spend_usd: 1, requests: 1 })) });
+    });
+    render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} {...exportActions} api={api} />);
+    fireEvent.click(loadButton());
+    await screen.findByRole("rowheader", { name: "customer-50" });
+    expect(screen.getAllByRole("rowheader")).toHaveLength(50);
+    expect(api).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Next customer page" }));
+    await screen.findByRole("rowheader", { name: "customer-100" });
+    expect(screen.queryByRole("rowheader", { name: "customer-1" })).toBeNull();
+    expect(screen.getAllByRole("rowheader")).toHaveLength(50);
+    fireEvent.click(screen.getByRole("button", { name: "Previous customer page" }));
+    await screen.findByRole("rowheader", { name: "customer-1" });
+    expect(api).toHaveBeenCalledTimes(2);
+    fireEvent.click(loadButton());
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(3));
+  });
+  it("allows Next on an empty directory page and sends an exact-ID lookup without keeping the old page", async () => {
+    const api = vi.fn(async (path: string) => {
+      const params = new URL(path, "http://test").searchParams;
+      return params.get("customer_id") ? snapshot({ customer_id: params.get("customer_id") }) : snapshot({ customers: [], page: Number(params.get("page")), customers_checked: 50, has_more: true });
+    });
+    render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} {...exportActions} api={api} />);
+    fireEvent.click(loadButton());
+    await screen.findByText(/No activity recorded/);
+    fireEvent.click(screen.getByRole("button", { name: "Next customer page" }));
+    await screen.findByText(/Directory page 2/);
+    fireEvent.change(screen.getByRole("searchbox", { name: "Customer ID (exact)" }), { target: { value: "  customer-z  " } });
+    fireEvent.click(loadButton());
+    await screen.findByText("Exact customer ID: customer-z");
+    const query = new URL(api.mock.calls.at(-1)![0], "http://test").searchParams;
+    expect(query.get("page")).toBe("1");
+    expect(query.get("customer_id")).toBe("customer-z");
+    expect(screen.queryByRole("group", { name: "Customer directory pagination" })).toBeNull();
+    fireEvent.change(screen.getByRole("searchbox", { name: "Customer ID (exact)" }), { target: { value: "one,two" } });
+    fireEvent.click(loadButton());
+    expect(screen.getByText(/without commas or control characters/)).toBeTruthy();
+    expect(api).toHaveBeenCalledTimes(3);
+  });
+  it("expires cached pages after 30 seconds and keeps only three pages", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      const api = vi.fn(async (path: string) => snapshot({ page: Number(new URL(path, "http://test").searchParams.get("page")), has_more: true }));
+      render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} {...exportActions} api={api} />);
+      fireEvent.click(loadButton());
+      await screen.findByRole("table");
+      for (let page = 2; page <= 5; page += 1) {
+        fireEvent.click(screen.getByRole("button", { name: "Next customer page" }));
+        await screen.findByText(new RegExp(`Directory page ${page} ·`));
+      }
+      for (let page = 4; page >= 2; page -= 1) {
+        fireEvent.click(screen.getByRole("button", { name: "Previous customer page" }));
+        await screen.findByText(new RegExp(`Directory page ${page} ·`));
+      }
+      expect(api).toHaveBeenCalledTimes(6);
+      clock.mockReturnValue(31001);
+      fireEvent.click(screen.getByRole("button", { name: "Next customer page" }));
+      await waitFor(() => expect(api).toHaveBeenCalledTimes(7));
+    } finally { clock.mockRestore(); }
+  });
+  it("exports all customers independently of the current filter, supports cancellation and copies a command", async () => {
+    let finish!: () => void;
+    const onExport = vi.fn((_dates: { start_date: string; end_date: string }, _signal: AbortSignal) => new Promise<void>(resolve => { finish = resolve; }));
+    const onCopyExport = vi.fn(async () => {});
+    render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} api={async () => snapshot()} onExport={onExport} onCopyExport={onCopyExport} />);
+    fireEvent.change(screen.getByRole("searchbox", { name: "Customer ID (exact)" }), { target: { value: "customer-one" } });
+    fireEvent.click(screen.getByRole("button", { name: "Export all customers (CSV)" }));
+    expect(onExport.mock.calls[0][0]).toEqual({ start_date: "2026-11-12", end_date: "2026-11-13" });
+    expect(onExport.mock.calls[0][1].aborted).toBe(false);
+    expect((loadButton() as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel export" }));
+    expect(onExport.mock.calls[0][1].aborted).toBe(true);
+    await act(async () => finish());
+    expect(screen.getByText("Export cancelled.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Copy export curl" }));
+    await screen.findByText(/Export curl copied/);
+    expect(onCopyExport).toHaveBeenCalledWith({ start_date: "2026-11-12", end_date: "2026-11-13" });
+  });
+  it("applies changed end dates and page sizes without retaining earlier rows and rejects oversized customer IDs", async () => {
+    const api = vi.fn(async (path: string) => {
+      const params = new URL(path, "http://test").searchParams;
+      return snapshot({ end_date: params.get("end_date"), page_size: Number(params.get("page_size")), fetched_at: null });
+    });
+    render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} {...exportActions} api={api} />);
+    fireEvent.click(loadButton());
+    await screen.findByRole("table");
+    fireEvent.change(screen.getByLabelText("To (UTC day)"), { target: { value: "2026-11-14" } });
+    expect(screen.queryByRole("table")).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "Customers per page" }), { target: { value: "100" } });
+    fireEvent.click(loadButton());
+    await screen.findByRole("table");
+    const query = new URL(api.mock.calls.at(-1)![0], "http://test").searchParams;
+    expect(query.get("page_size")).toBe("100");
+    expect(query.get("end_date")).toBe("2026-11-14");
+    expect(screen.getByText(/2026-11-12 through 2026-11-14/).textContent).not.toContain("Retrieved");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Customer ID (exact)" }), { target: { value: "é".repeat(513) } });
+    fireEvent.click(loadButton());
+    expect(screen.getByText(/up to 1,024 bytes/)).toBeTruthy();
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+  it("keeps an empty exact-customer result distinct from an empty directory page", async () => {
+    render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} {...exportActions} api={async () => snapshot({ customer_id: "missing-customer", customers: [] })} />);
+    fireEvent.change(screen.getByRole("searchbox", { name: "Customer ID (exact)" }), { target: { value: "missing-customer" } });
+    fireEvent.click(loadButton());
+    await screen.findByText(/No activity recorded for this customer/);
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Customer directory pagination" })).toBeNull();
+  });
+  it("validates bounded dates before starting an all-customer export or copying its command", async () => {
+    const onExport = vi.fn(async () => {});
+    const onCopyExport = vi.fn(async () => {});
+    render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} api={async () => snapshot()} onExport={onExport} onCopyExport={onCopyExport} />);
+    fireEvent.change(screen.getByLabelText("To (UTC day)"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Export all customers (CSV)" }));
+    expect(screen.getByText(/1–366 inclusive UTC days/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Copy export curl" }));
+    expect(onExport).not.toHaveBeenCalled();
+    expect(onCopyExport).not.toHaveBeenCalled();
+  });
+  it("distinguishes a saved export, a cancelled file picker, and failures that require retry or curl", async () => {
+    const onExport = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new DOMException("File picker dismissed", "AbortError"))
+      .mockRejectedValueOnce(new Error("private upstream failure"))
+      .mockRejectedValueOnce(new DOMException("File access unavailable", "NotAllowedError"));
+    render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} api={async () => snapshot()} onExport={onExport} onCopyExport={async () => {}} />);
+    const start = () => fireEvent.click(screen.getByRole("button", { name: "Export all customers (CSV)" }));
+    start();
+    await screen.findByText("All-customer CSV saved.");
+    expect(screen.queryByRole("button", { name: "Cancel export" })).toBeNull();
+    start();
+    await screen.findByText("Export cancelled.");
+    start();
+    await screen.findByText(/Export failed. No completed file was saved/);
+    expect(screen.queryByText(/private upstream failure/)).toBeNull();
+    start();
+    await waitFor(() => expect((screen.getByRole("button", { name: "Export all customers (CSV)" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(onExport).toHaveBeenCalledTimes(4);
+    expect(screen.getByText(/use Copy export curl if this browser cannot stream files/)).toBeTruthy();
+  });
+  it("shows clipboard failures without exposing private errors and lets copying recover", async () => {
+    const onCopyExport = vi.fn().mockRejectedValueOnce(new Error("private clipboard details")).mockResolvedValueOnce(undefined);
+    render(<LiteLlmCustomerSpend keyId="gateway-key" {...range} api={async () => snapshot()} onExport={async () => {}} onCopyExport={onCopyExport} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy export curl" }));
+    await screen.findByText(/Could not copy the export command/);
+    expect(screen.queryByText(/private clipboard details/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Copy export curl" }));
+    await screen.findByText(/Export curl copied/);
+    expect(onCopyExport).toHaveBeenCalledTimes(2);
+  });
+  it("mounts and disposes a customer panel once, aborting pending reads and exports before late failures settle", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    let rejectRead!: (error: Error) => void;
+    let rejectExport!: (error: Error) => void;
+    const api = vi.fn((_path: string, _options: { signal: AbortSignal }) => new Promise<ReturnType<typeof snapshot>>((_, reject) => { rejectRead = reject; }));
+    const onExport = vi.fn((_dates: { start_date: string; end_date: string }, _signal: AbortSignal) => new Promise<void>((_, reject) => { rejectExport = reject; }));
+    let dispose!: () => void;
+    await act(async () => { dispose = mountLiteLlmCustomerSpend(host, { keyId: "gateway-key", ...range, api, onExport, onCopyExport: async () => {} }); });
+    fireEvent.click(loadButton());
+    fireEvent.click(screen.getByRole("button", { name: "Export all customers (CSV)" }));
+    const readSignal = api.mock.calls[0][1].signal;
+    const exportSignal = onExport.mock.calls[0][1];
+    await act(async () => { dispose(); dispose(); });
+    expect(readSignal.aborted).toBe(true);
+    expect(exportSignal.aborted).toBe(true);
+    expect(host.childElementCount).toBe(0);
+    await act(async () => { rejectRead(new Error("late read failure")); rejectExport(new Error("late export failure")); });
+    expect(screen.queryByText(/Customer costs unavailable|Export failed/)).toBeNull();
+    host.remove();
   });
 });

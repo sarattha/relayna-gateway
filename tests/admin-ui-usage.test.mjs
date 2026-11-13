@@ -36,6 +36,7 @@ function harness(respond) {
     const handleAsync=fn=>fn, organizeView=()=>{}, syncUsageExportControls=()=>{};
     const showContentDrawer=(title,markup)=>{const drawer=document.createElement('div');drawer.dataset.chartData='true';drawer.innerHTML=title+markup;document.body.appendChild(drawer);};
     const applyUsageFilters=()=>{}, loadTaskUsage=()=>{}, usageExportAction=()=>{}, showLiteLlmSpend=()=>{}, openDebugRequest=()=>{};
+    const mountLiteLlmCustomerSpend=(host,props)=>{ host.textContent='LiteLLM customer costs'; host.dataset.keyId=props.keyId; host.dataset.from=props.from||''; host.dataset.to=props.to||''; return ()=>{ host.dataset.disposed='true'; }; };
     const usageEventsTable=rows=>'<div data-events>'+rows.map(row=>row.request_id).join(',')+'</div>';
     const usageBreakdownTable=rows=>JSON.stringify(rows), usageTimeseriesTable=usageBreakdownTable, usageServiceTimeseriesTable=usageBreakdownTable;
     const usageProjectKeyServiceHierarchy=usageBreakdownTable, unusedKeysTable=usageBreakdownTable;
@@ -200,6 +201,9 @@ console.log('ok - chart failures preserve Usage results, bounded chart retries r
   assert.equal(h.document.querySelector('[name=key_id]').value,'saved-key');
   assert.equal(h.ui.usageQueryFromForm().get('key_id'),'saved-key');
   assert.equal(h.ui.usageQueryFromForm().has('from'),false);
+  const customerPanel = h.document.querySelector('[data-usage-litellm-customers]');
+  assert.equal(customerPanel.dataset.keyId, 'saved-key');
+  assert.equal(customerPanel.dataset.from, '');
   [...h.document.querySelectorAll('.result-tabs button')].find(button => button.textContent === 'Recent requests').click();
   assert.equal(pending.length,3);
   while (pending.length) { pending.shift()(); await tick(); }
@@ -208,6 +212,28 @@ console.log('ok - chart failures preserve Usage results, bounded chart retries r
   h.dom.window.close();
 }
 console.log('ok - explicit all time and saved project/key filters survive progressive inventories; Show all bounds section concurrency');
+
+{
+  const h = harness(path => path.includes('/summary?') ? {request_count:0} : {rows:[],has_more:false});
+  await h.ui.usage();
+  assert.equal(h.document.querySelector('[data-usage-litellm-customers]'), null);
+  assert.match(h.document.querySelector('#usage-results').textContent, /Select a virtual key/);
+  const key = h.document.querySelector('#usage-form [name=key_id]');
+  key.add(new h.dom.window.Option('Mapped key', 'mapped-key'));
+  key.value = 'mapped-key';
+  await h.ui.loadUsage();
+  const customerPanel = h.document.querySelector('[data-usage-litellm-customers]');
+  assert.equal(customerPanel.dataset.keyId, 'mapped-key');
+  const query = new URL(h.calls.findLast(call => call.path.includes('/summary?')).path, 'http://test').searchParams;
+  assert.equal(customerPanel.dataset.from, query.get('from'));
+  assert.equal(customerPanel.dataset.to, query.get('to'));
+  key.value = '';
+  await h.ui.loadUsage();
+  assert.equal(customerPanel.dataset.disposed, 'true');
+  assert.equal(h.document.querySelector('[data-usage-litellm-customers]'), null);
+  h.dom.window.close();
+}
+console.log('ok - mapped-key customer panel follows applied key and dates and disposes before filters change');
 
 {
   const flights = new Set();
@@ -310,3 +336,62 @@ console.log('ok - Usage cancels superseded reads, rejects stale completions, deb
   assert.doesNotMatch(extract('downloadAllUsageExport'), /response\.(blob|text|json|arrayBuffer)\(|const parts =/);
 }
 console.log('ok - All rows export pipes response chunks to disk without accumulating a Blob or response body');
+
+{
+  const chunks = [];
+  const viewController = new AbortController();
+  let request;
+  const sink = new WritableStream({write(chunk) { chunks.push(chunk); }});
+  const window = { showSaveFilePicker: async () => ({createWritable: async () => sink}) };
+  const fetch = async (path, options) => {
+    request = {path, options};
+    return {ok:true,body:new ReadableStream({start(controller) {controller.enqueue(new TextEncoder().encode('header\n'));controller.enqueue(new TextEncoder().encode('customer\n'));controller.close();}})};
+  };
+  const dates = {start_date:'2026-11-01',end_date:'2026-11-13'};
+  const download = new Function('window','viewController','fetch','usageExportHeaders', `${extract('customerUsageExportPath')}\n${extract('downloadCustomerUsageExport')}; return downloadCustomerUsageExport;`)(window,viewController,fetch,()=>({authorization:'synthetic-fixture'}));
+  await download('mapped-key',dates,new AbortController().signal);
+  assert.equal(request.path,'/admin-ui/admin/keys/mapped-key/litellm-customer-spend/export.csv?start_date=2026-11-01&end_date=2026-11-13');
+  assert.equal(request.options.headers.authorization,'synthetic-fixture');
+  assert.equal(chunks.length,2);
+  assert.doesNotMatch(extract('downloadCustomerUsageExport'), /response\.(blob|text|json|arrayBuffer)\(|const parts =/);
+  assert.equal(new URL(request.path,'http://test').searchParams.has('page'),false);
+}
+console.log('ok - all-customer export streams chunks directly to disk with protected headers and no page limit');
+
+{
+  for (const reason of ['upstream','navigation','cancel']) {
+    const viewController = new AbortController();
+    const caller = new AbortController();
+    let aborts = 0, closeCount = 0, request;
+    const sink = new WritableStream({abort(){aborts += 1;},close(){closeCount += 1;}});
+    const window = {showSaveFilePicker:async()=>({createWritable:async()=>sink})};
+    const fetch = async (_path, options) => {
+      request=options;
+      return {ok:true,body:new ReadableStream({start(controller){
+        controller.enqueue(new Uint8Array([1]));
+        if(reason==='upstream')controller.error(new Error('synthetic interrupted stream'));
+      }})};
+    };
+    const download = new Function('window','viewController','fetch','usageExportHeaders', `${extract('customerUsageExportPath')}\n${extract('downloadCustomerUsageExport')}; return downloadCustomerUsageExport;`)(window,viewController,fetch,()=>({}));
+    const finished = download('key',{start_date:'2026-11-01',end_date:'2026-11-13'},caller.signal);
+    const rejected = assert.rejects(finished);
+    await tick();
+    if(reason==='navigation')viewController.abort();
+    if(reason==='cancel')caller.abort();
+    await rejected;
+    assert.equal(aborts,1);
+    assert.equal(closeCount,0,'an interrupted file must not be committed');
+    if(reason!=='upstream')assert.equal(request.signal.aborted,true);
+  }
+}
+console.log('ok - interrupted, cancelled and navigated-away customer exports abort their file sink without committing partial data');
+
+{
+  let copied;
+  const copy = new Function('location','navigator', `${extract('customerUsageExportPath')}\n${extract('copyCustomerUsageExport')}; return copyCustomerUsageExport;`)({origin:'http://localhost:18472'},{clipboard:{writeText:async text=>{copied=text;}}});
+  await copy('key',{start_date:'2026-11-01',end_date:'2026-11-13'});
+  assert.match(copied,/curl --fail --show-error/);
+  assert.match(copied,/\$GATEWAY_OPERATOR_TOKEN/);
+  assert.doesNotMatch(copied,/customer_id=|page=/);
+}
+console.log('ok - export curl uses an operator-token placeholder and exports every customer independently of the visible page');

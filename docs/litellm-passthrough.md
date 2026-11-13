@@ -573,3 +573,10 @@ investigation still shows the passthrough mode and metering explanation. This
 change does not introduce billing identities or change Usage recording rules.
 Service `cost_mode: passthrough` means reading upstream cost and is separate from
 LiteLLM passthrough routing; it does not receive this unmetered label.
+
+For managed requests using a mapped LiteLLM credential, **Usage & cost** can also
+show LiteLLM costs per recorded customer ID. Select a virtual key, then load the
+**LiteLLM customer costs** table for explicit UTC days. This reads the mapped
+key's daily activity from LiteLLM and includes any other traffic using that
+credential. See [cost per customer](admin-portal.md#litellm-cost-per-customer)
+for permissions, customer ID examples and date-range semantics.
