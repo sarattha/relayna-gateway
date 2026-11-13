@@ -11219,7 +11219,7 @@ mod tests {
     #[tokio::test]
     async fn litellm_customer_export_requires_export_scope_and_sanitizes_startup_failures() {
         let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
-        let stored = stored_key("rk_live_localdev000001");
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
         let path = format!(
             "/admin-ui/admin/keys/{}/litellm-customer-spend/export.csv?start_date=2026-11-01&end_date=2026-11-13",
             stored.id
@@ -11294,7 +11294,7 @@ mod tests {
     #[tokio::test]
     async fn litellm_customer_spend_requires_usage_scope_mapping_and_valid_query() {
         let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
-        let stored = stored_key("rk_live_localdev000001");
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
         let root = format!("/admin-ui/admin/keys/{}/litellm-customer-spend", stored.id);
         let dates = "start_date=2026-11-01&end_date=2026-11-13";
         let path = format!("{root}?{dates}");
@@ -11365,7 +11365,7 @@ mod tests {
     {
         let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
         use gateway_core::LiteLlmCredentialMappingScope::{Key, Project};
-        let stored = stored_key("rk_live_localdev000001");
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
         let path=format!("/admin-ui/admin/keys/{}/litellm-customer-spend?start_date=2026-11-01&end_date=2026-11-13&customer_id=%20customer-a%20&page=900000",stored.id);
         let key_hash = format!("{:x}", Sha256::digest(b"mapped-secret"));
         let day = |date, spend, requests| {
@@ -11445,7 +11445,7 @@ mod tests {
     #[tokio::test]
     async fn litellm_customer_spend_pages_a_million_customers_without_walking_previous_pages() {
         let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
-        let stored = stored_key("rk_live_localdev000001");
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
         let key_hash = format!("{:x}", Sha256::digest(b"mapped-secret"));
         // A logical million-entry registry generates only the requested page.
         for page in [1, 20_000, 20_001] {
@@ -11507,7 +11507,7 @@ mod tests {
     #[tokio::test]
     async fn litellm_customer_spend_empty_activity_keeps_next_and_rejects_ignored_pagination() {
         let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
-        let stored = stored_key("rk_live_localdev000001");
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
         let empty = serde_json::json!({"results":[],"metadata":{"page":1,"total_pages":0,"has_more":false}});
         for (directory, activity, expected, has_more) in [
             (
@@ -11567,7 +11567,7 @@ mod tests {
     #[tokio::test]
     async fn litellm_customer_spend_discards_upstream_failures_and_partial_aggregates() {
         let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
-        let stored = stored_key("rk_live_localdev000001");
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
         let path=format!("/admin-ui/admin/keys/{}/litellm-customer-spend?start_date=2026-11-01&end_date=2026-11-13&customer_id=customer",stored.id);
         for (status,payload) in [
             ("403 Forbidden","server-secret".into()),("302 Found","".into()),("404 Not Found","old LiteLLM lacks aggregate route".into()),
